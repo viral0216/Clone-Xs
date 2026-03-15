@@ -1,0 +1,106 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api-client";
+import type { AuthStatus, WarehouseInfo, CloneJob } from "@/types/api";
+
+export function useAuthStatus() {
+  return useQuery<AuthStatus>({
+    queryKey: ["auth-status"],
+    queryFn: () => api.get("/auth/status"),
+    retry: false,
+  });
+}
+
+export function useWarehouses() {
+  return useQuery<WarehouseInfo[]>({
+    queryKey: ["warehouses"],
+    queryFn: () => api.get("/auth/warehouses"),
+    retry: false,
+  });
+}
+
+export interface VolumeInfo {
+  catalog: string;
+  schema: string;
+  name: string;
+  type: string;
+  path: string;
+}
+
+export function useVolumes() {
+  return useQuery<VolumeInfo[]>({
+    queryKey: ["volumes"],
+    queryFn: () => api.get("/auth/volumes"),
+    retry: false,
+  });
+}
+
+export function useCloneJobs() {
+  return useQuery<CloneJob[]>({
+    queryKey: ["clone-jobs"],
+    queryFn: () => api.get("/clone/jobs"),
+    refetchInterval: 5000,
+  });
+}
+
+export function useStartClone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/clone", req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clone-jobs"] }),
+  });
+}
+
+export function useDiff() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string; warehouse_id?: string }) =>
+      api.post("/diff", req),
+  });
+}
+
+export function useValidate() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/validate", req),
+  });
+}
+
+export function useStats() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; warehouse_id?: string }) =>
+      api.post("/stats", req),
+  });
+}
+
+export function useSearch() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; pattern: string; search_columns?: boolean }) =>
+      api.post("/search", req),
+  });
+}
+
+export function usePreflight() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string; warehouse_id?: string }) =>
+      api.post("/preflight", req),
+  });
+}
+
+export function usePiiScan() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; no_exit_code?: boolean }) =>
+      api.post("/pii-scan", req),
+  });
+}
+
+export function useSchemaDrift() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string }) =>
+      api.post("/schema-drift", req),
+  });
+}
+
+export function useSync() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string; dry_run?: boolean; drop_extra?: boolean }) =>
+      api.post("/sync", req),
+  });
+}

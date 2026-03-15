@@ -166,11 +166,11 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions will be licensed under the [MIT License](../LICENSE).
 
 ## Recognition
 
-All contributors are recognized in the [README](README.md#contributing) via the contributors graph. Significant contributions may also be acknowledged in the [CHANGELOG](CHANGELOG.md) for the relevant release.
+All contributors are recognized in the [README](../README.md#contributing) via the contributors graph. Significant contributions may also be acknowledged in the [CHANGELOG](CHANGELOG.md) for the relevant release.
 
 ## Questions?
 

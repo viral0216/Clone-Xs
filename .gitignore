@@ -78,6 +78,17 @@ docker-compose.override.yml
 *.tfvars
 crash.log
 
+# Runtime data
+checkpoints/
+rollback_logs/
+snapshots/
+exports/
+reports/
+
+# Generated files
+databricks_workflow.json
+clone_queue_state.json
+
 # Misc
 *.bak
 *.tmp

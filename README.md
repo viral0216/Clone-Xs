@@ -132,7 +132,7 @@ clone-catalog audit                                # Query audit trail
 clone-catalog serve                                # Start API server
 ```
 
-For the complete reference with real-world examples, see **[HOWTO.md](HOWTO.md)**.
+For the complete reference with real-world examples, see **[HOWTO.md](.github/HOWTO.md)**.
 
 ---
 
@@ -221,15 +221,15 @@ clone-catalog clone --source X --dest Y --serverless --volume /Volumes/cat/schem
 - Config files with tokens are sanitized before writing to audit logs
 - RBAC policies control who can clone which catalogs
 
-See [SECURITY.md](SECURITY.md) for details on reporting vulnerabilities.
+See [SECURITY.md](.github/SECURITY.md) for details on reporting vulnerabilities.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding guidelines, and the PR process.
+Contributions are welcome! Please read [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup instructions, coding guidelines, and the PR process.
 
-This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+This project follows the [Contributor Covenant Code of Conduct](.github/CODE_OF_CONDUCT.md).
 
 ### Areas Where Help Is Welcome
 
@@ -254,7 +254,7 @@ Thanks to everyone who contributes to Clone-Xs!
 
 ## Documentation
 
-For detailed documentation — full feature walkthrough, 50+ how-to guides, configuration reference, and architecture — see **[HOWTO.md](HOWTO.md)**.
+For detailed documentation — full feature walkthrough, 50+ how-to guides, configuration reference, and architecture — see **[HOWTO.md](.github/HOWTO.md)**.
 
 To run the docs site locally:
 

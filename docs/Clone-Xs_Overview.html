@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clone-Xs — Enterprise Unity Catalog Cloning</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --crimson: #DC143C;
+    --crimson-dark: #B8102F;
+    --crimson-light: #FF1A47;
+    --crimson-glow: rgba(220, 20, 60, 0.15);
+    --black: #0A0A0A;
+    --white: #FFFFFF;
+    --body-text: #4A5568;
+    --subtitle: #718096;
+    --card-bg: #F7FAFC;
+    --card-border: #E2E8F0;
+    --alt-row: #F7FAFC;
+    --table-text: #1A202C;
+    --dark-bg: #0F1628;
+    --dark-card: #1A2340;
+    --dark-surface: #232D4A;
+    --success: #22C55E;
+    --success-dark: #16A34A;
+    --info: #3B82F6;
+    --info-dark: #2563EB;
+    --warn: #F59E0B;
+    --warn-dark: #D97706;
+    --purple: #8B5CF6;
+    --surface-50: #F8FAFC;
+    --surface-100: #F1F5F9;
+    --surface-200: #E2E8F0;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.06);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 400;
+    background: linear-gradient(180deg, #EDF2F7 0%, #E2E8F0 100%);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .deck {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* ── Slide Container ── */
+  .slide {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--white);
+    border-radius: 16px;
+    box-shadow: var(--shadow-xl), 0 0 0 1px rgba(0,0,0,0.03);
+    margin-bottom: 48px;
+    padding: 56px 72px 52px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease;
+  }
+  .slide:hover { transform: translateY(-2px); }
+
+  .slide-number {
+    position: absolute;
+    bottom: 18px;
+    right: 28px;
+    font-size: 11px;
+    color: #A0AEC0;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  .slide h1 {
+    font-size: 30px;
+    font-weight: 800;
+    color: var(--black);
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+  }
+
+  .slide-subtitle {
+    font-size: 14px;
+    color: var(--subtitle);
+    margin-bottom: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .separator {
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, var(--crimson) 0%, var(--crimson-light) 50%, transparent 100%);
+    margin: 8px 0 20px;
+    border-radius: 2px;
+  }
+
+  /* ── Cover Slide ── */
+  .slide.cover {
+    background: linear-gradient(135deg, var(--dark-bg) 0%, var(--dark-card) 40%, #1E2D50 100%);
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  .slide.cover::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(220, 20, 60, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 30%, rgba(59, 130, 246, 0.05) 0%, transparent 40%);
+    pointer-events: none;
+  }
+  .slide.cover h1 {
+    font-size: 56px;
+    color: var(--white);
+    margin-bottom: 12px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    position: relative;
+    text-shadow: 0 2px 40px rgba(220, 20, 60, 0.2);
+  }
+  .slide.cover .slide-subtitle {
+    font-size: 20px;
+    color: var(--crimson-light);
+    font-weight: 400;
+    position: relative;
+    letter-spacing: 0.5px;
+  }
+  .slide.cover .cover-meta {
+    font-size: 14px;
+    color: #8899BB;
+    margin-top: 28px;
+    position: relative;
+    letter-spacing: 1px;
+    font-weight: 300;
+  }
+  .slide.cover .cover-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--crimson) 0%, var(--crimson-dark) 100%);
+    color: var(--white);
+    padding: 8px 28px;
+    border-radius: 24px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 16px;
+    position: relative;
+    box-shadow: 0 4px 15px rgba(220, 20, 60, 0.3);
+    letter-spacing: 0.3px;
+  }
+
+  /* ── KPIs ── */
+  .kpi-row { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .kpi {
+    flex: 1;
+    min-width: 120px;
+    background: linear-gradient(135deg, var(--crimson) 0%, var(--crimson-dark) 100%);
+    color: var(--white);
+    border-radius: var(--radius);
+    padding: 22px 16px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(220, 20, 60, 0.2);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(220, 20, 60, 0.3); }
+  .kpi .value { font-size: 36px; font-weight: 800; letter-spacing: -1px; }
+  .kpi .label { font-size: 11px; font-weight: 500; margin-top: 6px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi.dark {
+    background: linear-gradient(135deg, #1A202C 0%, var(--black) 100%);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .kpi.dark:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+  .kpi.blue {
+    background: linear-gradient(135deg, var(--info) 0%, var(--info-dark) 100%);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  }
+  .kpi.blue:hover { box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3); }
+  .kpi.green {
+    background: linear-gradient(135deg, var(--success) 0%, var(--success-dark) 100%);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
+  }
+  .kpi.green:hover { box-shadow: 0 6px 20px rgba(34, 197, 94, 0.3); }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; gap: 16px; flex: 1; }
+  .card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card-grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .card.accent-left {
+    border-left: 4px solid var(--crimson);
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+  }
+  .card h3 { font-size: 14px; font-weight: 700; color: var(--black); margin-bottom: 6px; }
+  .card p, .card li { font-size: 12.5px; color: var(--body-text); line-height: 1.6; }
+  .card ul { padding-left: 16px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge.crimson { background: var(--crimson-glow); color: var(--crimson); border: 1px solid rgba(220,20,60,0.2); }
+  .badge.green { background: rgba(34,197,94,0.1); color: var(--success-dark); border: 1px solid rgba(34,197,94,0.2); }
+  .badge.blue { background: rgba(59,130,246,0.1); color: var(--info-dark); border: 1px solid rgba(59,130,246,0.2); }
+  .badge.dark { background: rgba(0,0,0,0.08); color: var(--black); border: 1px solid rgba(0,0,0,0.1); }
+  .badge.warn { background: rgba(245,158,11,0.1); color: var(--warn-dark); border: 1px solid rgba(245,158,11,0.2); }
+
+  /* ── Tables ── */
+  .data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; margin-top: 8px; border-radius: var(--radius-sm); overflow: hidden; box-shadow: var(--shadow-sm); }
+  .data-table th {
+    background: var(--black);
+    color: var(--white);
+    font-weight: 600;
+    padding: 12px 18px;
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .data-table td {
+    padding: 11px 18px;
+    color: var(--table-text);
+    border-bottom: 1px solid var(--card-border);
+    font-size: 13px;
+  }
+  .data-table tr:nth-child(even) td { background: var(--alt-row); }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(220, 20, 60, 0.03); }
+
+  /* ── Phase Cards ── */
+  .phase-card {
+    background: var(--white);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .phase-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .phase-card .phase-header {
+    background: linear-gradient(135deg, var(--crimson) 0%, var(--crimson-dark) 100%);
+    color: var(--white);
+    padding: 12px 18px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .phase-card .phase-body { padding: 16px 18px; }
+  .phase-card .phase-body li { font-size: 12.5px; color: var(--body-text); line-height: 1.7; }
+  .phase-card .phase-body ul { padding-left: 16px; }
+  .phase-card .outcome {
+    margin-top: 10px;
+    background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+    border-radius: var(--radius-xs);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: #065F46;
+    font-weight: 500;
+    border: 1px solid rgba(34, 197, 94, 0.15);
+  }
+
+  /* ── Architecture ── */
+  .arch-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 16px; }
+  .arch-box {
+    flex: 1;
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    text-align: center;
+    transition: transform 0.15s ease;
+  }
+  .arch-box:hover { transform: translateY(-2px); }
+  .arch-box h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .arch-box p { font-size: 11.5px; line-height: 1.5; opacity: 0.85; }
+  .arch-box.dark-bg {
+    background: linear-gradient(135deg, var(--dark-bg) 0%, var(--dark-card) 100%);
+    color: var(--white);
+    box-shadow: 0 4px 12px rgba(15, 22, 40, 0.3);
+  }
+  .arch-box.crimson-bg {
+    background: linear-gradient(135deg, var(--crimson) 0%, var(--crimson-dark) 100%);
+    color: var(--white);
+    box-shadow: 0 4px 12px rgba(220, 20, 60, 0.2);
+  }
+  .arch-box.card-bg {
+    background: var(--card-bg);
+    color: var(--black);
+    border: 1px solid var(--card-border);
+  }
+  .arch-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--crimson);
+    font-weight: 700;
+    min-width: 32px;
+  }
+
+  /* ── Layout Helpers ── */
+  .content-cols { display: flex; gap: 28px; flex: 1; }
+  .content-cols > div { flex: 1; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--crimson);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--crimson-glow);
+  }
+
+  .icon-list { list-style: none; padding: 0; }
+  .icon-list li {
+    font-size: 12.5px;
+    color: var(--body-text);
+    padding: 5px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+  }
+  .icon-list li::before {
+    content: ">";
+    color: var(--crimson);
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+
+  .highlight-box {
+    background: linear-gradient(135deg, var(--crimson) 0%, var(--crimson-dark) 100%);
+    color: var(--white);
+    border-radius: var(--radius);
+    padding: 18px 24px;
+    margin-top: 16px;
+    box-shadow: 0 4px 15px rgba(220, 20, 60, 0.2);
+  }
+  .highlight-box h3 { color: var(--white); font-size: 14px; margin-bottom: 6px; font-weight: 700; }
+  .highlight-box p { font-size: 13px; opacity: 0.92; line-height: 1.5; }
+
+  /* ── Code Blocks ── */
+  .code-block {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: linear-gradient(135deg, #0F1628 0%, #1A2340 100%);
+    color: var(--success);
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    line-height: 1.9;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* ── Watermark ── */
+  .slide::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle at top right, var(--crimson-glow), transparent 70%);
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .slide.cover::after { display: none; }
+
+  /* ── Print ── */
+  @media print {
+    body { background: white; }
+    .slide {
+      page-break-after: always;
+      box-shadow: none;
+      margin: 0;
+      border-radius: 0;
+      break-inside: avoid;
+    }
+    .slide:hover { transform: none; }
+    .card:hover, .kpi:hover, .phase-card:hover, .arch-box:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- ═══════════════════ SLIDE 1: COVER ═══════════════════ -->
+<div class="slide cover">
+  <h1>Clone-Xs</h1>
+  <div class="slide-subtitle">Enterprise Unity Catalog Cloning for Databricks</div>
+  <div class="cover-badge">Open Source &mdash; MIT License</div>
+  <div class="cover-meta">CLI &nbsp;&bull;&nbsp; Web UI &nbsp;&bull;&nbsp; REST API &nbsp;&bull;&nbsp; Serverless &nbsp;&bull;&nbsp; Notebooks</div>
+  <span class="slide-number">1 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 2: THE PROBLEM ═══════════════════ -->
+<div class="slide">
+  <h1>The Problem</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Cloning Unity Catalog catalogs today is manual, fragile, and incomplete</div>
+
+  <div class="card-grid cols-2" style="margin-top: 16px;">
+    <div class="card accent-left">
+      <h3>Manual SQL Scripts</h3>
+      <p>Teams write custom SQL to clone tables one-by-one. No automation, no error handling, no rollback.</p>
+    </div>
+    <div class="card accent-left">
+      <h3>Missing Metadata</h3>
+      <p>Permissions, tags, properties, ownership, constraints, and comments are silently dropped.</p>
+    </div>
+    <div class="card accent-left">
+      <h3>No Validation</h3>
+      <p>No way to verify clone accuracy &mdash; row counts, checksums, and schema parity are unchecked.</p>
+    </div>
+    <div class="card accent-left">
+      <h3>No Audit Trail</h3>
+      <p>Nobody knows who cloned what, when, or whether it succeeded. Compliance gaps everywhere.</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <h3>Result</h3>
+    <p>Cloning a single catalog takes hours, fails silently, and leaves teams without confidence in their data.</p>
+  </div>
+  <span class="slide-number">2 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 3: THE SOLUTION ═══════════════════ -->
+<div class="slide">
+  <h1>The Solution: Clone-Xs</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Enterprise-grade cloning toolkit &mdash; clone, compare, sync, and manage Unity Catalog catalogs</div>
+
+  <div class="kpi-row" style="margin-top: 16px;">
+    <div class="kpi"><div class="value">56</div><div class="label">CLI Commands</div></div>
+    <div class="kpi dark"><div class="value">88</div><div class="label">Python Modules</div></div>
+    <div class="kpi blue"><div class="value">31</div><div class="label">Web UI Pages</div></div>
+    <div class="kpi green"><div class="value">61+</div><div class="label">API Endpoints</div></div>
+  </div>
+
+  <div class="card-grid cols-3">
+    <div class="card accent-left">
+      <span class="badge crimson">CLI</span>
+      <h3>Command Line</h3>
+      <p>56 commands for cloning, diffing, syncing, rollback, validation, profiling, and more.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge blue">WEB</span>
+      <h3>Web Dashboard</h3>
+      <p>31-page React UI with dark mode, dynamic dropdowns, real-time logs, and guided wizards.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge green">API</span>
+      <h3>REST API</h3>
+      <p>61+ FastAPI endpoints for automation, CI/CD integration, and programmatic control.</p>
+    </div>
+  </div>
+  <span class="slide-number">3 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 4: KEY FEATURES ═══════════════════ -->
+<div class="slide">
+  <h1>Key Features</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Everything you need to clone, manage, and govern Unity Catalog at scale</div>
+
+  <div class="card-grid cols-2" style="margin-top: 12px;">
+    <div class="card accent-left">
+      <span class="badge crimson">CLONE</span>
+      <h3>Deep &amp; Shallow Clone</h3>
+      <p>Full data copy or metadata-only. Incremental sync and time-travel support.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge crimson">METADATA</span>
+      <h3>Full Metadata Copy</h3>
+      <p>Permissions, ownership, tags, properties, security policies, constraints, comments.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge green">VALIDATE</span>
+      <h3>Post-Clone Validation</h3>
+      <p>Row count + checksum verification with automatic rollback on mismatch.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge blue">SERVERLESS</span>
+      <h3>Serverless Compute</h3>
+      <p>Run clones without a SQL warehouse &mdash; uploads wheel, submits notebook job automatically.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge dark">AUDIT</span>
+      <h3>Run Logs to Delta</h3>
+      <p>Every operation persists logs, metrics, and audit trail to Unity Catalog Delta tables.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge warn">SYNC</span>
+      <h3>Incremental Sync</h3>
+      <p>Sync only changed tables using Delta version history &mdash; no full re-clone needed.</p>
+    </div>
+  </div>
+  <span class="slide-number">4 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 5: ARCHITECTURE ═══════════════════ -->
+<div class="slide">
+  <h1>Architecture</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Three-tier design with shared Python core</div>
+
+  <div class="arch-row" style="margin-top: 20px;">
+    <div class="arch-box dark-bg">
+      <h4>React UI</h4>
+      <p>31 pages<br>Vite + TanStack Query<br>Tailwind CSS 4<br>shadcn/ui components</p>
+    </div>
+    <div class="arch-arrow">&rarr;</div>
+    <div class="arch-box crimson-bg">
+      <h4>FastAPI Backend</h4>
+      <p>61+ endpoints<br>Job queue + WebSockets<br>Real-time log streaming<br>Pydantic v2 models</p>
+    </div>
+    <div class="arch-arrow">&rarr;</div>
+    <div class="arch-box dark-bg">
+      <h4>Python Core</h4>
+      <p>88 modules<br>Databricks SDK<br>Unity Catalog APIs<br>Delta Lake operations</p>
+    </div>
+    <div class="arch-arrow">&rarr;</div>
+    <div class="arch-box card-bg">
+      <h4>Databricks</h4>
+      <p>Unity Catalog<br>SQL Warehouses<br>Serverless Compute<br>Delta Tables</p>
+    </div>
+  </div>
+
+  <div class="card-grid cols-3" style="margin-top: 16px;">
+    <div class="card">
+      <h3>CLI Layer</h3>
+      <ul class="icon-list">
+        <li>Python Click framework</li>
+        <li>56 commands, YAML config</li>
+        <li>Same core as API</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Job Queue</h3>
+      <ul class="icon-list">
+        <li>Async job execution</li>
+        <li>WebSocket progress</li>
+        <li>Concurrent schema processing</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Audit Pipeline</h3>
+      <ul class="icon-list">
+        <li>Auto-create Delta tables</li>
+        <li>Every operation logged</li>
+        <li>Queryable via SQL</li>
+      </ul>
+    </div>
+  </div>
+  <span class="slide-number">5 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 6: WEB UI ═══════════════════ -->
+<div class="slide">
+  <h1>Web UI &mdash; 31 Pages</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Modern React dashboard with dark mode, real-time logs, and guided wizards</div>
+
+  <table class="data-table" style="margin-top: 12px;">
+    <tr>
+      <th>Category</th>
+      <th>Pages</th>
+      <th>Count</th>
+    </tr>
+    <tr>
+      <td><strong>Overview</strong></td>
+      <td>Dashboard, Audit Trail, Metrics</td>
+      <td>3</td>
+    </tr>
+    <tr>
+      <td><strong>Operations</strong></td>
+      <td>Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Multi-Clone</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <td><strong>Discovery</strong></td>
+      <td>Explorer, Diff &amp; Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview</td>
+      <td>7</td>
+    </tr>
+    <tr>
+      <td><strong>Analysis</strong></td>
+      <td>Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Compliance</td>
+      <td>6</td>
+    </tr>
+    <tr>
+      <td><strong>Management</strong></td>
+      <td>Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins</td>
+      <td>7</td>
+    </tr>
+  </table>
+
+  <div class="kpi-row" style="margin-top: auto;">
+    <div class="kpi"><div class="value">17</div><div class="label">Dynamic Dropdown Pages</div></div>
+    <div class="kpi dark"><div class="value">12</div><div class="label">Clone Templates</div></div>
+    <div class="kpi green"><div class="value">4</div><div class="label">Clone Wizard Steps</div></div>
+  </div>
+  <span class="slide-number">6 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 7: CLONE WIZARD ═══════════════════ -->
+<div class="slide">
+  <h1>Clone Wizard &mdash; 4-Step Guided Flow</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Source &rarr; Options &rarr; Preview &rarr; Execute &mdash; with real-time progress and logs</div>
+
+  <div class="card-grid cols-4" style="margin-top: 16px;">
+    <div class="phase-card">
+      <div class="phase-header">1. Source</div>
+      <div class="phase-body">
+        <ul>
+          <li>Select source catalog</li>
+          <li>Select destination catalog</li>
+          <li>Filter by schema/table</li>
+          <li>Include/exclude patterns</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">2. Options</div>
+      <div class="phase-body">
+        <ul>
+          <li>Deep vs Shallow clone</li>
+          <li>Copy permissions, tags</li>
+          <li>Enable validation</li>
+          <li>Serverless toggle</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">3. Preview</div>
+      <div class="phase-body">
+        <ul>
+          <li>Review all settings</li>
+          <li>See object counts</li>
+          <li>Dry-run mode</li>
+          <li>Preflight checks</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">4. Execute</div>
+      <div class="phase-body">
+        <ul>
+          <li>Real-time log stream</li>
+          <li>Progress bar per schema</li>
+          <li>Live status badges</li>
+          <li>Databricks job link</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-grid cols-2" style="margin-top: 16px;">
+    <div class="card accent-left">
+      <h3>15 Clone Options</h3>
+      <p>Permissions, ownership, tags, properties, security, constraints, comments, validation, checksum, rollback, report, checkpoint, force re-clone, verbose, serverless.</p>
+    </div>
+    <div class="card accent-left">
+      <h3>12 Built-in Templates</h3>
+      <p>Production Mirror, Dev Sandbox, DR Copy, Staging Refresh, Compliance Clone, Data Lake Copy, Schema-Only, Table Subset, Cross-Region, Audit Clone, Performance Test, Migration.</p>
+    </div>
+  </div>
+  <span class="slide-number">7 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 8: SERVERLESS ═══════════════════ -->
+<div class="slide">
+  <h1>Serverless Compute</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Run clones on Databricks serverless &mdash; no SQL warehouse needed</div>
+
+  <div class="content-cols" style="margin-top: 16px;">
+    <div>
+      <div class="section-label">How It Works</div>
+      <div class="card accent-left" style="margin-bottom: 12px;">
+        <h3>1. Package &amp; Upload</h3>
+        <p>Clone-Xs builds a Python wheel and uploads it to your selected UC Volume.</p>
+      </div>
+      <div class="card accent-left" style="margin-bottom: 12px;">
+        <h3>2. Generate Notebook</h3>
+        <p>Creates a runner notebook that imports the wheel and executes the clone with all options.</p>
+      </div>
+      <div class="card accent-left" style="margin-bottom: 12px;">
+        <h3>3. Submit Job</h3>
+        <p>Submits a one-time Databricks job using serverless compute. No cluster provisioning.</p>
+      </div>
+      <div class="card accent-left">
+        <h3>4. Stream Results</h3>
+        <p>Polls job status and streams output back to the UI in real-time.</p>
+      </div>
+    </div>
+    <div>
+      <div class="section-label">Benefits</div>
+      <div class="kpi" style="margin-bottom: 12px;"><div class="value">$0</div><div class="label">No Warehouse Costs</div></div>
+      <div class="kpi dark" style="margin-bottom: 12px;"><div class="value">Auto</div><div class="label">Scales Automatically</div></div>
+      <div class="kpi green"><div class="value">Fast</div><div class="label">No Cluster Start Wait</div></div>
+
+      <div class="card" style="margin-top: 12px;">
+        <h3>CLI Usage</h3>
+        <div class="code-block" style="margin-top: 8px;">
+          clone-catalog clone<br>
+          &nbsp;&nbsp;--source edp_dev<br>
+          &nbsp;&nbsp;--dest edp_dev_00<br>
+          &nbsp;&nbsp;--serverless<br>
+          &nbsp;&nbsp;--volume /Volumes/cat/schema/vol
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">8 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 9: AUDIT ═══════════════════ -->
+<div class="slide">
+  <h1>Audit Trail &amp; Run Logs</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Every operation auto-persists to Unity Catalog Delta tables &mdash; queryable via SQL</div>
+
+  <div class="card-grid cols-3" style="margin-top: 16px;">
+    <div class="phase-card">
+      <div class="phase-header">logs.run_logs</div>
+      <div class="phase-body">
+        <p style="font-size: 11px; color: var(--subtitle); margin-bottom: 8px; font-weight: 500;">Full execution trace</p>
+        <ul>
+          <li>Job ID, type, status</li>
+          <li>Source &rarr; destination</li>
+          <li>All log lines as ARRAY</li>
+          <li>Result JSON</li>
+          <li>Config (sanitized)</li>
+          <li>Duration, timestamps</li>
+          <li>User, host</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">logs.clone_operations</div>
+      <div class="phase-body">
+        <p style="font-size: 11px; color: var(--subtitle); margin-bottom: 8px; font-weight: 500;">Compliance audit trail</p>
+        <ul>
+          <li>Operation ID &amp; type</li>
+          <li>Who cloned what, when</li>
+          <li>Tables/views/functions/volumes</li>
+          <li>Success vs failure counts</li>
+          <li>Summary JSON</li>
+          <li>Error messages</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">metrics.clone_metrics</div>
+      <div class="phase-body">
+        <p style="font-size: 11px; color: var(--subtitle); margin-bottom: 8px; font-weight: 500;">Performance metrics</p>
+        <ul>
+          <li>Throughput rates</li>
+          <li>Success/failure rates</li>
+          <li>Per-table timing</li>
+          <li>Schema-level aggregates</li>
+          <li>Trend analysis</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight-box" style="margin-top: 16px;">
+    <h3>Operations Logged</h3>
+    <p>Clone, Sync, Incremental Sync, Validate, PII Scan, Preflight, Schema Evolve, Diff, Rollback, Terraform Generate &mdash; all operations write to Delta automatically.</p>
+  </div>
+  <span class="slide-number">9 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 10: INCREMENTAL SYNC ═══════════════════ -->
+<div class="slide">
+  <h1>Incremental Sync</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Sync only changed tables using Delta version history &mdash; no full re-clone</div>
+
+  <div class="content-cols" style="margin-top: 16px;">
+    <div>
+      <div class="section-label">How It Works</div>
+      <ul class="icon-list">
+        <li>Compares Delta table versions between source and destination</li>
+        <li>Identifies tables with new commits since last sync</li>
+        <li>Syncs only changed tables &mdash; skips up-to-date ones</li>
+        <li>Supports schema-level and table-level selection</li>
+        <li>Parallel processing across schemas</li>
+        <li>Runs on serverless or SQL warehouse</li>
+      </ul>
+
+      <div class="card" style="margin-top: 16px;">
+        <h3>Selection Modes</h3>
+        <ul class="icon-list">
+          <li><strong>All schemas</strong> &mdash; scan entire catalog</li>
+          <li><strong>Selected schemas</strong> &mdash; pick specific schemas</li>
+          <li><strong>Selected tables</strong> &mdash; per-table checkboxes</li>
+          <li><strong>Select all / Clear</strong> &mdash; bulk operations</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="section-label">UI Features</div>
+      <div class="kpi" style="margin-bottom: 12px;"><div class="value">Live</div><div class="label">Schema Results Stream In</div></div>
+
+      <div class="card" style="margin-bottom: 12px;">
+        <h3>Per-Schema Status</h3>
+        <ul class="icon-list">
+          <li>Up to date &mdash; green badge</li>
+          <li>N changed &mdash; amber badge with count</li>
+          <li>Expandable table list with checkboxes</li>
+          <li>Version history per table</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Sync Execution</h3>
+        <ul class="icon-list">
+          <li>Jobs submitted per schema</li>
+          <li>Real-time progress tracking</li>
+          <li>Live logs streaming</li>
+          <li>Databricks job run links</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">10 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 11: SECURITY ═══════════════════ -->
+<div class="slide">
+  <h1>Security &amp; Governance</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Enterprise security built in &mdash; credentials never stored server-side</div>
+
+  <div class="card-grid cols-2" style="margin-top: 16px;">
+    <div class="card accent-left">
+      <span class="badge crimson">CREDENTIALS</span>
+      <h3>Browser-Only Storage</h3>
+      <p>Databricks tokens stored in browser session only. Passed via headers per request &mdash; never persisted on server.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge dark">AUDIT</span>
+      <h3>Sanitized Logging</h3>
+      <p>All tokens and secrets are stripped from config before writing to audit Delta tables.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge blue">RBAC</span>
+      <h3>Role-Based Access Control</h3>
+      <p>Define policies for who can clone which catalogs. Enforceable at API and UI level.</p>
+    </div>
+    <div class="card accent-left">
+      <span class="badge green">PII</span>
+      <h3>PII Scanner</h3>
+      <p>Scan catalogs for PII patterns (email, phone, SSN) before cloning to prevent data exposure.</p>
+    </div>
+  </div>
+
+  <div class="card-grid cols-2" style="margin-top: 12px;">
+    <div class="card">
+      <h3>Compliance Features</h3>
+      <ul class="icon-list">
+        <li>Full audit trail with Delta time travel</li>
+        <li>Who cloned what, when, with what config</li>
+        <li>Immutable operation logs</li>
+        <li>Compliance dashboard in UI</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Safety Features</h3>
+      <ul class="icon-list">
+        <li>Preflight checks before clone</li>
+        <li>Dry-run mode for all operations</li>
+        <li>Auto-rollback on validation failure</li>
+        <li>Checkpoint &amp; restore support</li>
+      </ul>
+    </div>
+  </div>
+  <span class="slide-number">11 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 12: TECH STACK ═══════════════════ -->
+<div class="slide">
+  <h1>Tech Stack</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Modern, production-ready stack with first-class Databricks integration</div>
+
+  <table class="data-table" style="margin-top: 16px;">
+    <tr>
+      <th>Layer</th>
+      <th>Technology</th>
+      <th>Details</th>
+    </tr>
+    <tr>
+      <td><strong>Frontend</strong></td>
+      <td>React 19 + TypeScript</td>
+      <td>Vite build, TanStack Query, Tailwind CSS 4, shadcn/ui, Recharts</td>
+    </tr>
+    <tr>
+      <td><strong>Backend</strong></td>
+      <td>Python + FastAPI</td>
+      <td>Uvicorn, Pydantic v2, WebSockets, async job queue</td>
+    </tr>
+    <tr>
+      <td><strong>Core Engine</strong></td>
+      <td>Databricks SDK</td>
+      <td>Unity Catalog REST APIs, SQL Statement Execution API</td>
+    </tr>
+    <tr>
+      <td><strong>CLI</strong></td>
+      <td>Python Click</td>
+      <td>56 commands, YAML config profiles, rich output formatting</td>
+    </tr>
+    <tr>
+      <td><strong>Storage</strong></td>
+      <td>Delta Lake</td>
+      <td>Audit logs, run history, metrics &mdash; all in Unity Catalog tables</td>
+    </tr>
+    <tr>
+      <td><strong>Docs</strong></td>
+      <td>Docusaurus</td>
+      <td>Full documentation site with search, versioning</td>
+    </tr>
+    <tr>
+      <td><strong>Deployment</strong></td>
+      <td>Docker + Wheel</td>
+      <td>Docker Compose for full stack, wheel for Databricks notebook/serverless</td>
+    </tr>
+  </table>
+
+  <div class="card" style="margin-top: auto;">
+    <h3>Project Stats</h3>
+    <p>88 Python modules &bull; 31 React pages &bull; 61+ API endpoints &bull; 56 CLI commands &bull; 12 templates &bull; Full test suite</p>
+  </div>
+  <span class="slide-number">12 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 13: GETTING STARTED ═══════════════════ -->
+<div class="slide">
+  <h1>Getting Started</h1>
+  <div class="separator"></div>
+  <div class="slide-subtitle">Up and running in 3 commands</div>
+
+  <div class="card-grid cols-3" style="margin-top: 16px;">
+    <div class="phase-card">
+      <div class="phase-header">Option 1: From Source</div>
+      <div class="phase-body">
+        <div class="code-block">
+          git clone github.com/viral0216/clone-xs<br>
+          cd clone-xs<br>
+          pip install -e ".[dev]"<br>
+          make web-start
+        </div>
+        <div class="outcome">Frontend on :3000 &bull; API on :8000</div>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">Option 2: Docker</div>
+      <div class="phase-body">
+        <div class="code-block">
+          docker-compose up --build<br>
+          <br>
+          # Open http://localhost:8000
+        </div>
+        <div class="outcome">Full stack in one container</div>
+      </div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-header">Option 3: CLI Only</div>
+      <div class="phase-body">
+        <div class="code-block">
+          pip install -e .<br>
+          clone-catalog clone \<br>
+          &nbsp;&nbsp;--source my_catalog \<br>
+          &nbsp;&nbsp;--dest my_catalog_clone
+        </div>
+        <div class="outcome">No server needed for CLI usage</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: auto;">
+    <h3>Required Setup After Install</h3>
+    <ul class="icon-list">
+      <li><strong>Connect to Databricks</strong> &mdash; Enter workspace URL + PAT in Settings</li>
+      <li><strong>Select SQL Warehouse</strong> &mdash; Choose from dropdown (or use serverless)</li>
+      <li><strong>Initialize Audit Tables</strong> &mdash; Optional: set audit catalog for Delta logging</li>
+    </ul>
+  </div>
+  <span class="slide-number">13 / 14</span>
+</div>
+
+<!-- ═══════════════════ SLIDE 14: CLOSING ═══════════════════ -->
+<div class="slide cover">
+  <h1>Clone-Xs</h1>
+  <div class="slide-subtitle">Enterprise Unity Catalog Cloning &mdash; Made Simple</div>
+  <div class="cover-meta" style="margin-top: 32px;">
+    <div style="font-size: 16px; color: #CCDDEE; margin-bottom: 20px; letter-spacing: 0.5px;">
+      56 CLI Commands &nbsp;&bull;&nbsp; 31 UI Pages &nbsp;&bull;&nbsp; 61+ API Endpoints &nbsp;&bull;&nbsp; 88 Python Modules
+    </div>
+    <div style="display: flex; gap: 16px; justify-content: center; margin-top: 12px;">
+      <span style="background: rgba(255,255,255,0.08); backdrop-filter: blur(8px); padding: 10px 24px; border-radius: 10px; color: #CCDDEE; font-size: 13px; border: 1px solid rgba(255,255,255,0.1);">github.com/viral0216/clone-xs</span>
+      <span style="background: rgba(255,255,255,0.08); backdrop-filter: blur(8px); padding: 10px 24px; border-radius: 10px; color: #CCDDEE; font-size: 13px; border: 1px solid rgba(255,255,255,0.1);">MIT License</span>
+    </div>
+  </div>
+  <div class="cover-badge" style="margin-top: 28px;">Open Source &mdash; Start Cloning Today</div>
+  <span class="slide-number">14 / 14</span>
+</div>
+
+</div><!-- .deck -->
+</body>
+</html>

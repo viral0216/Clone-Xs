@@ -1,11 +1,9 @@
-// @ts-nocheck
-"use client";
-
 import { useAuthStatus, useCloneJobs } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "react-router-dom";
 import { Copy, GitCompare, CheckCircle, Activity, Database, AlertCircle } from "lucide-react";
 
 export default function Dashboard() {
@@ -29,7 +27,13 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           {auth.isLoading ? (
-            <p className="text-gray-400">Checking authentication...</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-4 w-48" />
+              </div>
+              <Skeleton className="h-4 w-32" />
+            </div>
           ) : auth.data?.authenticated ? (
             <div className="flex items-center gap-4">
               <Badge variant="default" className="bg-green-600">Connected</Badge>
@@ -41,7 +45,7 @@ export default function Dashboard() {
           ) : (
             <div className="flex items-center gap-4">
               <Badge variant="destructive">Not Connected</Badge>
-              <Link href="/settings">
+              <Link to="/settings">
                 <Button variant="outline" size="sm">Configure Connection</Button>
               </Link>
             </div>
@@ -51,7 +55,7 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Link href="/clone">
+        <Link to="/clone">
           <Card className="hover:border-blue-500 transition-colors cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <Copy className="h-8 w-8 text-blue-600" />
@@ -62,7 +66,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/diff">
+        <Link to="/diff">
           <Card className="hover:border-blue-500 transition-colors cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <GitCompare className="h-8 w-8 text-purple-600" />
@@ -73,7 +77,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/monitor">
+        <Link to="/monitor">
           <Card className="hover:border-blue-500 transition-colors cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <Activity className="h-8 w-8 text-green-600" />
@@ -84,7 +88,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/explore">
+        <Link to="/explore">
           <Card className="hover:border-blue-500 transition-colors cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <CheckCircle className="h-8 w-8 text-orange-600" />
@@ -104,7 +108,18 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           {jobs.isLoading ? (
-            <p className="text-gray-400">Loading jobs...</p>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-5 w-20" />
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                  <Skeleton className="h-4 w-28" />
+                </div>
+              ))}
+            </div>
           ) : !jobs.data?.length ? (
             <p className="text-gray-400">No clone jobs yet. Start one from the Clone page.</p>
           ) : (

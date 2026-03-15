@@ -1,5 +1,3 @@
-"use client";
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type { AuthStatus, WarehouseInfo, CloneJob } from "@/types/api";
@@ -67,5 +65,26 @@ export function usePreflight() {
   return useMutation({
     mutationFn: (req: { source_catalog: string; destination_catalog: string; warehouse_id?: string }) =>
       api.post("/preflight", req),
+  });
+}
+
+export function usePiiScan() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; no_exit_code?: boolean }) =>
+      api.post("/pii-scan", req),
+  });
+}
+
+export function useSchemaDrift() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string }) =>
+      api.post("/schema-drift", req),
+  });
+}
+
+export function useSync() {
+  return useMutation({
+    mutationFn: (req: { source_catalog: string; destination_catalog: string; dry_run?: boolean; drop_extra?: boolean }) =>
+      api.post("/sync", req),
   });
 }

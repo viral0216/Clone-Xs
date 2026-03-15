@@ -2,11 +2,8 @@
  * Typed API client for the Clone-X FastAPI backend.
  */
 
-// Call FastAPI directly to avoid Next.js proxy 30s timeout
-const API_BASE =
-  typeof window !== "undefined"
-    ? `http://${window.location.hostname}:8000/api`
-    : "/api";
+// Use Vite proxy (/api -> localhost:8000/api) — no CORS issues, no timeout
+const API_BASE = "/api";
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string>;

@@ -38,20 +38,19 @@ clone-catalog clone [options]
 | `--dest` | Destination catalog name |
 | `--clone-type` | `DEEP` or `SHALLOW` (default: `DEEP`) |
 | `--load-type` | `FULL` or `INCREMENTAL` (default: `FULL`) |
-| `--schemas` | Comma-separated list of schemas to include |
-| `--exclude-schemas` | Comma-separated list of schemas to exclude |
-| `--table-pattern` | Regex pattern for table inclusion |
-| `--exclude-table-pattern` | Regex pattern for table exclusion |
-| `--filter-tags` | Tag-based filter (e.g. `env=prod,tier=gold`) |
-| `--timestamp-as-of` | Time travel (version or timestamp) |
+| `--include-schemas` | Comma-separated list of schemas to include |
+| `--include-tables-regex` | Regex pattern for table inclusion |
+| `--exclude-tables-regex` | Regex pattern for table exclusion |
+| `--as-of-timestamp` | Time travel (version or timestamp) |
 | `--max-workers` | Parallel workers (default: 4) |
 | `--dry-run` | Preview SQL without executing |
 | `--validate` | Validate after cloning |
 | `--enable-rollback` | Save rollback log |
 | `--report` | Generate summary report |
 | `--progress` | Show progress bar |
-| `--copy-permissions` | Copy grants and access controls |
-| `--copy-tags` | Copy tags |
+| `--no-permissions` | Skip copying grants and access controls (copied by default) |
+| `--no-tags` | Skip copying tags (copied by default) |
+| `--no-ownership` | Skip copying ownership (copied by default) |
 | `--location` | Managed storage location for new catalog |
 | `--dest-host` | Destination workspace URL (cross-workspace) |
 | `--dest-token` | Destination workspace token (cross-workspace) |
@@ -98,7 +97,7 @@ clone-catalog compare --source <catalog> --dest <catalog> [options]
 |------|-------------|
 | `--source` | First catalog |
 | `--dest` | Second catalog |
-| `--schemas` | Limit to specific schemas |
+| `--include-schemas` | Limit to specific schemas |
 
 ---
 
@@ -132,7 +131,6 @@ clone-catalog sync --source <catalog> --dest <catalog> [options]
 
 | Flag | Description |
 |------|-------------|
-| `--direction` | `source` or `dest` (conflict resolution) |
 | `--dry-run` | Preview changes |
 
 ---
@@ -177,7 +175,7 @@ clone-catalog stats --source <catalog> [options]
 Search catalog metadata.
 
 ```bash
-clone-catalog search --source <catalog> --query <text> [options]
+clone-catalog search --source <catalog> --pattern <regex> [options]
 ```
 
 ---
@@ -227,7 +225,7 @@ clone-catalog snapshot --source <catalog> [options]
 Cost estimation for clone operations.
 
 ```bash
-clone-catalog estimate --source <catalog> --dest <catalog> [options]
+clone-catalog estimate --source <catalog> [options]
 ```
 
 ---
@@ -237,7 +235,7 @@ clone-catalog estimate --source <catalog> --dest <catalog> [options]
 Generate Databricks Workflow JSON.
 
 ```bash
-clone-catalog generate-workflow --source <catalog> --dest <catalog> [options]
+clone-catalog generate-workflow [options]
 ```
 
 | Flag | Description |
@@ -262,7 +260,7 @@ clone-catalog export-iac --source <catalog> --format <terraform|pulumi> --output
 Compare two config files.
 
 ```bash
-clone-catalog config-diff --file1 <path> --file2 <path>
+clone-catalog config-diff <file_a> <file_b>
 ```
 
 ---

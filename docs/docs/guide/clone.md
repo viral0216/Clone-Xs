@@ -557,7 +557,7 @@ clone-catalog clone \
   --source production --dest staging \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/libs \
-  --copy-permissions --copy-tags --validate --report
+  --validate --report
 ```
 
 ```yaml

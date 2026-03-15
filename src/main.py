@@ -299,6 +299,13 @@ def cmd_clone(args):
             "sql_warehouse_id": args.dest_warehouse_id or config["sql_warehouse_id"],
         }
 
+    if not config.get("source_catalog"):
+        logger.error("Source catalog is required. Use --source <catalog_name> or set source_catalog in config.")
+        sys.exit(1)
+    if not config.get("destination_catalog"):
+        logger.error("Destination catalog is required. Use --dest <catalog_name> or set destination_catalog in config.")
+        sys.exit(1)
+
     logger.info(
         f"Cloning catalog: {config['source_catalog']} -> {config['destination_catalog']}"
     )
@@ -1400,6 +1407,21 @@ def cmd_plan(args):
     plan = build_execution_plan(client, config)
     output_plan(plan, fmt=args.format, output_path=getattr(args, "output", None))
 
+    # --capture-sql: write all SQL statements to a .sql file
+    capture_sql = getattr(args, "capture_sql", None)
+    if capture_sql:
+        statements = plan.get("sql_statements", [])
+        with open(capture_sql, "w") as f:
+            f.write(f"-- Clone-Xs Execution Plan\n")
+            f.write(f"-- Source: {config.get('source_catalog')} -> Destination: {config.get('destination_catalog')}\n")
+            f.write(f"-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"-- Total statements: {len(statements)}\n\n")
+            for i, stmt in enumerate(statements, 1):
+                sql = stmt if isinstance(stmt, str) else stmt.get("sql", str(stmt))
+                cat = stmt.get("category", "SQL") if isinstance(stmt, dict) else "SQL"
+                f.write(f"-- [{cat}] Statement {i}\n{sql};\n\n")
+        logger.info(f"SQL statements saved to {capture_sql} ({len(statements)} statements)")
+
 
 def cmd_lint(args):
     """Execute the config lint command."""
@@ -2180,8 +2202,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(plan_parser)
     plan_parser.add_argument("--source", help="Override source catalog name")
     plan_parser.add_argument("--dest", help="Override destination catalog name")
-    plan_parser.add_argument("--format", choices=["console", "json", "html"], default="console", help="Output format")
+    plan_parser.add_argument("--format", choices=["console", "json", "html", "sql"], default="console", help="Output format")
     plan_parser.add_argument("--output", help="Output file path")
+    plan_parser.add_argument("--capture-sql", dest="capture_sql", help="Save all planned SQL statements to a .sql file")
     plan_parser.set_defaults(func=cmd_plan)
 
     # --- lint command ---

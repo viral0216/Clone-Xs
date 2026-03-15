@@ -54,6 +54,11 @@ _rate_limiter = RateLimiter(0)
 # instead of the warehouse API. Used by serverless jobs to run via spark.sql().
 _sql_executor = None
 
+# Pluggable SQL capture hook — when set, called for every SQL statement
+# (including dry-run writes) before execution. Used by plan/dry-run to
+# capture write statements. Must accept a single SQL string.
+_sql_capture = None
+
 # Global parallelism for SQL queries
 _max_parallel_queries = 10
 
@@ -81,6 +86,16 @@ def set_sql_executor(executor) -> None:
     global _sql_executor
     _sql_executor = executor
     logger.info("Custom SQL executor configured (spark.sql mode)")
+
+
+def set_sql_capture(capture_fn) -> None:
+    """Set a capture hook called for every SQL statement (including dry-run writes).
+
+    Used by the plan command to record write statements that would be executed.
+    Pass None to disable capture.
+    """
+    global _sql_capture
+    _sql_capture = capture_fn
 
 
 def set_rate_limit(max_rps: float) -> None:
@@ -125,6 +140,10 @@ def execute_sql(
     Includes retry logic with exponential backoff for transient failures.
     In dry_run mode, logs the SQL without executing write operations.
     """
+    # Capture hook — fires for every statement, even dry-run writes
+    if _sql_capture is not None:
+        _sql_capture(sql)
+
     # In dry run mode, skip write operations but allow reads (SELECT, SHOW, DESCRIBE)
     if dry_run:
         sql_upper = sql.strip().upper()

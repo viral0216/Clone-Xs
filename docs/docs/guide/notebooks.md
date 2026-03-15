@@ -83,10 +83,8 @@ clone-catalog clone \
   --dest staging \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/libs \
-  --copy-permissions \
-  --copy-tags \
   --validate \
-  --generate-report
+  --report
 ```
 
 ### From the REST API

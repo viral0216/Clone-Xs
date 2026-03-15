@@ -117,16 +117,18 @@ Open the Web UI and go to **Settings** to complete the following:
 ```bash
 clone-catalog clone --source X --dest Y           # Clone a catalog
 clone-catalog clone --source X --dest Y --dry-run  # Preview without executing
+clone-catalog plan --source X --dest Y             # Execution plan (SQL, cost, duration)
+clone-catalog plan --source X --dest Y --capture-sql plan.sql  # Save SQL to file
 clone-catalog diff --source X --dest Y             # Object-level diff
 clone-catalog sync --source X --dest Y             # Two-way sync
 clone-catalog validate --source X --dest Y         # Row count validation
-clone-catalog rollback --catalog Y                 # Undo previous clone
-clone-catalog stats --catalog X                    # Catalog statistics
-clone-catalog search --catalog X --pattern "email" # Search tables/columns
+clone-catalog rollback --list                       # List available rollback logs
+clone-catalog stats --source X                     # Catalog statistics
+clone-catalog search --source X --pattern "email"  # Search tables/columns
 clone-catalog schema-drift --source X --dest Y     # Detect schema changes
-clone-catalog pii-scan --catalog X                 # Scan for PII
-clone-catalog estimate --catalog X                 # Cost estimation
-clone-catalog profile --catalog X                  # Data quality profiling
+clone-catalog pii-scan --source X                  # Scan for PII
+clone-catalog estimate --source X                  # Cost estimation
+clone-catalog profile --source X                   # Data quality profiling
 clone-catalog templates                            # List clone templates
 clone-catalog audit                                # Query audit trail
 clone-catalog serve                                # Start API server

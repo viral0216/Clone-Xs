@@ -43,6 +43,7 @@ Each section links to the relevant **official Databricks documentation** so you 
 3. [Full vs Incremental Load](#3-full-vs-incremental-load)
 4. [Time Travel Clone](#4-time-travel-clone)
 5. [Dry Run Mode](#5-dry-run-mode)
+5b. [Execution Plan](#5b-execution-plan)
 6. [Pre-Flight Checks](#6-pre-flight-checks)
 7. [Schema Filtering](#7-schema-filtering)
 8. [Regex Table Filtering](#8-regex-table-filtering)
@@ -468,6 +469,73 @@ clone-catalog clone --dry-run -v
 ```
 
 All read operations (listing schemas, tables) still execute so you get an accurate preview. Only write operations are skipped.
+
+---
+
+## 5b. Execution Plan
+
+> **Docs:** [SQL Statement Execution API](https://docs.databricks.com/api/workspace/statementexecution) | [Unity Catalog Overview](https://docs.databricks.com/en/data-governance/unity-catalog/index.html)
+
+### When to use
+Before running a clone, preview every SQL statement that will be executed along with cost and duration estimates. Unlike `--dry-run`, the plan command renders a structured report without connecting to a warehouse.
+
+### Real-world scenario
+You are onboarding a 200-table production catalog to a new staging environment. You want a DBA to review the exact SQL before anything runs, and you need a cost estimate to justify the storage spend.
+
+### Example
+
+```bash
+# Console plan (default)
+clone-catalog plan --source production --dest staging
+
+# Save all write SQL statements to a file for DBA review
+clone-catalog plan \
+  --source production --dest staging \
+  --capture-sql plan_statements.sql
+
+# Output as SQL format (equivalent to --capture-sql)
+clone-catalog plan \
+  --source production --dest staging \
+  --format sql --output plan_statements.sql
+
+# Output as JSON (CI/CD validation)
+clone-catalog plan \
+  --source production --dest staging \
+  --format json --output plan.json
+
+# Output as HTML (shareable report)
+clone-catalog plan \
+  --source production --dest staging \
+  --format html --output plan.html
+```
+
+**Output formats:**
+
+| Flag | Description |
+|------|-------------|
+| `--format console` (default) | Human-readable terminal output |
+| `--format json` | Machine-readable, suitable for CI/CD |
+| `--format html` | Shareable stakeholder report |
+| `--format sql` | All write statements in execution order |
+| `--capture-sql <file>` | Save write SQL to a file (any format) |
+
+**Example `plan_statements.sql` output (203 statements):**
+
+```sql
+-- Category: CREATE_SCHEMA
+CREATE SCHEMA IF NOT EXISTS `staging`.`sales`;
+CREATE SCHEMA IF NOT EXISTS `staging`.`analytics`;
+-- ...
+
+-- Category: CLONE
+CREATE TABLE `staging`.`sales`.`transactions`
+  DEEP CLONE `production`.`sales`.`transactions`;
+-- ...
+
+-- Category: CREATE_VIEW
+CREATE VIEW `staging`.`reporting`.`monthly_summary` AS ...;
+-- ...
+```
 
 ---
 

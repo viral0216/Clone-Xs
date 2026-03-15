@@ -37,16 +37,6 @@ clone-catalog sync --source production --dest staging --drop-extra --dry-run
    - In both with differences → flagged for review
 3. Applies changes with configurable conflict resolution
 
-## Direction control
-
-```bash
-# Source wins (default) — source is the authority
-clone-catalog sync --source production --dest staging --direction source
-
-# Destination wins — destination takes precedence
-clone-catalog sync --source production --dest staging --direction dest
-```
-
 ---
 
 ## Incremental Sync

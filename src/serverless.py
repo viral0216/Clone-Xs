@@ -262,7 +262,7 @@ def submit_clone_job(
     """Submit a catalog clone as a single serverless spark_python_task job.
 
     The job:
-      1. Installs the clone-xs wheel from a UC Volume
+      1. Installs the Clone-Xs wheel from a UC Volume
       2. Runs run_clone_job.py which wires spark.sql() as the executor
       3. Calls clone_full_catalog() — entire clone in one job
 
@@ -353,6 +353,7 @@ def submit_clone_job(
     clone_result = _extract_result(client, result, run_id)
 
     if clone_result:
+        clone_result["run_id"] = run_id
         logger.info("Serverless clone complete.")
     else:
         logger.warning("Job completed but could not parse result. Check job logs (run_id=%s).", run_id)
@@ -362,6 +363,7 @@ def submit_clone_job(
             "views": {"success": 0, "failed": 0, "skipped": 0},
             "functions": {"success": 0, "failed": 0, "skipped": 0},
             "volumes": {"success": 0, "failed": 0, "skipped": 0},
+            "run_id": run_id,
             "errors": [f"Check Databricks job run_id={run_id} for details"],
         }
 

@@ -388,4 +388,4 @@ with tab7:
         st.warning("Load a valid config file to use the Clone Builder.")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**clone-xs** v0.5.0")
+st.sidebar.markdown("**Clone-Xs** v0.5.0")

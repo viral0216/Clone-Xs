@@ -42,7 +42,12 @@ Clone Catalog replicates an entire Unity Catalog catalog to a new catalog in the
 | RBAC & Approvals | Control who can clone what, with approval workflows |
 | TTL Policies | Auto-expire cloned catalogs after N days |
 | Usage Analysis | Find and skip unused tables |
+| Incremental Sync | Sync only changed tables using Delta version history |
+| Dependency Analysis | View/function dependency graphs with creation order |
+| Slack Bot | Trigger and monitor clone operations from Slack |
+| Data Sampling | Preview and compare table data between catalogs |
 | Metrics & History | Track throughput, failure rates, and operation history |
+| Delta Audit Logging | Every operation logs to run_logs, clone_operations, and clone_metrics |
 | Compliance Reports | Audit-ready reports covering PII, permissions, lineage |
 | REST API Server | Expose clone operations as HTTP endpoints |
 | Plugin System | Extend with custom plugins from a marketplace |

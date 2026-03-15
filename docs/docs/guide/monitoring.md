@@ -190,3 +190,52 @@ clone-catalog snapshot --source production --output snapshots/post_migration.jso
 ```
 
 The snapshot JSON includes full column definitions, view SQL, function definitions, and volume metadata.
+
+---
+
+## Delta Table Logging
+
+Every operation automatically persists to three Unity Catalog Delta tables — **enabled by default**.
+
+### Tables
+
+| Table | Purpose | What's stored |
+|-------|---------|---------------|
+| `{catalog}.logs.run_logs` | Execution trace | Job ID, log lines, result JSON, config, duration, user |
+| `{catalog}.logs.clone_operations` | Audit trail | Who ran what, when, status, tables cloned/failed |
+| `{catalog}.metrics.clone_metrics` | Performance | Throughput, success rates, durations |
+
+### Operations that log
+
+All data-modifying and analysis operations log to Delta:
+clone, sync, incremental-sync, validate, diff, compare, rollback, PII scan, preflight, schema-drift, schema-evolve, multi-clone, profile, export, snapshot.
+
+### Configuration
+
+```yaml
+# config/clone_config.yaml
+save_run_logs: true          # Enable run_logs (default: true)
+metrics_enabled: true        # Enable clone_metrics (default: false)
+audit_trail:
+  catalog: clone_audit       # Delta catalog for audit tables
+  schema: logs               # Schema name
+  table: clone_operations    # Table name
+```
+
+### Querying logs
+
+```bash
+# Query audit trail
+clone-catalog audit --limit 20
+
+# Filter by source catalog
+clone-catalog audit --source production
+
+# Filter by status
+clone-catalog audit --status failed
+```
+
+### API path vs CLI path
+
+- **API operations** (via Web UI): All 3 tables are written via the JobManager's `finally` block
+- **CLI operations** (direct): `run_logs` and `clone_operations` are written; `clone_metrics` is written when `metrics_enabled: true`

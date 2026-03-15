@@ -3,7 +3,7 @@
 # MAGIC %md
 # MAGIC # Catalog Clone Utility — Complete Guide
 # MAGIC
-# MAGIC This notebook demonstrates every feature of the **clone-xs** catalog clone tool.
+# MAGIC This notebook demonstrates every feature of the **Clone-Xs** catalog clone tool.
 # MAGIC
 # MAGIC **How it works:** This Python-based tool sends SQL statements to a SQL Warehouse via the
 # MAGIC [SQL Statement Execution API](https://docs.databricks.com/api/workspace/statementexecution).

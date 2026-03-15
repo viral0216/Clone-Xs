@@ -20,6 +20,7 @@ def sync_catalogs(
     clone_type: str = "DEEP",
     dry_run: bool = False,
     drop_extra: bool = False,
+    **kwargs,
 ) -> dict:
     """Two-way sync: add missing objects from source, optionally drop extras in dest.
 
@@ -153,27 +154,39 @@ def sync_catalogs(
         logger.warning(f"  Errors: {len(results['errors'])}")
     logger.info("=" * 60)
 
-    # Save run log to Delta
-    if not dry_run:
+    # Save run log + audit trail to Delta (skip if called from API JobManager)
+    if not dry_run and not kwargs.get("_api_managed_logs"):
+        job_id = str(uuid.uuid4())[:8]
+        sync_end = time.time()
+        started_dt = datetime.fromtimestamp(sync_end - (results.get("duration_seconds", 0) or 0))
+        error_msg = "; ".join(results.get("errors", [])) if results.get("errors") else None
+
         try:
             from src.run_logs import save_run_log
-            sync_end = time.time()
             job_record = {
-                "job_id": str(uuid.uuid4())[:8],
+                "job_id": job_id,
                 "job_type": "sync",
                 "source_catalog": source_catalog,
                 "destination_catalog": dest_catalog,
                 "clone_type": clone_type,
                 "status": "failed" if results.get("errors") else "completed",
-                "started_at": datetime.fromtimestamp(sync_end - (results.get("duration_seconds", 0) or 0)).isoformat(),
+                "started_at": started_dt.isoformat(),
                 "completed_at": datetime.now().isoformat(),
                 "result": results,
-                "error": "; ".join(results.get("errors", [])) if results.get("errors") else None,
+                "error": error_msg,
                 "logs": [],
             }
             save_run_log(client, warehouse_id, job_record)
         except Exception as e:
             logger.debug(f"Could not save sync run log to Delta: {e}")
+
+        try:
+            from src.audit_trail import log_operation_start, log_operation_complete
+            cfg = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+            log_operation_start(client, warehouse_id, cfg, job_id, operation_type="sync")
+            log_operation_complete(client, warehouse_id, cfg, job_id, results, started_dt, error_message=error_msg)
+        except Exception as e:
+            logger.debug(f"Could not save audit trail to Delta: {e}")
 
     return results
 

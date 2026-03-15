@@ -7,8 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.4.0] - 2026-03-15
 
 ### Added
-- **Web UI expanded to 27 pages** across 5 categories (Overview, Operations, Discovery, Analysis, Management)
-- **13 new pages**: Audit Trail, Metrics, Rollback, Templates, Schedule, Multi-Clone, Lineage, Impact Analysis, Data Preview, Profiling, Cost Estimator, Compliance, Warehouse, RBAC, Plugins
+- **Web UI expanded to 31 pages** across 5 categories (Overview, Operations, Discovery, Analysis, Management)
+- **17 new pages**: Audit Trail, Metrics, Rollback, Templates, Schedule, Multi-Clone, Incremental Sync, Lineage, Dependencies, Impact Analysis, Data Preview, Profiling, Cost Estimator, Compliance, Warehouse, RBAC, Plugins
+- **All operations log to Delta tables** — run_logs (execution trace), clone_operations (audit trail), clone_metrics (performance metrics)
 - **Run logs to Delta tables** -- every clone, sync, and validate operation automatically persists to Unity Catalog (`run_logs`, `clone_operations`, `clone_metrics`)
 - **Dynamic catalog browser** -- 17 pages use cascading dropdowns that auto-populate catalogs, schemas, and tables from the workspace
 - **Destination catalog creation** -- "Create New Catalog" option in Clone wizard
@@ -31,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.3.0] - 2026-02-01
 
 ### Added
-- 47+ CLI commands covering clone, diff, sync, validate, and more
+- 56 CLI commands covering clone, diff, sync, validate, incremental-sync, sample, view-deps, slack-bot, and more
 - FastAPI REST API with auto-generated Swagger docs
 - Initial Web UI with 14 pages (Dashboard, Clone, Explorer, Diff, Monitor, Config, Reports, Settings, PII, Schema Drift, Preflight, Sync, Config Diff, Generate)
 - Clone templates (12 built-in)

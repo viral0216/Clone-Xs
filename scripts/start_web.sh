@@ -47,9 +47,6 @@ for port in 8000 3000; do
     fi
 done
 
-# Clean stale lock files
-rm -f "$ROOT/ui/.next/dev/lock" 2>/dev/null
-
 # ── Check dependencies ───────────────────────────────────────
 echo -e "${BLUE}Checking dependencies...${NC}"
 
@@ -64,19 +61,12 @@ if [[ ! -d "$ROOT/ui/node_modules" ]]; then
     cd "$ROOT"
 fi
 
-# ── Build & install clone-xs package ──────────────────────────
-echo -e "${BLUE}Building clone-xs package...${NC}"
+# ── Build & install Clone-Xs package ──────────────────────────
+echo -e "${BLUE}Building Clone-Xs package...${NC}"
 cd "$ROOT"
-rm -rf build/ dist/ clone_xs.egg-info
-PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
-PIP="/Library/Frameworks/Python.framework/Versions/3.13/bin/pip"
-# Fall back to system python if framework python not found
-if [[ ! -x "$PYTHON" ]]; then
-    PYTHON="python3"
-    PIP="pip3"
-fi
-$PYTHON -m build --wheel --outdir dist/ 2>&1 | tail -1
-$PIP install --force-reinstall --no-deps dist/clone_xs-*.whl 2>&1 | tail -1
+rm -rf build/ dist/ *.egg-info
+python3 -m build --wheel --outdir dist/ 2>&1 | tail -1
+pip3 install --force-reinstall --no-deps dist/clone_xs-*.whl 2>&1 | tail -1
 echo -e "${GREEN}Package installed${NC}"
 
 echo -e "${GREEN}Dependencies OK${NC}"

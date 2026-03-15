@@ -1,4 +1,4 @@
-"""Audit trail — log every clone operation to a Delta table for compliance."""
+"""Audit trail — log every operation to a Delta table for compliance."""
 
 import json
 import logging
@@ -75,7 +75,7 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
         tags MAP<STRING, STRING>
     )
     USING DELTA
-    COMMENT 'Audit trail for catalog clone operations'
+    COMMENT 'Audit trail for all Clone-Xs operations'
     TBLPROPERTIES (
         'delta.enableChangeDataFeed' = 'true',
         'delta.autoOptimize.optimizeWrite' = 'true'
@@ -136,11 +136,21 @@ def log_operation_complete(
     duration = (now - started_at).total_seconds()
     completed_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
-    tables_cloned = summary.get("tables", {}).get("cloned", 0)
-    tables_failed = summary.get("tables", {}).get("failed", 0)
-    views_cloned = summary.get("views", {}).get("cloned", 0)
-    functions_cloned = summary.get("functions", {}).get("cloned", 0)
-    volumes_cloned = summary.get("volumes", {}).get("cloned", 0)
+    # Extract counts — support both clone summary format and generic result dicts
+    tables_info = summary.get("tables", {})
+    if isinstance(tables_info, dict):
+        tables_cloned = tables_info.get("cloned", 0) or tables_info.get("success", 0)
+        tables_failed = tables_info.get("failed", 0)
+    else:
+        tables_cloned = summary.get("synced", 0) or summary.get("tables_cloned", 0)
+        tables_failed = summary.get("failed", 0) or summary.get("tables_failed", 0)
+
+    views_info = summary.get("views", {})
+    views_cloned = views_info.get("cloned", 0) or views_info.get("success", 0) if isinstance(views_info, dict) else 0
+    funcs_info = summary.get("functions", {})
+    functions_cloned = funcs_info.get("cloned", 0) or funcs_info.get("success", 0) if isinstance(funcs_info, dict) else 0
+    vols_info = summary.get("volumes", {})
+    volumes_cloned = vols_info.get("cloned", 0) or vols_info.get("success", 0) if isinstance(vols_info, dict) else 0
 
     status = "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
     summary_json = json.dumps(summary).replace("'", "\\'")

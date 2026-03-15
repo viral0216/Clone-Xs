@@ -1,5 +1,5 @@
 services:
-  clone-xs:
+  clone-xs:  # service name must be lowercase
     build: .
     ports:
       - "8000:8000"

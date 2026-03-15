@@ -9,7 +9,7 @@ Clone your first Unity Catalog catalog in 5 minutes.
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.13+
 - Access to a Databricks workspace with Unity Catalog enabled
 - A SQL warehouse (serverless or pro) with permissions to execute queries
 - Databricks credentials configured (PAT, service principal, or CLI profile)

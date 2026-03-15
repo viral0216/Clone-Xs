@@ -179,7 +179,8 @@ def clone_schema(
         include_schemas=[schema_name], **kwargs,
     )
 
-    create_catalog_if_not_exists(client, warehouse_id, dest_catalog, dry_run=dry_run)
+    create_catalog_if_not_exists(client, warehouse_id, dest_catalog, dry_run=dry_run,
+                                 location=kwargs.get("catalog_location", ""))
     return process_schema(client, config, schema_name)
 
 

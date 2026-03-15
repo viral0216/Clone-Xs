@@ -38,7 +38,7 @@ for arg in "$@"; do
 done
 
 echo "============================================"
-echo "  clone-xs — Build & Deploy"
+echo "  Clone-Xs — Build & Deploy"
 echo "============================================"
 
 # -------------------------------------------------------------------
@@ -46,7 +46,7 @@ echo "============================================"
 # -------------------------------------------------------------------
 echo ""
 echo "[1/5] Cleaning previous builds..."
-rm -rf "$DIST_DIR" "$PROJECT_ROOT/build" "$PROJECT_ROOT"/*.egg-info "$PROJECT_ROOT"/src/*.egg-info
+rm -rf "$DIST_DIR" "$PROJECT_ROOT/build" "$PROJECT_ROOT"/*.egg-info
 echo "      Done."
 
 # -------------------------------------------------------------------
@@ -89,14 +89,6 @@ if [ "$UPLOAD_ONLY" = false ]; then
         echo "      Installing in .venv..."
         "$VENV_PIP" install --force-reinstall --no-deps "$WHEEL_FILE" 2>&1 | tail -1
         echo "      Installed (.venv)."
-    fi
-
-    # Also install in system Python framework if it exists (macOS)
-    SYS_PIP="/Library/Frameworks/Python.framework/Versions/3.13/bin/pip"
-    if [ -x "$SYS_PIP" ]; then
-        echo "      Installing in system Python..."
-        "$SYS_PIP" install --force-reinstall --no-deps "$WHEEL_FILE" 2>&1 | tail -1
-        echo "      Installed (system Python)."
     fi
 
     # Clear all __pycache__ to avoid stale bytecode

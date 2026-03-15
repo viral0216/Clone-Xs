@@ -1,4 +1,5 @@
 import logging
+import sys
 import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -469,6 +470,16 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     progress = SchemaProgressTracker(schemas, show_progress=show_progress)
     progress.start()
 
+    # Optional TUI dashboard for terminal sessions
+    dashboard = None
+    if show_progress and sys.stderr.isatty() and len(schemas) > 1:
+        try:
+            from src.dashboard import Dashboard
+            dashboard = Dashboard(schemas)
+            dashboard.start()
+        except Exception:
+            pass  # Fall back to standard progress tracker
+
     all_results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -484,13 +495,19 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 result = future.result()
                 all_results.append(result)
                 progress.schema_done(result)
+                if dashboard:
+                    dashboard.schema_completed(schema_name, result)
             except Exception as e:
                 logger.error(f"Schema {schema_name} failed: {e}")
                 error_result = {"schema": schema_name, "error": str(e)}
                 all_results.append(error_result)
                 progress.schema_done(error_result)
+                if dashboard:
+                    dashboard.schema_completed(schema_name, error_result)
 
     progress.stop()
+    if dashboard:
+        dashboard.stop()
 
     # Save final checkpoint (#13)
     if checkpoint_manager:
@@ -659,6 +676,16 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
             save_run_log(client, warehouse_id, job_record, config)
         except Exception as e:
             logger.debug(f"Could not save run log to Delta: {e}")
+
+        # Also log to audit trail (clone_operations table)
+        try:
+            from src.audit_trail import log_operation_start, log_operation_complete
+            log_operation_start(client, warehouse_id, config, job_record["job_id"], operation_type="clone")
+            log_operation_complete(client, warehouse_id, config, job_record["job_id"],
+                                   summary, datetime.fromtimestamp(clone_start),
+                                   error_message=job_record.get("error"))
+        except Exception as e:
+            logger.debug(f"Could not save audit trail to Delta: {e}")
 
     return summary
 

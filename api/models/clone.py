@@ -53,6 +53,7 @@ class CloneJobStatus(BaseModel):
     progress: dict | None = None
     result: dict | None = None
     error: str | None = None
+    run_url: str | None = None
     logs: list[str] = []
     created_at: str | None = None
     started_at: str | None = None

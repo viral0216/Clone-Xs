@@ -138,6 +138,68 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
     logger.info(f"Metrics saved to Delta table: {table_fqn}")
 
 
+def save_operation_metrics(
+    client, warehouse_id: str, job: dict, config: dict,
+) -> None:
+    """Save basic operation metrics to the clone_metrics Delta table.
+
+    Works for any operation type — uses available fields from the job dict.
+    """
+    if not config.get("metrics_enabled", False):
+        return
+
+    table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+    import uuid
+
+    started = job.get("started_at", "")
+    completed = job.get("completed_at", "")
+    duration = 0.0
+    if started and completed:
+        try:
+            from datetime import datetime
+            t1 = datetime.fromisoformat(started)
+            t2 = datetime.fromisoformat(completed)
+            duration = (t2 - t1).total_seconds()
+        except Exception:
+            pass
+
+    result = job.get("result") or {}
+    tables_info = result.get("tables", {})
+    if isinstance(tables_info, dict):
+        successful = tables_info.get("cloned", 0) or tables_info.get("success", 0)
+        failed = tables_info.get("failed", 0)
+    else:
+        successful = result.get("synced", 0) or result.get("tables_cloned", 0)
+        failed = result.get("failed", 0) or result.get("tables_failed", 0)
+
+    total = successful + failed
+    throughput = (total / (duration / 60)) if duration > 0 and total > 0 else 0
+
+    metrics_obj = {
+        "source_catalog": job.get("source_catalog", ""),
+        "destination_catalog": job.get("destination_catalog", ""),
+        "clone_type": job.get("clone_type") or job.get("job_type", ""),
+        "started_at": started,
+        "completed_at": completed,
+        "duration_seconds": round(duration, 1),
+        "metrics": {
+            "total_tables": total,
+            "successful": successful,
+            "failed": failed,
+            "failure_rate": round(failed / total, 4) if total > 0 else 0,
+            "throughput_tables_per_min": round(throughput, 2),
+            "avg_table_clone_seconds": round(duration / total, 2) if total > 0 else 0,
+            "total_row_count": 0,
+            "total_size_bytes": 0,
+        },
+    }
+
+    try:
+        save_metrics_delta(client, warehouse_id, metrics_obj, table_fqn)
+    except Exception as e:
+        logger.debug(f"Could not save operation metrics: {e}")
+
+
 def save_metrics_json(metrics: dict, output_path: str):
     """Save metrics to JSON file."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

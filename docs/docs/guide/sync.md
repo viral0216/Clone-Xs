@@ -46,3 +46,26 @@ clone-catalog sync --source production --dest staging --direction source
 # Destination wins — destination takes precedence
 clone-catalog sync --source production --dest staging --direction dest
 ```
+
+---
+
+## Incremental Sync
+
+For large catalogs where only a few tables change between refreshes, use **incremental sync** instead of a full two-way sync. It uses Delta table version history to detect which tables have changed since the last sync.
+
+```bash
+# Check which tables need syncing (dry check)
+clone-catalog incremental-sync --source production --dest staging --schema sales --dry-run
+
+# Sync only changed tables in a specific schema
+clone-catalog incremental-sync --source production --dest staging --schema sales
+
+# Sync all schemas (auto-discovers changed tables)
+clone-catalog incremental-sync --source production --dest staging
+```
+
+The Web UI provides an **Incremental Sync** page under Operations where you can:
+- Scan all schemas in parallel
+- See which tables changed with Delta version details
+- Select/deselect individual tables or entire schemas
+- Run sync for only the selected tables

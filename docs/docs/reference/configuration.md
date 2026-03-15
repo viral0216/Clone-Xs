@@ -142,6 +142,15 @@ schedule_interval: null          # e.g., "6h"
 schedule_cron: null              # e.g., "0 */6 * * *"
 drift_check_before_clone: true
 
+# ── Logging & Audit ────────────────────────────────────
+save_run_logs: true              # Persist run logs to Delta (default: true)
+metrics_enabled: false           # Persist metrics to Delta (default: false)
+metrics_table: "clone_audit.metrics.clone_metrics"
+audit_trail:
+  catalog: clone_audit           # Delta catalog for audit tables
+  schema: logs                   # Schema name
+  table: clone_operations        # Audit trail table name
+
 # ── API server ─────────────────────────────────────────
 api_port: 8080
 api_host: "0.0.0.0"

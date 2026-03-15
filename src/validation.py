@@ -177,6 +177,7 @@ def validate_catalog(
     exclude_schemas: list[str],
     max_workers: int = 4,
     use_checksum: bool = False,
+    **kwargs,
 ) -> dict:
     """Validate all tables across all schemas in destination catalog."""
     logger.info(f"Validating clone: {source_catalog} vs {dest_catalog}")
@@ -250,27 +251,39 @@ def validate_catalog(
 
     logger.info("=" * 60)
 
-    # Save run log to Delta
-    try:
+    # Save run log + audit trail to Delta (skip if called from API JobManager)
+    if not kwargs.get("_api_managed_logs"):
         import uuid
         from datetime import datetime
-        from src.run_logs import save_run_log
-        job_record = {
-            "job_id": str(uuid.uuid4())[:8],
-            "job_type": "validate",
-            "source_catalog": source_catalog,
-            "destination_catalog": dest_catalog,
-            "clone_type": "",
-            "status": "completed",
-            "started_at": datetime.now().isoformat(),
-            "completed_at": datetime.now().isoformat(),
-            "result": {k: v for k, v in summary.items() if k != "details"},
-            "error": None,
-            "logs": [],
-        }
-        save_run_log(client, warehouse_id, job_record)
-    except Exception as e:
-        logger.debug(f"Could not save validate run log to Delta: {e}")
+        job_id = str(uuid.uuid4())[:8]
+        result_data = {k: v for k, v in summary.items() if k != "details"}
+
+        try:
+            from src.run_logs import save_run_log
+            job_record = {
+                "job_id": job_id,
+                "job_type": "validate",
+                "source_catalog": source_catalog,
+                "destination_catalog": dest_catalog,
+                "clone_type": "",
+                "status": "completed",
+                "started_at": datetime.now().isoformat(),
+                "completed_at": datetime.now().isoformat(),
+                "result": result_data,
+                "error": None,
+                "logs": [],
+            }
+            save_run_log(client, warehouse_id, job_record)
+        except Exception as e:
+            logger.debug(f"Could not save validate run log to Delta: {e}")
+
+        try:
+            from src.audit_trail import log_operation_start, log_operation_complete
+            cfg = {"source_catalog": source_catalog, "destination_catalog": dest_catalog}
+            log_operation_start(client, warehouse_id, cfg, job_id, operation_type="validate")
+            log_operation_complete(client, warehouse_id, cfg, job_id, result_data, datetime.now())
+        except Exception as e:
+            logger.debug(f"Could not save audit trail to Delta: {e}")
 
     return summary
 

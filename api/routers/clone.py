@@ -36,6 +36,9 @@ async def start_clone(
     config.setdefault("copy_comments", True)
     config.setdefault("enable_rollback", True)
     config.setdefault("show_progress", True)
+    # Map API field 'location' to internal 'catalog_location'
+    if config.get("location") and not config.get("catalog_location"):
+        config["catalog_location"] = config["location"]
     job_id = await jm.submit_job("clone", config, client)
     return CloneJobResponse(job_id=job_id, status="queued", message="Clone job submitted")
 

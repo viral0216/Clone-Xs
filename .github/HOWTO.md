@@ -2430,9 +2430,9 @@ All clone options work with serverless compute:
 
 ---
 
-## 50. Web UI Pages (27 pages)
+## 50. Web UI Pages (31 pages)
 
-The Web UI provides 27 pages organized into 5 categories:
+The Web UI provides 31 pages organized into 5 categories:
 
 ### Overview (3 pages)
 
@@ -2442,19 +2442,20 @@ The Web UI provides 27 pages organized into 5 categories:
 | Audit Trail | `/audit` | Query clone history from Delta tables with filters |
 | Metrics | `/metrics` | Clone success rates, durations, throughput charts |
 
-### Operations (7 pages)
+### Operations (8 pages)
 
 | Page | URL | Description |
 |------|-----|-------------|
 | Clone | `/clone` | 4-step wizard: Source, Options, Preview, Execute |
 | Sync | `/sync` | Synchronize schemas/tables between catalogs |
+| Incremental Sync | `/incremental-sync` | Sync only changed tables using Delta version history |
 | Generate | `/generate` | Generate Terraform, Pulumi, or Databricks Workflows |
 | Rollback | `/rollback` | Undo previous clone operations from rollback logs |
 | Templates | `/templates` | Pre-built clone configs (Production Mirror, Dev Sandbox, DR Copy, etc.) |
 | Schedule | `/schedule` | Schedule recurring clone operations with cron expressions |
 | Multi-Clone | `/multi-clone` | Clone to multiple workspaces simultaneously |
 
-### Discovery (6 pages)
+### Discovery (7 pages)
 
 | Page | URL | Description |
 |------|-----|-------------|
@@ -2462,6 +2463,7 @@ The Web UI provides 27 pages organized into 5 categories:
 | Diff & Compare | `/diff` | Visual diff between catalogs, validate clones |
 | Config Diff | `/config-diff` | Compare configuration profiles side by side |
 | Lineage | `/lineage` | Track data flow from source to cloned tables |
+| Dependencies | `/view-deps` | View/function dependency graphs with creation order |
 | Impact Analysis | `/impact` | Analyze downstream effects before making changes |
 | Data Preview | `/preview` | Side-by-side source vs destination data comparison |
 

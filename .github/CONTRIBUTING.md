@@ -40,12 +40,14 @@ This starts:
 clone-xs/
   src/           88 Python modules (shared by CLI + API)
   api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (27 pages, shadcn/ui components)
+  ui/            React frontend (31 pages, shadcn/ui components)
   config/        YAML configuration with profile support
+  infra/         Terraform / IaC files
   notebooks/     Databricks notebook examples
   scripts/       Start scripts, build, deploy
   tests/         Python unit tests
   docs/          Docusaurus documentation site
+  .github/       Contributing guidelines, security policy, changelog
 ```
 
 ## How to Contribute
@@ -152,7 +154,7 @@ make deploy
 ## Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving dark mode across all 27 pages
+- Improving dark mode across all 31 pages
 - Writing tests (frontend and backend)
 - Documentation improvements
 - Accessibility enhancements

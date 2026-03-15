@@ -1,0 +1,21 @@
+{
+  "tables": {
+    "assessment.assessment_runs": {
+      "version": 27,
+      "synced_at": "2026-03-15T18:23:39.737288"
+    },
+    "assessment.pillar_scores": {
+      "version": 297,
+      "synced_at": "2026-03-15T18:23:59.157283"
+    },
+    "assessment.scores_trend": {
+      "version": 297,
+      "synced_at": "2026-03-15T18:24:11.173680"
+    },
+    "assessment.findings": {
+      "version": 3106,
+      "synced_at": "2026-03-15T18:24:19.044597"
+    }
+  },
+  "last_sync": "2026-03-15T18:24:19.044615"
+}

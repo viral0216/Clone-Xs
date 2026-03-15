@@ -1,9 +1,9 @@
 {
   "name": "dbx-catalog-clone",
   "displayName": "Databricks Catalog Clone",
-  "description": "VS Code extension for the clone-xs catalog clone tool",
+  "description": "VS Code extension for the Clone-Xs catalog clone tool",
   "version": "0.1.0",
-  "publisher": "clone-xs",
+  "publisher": "Clone-Xs",
   "engines": {
     "vscode": "^1.85.0"
   },

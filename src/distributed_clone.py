@@ -25,6 +25,7 @@ def generate_spark_clone_notebook(
     clone_type = config.get("clone_type", "DEEP")
     exclude = config.get("exclude_schemas", [])
     max_parallel = config.get("max_workers", 16)
+    catalog_location = config.get("catalog_location", "")
 
     exclude_list = ", ".join(f"'{s}'" for s in exclude) if exclude else "'__none__'"
 
@@ -73,7 +74,11 @@ print(f"Found {{len(tables)}} tables to clone")
 
 # COMMAND ----------
 
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {{dest_catalog}}")
+catalog_location = "{catalog_location}"
+create_cat_sql = f"CREATE CATALOG IF NOT EXISTS {{dest_catalog}}"
+if catalog_location:
+    create_cat_sql += f" MANAGED LOCATION '{{catalog_location}}'"
+spark.sql(create_cat_sql)
 
 schemas = set(row.table_schema for row in tables)
 for schema in schemas:

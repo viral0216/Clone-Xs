@@ -557,3 +557,71 @@ clone-catalog serve [options]
 | `--port` | Server port (default: 8080) |
 | `--host-addr` | Bind address (default: `0.0.0.0`) |
 | `--api-key` | API key for authentication |
+
+---
+
+### `incremental-sync`
+
+Sync only changed tables using Delta table version history.
+
+```bash
+clone-catalog incremental-sync [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Source catalog name |
+| `--dest` | Destination catalog name |
+| `--schema` | Specific schema to sync |
+| `--clone-type` | `DEEP` or `SHALLOW` |
+| `--dry-run` | Preview without executing |
+
+---
+
+### `sample`
+
+Preview or compare table data samples.
+
+```bash
+clone-catalog sample --schema S --table T [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Source catalog |
+| `--dest` | Destination catalog (enables compare mode) |
+| `--schema` | Schema name (required) |
+| `--table` | Table name (required) |
+| `--limit` | Number of rows (default: 10) |
+
+---
+
+### `view-deps`
+
+Analyze view and function dependencies with creation order.
+
+```bash
+clone-catalog view-deps --schema S [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Catalog name |
+| `--schema` | Schema to analyze (required) |
+| `--output` | Export dependency graph to JSON |
+
+---
+
+### `slack-bot`
+
+Start a Slack bot for clone operations via Socket Mode.
+
+```bash
+clone-catalog slack-bot [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `-c, --config` | Config file path |
+
+Requires environment variables: `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`.

@@ -11,15 +11,15 @@
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 27-page Web UI with 47+ CLI commands and a full REST API — all backed by 88 Python modules.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 31-page Web UI with 56 CLI commands and a full REST API — all backed by 88 Python modules.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
 ### Key Features
 
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
-- **27-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
-- **47+ CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, and more
+- **31-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
+- **51+ CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, and more
 - **Serverless Compute** — Run clones without a SQL warehouse (uploads wheel, submits notebook job)
 - **Full Metadata Copy** — Permissions, ownership, tags, properties, security, constraints, comments
 - **Post-Clone Validation** — Row count and checksum validation with auto-rollback on failure
@@ -100,13 +100,13 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ---
 
-## Web UI (27 Pages)
+## Web UI (31 Pages)
 
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
-| **Operations** (7) | Clone, Sync, Generate, Rollback, Templates, Schedule, Multi-Clone |
-| **Discovery** (6) | Explorer, Diff & Compare, Config Diff, Lineage, Impact Analysis, Data Preview |
+| **Operations** (8) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Multi-Clone |
+| **Discovery** (7) | Explorer, Diff & Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview |
 | **Analysis** (6) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Compliance |
 | **Management** (7) | Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins |
 
@@ -130,6 +130,10 @@ clone-catalog profile --catalog X                  # Data quality profiling
 clone-catalog templates                            # List clone templates
 clone-catalog audit                                # Query audit trail
 clone-catalog serve                                # Start API server
+clone-catalog incremental-sync --source X --dest Y # Sync only changed tables
+clone-catalog sample --schema S --table T          # Preview table data
+clone-catalog view-deps --schema S                 # View/function dependency graph
+clone-catalog slack-bot                            # Start Slack bot
 ```
 
 For the complete reference with real-world examples, see **[HOWTO.md](.github/HOWTO.md)**.
@@ -155,19 +159,21 @@ Docs        Docusaurus
 clone-xs/
   src/           88 Python modules (shared by CLI + API)
   api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (27 pages, shadcn/ui components)
+  ui/            React frontend (31 pages, shadcn/ui components)
   config/        YAML configuration with profile support
+  infra/         Terraform / IaC files
   notebooks/     Databricks notebook examples
   scripts/       Start scripts, build, deploy
   tests/         Python unit tests
   docs/          Docusaurus documentation site
+  .github/       Contributing guidelines, security policy, changelog
 ```
 
 ---
 
 ## Run Logs & Audit Trail
 
-Every clone, sync, and validate operation automatically persists to Unity Catalog Delta tables — **enabled by default**.
+Every operation (clone, sync, validate, incremental-sync, diff, rollback, PII scan, preflight, and more) automatically persists to Unity Catalog Delta tables — **enabled by default**.
 
 | Table | Purpose |
 |-------|---------|
@@ -189,10 +195,10 @@ audit_trail:
 
 | Metric | Value |
 |--------|-------|
-| CLI commands | 47+ |
+| CLI commands | 56 |
 | Python modules | 88 |
-| Web UI pages | 27 |
-| REST API endpoints | 55+ |
+| Web UI pages | 31 |
+| REST API endpoints | 61+ |
 | Clone templates | 12 |
 | Pages with catalog dropdowns | 17 |
 
@@ -234,7 +240,7 @@ This project follows the [Contributor Covenant Code of Conduct](.github/CODE_OF_
 ### Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving dark mode across all 27 pages
+- Improving dark mode across all 31 pages
 - Writing tests (frontend and backend)
 - Documentation improvements
 - Accessibility enhancements

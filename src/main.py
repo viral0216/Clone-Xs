@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+import time
 
 from src.auth import (
     _load_session,
@@ -45,6 +46,48 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile", help="Config profile to use")
     parser.add_argument("--log-file", help="Write logs to a file in addition to console")
     add_auth_args(parser)
+
+
+def _save_cli_run_log(client, config, job_type, result, start_time, error=None):
+    """Save run log + audit trail for CLI commands that don't go through JobManager."""
+    if not config.get("save_run_logs", True):
+        return
+
+    import uuid
+    from datetime import datetime
+
+    job_id = str(uuid.uuid4())[:8]
+    wid = config.get("sql_warehouse_id", "")
+    started_dt = datetime.fromtimestamp(start_time)
+
+    # 1. Save to run_logs table (detailed execution trace)
+    try:
+        from src.run_logs import save_run_log
+        job_record = {
+            "job_id": job_id,
+            "job_type": job_type,
+            "source_catalog": config.get("source_catalog", ""),
+            "destination_catalog": config.get("destination_catalog", ""),
+            "clone_type": config.get("clone_type", ""),
+            "status": "failed" if error else "completed",
+            "started_at": started_dt.isoformat(),
+            "completed_at": datetime.now().isoformat(),
+            "result": result,
+            "error": str(error) if error else None,
+            "logs": [],
+        }
+        save_run_log(client, wid, job_record, config)
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"Could not save run log to Delta: {e}")
+
+    # 2. Save to clone_operations table (audit trail)
+    try:
+        from src.audit_trail import log_operation_start, log_operation_complete
+        log_operation_start(client, wid, config, job_id, operation_type=job_type)
+        log_operation_complete(client, wid, config, job_id, result or {}, started_dt,
+                              error_message=str(error) if error else None)
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"Could not save audit trail to Delta: {e}")
 
 
 def _get_auth_client(args):
@@ -302,12 +345,14 @@ def cmd_diff(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     diff = compare_catalogs(
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         config["exclude_schemas"],
     )
     print_diff(diff, config["source_catalog"], config["destination_catalog"])
+    _save_cli_run_log(client, config, "diff", diff, start_time)
 
 
 def cmd_rollback(args):
@@ -342,10 +387,14 @@ def cmd_rollback(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     results = rollback(
         client, config["sql_warehouse_id"], args.rollback_log_file,
         drop_catalog=args.drop_catalog,
     )
+    _save_cli_run_log(client, config, "rollback", results, start_time,
+                      error=f"{results['failed']} failed" if results["failed"] else None)
+
     if results["failed"] > 0:
         sys.exit(1)
 
@@ -445,11 +494,14 @@ def cmd_compare(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     summary = compare_catalogs_deep(
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         config["exclude_schemas"], config["max_workers"],
     )
+    _save_cli_run_log(client, config, "compare", summary, start_time)
+
     if summary["tables_with_issues"] > 0:
         sys.exit(1)
 
@@ -498,11 +550,13 @@ def cmd_snapshot(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     output = create_snapshot(
         client, config["sql_warehouse_id"], config["source_catalog"],
         config["exclude_schemas"], output_path=args.output,
     )
     logger.info(f"Snapshot saved: {output}")
+    _save_cli_run_log(client, config, "snapshot", {"output_path": output}, start_time)
 
 
 def cmd_schema_drift(args):
@@ -523,11 +577,14 @@ def cmd_schema_drift(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     summary = detect_schema_drift(
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         config["exclude_schemas"],
     )
+    _save_cli_run_log(client, config, "schema-drift", summary, start_time)
+
     if summary["tables_with_drift"] > 0:
         sys.exit(1)
 
@@ -586,11 +643,15 @@ def cmd_preflight(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     result = run_preflight(
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         check_write=not args.no_write_check,
     )
+    _save_cli_run_log(client, config, "preflight", result, start_time,
+                      error="Preflight checks failed" if not result["ready"] else None)
+
     if not result["ready"]:
         sys.exit(1)
 
@@ -656,11 +717,13 @@ def cmd_profile(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
-    profile_catalog(
+    start_time = time.time()
+    result = profile_catalog(
         client, config["sql_warehouse_id"], config["source_catalog"],
         config["exclude_schemas"], config["max_workers"],
         output_path=args.output,
     )
+    _save_cli_run_log(client, config, "profile", result or {}, start_time)
 
 
 def cmd_monitor(args):
@@ -718,12 +781,14 @@ def cmd_export(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     output = export_catalog_metadata(
         client, config["sql_warehouse_id"], config["source_catalog"],
         config["exclude_schemas"], output_format=args.format,
         output_path=args.output,
     )
     logger.info(f"Export saved: {output}")
+    _save_cli_run_log(client, config, "export", {"output_path": output}, start_time)
 
 
 def cmd_config_diff(args):
@@ -787,7 +852,11 @@ def cmd_multi_clone(args):
         dest_config = yaml.safe_load(f)
 
     destinations = dest_config.get("destinations", [])
+    start_time = time.time()
     summary = clone_to_multiple_workspaces(config, destinations, max_parallel=args.max_parallel)
+    _save_cli_run_log(None, config, "multi-clone", summary, start_time,
+                      error=f"{summary['failed']} workspaces failed" if summary["failed"] else None)
+
     if summary["failed"] > 0:
         sys.exit(1)
 
@@ -881,11 +950,14 @@ def cmd_pii_scan(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     result = scan_catalog_for_pii(
         client, config["sql_warehouse_id"], config["source_catalog"],
         config.get("exclude_schemas", []),
         sample_data=args.sample_data, max_workers=config.get("max_workers", 4),
     )
+    _save_cli_run_log(client, config, "pii-scan", result, start_time)
+
     if result["total_pii_columns"] > 0 and not args.no_exit_code:
         sys.exit(1)
 
@@ -930,14 +1002,167 @@ def cmd_schema_evolve(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
+    start_time = time.time()
     result = evolve_catalog_schema(
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         config.get("exclude_schemas", []),
         dry_run=args.dry_run, drop_removed=args.drop_removed,
     )
+    if not args.dry_run:
+        _save_cli_run_log(client, config, "schema-evolve", result, start_time,
+                          error=f"{result['tables_with_errors']} errors" if result["tables_with_errors"] else None)
+
     if result["tables_with_errors"] > 0:
         sys.exit(1)
+
+
+def cmd_incremental_sync(args):
+    """Execute the incremental sync command."""
+    from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    if args.dest:
+        config["destination_catalog"] = args.dest
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    source = config["source_catalog"]
+    dest = config["destination_catalog"]
+    wid = config["sql_warehouse_id"]
+    clone_type = getattr(args, "clone_type", None) or config.get("clone_type", "DEEP")
+    start_time = time.time()
+
+    schemas = config.get("include_schemas") or []
+    if args.schema:
+        schemas = [args.schema]
+
+    if not schemas:
+        # Discover schemas
+        from src.client import execute_sql
+        rows = execute_sql(client, wid,
+            f"SELECT schema_name FROM {source}.information_schema.schemata "
+            f"WHERE schema_name NOT IN ('information_schema', 'default')")
+        schemas = [r["schema_name"] for r in rows]
+
+    total_synced, total_failed = 0, 0
+    for schema in schemas:
+        tables = get_tables_needing_sync(client, wid, source, dest, schema)
+        if not tables:
+            logger.info(f"Schema {schema}: all tables up to date")
+            continue
+
+        logger.info(f"Schema {schema}: {len(tables)} tables need sync")
+        for t in tables:
+            ok = sync_changed_table(
+                client, wid, source, dest, schema, t["table_name"],
+                clone_type=clone_type, dry_run=args.dry_run,
+            )
+            if ok:
+                total_synced += 1
+            else:
+                total_failed += 1
+
+    result = {"synced": total_synced, "failed": total_failed, "schemas": len(schemas)}
+    logger.info(f"Incremental sync complete: {total_synced} synced, {total_failed} failed")
+
+    if not args.dry_run:
+        _save_cli_run_log(client, config, "incremental_sync", result, start_time,
+                          error=f"{total_failed} tables failed" if total_failed else None)
+
+    if total_failed > 0:
+        sys.exit(1)
+
+
+def cmd_sample(args):
+    """Execute the sample command."""
+    from src.sampling import sample_table, compare_samples, preview_table
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    wid = config["sql_warehouse_id"]
+
+    if args.dest:
+        # Compare mode
+        result = compare_samples(
+            client, wid, config["source_catalog"], args.dest,
+            args.schema, args.table, limit=args.limit,
+        )
+        import json
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        # Preview mode
+        preview_table(client, wid, config["source_catalog"], args.schema, args.table, args.limit)
+
+
+def cmd_view_deps(args):
+    """Execute the view/function dependencies command."""
+    from src.dependencies import get_view_dependencies, get_function_dependencies, get_ordered_views
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    wid = config["sql_warehouse_id"]
+    catalog = config["source_catalog"]
+
+    view_deps = get_view_dependencies(client, wid, catalog, args.schema)
+    func_deps = get_function_dependencies(client, wid, catalog, args.schema)
+    order = get_ordered_views(client, wid, catalog, args.schema)
+
+    if view_deps:
+        logger.info(f"\nView dependencies in {catalog}.{args.schema}:")
+        for view, deps in view_deps.items():
+            dep_str = ", ".join(deps) if deps else "(none)"
+            logger.info(f"  {view} -> {dep_str}")
+
+    if func_deps:
+        logger.info(f"\nFunction dependencies in {catalog}.{args.schema}:")
+        for func, deps in func_deps.items():
+            dep_str = ", ".join(deps) if deps else "(none)"
+            logger.info(f"  {func} -> {dep_str}")
+
+    if order:
+        logger.info(f"\nRecommended creation order: {' -> '.join(order)}")
+
+    if args.output:
+        import json
+        result = {"views": view_deps, "functions": func_deps, "creation_order": order}
+        with open(args.output, "w") as f:
+            json.dump(result, f, indent=2)
+        logger.info(f"Exported to {args.output}")
+
+
+def cmd_slack_bot(args):
+    """Start the Slack bot."""
+    from src.slack_bot import start_slack_bot
+    start_slack_bot(config_path=args.config)
 
 
 def cmd_dep_graph(args):
@@ -2084,6 +2309,39 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--api-key", help="API key for authentication")
     serve_parser.set_defaults(func=cmd_serve)
 
+    # --- incremental-sync command ---
+    isync_parser = subparsers.add_parser("incremental-sync", help="Sync only changed tables using Delta history")
+    add_common_args(isync_parser)
+    isync_parser.add_argument("--source", help="Override source catalog name")
+    isync_parser.add_argument("--dest", help="Override destination catalog name")
+    isync_parser.add_argument("--schema", help="Specific schema to sync")
+    isync_parser.add_argument("--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type")
+    isync_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
+    isync_parser.set_defaults(func=cmd_incremental_sync)
+
+    # --- sample command ---
+    samp_parser = subparsers.add_parser("sample", help="Preview or compare table data samples")
+    add_common_args(samp_parser)
+    samp_parser.add_argument("--source", help="Source catalog")
+    samp_parser.add_argument("--dest", help="Destination catalog (enables compare mode)")
+    samp_parser.add_argument("--schema", required=True, help="Schema name")
+    samp_parser.add_argument("--table", required=True, help="Table name")
+    samp_parser.add_argument("--limit", type=int, default=10, help="Number of rows")
+    samp_parser.set_defaults(func=cmd_sample)
+
+    # --- view-deps command ---
+    vd_parser = subparsers.add_parser("view-deps", help="Analyze view/function dependencies and creation order")
+    add_common_args(vd_parser)
+    vd_parser.add_argument("--source", help="Override source catalog name")
+    vd_parser.add_argument("--schema", required=True, help="Schema to analyze")
+    vd_parser.add_argument("--output", help="Export dependency graph to JSON file")
+    vd_parser.set_defaults(func=cmd_view_deps)
+
+    # --- slack-bot command ---
+    sb_parser = subparsers.add_parser("slack-bot", help="Start Slack bot for clone operations (requires SLACK_BOT_TOKEN, SLACK_APP_TOKEN)")
+    sb_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
+    sb_parser.set_defaults(func=cmd_slack_bot)
+
     return parser
 
 
@@ -2096,7 +2354,7 @@ def main():
         sys.exit(0)
 
     # Commands that don't need standard logging setup
-    if args.command in ("init", "completion", "dashboard", "tui", "templates", "approval"):
+    if args.command in ("init", "completion", "dashboard", "tui", "templates", "approval", "slack-bot"):
         args.func(args)
         return
 

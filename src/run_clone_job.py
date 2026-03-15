@@ -5,7 +5,7 @@ It wires spark.sql() into the execute_sql path so the entire clone
 engine works without a SQL warehouse.
 
 Submitted by: src/serverless.py via jobs.submit(spark_python_task)
-Installed as: part of the clone-xs wheel
+Installed as: part of the Clone-Xs wheel
 
 Usage (automatic — called by serverless.submit_clone_job):
     spark-submit run_clone_job.py '{"source_catalog":"prod","dest_catalog":"staging",...}'

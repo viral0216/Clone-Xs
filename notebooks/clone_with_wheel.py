@@ -3,7 +3,7 @@
 # MAGIC %md
 # MAGIC # Unity Catalog Clone — Wheel Package
 # MAGIC
-# MAGIC This notebook clones a Unity Catalog catalog using the **clone-xs** wheel package.
+# MAGIC This notebook clones a Unity Catalog catalog using the **Clone-Xs** wheel package.
 # MAGIC
 # MAGIC ### Setup
 # MAGIC 1. Build the wheel: `python -m build` (creates `dist/clone_xs-*.whl`)

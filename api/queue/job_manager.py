@@ -17,10 +17,13 @@ logger = logging.getLogger(__name__)
 class JobLogHandler(logging.Handler):
     """Captures log messages into a list for a specific job."""
 
-    def __init__(self, job_logs: list, max_lines: int = 500):
+    def __init__(self, job_logs: list, job_dict: dict | None = None, workspace_host: str = "", max_lines: int = 500):
         super().__init__()
         self.job_logs = job_logs
+        self.job_dict = job_dict
+        self.workspace_host = workspace_host.rstrip("/")
         self.max_lines = max_lines
+        self._run_id_re = re.compile(r"run_id[=:]?\s*(\d+)")
 
     def emit(self, record):
         try:
@@ -29,6 +32,11 @@ class JobLogHandler(logging.Handler):
             # Keep only the last N lines
             if len(self.job_logs) > self.max_lines:
                 del self.job_logs[: len(self.job_logs) - self.max_lines]
+            # Detect Databricks run_id in log messages and set run_url early
+            if self.job_dict and not self.job_dict.get("run_url") and self.workspace_host:
+                m = self._run_id_re.search(msg)
+                if m:
+                    self.job_dict["run_url"] = f"{self.workspace_host}/#job/{m.group(1)}"
         except Exception:
             pass
 
@@ -96,6 +104,7 @@ class JobManager:
             "progress": None,
             "result": None,
             "error": None,
+            "run_url": None,
             "logs": [],
             "created_at": now,
             "started_at": None,
@@ -118,8 +127,11 @@ class JobManager:
 
         job_logs = self.jobs[job_id]["logs"]
 
+        # Capture workspace host for building Databricks run URLs
+        workspace_host = getattr(getattr(client, "config", None), "host", None) or ""
+
         # Set up log capture for src.* loggers
-        log_handler = JobLogHandler(job_logs)
+        log_handler = JobLogHandler(job_logs, job_dict=self.jobs[job_id], workspace_host=workspace_host)
         log_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         src_logger = logging.getLogger("src")
         src_logger.addHandler(log_handler)
@@ -136,6 +148,15 @@ class JobManager:
 
             # Mark as API-managed so clone_catalog doesn't double-save run logs
             config["_api_managed_logs"] = True
+
+            # Log operation start to audit trail (clone_operations table)
+            audit_start_time = datetime.utcnow()
+            try:
+                from src.audit_trail import log_operation_start
+                log_operation_start(client, config.get("sql_warehouse_id", ""),
+                                    config, job_id, operation_type=job_type)
+            except Exception:
+                pass
 
             if job_type == "clone":
                 if config.get("serverless") and config.get("volume"):
@@ -154,6 +175,7 @@ class JobManager:
                     client, config["sql_warehouse_id"],
                     config["source_catalog"], config["destination_catalog"],
                     config.get("exclude_schemas", []), config.get("max_workers", 4),
+                    _api_managed_logs=True,
                 )
             elif job_type == "sync":
                 from src.sync_catalog import sync_catalogs
@@ -163,7 +185,32 @@ class JobManager:
                     config.get("exclude_schemas", ["information_schema", "default"]),
                     dry_run=config.get("dry_run", True),
                     drop_extra=config.get("drop_extra", False),
+                    _api_managed_logs=True,
                 )
+            elif job_type == "incremental_sync":
+                from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+                schema = config["schema_name"]
+                tables = get_tables_needing_sync(
+                    client, config["sql_warehouse_id"],
+                    config["source_catalog"], config["destination_catalog"], schema,
+                )
+                synced, failed = 0, 0
+                for t in tables:
+                    ok = sync_changed_table(
+                        client, config["sql_warehouse_id"],
+                        config["source_catalog"], config["destination_catalog"],
+                        schema, t["table_name"],
+                        clone_type=config.get("clone_type", "DEEP"),
+                        dry_run=config.get("dry_run", False),
+                    )
+                    if ok:
+                        synced += 1
+                    else:
+                        failed += 1
+                result = {
+                    "schema": schema, "tables_checked": len(tables),
+                    "synced": synced, "failed": failed,
+                }
             elif job_type == "pii-scan":
                 from src.pii_detection import scan_catalog_for_pii
                 result = scan_catalog_for_pii(
@@ -210,6 +257,12 @@ class JobManager:
             else:
                 result = {"error": f"Unknown job type: {job_type}"}
 
+            # Build Databricks job run URL if a run_id is available
+            run_id = result.get("run_id") if isinstance(result, dict) else None
+            if run_id and workspace_host:
+                host = workspace_host.rstrip("/")
+                self.jobs[job_id]["run_url"] = f"{host}/#job/{run_id}"
+
             self.jobs[job_id]["status"] = "completed"
             self.jobs[job_id]["result"] = result
             self.jobs[job_id]["completed_at"] = datetime.now().isoformat()
@@ -235,6 +288,27 @@ class JobManager:
                 save_run_log(client, config.get("sql_warehouse_id", ""), self.jobs[job_id], config)
             except Exception as log_err:
                 logger.debug(f"Could not persist run log to Delta: {log_err}")
+
+            # Log operation completion to audit trail (clone_operations table)
+            try:
+                from src.audit_trail import log_operation_complete
+                job_data = self.jobs[job_id]
+                summary = job_data.get("result") or {}
+                log_operation_complete(
+                    client, config.get("sql_warehouse_id", ""), config,
+                    job_id, summary, audit_start_time,
+                    error_message=job_data.get("error"),
+                )
+            except Exception as audit_err:
+                logger.debug(f"Could not persist audit trail to Delta: {audit_err}")
+
+            # Save operation metrics to clone_metrics table
+            try:
+                from src.metrics import save_operation_metrics
+                save_operation_metrics(client, config.get("sql_warehouse_id", ""),
+                                       self.jobs[job_id], config)
+            except Exception as metrics_err:
+                logger.debug(f"Could not persist metrics to Delta: {metrics_err}")
 
     def _broadcast_sync(self, loop, job_id: str, data: dict):
         """Thread-safe broadcast to WebSocket clients."""

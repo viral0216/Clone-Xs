@@ -1,0 +1,16 @@
+{
+  "files.exclude": {
+    "clone_queue_state.json": true,
+    "databricks_workflow.json": true,
+    "**/__pycache__": true,
+    "*.egg-info": true,
+    "**/.DS_Store": true,
+    "dist": true,
+    "build": true,
+    "checkpoints": true,
+    "rollback_logs": true,
+    "snapshots": true,
+    "exports": true,
+    "reports": true
+  }
+}

@@ -16,10 +16,13 @@ from api.routers import (
     auth,
     clone,
     config,
+    deps,
     generate,
     health,
+    incremental,
     management,
     monitor,
+    sampling,
 )
 
 
@@ -55,6 +58,9 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(generate.router, prefix="/api/generate", tags=["generate"])
 app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(monitor.router, prefix="/api", tags=["monitor"])
+app.include_router(incremental.router, prefix="/api", tags=["incremental"])
+app.include_router(sampling.router, prefix="/api", tags=["sampling"])
+app.include_router(deps.router, prefix="/api", tags=["dependencies"])
 
 # Serve frontend static files in production
 import os

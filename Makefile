@@ -24,7 +24,7 @@ test-all: test test-howto ## Run all tests including HOWTO examples
 api-dev: ## Start FastAPI backend (port 8000)
 	cd $(CURDIR) && uvicorn api.main:app --reload --port 8000
 
-ui-dev: ## Start Next.js frontend (port 3000)
+ui-dev: ## Start Vite React frontend (port 3000)
 	cd ui && npm run dev
 
 web-start: ## Start both API + UI in one terminal
@@ -40,7 +40,7 @@ lint: ## Run linter (ruff)
 	python3 -m ruff check src/ tests/
 
 clean: ## Remove build artifacts
-	rm -rf dist/ build/ *.egg-info src/*.egg-info .pytest_cache
+	rm -rf dist/ build/ *.egg-info .pytest_cache
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 build: clean test ## Build wheel package (runs tests first)

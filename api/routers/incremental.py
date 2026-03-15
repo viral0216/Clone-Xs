@@ -16,6 +16,8 @@ class IncrementalSyncRequest(BaseModel):
     warehouse_id: str | None = None
     clone_type: str = "DEEP"
     dry_run: bool = False
+    serverless: bool = False
+    volume: str | None = None
 
 
 @router.post("/incremental/check")
@@ -45,6 +47,8 @@ async def start_incremental_sync(
         "sql_warehouse_id": req.warehouse_id or config["sql_warehouse_id"],
         "clone_type": req.clone_type,
         "dry_run": req.dry_run,
+        "serverless": req.serverless,
+        "volume": req.volume,
     }
     job_id = await jm.submit_job("incremental_sync", job_config, client)
     return {"job_id": job_id, "status": "queued", "message": "Incremental sync job submitted"}

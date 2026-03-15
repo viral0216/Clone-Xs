@@ -1,14 +1,250 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { useVolumes } from "@/hooks/useApi";
+import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
   RefreshCw, Loader2, CheckCircle, XCircle, ArrowRight,
-  AlertTriangle, Database, Table2, Clock,
+  AlertTriangle, Database, Table2, Clock, ChevronDown, ChevronRight,
+  Download, ClipboardCopy, Check,
 } from "lucide-react";
+
+
+/* ── Reusable progress bar ────────────────────────────── */
+function ProgressBar({ value, max, label }: { value: number; max: number; label?: string }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      {label && (
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{label}</span>
+          <span>{value}/{max} ({pct}%)</span>
+        </div>
+      )}
+      <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+        <div
+          className="h-full bg-blue-600 rounded-full transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+/* ── Log panel with color coding ─────────────────────── */
+function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; isRunning: boolean }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (isRunning && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs.length, isRunning]);
+
+  function logColor(line: string) {
+    if (/error|ERROR|FAILED|failed/i.test(line)) return "text-red-400";
+    if (/warn|WARNING/i.test(line)) return "text-yellow-400";
+    if (/OK|success|cloned|completed|matched/i.test(line)) return "text-green-400";
+    if (/progress|running|scanning|cloning/i.test(line)) return "text-blue-400";
+    return "text-gray-300";
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+          {isRunning && <Loader2 className="h-3 w-3 animate-spin" />}
+          Logs
+          <Badge variant="outline" className="text-xs">{logs.length} lines</Badge>
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard.writeText(logs.join("\n"));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? <Check className="h-3 w-3 mr-1" /> : <ClipboardCopy className="h-3 w-3 mr-1" />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <div className="bg-[#0d1117] rounded-lg p-3 max-h-60 overflow-y-auto font-mono text-xs">
+        {logs.map((line, i) => (
+          <div key={i} className={logColor(line)}>{line}</div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+
+/* ── Per-schema job progress tracker ─────────────────── */
+function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
+  const [job, setJob] = useState<any>(null);
+  const [expanded, setExpanded] = useState(true);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const data = await api.get(`/clone/${jobId}`);
+        setJob(data);
+        if (data.status === "completed" || data.status === "failed") {
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+      } catch {}
+    };
+    poll();
+    pollRef.current = setInterval(poll, 2000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [jobId]);
+
+  const statusColor: Record<string, string> = {
+    queued: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    running: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    completed: "bg-green-500/20 text-green-400 border-green-500/30",
+    failed: "bg-red-500/20 text-red-400 border-red-500/30",
+  };
+
+  const statusIcon: Record<string, React.ReactNode> = {
+    queued: <Clock className="h-4 w-4 text-yellow-500" />,
+    running: <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
+    completed: <CheckCircle className="h-4 w-4 text-green-500" />,
+    failed: <XCircle className="h-4 w-4 text-red-500" />,
+  };
+
+  if (!job) {
+    return (
+      <Card className="bg-card border-border">
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{schema}: Loading job {jobId}...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const result = job.result || {};
+  const synced = result.synced ?? result.tables?.success ?? result.tables?.cloned ?? 0;
+  const failed = result.failed ?? result.tables?.failed ?? 0;
+
+  return (
+    <Card className={`bg-card border-border transition-all ${
+      job.status === "running" ? "ring-1 ring-blue-500/40" : ""
+    }`}>
+      {/* Header — always visible */}
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-3">
+          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          {statusIcon[job.status] || statusIcon.queued}
+          <div>
+            <span className="font-medium text-foreground">{schema}</span>
+            <span className="text-xs text-muted-foreground ml-2">Job {jobId}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {job.status === "completed" && (
+            <span className="text-xs text-muted-foreground">
+              {synced} synced{failed > 0 ? `, ${failed} failed` : ""}
+            </span>
+          )}
+          {job.started_at && job.completed_at && (
+            <span className="text-xs text-muted-foreground">
+              {Math.round((new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000)}s
+            </span>
+          )}
+          <Badge className={statusColor[job.status] || statusColor.queued}>
+            {job.status.toUpperCase()}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Expanded details */}
+      {expanded && (
+        <CardContent className="pt-0 space-y-3">
+          {/* Progress */}
+          {job.status === "running" && (
+            <div className="space-y-2">
+              {job.progress ? (
+                <>
+                  <ProgressBar value={job.progress.completed_tables || 0} max={job.progress.total_tables || 0} label="Tables" />
+                  {job.progress.current_table && (
+                    <p className="text-xs text-muted-foreground">
+                      Current: {job.progress.current_schema}.{job.progress.current_table}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Sync in progress...
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: "60%" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Timing */}
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            {job.started_at && <span>Started: {new Date(job.started_at).toLocaleTimeString()}</span>}
+            {job.completed_at && <span>Completed: {new Date(job.completed_at).toLocaleTimeString()}</span>}
+          </div>
+
+          {/* Result summary */}
+          {job.status === "completed" && (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="text-center p-2 rounded bg-muted/50">
+                <p className="text-lg font-bold text-green-500">{synced}</p>
+                <p className="text-xs text-muted-foreground">Synced</p>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <p className="text-lg font-bold text-red-500">{failed}</p>
+                <p className="text-xs text-muted-foreground">Failed</p>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <p className="text-lg font-bold text-foreground">{result.tables_checked || result.schemas || 0}</p>
+                <p className="text-xs text-muted-foreground">Checked</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {job.status === "failed" && job.error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <XCircle className="h-4 w-4 text-red-500" />
+                <span className="text-sm font-medium text-red-400">Sync failed</span>
+              </div>
+              <pre className="text-xs text-red-300 whitespace-pre-wrap">{job.error}</pre>
+            </div>
+          )}
+
+          {/* Logs */}
+          {job.logs && job.logs.length > 0 && (
+            <LogPanel logs={job.logs} jobId={jobId} isRunning={job.status === "running"} />
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 interface ChangedTable {
   table_name: string;
@@ -36,6 +272,9 @@ export default function IncrementalSyncPage() {
   const [error, setError] = useState("");
   const [schemaResults, setSchemaResults] = useState<SchemaCheck[]>([]);
   const [syncResult, setSyncResult] = useState<any>(null);
+  const [serverless, setServerless] = useState(false);
+  const [volume, setVolume] = useState("");
+  const volumes = useVolumes();
   // Track selected tables as "schema.table_name" keys
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
 
@@ -131,6 +370,8 @@ export default function IncrementalSyncPage() {
           source_catalog: sourceCatalog,
           destination_catalog: destCatalog,
           schema_name: schema,
+          serverless,
+          volume: serverless ? volume : null,
         });
         results.push({ schema, tables: tables.length, ...data });
       }
@@ -238,6 +479,48 @@ export default function IncrementalSyncPage() {
             </div>
           </div>
 
+          {/* Serverless toggle */}
+          <div className="flex gap-4 items-start">
+            <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={serverless}
+                onChange={(e) => setServerless(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              Use Serverless Compute
+            </label>
+            {serverless && (
+              <div className="flex-1 max-w-md">
+                <label className="text-xs text-muted-foreground mb-1 block">UC Volume (required for serverless)</label>
+                {volumes.isLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading volumes...
+                  </div>
+                ) : volumes.isError ? (
+                  <Input
+                    placeholder="/Volumes/catalog/schema/volume"
+                    value={volume}
+                    onChange={(e) => setVolume(e.target.value)}
+                  />
+                ) : (
+                  <select
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                    value={volume}
+                    onChange={(e) => setVolume(e.target.value)}
+                  >
+                    <option value="">Select a volume...</option>
+                    {(volumes.data || []).map((v: any) => (
+                      <option key={v.path} value={v.path}>
+                        {v.path} ({v.type})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3 pt-2">
             <Button onClick={checkChanges} disabled={!sourceCatalog || !destCatalog || loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
@@ -263,21 +546,17 @@ export default function IncrementalSyncPage() {
         </Card>
       )}
 
-      {/* Sync Result */}
-      {syncResult && (
-        <Card className="border-green-500/30 bg-green-500/5">
-          <CardContent className="pt-6 space-y-2">
-            <div className="flex items-center gap-2 text-green-500">
-              <CheckCircle className="h-5 w-5" />
-              Sync jobs submitted for {syncResult.total} schema(s)
-            </div>
-            {syncResult.schemas.map((s: any) => (
-              <div key={s.schema} className="flex items-center gap-2 text-sm text-muted-foreground ml-7">
-                <Database className="h-3 w-3" /> {s.schema}: Job {s.job_id}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      {/* Sync Job Progress — live tracking per schema */}
+      {syncResult && syncResult.schemas.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <RefreshCw className="h-4 w-4" />
+            Sync Progress — {syncResult.schemas.length} schema(s)
+          </div>
+          {syncResult.schemas.map((s: any) => (
+            <SyncJobProgress key={s.job_id} jobId={s.job_id} schema={s.schema} />
+          ))}
+        </div>
       )}
 
       {/* Summary Bar */}
@@ -309,10 +588,10 @@ export default function IncrementalSyncPage() {
                 <Button variant="ghost" size="sm" onClick={deselectAll}>Clear</Button>
                 <Button
                   onClick={runSync}
-                  disabled={selectedCount === 0 || syncing}
+                  disabled={selectedCount === 0 || syncing || (serverless && !volume)}
                 >
                   {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
+                  {serverless ? "Serverless " : ""}Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
                 </Button>
               </div>
             </div>

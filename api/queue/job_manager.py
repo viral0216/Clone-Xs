@@ -152,7 +152,8 @@ class JobManager:
             # Log operation start to audit trail (clone_operations table)
             audit_start_time = datetime.utcnow()
             try:
-                from src.audit_trail import log_operation_start
+                from src.audit_trail import ensure_audit_table, log_operation_start
+                ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)
                 log_operation_start(client, config.get("sql_warehouse_id", ""),
                                     config, job_id, operation_type=job_type)
             except Exception:
@@ -188,29 +189,47 @@ class JobManager:
                     _api_managed_logs=True,
                 )
             elif job_type == "incremental_sync":
-                from src.incremental_sync import get_tables_needing_sync, sync_changed_table
-                schema = config["schema_name"]
-                tables = get_tables_needing_sync(
-                    client, config["sql_warehouse_id"],
-                    config["source_catalog"], config["destination_catalog"], schema,
-                )
-                synced, failed = 0, 0
-                for t in tables:
-                    ok = sync_changed_table(
+                if config.get("serverless") and config.get("volume"):
+                    # Serverless: build a clone config and submit via serverless
+                    from src.serverless import submit_clone_job
+                    clone_config = {
+                        "source_catalog": config["source_catalog"],
+                        "destination_catalog": config["destination_catalog"],
+                        "clone_type": config.get("clone_type", "DEEP"),
+                        "include_schemas": [config["schema_name"]],
+                        "exclude_schemas": [],
+                        "sql_warehouse_id": config.get("sql_warehouse_id", ""),
+                        "max_workers": config.get("max_workers", 4),
+                        "copy_permissions": False,
+                        "copy_ownership": False,
+                        "copy_tags": False,
+                        "enable_rollback": False,
+                    }
+                    result = submit_clone_job(client, clone_config, volume_path=config["volume"])
+                else:
+                    from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+                    schema = config["schema_name"]
+                    tables = get_tables_needing_sync(
                         client, config["sql_warehouse_id"],
-                        config["source_catalog"], config["destination_catalog"],
-                        schema, t["table_name"],
-                        clone_type=config.get("clone_type", "DEEP"),
-                        dry_run=config.get("dry_run", False),
+                        config["source_catalog"], config["destination_catalog"], schema,
                     )
-                    if ok:
-                        synced += 1
-                    else:
-                        failed += 1
-                result = {
-                    "schema": schema, "tables_checked": len(tables),
-                    "synced": synced, "failed": failed,
-                }
+                    synced, failed = 0, 0
+                    for t in tables:
+                        ok = sync_changed_table(
+                            client, config["sql_warehouse_id"],
+                            config["source_catalog"], config["destination_catalog"],
+                            schema, t["table_name"],
+                            clone_type=config.get("clone_type", "DEEP"),
+                            dry_run=config.get("dry_run", False),
+                        )
+                        if ok:
+                            synced += 1
+                        else:
+                            failed += 1
+                    result = {
+                        "schema": schema, "tables_checked": len(tables),
+                        "synced": synced, "failed": failed,
+                    }
             elif job_type == "pii-scan":
                 from src.pii_detection import scan_catalog_for_pii
                 result = scan_catalog_for_pii(
@@ -284,7 +303,8 @@ class JobManager:
 
             # Persist run logs to Unity Catalog Delta table
             try:
-                from src.run_logs import save_run_log
+                from src.run_logs import save_run_log, ensure_run_logs_table
+                ensure_run_logs_table(client, config.get("sql_warehouse_id", ""), config)
                 save_run_log(client, config.get("sql_warehouse_id", ""), self.jobs[job_id], config)
             except Exception as log_err:
                 logger.debug(f"Could not persist run log to Delta: {log_err}")

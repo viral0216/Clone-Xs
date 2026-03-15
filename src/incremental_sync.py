@@ -32,8 +32,12 @@ def get_last_sync_version(
     if not os.path.exists(state_file):
         return None
 
-    with open(state_file) as f:
-        state = json.load(f)
+    try:
+        with open(state_file) as f:
+            state = json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning(f"Corrupt sync state file: {state_file} — treating all tables as new")
+        return None
 
     key = f"{schema}.{table_name}"
     entry = state.get("tables", {}).get(key)
@@ -50,8 +54,12 @@ def save_sync_version(
 
     state = {"tables": {}, "last_sync": None}
     if os.path.exists(state_file):
-        with open(state_file) as f:
-            state = json.load(f)
+        try:
+            with open(state_file) as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(f"Corrupt sync state file: {state_file} — resetting")
+            state = {"tables": {}, "last_sync": None}
 
     key = f"{schema}.{table_name}"
     state["tables"][key] = {

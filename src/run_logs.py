@@ -113,7 +113,7 @@ def save_run_log(
     status = job.get("status", "unknown")
     started_at = job.get("started_at", "")
     completed_at = job.get("completed_at", "")
-    error_msg = (job.get("error") or "").replace("'", "\\'").replace("\\", "\\\\")
+    error_msg = (job.get("error") or "").replace("'", "''")
     host = os.environ.get("DATABRICKS_HOST", "unknown")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -128,16 +128,20 @@ def save_run_log(
         except Exception:
             pass
 
+    def _sql_escape(s: str) -> str:
+        """Escape a string for Databricks SQL by doubling single quotes."""
+        return s.replace("'", "''")
+
     # Serialize log lines as array
     log_lines = job.get("logs", [])
-    escaped_lines = [line.replace("'", "\\'").replace("\\", "\\\\") for line in log_lines]
+    escaped_lines = [_sql_escape(line) for line in log_lines]
     log_array = "ARRAY(" + ", ".join(f"'{line}'" for line in escaped_lines) + ")"
 
     # Serialize result
     result_json = ""
     if job.get("result"):
         try:
-            result_json = json.dumps(job["result"], default=str).replace("'", "\\'")
+            result_json = _sql_escape(json.dumps(job["result"], default=str))
         except Exception:
             result_json = "{}"
 
@@ -146,7 +150,7 @@ def save_run_log(
     if config:
         safe = {k: v for k, v in config.items() if "token" not in k.lower() and "secret" not in k.lower()}
         try:
-            config_json = json.dumps(safe, default=str).replace("'", "\\'")
+            config_json = _sql_escape(json.dumps(safe, default=str))
         except Exception:
             config_json = "{}"
 

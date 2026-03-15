@@ -104,7 +104,7 @@ def log_operation_start(
 
     # Sanitize config for storage (remove tokens)
     safe_config = {k: v for k, v in config.items() if "token" not in k.lower()}
-    config_json = json.dumps(safe_config).replace("'", "\\'")
+    config_json = json.dumps(safe_config).replace("'", "''")
 
     sql = f"""
     INSERT INTO {fqn}
@@ -153,8 +153,8 @@ def log_operation_complete(
     volumes_cloned = vols_info.get("cloned", 0) or vols_info.get("success", 0) if isinstance(vols_info, dict) else 0
 
     status = "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
-    summary_json = json.dumps(summary).replace("'", "\\'")
-    error_msg = (error_message or "").replace("'", "\\'")
+    summary_json = json.dumps(summary).replace("'", "''")
+    error_msg = (error_message or "").replace("'", "''")
 
     sql = f"""
     UPDATE {fqn}

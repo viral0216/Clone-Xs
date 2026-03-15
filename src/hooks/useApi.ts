@@ -18,6 +18,22 @@ export function useWarehouses() {
   });
 }
 
+export interface VolumeInfo {
+  catalog: string;
+  schema: string;
+  name: string;
+  type: string;
+  path: string;
+}
+
+export function useVolumes() {
+  return useQuery<VolumeInfo[]>({
+    queryKey: ["volumes"],
+    queryFn: () => api.get("/auth/volumes"),
+    retry: false,
+  });
+}
+
 export function useCloneJobs() {
   return useQuery<CloneJob[]>({
     queryKey: ["clone-jobs"],

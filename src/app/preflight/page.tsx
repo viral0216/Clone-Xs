@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { usePreflight } from "@/hooks/useApi";
 import {
@@ -11,7 +12,7 @@ import {
 
 function statusIcon(status: string) {
   switch (status?.toUpperCase()) {
-    case "PASS": return <CheckCircle className="h-4 w-4 text-green-500" />;
+    case "PASS": case "OK": return <CheckCircle className="h-4 w-4 text-green-500" />;
     case "WARN": return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     case "FAIL": return <XCircle className="h-4 w-4 text-red-500" />;
     default: return null;
@@ -20,7 +21,7 @@ function statusIcon(status: string) {
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
-    case "PASS": return <Badge className="bg-green-100 text-green-800 text-xs">PASS</Badge>;
+    case "PASS": case "OK": return <Badge className="bg-green-100 text-green-800 text-xs">{status}</Badge>;
     case "WARN": return <Badge className="bg-yellow-100 text-yellow-800 text-xs">WARN</Badge>;
     case "FAIL": return <Badge variant="destructive" className="text-xs">FAIL</Badge>;
     default: return <Badge variant="outline" className="text-xs">{status}</Badge>;
@@ -35,9 +36,9 @@ export default function PreflightPage() {
 
   const checks = data?.checks || data?.results || [];
 
-  const passed = checks.filter((c: any) => c.status?.toUpperCase() === "PASS").length;
-  const warnings = checks.filter((c: any) => c.status?.toUpperCase() === "WARN").length;
-  const failed = checks.filter((c: any) => c.status?.toUpperCase() === "FAIL").length;
+  const passed = checks.filter((c: any) => ["PASS", "OK"].includes(c.status?.toUpperCase())).length;
+  const warnings = checks.filter((c: any) => ["WARN", "WARNING"].includes(c.status?.toUpperCase())).length;
+  const failed = checks.filter((c: any) => ["FAIL", "FAILED", "ERROR"].includes(c.status?.toUpperCase())).length;
 
   return (
     <div className="space-y-6">
@@ -50,17 +51,21 @@ export default function PreflightPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Source Catalog</label>
-              <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="production" />
-            </div>
+            <CatalogPicker
+              catalog={source}
+              onCatalogChange={setSource}
+              showSchema={false}
+              showTable={false}
+            />
             <div className="flex items-center text-gray-400 pb-2">
               <ArrowRight className="h-5 w-5" />
             </div>
-            <div className="flex-1">
-              <label className="text-sm font-medium">Destination Catalog</label>
-              <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="staging" />
-            </div>
+            <CatalogPicker
+              catalog={dest}
+              onCatalogChange={setDest}
+              showSchema={false}
+              showTable={false}
+            />
             <Button
               onClick={() => preflight.mutate({ source_catalog: source, destination_catalog: dest })}
               disabled={!source || !dest || preflight.isPending}

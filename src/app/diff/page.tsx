@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { useDiff, useValidate } from "@/hooks/useApi";
 import {
@@ -146,17 +147,21 @@ export default function DiffPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Source Catalog</label>
-              <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="production" />
-            </div>
+            <CatalogPicker
+              catalog={source}
+              onCatalogChange={setSource}
+              showSchema={false}
+              showTable={false}
+            />
             <div className="flex items-center text-gray-400 pb-2">
               <ArrowRight className="h-5 w-5" />
             </div>
-            <div className="flex-1">
-              <label className="text-sm font-medium">Destination Catalog</label>
-              <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="staging" />
-            </div>
+            <CatalogPicker
+              catalog={dest}
+              onCatalogChange={setDest}
+              showSchema={false}
+              showTable={false}
+            />
             <Button
               onClick={() => diff.mutate({ source_catalog: source, destination_catalog: dest })}
               disabled={!source || !dest || diff.isPending}

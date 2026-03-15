@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { Activity, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
@@ -40,14 +41,18 @@ export default function MonitorPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Source Catalog</label>
-              <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="production" />
-            </div>
-            <div className="flex-1">
-              <label className="text-sm font-medium">Destination Catalog</label>
-              <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="staging" />
-            </div>
+            <CatalogPicker
+              catalog={source}
+              onCatalogChange={setSource}
+              showSchema={false}
+              showTable={false}
+            />
+            <CatalogPicker
+              catalog={dest}
+              onCatalogChange={setDest}
+              showSchema={false}
+              showTable={false}
+            />
             <Button onClick={runCheck} disabled={!source || !dest || loading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               Check Now
@@ -215,16 +220,12 @@ export default function MonitorPage() {
 
             {/* Fallback: show raw JSON if no structured fields are present */}
             {!r.missing_tables && !r.extra_tables && !r.drifted_tables && r.total_tables === undefined && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Raw Response</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="bg-gray-100 p-4 rounded text-sm overflow-auto max-h-96">
-                    {JSON.stringify(result, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
+              <details className="mt-2">
+                <summary className="text-sm text-gray-500 cursor-pointer hover:text-gray-700">Show raw response</summary>
+                <pre className="bg-gray-100 p-4 rounded text-sm overflow-auto max-h-64 mt-2">
+                  {JSON.stringify(result, null, 2)}
+                </pre>
+              </details>
             )}
           </>
         );

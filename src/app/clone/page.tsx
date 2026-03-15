@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useStartClone } from "@/hooks/useApi";
+import { useStartClone, useVolumes } from "@/hooks/useApi";
+import CatalogPicker from "@/components/CatalogPicker";
 import { api } from "@/lib/api-client";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
@@ -521,6 +522,9 @@ export default function ClonePage() {
     impact_check: false,
     skip_unused: false,
     verbose: false,
+    // Serverless
+    serverless: false,
+    volume: "",
     // Filtering
     exclude_schemas: ["information_schema", "default"],
     include_schemas: [] as string[],
@@ -539,17 +543,30 @@ export default function ClonePage() {
   });
 
   const startClone = useStartClone();
+  const volumes = useVolumes();
 
   const handleClone = (dryRun: boolean) => {
-    startClone.mutate(
-      { ...config, dry_run: dryRun },
-      {
-        onSuccess: (data: any) => {
-          setActiveJobId(data.job_id);
-          setStep("execute");
-        },
-      }
-    );
+    // Clean up empty strings → null so Pydantic optional fields validate correctly
+    const payload: Record<string, unknown> = { ...config, dry_run: dryRun };
+    if (!payload.order_by_size) payload.order_by_size = null;
+    if (!payload.as_of_version) payload.as_of_version = null;
+    else payload.as_of_version = parseInt(payload.as_of_version as string, 10) || null;
+    if (!payload.as_of_timestamp) payload.as_of_timestamp = null;
+    if (!payload.include_tables_regex) payload.include_tables_regex = null;
+    if (!payload.exclude_tables_regex) payload.exclude_tables_regex = null;
+    if (!payload.location) payload.location = null;
+    if (!payload.volume) payload.volume = null;
+    if (!payload.throttle) delete payload.throttle;
+    if (!payload.ttl) delete payload.ttl;
+    if (!payload.template) delete payload.template;
+    if (!payload.where_clause) delete payload.where_clause;
+
+    startClone.mutate(payload, {
+      onSuccess: (data: any) => {
+        setActiveJobId(data.job_id);
+        setStep("execute");
+      },
+    });
     setStep("execute");
   };
 
@@ -583,18 +600,20 @@ export default function ClonePage() {
           <CardContent className="space-y-4">
             <div>
               <label className="text-sm font-medium">Source Catalog</label>
-              <Input
-                placeholder="e.g. production"
-                value={config.source_catalog}
-                onChange={(e) => setConfig({ ...config, source_catalog: e.target.value })}
+              <CatalogPicker
+                catalog={config.source_catalog}
+                onCatalogChange={(v) => setConfig({ ...config, source_catalog: v })}
+                showSchema={false}
+                showTable={false}
               />
             </div>
             <div>
               <label className="text-sm font-medium">Destination Catalog</label>
-              <Input
-                placeholder="e.g. staging"
-                value={config.destination_catalog}
-                onChange={(e) => setConfig({ ...config, destination_catalog: e.target.value })}
+              <CatalogPicker
+                catalog={config.destination_catalog}
+                onCatalogChange={(v) => setConfig({ ...config, destination_catalog: v })}
+                showSchema={false}
+                showTable={false}
               />
             </div>
             <div>
@@ -650,6 +669,54 @@ export default function ClonePage() {
                     </Button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Serverless */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Compute</label>
+              <div className="flex gap-4 items-start">
+                <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
+                  <input
+                    type="checkbox"
+                    checked={config.serverless}
+                    onChange={(e) => setConfig({ ...config, serverless: e.target.checked })}
+                  />
+                  Use Serverless Compute
+                </label>
+                {config.serverless && (
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">UC Volume (required for serverless)</label>
+                    {volumes.isLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading volumes...
+                      </div>
+                    ) : volumes.isError ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-red-500">Failed to load volumes</p>
+                        <Input
+                          placeholder="/Volumes/catalog/schema/volume"
+                          value={config.volume}
+                          onChange={(e) => setConfig({ ...config, volume: e.target.value })}
+                        />
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                        value={config.volume}
+                        onChange={(e) => setConfig({ ...config, volume: e.target.value })}
+                      >
+                        <option value="">Select a volume...</option>
+                        {(volumes.data || []).map((v) => (
+                          <option key={v.path} value={v.path}>
+                            {v.path} ({v.type})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -857,6 +924,8 @@ export default function ClonePage() {
               {config.enable_rollback && <p>  --enable-rollback \</p>}
               {config.validate_after_clone && <p>  --validate \</p>}
               {config.force_reclone && <p>  --force-reclone \</p>}
+              {config.serverless && <p>  --serverless \</p>}
+              {config.serverless && config.volume && <p>  --volume &quot;{config.volume}&quot; \</p>}
               {config.location && <p>  --location &quot;{config.location}&quot; \</p>}
               <p>  --progress</p>
             </div>
@@ -912,6 +981,7 @@ export default function ClonePage() {
               {config.require_approval && <Badge className="bg-purple-100 text-purple-800 text-xs">Approval Required</Badge>}
               {config.dry_run && <Badge className="bg-yellow-100 text-yellow-800 text-xs">Dry Run</Badge>}
               {config.verbose && <Badge className="bg-gray-100 text-gray-800 text-xs">Verbose</Badge>}
+              {config.serverless && <Badge className="bg-indigo-100 text-indigo-800 text-xs">Serverless</Badge>}
               {!config.copy_permissions && <Badge className="bg-red-100 text-red-800 text-xs">No Permissions</Badge>}
               {!config.copy_ownership && <Badge className="bg-red-100 text-red-800 text-xs">No Ownership</Badge>}
               {config.include_schemas.length > 0 && <Badge variant="outline" className="text-xs">Schemas: {config.include_schemas.join(",")}</Badge>}
@@ -937,7 +1007,7 @@ export default function ClonePage() {
             {startClone.isError && !activeJobId && (
               <div className="flex items-center gap-2 text-red-600">
                 <XCircle className="h-5 w-5" />
-                <span>Error: {(startClone.error as Error).message}</span>
+                <span>Error: {startClone.error instanceof Error ? startClone.error.message : String(startClone.error)}</span>
               </div>
             )}
 

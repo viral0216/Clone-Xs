@@ -54,7 +54,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.55 0.22 25);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -83,14 +83,14 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --background: oklch(0.16 0.01 250);
+  --foreground: oklch(0.93 0 0);
+  --card: oklch(0.2 0.01 250);
+  --card-foreground: oklch(0.93 0 0);
+  --popover: oklch(0.2 0.01 250);
+  --popover-foreground: oklch(0.93 0 0);
+  --primary: oklch(0.62 0.2 25);
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -126,4 +126,301 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Databricks-inspired enhancements */
+
+/* Cards — rounder corners, subtle shadow */
+[data-slot="card"] {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+[data-slot="card"]:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+.dark [data-slot="card"] {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+/* Primary buttons — Databricks red gradient */
+button[data-slot="button"][data-variant="default"] {
+  background: linear-gradient(135deg, #FF3621, #E02F1B);
+  box-shadow: 0 2px 8px rgba(255, 54, 33, 0.25);
+  transition: all 0.2s ease;
+  border: none;
+}
+button[data-slot="button"][data-variant="default"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 54, 33, 0.35);
+}
+.dark button[data-slot="button"][data-variant="default"] {
+  background: linear-gradient(135deg, #FF5540, #FF3621);
+}
+
+/* Destructive buttons */
+button[data-slot="button"][data-variant="destructive"] {
+  background: linear-gradient(135deg, #DC3545, #C82333);
+}
+
+/* Primary badges — Databricks red */
+span[data-slot="badge"][data-variant="default"] {
+  background: #FF3621;
+}
+.dark span[data-slot="badge"][data-variant="default"] {
+  background: #FF5540;
+}
+
+/* Input focus — red accent ring */
+input:focus, textarea:focus, select:focus {
+  border-color: #FF3621;
+  box-shadow: 0 0 0 3px rgba(255, 54, 33, 0.08);
+}
+.dark input:focus, .dark textarea:focus, .dark select:focus {
+  border-color: #FF5540;
+  box-shadow: 0 0 0 3px rgba(255, 85, 64, 0.15);
+}
+
+/* Smooth page transitions */
+main {
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Override background for light/dark modes */
+:root {
+  --background: #F8F9FA;
+  --card: #FFFFFF;
+  --card-foreground: #1B3139;
+  --foreground: #1B3139;
+}
+.dark {
+  --background: #0F1419;
+  --card: #1B2028;
+  --card-foreground: #E8ECEF;
+  --foreground: #E8ECEF;
+}
+
+/* ─── Dark mode overrides for hardcoded Tailwind utility colors ─── */
+/* These ensure pages using bg-gray-50, bg-white, bg-gray-100, etc. look correct in dark mode */
+
+/* Backgrounds */
+.dark .bg-gray-50 {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+.dark .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+.dark .bg-white {
+  background-color: #1B2028 !important;
+}
+.dark .hover\:bg-gray-50:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Text colors */
+.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+.dark .text-gray-600 {
+  color: #a0aec0 !important;
+}
+.dark .text-gray-700 {
+  color: #cbd5e1 !important;
+}
+.dark .text-gray-800 {
+  color: #e2e8f0 !important;
+}
+.dark .text-gray-900 {
+  color: #f1f5f9 !important;
+}
+
+/* Borders */
+.dark .border-gray-200 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.dark .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+.dark .hover\:border-gray-300:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+.dark .hover\:border-gray-400:hover {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+/* Status colors — *-50 (subtle bg), *-100 (stronger bg), *-200 (borders), text */
+
+/* Red */
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+.dark .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+.dark .text-red-600 {
+  color: #f87171 !important;
+}
+.dark .text-red-700 {
+  color: #fca5a5 !important;
+}
+.dark .text-red-800 {
+  color: #fca5a5 !important;
+}
+
+/* Green */
+.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+}
+.dark .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+}
+.dark .text-green-600 {
+  color: #4ade80 !important;
+}
+.dark .text-green-700 {
+  color: #86efac !important;
+}
+.dark .text-green-800 {
+  color: #86efac !important;
+}
+
+/* Yellow */
+.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.1) !important;
+}
+.dark .bg-yellow-100 {
+  background-color: rgba(234, 179, 8, 0.15) !important;
+}
+.dark .border-yellow-200 {
+  border-color: rgba(234, 179, 8, 0.3) !important;
+}
+.dark .text-yellow-700 {
+  color: #fde047 !important;
+}
+.dark .text-yellow-800 {
+  color: #fde047 !important;
+}
+
+/* Blue */
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+.dark .text-blue-600 {
+  color: #60a5fa !important;
+}
+.dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+.dark .text-blue-800 {
+  color: #93c5fd !important;
+}
+.dark .bg-blue-600 {
+  background-color: #3b82f6 !important;
+}
+
+/* Purple */
+.dark .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+.dark .text-purple-600 {
+  color: #c084fc !important;
+}
+
+/* Orange */
+.dark .bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+}
+.dark .text-orange-600 {
+  color: #fb923c !important;
+}
+
+/* Indigo */
+.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.15) !important;
+}
+.dark .text-indigo-800 {
+  color: #a5b4fc !important;
+}
+
+/* Opacity variants (*-50/50) */
+.dark .bg-green-50\/50 {
+  background-color: rgba(34, 197, 94, 0.05) !important;
+}
+.dark .bg-red-50\/50 {
+  background-color: rgba(239, 68, 68, 0.05) !important;
+}
+.dark .bg-yellow-50\/50 {
+  background-color: rgba(234, 179, 8, 0.05) !important;
+}
+
+/* Orange */
+.dark .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.1) !important;
+}
+.dark .border-orange-200 {
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+/* Additional borders */
+.dark .border-green-200 {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+.dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+.dark .border-blue-500 {
+  border-color: rgba(59, 130, 246, 0.6) !important;
+}
+.dark .border-yellow-300 {
+  border-color: rgba(234, 179, 8, 0.4) !important;
+}
+
+/* Gray-900 (code blocks) */
+.dark .bg-gray-900 {
+  background-color: #0d1117 !important;
+}
+
+/* Hover variants for colored backgrounds */
+.dark .hover\:bg-red-100:hover {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+.dark .hover\:bg-green-100:hover {
+  background-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* Scrollbar styling for sidebar */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+/* Prevent body scroll, use layout scroll */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }

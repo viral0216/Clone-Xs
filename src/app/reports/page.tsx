@@ -5,11 +5,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import CatalogPicker from "@/components/CatalogPicker";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useCloneJobs } from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
 import {
   DollarSign, History, FileText, Loader2, HardDrive,
   Table2, TrendingUp, Download, Clock, CheckCircle, XCircle,
+  Undo2, Camera, FileDown,
 } from "lucide-react";
 
 function formatBytes(bytes: number): string {
@@ -27,6 +37,25 @@ export default function ReportsPage() {
   const [rollbackLogs, setRollbackLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [rbLoading, setRbLoading] = useState(false);
+
+  // Rollback Execute state
+  const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<any>(null);
+  const [dropCatalog, setDropCatalog] = useState(false);
+  const [rollbackExecuting, setRollbackExecuting] = useState(false);
+  const [rollbackResult, setRollbackResult] = useState<any>(null);
+
+  // Catalog Snapshot state
+  const [snapshotCatalog, setSnapshotCatalog] = useState("");
+  const [snapshotOutputPath, setSnapshotOutputPath] = useState("");
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotResult, setSnapshotResult] = useState<any>(null);
+
+  // Export Metadata state
+  const [exportCatalog, setExportCatalog] = useState("");
+  const [exportFormat, setExportFormat] = useState("csv");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportResult, setExportResult] = useState<any>(null);
 
   const estimateCost = async () => {
     setLoading(true);
@@ -48,6 +77,58 @@ export default function ReportsPage() {
       toast.error((e as Error).message);
     }
     setRbLoading(false);
+  };
+
+  const openRollbackDialog = (log: any) => {
+    setSelectedLog(log);
+    setDropCatalog(false);
+    setRollbackResult(null);
+    setRollbackDialogOpen(true);
+  };
+
+  const executeRollback = async () => {
+    if (!selectedLog) return;
+    setRollbackExecuting(true);
+    try {
+      const res = await api.post("/rollback", {
+        log_file: selectedLog.file,
+        drop_catalog: dropCatalog,
+      });
+      setRollbackResult(res);
+      toast.success("Rollback executed successfully");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setRollbackExecuting(false);
+  };
+
+  const createSnapshot = async () => {
+    setSnapshotLoading(true);
+    try {
+      const payload: any = { source_catalog: snapshotCatalog };
+      if (snapshotOutputPath) payload.output_path = snapshotOutputPath;
+      const res = await api.post("/snapshot", payload);
+      setSnapshotResult(res);
+      toast.success("Snapshot created successfully");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setSnapshotLoading(false);
+  };
+
+  const exportMetadata = async () => {
+    setExportLoading(true);
+    try {
+      const res = await api.post("/export", {
+        source_catalog: exportCatalog,
+        format: exportFormat,
+      });
+      setExportResult(res);
+      toast.success("Export completed successfully");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setExportLoading(false);
   };
 
   return (
@@ -103,10 +184,10 @@ export default function ReportsPage() {
                           <Badge variant="outline" className="text-xs">{job.clone_type}</Badge>
                         </td>
                         <td className="py-2 px-3 text-gray-500 text-xs">
-                          {job.created_at ? new Date(job.created_at).toLocaleString() : "—"}
+                          {job.created_at ? new Date(job.created_at).toLocaleString() : "\u2014"}
                         </td>
                         <td className="py-2 px-3 text-gray-500 text-xs">
-                          {duration != null ? `${duration}s` : job.status === "running" ? "..." : "—"}
+                          {duration != null ? `${duration}s` : job.status === "running" ? "..." : "\u2014"}
                         </td>
                         <td className="py-2 px-3 text-gray-400 font-mono text-xs">{job.job_id}</td>
                       </tr>
@@ -131,7 +212,7 @@ export default function ReportsPage() {
           <div className="flex gap-4 items-end">
             <div className="flex-1">
               <label className="text-sm font-medium">Catalog</label>
-              <Input value={catalog} onChange={(e) => setCatalog(e.target.value)} placeholder="e.g. edp_dev" />
+              <CatalogPicker catalog={catalog} onCatalogChange={setCatalog} showSchema={false} showTable={false} />
             </div>
             <Button onClick={estimateCost} disabled={!catalog || loading}>
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <DollarSign className="h-4 w-4 mr-2" />}
@@ -259,26 +340,209 @@ export default function ReportsPage() {
                     <th className="text-left py-2 px-3 font-medium">Timestamp</th>
                     <th className="text-left py-2 px-3 font-medium">Objects</th>
                     <th className="text-left py-2 px-3 font-medium">File</th>
+                    <th className="text-left py-2 px-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rollbackLogs.map((log: any, i: number) => (
                     <tr key={i} className="border-b hover:bg-gray-50">
-                      <td className="py-2 px-3 font-medium">{log.destination_catalog || "—"}</td>
+                      <td className="py-2 px-3 font-medium">{log.destination_catalog || "\u2014"}</td>
                       <td className="py-2 px-3 text-gray-500 text-xs">
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : "—"}
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : "\u2014"}
                         </div>
                       </td>
                       <td className="py-2 px-3">
                         <Badge variant="outline" className="text-xs">{log.total_objects ?? 0} objects</Badge>
                       </td>
                       <td className="py-2 px-3 text-gray-400 font-mono text-xs">{log.file}</td>
+                      <td className="py-2 px-3">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => openRollbackDialog(log)}
+                        >
+                          <Undo2 className="h-3 w-3 mr-1" />
+                          Rollback
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Rollback Confirmation Dialog */}
+      <Dialog open={rollbackDialogOpen} onOpenChange={setRollbackDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Rollback</DialogTitle>
+            <DialogDescription>
+              Are you sure? This will drop cloned objects from{" "}
+              <strong>{selectedLog?.destination_catalog}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {selectedLog && (
+              <div className="text-sm text-gray-600">
+                <p>Log file: <span className="font-mono text-xs">{selectedLog.file}</span></p>
+                <p>Objects: {selectedLog.total_objects ?? 0}</p>
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={dropCatalog}
+                onChange={(e) => setDropCatalog(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Drop entire catalog after rollback
+            </label>
+            {rollbackResult && (
+              <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm">
+                <div className="flex items-center gap-2 text-green-700 font-medium mb-1">
+                  <CheckCircle className="h-4 w-4" />
+                  Rollback Complete
+                </div>
+                <p className="text-green-600">
+                  Objects dropped: {rollbackResult.objects_dropped ?? rollbackResult.dropped_count ?? "N/A"}
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRollbackDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={executeRollback}
+              disabled={rollbackExecuting}
+            >
+              {rollbackExecuting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Undo2 className="h-4 w-4 mr-2" />
+              )}
+              {rollbackExecuting ? "Executing..." : "Execute Rollback"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Catalog Snapshot */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Camera className="h-5 w-5" />
+            Catalog Snapshot
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <label className="text-sm font-medium">Catalog Name</label>
+              <CatalogPicker catalog={snapshotCatalog} onCatalogChange={setSnapshotCatalog} showSchema={false} showTable={false} />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium">Output Path (optional)</label>
+              <Input
+                value={snapshotOutputPath}
+                onChange={(e) => setSnapshotOutputPath(e.target.value)}
+                placeholder="Auto-generated if empty"
+              />
+            </div>
+            <Button onClick={createSnapshot} disabled={!snapshotCatalog || snapshotLoading}>
+              {snapshotLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Camera className="h-4 w-4 mr-2" />
+              )}
+              {snapshotLoading ? "Creating..." : "Create Snapshot"}
+            </Button>
+          </div>
+
+          {snapshotResult && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-blue-700 font-medium">
+                <CheckCircle className="h-4 w-4" />
+                Snapshot Created
+              </div>
+              <div className="text-sm text-blue-600 space-y-1">
+                <p>
+                  Output: <span className="font-mono text-xs">{snapshotResult.output_path ?? snapshotResult.output_file ?? "N/A"}</span>
+                </p>
+                {snapshotResult.schemas !== undefined && (
+                  <p>Schemas: {snapshotResult.schemas}</p>
+                )}
+                {snapshotResult.tables !== undefined && (
+                  <p>Tables: {snapshotResult.tables}</p>
+                )}
+                {snapshotResult.views !== undefined && (
+                  <p>Views: {snapshotResult.views}</p>
+                )}
+                {snapshotResult.total_objects !== undefined && (
+                  <p>Total Objects: {snapshotResult.total_objects}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Export Metadata */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileDown className="h-5 w-5" />
+            Export Metadata
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <label className="text-sm font-medium">Catalog Name</label>
+              <CatalogPicker catalog={exportCatalog} onCatalogChange={setExportCatalog} showSchema={false} showTable={false} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Format</label>
+              <select
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="csv">CSV</option>
+                <option value="json">JSON</option>
+              </select>
+            </div>
+            <Button onClick={exportMetadata} disabled={!exportCatalog || exportLoading}>
+              {exportLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {exportLoading ? "Exporting..." : "Export"}
+            </Button>
+          </div>
+
+          {exportResult && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-green-700 font-medium">
+                <CheckCircle className="h-4 w-4" />
+                Export Complete
+              </div>
+              <div className="text-sm text-green-600">
+                <p>
+                  Output: <span className="font-mono text-xs">{exportResult.output_path ?? exportResult.output_file ?? "N/A"}</span>
+                </p>
+              </div>
             </div>
           )}
         </CardContent>

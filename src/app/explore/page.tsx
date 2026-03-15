@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { useSearch, useStats } from "@/hooks/useApi";
 import {
@@ -64,14 +65,12 @@ export default function ExplorePage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Catalog Name</label>
-              <Input
-                placeholder="e.g. production"
-                value={catalog}
-                onChange={(e) => setCatalog(e.target.value)}
-              />
-            </div>
+            <CatalogPicker
+              catalog={catalog}
+              onCatalogChange={setCatalog}
+              showSchema={false}
+              showTable={false}
+            />
             <Button
               onClick={() => stats.mutate({ source_catalog: catalog })}
               disabled={!catalog || stats.isPending}

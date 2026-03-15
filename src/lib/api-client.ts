@@ -33,7 +33,15 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `API error: ${res.status}`);
+    let message = `API error: ${res.status}`;
+    if (typeof error.detail === "string") {
+      message = error.detail;
+    } else if (Array.isArray(error.detail)) {
+      message = error.detail.map((e: any) => e.msg || JSON.stringify(e)).join("; ");
+    } else if (error.detail) {
+      message = JSON.stringify(error.detail);
+    }
+    throw new Error(message);
   }
 
   return res.json();

@@ -12,7 +12,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
+      <div className="border-l-4 border-[#FF3621] pl-4">
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <p className="text-gray-500 mt-1">Unity Catalog Clone Utility</p>
       </div>
@@ -36,7 +36,7 @@ export default function Dashboard() {
             </div>
           ) : auth.data?.authenticated ? (
             <div className="flex items-center gap-4">
-              <Badge variant="default" className="bg-green-600">Connected</Badge>
+              <Badge variant="default" className="bg-[#00A972]">Connected</Badge>
               <span className="text-sm text-gray-600">
                 {auth.data.user} @ {auth.data.host}
               </span>
@@ -56,7 +56,7 @@ export default function Dashboard() {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Link to="/clone">
-          <Card className="hover:border-blue-500 transition-colors cursor-pointer">
+          <Card className="hover:border-[#FF3621] hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <Copy className="h-8 w-8 text-blue-600" />
               <div>
@@ -67,7 +67,7 @@ export default function Dashboard() {
           </Card>
         </Link>
         <Link to="/diff">
-          <Card className="hover:border-blue-500 transition-colors cursor-pointer">
+          <Card className="hover:border-[#FF3621] hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <GitCompare className="h-8 w-8 text-purple-600" />
               <div>
@@ -78,7 +78,7 @@ export default function Dashboard() {
           </Card>
         </Link>
         <Link to="/monitor">
-          <Card className="hover:border-blue-500 transition-colors cursor-pointer">
+          <Card className="hover:border-[#FF3621] hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <Activity className="h-8 w-8 text-green-600" />
               <div>
@@ -89,7 +89,7 @@ export default function Dashboard() {
           </Card>
         </Link>
         <Link to="/explore">
-          <Card className="hover:border-blue-500 transition-colors cursor-pointer">
+          <Card className="hover:border-[#FF3621] hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
             <CardContent className="pt-6 flex items-center gap-3">
               <CheckCircle className="h-8 w-8 text-orange-600" />
               <div>

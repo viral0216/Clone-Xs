@@ -1,5 +1,5 @@
 /**
- * Typed API client for the Clone-X FastAPI backend.
+ * Typed API client for the Clone-Xs FastAPI backend.
  */
 
 // Use Vite proxy (/api -> localhost:8000/api) — no CORS issues, no timeout

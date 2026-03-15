@@ -487,6 +487,74 @@ function JobProgress({ jobId }: { jobId: string }) {
   );
 }
 
+function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [catalogs, setCatalogs] = useState<string[]>([]);
+  const [isNew, setIsNew] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<string[]>("/catalogs")
+      .then((data) => setCatalogs(data || []))
+      .catch(() => setCatalogs([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectClass =
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+
+  return (
+    <div>
+      <label className="text-sm font-medium">Destination Catalog</label>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
+        </div>
+      ) : isNew ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              className={selectClass}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="Enter new catalog name (e.g. my_catalog_clone)"
+              autoFocus
+            />
+            <button
+              onClick={() => { setIsNew(false); onChange(""); }}
+              className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted/50 text-muted-foreground whitespace-nowrap"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            This catalog will be created automatically during the clone operation
+          </p>
+        </div>
+      ) : (
+        <select
+          className={selectClass}
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === "__NEW__") {
+              setIsNew(true);
+              onChange("");
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+        >
+          <option value="">Select catalog...</option>
+          <option value="__NEW__">+ Create New Catalog</option>
+          {catalogs.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export default function ClonePage() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -607,15 +675,10 @@ export default function ClonePage() {
                 showTable={false}
               />
             </div>
-            <div>
-              <label className="text-sm font-medium">Destination Catalog</label>
-              <CatalogPicker
-                catalog={config.destination_catalog}
-                onCatalogChange={(v) => setConfig({ ...config, destination_catalog: v })}
-                showSchema={false}
-                showTable={false}
-              />
-            </div>
+            <DestinationCatalogPicker
+              value={config.destination_catalog}
+              onChange={(v) => setConfig({ ...config, destination_catalog: v })}
+            />
             <div>
               <label className="text-sm font-medium">Storage Location (optional)</label>
               <Input

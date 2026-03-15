@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clone-X | Unity Catalog Clone Utility",
+  title: "Clone-Xs | Unity Catalog Clone Utility",
   description: "Web UI for cloning Databricks Unity Catalog catalogs",
 };
 

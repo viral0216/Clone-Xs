@@ -46,7 +46,7 @@ export default function HeaderBar() {
           CX
         </div>
         <div>
-          <h1 className="text-base font-semibold leading-tight">Clone-X</h1>
+          <h1 className="text-base font-semibold leading-tight">Clone-Xs</h1>
           <p className="text-[10px] text-gray-400 leading-tight">
             Unity Catalog Clone Utility
           </p>

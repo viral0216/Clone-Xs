@@ -44,7 +44,7 @@ export default function PluginsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Plugins</h1>
-        <p className="text-muted-foreground mt-1">Extend Clone-X with plugins</p>
+        <p className="text-muted-foreground mt-1">Extend Clone-Xs with plugins</p>
       </div>
 
       {loading && (

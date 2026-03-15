@@ -1,0 +1,39 @@
+{
+  "name": "Clone UC: supplier_portal -> supplier_portal_clone",
+  "tasks": [
+    {
+      "task_key": "clone_catalog",
+      "description": "Clone supplier_portal to supplier_portal_clone",
+      "python_wheel_task": {
+        "package_name": "clone_xs",
+        "entry_point": "clone-catalog",
+        "parameters": [
+          "clone",
+          "--source",
+          "supplier_portal",
+          "--dest",
+          "supplier_portal_clone",
+          "--clone-type",
+          "DEEP",
+          "--load-type",
+          "FULL",
+          "--warehouse-id",
+          "1a86a25830e584b7",
+          "--max-workers",
+          "10",
+          "--report",
+          "--enable-rollback",
+          "-v"
+        ]
+      },
+      "libraries": [
+        {
+          "pypi": {
+            "package": "clone-xs"
+          }
+        }
+      ]
+    }
+  ],
+  "max_concurrent_runs": 1
+}

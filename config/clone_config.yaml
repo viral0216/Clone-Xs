@@ -1,0 +1,101 @@
+source_catalog: supplier_portal
+destination_catalog: supplier_portal_clone
+sql_warehouse_id: 1a86a25830e584b7
+clone_type: DEEP
+load_type: FULL
+catalog_location: ''
+max_workers: 10
+max_parallel_queries: 10
+parallel_tables: 10
+include_schemas: []
+exclude_schemas:
+- information_schema
+- default
+exclude_tables: []
+include_tables_regex: ''
+exclude_tables_regex: ''
+filter_by_tags: {}
+copy_permissions: true
+copy_ownership: true
+copy_tags: true
+copy_properties: true
+copy_security: true
+copy_constraints: true
+copy_comments: true
+dry_run: false
+show_progress: true
+max_rps: 0
+max_retries: 3
+order_by_size: ''
+validate_after_clone: true
+validate_checksum: false
+generate_report: true
+report_dir: reports
+enable_rollback: true
+auto_rollback_on_failure: false
+rollback_threshold: 5.0
+checkpoint_enabled: false
+checkpoint_interval_tables: 50
+checkpoint_interval_minutes: 5
+slack_webhook_url: ''
+teams_webhook_url: ''
+pre_clone_hooks: []
+post_clone_hooks: []
+post_schema_hooks: []
+audit:
+  catalog: edp_dev
+  schema: logging
+  table: logging_01
+metrics_enabled: false
+metrics_destination: delta
+metrics_table: edp_dev.metrics.clone_metrics
+ttl_enabled: false
+ttl_default_days: 0
+ttl_warn_days: 3
+usage_analysis_days: 90
+usage_unused_threshold_days: 30
+rbac_enabled: false
+rbac_policy_path: ~/.clone-xs/rbac_policy.yaml
+approval_required: false
+approval_channel: cli
+approval_timeout_hours: 24
+impact_check_before_clone: false
+impact_high_threshold: 10
+auto_lint: false
+compliance_report_enabled: false
+compliance_retention_days: 90
+plugin_dir: ~/.clone-xs/plugins
+auto_load_plugins: true
+drift_check_before_clone: true
+schedule_max_runs: 0
+api_port: 8080
+api_host: 0.0.0.0
+dry_run_output_format: console
+preview_limit: 10
+profiles:
+  dev:
+    destination_catalog: supplier_portal_dev
+    clone_type: SHALLOW
+    copy_permissions: false
+    copy_ownership: false
+    dry_run: true
+  staging:
+    destination_catalog: supplier_portal_staging
+    clone_type: DEEP
+    validate_after_clone: true
+    enable_rollback: true
+  production:
+    destination_catalog: supplier_portal_prod
+    clone_type: DEEP
+    validate_after_clone: true
+    validate_checksum: true
+    enable_rollback: true
+    auto_rollback_on_failure: true
+    rollback_threshold: 2.0
+    approval_required: true
+    impact_check_before_clone: true
+    metrics_enabled: true
+audit_trail:
+  catalog: edp_dev
+  schema: logs
+  table: clone_operations

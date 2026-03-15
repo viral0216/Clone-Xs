@@ -1,0 +1,32 @@
+[project]
+name = "clone-xs"
+version = "0.4.0"
+description = "Unity Catalog clone utility for Databricks"
+requires-python = ">=3.10"
+dependencies = [
+    "databricks-sdk>=0.20.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+clone-catalog = "src.main:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

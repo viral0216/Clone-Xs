@@ -1,0 +1,94 @@
+{
+  "name": "dbx-catalog-clone",
+  "displayName": "Databricks Catalog Clone",
+  "description": "VS Code extension for the clone-xs catalog clone tool",
+  "version": "0.1.0",
+  "publisher": "clone-xs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:dbxClone.openPanel"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dbxClone.openPanel",
+        "title": "Catalog Clone: Open Panel"
+      },
+      {
+        "command": "dbxClone.runClone",
+        "title": "Catalog Clone: Run Clone"
+      },
+      {
+        "command": "dbxClone.runDiff",
+        "title": "Catalog Clone: Run Diff"
+      },
+      {
+        "command": "dbxClone.runPreflight",
+        "title": "Catalog Clone: Preflight Checks"
+      },
+      {
+        "command": "dbxClone.runPiiScan",
+        "title": "Catalog Clone: PII Scan"
+      },
+      {
+        "command": "dbxClone.costEstimate",
+        "title": "Catalog Clone: Cost Estimate"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dbx-catalog-clone",
+          "title": "Catalog Clone",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dbx-catalog-clone": [
+        {
+          "id": "dbxClone.catalogs",
+          "name": "Catalogs"
+        },
+        {
+          "id": "dbxClone.operations",
+          "name": "Operations"
+        },
+        {
+          "id": "dbxClone.history",
+          "name": "Clone History"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Catalog Clone",
+      "properties": {
+        "dbxClone.configPath": {
+          "type": "string",
+          "default": "config/clone_config.yaml",
+          "description": "Path to the clone config YAML file"
+        },
+        "dbxClone.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python interpreter"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,806 @@
+{
+  "timestamp": "2026-03-15T08:21:18.343427",
+  "source_catalog": "edp_dev",
+  "destination_catalog": "edp_dev_cloned",
+  "clone_type": "SHALLOW",
+  "load_type": "INCREMENTAL",
+  "dry_run": false,
+  "summary": {
+    "schemas_processed": 22,
+    "tables": {
+      "success": 0,
+      "failed": 1,
+      "skipped": 166
+    },
+    "views": {
+      "success": 0,
+      "failed": 0,
+      "skipped": 4
+    },
+    "functions": {
+      "success": 0,
+      "failed": 11,
+      "skipped": 0
+    },
+    "volumes": {
+      "success": 0,
+      "failed": 6,
+      "skipped": 3
+    },
+    "errors": [],
+    "schema_durations": {
+      "demo": 6.0,
+      "test_reports": 6.8,
+      "staging": 7.0,
+      "mcp_tools": 7.6,
+      "dbu_analysis": 5.9,
+      "fin_ops_reports": 5.7,
+      "bronze": 7.4,
+      "assessment": 6.2,
+      "synthetic_data_schema": 5.7,
+      "monitoring": 5.8,
+      "production": 5.8,
+      "sat_scan_report": 5.8,
+      "target_system": 5.8,
+      "gold": 6.9,
+      "source_system": 5.8,
+      "logging": 9.2,
+      "test": 6.0,
+      "audit": 5.6,
+      "dqx_rules": 6.0,
+      "finance": 5.6,
+      "demo_schema": 5.4,
+      "silver": 6.4
+    },
+    "duration_seconds": 42.8,
+    "validation": {
+      "total_tables": 81,
+      "matched": 73,
+      "mismatched": 1,
+      "errors": 7,
+      "checksum_mismatches": 0,
+      "details": [
+        {
+          "schema": "demo",
+          "table": "orders",
+          "source_count": 3,
+          "dest_count": 3,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "dqx_rules",
+          "table": "dqx_quality_checks_configs",
+          "source_count": 8,
+          "dest_count": 8,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "sat_tool",
+          "table": "findings",
+          "source_count": null,
+          "dest_count": 1320,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "sat_tool",
+          "table": "scan_runs",
+          "source_count": null,
+          "dest_count": 8,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "sat_tool",
+          "table": "api_endpoints",
+          "source_count": null,
+          "dest_count": 353,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "sat_tool",
+          "table": "category_scores",
+          "source_count": null,
+          "dest_count": 106,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "sat_tool",
+          "table": "all_checks",
+          "source_count": null,
+          "dest_count": 880,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "sat_tool",
+          "table": "reports",
+          "source_count": null,
+          "dest_count": 25,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "finance",
+          "table": "transactions_source",
+          "source_count": 8,
+          "dest_count": 8,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "finance",
+          "table": "transactions_target",
+          "source_count": 8,
+          "dest_count": 8,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "aircraft_positions",
+          "source_count": 85142,
+          "dest_count": 85142,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "poc_payload",
+          "source_count": 0,
+          "dest_count": 0,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "web_page",
+          "source_count": 5004,
+          "dest_count": 5004,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_comparison_positional",
+          "source_count": 6,
+          "dest_count": 6,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "income_band",
+          "source_count": 20,
+          "dest_count": 20,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "catalog_page",
+          "source_count": 50000,
+          "dest_count": 50000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_dashboard",
+          "source_count": 9,
+          "dest_count": 9,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "supplier",
+          "source_count": 40000,
+          "dest_count": 40000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_users",
+          "source_count": 441,
+          "dest_count": 441,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "sftp_invoice_pdf",
+          "source_count": 10,
+          "dest_count": 10,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "gemini_pricefeed",
+          "source_count": 875,
+          "dest_count": 875,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_pipeline",
+          "source_count": 2,
+          "dest_count": 2,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_target",
+          "source_count": 6,
+          "dest_count": 6,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "bus_tracking",
+          "source_count": 8,
+          "dest_count": 8,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "workspace_scan_summary",
+          "source_count": 35,
+          "dest_count": 35,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_job",
+          "source_count": 21,
+          "dest_count": 21,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_photos_quarantine",
+          "source_count": null,
+          "dest_count": 25000,
+          "match": false,
+          "checksum_match": null,
+          "error": "Could not retrieve row counts"
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_data",
+          "source_count": 10,
+          "dest_count": 10,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "kafka_dummy_events",
+          "source_count": 6630000,
+          "dest_count": 6630000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_albums",
+          "source_count": 100,
+          "dest_count": 100,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "call_center",
+          "source_count": 60,
+          "dest_count": 60,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "store",
+          "source_count": 1902,
+          "dest_count": 1902,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_posts",
+          "source_count": 500,
+          "dest_count": 500,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "promotion",
+          "source_count": 2500,
+          "dest_count": 2500,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customers",
+          "source_count": 1500000,
+          "dest_count": 1500000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customers_example",
+          "source_count": 7,
+          "dest_count": 7,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_workspace_conf",
+          "source_count": 0,
+          "dest_count": 0,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "time_dim",
+          "source_count": 86400,
+          "dest_count": 86400,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_catalog",
+          "source_count": 10,
+          "dest_count": 10,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "part_supp",
+          "source_count": 3200000,
+          "dest_count": 3200000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_todos",
+          "source_count": 1400,
+          "dest_count": 1400,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "invoice_pdf",
+          "source_count": 1,
+          "dest_count": 1,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_external_location",
+          "source_count": 11,
+          "dest_count": 11,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_demographics",
+          "source_count": 1920800,
+          "dest_count": 1920800,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "reason",
+          "source_count": 75,
+          "dest_count": 75,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_cluster_policy",
+          "source_count": 6,
+          "dest_count": 6,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "ship_mode",
+          "source_count": 20,
+          "dest_count": 20,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "azure_sql_poc_customers",
+          "source_count": 7,
+          "dest_count": 7,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "orders",
+          "source_count": 6000000,
+          "dest_count": 6000000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_photos",
+          "source_count": 5000,
+          "dest_count": 25000,
+          "match": false,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_cluster",
+          "source_count": 20,
+          "dest_count": 20,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "household_demographics",
+          "source_count": 7200,
+          "dest_count": 7200,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "region",
+          "source_count": 20,
+          "dest_count": 20,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_group",
+          "source_count": 2,
+          "dest_count": 2,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "primary_key_detection_results",
+          "source_count": 64,
+          "dest_count": 64,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_source",
+          "source_count": 5,
+          "dest_count": 5,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "part",
+          "source_count": 800000,
+          "dest_count": 800000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "gov_bus_tracking",
+          "source_count": 2077839,
+          "dest_count": 2077839,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_address",
+          "source_count": 50000000,
+          "dest_count": 50000000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_storage_credential",
+          "source_count": 14,
+          "dest_count": 14,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_connection",
+          "source_count": 1,
+          "dest_count": 1,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_secret_scope",
+          "source_count": 2,
+          "dest_count": 2,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "date_dim",
+          "source_count": 73049,
+          "dest_count": 73049,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "invoices",
+          "source_count": 2,
+          "dest_count": 2,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_schema",
+          "source_count": 8,
+          "dest_count": 8,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_comparison_log",
+          "source_count": 12,
+          "dest_count": 12,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer",
+          "source_count": 100000000,
+          "dest_count": 100000000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "gemini_free_promos",
+          "source_count": 1,
+          "dest_count": 1,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_dbfs_file",
+          "source_count": 9,
+          "dest_count": 9,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_table",
+          "source_count": 90,
+          "dest_count": 90,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_global_init_script",
+          "source_count": 1,
+          "dest_count": 1,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "nations",
+          "source_count": 100,
+          "dest_count": 100,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_sql_endpoint",
+          "source_count": 1,
+          "dest_count": 1,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "item",
+          "source_count": 502000,
+          "dest_count": 502000,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "raw_databricks_workspace_file",
+          "source_count": 6,
+          "dest_count": 6,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "typicode_comments",
+          "source_count": 500,
+          "dest_count": 500,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "warehouse",
+          "source_count": 30,
+          "dest_count": 30,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "customer_comparison_all_columns",
+          "source_count": 12,
+          "dest_count": 12,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "lineitems",
+          "source_count": 24004860,
+          "dest_count": 24004860,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "bronze",
+          "table": "web_site",
+          "source_count": 96,
+          "dest_count": 96,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        },
+        {
+          "schema": "logging",
+          "table": "ingestion_events",
+          "source_count": 0,
+          "dest_count": 0,
+          "match": true,
+          "checksum_match": null,
+          "error": null
+        }
+      ],
+      "mismatched_tables": [
+        {
+          "schema": "bronze",
+          "table": "typicode_photos",
+          "source_count": 5000,
+          "dest_count": 25000,
+          "match": false,
+          "checksum_match": null,
+          "error": null
+        }
+      ]
+    }
+  }
+}

@@ -1,7 +1,5 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
+# Dependencies
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,32 +8,77 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+.venv/
+venv/
+env/
+ENV/
 
-# next.js
-/.next/
+# Testing
+/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Build / Production
+*.tsbuildinfo
 /out/
 
-# production
-/build
+# Vite
+*.local
 
-# misc
+# IDE / Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
-*.pem
+Thumbs.db
 
-# debug
+# Env files
+.env
+.env.*
+!.env.example
+
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# Keys / Secrets
+*.pem
+*.key
 
-# vercel
-.vercel
+# Docker
+docker-compose.override.yml
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+crash.log
+
+# Misc
+*.bak
+*.tmp
+*.log

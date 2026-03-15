@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-03-15T08:03:52.517654",
+  "destination_catalog": "edp_dev_cloned",
+  "source_catalog": "edp_dev",
+  "created_objects": {
+    "catalog": "`edp_dev_cloned`",
+    "schemas": [],
+    "tables": [],
+    "views": [],
+    "functions": [],
+    "volumes": []
+  }
+}

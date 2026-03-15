@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-14T22:37:36.992962",
+  "destination_catalog": "supplier_portal_howto_test",
+  "source_catalog": "supplier_portal",
+  "created_objects": {
+    "catalog": "`supplier_portal_howto_test`",
+    "schemas": [
+      "`supplier_portal_howto_test`.`gold_demo`",
+      "`supplier_portal_howto_test`.`bronze`",
+      "`supplier_portal_howto_test`.`silver_demo`",
+      "`supplier_portal_howto_test`.`silver`",
+      "`supplier_portal_howto_test`.`gold`"
+    ],
+    "tables": [],
+    "views": [],
+    "functions": [],
+    "volumes": []
+  }
+}

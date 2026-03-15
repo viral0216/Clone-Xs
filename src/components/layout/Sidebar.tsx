@@ -34,6 +34,7 @@ import {
   Server,
   Lock,
   Puzzle,
+  X,
 } from "lucide-react";
 
 interface NavItem {
@@ -104,7 +105,12 @@ const navSections: NavSection[] = [
   },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -123,12 +129,8 @@ export default function Sidebar() {
     });
   };
 
-  return (
-    <aside
-      className={`${
-        collapsed ? "w-16" : "w-60"
-      } bg-[#0d1117] text-white flex flex-col border-r border-white/10 transition-all duration-200 overflow-hidden`}
-    >
+  const sidebarContent = (
+    <>
       {/* Sidebar Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         {!collapsed && (
@@ -136,17 +138,27 @@ export default function Sidebar() {
             Navigator
           </span>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-all"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <PanelLeft className="h-4 w-4" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4" />
-          )}
-        </button>
+        {/* Close button on mobile */}
+        {mobileOpen && onMobileClose ? (
+          <button
+            onClick={onMobileClose}
+            className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-all lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-all hidden lg:block"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? (
+              <PanelLeft className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -193,6 +205,7 @@ export default function Sidebar() {
                       <Link
                         key={item.href}
                         to={item.href}
+                        onClick={onMobileClose}
                         title={collapsed ? item.label : undefined}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                           collapsed ? "justify-center" : ""
@@ -227,6 +240,36 @@ export default function Sidebar() {
           {collapsed ? "v0.4" : "v0.4.0"}
         </span>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      {/* Mobile sidebar (slide-in overlay) */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1117] text-white flex flex-col border-r border-white/10 transform transition-transform duration-200 lg:hidden ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {sidebarContent}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside
+        className={`${
+          collapsed ? "w-16" : "w-60"
+        } bg-[#0d1117] text-white flex-col border-r border-white/10 transition-all duration-200 overflow-hidden hidden lg:flex`}
+      >
+        {sidebarContent}
+      </aside>
+    </>
   );
 }

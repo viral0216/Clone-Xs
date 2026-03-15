@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import HeaderBar from "@/components/layout/HeaderBar";
@@ -33,20 +34,25 @@ import RbacPage from "@/app/rbac/page";
 import PluginsPage from "@/app/plugins/page";
 
 export default function App() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <>
       <Toaster richColors position="top-right" />
       <div className="flex flex-col h-screen">
         {/* Top Header Bar */}
-        <HeaderBar />
+        <HeaderBar onMenuToggle={() => setMobileMenuOpen((prev) => !prev)} />
 
         {/* Main Layout: Sidebar + Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar */}
-          <Sidebar />
+          {/* Sidebar */}
+          <Sidebar
+            mobileOpen={mobileMenuOpen}
+            onMobileClose={() => setMobileMenuOpen(false)}
+          />
 
           {/* Center Content */}
-          <main className="flex-1 bg-background overflow-auto p-6">
+          <main className="flex-1 bg-background overflow-auto p-3 sm:p-4 md:p-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />
@@ -62,7 +68,6 @@ export default function App() {
               <Route path="/sync" element={<SyncPage />} />
               <Route path="/config-diff" element={<ConfigDiffPage />} />
               <Route path="/generate" element={<GeneratePage />} />
-              {/* New pages */}
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/metrics" element={<MetricsPage />} />
               <Route path="/rollback" element={<RollbackPage />} />

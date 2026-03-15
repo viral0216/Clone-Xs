@@ -78,7 +78,7 @@ export default function CatalogPicker({
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
 
   return (
-    <div className="flex gap-4 items-end">
+    <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
       {/* Catalog */}
       <div className="flex-1">
         <label className="text-sm font-medium mb-1 block">Catalog</label>

@@ -424,3 +424,34 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
 }
+
+/* ─── Responsive utilities ─── */
+
+/* Tables: horizontal scroll on mobile */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Stack grid columns on mobile */
+  .grid-cols-4, .grid-cols-5 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .md\:grid-cols-4, .md\:grid-cols-5 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  /* Smaller headings on mobile */
+  h1 {
+    font-size: 1.5rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .grid-cols-4, .grid-cols-5, .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+  .md\:grid-cols-4, .md\:grid-cols-5 {
+    grid-template-columns: 1fr !important;
+  }
+}

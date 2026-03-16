@@ -38,16 +38,19 @@ This starts:
 
 ```
 clone-xs/
-  src/           88 Python modules (shared by CLI + API)
-  api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (31 pages, shadcn/ui components)
-  config/        YAML configuration with profile support
-  infra/         Terraform / IaC files
-  notebooks/     Databricks notebook examples
-  scripts/       Start scripts, build, deploy
-  tests/         Python unit tests
-  docs/          Docusaurus documentation site
-  .github/       Contributing guidelines, security policy, changelog
+  src/              91 Python modules (shared by CLI + API)
+  api/              FastAPI backend (routers, models, job queue)
+  ui/               React frontend (33 pages, shadcn/ui components)
+  databricks-app/   Databricks App deployment (app.yaml, deploy script)
+  desktop/          Electron desktop app (macOS + Windows)
+  marketplace/      Marketplace listing assets and provider application
+  config/           YAML configuration with profile support
+  infra/            Terraform / IaC files
+  notebooks/        Databricks notebook examples
+  scripts/          Build and start scripts
+  tests/            Python unit tests
+  docs/             Docusaurus documentation site
+  .github/          Contributing guidelines, security policy, changelog
 ```
 
 ## How to Contribute

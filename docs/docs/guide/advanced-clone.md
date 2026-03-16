@@ -94,6 +94,36 @@ Filtered clones use CTAS, which creates a new table rather than a true Delta clo
 
 > Set expiration dates on cloned catalogs so temporary environments are automatically cleaned up.
 
+### How Clone-Xs TTL differs from native Databricks
+
+Databricks does not provide a native TTL mechanism at the catalog or schema level. The only built-in retention controls operate at the **table level** through Delta table properties:
+
+```sql
+-- Native Databricks: table-level only
+ALTER TABLE my_table SET TBLPROPERTIES (
+  'delta.deletedFileRetentionDuration' = '30 days',   -- controls VACUUM
+  'delta.logRetentionDuration' = '30 days'             -- controls time travel
+);
+```
+
+These properties control how long deleted data files and transaction log entries are retained for individual tables. They do not expire or drop the table itself — they only affect storage cleanup during `VACUUM` operations.
+
+**Clone-Xs fills this gap** by implementing **catalog-level TTL** on top of Unity Catalog tags. Instead of managing retention on hundreds of individual tables, Clone-Xs sets a single expiration on the entire destination catalog and drops it (along with all its schemas, tables, views, and volumes) when the TTL expires.
+
+| Aspect | Native Databricks | Clone-Xs TTL |
+|---|---|---|
+| **Level** | Table only | Catalog |
+| **What it controls** | File retention for `VACUUM` and time travel | Catalog lifecycle (creation to deletion) |
+| **What happens on expiry** | Old data files become eligible for `VACUUM` cleanup | Entire catalog is dropped |
+| **Scope** | Individual table property | All objects in the catalog |
+| **Setup** | `ALTER TABLE ... SET TBLPROPERTIES` per table | Single `--ttl` flag at clone time |
+| **Automation** | Requires scheduled `VACUUM` per table | Built-in cleanup scheduler (`clxs ttl cleanup`) |
+| **Use case** | Storage optimization | Ephemeral environment lifecycle management |
+
+:::info
+Clone-Xs TTL and native Delta retention serve different purposes. Native retention keeps your tables healthy by cleaning up old files. Clone-Xs TTL manages the lifecycle of entire cloned environments. You may use both — Clone-Xs TTL to expire a PR catalog after 7 days, and native Delta retention to control file cleanup within long-lived catalogs.
+:::
+
 ### Real-world scenario
 
 Your CI pipeline creates a fresh cloned catalog for every pull request. Without TTL policies, these catalogs accumulate and waste storage. With a 7-day TTL, abandoned PR environments are automatically cleaned up, keeping costs under control.
@@ -160,13 +190,24 @@ ttl:
 
 ### How it works
 
-TTL metadata is stored as a Unity Catalog tag on the destination catalog:
+Clone-Xs implements catalog-level TTL using **Unity Catalog tags** — since Databricks has no native catalog expiration feature. The lifecycle works in three stages:
+
+**1. Tag assignment** — When you clone with `--ttl`, Clone-Xs calculates the expiration timestamp and stores it as a UC tag on the destination catalog:
 
 ```sql
 ALTER CATALOG pr_1234 SET TAGS ('clone_catalog_ttl' = '2026-03-21T09:15:00Z');
 ```
 
-The `ttl cleanup` command (or the automatic cleanup schedule) queries all catalogs for expired TTL tags and drops them.
+**2. Status monitoring** — The `clxs ttl check` command reads the `clone_catalog_ttl` tag from all catalogs and compares against the current time to report status (`ACTIVE`, `EXPIRING`, or `EXPIRED`).
+
+**3. Cleanup** — The `clxs ttl cleanup` command (or the automatic cleanup schedule) queries all catalogs for expired TTL tags and drops the entire catalog, including all schemas, tables, views, and volumes within it:
+
+```sql
+-- What cleanup executes for each expired catalog
+DROP CATALOG IF EXISTS pr_1234 CASCADE;
+```
+
+Because this uses standard Unity Catalog tags, the TTL metadata is visible in Catalog Explorer and queryable via the Unity Catalog API — no external database or state file is required.
 
 :::tip
 In CI/CD pipelines, always set a TTL when creating PR-specific catalogs. Combine with `--drop-catalog` on the rollback command for immediate cleanup when the PR is merged or closed.

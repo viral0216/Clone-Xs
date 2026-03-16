@@ -70,6 +70,36 @@ async def create_databricks_job(
     config = dict(app_config)
     config["source_catalog"] = req.source_catalog
     config["destination_catalog"] = req.destination_catalog
+    # Clone configuration
+    config["clone_type"] = req.clone_type
+    config["load_type"] = req.load_type
+    config["max_workers"] = req.max_workers
+    config["parallel_tables"] = req.parallel_tables
+    config["max_parallel_queries"] = req.max_parallel_queries
+    config["max_rps"] = req.max_rps
+    # Copy options
+    config["copy_permissions"] = req.copy_permissions
+    config["copy_ownership"] = req.copy_ownership
+    config["copy_tags"] = req.copy_tags
+    config["copy_properties"] = req.copy_properties
+    config["copy_security"] = req.copy_security
+    config["copy_constraints"] = req.copy_constraints
+    config["copy_comments"] = req.copy_comments
+    # Features
+    config["enable_rollback"] = req.enable_rollback
+    config["validate_after_clone"] = req.validate_after_clone
+    config["validate_checksum"] = req.validate_checksum
+    config["force_reclone"] = req.force_reclone
+    config["show_progress"] = req.show_progress
+    # Filtering
+    config["exclude_schemas"] = req.exclude_schemas
+    config["include_schemas"] = req.include_schemas
+    config["include_tables_regex"] = req.include_tables_regex
+    config["exclude_tables_regex"] = req.exclude_tables_regex
+    config["order_by_size"] = req.order_by_size
+    # Time travel
+    config["as_of_timestamp"] = req.as_of_timestamp
+    config["as_of_version"] = req.as_of_version
 
     result = create_persistent_job(
         client,

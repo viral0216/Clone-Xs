@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,76 @@ import { api } from "@/lib/api-client";
 import { useVolumes } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
-  Briefcase, Loader2, CheckCircle, XCircle, ExternalLink, Copy, CalendarClock, Bell, RotateCcw, Clock, Tag,
+  Briefcase, Loader2, CheckCircle, XCircle, ExternalLink, Copy, CalendarClock, Bell, RotateCcw, Clock, Tag, Settings2, Filter, Gauge,
 } from "lucide-react";
+
+function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [catalogs, setCatalogs] = useState<string[]>([]);
+  const [isNew, setIsNew] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<string[]>("/catalogs")
+      .then((data) => setCatalogs(data || []))
+      .catch(() => setCatalogs([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectClass =
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+
+  return (
+    <div>
+      <label className="text-sm font-medium mb-1 block">Destination Catalog</label>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
+        </div>
+      ) : isNew ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              className={selectClass}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="Enter new catalog name (e.g. my_catalog_clone)"
+              autoFocus
+            />
+            <button
+              onClick={() => { setIsNew(false); onChange(""); }}
+              className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted/50 text-muted-foreground whitespace-nowrap"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            This catalog will be created automatically during the clone operation
+          </p>
+        </div>
+      ) : (
+        <select
+          className={selectClass}
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === "__NEW__") {
+              setIsNew(true);
+              onChange("");
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+        >
+          <option value="">Select catalog...</option>
+          <option value="__NEW__">+ Create New Catalog</option>
+          {catalogs.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
 
 export default function CreateJobPage() {
   const [sourceCatalog, setSourceCatalog] = useState("");
@@ -24,6 +92,37 @@ export default function CreateJobPage() {
   const [timeout, setTimeout] = useState(7200);
   const [tags, setTags] = useState("");
   const [updateJobId, setUpdateJobId] = useState("");
+
+  // Clone configuration
+  const [cloneType, setCloneType] = useState<"DEEP" | "SHALLOW">("DEEP");
+  const [loadType, setLoadType] = useState<"FULL" | "INCREMENTAL">("FULL");
+  const [maxWorkers, setMaxWorkers] = useState(4);
+  const [parallelTables, setParallelTables] = useState(1);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [maxRps, setMaxRps] = useState(0);
+  const [orderBySize, setOrderBySize] = useState<"" | "asc" | "desc">("");
+  // Copy options
+  const [copyPermissions, setCopyPermissions] = useState(true);
+  const [copyOwnership, setCopyOwnership] = useState(true);
+  const [copyTags, setCopyTags] = useState(true);
+  const [copyProperties, setCopyProperties] = useState(true);
+  const [copySecurity, setCopySecurity] = useState(true);
+  const [copyConstraints, setCopyConstraints] = useState(true);
+  const [copyComments, setCopyComments] = useState(true);
+  // Features
+  const [enableRollback, setEnableRollback] = useState(false);
+  const [validateAfterClone, setValidateAfterClone] = useState(false);
+  const [validateChecksum, setValidateChecksum] = useState(false);
+  const [forceReclone, setForceReclone] = useState(false);
+  const [showProgress, setShowProgress] = useState(true);
+  // Filtering
+  const [excludeSchemas, setExcludeSchemas] = useState("information_schema,default");
+  const [includeSchemas, setIncludeSchemas] = useState("");
+  const [includeTablesRegex, setIncludeTablesRegex] = useState("");
+  const [excludeTablesRegex, setExcludeTablesRegex] = useState("");
+  // Time travel
+  const [asOfTimestamp, setAsOfTimestamp] = useState("");
+  const [asOfVersion, setAsOfVersion] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -53,6 +152,36 @@ export default function CreateJobPage() {
         max_retries: maxRetries,
         timeout,
         timezone,
+        // Clone configuration
+        clone_type: cloneType,
+        load_type: loadType,
+        max_workers: maxWorkers,
+        parallel_tables: parallelTables,
+        max_parallel_queries: maxParallelQueries,
+        max_rps: maxRps,
+        order_by_size: orderBySize,
+        // Copy options
+        copy_permissions: copyPermissions,
+        copy_ownership: copyOwnership,
+        copy_tags: copyTags,
+        copy_properties: copyProperties,
+        copy_security: copySecurity,
+        copy_constraints: copyConstraints,
+        copy_comments: copyComments,
+        // Features
+        enable_rollback: enableRollback,
+        validate_after_clone: validateAfterClone,
+        validate_checksum: validateChecksum,
+        force_reclone: forceReclone,
+        show_progress: showProgress,
+        // Filtering
+        exclude_schemas: excludeSchemas ? excludeSchemas.split(",").map((s: string) => s.trim()) : [],
+        include_schemas: includeSchemas ? includeSchemas.split(",").map((s: string) => s.trim()) : [],
+        include_tables_regex: includeTablesRegex,
+        exclude_tables_regex: excludeTablesRegex,
+        // Time travel
+        as_of_timestamp: asOfTimestamp,
+        as_of_version: asOfVersion,
       };
       if (jobName) payload.job_name = jobName;
       if (schedule) payload.schedule = schedule;
@@ -105,19 +234,12 @@ export default function CreateJobPage() {
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Catalogs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div>
               <label className="text-sm font-medium mb-1 block">Source Catalog</label>
               <CatalogPicker catalog={sourceCatalog} onCatalogChange={setSourceCatalog} showSchema={false} showTable={false} />
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Destination Catalog</label>
-              <Input
-                placeholder="e.g. edp_dev_00"
-                value={destCatalog}
-                onChange={(e) => setDestCatalog(e.target.value)}
-              />
-            </div>
+            <DestinationCatalogPicker value={destCatalog} onChange={setDestCatalog} />
           </div>
 
           {/* Job Name */}
@@ -277,6 +399,181 @@ export default function CreateJobPage() {
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
               />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Clone Options */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings2 className="h-5 w-5" />
+            Clone Options
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Clone Type & Load Type */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Clone Type</label>
+              <div className="flex gap-2 mt-1">
+                {(["DEEP", "SHALLOW"] as const).map((t) => (
+                  <Button
+                    key={t}
+                    variant={cloneType === t ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCloneType(t)}
+                  >
+                    {t}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Load Type</label>
+              <div className="flex gap-2 mt-1">
+                {(["FULL", "INCREMENTAL"] as const).map((t) => (
+                  <Button
+                    key={t}
+                    variant={loadType === t ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setLoadType(t)}
+                  >
+                    {t}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Performance */}
+          <div>
+            <label className="text-sm font-medium mb-2 block flex items-center gap-2">
+              <Gauge className="h-3.5 w-3.5" />
+              Performance
+            </label>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="text-xs text-gray-500">Max Workers (schemas)</label>
+                <Input type="number" min={1} max={16} value={maxWorkers}
+                  onChange={(e) => setMaxWorkers(parseInt(e.target.value) || 4)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Parallel Tables</label>
+                <Input type="number" min={1} max={8} value={parallelTables}
+                  onChange={(e) => setParallelTables(parseInt(e.target.value) || 1)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Max Parallel Queries</label>
+                <Input type="number" min={1} max={50} value={maxParallelQueries}
+                  onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 10)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Max RPS (0=unlimited)</label>
+                <Input type="number" min={0} max={100} value={maxRps}
+                  onChange={(e) => setMaxRps(parseFloat(e.target.value) || 0)} />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="text-xs text-gray-500">Order by Size</label>
+              <div className="flex gap-1 mt-1">
+                {(["", "asc", "desc"] as const).map((v) => (
+                  <Button key={v || "none"} size="sm" variant={orderBySize === v ? "default" : "outline"}
+                    onClick={() => setOrderBySize(v)}>
+                    {v || "None"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Copy Options */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Copy Options</label>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                [copyPermissions, setCopyPermissions, "Permissions"],
+                [copyOwnership, setCopyOwnership, "Ownership"],
+                [copyTags, setCopyTags, "Tags"],
+                [copyProperties, setCopyProperties, "Properties"],
+                [copySecurity, setCopySecurity, "Security"],
+                [copyConstraints, setCopyConstraints, "Constraints"],
+                [copyComments, setCopyComments, "Comments"],
+              ] as const).map(([val, setter, label]) => (
+                <label key={label} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={val as boolean}
+                    onChange={(e) => (setter as any)(e.target.checked)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Features */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Features</label>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                [enableRollback, setEnableRollback, "Enable Rollback"],
+                [validateAfterClone, setValidateAfterClone, "Validate After Clone"],
+                [validateChecksum, setValidateChecksum, "Checksum Validation"],
+                [forceReclone, setForceReclone, "Force Re-clone"],
+                [showProgress, setShowProgress, "Show Progress"],
+              ] as const).map(([val, setter, label]) => (
+                <label key={label} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={val as boolean}
+                    onChange={(e) => (setter as any)(e.target.checked)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Filtering */}
+          <div>
+            <label className="text-sm font-medium mb-2 block flex items-center gap-2">
+              <Filter className="h-3.5 w-3.5" />
+              Filtering
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-500">Include Schemas (comma-separated)</label>
+                <Input placeholder="e.g. bronze,silver,gold" value={includeSchemas}
+                  onChange={(e) => setIncludeSchemas(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Exclude Schemas (comma-separated)</label>
+                <Input value={excludeSchemas}
+                  onChange={(e) => setExcludeSchemas(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Include Tables Regex</label>
+                <Input placeholder="e.g. ^fact_.*" value={includeTablesRegex}
+                  onChange={(e) => setIncludeTablesRegex(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Exclude Tables Regex</label>
+                <Input placeholder="e.g. _tmp$|_backup$" value={excludeTablesRegex}
+                  onChange={(e) => setExcludeTablesRegex(e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Time Travel */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Time Travel (optional)</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-500">As-of Timestamp</label>
+                <Input type="datetime-local" value={asOfTimestamp}
+                  onChange={(e) => setAsOfTimestamp(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">As-of Version</label>
+                <Input type="number" min={0} placeholder="e.g. 5" value={asOfVersion}
+                  onChange={(e) => setAsOfVersion(e.target.value)} />
+              </div>
             </div>
           </div>
         </CardContent>

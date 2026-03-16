@@ -18,6 +18,9 @@ async def get_db_client(creds: tuple = Depends(get_credentials)):
     """Get an authenticated Databricks WorkspaceClient."""
     host, token = creds
     try:
+        from src.auth import is_databricks_app
+        if is_databricks_app():
+            return get_client()
         return get_client(host, token)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")

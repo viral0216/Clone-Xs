@@ -1,0 +1,27 @@
+# Exclude files not needed in Databricks App deployment
+.git/
+desktop/
+docs/
+tests/
+notebooks/
+node_modules/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+reports/
+snapshots/
+rollback_logs/
+exports/
+checkpoints/
+ui/node_modules/
+ui/src/
+scripts/
+infra/
+.github/
+*.md
+Dockerfile
+docker-compose.yml
+Makefile
+pyproject.toml

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.5.0] - 2026-03-16
 
 ### Added
+- **Databricks App deployment** — run Clone-Xs as a native Databricks App with automatic service principal authentication, `app.yaml` manifest, `make deploy-dbx-app` target, auto-login endpoint, and `.databricksignore` for optimized uploads
 - **Create Databricks Job** — new `create-job` CLI command and Web UI page to create persistent Databricks Jobs via the SDK (`client.jobs.create()`), with cron scheduling, email notifications, retries, tags, and update-existing-job support
 - **Desktop App** — native macOS/Windows application via Electron 28; auto-starts Python backend, loads Web UI in a native window, packages with electron-builder (macOS arm64 ZIP + Windows NSIS installer + portable)
 - **Create Job UI page** — full clone configuration (clone type, copy options, performance, filtering, time travel), cron presets, timezone picker, destination catalog dropdown with "Create New" option

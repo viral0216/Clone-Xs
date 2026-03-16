@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
         'guide/notebooks',
         'guide/create-job',
         'guide/desktop',
+        'guide/databricks-app',
         'guide/cicd',
       ],
     },

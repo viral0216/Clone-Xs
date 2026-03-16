@@ -8,6 +8,24 @@ from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, Profile
 router = APIRouter()
 
 
+@router.get("/auto-login")
+async def auto_login():
+    """Auto-login when running as a Databricks App (service principal injected)."""
+    from src.auth import is_databricks_app, ensure_authenticated
+    if not is_databricks_app():
+        raise HTTPException(status_code=404, detail="Not running as Databricks App")
+    try:
+        info = ensure_authenticated()
+        return AuthStatus(
+            authenticated=True,
+            user=info.get("user"),
+            host=info.get("host"),
+            auth_method="databricks-app",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
 @router.post("/login")
 async def login(req: LoginRequest):
     """Authenticate to a Databricks workspace."""

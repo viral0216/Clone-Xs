@@ -29,6 +29,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def is_databricks_app() -> bool:
+    """Detect if running as a Databricks App (service principal auth is injected)."""
+    return os.getenv("CLONE_XS_RUNTIME") == "databricks-app"
+
 logger = logging.getLogger(__name__)
 
 # ── Module-level client cache ─────────────────────────────────────────
@@ -587,6 +592,11 @@ def _create_client(
 ) -> WorkspaceClient:
     """Create a new WorkspaceClient using the best available auth method."""
 
+    # Method 0: Databricks App (auto-injected service principal)
+    if is_databricks_app():
+        logger.debug("Auth: Databricks App runtime — using injected credentials")
+        return WorkspaceClient()
+
     # Method 1: Explicit host + token
     if host and token:
         logger.debug("Auth: using explicit host + token")
@@ -701,6 +711,8 @@ def _detect_auth_method(
     profile: str | None = None,
 ) -> str:
     """Detect which auth method is being used (for display purposes)."""
+    if is_databricks_app():
+        return "databricks-app"
     if host and token:
         return "explicit-token"
     if os.getenv("DATABRICKS_CLIENT_ID") and os.getenv("DATABRICKS_CLIENT_SECRET"):

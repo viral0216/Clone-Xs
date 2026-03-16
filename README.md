@@ -4,7 +4,7 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.4.0-green.svg)
-![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Databricks%20App%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
 ---
@@ -73,6 +73,15 @@ This starts:
 docker-compose up --build
 # Open http://localhost:8000
 ```
+
+### Databricks App
+
+```bash
+# Deploy directly to your Databricks workspace
+make deploy-dbx-app
+```
+
+Authentication is automatic via workspace service principal — no PAT tokens needed. See [Databricks App Guide](docs/docs/guide/databricks-app.md) for details.
 
 ### CLI Only
 

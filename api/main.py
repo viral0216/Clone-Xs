@@ -41,9 +41,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+import os as _os
+_cors_origins = ["*"] if _os.getenv("CLONE_XS_RUNTIME") == "databricks-app" else ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -224,6 +224,9 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<AuthTab>("token");
 
+  // Databricks App runtime detection
+  const [isDatabricksApp, setIsDatabricksApp] = useState(false);
+
   // Token auth state
   const [host, setHost] = useState("");
   const [token, setToken] = useState("");
@@ -255,6 +258,16 @@ export default function SettingsPage() {
 
   const auth = useAuthStatus();
   const warehouses = useWarehouses();
+
+  // Detect Databricks App runtime and auto-login
+  useEffect(() => {
+    api.get<{ runtime?: string }>("/health").then((data) => {
+      if (data.runtime === "databricks-app") {
+        setIsDatabricksApp(true);
+        api.get("/auth/auto-login").then(() => auth.refetch()).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setHost(sessionStorage.getItem("dbx_host") || "");
@@ -446,8 +459,25 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Databricks App Banner */}
+      {isDatabricksApp && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Shield className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="font-medium text-blue-900">Running as Databricks App</p>
+                <p className="text-sm text-blue-700">
+                  Authenticated automatically via workspace service principal. No manual credentials required.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Auth Method Tabs */}
-      <Card>
+      {!isDatabricksApp && <Card>
         <CardHeader className="pb-0">
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
@@ -698,7 +728,7 @@ export default function SettingsPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* SQL Warehouses */}
       <Card>

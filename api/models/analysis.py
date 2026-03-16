@@ -40,6 +40,11 @@ class EstimateRequest(CatalogRequest):
     include_schemas: list[str] | None = None
 
 
+class StorageMetricsRequest(CatalogRequest):
+    schema_filter: str | None = None
+    table_filter: str | None = None
+
+
 class ExportRequest(CatalogRequest):
     format: Literal["csv", "json"] = "csv"
     output_path: str | None = None

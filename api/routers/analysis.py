@@ -11,6 +11,7 @@ from api.models.analysis import (
     ProfileRequest,
     SearchRequest,
     SnapshotRequest,
+    StorageMetricsRequest,
     ValidateRequest,
 )
 
@@ -105,6 +106,20 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     result = estimate_clone_cost(
         client, wid, req.source_catalog, req.exclude_schemas,
         include_schemas=req.include_schemas, price_per_gb=req.price_per_gb,
+    )
+    return result
+
+
+@router.post("/storage-metrics")
+async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_client)):
+    """Analyze storage metrics (active, vacuumable, time-travel) for tables."""
+    from src.storage_metrics import catalog_storage_metrics
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    result = catalog_storage_metrics(
+        client, wid, req.source_catalog, req.exclude_schemas,
+        schema_filter=req.schema_filter,
+        table_filter=req.table_filter,
     )
     return result
 

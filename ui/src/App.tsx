@@ -35,6 +35,7 @@ import PluginsPage from "@/app/plugins/page";
 import IncrementalSyncPage from "@/app/incremental-sync/page";
 import ViewDepsPage from "@/app/view-deps/page";
 import CreateJobPage from "@/app/create-job/page";
+import StorageMetricsPage from "@/app/storage-metrics/page";
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -89,6 +90,7 @@ export default function App() {
               <Route path="/incremental-sync" element={<IncrementalSyncPage />} />
               <Route path="/view-deps" element={<ViewDepsPage />} />
               <Route path="/create-job" element={<CreateJobPage />} />
+              <Route path="/storage-metrics" element={<StorageMetricsPage />} />
             </Routes>
           </main>
         </div>

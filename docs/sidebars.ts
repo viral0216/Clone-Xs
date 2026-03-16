@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         'guide/validation',
         'guide/monitoring',
         'guide/notebooks',
+        'guide/storage-metrics',
         'guide/create-job',
         'guide/desktop',
         'guide/databricks-app',

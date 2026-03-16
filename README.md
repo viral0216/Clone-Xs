@@ -11,16 +11,17 @@
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 32-page Web UI, a native Desktop App, 57 CLI commands, and a full REST API — all backed by 88 Python modules.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 58 CLI commands, and a full REST API — all backed by 89 Python modules.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
 ### Key Features
 
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
-- **32-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
+- **33-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
 - **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
-- **57 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, and more
+- **58 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, and more
+- **Storage Metrics** — Analyze active, vacuumable, and time-travel storage per table using `ANALYZE TABLE COMPUTE STORAGE METRICS` (Runtime 18.0+)
 - **Create Databricks Job** — Create persistent scheduled jobs directly from the UI or CLI — no manual JSON or `databricks` CLI needed
 - **Serverless Compute** — Run clones without a SQL warehouse (uploads wheel, submits notebook job)
 - **Full Metadata Copy** — Permissions, ownership, tags, properties, security, constraints, comments
@@ -111,14 +112,14 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ---
 
-## Web UI (32 Pages)
+## Web UI (33 Pages)
 
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
 | **Operations** (9) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Create Job, Multi-Clone |
 | **Discovery** (7) | Explorer, Diff & Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview |
-| **Analysis** (6) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Compliance |
+| **Analysis** (7) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Storage Metrics, Compliance |
 | **Management** (7) | Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins |
 
 ---
@@ -140,6 +141,8 @@ clone-catalog schema-drift --source X --dest Y     # Detect schema changes
 clone-catalog pii-scan --source X                  # Scan for PII
 clone-catalog estimate --source X                  # Cost estimation
 clone-catalog profile --source X                   # Data quality profiling
+clone-catalog storage-metrics --source X             # Storage breakdown (active/vacuumable/time-travel)
+clone-catalog storage-metrics --source X --schema S  # Single schema storage metrics
 clone-catalog templates                            # List clone templates
 clone-catalog audit                                # Query audit trail
 clone-catalog serve                                # Start API server
@@ -173,9 +176,9 @@ Docs        Docusaurus
 
 ```
 clone-xs/
-  src/           88 Python modules (shared by CLI + API)
+  src/           89 Python modules (shared by CLI + API)
   api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (32 pages, shadcn/ui components)
+  ui/            React frontend (33 pages, shadcn/ui components)
   desktop/       Electron desktop app (macOS + Windows)
   config/        YAML configuration with profile support
   infra/         Terraform / IaC files
@@ -212,12 +215,12 @@ audit_trail:
 
 | Metric | Value |
 |--------|-------|
-| CLI commands | 57 |
-| Python modules | 89 |
-| Web UI pages | 32 |
-| REST API endpoints | 62+ |
+| CLI commands | 58 |
+| Python modules | 90 |
+| Web UI pages | 33 |
+| REST API endpoints | 63+ |
 | Clone templates | 12 |
-| Pages with catalog dropdowns | 18 |
+| Pages with catalog dropdowns | 19 |
 | Desktop platforms | macOS, Windows |
 
 ---
@@ -297,6 +300,33 @@ clone-catalog create-job \
 
 ---
 
+## Storage Metrics
+
+Analyze per-table storage breakdown using `ANALYZE TABLE ... COMPUTE STORAGE METRICS` (Databricks Runtime 18.0+). Identify tables with significant reclaimable storage and optimize costs.
+
+### From the Web UI
+
+Navigate to **Analysis > Storage Metrics**, select a catalog (optionally filter by schema/table), and click **Analyze Storage**. The page shows:
+
+- **Summary cards** — Total storage, active data, vacuumable (reclaimable via VACUUM), and time-travel bytes with percentages
+- **Top Reclaimable Tables** — The 10 tables with the most vacuumable storage
+- **Detail table** — Per-table breakdown with conditional coloring on vacuum percentage
+
+### From the CLI
+
+```bash
+# Full catalog
+clone-catalog storage-metrics --source my_catalog
+
+# Single schema
+clone-catalog storage-metrics --source my_catalog --schema sales
+
+# Single table
+clone-catalog storage-metrics --source my_catalog --schema sales --table orders
+```
+
+---
+
 ## Security
 
 - Credentials are stored in **browser session only** — never sent to any server except your Databricks workspace
@@ -317,7 +347,7 @@ This project follows the [Contributor Covenant Code of Conduct](.github/CODE_OF_
 ### Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving dark mode across all 31 pages
+- Improving dark mode across all 33 pages
 - Writing tests (frontend and backend)
 - Documentation improvements
 - Accessibility enhancements

@@ -35,6 +35,7 @@ import {
   Server,
   Lock,
   Puzzle,
+  HardDrive,
   X,
 } from "lucide-react";
 
@@ -92,6 +93,7 @@ const navSections: NavSection[] = [
       { href: "/schema-drift", label: "Schema Drift", icon: GitBranch },
       { href: "/profiling", label: "Profiling", icon: ScanSearch },
       { href: "/cost", label: "Cost Estimator", icon: Calculator },
+      { href: "/storage-metrics", label: "Storage Metrics", icon: HardDrive },
       { href: "/compliance", label: "Compliance", icon: ShieldCheck },
     ],
   },

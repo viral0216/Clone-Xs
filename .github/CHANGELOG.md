@@ -14,13 +14,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **API endpoint** `POST /api/generate/create-job` — creates/updates Databricks Jobs with full clone config passthrough
 - **Build scripts** — `scripts/build-desktop.sh` with `--mac`, `--win`, `--skip-frontend` flags
 - **Makefile targets** — `desktop-dev`, `desktop-install`, `build-desktop-mac`, `build-desktop-win`
-- Web UI expanded to **32 pages** (added Create Job)
-- CLI expanded to **57 commands** (added `create-job`)
+- **Storage Metrics** — new `storage-metrics` CLI command and Web UI page using `ANALYZE TABLE ... COMPUTE STORAGE METRICS` (Databricks Runtime 18.0+) to analyze per-table storage breakdown (active, vacuumable, time-travel bytes/files), with parallel execution, progress tracking, top-10 reclaimable tables, and conditional coloring
+- **API endpoint** `POST /api/storage-metrics` — analyzes storage metrics across a catalog with optional schema/table filtering
+- **New module** `src/storage_metrics.py` — core storage metrics logic with `catalog_storage_metrics()` and `get_table_storage_metrics()`
+- Web UI expanded to **33 pages** (added Create Job, Storage Metrics)
+- CLI expanded to **58 commands** (added `create-job`, `storage-metrics`)
 - Extracted `build_job_config()` helper in `serverless.py` for reuse across serverless submit and create-job
 
 ### Changed
 - `ui/vite.config.ts` — set `base: "./"` for Electron `file://` compatibility
 - Sidebar Operations section updated with Create Job entry
+- Sidebar Analysis section updated with Storage Metrics entry
 - Platform badge updated to include Desktop
 
 ## [0.4.0] - 2026-03-15

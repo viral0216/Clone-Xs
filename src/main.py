@@ -754,6 +754,30 @@ def cmd_stats(args):
     )
 
 
+def cmd_storage_metrics(args):
+    """Execute the storage-metrics command."""
+    from src.storage_metrics import catalog_storage_metrics
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    catalog_storage_metrics(
+        client, config["sql_warehouse_id"], config["source_catalog"],
+        config["exclude_schemas"],
+        schema_filter=args.schema,
+        table_filter=args.table,
+    )
+
+
 def cmd_profile(args):
     """Execute the profile command."""
     from src.profiling import profile_catalog
@@ -2087,6 +2111,17 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(stats_parser)
     stats_parser.add_argument("--source", help="Override source catalog name")
     stats_parser.set_defaults(func=cmd_stats)
+
+    # --- storage-metrics command ---
+    sm_parser = subparsers.add_parser(
+        "storage-metrics",
+        help="Analyze storage metrics (active, vacuumable, time-travel) for all tables",
+    )
+    add_common_args(sm_parser)
+    sm_parser.add_argument("--source", help="Override source catalog name")
+    sm_parser.add_argument("--schema", help="Filter to a specific schema")
+    sm_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
+    sm_parser.set_defaults(func=cmd_storage_metrics)
 
     # --- profile command ---
     prof_parser = subparsers.add_parser("profile", help="Profile table data quality (nulls, distinct, min/max)")

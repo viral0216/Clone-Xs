@@ -128,7 +128,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
   const iconBtn = "p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-white/10 transition-all";
 
   return (
-    <header className="h-12 header-bg flex items-center justify-between px-4 shrink-0">
+    <header className="h-20 header-bg flex items-center justify-between px-4 shrink-0">
       {/* Left */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (

@@ -12,10 +12,10 @@ const config: Config = {
   },
 
   url: 'https://viral0216.github.io',
-  baseUrl: '/clone-xs/',
+  baseUrl: '/Clone-Xs/',
 
   organizationName: 'viral0216',
-  projectName: 'clone-xs',
+  projectName: 'Clone-Xs',
 
   onBrokenLinks: 'throw',
 

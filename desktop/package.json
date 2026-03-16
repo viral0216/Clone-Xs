@@ -1,0 +1,53 @@
+{
+  "name": "clone-xs-desktop",
+  "version": "1.0.0",
+  "description": "Clone-Xs Desktop — Enterprise Unity Catalog Cloning for Databricks",
+  "main": "main.js",
+  "author": "Clone-Xs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "build": {
+    "appId": "com.clonexs.desktop",
+    "productName": "Clone-Xs",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../ui/dist",
+        "to": "frontend"
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        { "target": "zip", "arch": ["arm64"] },
+        { "target": "dir", "arch": ["arm64"] }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis" },
+        { "target": "portable" }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

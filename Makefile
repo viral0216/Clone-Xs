@@ -83,3 +83,18 @@ docker: ## Build Docker image
 
 docker-up: ## Start with docker-compose
 	docker-compose up --build
+
+# Desktop app
+.PHONY: desktop-dev desktop-install build-desktop-mac build-desktop-win
+
+desktop-install: ## Install desktop (Electron) dependencies
+	cd desktop && npm install
+
+desktop-dev: ## Run desktop app in dev mode (starts backend automatically)
+	cd desktop && npm start
+
+build-desktop-mac: build-ui ## Build macOS desktop app
+	./scripts/build-desktop.sh --mac --skip-frontend
+
+build-desktop-win: build-ui ## Build Windows desktop app
+	./scripts/build-desktop.sh --win --skip-frontend

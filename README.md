@@ -4,22 +4,24 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.4.0-green.svg)
-![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
 ---
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 31-page Web UI with 56 CLI commands and a full REST API — all backed by 88 Python modules.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 32-page Web UI, a native Desktop App, 57 CLI commands, and a full REST API — all backed by 88 Python modules.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
 ### Key Features
 
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
-- **31-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
-- **51+ CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, and more
+- **32-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
+- **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
+- **57 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, and more
+- **Create Databricks Job** — Create persistent scheduled jobs directly from the UI or CLI — no manual JSON or `databricks` CLI needed
 - **Serverless Compute** — Run clones without a SQL warehouse (uploads wheel, submits notebook job)
 - **Full Metadata Copy** — Permissions, ownership, tags, properties, security, constraints, comments
 - **Post-Clone Validation** — Row count and checksum validation with auto-rollback on failure
@@ -100,12 +102,12 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ---
 
-## Web UI (31 Pages)
+## Web UI (32 Pages)
 
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
-| **Operations** (8) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Multi-Clone |
+| **Operations** (9) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Create Job, Multi-Clone |
 | **Discovery** (7) | Explorer, Diff & Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview |
 | **Analysis** (6) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Compliance |
 | **Management** (7) | Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins |
@@ -135,6 +137,9 @@ clone-catalog serve                                # Start API server
 clone-catalog incremental-sync --source X --dest Y # Sync only changed tables
 clone-catalog sample --schema S --table T          # Preview table data
 clone-catalog view-deps --schema S                 # View/function dependency graph
+clone-catalog create-job --source X --dest Y        # Create persistent Databricks Job
+clone-catalog create-job --source X --dest Y \
+  --schedule "0 0 6 * * ?" --notification-email t@co.com  # Scheduled job with alerts
 clone-catalog slack-bot                            # Start Slack bot
 ```
 
@@ -148,7 +153,7 @@ For the complete reference with real-world examples, see **[HOWTO.md](.github/HO
 Frontend    React 19 + TypeScript + Vite + TanStack Query + Tailwind CSS 4
 Backend     Python + FastAPI + Uvicorn + Pydantic v2
 Core        Databricks SDK for Python + Unity Catalog REST APIs
-Desktop     Electron (planned)
+Desktop     Electron 28 + electron-builder (macOS arm64, Windows NSIS/portable)
 CLI         Python Click
 Docs        Docusaurus
 ```
@@ -161,11 +166,12 @@ Docs        Docusaurus
 clone-xs/
   src/           88 Python modules (shared by CLI + API)
   api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (31 pages, shadcn/ui components)
+  ui/            React frontend (32 pages, shadcn/ui components)
+  desktop/       Electron desktop app (macOS + Windows)
   config/        YAML configuration with profile support
   infra/         Terraform / IaC files
   notebooks/     Databricks notebook examples
-  scripts/       Start scripts, build, deploy
+  scripts/       Build, start, and deploy scripts
   tests/         Python unit tests
   docs/          Docusaurus documentation site
   .github/       Contributing guidelines, security policy, changelog
@@ -197,12 +203,13 @@ audit_trail:
 
 | Metric | Value |
 |--------|-------|
-| CLI commands | 56 |
-| Python modules | 88 |
-| Web UI pages | 31 |
-| REST API endpoints | 61+ |
+| CLI commands | 57 |
+| Python modules | 89 |
+| Web UI pages | 32 |
+| REST API endpoints | 62+ |
 | Clone templates | 12 |
-| Pages with catalog dropdowns | 17 |
+| Pages with catalog dropdowns | 18 |
+| Desktop platforms | macOS, Windows |
 
 ---
 
@@ -218,6 +225,65 @@ Run clones on Databricks serverless compute — no SQL warehouse needed:
 ```bash
 # CLI
 clone-catalog clone --source X --dest Y --serverless --volume /Volumes/cat/schema/vol
+```
+
+---
+
+## Desktop App
+
+Run Clone-Xs as a native desktop application — no terminal needed. The Electron wrapper auto-starts the Python backend and loads the Web UI in a native window.
+
+### Quick Start
+
+```bash
+# Install Electron dependencies (one-time)
+make desktop-install
+
+# Run in dev mode
+make desktop-dev
+```
+
+### Build Distributable
+
+```bash
+# macOS (.app + .zip)
+make build-desktop-mac
+
+# Windows (.exe installer + portable)
+make build-desktop-win
+```
+
+Output goes to `desktop/dist/`. The macOS build produces an arm64 app bundle; the Windows build produces an NSIS installer and a portable `.exe`.
+
+---
+
+## Create Databricks Job
+
+Create persistent Databricks Jobs that run Clone-Xs on a schedule — directly from the UI or CLI. No manual JSON or `databricks` CLI required.
+
+### From the Web UI
+
+Navigate to **Operations > Create Job**, configure your clone options, set a cron schedule, and click **Create Databricks Job**. The job appears in your Databricks Jobs UI with a direct link.
+
+### From the CLI
+
+```bash
+clone-catalog create-job \
+  --source edp_dev \
+  --dest edp_dev_00 \
+  --volume /Volumes/edp_dev/packages/wheels \
+  --schedule "0 0 6 * * ?" \
+  --timezone "America/New_York" \
+  --notification-email team@company.com \
+  --tag env=production
+```
+
+Update an existing job:
+
+```bash
+clone-catalog create-job \
+  --update-job-id 12345 \
+  --schedule "0 0 12 * * ?"
 ```
 
 ---
@@ -278,6 +344,10 @@ make docs-start
 | Command | Description |
 |---------|-------------|
 | `make web-start` | Start API + UI dev servers |
+| `make desktop-dev` | Launch desktop app (auto-starts backend) |
+| `make desktop-install` | Install Electron dependencies |
+| `make build-desktop-mac` | Build macOS desktop app |
+| `make build-desktop-win` | Build Windows desktop app |
 | `make docs-start` | Start documentation site (port 3001) |
 | `make test` | Run unit tests |
 | `make build` | Build wheel package |

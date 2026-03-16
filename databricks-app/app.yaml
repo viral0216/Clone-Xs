@@ -1,0 +1,27 @@
+# Databricks App manifest for Clone-Xs
+# Deploy with: databricks apps deploy clone-xs --source-code-path .
+#
+# The frontend must be pre-built before deployment:
+#   cd ui && npm ci && npm run build
+# The deploy script (scripts/deploy-databricks-app.sh) handles this automatically.
+
+command:
+  - /bin/bash
+  - -c
+  - |
+    echo "=== Clone-Xs App Starting ===" &&
+    echo "Working directory: $(pwd)" &&
+    echo "Contents: $(ls -la)" &&
+    echo "UI dist exists: $(ls ui/dist/index.html 2>/dev/null && echo YES || echo NO)" &&
+    pip install --quiet -e . &&
+    echo "Python deps installed." &&
+    uvicorn api.main:app --host 0.0.0.0 --port $DATABRICKS_APP_PORT
+
+env:
+  - name: CLONE_XS_RUNTIME
+    value: databricks-app
+
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      permission: CAN_USE

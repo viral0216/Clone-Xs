@@ -67,12 +67,30 @@ app.include_router(deps.router, prefix="/api", tags=["dependencies"])
 
 # Serve frontend static files in production
 import os
-ui_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "dist")
-if os.path.isdir(ui_dist):
+from pathlib import Path as _Path
+
+# Try multiple possible locations for ui/dist/
+_project_root = _Path(__file__).resolve().parent.parent
+_candidates = [
+    _project_root / "ui" / "dist",                    # Standard: relative to api/
+    _Path.cwd() / "ui" / "dist",                      # CWD-based (Databricks App)
+    _Path(os.environ.get("APP_SOURCE_PATH", "")) / "ui" / "dist",  # Explicit env var
+]
+ui_dist = None
+for _c in _candidates:
+    if _c.is_dir() and (_c / "index.html").exists():
+        ui_dist = str(_c)
+        break
+
+if ui_dist:
+    import logging as _logging
+    _logging.getLogger(__name__).info(f"Serving frontend from: {ui_dist}")
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
 
-    app.mount("/assets", StaticFiles(directory=os.path.join(ui_dist, "assets")), name="assets")
+    _assets_dir = os.path.join(ui_dist, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -81,3 +99,9 @@ if os.path.isdir(ui_dist):
         if os.path.isfile(file_path):
             return FileResponse(file_path)
         return FileResponse(os.path.join(ui_dist, "index.html"))
+else:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        f"Frontend not found. Searched: {[str(c) for c in _candidates]}. "
+        "API-only mode — no UI served."
+    )

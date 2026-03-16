@@ -81,10 +81,12 @@ docker-compose up --build
 
 ```bash
 # Deploy directly to your Databricks workspace
+./databricks-app/deploy.sh
+# Or via make:
 make deploy-dbx-app
 ```
 
-Authentication is automatic via workspace service principal — no PAT tokens needed. See [Databricks App Guide](docs/docs/guide/databricks-app.md) for details.
+Authentication is automatic via workspace service principal — no PAT tokens needed. See [databricks-app/](databricks-app/) for details.
 
 ### CLI Only
 
@@ -184,17 +186,18 @@ Docs        Docusaurus
 
 ```
 clone-xs/
-  src/           89 Python modules (shared by CLI + API)
-  api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (33 pages, shadcn/ui components)
-  desktop/       Electron desktop app (macOS + Windows)
-  config/        YAML configuration with profile support
-  infra/         Terraform / IaC files
-  notebooks/     Databricks notebook examples
-  scripts/       Build, start, and deploy scripts
-  tests/         Python unit tests
-  docs/          Docusaurus documentation site
-  .github/       Contributing guidelines, security policy, changelog
+  src/              91 Python modules (shared by CLI + API)
+  api/              FastAPI backend (routers, models, job queue)
+  ui/               React frontend (33 pages, shadcn/ui components)
+  databricks-app/   Databricks App deployment (app.yaml, deploy script)
+  desktop/          Electron desktop app (macOS + Windows)
+  config/           YAML configuration with profile support
+  infra/            Terraform / IaC files
+  notebooks/        Databricks notebook examples
+  scripts/          Build and start scripts
+  tests/            Python unit tests
+  docs/             Docusaurus documentation site
+  .github/          Contributing guidelines, security policy, changelog
 ```
 
 ---

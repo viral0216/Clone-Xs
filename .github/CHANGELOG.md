@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Storage Metrics row-per-metric parsing** — correctly handles Databricks' `metric_name`/`metric_value` result format
 - **CSV/JSON export** on Storage Metrics page — download per-table storage data
 
+- **`databricks-app/` directory** — moved `app.yaml`, `.databricksignore`, and deploy script into dedicated `databricks-app/` folder with its own README documenting authentication, UC permissions, and troubleshooting
+- **Improved deploy script** — uses staging directory + `workspace import-dir` (avoids `.gitignore` excluding `ui/dist/`), auto-creates app, waits for compute, shows app URL on completion
+- **Robust frontend path resolution** — `api/main.py` searches multiple candidate paths for `ui/dist/` with logging, works reliably on Databricks App runtime
+
 ### Changed
 - `ui/vite.config.ts` — set `base: "./"` for Electron `file://` compatibility
 - CLI entry point renamed from `clone-catalog` to `clxs` in `pyproject.toml` and 54 files across the codebase

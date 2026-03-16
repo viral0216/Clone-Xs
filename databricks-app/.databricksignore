@@ -5,7 +5,6 @@ docs/
 tests/
 notebooks/
 node_modules/
-dist/
 build/
 *.egg-info/
 __pycache__/
@@ -17,11 +16,10 @@ exports/
 checkpoints/
 ui/node_modules/
 ui/src/
-scripts/
 infra/
 .github/
 *.md
+!README.md
 Dockerfile
 docker-compose.yml
 Makefile
-pyproject.toml

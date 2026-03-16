@@ -94,8 +94,8 @@ docker-up: ## Start with docker-compose
 # Databricks App
 .PHONY: deploy-dbx-app
 
-deploy-dbx-app: build-ui ## Deploy as a Databricks App
-	./scripts/deploy-databricks-app.sh
+deploy-dbx-app: ## Deploy as a Databricks App (builds frontend automatically)
+	./databricks-app/deploy.sh
 
 # Desktop app
 .PHONY: desktop-dev desktop-install build-desktop-mac build-desktop-win

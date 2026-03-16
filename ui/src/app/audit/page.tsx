@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
-import { FileText, RefreshCw, Filter } from "lucide-react";
+import { FileText, RefreshCw, Filter, History } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
+import DataTable from "@/components/DataTable";
 
 interface AuditEntry {
   timestamp: string;
@@ -46,97 +48,104 @@ export default function AuditPage() {
     return true;
   });
 
-  const statusColor = (s: string) => {
-    if (s === "success") return "default";
-    if (s === "failed") return "destructive";
-    return "secondary";
-  };
+  const columns = [
+    {
+      key: "timestamp",
+      label: "Timestamp",
+      sortable: true,
+      render: (v: string) => <span className="text-muted-foreground text-xs">{v}</span>,
+    },
+    { key: "user", label: "User", sortable: true },
+    {
+      key: "operation",
+      label: "Operation",
+      sortable: true,
+      render: (v: string) => <span className="font-mono text-xs">{v}</span>,
+    },
+    { key: "source", label: "Source", sortable: true },
+    { key: "destination", label: "Destination", sortable: true },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (v: string) => (
+        <Badge
+          variant="outline"
+          className={`text-[10px] font-semibold ${
+            v === "success"
+              ? "border-green-600/30 text-green-600 bg-green-500/5"
+              : v === "failed"
+              ? "border-red-500/30 text-red-500 bg-red-500/5"
+              : "border-blue-600/30 text-blue-600 bg-blue-500/5"
+          }`}
+        >
+          {v}
+        </Badge>
+      ),
+    },
+    {
+      key: "duration",
+      label: "Duration",
+      align: "right" as const,
+      render: (v: string) => <span className="text-muted-foreground">{v}</span>,
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Audit Trail</h1>
-          <p className="text-muted-foreground mt-1">Query clone operation history stored in Delta tables — who ran what, when, duration, status, and configuration. All operations are automatically logged.</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta Lake audit</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">System tables</a>
-          </p>
-        </div>
-        <Button onClick={loadAudit} disabled={loading} variant="outline">
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Audit Trail"
+        icon={History}
+        breadcrumbs={["Overview", "Audit Trail"]}
+        description="Query clone operation history stored in Delta tables — who ran what, when, duration, status, and configuration."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/delta/"
+        docsLabel="Delta Lake docs"
+        actions={
+          <Button onClick={loadAudit} disabled={loading} variant="outline" size="sm">
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Filter className="h-4 w-4" /> Filters
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" /> Filters
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4 flex-wrap">
             <div>
-              <label className="text-sm font-medium text-foreground">From</label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <label className="text-xs font-medium text-muted-foreground">From</label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">To</label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">Operation</label>
-              <Input placeholder="e.g. clone, rollback" value={opFilter} onChange={(e) => setOpFilter(e.target.value)} />
+              <label className="text-xs font-medium text-muted-foreground">Operation</label>
+              <Input placeholder="e.g. clone, rollback" value={opFilter} onChange={(e) => setOpFilter(e.target.value)} className="mt-1" />
             </div>
           </div>
         </CardContent>
       </Card>
 
       {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6 text-destructive">{error}</CardContent>
+        <Card className="border-red-500/30 bg-card">
+          <CardContent className="pt-6 text-red-500">{error}</CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardContent className="pt-6">
-          {filtered.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-3 opacity-40" />
-              <p>No audit entries found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/50">
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Timestamp</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">User</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Operation</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Source</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Destination</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Status</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((entry, i) => (
-                    <tr key={i} className="border-b border-border hover:bg-muted/30">
-                      <td className="py-2 px-3 text-muted-foreground">{entry.timestamp}</td>
-                      <td className="py-2 px-3 text-foreground">{entry.user}</td>
-                      <td className="py-2 px-3 font-mono text-foreground">{entry.operation}</td>
-                      <td className="py-2 px-3 text-foreground">{entry.source}</td>
-                      <td className="py-2 px-3 text-foreground">{entry.destination}</td>
-                      <td className="py-2 px-3"><Badge variant={statusColor(entry.status)}>{entry.status}</Badge></td>
-                      <td className="py-2 px-3 text-muted-foreground">{entry.duration}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        data={filtered}
+        columns={columns}
+        searchable={true}
+        searchPlaceholder="Search audit entries..."
+        pageSize={25}
+        emptyMessage="No audit entries found. Operations are logged automatically when you run clones, syncs, or other operations."
+      />
     </div>
   );
 }

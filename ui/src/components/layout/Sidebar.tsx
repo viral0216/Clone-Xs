@@ -1,54 +1,16 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Briefcase,
-  Copy,
-  FolderTree,
-  GitCompare,
-  Activity,
-  Settings2,
-  FileText,
-  Wrench,
-  Shield,
-  GitBranch,
-  ClipboardCheck,
-  RefreshCw,
-  GitCompareArrows,
-  Wand2,
-  ChevronRight,
-  ChevronDown,
-  PanelLeftClose,
-  PanelLeft,
-  History,
-  BarChart3,
-  Undo2,
-  LayoutTemplate,
-  CalendarClock,
-  CopyPlus,
-  GitFork,
-  Zap,
-  Eye,
-  ScanSearch,
-  Calculator,
-  ShieldCheck,
-  Server,
-  Lock,
-  Puzzle,
-  HardDrive,
-  X,
+  LayoutDashboard, Briefcase, Copy, FolderTree, GitCompare, Activity,
+  Settings2, FileText, Wrench, Shield, GitBranch, ClipboardCheck, RefreshCw,
+  GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
+  Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
+  ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
+  X, Plus,
 } from "lucide-react";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-interface NavSection {
-  title: string;
-  items: NavItem[];
-}
+interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
+interface NavSection { title: string; items: NavItem[]; }
 
 const navSections: NavSection[] = [
   {
@@ -111,14 +73,10 @@ const navSections: NavSection[] = [
   },
 ];
 
-interface SidebarProps {
-  mobileOpen?: boolean;
-  onMobileClose?: () => void;
-}
+interface SidebarProps { mobileOpen?: boolean; onMobileClose?: () => void; }
 
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { pathname } = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     () => new Set(navSections.map((s) => s.title))
   );
@@ -126,160 +84,173 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const toggleSection = (title: string) => {
     setExpandedSections((prev) => {
       const next = new Set(prev);
-      if (next.has(title)) {
-        next.delete(title);
-      } else {
-        next.add(title);
-      }
+      if (next.has(title)) next.delete(title); else next.add(title);
       return next;
     });
   };
 
   const sidebarContent = (
-    <>
-      {/* Sidebar Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        {!collapsed && (
-          <span className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-            Navigator
-          </span>
-        )}
-        {/* Close button on mobile */}
-        {mobileOpen && onMobileClose ? (
-          <button
-            onClick={onMobileClose}
-            className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-all lg:hidden"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        ) : (
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-all hidden lg:block"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </button>
-        )}
+    <div className="flex flex-col h-full">
+      {/* + New button — light salmon bg, red icon like Databricks */}
+      <div className="px-3 pt-3 pb-1">
+        <Link
+          to="/clone"
+          className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          style={{ background: '#FCE8E6', color: '#D93025' }}
+        >
+          <Plus className="h-5 w-5" style={{ color: '#D93025' }} />
+          New
+        </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
-        {navSections.map((section) => {
+      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
+        {navSections.map((section, sIdx) => {
           const isExpanded = expandedSections.has(section.title);
-          const hasActiveItem = section.items.some(
-            (item) => item.href === pathname
-          );
-
           return (
-            <div key={section.title} className="mb-1">
-              {/* Section Header */}
-              {!collapsed && (
-                <button
-                  onClick={() => toggleSection(section.title)}
-                  className={`w-full flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
-                    hasActiveItem
-                      ? "text-[#FF5540]"
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    {section.title}
-                    <span className="text-[10px] font-normal text-gray-600">
-                      ({section.items.length})
-                    </span>
-                  </span>
-                  {isExpanded ? (
-                    <ChevronDown className="h-3 w-3" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3" />
-                  )}
-                </button>
-              )}
+            <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
+              {/* Section label */}
+              <button
+                onClick={() => toggleSection(section.title)}
+                className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium transition-colors"
+                style={{ color: '#5F6368' }}
+              >
+                <span>{section.title}</span>
+                {isExpanded
+                  ? <ChevronDown className="h-3 w-3" />
+                  : <ChevronRight className="h-3 w-3" />
+                }
+              </button>
 
-              {/* Section Items */}
-              {(collapsed || isExpanded) && (
-                <div className={collapsed ? "px-2 space-y-1" : "px-2 space-y-0.5"}>
-                  {section.items.map((item) => {
-                    const Icon = item.icon;
-                    const active = pathname === item.href;
-                    return (
-                      <Link
-                        key={item.href}
-                        to={item.href}
-                        onClick={onMobileClose}
-                        title={collapsed ? item.label : undefined}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
-                          collapsed ? "justify-center" : ""
-                        } ${
-                          active
-                            ? "bg-[#FF3621]/15 text-[#FF5540] font-medium"
-                            : "text-gray-400 hover:bg-white/5 hover:text-white"
-                        }`}
-                      >
-                        <Icon
-                          className={`h-4 w-4 shrink-0 ${
-                            active ? "text-[#FF5540]" : ""
-                          }`}
-                        />
-                        {!collapsed && <span className="truncate">{item.label}</span>}
-                        {!collapsed && active && (
-                          <ChevronRight className="h-3 w-3 ml-auto shrink-0 text-[#FF5540]" />
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Items */}
+              {isExpanded && section.items.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={onMobileClose}
+                    className="flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2"
+                    style={active ? {
+                      background: '#E8F0FE',
+                      color: '#1A73E8',
+                      fontWeight: 500,
+                    } : {
+                      color: '#3C4043',
+                    }}
+                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#F1F3F4'; }}
+                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Icon
+                      className="h-5 w-5 shrink-0"
+                      style={{ color: active ? '#1A73E8' : '#5F6368' }}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
             </div>
           );
         })}
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between">
-        <span className="text-[10px] text-gray-600">
-          {collapsed ? "v0.5" : "v0.5.0"}
-        </span>
-        {!collapsed && (
-          <span className="text-[10px] text-gray-700">
-            33 pages &middot; 60 commands
-          </span>
-        )}
+      <div className="px-4 py-2 border-t" style={{ borderColor: '#E8EAED' }}>
+        <span className="text-[10px]" style={{ color: '#9AA0A6' }}>cloneXs v0.5.0</span>
       </div>
-    </>
+
+      {/* Mobile close */}
+      {mobileOpen && onMobileClose && (
+        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded lg:hidden" style={{ color: '#5F6368' }}>
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+
+  // Dark mode wrapper — in dark mode, override inline styles
+  const darkSidebar = (
+    <div className="flex flex-col h-full">
+      {/* + New button — dark mode */}
+      <div className="px-3 pt-3 pb-1">
+        <Link
+          to="/clone"
+          className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+        >
+          <Plus className="h-5 w-5" />
+          New
+        </Link>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
+        {navSections.map((section, sIdx) => {
+          const isExpanded = expandedSections.has(section.title);
+          return (
+            <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
+              <button
+                onClick={() => toggleSection(section.title)}
+                className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium text-gray-500 hover:text-gray-400 transition-colors"
+              >
+                <span>{section.title}</span>
+                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              </button>
+
+              {isExpanded && section.items.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={onMobileClose}
+                    className={`flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2 ${
+                      active
+                        ? "bg-blue-500/15 text-blue-400 font-medium"
+                        : "text-gray-300 hover:bg-white/5"
+                    }`}
+                  >
+                    <Icon className={`h-5 w-5 shrink-0 ${active ? "text-blue-400" : "text-gray-500"}`} />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          );
+        })}
+      </nav>
+
+      <div className="px-4 py-2 border-t border-white/10">
+        <span className="text-[10px] text-gray-600">cloneXs v0.5.0</span>
+      </div>
+
+      {mobileOpen && onMobileClose && (
+        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded text-gray-500 lg:hidden">
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 
   return (
     <>
-      {/* Mobile overlay */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={onMobileClose}
-        />
+        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onMobileClose} />
       )}
 
-      {/* Mobile sidebar (slide-in overlay) */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1117] text-white flex flex-col border-r border-white/10 transform transition-transform duration-200 lg:hidden ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        {sidebarContent}
+      {/* Mobile */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-52 sidebar-bg flex flex-col relative transform transition-transform duration-200 lg:hidden ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
+        <div className="hidden dark:block h-full">{darkSidebar}</div>
+        <div className="dark:hidden h-full">{sidebarContent}</div>
       </aside>
 
-      {/* Desktop sidebar */}
-      <aside
-        className={`${
-          collapsed ? "w-16" : "w-60"
-        } bg-[#0d1117] text-white flex-col border-r border-white/10 transition-all duration-200 overflow-hidden hidden lg:flex`}
-      >
-        {sidebarContent}
+      {/* Desktop */}
+      <aside className="w-52 sidebar-bg flex-col hidden lg:flex relative">
+        <div className="hidden dark:block h-full">{darkSidebar}</div>
+        <div className="dark:hidden h-full">{sidebarContent}</div>
       </aside>
     </>
   );

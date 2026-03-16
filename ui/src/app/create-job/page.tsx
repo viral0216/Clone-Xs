@@ -26,7 +26,7 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   }, []);
 
   const selectClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div>
@@ -268,7 +268,7 @@ export default function CreateJobPage() {
               />
             ) : (
               <select
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                 value={volume}
                 onChange={(e) => setVolume(e.target.value)}
               >
@@ -317,8 +317,8 @@ export default function CreateJobPage() {
                   onClick={() => setSchedule(p.value)}
                   className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
                     schedule === p.value
-                      ? "bg-[#FF3621]/10 border-[#FF3621] text-[#FF5540]"
-                      : "border-border text-muted-foreground hover:border-[#FF3621]/50 hover:text-foreground"
+                      ? "bg-[#1A73E8]/10 border-[#1A73E8] text-[#1A73E8]"
+                      : "border-border text-muted-foreground hover:border-[#1A73E8]/50 hover:text-foreground"
                   }`}
                 >
                   {p.label}
@@ -339,7 +339,7 @@ export default function CreateJobPage() {
               Timezone
             </label>
             <select
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
             >
@@ -646,7 +646,7 @@ export default function CreateJobPage() {
               href={result.job_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#FF3621] text-white text-sm font-medium hover:bg-[#e0301d] transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A73E8] text-white text-sm font-medium hover:bg-[#1567D2] transition-colors"
             >
               <ExternalLink className="h-4 w-4" />
               Open in Databricks

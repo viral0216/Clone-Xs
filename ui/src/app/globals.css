@@ -54,8 +54,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.22 25);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #E8453C;
+  --primary-foreground: #FFFFFF;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -89,8 +89,8 @@
   --card-foreground: oklch(0.93 0 0);
   --popover: oklch(0.2 0.01 250);
   --popover-foreground: oklch(0.93 0 0);
-  --primary: oklch(0.62 0.2 25);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #E8453C;
+  --primary-foreground: #FFFFFF;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -122,63 +122,120 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   html {
     @apply font-sans;
+  }
+
+  /* Databricks typography scale */
+  h1 { font-size: 24px !important; font-weight: 600 !important; line-height: 1.3 !important; letter-spacing: -0.01em; }
+  h2 { font-size: 20px !important; font-weight: 600 !important; line-height: 1.3 !important; }
+  h3 { font-size: 16px !important; font-weight: 600 !important; line-height: 1.4 !important; }
+  h4 { font-size: 14px !important; font-weight: 600 !important; line-height: 1.4 !important; }
+
+  /* Databricks body text */
+  p { font-size: 14px; line-height: 1.6; }
+  label { font-size: 13px; font-weight: 500; }
+  small { font-size: 12px; }
+
+  /* Icon sizing — Databricks uses 20px nav icons, 16px inline icons */
+  svg { flex-shrink: 0; }
+
+  /* Databricks input style */
+  input, select, textarea {
+    font-size: 14px !important;
+    border-radius: 6px !important;
+  }
+
+  /* Databricks table style */
+  table {
+    font-size: 13px;
+  }
+  th {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted-foreground) !important;
+  }
+
+  /* Databricks badge sizing */
+  [data-slot="badge"] {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    font-weight: 500 !important;
+  }
+
+  /* Databricks button sizing */
+  button, [data-slot="button"] {
+    font-size: 13px;
+    border-radius: 6px !important;
   }
 }
 
 /* Databricks-inspired enhancements */
 
-/* Cards — rounder corners, subtle shadow */
+/* Cards — Databricks style: subtle border, minimal shadow */
 [data-slot="card"] {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  border: 1px solid #E5E7EB;
 }
 [data-slot="card"]:hover {
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 .dark [data-slot="card"] {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  box-shadow: none;
+  border-color: rgba(255,255,255,0.1);
 }
 
-/* Primary buttons — Databricks red gradient */
+/* Primary buttons — Databricks coral/salmon */
 button[data-slot="button"][data-variant="default"] {
-  background: linear-gradient(135deg, #FF3621, #E02F1B);
-  box-shadow: 0 2px 8px rgba(255, 54, 33, 0.25);
-  transition: all 0.2s ease;
+  background: #E8453C;
+  box-shadow: none;
+  transition: all 0.15s ease;
   border: none;
 }
 button[data-slot="button"][data-variant="default"]:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 54, 33, 0.35);
+  background: #D93025;
 }
 .dark button[data-slot="button"][data-variant="default"] {
-  background: linear-gradient(135deg, #FF5540, #FF3621);
+  background: #E8453C;
+}
+.dark button[data-slot="button"][data-variant="default"]:hover {
+  background: #D93025;
 }
 
 /* Destructive buttons */
 button[data-slot="button"][data-variant="destructive"] {
-  background: linear-gradient(135deg, #DC3545, #C82333);
+  background: #D93025;
+}
+button[data-slot="button"][data-variant="destructive"]:hover {
+  background: #C5221F;
 }
 
-/* Primary badges — Databricks red */
+/* Primary badges — Databricks coral */
 span[data-slot="badge"][data-variant="default"] {
-  background: #FF3621;
+  background: #E8453C;
 }
 .dark span[data-slot="badge"][data-variant="default"] {
-  background: #FF5540;
+  background: #E8453C;
 }
 
-/* Input focus — red accent ring */
+/* Input focus — blue accent ring (Databricks style) */
 input:focus, textarea:focus, select:focus {
-  border-color: #FF3621;
-  box-shadow: 0 0 0 3px rgba(255, 54, 33, 0.08);
+  border-color: #1B73E8;
+  box-shadow: 0 0 0 3px rgba(27, 115, 232, 0.1);
 }
 .dark input:focus, .dark textarea:focus, .dark select:focus {
-  border-color: #FF5540;
-  box-shadow: 0 0 0 3px rgba(255, 85, 64, 0.15);
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 /* Smooth page transitions */
@@ -190,18 +247,20 @@ main {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Override background for light/dark modes */
+/* Override background for light/dark modes — Databricks palette */
 :root {
-  --background: #F8F9FA;
+  --background: #F5F5F5;
   --card: #FFFFFF;
-  --card-foreground: #1B3139;
-  --foreground: #1B3139;
+  --card-foreground: #1F2937;
+  --foreground: #1F2937;
+  --border: #E5E7EB;
 }
 .dark {
   --background: #0F1419;
   --card: #1B2028;
   --card-foreground: #E8ECEF;
   --foreground: #E8ECEF;
+  --border: rgba(255, 255, 255, 0.1);
 }
 
 /* ─── Dark mode overrides for hardcoded Tailwind utility colors ─── */
@@ -402,6 +461,25 @@ main {
 }
 .dark .hover\:bg-green-100:hover {
   background-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* Sidebar — White in light mode (Databricks), dark in dark mode */
+.sidebar-bg {
+  background: #FFFFFF;
+  border-right: 1px solid #E5E7EB;
+}
+.dark .sidebar-bg {
+  background: #161B22;
+  border-right: 1px solid rgba(255,255,255,0.1);
+}
+/* Header — White in light mode, dark in dark mode */
+.header-bg {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E5E7EB;
+}
+.dark .header-bg {
+  background: #161B22;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 /* Scrollbar styling for sidebar */

@@ -512,7 +512,7 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   }, []);
 
   const selectClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div>
@@ -780,7 +780,7 @@ export default function ClonePage() {
                       </div>
                     ) : (
                       <select
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                         value={config.volume}
                         onChange={(e) => setConfig({ ...config, volume: e.target.value })}
                       >

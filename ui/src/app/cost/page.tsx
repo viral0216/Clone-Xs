@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
-import { Loader2, XCircle, DollarSign, HardDrive, Cpu } from "lucide-react";
+import { Loader2, XCircle, DollarSign, HardDrive, Cpu, Calculator } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 export default function CostPage() {
   const [catalog, setCatalog] = useState("");
@@ -33,13 +34,14 @@ export default function CostPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Cost Estimator</h1>
-        <p className="text-muted-foreground mt-1">Estimate storage cost (GB x price) and compute cost (DBUs) for deep vs. shallow clone operations. Breaks down cost by schema and highlights the largest tables.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/pricing" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Pricing</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-describe-detail" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">DESCRIBE DETAIL</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Cost Estimator"
+        icon={Calculator}
+        breadcrumbs={["Analysis", "Cost Estimator"]}
+        description="Estimate storage cost (GB x price) and compute cost (DBUs) for deep vs. shallow clone operations. Breaks down cost by schema and highlights the largest tables."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-describe-detail"
+        docsLabel="DESCRIBE DETAIL"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

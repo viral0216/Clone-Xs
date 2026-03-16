@@ -506,7 +506,7 @@ export default function IncrementalSyncPage() {
                   />
                 ) : (
                   <select
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                     value={volume}
                     onChange={(e) => setVolume(e.target.value)}
                   >
@@ -607,7 +607,7 @@ export default function IncrementalSyncPage() {
             <Card
               key={sr.schema}
               className={`bg-card border-border transition-all ${
-                schemaSelectedCount(sr.schema, sr.tables || []) > 0 ? "ring-1 ring-[#FF3621]/40" : ""
+                schemaSelectedCount(sr.schema, sr.tables || []) > 0 ? "ring-1 ring-[#1A73E8]/40" : ""
               }`}
             >
               <CardHeader className="pb-2">
@@ -669,7 +669,7 @@ export default function IncrementalSyncPage() {
                           <tr
                             key={t.table_name}
                             className={`border-b border-border/50 hover:bg-muted/50 cursor-pointer ${
-                              selectedTables.has(tableKey(sr.schema, t.table_name)) ? "bg-[#FF3621]/5" : ""
+                              selectedTables.has(tableKey(sr.schema, t.table_name)) ? "bg-[#1A73E8]/5" : ""
                             }`}
                             onClick={() => toggleTable(sr.schema, t.table_name)}
                           >

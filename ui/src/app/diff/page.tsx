@@ -10,6 +10,7 @@ import {
   GitCompare, CheckCircle, XCircle, Loader2, AlertCircle,
   Plus, Minus, Equal, ArrowRight,
 } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 function DiffSection({ title, data }: { title: string; data: any }) {
   if (!data) return null;
@@ -138,13 +139,14 @@ export default function DiffPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Diff & Compare</h1>
-        <p className="text-gray-500 mt-1">Object-level diff between two catalogs — identifies missing, extra, and modified schemas, tables, views, and columns. Validates that clones match their source.</p>
-        <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/information-schema" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">INFORMATION_SCHEMA</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Diff & Compare"
+        icon={GitCompare}
+        breadcrumbs={["Discovery", "Diff & Compare"]}
+        description="Object-level diff between two catalogs — identifies missing, extra, and modified schemas, tables, views, and columns. Validates that clones match their source."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/information-schema"
+        docsLabel="INFORMATION_SCHEMA"
+      />
 
       {/* Input */}
       <Card>

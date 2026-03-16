@@ -10,6 +10,7 @@ import {
   Loader2, XCircle, HardDrive, Database, Trash2, Clock,
   AlertTriangle, Download, Zap, CheckCircle, Info,
 } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 function vacuumColor(pct: number) {
   if (pct >= 30) return "text-red-500";
@@ -139,17 +140,14 @@ export default function StorageMetricsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Storage Metrics</h1>
-        <p className="text-muted-foreground mt-1">
-          Analyze per-table storage breakdown using <code className="text-xs bg-muted px-1 py-0.5 rounded">ANALYZE TABLE ... COMPUTE STORAGE METRICS</code>.
-          Shows active data, vacuumable bytes (reclaimable via VACUUM), and time-travel/tombstone storage.
-          Helps identify tables consuming excess storage and optimize costs.
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Requires <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-compute-storage-metrics" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Runtime 18.0+</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-vacuum" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">VACUUM</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-optimize" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">OPTIMIZE</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Predictive Optimization</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Storage Metrics"
+        icon={HardDrive}
+        breadcrumbs={["Analysis", "Storage Metrics"]}
+        description="Analyze per-table storage breakdown using ANALYZE TABLE COMPUTE STORAGE METRICS. Shows active data, vacuumable bytes (reclaimable via VACUUM), and time-travel/tombstone storage. Requires Runtime 18.0+."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-compute-storage-metrics"
+        docsLabel="ANALYZE TABLE reference"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

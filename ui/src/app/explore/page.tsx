@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { useSearch, useStats } from "@/hooks/useApi";
 import {
   Search, BarChart3, Database, Table2, HardDrive, Rows3,
-  ArrowUpDown, Loader2,
+  ArrowUpDown, Loader2, FolderTree,
 } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
@@ -56,13 +57,14 @@ export default function ExplorePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Catalog Explorer</h1>
-        <p className="text-gray-500 mt-1">Browse Unity Catalog hierarchy — catalogs, schemas, tables, views, and columns with row counts, sizes, and metadata. Search across objects by name or pattern.</p>
-        <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog objects</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/information-schema" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">INFORMATION_SCHEMA</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Catalog Explorer"
+        icon={FolderTree}
+        breadcrumbs={["Discovery", "Explorer"]}
+        description="Browse Unity Catalog hierarchy — catalogs, schemas, tables, views, and columns with row counts, sizes, and metadata. Search across objects by name or pattern."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/"
+        docsLabel="Unity Catalog objects"
+      />
 
       {/* Catalog Input */}
       <Card>

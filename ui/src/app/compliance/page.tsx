@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, ShieldCheck, Download, FileText } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
@@ -59,13 +60,14 @@ export default function CompliancePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Compliance</h1>
-        <p className="text-muted-foreground mt-1">Generate governance and compliance reports — permission audits, tag coverage, PII exposure, ownership mapping, and access control analysis across catalogs.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog governance</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-show-grants" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SHOW GRANTS</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Compliance"
+        icon={ShieldCheck}
+        breadcrumbs={["Analysis", "Compliance"]}
+        description="Generate governance and compliance reports — permission audits, tag coverage, PII exposure, ownership mapping, and access control analysis across catalogs."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/"
+        docsLabel="Unity Catalog governance"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

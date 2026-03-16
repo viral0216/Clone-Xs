@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
-import { Loader2, XCircle, BarChart3, CheckCircle } from "lucide-react";
+import { Loader2, XCircle, BarChart3, CheckCircle, ScanSearch } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 export default function ProfilingPage() {
   const [catalog, setCatalog] = useState("");
@@ -35,13 +36,14 @@ export default function ProfilingPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Data Profiling</h1>
-        <p className="text-muted-foreground mt-1">Per-column data quality profiling — null rates, distinct counts, min/max values, and string length distributions. Helps assess data completeness before and after cloning.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-table" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ANALYZE TABLE</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Data Profiling"
+        icon={ScanSearch}
+        breadcrumbs={["Analysis", "Profiling"]}
+        description="Per-column data quality profiling — null rates, distinct counts, min/max values, and string length distributions. Helps assess data completeness before and after cloning."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-table"
+        docsLabel="ANALYZE TABLE"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

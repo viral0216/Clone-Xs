@@ -75,7 +75,7 @@ export default function CatalogPicker({
   }, [catalog, schema, showTable]);
 
   const selectClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">

@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 _CUSTOM_DOCS_HTML = (
     '<!DOCTYPE html><html lang="en"><head>'
     '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
-    '<title>Clone-Xs API</title>'
+    '<title>Clone → Xs API</title>'
     '<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css">'
     '</head><body>'
     '<div id="cx-header"></div>'
@@ -48,7 +48,7 @@ _CUSTOM_DOCS_HTML = (
     '<div style="background:linear-gradient(135deg,#1B3139,#0F1419);border-bottom:1px solid rgba(255,255,255,0.1);padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100">'
     '<div style="display:flex;align-items:center;gap:12px">'
     '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#FF3621,#E02F1B);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:white">CX</div>'
-    '<div><div style="font-size:20px;font-weight:700;color:white;letter-spacing:-0.3px">Clone-Xs API</div>'
+    '<div><div style="font-size:20px;font-weight:700;color:white;letter-spacing:-0.3px">Clone → Xs API</div>'
     '<div style="font-size:12px;color:#6B7280;margin-top:2px">Enterprise Unity Catalog Cloning Toolkit</div></div></div>'
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
     '<span style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;color:#49CC90;border:1px solid rgba(73,204,144,0.3)">v0.5.0</span>'
@@ -166,7 +166,7 @@ _CUSTOM_DOCS_HTML = (
 _api_description = """
 ## Enterprise Unity Catalog Cloning Toolkit
 
-Clone-Xs provides a complete REST API for cloning, comparing, syncing, and managing
+Clone → Xs provides a complete REST API for cloning, comparing, syncing, and managing
 Databricks Unity Catalog catalogs.
 
 ### Quick Start
@@ -252,7 +252,7 @@ _tag_metadata = [
 ]
 
 app = FastAPI(
-    title="Clone-Xs API",
+    title="Clone → Xs API",
     description=_api_description,
     version="0.5.0",
     lifespan=lifespan,

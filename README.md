@@ -1,6 +1,6 @@
-# Clone-Xs
+# Clone → Xs
 
-**Enterprise-grade Unity Catalog cloning toolkit for Databricks — clone, compare, and manage catalogs from CLI, Web UI, or REST API.**
+**Enterprise-grade Unity Catalog Toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API.**
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.5.0-green.svg)

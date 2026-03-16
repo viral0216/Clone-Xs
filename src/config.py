@@ -5,10 +5,16 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     """Load clone configuration from YAML file.
 
     If profiles are defined and a profile name is given, the profile settings
-    are merged on top of the base config.
+    are merged on top of the base config.  If the config file does not exist,
+    returns sensible defaults so the CLI can run purely from flags (e.g. in
+    Databricks notebooks).
     """
-    with open(config_path) as f:
-        raw = yaml.safe_load(f)
+    import os
+    if not os.path.exists(config_path):
+        raw = {}
+    else:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
 
     # Handle config profiles
     profiles = raw.pop("profiles", None)

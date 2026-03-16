@@ -79,22 +79,24 @@ def build_execution_plan(client, config: dict) -> dict:
     # Ensure dry_run is True
     plan_config = {**config, "dry_run": True}
 
-    # Capture SQL by wrapping execute_sql
+    # Use the global capture hook in client.py to record all SQL statements.
+    # This fires before the dry_run check, so write statements are captured
+    # even though they won't be executed.
     capture = SqlCapture()
-    original_execute = None
 
-    import src.client as client_module
-    original_execute = client_module.execute_sql
+    from src.client import set_sql_capture
 
-    def capturing_execute(cl, wh, sql, max_retries=3, dry_run=False):
-        capture.capture(sql)
-        return original_execute(cl, wh, sql, max_retries=max_retries, dry_run=True)
+    def on_sql(sql):
+        sql_upper = sql.strip().upper()
+        is_read = sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "LIST"))
+        if not is_read:
+            capture.capture(sql)
 
     try:
-        client_module.execute_sql = capturing_execute
+        set_sql_capture(on_sql)
         summary = clone_catalog(client, plan_config)
     finally:
-        client_module.execute_sql = original_execute
+        set_sql_capture(None)
 
     # Build cost estimate
     cost_estimate = None
@@ -254,12 +256,33 @@ th {{ background: #f0f0f0; font-weight: 600; }}
     return html
 
 
+def format_plan_sql(plan: dict) -> str:
+    """Format execution plan as a .sql file with all statements."""
+    lines = []
+    lines.append(f"-- Clone-Xs Execution Plan")
+    lines.append(f"-- Source: {plan['source_catalog']} -> Destination: {plan['destination_catalog']}")
+    lines.append(f"-- Clone Type: {plan['clone_type']}")
+    lines.append(f"-- Generated: {plan['generated_at']}")
+    lines.append(f"-- Total statements: {plan['sql_summary']['total_statements']}")
+    lines.append("")
+
+    for i, stmt in enumerate(plan.get("sql_statements", []), 1):
+        sql = stmt["sql"] if isinstance(stmt, dict) else str(stmt)
+        lines.append(f"-- [{stmt.get('category', 'SQL')}] Statement {i}")
+        lines.append(f"{sql};")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def output_plan(plan: dict, fmt: str = "console", output_path: str | None = None):
     """Output the plan in the requested format."""
     if fmt == "json":
         content = format_plan_json(plan)
     elif fmt == "html":
         content = format_plan_html(plan)
+    elif fmt == "sql":
+        content = format_plan_sql(plan)
     else:
         content = format_plan_console(plan)
 

@@ -65,10 +65,10 @@ The tool uses `CREATE CATALOG IF NOT EXISTS` — it won't overwrite an existing 
 
 ### Can I clone only specific tables?
 
-Yes. Use `--table-pattern` with a regex:
+Yes. Use `--include-tables-regex` with a regex:
 
 ```bash
-clone-catalog clone --source prod --dest staging --table-pattern "^dim_.*"
+clone-catalog clone --source prod --dest staging --include-tables-regex "^dim_.*"
 ```
 
 ### What about views that reference the source catalog?
@@ -97,7 +97,7 @@ This happens when a catalog was created without an explicit owner. Drop the cata
 This was a bug in earlier versions. Update to the latest version:
 
 ```bash
-pip install --upgrade clone-xs
+pip install clone-xs
 ```
 
 ### Pre-flight shows failures but I want to proceed anyway

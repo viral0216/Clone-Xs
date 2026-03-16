@@ -214,9 +214,6 @@ clone-catalog serve --host 0.0.0.0 --port 9090
 
 # With API key authentication
 clone-catalog serve --api-key "your-secret-key"
-
-# With SSL
-clone-catalog serve --ssl-cert cert.pem --ssl-key key.pem
 ```
 
 ### REST API endpoints
@@ -310,7 +307,7 @@ clone-catalog clone \
 # Time-based throttle (low during business hours, max overnight)
 clone-catalog clone \
   --source production --dest staging \
-  --throttle-schedule "09:00-18:00=low,18:00-09:00=max"
+  --throttle low
 ```
 
 ### Throttle presets
@@ -349,7 +346,7 @@ For fine-grained control, set a hard cap on how many tables can be cloned per mi
 ```bash
 clone-catalog clone \
   --source production --dest staging \
-  --tables-per-minute 10
+  --max-rps 10
 ```
 
 This is useful when you know your warehouse can handle exactly N concurrent clone statements without queuing.

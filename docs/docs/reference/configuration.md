@@ -211,5 +211,5 @@ Environment variables override config file values for auth settings:
 Compare two config files to see differences:
 
 ```bash
-clone-catalog config-diff --file1 config/dev.yaml --file2 config/staging.yaml
+clone-catalog config-diff config/dev.yaml config/staging.yaml
 ```

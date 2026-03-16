@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clone-Xs — Enterprise Unity Catalog Cloning for Databricks</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0F1628; --card: #1A2340; --surface: #232D4A;
+  --crimson: #DC143C; --crimson-glow: rgba(220,20,60,.35);
+  --text: #E8ECF4; --text-muted: #8892A8; --text-dim: #5A6378;
+  --terminal-bg: #0D1117; --terminal-green: #22C55E;
+  --amber: #F59E0B; --green: #22C55E; --blue: #3B82F6;
+}
+html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+.slide { min-height: 100vh; scroll-snap-align: start; display: flex; align-items: center; justify-content: center; position: relative; padding: 60px 40px; }
+
+/* Navigation dots */
+.nav-dots { position: fixed; right: 24px; top: 50%; transform: translateY(-50%); z-index: 100; display: flex; flex-direction: column; gap: 14px; }
+.nav-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--text-dim); background: transparent; cursor: pointer; transition: all .3s; }
+.nav-dot.active { background: var(--crimson); border-color: var(--crimson); box-shadow: 0 0 8px var(--crimson-glow); transform: scale(1.3); }
+.nav-dot:hover { border-color: var(--text-muted); }
+
+/* Animations */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes glow { 0%, 100% { text-shadow: 0 0 20px var(--crimson-glow), 0 0 60px rgba(220,20,60,.15); } 50% { text-shadow: 0 0 30px var(--crimson-glow), 0 0 80px rgba(220,20,60,.25); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes progressFill { from { width: 0; } to { width: 100%; } }
+@keyframes slideRight { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes flowPulse { 0% { box-shadow: 0 0 0 0 var(--crimson-glow); } 70% { box-shadow: 0 0 0 12px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+.anim-target { opacity: 0; }
+.anim-target.visible { animation: fadeInUp .6s ease forwards; }
+.anim-delay-1 { animation-delay: .15s !important; }
+.anim-delay-2 { animation-delay: .3s !important; }
+.anim-delay-3 { animation-delay: .45s !important; }
+.anim-delay-4 { animation-delay: .6s !important; }
+.anim-delay-5 { animation-delay: .75s !important; }
+
+/* Slide 1 — Hero */
+.hero-content { text-align: center; max-width: 900px; }
+.hero-title { font-size: clamp(3rem, 7vw, 5.5rem); font-weight: 900; letter-spacing: -2px; color: var(--text); animation: glow 4s ease-in-out infinite; }
+.hero-title span { color: var(--crimson); }
+.hero-sub { font-size: clamp(1rem, 2vw, 1.35rem); color: var(--text-muted); margin-top: 16px; font-weight: 400; }
+.stats-row { display: flex; gap: 32px; justify-content: center; margin-top: 48px; flex-wrap: wrap; }
+.stat-card { background: var(--card); border: 1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 24px 32px; text-align: center; min-width: 150px; }
+.stat-num { font-size: 2.4rem; font-weight: 800; color: var(--crimson); font-variant-numeric: tabular-nums; }
+.stat-label { font-size: .8rem; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 1.5px; }
+.scroll-hint { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); color: var(--text-dim); font-size: .8rem; animation: pulse 2s infinite; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.scroll-hint svg { width: 20px; height: 20px; }
+
+/* Slide 2 — Problem */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; max-width: 1200px; width: 100%; align-items: center; }
+.slide-header { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+.slide-header span { color: var(--crimson); }
+.slide-subheader { color: var(--text-muted); margin-bottom: 32px; font-size: .95rem; }
+
+/* Terminal */
+.terminal { background: var(--terminal-bg); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); }
+.terminal-bar { height: 36px; background: rgba(255,255,255,.04); display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+.terminal-dot { width: 11px; height: 11px; border-radius: 50%; }
+.terminal-dot.r { background: #FF5F57; } .terminal-dot.y { background: #FEBC2E; } .terminal-dot.g { background: #28C840; }
+.terminal-body { padding: 20px; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: .82rem; line-height: 1.7; color: var(--terminal-green); min-height: 260px; position: relative; }
+.terminal-line { white-space: pre-wrap; word-break: break-all; }
+.terminal-line.error { color: #EF4444; }
+.terminal-line.dim { color: var(--text-dim); }
+.terminal-line .prompt { color: var(--blue); }
+.cursor-blink { display: inline-block; width: 8px; height: 16px; background: var(--terminal-green); animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 2px; }
+
+.pain-cards { display: grid; gap: 16px; }
+.pain-card { background: var(--card); border-radius: 10px; padding: 20px 24px; border-left: 3px solid var(--crimson); display: flex; align-items: flex-start; gap: 14px; }
+.pain-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+.pain-title { font-weight: 600; font-size: .95rem; margin-bottom: 4px; }
+.pain-desc { color: var(--text-muted); font-size: .82rem; }
+
+/* Slide 3 — Wizard */
+.wizard-wrap { max-width: 800px; width: 100%; }
+.wizard-tabs { display: flex; gap: 0; margin-bottom: 0; }
+.wizard-tab { flex: 1; padding: 14px; text-align: center; font-size: .85rem; font-weight: 600; cursor: pointer; background: var(--surface); color: var(--text-dim); border-bottom: 2px solid transparent; transition: all .3s; position: relative; }
+.wizard-tab:first-child { border-radius: 10px 0 0 0; } .wizard-tab:last-child { border-radius: 0 10px 0 0; }
+.wizard-tab.active { color: var(--crimson); border-bottom-color: var(--crimson); background: var(--card); }
+.wizard-tab .step-num { display: block; font-size: .7rem; color: var(--text-dim); margin-bottom: 2px; }
+.wizard-panel { background: var(--card); border-radius: 0 0 12px 12px; padding: 32px; min-height: 300px; border: 1px solid rgba(255,255,255,.06); border-top: none; display: none; }
+.wizard-panel.active { display: block; }
+
+.form-group { margin-bottom: 20px; }
+.form-label { font-size: .78rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; display: block; }
+.form-select { width: 100%; padding: 10px 14px; background: var(--surface); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: var(--text); font-size: .9rem; font-family: inherit; appearance: none; cursor: pointer; }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.toggle-label { font-size: .9rem; }
+.toggle-sub { font-size: .75rem; color: var(--text-dim); }
+.toggle { width: 44px; height: 24px; border-radius: 12px; background: var(--surface); position: relative; cursor: pointer; transition: background .3s; flex-shrink: 0; }
+.toggle.on { background: var(--crimson); }
+.toggle::after { content: ''; position: absolute; width: 18px; height: 18px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: transform .3s; }
+.toggle.on::after { transform: translateX(20px); }
+
+.preview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.preview-stat { text-align: center; background: var(--surface); padding: 20px 12px; border-radius: 10px; }
+.preview-stat .num { font-size: 2rem; font-weight: 800; color: var(--crimson); }
+.preview-stat .label { font-size: .75rem; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+
+.exec-progress { margin: 20px 0; }
+.progress-bar-track { height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--crimson), #E84368); border-radius: 4px; width: 0; transition: width .5s ease; }
+.exec-logs { margin-top: 20px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: .78rem; line-height: 1.8; color: var(--terminal-green); background: var(--terminal-bg); padding: 16px; border-radius: 8px; min-height: 160px; }
+.exec-log-line { opacity: 0; transform: translateX(-10px); transition: all .3s; }
+.exec-log-line.show { opacity: 1; transform: translateX(0); }
+.status-badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: .72rem; font-weight: 700; text-transform: uppercase; }
+.badge-running { background: rgba(59,130,246,.2); color: var(--blue); }
+.badge-completed { background: rgba(34,197,94,.2); color: var(--green); }
+.badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+.badge-amber { background: rgba(245,158,11,.15); color: var(--amber); }
+
+/* Slide 4 — Incremental Sync */
+.sync-wrap { max-width: 800px; width: 100%; }
+.schema-card { background: var(--card); border-radius: 10px; padding: 18px 24px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,.06); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all .3s; }
+.schema-card:hover { border-color: rgba(255,255,255,.12); }
+.schema-name { font-weight: 600; font-size: .95rem; font-family: 'SF Mono', 'Fira Code', monospace; }
+.schema-expand { margin-top: -2px; max-height: 0; overflow: hidden; transition: max-height .4s ease, padding .3s; background: var(--surface); border-radius: 0 0 10px 10px; }
+.schema-expand.open { max-height: 260px; padding: 16px 20px; overflow-y: auto; }
+.expand-table { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: .82rem; color: var(--text-muted); border-bottom: 1px solid rgba(255,255,255,.04); }
+.expand-check { width: 16px; height: 16px; border-radius: 4px; border: 2px solid var(--crimson); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.expand-check.checked::after { content: ''; width: 8px; height: 8px; background: var(--crimson); border-radius: 2px; }
+.sync-btn { display: inline-flex; align-items: center; gap: 8px; margin-top: 24px; padding: 14px 32px; background: var(--crimson); color: #fff; border: none; border-radius: 10px; font-size: .95rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .3s; }
+.sync-btn:hover { background: #C41235; transform: translateY(-1px); }
+.sync-btn.syncing { pointer-events: none; opacity: .85; }
+.sync-progress { margin-top: 16px; display: none; }
+.sync-progress.show { display: block; }
+
+/* Slide 5 — Serverless */
+.serverless-wrap { max-width: 900px; width: 100%; text-align: center; }
+.flow-diagram { display: flex; align-items: center; justify-content: center; gap: 0; margin: 40px 0; flex-wrap: wrap; }
+.flow-box { background: var(--card); border: 2px solid rgba(255,255,255,.08); border-radius: 12px; padding: 22px 28px; font-weight: 600; font-size: .9rem; opacity: 0; transform: scale(.9); transition: all .5s; min-width: 140px; }
+.flow-box.lit { opacity: 1; transform: scale(1); border-color: var(--crimson); animation: flowPulse 2s ease infinite; }
+.flow-arrow { font-size: 1.4rem; color: var(--text-dim); padding: 0 8px; opacity: 0; transition: opacity .3s; }
+.flow-arrow.lit { opacity: 1; color: var(--crimson); }
+.kpi-row { display: flex; gap: 24px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
+.kpi-card { background: var(--card); border-radius: 12px; padding: 28px 36px; text-align: center; border: 1px solid rgba(255,255,255,.06); min-width: 180px; }
+.kpi-val { font-size: 1.5rem; font-weight: 800; color: var(--green); }
+.kpi-label { font-size: .8rem; color: var(--text-muted); margin-top: 4px; }
+
+/* Slide 6 — Audit */
+.audit-wrap { max-width: 1000px; width: 100%; }
+.audit-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 32px; }
+.audit-card { background: var(--card); border-radius: 10px; padding: 22px; border-top: 3px solid var(--crimson); }
+.audit-card-title { font-family: 'SF Mono', 'Fira Code', monospace; font-size: .85rem; color: var(--crimson); margin-bottom: 14px; font-weight: 600; }
+.audit-col { font-size: .78rem; color: var(--text-muted); padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-family: 'SF Mono', 'Fira Code', monospace; opacity: 0; transition: opacity .3s; }
+.audit-col.visible { opacity: 1; }
+.audit-query { margin-top: 20px; }
+.audit-results { margin-top: 16px; overflow-x: auto; }
+.audit-results table { width: 100%; border-collapse: collapse; font-size: .75rem; font-family: 'SF Mono', 'Fira Code', monospace; }
+.audit-results th { background: var(--surface); color: var(--text-muted); padding: 8px 12px; text-align: left; white-space: nowrap; }
+.audit-results td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; }
+.audit-results tr { opacity: 0; transition: opacity .4s; }
+.audit-results tr.visible { opacity: 1; }
+
+/* Slide 7 — Plan */
+.plan-wrap { max-width: 800px; width: 100%; }
+
+/* Slide 8 — Getting Started */
+.start-wrap { max-width: 1000px; width: 100%; text-align: center; }
+.start-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 36px; text-align: left; }
+.start-card { background: var(--card); border-radius: 12px; padding: 28px; border: 1px solid rgba(255,255,255,.06); }
+.start-card-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 6px; }
+.start-card-sub { font-size: .82rem; color: var(--text-muted); margin-bottom: 18px; }
+.start-code { background: var(--terminal-bg); border-radius: 8px; padding: 14px 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: .78rem; line-height: 1.7; color: var(--terminal-green); overflow-x: auto; }
+.gh-btn { display: inline-flex; align-items: center; gap: 10px; margin-top: 36px; padding: 14px 36px; background: var(--card); border: 1px solid rgba(255,255,255,.1); color: var(--text); border-radius: 10px; font-size: .95rem; font-weight: 600; text-decoration: none; transition: all .3s; font-family: inherit; }
+.gh-btn:hover { border-color: var(--crimson); transform: translateY(-2px); }
+.gh-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.license-badge { margin-top: 20px; font-size: .78rem; color: var(--text-dim); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .split { grid-template-columns: 1fr; }
+  .preview-grid { grid-template-columns: repeat(2, 1fr); }
+  .audit-cards { grid-template-columns: 1fr; }
+  .start-cards { grid-template-columns: 1fr; }
+  .flow-diagram { flex-direction: column; }
+  .flow-arrow { transform: rotate(90deg); }
+  .slide { padding: 40px 20px; }
+  .stats-row { gap: 16px; }
+  .stat-card { padding: 16px 20px; min-width: 120px; }
+  .kpi-row { flex-direction: column; align-items: center; }
+}
+@media (max-width: 600px) {
+  .nav-dots { right: 10px; gap: 10px; }
+  .nav-dot { width: 8px; height: 8px; }
+  .preview-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation Dots -->
+<nav class="nav-dots" id="navDots"></nav>
+
+<!-- Slide 1: Hero -->
+<section class="slide" id="slide-0">
+  <div class="hero-content">
+    <h1 class="hero-title anim-target">Clone<span>-Xs</span></h1>
+    <p class="hero-sub anim-target anim-delay-1">Enterprise Unity Catalog Cloning for Databricks</p>
+    <div class="stats-row">
+      <div class="stat-card anim-target anim-delay-2">
+        <div class="stat-num" data-count="56">0</div>
+        <div class="stat-label">CLI Commands</div>
+      </div>
+      <div class="stat-card anim-target anim-delay-2">
+        <div class="stat-num" data-count="88">0</div>
+        <div class="stat-label">Python Modules</div>
+      </div>
+      <div class="stat-card anim-target anim-delay-3">
+        <div class="stat-num" data-count="31">0</div>
+        <div class="stat-label">UI Pages</div>
+      </div>
+      <div class="stat-card anim-target anim-delay-3">
+        <div class="stat-num" data-count="61">0</div>
+        <div class="stat-label">API Endpoints</div>
+      </div>
+    </div>
+    <div class="scroll-hint">
+      Scroll to explore
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 2: The Problem -->
+<section class="slide" id="slide-1">
+  <div class="split">
+    <div>
+      <h2 class="slide-header anim-target">The <span>Problem</span></h2>
+      <p class="slide-subheader anim-target anim-delay-1">Manual catalog cloning is fragile and error-prone.</p>
+      <div class="terminal anim-target anim-delay-2" id="problemTerminal">
+        <div class="terminal-bar"><span class="terminal-dot r"></span><span class="terminal-dot y"></span><span class="terminal-dot g"></span></div>
+        <div class="terminal-body" id="problemTermBody"></div>
+      </div>
+    </div>
+    <div class="pain-cards">
+      <div class="pain-card anim-target anim-delay-2">
+        <div class="pain-icon">&#9881;</div>
+        <div><div class="pain-title">Manual SQL Scripts</div><div class="pain-desc">No automation — hand-written CREATE TABLE AS SELECT for every object.</div></div>
+      </div>
+      <div class="pain-card anim-target anim-delay-3">
+        <div class="pain-icon">&#128274;</div>
+        <div><div class="pain-title">Missing Metadata</div><div class="pain-desc">Permissions, tags, and properties silently dropped on every clone.</div></div>
+      </div>
+      <div class="pain-card anim-target anim-delay-4">
+        <div class="pain-icon">&#10060;</div>
+        <div><div class="pain-title">No Validation</div><div class="pain-desc">Row counts unchecked — data drift goes unnoticed for weeks.</div></div>
+      </div>
+      <div class="pain-card anim-target anim-delay-5">
+        <div class="pain-icon">&#128196;</div>
+        <div><div class="pain-title">No Audit Trail</div><div class="pain-desc">Compliance gaps — no record of what was cloned, when, or by whom.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 3: Clone Wizard -->
+<section class="slide" id="slide-2">
+  <div class="wizard-wrap">
+    <h2 class="slide-header anim-target" style="text-align:center;">Clone <span>Wizard</span></h2>
+    <p class="slide-subheader anim-target anim-delay-1" style="text-align:center;">Four steps from source to cloned catalog.</p>
+    <div class="anim-target anim-delay-2">
+      <div class="wizard-tabs">
+        <div class="wizard-tab active" data-tab="0"><span class="step-num">Step 1</span>Source</div>
+        <div class="wizard-tab" data-tab="1"><span class="step-num">Step 2</span>Options</div>
+        <div class="wizard-tab" data-tab="2"><span class="step-num">Step 3</span>Preview</div>
+        <div class="wizard-tab" data-tab="3"><span class="step-num">Step 4</span>Execute</div>
+      </div>
+      <!-- Source -->
+      <div class="wizard-panel active" id="wiz-0">
+        <div class="form-group">
+          <label class="form-label">Source Catalog</label>
+          <select class="form-select"><option>edp_dev</option><option>edp_staging</option><option>edp_prod</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Destination Catalog</label>
+          <select class="form-select"><option>edp_dev_00</option><option>edp_dev_clone</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Schema Filter (optional)</label>
+          <select class="form-select"><option>All Schemas (24)</option><option>bronze</option><option>silver</option><option>gold</option></select>
+        </div>
+      </div>
+      <!-- Options -->
+      <div class="wizard-panel" id="wiz-1">
+        <div class="toggle-row"><div><div class="toggle-label">Clone Permissions</div><div class="toggle-sub">Copy grants from source to destination</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">Clone Tags</div><div class="toggle-sub">Preserve column-level and table-level tags</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">Row-Count Validation</div><div class="toggle-sub">Verify row counts match after clone</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">Serverless Execution</div><div class="toggle-sub">Run on serverless compute — no warehouse required</div></div><div class="toggle" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+      <!-- Preview -->
+      <div class="wizard-panel" id="wiz-2">
+        <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:20px;">Review what will be cloned before execution.</p>
+        <div class="preview-grid">
+          <div class="preview-stat"><div class="num">24</div><div class="label">Schemas</div></div>
+          <div class="preview-stat"><div class="num">166</div><div class="label">Tables</div></div>
+          <div class="preview-stat"><div class="num">4</div><div class="label">Views</div></div>
+          <div class="preview-stat"><div class="num">9</div><div class="label">Volumes</div></div>
+        </div>
+        <div style="margin-top:20px;padding:14px;background:var(--surface);border-radius:8px;font-size:.82rem;color:var(--text-muted);">
+          Estimated time: <strong style="color:var(--text);">~8 minutes</strong> &nbsp;|&nbsp; Clone type: <strong style="color:var(--text);">SHALLOW</strong> &nbsp;|&nbsp; Permissions: <strong style="color:var(--green);">YES</strong>
+        </div>
+      </div>
+      <!-- Execute -->
+      <div class="wizard-panel" id="wiz-3">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <span style="font-weight:600;">Cloning edp_dev &rarr; edp_dev_00</span>
+          <span class="status-badge badge-running" id="execBadge">RUNNING</span>
+        </div>
+        <div class="exec-progress">
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="execBar"></div></div>
+        </div>
+        <div class="exec-logs" id="execLogs"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 4: Incremental Sync -->
+<section class="slide" id="slide-3">
+  <div class="sync-wrap">
+    <h2 class="slide-header anim-target" style="text-align:center;">Sync Only <span>What Changed</span></h2>
+    <p class="slide-subheader anim-target anim-delay-1" style="text-align:center;">Incremental sync detects schema-level changes and re-clones only what is needed.</p>
+    <div id="syncCards" style="margin-top:32px;"></div>
+    <div style="text-align:center;">
+      <button class="sync-btn anim-target anim-delay-4" id="syncBtn" onclick="runSyncAnim()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Sync 72 Tables
+      </button>
+      <div class="sync-progress" id="syncProgress">
+        <div class="progress-bar-track"><div class="progress-bar-fill" id="syncBar" style="width:0"></div></div>
+        <p style="margin-top:10px;font-size:.82rem;color:var(--text-muted);" id="syncStatusText">Syncing...</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 5: Serverless -->
+<section class="slide" id="slide-4">
+  <div class="serverless-wrap">
+    <h2 class="slide-header anim-target"><span>Serverless</span> Execution</h2>
+    <p class="slide-subheader anim-target anim-delay-1">Upload the Clone-Xs wheel to a UC Volume, then run as a serverless job. Zero warehouse cost.</p>
+    <div class="flow-diagram" id="flowDiagram">
+      <div class="flow-box" data-flow="0">Clone-Xs</div>
+      <div class="flow-arrow" data-flow="0">&rarr;</div>
+      <div class="flow-box" data-flow="1">UC Volume<br><small style="color:var(--text-dim);font-weight:400;">(upload wheel)</small></div>
+      <div class="flow-arrow" data-flow="1">&rarr;</div>
+      <div class="flow-box" data-flow="2">Serverless Job</div>
+      <div class="flow-arrow" data-flow="2">&rarr;</div>
+      <div class="flow-box" data-flow="3">Results</div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi-card anim-target anim-delay-3"><div class="kpi-val">$0</div><div class="kpi-label">Warehouse Cost</div></div>
+      <div class="kpi-card anim-target anim-delay-4"><div class="kpi-val">Auto-Scale</div><div class="kpi-label">Elastic Compute</div></div>
+      <div class="kpi-card anim-target anim-delay-5"><div class="kpi-val">0 s</div><div class="kpi-label">Cluster Wait</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 6: Audit Trail -->
+<section class="slide" id="slide-5">
+  <div class="audit-wrap">
+    <h2 class="slide-header anim-target" style="text-align:center;">Audit <span>Trail</span></h2>
+    <p class="slide-subheader anim-target anim-delay-1" style="text-align:center;">Every clone operation logged to Delta tables for compliance and debugging.</p>
+    <div class="audit-cards anim-target anim-delay-2" id="auditCards">
+      <div class="audit-card" data-audit="0">
+        <div class="audit-card-title">logs.run_logs</div>
+        <div class="audit-col">run_id</div><div class="audit-col">started_at</div><div class="audit-col">finished_at</div>
+        <div class="audit-col">source_catalog</div><div class="audit-col">dest_catalog</div><div class="audit-col">status</div>
+      </div>
+      <div class="audit-card" data-audit="1">
+        <div class="audit-card-title">logs.clone_operations</div>
+        <div class="audit-col">operation_id</div><div class="audit-col">run_id</div><div class="audit-col">object_type</div>
+        <div class="audit-col">object_name</div><div class="audit-col">sql_statement</div><div class="audit-col">duration_ms</div>
+      </div>
+      <div class="audit-card" data-audit="2">
+        <div class="audit-card-title">metrics.clone_metrics</div>
+        <div class="audit-col">metric_id</div><div class="audit-col">run_id</div><div class="audit-col">source_row_count</div>
+        <div class="audit-col">dest_row_count</div><div class="audit-col">match</div><div class="audit-col">checked_at</div>
+      </div>
+    </div>
+    <div class="anim-target anim-delay-3">
+      <div class="terminal audit-query" id="auditQueryTerm">
+        <div class="terminal-bar"><span class="terminal-dot r"></span><span class="terminal-dot y"></span><span class="terminal-dot g"></span></div>
+        <div class="terminal-body" id="auditQueryBody"></div>
+      </div>
+    </div>
+    <div class="audit-results anim-target anim-delay-4" id="auditResults">
+      <table>
+        <thead><tr class="visible"><th>run_id</th><th>started_at</th><th>source</th><th>dest</th><th>tables</th><th>status</th></tr></thead>
+        <tbody id="auditTableBody">
+          <tr><td>a3f8…c2</td><td>2025-01-15 09:12:04</td><td>edp_dev</td><td>edp_dev_00</td><td>166</td><td><span class="status-badge badge-completed">COMPLETED</span></td></tr>
+          <tr><td>b7d1…e5</td><td>2025-01-14 14:33:18</td><td>edp_staging</td><td>edp_stg_01</td><td>142</td><td><span class="status-badge badge-completed">COMPLETED</span></td></tr>
+          <tr><td>c9e4…a1</td><td>2025-01-14 08:01:55</td><td>edp_prod</td><td>edp_prod_bk</td><td>210</td><td><span class="status-badge badge-completed">COMPLETED</span></td></tr>
+          <tr><td>d2f6…b8</td><td>2025-01-13 16:45:30</td><td>edp_dev</td><td>edp_dev_00</td><td>166</td><td><span class="status-badge badge-completed">COMPLETED</span></td></tr>
+          <tr><td>e5a9…d3</td><td>2025-01-13 11:22:09</td><td>edp_dev</td><td>edp_dev_test</td><td>89</td><td><span class="status-badge badge-completed">COMPLETED</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 7: Execution Plan -->
+<section class="slide" id="slide-6">
+  <div class="plan-wrap">
+    <h2 class="slide-header anim-target" style="text-align:center;">Execution <span>Plan</span></h2>
+    <p class="slide-subheader anim-target anim-delay-1" style="text-align:center;">Dry-run any clone to review and capture every SQL statement before execution.</p>
+    <div class="terminal anim-target anim-delay-2" id="planTerminal">
+      <div class="terminal-bar"><span class="terminal-dot r"></span><span class="terminal-dot y"></span><span class="terminal-dot g"></span></div>
+      <div class="terminal-body" id="planTermBody" style="min-height:320px;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 8: Getting Started -->
+<section class="slide" id="slide-7">
+  <div class="start-wrap">
+    <h2 class="slide-header anim-target">Get <span>Started</span></h2>
+    <p class="slide-subheader anim-target anim-delay-1">Three paths to running Clone-Xs in your environment.</p>
+    <div class="start-cards">
+      <div class="start-card anim-target anim-delay-2">
+        <div class="start-card-title">From Source</div>
+        <div class="start-card-sub">Full stack with UI, API, and CLI.</div>
+        <div class="start-code">git clone https://github.com/&#8203;your-org/Clone-Xs.git<br>cd Clone-Xs<br>pip install -e ".[dev]"<br>make web-start</div>
+      </div>
+      <div class="start-card anim-target anim-delay-3">
+        <div class="start-card-title">Docker</div>
+        <div class="start-card-sub">One command — API + UI ready.</div>
+        <div class="start-code">docker-compose up --build</div>
+      </div>
+      <div class="start-card anim-target anim-delay-4">
+        <div class="start-card-title">CLI Only</div>
+        <div class="start-card-sub">Lightweight — just the clone engine.</div>
+        <div class="start-code">pip install clone-xs<br><br>clone-catalog clone \<br>&nbsp; --source edp_dev \<br>&nbsp; --dest edp_dev_00</div>
+      </div>
+    </div>
+    <a class="gh-btn anim-target anim-delay-5" href="#" target="_blank">
+      <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+    <div class="license-badge anim-target anim-delay-5">MIT License &bull; Open Source</div>
+  </div>
+</section>
+
+<script>
+// --- Navigation Dots ---
+const SLIDES = 8;
+const dotsContainer = document.getElementById('navDots');
+for (let i = 0; i < SLIDES; i++) {
+  const d = document.createElement('div');
+  d.className = 'nav-dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => document.getElementById('slide-' + i).scrollIntoView({ behavior: 'smooth' }));
+  dotsContainer.appendChild(d);
+}
+const dots = dotsContainer.querySelectorAll('.nav-dot');
+
+// --- Intersection Observer for animations & dot tracking ---
+const slideEls = document.querySelectorAll('.slide');
+const slideObserver = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const idx = Array.from(slideEls).indexOf(e.target);
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+      // trigger anim-targets
+      e.target.querySelectorAll('.anim-target').forEach(el => el.classList.add('visible'));
+      // slide-specific triggers
+      if (idx === 0) animateCounters(e.target);
+      if (idx === 1) typeTerminal('problem');
+      if (idx === 2) initWizardExec();
+      if (idx === 3) buildSyncCards();
+      if (idx === 4) animateFlow();
+      if (idx === 5) animateAudit();
+      if (idx === 6) typeTerminal('plan');
+    }
+  });
+}, { threshold: 0.4 });
+slideEls.forEach(s => slideObserver.observe(s));
+
+// --- Keyboard nav ---
+document.addEventListener('keydown', e => {
+  const currentIdx = [...dots].findIndex(d => d.classList.contains('active'));
+  if (e.key === 'ArrowDown' && currentIdx < SLIDES - 1) document.getElementById('slide-' + (currentIdx + 1)).scrollIntoView({ behavior: 'smooth' });
+  if (e.key === 'ArrowUp' && currentIdx > 0) document.getElementById('slide-' + (currentIdx - 1)).scrollIntoView({ behavior: 'smooth' });
+});
+
+// --- Counter animation ---
+let countersRan = false;
+function animateCounters(slide) {
+  if (countersRan) return; countersRan = true;
+  slide.querySelectorAll('.stat-num').forEach(el => {
+    const target = parseInt(el.dataset.count);
+    let cur = 0;
+    const step = Math.max(1, Math.floor(target / 40));
+    const iv = setInterval(() => { cur = Math.min(cur + step, target); el.textContent = cur + (target === 61 ? '+' : ''); if (cur >= target) clearInterval(iv); }, 30);
+  });
+}
+
+// --- Typewriter terminals ---
+const terminalRan = {};
+function typeTerminal(id) {
+  if (terminalRan[id]) return; terminalRan[id] = true;
+  const lines = id === 'problem' ? [
+    { text: '$ CREATE TABLE dest.bronze.orders AS SELECT * FROM src.bronze.orders;', cls: '' },
+    { text: 'OK — 1,204,811 rows', cls: 'dim' },
+    { text: '$ CREATE TABLE dest.bronze.customers AS SELECT * FROM src.bronze.customers;', cls: '' },
+    { text: 'ERROR: [INSUFFICIENT_PERMISSIONS] User does not have SELECT on `src.bronze.customers`.', cls: 'error' },
+    { text: '$ -- What about permissions? Tags? Row validation?', cls: 'dim' },
+    { text: '$ -- ...silence...', cls: 'dim' },
+  ] : [
+    { text: '$ clone-catalog plan --source edp_dev --dest edp_dev_00 --capture-sql plan.sql', cls: '' },
+    { text: '', cls: 'dim' },
+    { text: '======================================================================', cls: 'dim' },
+    { text: 'CLONE EXECUTION PLAN', cls: '' },
+    { text: '======================================================================', cls: 'dim' },
+    { text: '  Total SQL Statements: 203', cls: '' },
+    { text: '    CLONE            : 166', cls: '' },
+    { text: '    CREATE_SCHEMA    : 24', cls: '' },
+    { text: '    CREATE_VIEW      : 4', cls: '' },
+    { text: '    CREATE_VOLUME    : 9', cls: '' },
+    { text: '', cls: 'dim' },
+    { text: '  Schemas: 24', cls: '' },
+    { text: '  Tables : 166 to clone, 4 to skip', cls: '' },
+    { text: '======================================================================', cls: 'dim' },
+    { text: 'SQL statements saved to plan.sql (203 statements)', cls: '' },
+  ];
+  const body = id === 'problem' ? document.getElementById('problemTermBody') : document.getElementById('planTermBody');
+  body.innerHTML = '';
+  let lineIdx = 0;
+  function nextLine() {
+    if (lineIdx >= lines.length) { body.innerHTML += '<span class="cursor-blink"></span>'; return; }
+    const l = lines[lineIdx++];
+    const div = document.createElement('div');
+    div.className = 'terminal-line ' + l.cls;
+    body.appendChild(div);
+    let charIdx = 0;
+    const speed = l.text.length > 60 ? 12 : 20;
+    function nextChar() {
+      if (charIdx < l.text.length) { div.textContent += l.text[charIdx++]; requestAnimationFrame(() => setTimeout(nextChar, speed)); }
+      else { setTimeout(nextLine, 150); }
+    }
+    nextChar();
+  }
+  nextLine();
+}
+
+// --- Wizard Tabs ---
+document.querySelectorAll('.wizard-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.wizard-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.wizard-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('wiz-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === '3') runExecAnim();
+  });
+});
+
+// --- Wizard Execute Animation ---
+let execRan = false;
+function initWizardExec() {}
+function runExecAnim() {
+  if (execRan) return; execRan = true;
+  const bar = document.getElementById('execBar');
+  const badge = document.getElementById('execBadge');
+  const logs = document.getElementById('execLogs');
+  const logLines = [
+    '[09:12:04] Creating schema edp_dev_00.bronze ...',
+    '[09:12:05] Cloning edp_dev.bronze.orders → edp_dev_00.bronze.orders ... OK (1,204,811 rows)',
+    '[09:12:07] Cloning edp_dev.bronze.customers → edp_dev_00.bronze.customers ... OK (342,109 rows)',
+    '[09:12:09] Applying permissions for bronze (14 grants) ... OK',
+    '[09:12:10] Creating schema edp_dev_00.silver ...',
+    '[09:12:11] Cloning edp_dev.silver.dim_product → edp_dev_00.silver.dim_product ... OK (8,412 rows)',
+    '[09:12:14] Validation: row counts match ✓',
+    '[09:12:15] Clone complete — 166 tables, 24 schemas, 4 views, 9 volumes',
+  ];
+  logs.innerHTML = '';
+  let i = 0;
+  const iv = setInterval(() => {
+    if (i >= logLines.length) {
+      clearInterval(iv);
+      badge.className = 'status-badge badge-completed'; badge.textContent = 'COMPLETED';
+      return;
+    }
+    const pct = Math.min(100, Math.round(((i + 1) / logLines.length) * 100));
+    bar.style.width = pct + '%';
+    const div = document.createElement('div');
+    div.className = 'exec-log-line';
+    div.textContent = logLines[i];
+    logs.appendChild(div);
+    requestAnimationFrame(() => div.classList.add('show'));
+    logs.scrollTop = logs.scrollHeight;
+    i++;
+  }, 700);
+}
+
+// --- Sync Cards ---
+let syncBuilt = false;
+function buildSyncCards() {
+  if (syncBuilt) return; syncBuilt = true;
+  const container = document.getElementById('syncCards');
+  const schemas = [
+    { name: 'assessment', status: 'Up to date', badge: 'badge-green', tables: null },
+    { name: 'audit', status: 'Up to date', badge: 'badge-green', tables: null },
+    { name: 'bronze', status: '72 changed', badge: 'badge-amber', tables: ['orders','customers','events','sessions','payments','products','inventory','returns','shipments','reviews','clicks','impressions'] },
+  ];
+  schemas.forEach((s, idx) => {
+    setTimeout(() => {
+      const card = document.createElement('div');
+      card.style.opacity = '0'; card.style.transform = 'translateY(16px)';
+      card.innerHTML = `<div class="schema-card" data-schema="${idx}">
+        <div><span class="schema-name">${s.name}</span></div>
+        <span class="status-badge ${s.badge}">${s.status}</span>
+      </div>` +
+      (s.tables ? `<div class="schema-expand" id="expand-${idx}">
+        ${s.tables.map(t => `<div class="expand-table"><div class="expand-check checked"></div><span>${s.name}.${t}</span></div>`).join('')}
+      </div>` : '');
+      container.appendChild(card);
+      requestAnimationFrame(() => { card.style.transition = 'all .4s ease'; card.style.opacity = '1'; card.style.transform = 'translateY(0)'; });
+      if (s.tables) {
+        card.querySelector('.schema-card').addEventListener('click', () => {
+          document.getElementById('expand-' + idx).classList.toggle('open');
+        });
+      }
+    }, idx * 300);
+  });
+}
+
+function runSyncAnim() {
+  const btn = document.getElementById('syncBtn');
+  const prog = document.getElementById('syncProgress');
+  const bar = document.getElementById('syncBar');
+  const txt = document.getElementById('syncStatusText');
+  btn.classList.add('syncing'); btn.textContent = 'Syncing...';
+  prog.classList.add('show');
+  let pct = 0;
+  const iv = setInterval(() => {
+    pct += 2;
+    bar.style.width = pct + '%';
+    txt.textContent = `Syncing... ${pct}% (${Math.round(pct * 0.72)} / 72 tables)`;
+    if (pct >= 100) {
+      clearInterval(iv);
+      txt.innerHTML = 'Sync complete &mdash; 72 tables updated.';
+      txt.style.color = 'var(--green)';
+      btn.textContent = 'Sync Complete'; btn.style.background = 'var(--green)';
+    }
+  }, 50);
+}
+
+// --- Flow Diagram ---
+let flowRan = false;
+function animateFlow() {
+  if (flowRan) return; flowRan = true;
+  const boxes = document.querySelectorAll('.flow-box');
+  const arrows = document.querySelectorAll('.flow-arrow');
+  [0,1,2,3].forEach(i => {
+    setTimeout(() => {
+      boxes[i].classList.add('lit');
+      if (arrows[i]) arrows[i].classList.add('lit');
+    }, i * 600);
+  });
+}
+
+// --- Audit animations ---
+let auditRan = false;
+function animateAudit() {
+  if (auditRan) return; auditRan = true;
+  document.querySelectorAll('.audit-card').forEach((card, ci) => {
+    const cols = card.querySelectorAll('.audit-col');
+    cols.forEach((col, i) => setTimeout(() => col.classList.add('visible'), ci * 400 + i * 120));
+  });
+  // query typewriter
+  setTimeout(() => {
+    const body = document.getElementById('auditQueryBody');
+    const q = "SELECT * FROM clone_audit.logs.run_logs ORDER BY started_at DESC LIMIT 5;";
+    body.innerHTML = '<div class="terminal-line"><span class="prompt">sql&gt; </span></div>';
+    const lineEl = body.querySelector('.terminal-line');
+    let ci = 0;
+    const iv = setInterval(() => {
+      if (ci >= q.length) { clearInterval(iv); body.innerHTML += '<span class="cursor-blink"></span>'; showAuditRows(); return; }
+      lineEl.innerHTML = '<span class="prompt">sql&gt; </span>' + q.substring(0, ++ci);
+    }, 25);
+  }, 1200);
+}
+function showAuditRows() {
+  document.querySelectorAll('#auditTableBody tr').forEach((r, i) => setTimeout(() => r.classList.add('visible'), i * 200));
+}
+</script>
+</body>
+</html>

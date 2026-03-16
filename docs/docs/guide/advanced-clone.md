@@ -107,7 +107,7 @@ clone-catalog clone \
   --ttl 7d
 
 # Set TTL on an existing catalog
-clone-catalog ttl set --catalog pr_1234 --ttl 14d
+clone-catalog ttl set --dest pr_1234 --days 14
 
 # Check TTL status for all catalogs
 clone-catalog ttl check
@@ -116,10 +116,10 @@ clone-catalog ttl check
 clone-catalog ttl cleanup
 
 # Extend TTL (e.g., PR review is taking longer)
-clone-catalog ttl extend --catalog pr_1234 --ttl 7d
+clone-catalog ttl extend --dest pr_1234 --days 7
 
 # Remove TTL (make permanent)
-clone-catalog ttl remove --catalog pr_1234
+clone-catalog ttl remove --dest pr_1234
 ```
 
 **Output (ttl check):**
@@ -311,107 +311,122 @@ You are setting up a new clone pipeline for a 500-table catalog. Before running 
 ### Usage
 
 ```bash
-# Generate an execution plan
+# Generate an execution plan (console output)
 clone-catalog plan \
   --source production --dest staging
 
-# Include cost estimates
-clone-catalog plan \
-  --source production --dest staging \
-  --estimate-cost --price-per-gb 0.023
-
-# Output as JSON (for programmatic review)
+# Save plan as JSON (for CI/CD pipelines)
 clone-catalog plan \
   --source production --dest staging \
   --format json --output plan.json
 
-# Output as HTML (shareable report)
+# Save plan as HTML (shareable report)
 clone-catalog plan \
   --source production --dest staging \
   --format html --output plan.html
-```
 
-**Output (console):**
+# Save plan as SQL (DBA review, manual execution)
+clone-catalog plan \
+  --source production --dest staging \
+  --format sql --output plan_statements.sql
 
-```
-============================================================
-EXECUTION PLAN: production → staging
-============================================================
-  Clone Type:     DEEP
-  Load Type:      FULL
-  Workers:        8 (parallel schemas) × 4 (parallel tables)
-
-  PHASE 1: Catalog Setup
-  ----------------------
-    CREATE CATALOG IF NOT EXISTS `staging`
-    (1 statement)
-
-  PHASE 2: Schema Creation (12 schemas)
-  ----------------------
-    CREATE SCHEMA IF NOT EXISTS `staging`.`sales`
-    CREATE SCHEMA IF NOT EXISTS `staging`.`analytics`
-    CREATE SCHEMA IF NOT EXISTS `staging`.`hr`
-    ... (9 more)
-    (12 statements)
-
-  PHASE 3: Table Cloning (247 tables)
-  ----------------------
-    CREATE TABLE `staging`.`sales`.`transactions`
-      DEEP CLONE `production`.`sales`.`transactions`      512.3 GB
-    CREATE TABLE `staging`.`sales`.`orders`
-      DEEP CLONE `production`.`sales`.`orders`             312.1 GB
-    CREATE TABLE `staging`.`sales`.`customers`
-      DEEP CLONE `production`.`sales`.`customers`           10.5 MB
-    ... (244 more)
-    (247 statements)
-
-  PHASE 4: Views (15 views)
-  ----------------------
-    CREATE VIEW `staging`.`reporting`.`monthly_summary` AS ...
-    ... (14 more)
-    (15 statements)
-
-  PHASE 5: Functions (8 functions)
-  ----------------------
-    CREATE FUNCTION `staging`.`analytics`.`compute_ltv` ...
-    ... (7 more)
-    (8 statements)
-
-  PHASE 6: Metadata (permissions, tags, properties)
-  ----------------------
-    GRANT SELECT ON ... (estimated 150 statements)
-    ALTER TABLE ... SET TAGS ... (estimated 80 statements)
-
-  SUMMARY
-  ----------------------
-    Total SQL statements:   ~513
-    Estimated data size:    1.84 TB
-    Estimated duration:     45-60 minutes
-    Estimated storage cost: $43.38/month ($0.023/GB)
-============================================================
-```
-
-### Capture SQL to file
-
-Save all planned SQL statements to a file for review or manual execution:
-
-```bash
+# Capture SQL separately (in addition to console output)
 clone-catalog plan \
   --source production --dest staging \
   --capture-sql plan_statements.sql
 ```
 
-This produces a `.sql` file with every statement in execution order — useful for review by a DBA or for running manually in a Databricks notebook.
+### Example: Real execution plan output
+
+Running `clone-catalog plan --source production --dest staging` produces:
+
+```
+======================================================================
+CLONE EXECUTION PLAN
+======================================================================
+  Source:      production
+  Destination: staging
+  Clone Type:  DEEP
+  Load Type:   FULL
+
+  Total SQL Statements: 203
+  By Category:
+    CLONE               : 166
+    CREATE_SCHEMA       : 24
+    CREATE_VIEW         : 4
+    CREATE_VOLUME       : 9
+
+  Schemas: 24
+  Tables      : 166 to clone, 4 to skip
+  Views       : 4 to clone, 0 to skip
+  Functions   : 0 to clone, 0 to skip
+  Volumes     : 9 to clone, 0 to skip
+======================================================================
+```
+
+### Example: Captured SQL file
+
+Using `--capture-sql plan_statements.sql` generates a `.sql` file with every write statement in execution order:
+
+```sql
+-- Clone-Xs Execution Plan
+-- Source: production -> Destination: staging
+-- Generated: 2026-03-15 22:00:36
+-- Total statements: 203
+
+-- [CREATE_SCHEMA] Statement 1
+CREATE SCHEMA IF NOT EXISTS `staging`.`staging`;
+
+-- [CREATE_SCHEMA] Statement 2
+CREATE SCHEMA IF NOT EXISTS `staging`.`bronze`;
+
+-- [CREATE_SCHEMA] Statement 3
+CREATE SCHEMA IF NOT EXISTS `staging`.`assessment`;
+
+-- ... (21 more schemas)
+
+-- [CLONE] Statement 25
+CREATE TABLE IF NOT EXISTS `staging`.`bronze`.`customer_data`
+  DEEP CLONE `production`.`bronze`.`customer_data`;
+
+-- [CLONE] Statement 26
+CREATE TABLE IF NOT EXISTS `staging`.`assessment`.`assessment_runs`
+  DEEP CLONE `production`.`assessment`.`assessment_runs`;
+
+-- ... (164 more table clones)
+
+-- [CREATE_VIEW] Statement 191
+CREATE OR REPLACE VIEW `staging`.`test_reports`.`junit_summary_by_run`
+  AS SELECT run_id, COUNT(*) as total_tests, ...;
+
+-- ... (3 more views)
+
+-- [CREATE_VOLUME] Statement 195
+CREATE VOLUME IF NOT EXISTS `staging`.`test_reports`.`test_artifacts`;
+
+-- [CREATE_VOLUME] Statement 196
+CREATE EXTERNAL VOLUME IF NOT EXISTS `staging`.`bronze`.`non-pii`
+  LOCATION 'abfss://non-pii@stdpdvuks01.dfs.core.windows.net/';
+
+-- ... (7 more volumes)
+```
+
+Each statement is categorised with `[CLONE]`, `[CREATE_SCHEMA]`, `[CREATE_VIEW]`, or `[CREATE_VOLUME]` — making it easy to review, filter, or run manually in a Databricks notebook.
 
 ### Output formats
 
-| Format | Best For |
-|---|---|
-| `console` (default) | Quick review in the terminal |
-| `json` | Programmatic integration, CI/CD validation |
-| `html` | Sharing with stakeholders, email reports |
-| `sql` | DBA review, manual execution |
+| Format | Flag | Best For |
+|---|---|---|
+| `console` (default) | `--format console` | Quick review in the terminal |
+| `json` | `--format json --output plan.json` | CI/CD pipelines, programmatic validation |
+| `html` | `--format html --output plan.html` | Sharing with stakeholders, email reports |
+| `sql` | `--format sql --output plan.sql` | DBA review, manual execution |
+| Capture SQL | `--capture-sql plan.sql` | Save write statements alongside any format |
 
 :::tip
-Run `clone-catalog plan` in your CI pipeline as a validation step. If the plan shows unexpected changes (e.g., tables being dropped and recreated), fail the pipeline before the clone runs.
+**CI/CD usage:** Run `clone-catalog plan --source prod --dest staging --format json --output plan.json` in your pipeline as a validation step. Parse the JSON to check statement counts, verify no unexpected drops, and auto-approve or flag for review.
+:::
+
+:::tip
+**DBA review:** Use `--capture-sql plan.sql` to generate a SQL file that a DBA can review before approving the clone. The file contains only write statements (CREATE, CLONE, GRANT) — read queries used for discovery are excluded.
 :::

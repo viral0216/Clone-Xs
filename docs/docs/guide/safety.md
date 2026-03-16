@@ -84,11 +84,6 @@ clone-catalog clone \
   --source production --dest staging \
   --checkpoint
 
-# Custom checkpoint interval
-clone-catalog clone \
-  --source production --dest staging \
-  --checkpoint --checkpoint-interval 100
-
 # Resume from the last checkpoint after a failure
 clone-catalog clone \
   --source production --dest staging \
@@ -143,9 +138,6 @@ clone-catalog lint --config config/clone_config.yaml
 
 # Strict mode: treat warnings as errors (useful in CI)
 clone-catalog lint --strict
-
-# Output as JSON (for programmatic checks)
-clone-catalog lint --format json
 ```
 
 **Output:**
@@ -185,12 +177,7 @@ Lint failed. Fix errors before cloning.
 
 ### Auto-lint before clone
 
-By default, `clone-catalog clone` runs a quick lint check before starting. If errors are found, the clone is aborted. You can disable this with `--no-lint`:
-
-```bash
-# Skip auto-lint (not recommended)
-clone-catalog clone --no-lint
-```
+By default, `clone-catalog clone` runs a quick lint check before starting. If errors are found, the clone is aborted.
 
 :::note
 Auto-lint only checks for `ERROR`-level issues. Run `clone-catalog lint` manually to see warnings and suggestions.
@@ -212,12 +199,9 @@ Your `production` catalog has views that reference tables in `analytics`. Before
 # Analyze impact of cloning a catalog
 clone-catalog impact --source production --dest staging
 
-# Check impact for specific schemas only
+# Check impact with a custom high-impact threshold
 clone-catalog impact --source production --dest staging \
-  --schemas analytics,sales
-
-# Output as JSON for integration with other tools
-clone-catalog impact --format json
+  --threshold 20
 
 # Include the impact check as part of the clone command
 clone-catalog clone \
@@ -280,5 +264,5 @@ clone-catalog clone \
 ```
 
 :::tip
-In CI/CD pipelines, combine `--impact-check` with `--max-risk medium` to automatically abort if the risk level exceeds your threshold — no interactive prompt needed.
+In CI/CD pipelines, combine `--impact-check` with `--threshold medium` to automatically abort if the risk level exceeds your threshold — no interactive prompt needed.
 :::

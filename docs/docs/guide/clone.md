@@ -537,6 +537,39 @@ Both workspaces must share the same Unity Catalog metastore, or the source table
 
 ---
 
+## Serverless compute
+
+**When to use:**
+You want to run a clone without provisioning or paying for a SQL warehouse — ideal for one-off clones, CI/CD pipelines, and scheduled jobs.
+
+**Real-world scenario:**
+Your CI pipeline creates a cloned catalog for every pull request. Instead of keeping a warehouse running 24/7, you use serverless compute — Clone-Xs packages itself, uploads to a UC Volume, and submits a serverless job that auto-scales and shuts down when done.
+
+```bash
+# Serverless clone
+clone-catalog clone \
+  --source production --dest staging \
+  --serverless \
+  --volume /Volumes/my_catalog/my_schema/libs
+
+# With full options
+clone-catalog clone \
+  --source production --dest staging \
+  --serverless \
+  --volume /Volumes/my_catalog/my_schema/libs \
+  --validate --report
+```
+
+```yaml
+# config/clone_config.yaml
+serverless: true
+volume: "/Volumes/my_catalog/my_schema/libs"
+```
+
+For full details on how serverless works, volume requirements, and incremental sync support, see [Notebooks & Serverless](./notebooks).
+
+---
+
 ## Resume from failure
 
 **When to use:**

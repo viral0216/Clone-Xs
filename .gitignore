@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+
+# Docusaurus build
+docs/build/
+docs/.docusaurus/
 /.pnp
 .pnp.*
 .yarn/*
@@ -80,11 +84,11 @@ crash.log
 
 # Runtime data
 checkpoints/
-rollback_logs/
-snapshots/
-exports/
-reports/
-sync_state/
+/rollback_logs/
+/snapshots/
+/exports/
+/reports/
+/sync_state/
 
 # Generated files
 databricks_workflow.json

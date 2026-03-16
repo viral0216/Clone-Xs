@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-03-16
+
+### Added
+- **Create Databricks Job** — new `create-job` CLI command and Web UI page to create persistent Databricks Jobs via the SDK (`client.jobs.create()`), with cron scheduling, email notifications, retries, tags, and update-existing-job support
+- **Desktop App** — native macOS/Windows application via Electron 28; auto-starts Python backend, loads Web UI in a native window, packages with electron-builder (macOS arm64 ZIP + Windows NSIS installer + portable)
+- **Create Job UI page** — full clone configuration (clone type, copy options, performance, filtering, time travel), cron presets, timezone picker, destination catalog dropdown with "Create New" option
+- **API endpoint** `POST /api/generate/create-job` — creates/updates Databricks Jobs with full clone config passthrough
+- **Build scripts** — `scripts/build-desktop.sh` with `--mac`, `--win`, `--skip-frontend` flags
+- **Makefile targets** — `desktop-dev`, `desktop-install`, `build-desktop-mac`, `build-desktop-win`
+- Web UI expanded to **32 pages** (added Create Job)
+- CLI expanded to **57 commands** (added `create-job`)
+- Extracted `build_job_config()` helper in `serverless.py` for reuse across serverless submit and create-job
+
+### Changed
+- `ui/vite.config.ts` — set `base: "./"` for Electron `file://` compatibility
+- Sidebar Operations section updated with Create Job entry
+- Platform badge updated to include Desktop
+
 ## [0.4.0] - 2026-03-15
 
 ### Added

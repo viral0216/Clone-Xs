@@ -24,6 +24,8 @@ const sidebars: SidebarsConfig = {
         'guide/validation',
         'guide/monitoring',
         'guide/notebooks',
+        'guide/create-job',
+        'guide/desktop',
         'guide/cicd',
       ],
     },

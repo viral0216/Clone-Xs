@@ -58,8 +58,7 @@ Preview what would be dropped:
 
 ```bash
 clone-catalog rollback \
-  --rollback-log rollback_logs/rollback_staging_20260310_143022.json \
-  --dry-run
+  --rollback-log rollback_logs/rollback_staging_20260310_143022.json
 ```
 
 ## What gets rolled back

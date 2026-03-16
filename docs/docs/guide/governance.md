@@ -19,17 +19,16 @@ Your organization has multiple teams sharing a Databricks workspace. The data en
 
 ```bash
 # Check if the current user can perform a clone
-clone-catalog rbac check \
-  --source production --dest dev_sandbox
+clone-catalog rbac check
 
 # Show all policies that apply to the current user
 clone-catalog rbac show
 
-# Show policies for a specific principal
-clone-catalog rbac show --principal "data-engineering@company.com"
+# Show policies for a specific user
+clone-catalog rbac show --user "data-engineering@company.com"
 
 # Validate RBAC policy file syntax
-clone-catalog rbac validate --policy rbac_policy.yaml
+clone-catalog policy-check --policy-file rbac_policy.yaml
 ```
 
 **Output (rbac check):**
@@ -124,14 +123,8 @@ clone-catalog clone --source production --dest production_backup
 # Clone aborted.
 ```
 
-To disable RBAC enforcement (e.g., for local development):
-
-```bash
-clone-catalog clone --no-rbac
-```
-
 :::caution
-Disabling RBAC (`--no-rbac`) should only be done in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized clones.
+RBAC enforcement should only be bypassed in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized clones.
 :::
 
 ---
@@ -156,14 +149,14 @@ clone-catalog clone \
 clone-catalog approval list
 
 # Approve a pending request (by ID)
-clone-catalog approval approve --id ap-2026031401
+clone-catalog approval approve ap-2026031401
 
 # Deny a request with a reason
-clone-catalog approval deny --id ap-2026031401 \
+clone-catalog approval deny ap-2026031401 \
   --reason "Use the existing QA catalog instead"
 
 # Check status of a specific request
-clone-catalog approval status --id ap-2026031401
+clone-catalog approval status ap-2026031401
 ```
 
 **Output (approval list):**
@@ -201,7 +194,7 @@ approval:
 1. User runs `clone-catalog clone --require-approval`
 2. The tool creates an approval request and sends a notification (Slack/webhook/CLI)
 3. The clone process enters a waiting state — it polls for approval status
-4. An approver runs `clone-catalog approval approve --id <id>` (or clicks the Slack button)
+4. An approver runs `clone-catalog approval approve <id>` (or clicks the Slack button)
 5. The clone resumes automatically
 
 If the timeout expires or the request is denied, the clone is aborted.
@@ -231,10 +224,10 @@ clone-catalog compliance-report \
   --from 2026-01-01 --to 2026-03-14
 
 # Output as HTML (shareable with non-technical stakeholders)
-clone-catalog compliance-report --format html --output report.html
+clone-catalog compliance-report --format html --output-dir reports/
 
 # Output as JSON (for integration with GRC tools)
-clone-catalog compliance-report --format json --output report.json
+clone-catalog compliance-report --format json --output-dir reports/
 ```
 
 **Output (console):**
@@ -322,7 +315,7 @@ Your `production` catalog contains customer PII — emails, phone numbers, socia
 clone-catalog pii-scan --source production
 
 # Scan specific schemas
-clone-catalog pii-scan --source production --schemas sales,hr
+clone-catalog pii-scan --source production
 ```
 
 **Output:**
@@ -353,18 +346,13 @@ PII SCAN RESULTS: production
 
 ### Masking during clone
 
-Combine PII scanning with masking rules to automatically protect sensitive data:
+Combine PII scanning with masking rules to automatically protect sensitive data. Define masking rules in your config YAML and reference the config file when cloning:
 
 ```bash
-# Clone with automatic PII masking
+# Clone using a config file with masking rules defined
 clone-catalog clone \
   --source production --dest dev \
-  --mask-pii
-
-# Clone with custom masking rules
-clone-catalog clone \
-  --source production --dest dev \
-  --masking-config config/masking_rules.yaml
+  --config config/clone_config.yaml
 ```
 
 ```yaml
@@ -400,5 +388,5 @@ When PII masking is applied during a clone, the compliance report automatically 
 - Whether any PII columns were left unmasked (flagged as a compliance risk)
 
 :::caution
-The `--mask-pii` flag uses heuristic column-name matching to detect PII. Always review the PII scan results and define explicit masking rules for complete coverage. Column-name detection may miss PII stored in generically named columns like `field1` or `data`.
+PII detection uses heuristic column-name matching. Always review the PII scan results and define explicit masking rules for complete coverage. Column-name detection may miss PII stored in generically named columns like `field1` or `data`.
 :::

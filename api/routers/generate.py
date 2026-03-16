@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.generate import TerraformRequest, WorkflowRequest
+from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
 router = APIRouter()
@@ -56,3 +56,63 @@ async def generate_terraform(
     config["output_path"] = req.output_path
     job_id = await jm.submit_job("terraform", config, client)
     return {"job_id": job_id, "status": "queued", "message": f"{req.format.title()} generation submitted"}
+
+
+@router.post("/create-job")
+async def create_databricks_job(
+    req: CreateJobRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+):
+    """Create a persistent Databricks Job for scheduled catalog cloning."""
+    from src.create_job import create_persistent_job
+
+    config = dict(app_config)
+    config["source_catalog"] = req.source_catalog
+    config["destination_catalog"] = req.destination_catalog
+    # Clone configuration
+    config["clone_type"] = req.clone_type
+    config["load_type"] = req.load_type
+    config["max_workers"] = req.max_workers
+    config["parallel_tables"] = req.parallel_tables
+    config["max_parallel_queries"] = req.max_parallel_queries
+    config["max_rps"] = req.max_rps
+    # Copy options
+    config["copy_permissions"] = req.copy_permissions
+    config["copy_ownership"] = req.copy_ownership
+    config["copy_tags"] = req.copy_tags
+    config["copy_properties"] = req.copy_properties
+    config["copy_security"] = req.copy_security
+    config["copy_constraints"] = req.copy_constraints
+    config["copy_comments"] = req.copy_comments
+    # Features
+    config["enable_rollback"] = req.enable_rollback
+    config["validate_after_clone"] = req.validate_after_clone
+    config["validate_checksum"] = req.validate_checksum
+    config["force_reclone"] = req.force_reclone
+    config["show_progress"] = req.show_progress
+    # Filtering
+    config["exclude_schemas"] = req.exclude_schemas
+    config["include_schemas"] = req.include_schemas
+    config["include_tables_regex"] = req.include_tables_regex
+    config["exclude_tables_regex"] = req.exclude_tables_regex
+    config["order_by_size"] = req.order_by_size
+    # Time travel
+    config["as_of_timestamp"] = req.as_of_timestamp
+    config["as_of_version"] = req.as_of_version
+
+    result = create_persistent_job(
+        client,
+        config,
+        job_name=req.job_name,
+        volume_path=req.volume,
+        schedule_cron=req.schedule,
+        schedule_timezone=req.timezone,
+        notification_emails=req.notification_emails or None,
+        max_retries=req.max_retries,
+        timeout_seconds=req.timeout,
+        tags=req.tags or None,
+        update_job_id=req.update_job_id,
+    )
+
+    return result

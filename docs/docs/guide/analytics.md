@@ -30,7 +30,7 @@ clone-catalog usage-analysis --source production --recommend
 # Clone with automatic unused table skipping
 clone-catalog clone \
   --source production --dest staging \
-  --skip-unused --unused-days 90
+  --skip-unused
 ```
 
 **Output:**
@@ -113,15 +113,14 @@ Your team runs nightly clones across 5 catalogs. You want to track clone duratio
 # View current metrics
 clone-catalog metrics
 
-# Export metrics to a Delta table
-clone-catalog metrics --export delta \
-  --export-table monitoring.clone_metrics
+# View metrics filtered by source catalog
+clone-catalog metrics --source monitoring.clone_metrics
 
-# Export to JSON file
-clone-catalog metrics --export json --output metrics.json
+# View metrics in JSON format
+clone-catalog metrics --format json
 
 # Enable Prometheus metrics endpoint (when running in serve mode)
-clone-catalog serve --metrics-port 9090
+clone-catalog serve --port 9090
 ```
 
 **Output:**
@@ -219,18 +218,15 @@ A data engineer notices that the staging environment has stale data. They want t
 clone-catalog history list
 
 # Show details of a specific operation
-clone-catalog history show --id clone-20260314-020000
+clone-catalog history show clone-20260314-020000
 
 # Diff two operations (what changed between runs)
 clone-catalog history diff \
-  --from clone-20260313-020000 \
-  --to clone-20260314-020000
+  clone-20260313-020000 \
+  clone-20260314-020000
 
 # Filter by catalog
-clone-catalog history list --dest staging
-
-# Filter by date range
-clone-catalog history list --from 2026-03-01 --to 2026-03-14
+clone-catalog history list --source production
 
 # Limit results
 clone-catalog history list --limit 5
@@ -364,12 +360,11 @@ DATA PREVIEW SUMMARY: production vs staging
 
 ### Difference highlighting
 
-When mismatches are found, preview highlights the specific rows that differ:
+When mismatches are found, use the `diff` command to compare catalogs in detail:
 
 ```bash
-clone-catalog preview \
-  --source production --dest staging \
-  --table sales.daily_agg --show-diff
+clone-catalog diff \
+  --source production --dest staging
 ```
 
 ```

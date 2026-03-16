@@ -51,14 +51,10 @@ CATALOG DIFF: production vs staging
 Differences found: 4 missing in dest, 0 extra in dest
 ```
 
-### Diff output formats
+### Diff output
 
 ```bash
-# JSON output (for programmatic use)
-clone-catalog diff --source production --dest staging --format json
-
-# CSV output (for spreadsheets)
-clone-catalog diff --source production --dest staging --format csv
+clone-catalog diff --source production --dest staging
 ```
 
 ---
@@ -72,14 +68,6 @@ A shallow diff says both catalogs have the same 247 tables. But you suspect some
 
 ```bash
 clone-catalog compare --source production --dest staging
-```
-
-### Compare specific schemas
-
-```bash
-clone-catalog compare \
-  --source production --dest staging \
-  --schemas sales,marketing
 ```
 
 ---

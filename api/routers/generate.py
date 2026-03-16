@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.generate import TerraformRequest, WorkflowRequest
+from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
 router = APIRouter()
@@ -56,3 +56,33 @@ async def generate_terraform(
     config["output_path"] = req.output_path
     job_id = await jm.submit_job("terraform", config, client)
     return {"job_id": job_id, "status": "queued", "message": f"{req.format.title()} generation submitted"}
+
+
+@router.post("/create-job")
+async def create_databricks_job(
+    req: CreateJobRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+):
+    """Create a persistent Databricks Job for scheduled catalog cloning."""
+    from src.create_job import create_persistent_job
+
+    config = dict(app_config)
+    config["source_catalog"] = req.source_catalog
+    config["destination_catalog"] = req.destination_catalog
+
+    result = create_persistent_job(
+        client,
+        config,
+        job_name=req.job_name,
+        volume_path=req.volume,
+        schedule_cron=req.schedule,
+        schedule_timezone=req.timezone,
+        notification_emails=req.notification_emails or None,
+        max_retries=req.max_retries,
+        timeout_seconds=req.timeout,
+        tags=req.tags or None,
+        update_job_id=req.update_job_id,
+    )
+
+    return result

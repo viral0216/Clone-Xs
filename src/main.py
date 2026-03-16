@@ -483,6 +483,52 @@ def cmd_generate_workflow(args):
     logger.info(f"Workflow file generated: {output}")
 
 
+def cmd_create_job(args):
+    """Create a persistent Databricks Job for scheduled catalog cloning."""
+    from src.create_job import create_persistent_job
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    if args.dest:
+        config["destination_catalog"] = args.dest
+
+    if not config.get("source_catalog") or not config.get("destination_catalog"):
+        logger.error("Both --source and --dest are required.")
+        sys.exit(1)
+
+    client = _get_auth_client(args)
+
+    result = create_persistent_job(
+        client,
+        config,
+        job_name=args.job_name,
+        volume_path=getattr(args, "volume", None),
+        schedule_cron=args.schedule,
+        schedule_timezone=args.timezone,
+        notification_emails=args.notification_email.split(",") if args.notification_email else None,
+        max_retries=args.max_retries,
+        timeout_seconds=args.timeout,
+        tags=dict(t.split("=", 1) for t in args.tag) if args.tag else None,
+        update_job_id=args.update_job_id,
+    )
+
+    print(f"\n  Job {'updated' if args.update_job_id else 'created'} successfully!")
+    print(f"  Job ID:   {result['job_id']}")
+    print(f"  Job URL:  {result['job_url']}")
+    print(f"  Notebook: {result['notebook_path']}")
+    print(f"  Wheel:    {result['volume_wheel_path']}")
+    if result.get("schedule"):
+        print(f"  Schedule: {result['schedule']}")
+    print(f"\n  Run or schedule this job from the Databricks Jobs UI.")
+
+
 def cmd_compare(args):
     """Execute the deep compare command."""
     from src.compare import compare_catalogs_deep
@@ -1968,6 +2014,21 @@ def build_parser() -> argparse.ArgumentParser:
     wf_parser.add_argument("--schedule", help="Quartz cron expression for scheduling")
     wf_parser.add_argument("--notification-email", help="Email for job notifications")
     wf_parser.set_defaults(func=cmd_generate_workflow)
+
+    # --- create-job command ---
+    cj_parser = subparsers.add_parser("create-job", help="Create a persistent Databricks Job for scheduled cloning")
+    add_common_args(cj_parser)
+    cj_parser.add_argument("--source", help="Source catalog name")
+    cj_parser.add_argument("--dest", help="Destination catalog name")
+    cj_parser.add_argument("--job-name", help="Job name (default: Clone-Xs: <source> -> <dest>)")
+    cj_parser.add_argument("--schedule", help="Quartz cron expression (e.g. '0 0 6 * * ?')")
+    cj_parser.add_argument("--timezone", default="UTC", help="Schedule timezone (default: UTC)")
+    cj_parser.add_argument("--notification-email", help="Comma-separated emails for job notifications")
+    cj_parser.add_argument("--max-retries", type=int, default=0, help="Number of retries on failure (default: 0)")
+    cj_parser.add_argument("--timeout", type=int, default=7200, help="Job timeout in seconds (default: 7200)")
+    cj_parser.add_argument("--tag", action="append", default=[], help="Job tag as key=value (repeatable)")
+    cj_parser.add_argument("--update-job-id", type=int, help="Update an existing job instead of creating a new one")
+    cj_parser.set_defaults(func=cmd_create_job)
 
     # --- sync command ---
     sync_parser = subparsers.add_parser("sync", help="Two-way sync: add missing objects, optionally drop extras")

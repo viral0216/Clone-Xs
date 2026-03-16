@@ -288,37 +288,7 @@ def submit_clone_job(
     vol_wheel, nb_path = _ensure_uploaded(client, volume_path, wheel_path)
 
     # Build config JSON for the job — pass through all clone options
-    job_config = {
-        "source_catalog": source,
-        "dest_catalog": dest,
-        "clone_type": config.get("clone_type", "DEEP"),
-        "load_type": config.get("load_type", "FULL"),
-        "dry_run": config.get("dry_run", False),
-        "max_workers": config.get("max_workers", 4),
-        "parallel_tables": config.get("parallel_tables", 2),
-        "max_parallel_queries": config.get("max_parallel_queries", 10),
-        "max_rps": config.get("max_rps", 0),
-        "exclude_schemas": config.get("exclude_schemas", ["information_schema", "default"]),
-        "include_schemas": config.get("include_schemas", []),
-        "include_tables_regex": config.get("include_tables_regex", ""),
-        "exclude_tables_regex": config.get("exclude_tables_regex", ""),
-        "catalog_location": config.get("catalog_location", ""),
-        "copy_permissions": config.get("copy_permissions", True),
-        "copy_ownership": config.get("copy_ownership", True),
-        "copy_tags": config.get("copy_tags", True),
-        "copy_properties": config.get("copy_properties", True),
-        "copy_security": config.get("copy_security", True),
-        "copy_constraints": config.get("copy_constraints", True),
-        "copy_comments": config.get("copy_comments", True),
-        "validate_after_clone": config.get("validate_after_clone", False),
-        "validate_checksum": config.get("validate_checksum", False),
-        "enable_rollback": config.get("enable_rollback", False),
-        "force_reclone": config.get("force_reclone", False),
-        "order_by_size": config.get("order_by_size", ""),
-        "as_of_timestamp": config.get("as_of_timestamp", ""),
-        "as_of_version": config.get("as_of_version", ""),
-        "show_progress": config.get("show_progress", True),
-    }
+    job_config = build_job_config(config)
 
     config_json = json.dumps(job_config)
     run_name = f"clone-catalog-{source}-to-{dest}"
@@ -368,6 +338,44 @@ def submit_clone_job(
         }
 
     return clone_result
+
+
+def build_job_config(config: dict) -> dict:
+    """Build the config dict passed to the clone notebook as a widget parameter.
+
+    Shared by submit_clone_job() and create_persistent_job().
+    """
+    return {
+        "source_catalog": config.get("source_catalog", ""),
+        "dest_catalog": config.get("destination_catalog", ""),
+        "clone_type": config.get("clone_type", "DEEP"),
+        "load_type": config.get("load_type", "FULL"),
+        "dry_run": config.get("dry_run", False),
+        "max_workers": config.get("max_workers", 4),
+        "parallel_tables": config.get("parallel_tables", 2),
+        "max_parallel_queries": config.get("max_parallel_queries", 10),
+        "max_rps": config.get("max_rps", 0),
+        "exclude_schemas": config.get("exclude_schemas", ["information_schema", "default"]),
+        "include_schemas": config.get("include_schemas", []),
+        "include_tables_regex": config.get("include_tables_regex", ""),
+        "exclude_tables_regex": config.get("exclude_tables_regex", ""),
+        "catalog_location": config.get("catalog_location", ""),
+        "copy_permissions": config.get("copy_permissions", True),
+        "copy_ownership": config.get("copy_ownership", True),
+        "copy_tags": config.get("copy_tags", True),
+        "copy_properties": config.get("copy_properties", True),
+        "copy_security": config.get("copy_security", True),
+        "copy_constraints": config.get("copy_constraints", True),
+        "copy_comments": config.get("copy_comments", True),
+        "validate_after_clone": config.get("validate_after_clone", False),
+        "validate_checksum": config.get("validate_checksum", False),
+        "enable_rollback": config.get("enable_rollback", False),
+        "force_reclone": config.get("force_reclone", False),
+        "order_by_size": config.get("order_by_size", ""),
+        "as_of_timestamp": config.get("as_of_timestamp", ""),
+        "as_of_version": config.get("as_of_version", ""),
+        "show_progress": config.get("show_progress", True),
+    }
 
 
 def _extract_result(client: WorkspaceClient, result, run_id: int) -> dict | None:

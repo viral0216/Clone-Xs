@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stop Writing SQL Scripts to Clone Your Databricks Catalogs</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  /* Reading progress bar */
+  #reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background: #DC143C;
+    z-index: 10000;
+    transition: width 0.1s linear;
+  }
+
+  body {
+    background: #FFFFFF;
+    color: #292929;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 21px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .article-container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+
+  /* Header */
+  .article-header {
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid #E6E6E6;
+  }
+
+  .article-header h1 {
+    font-family: Georgia, serif;
+    font-size: 42px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #1A1A1A;
+    margin-bottom: 16px;
+    letter-spacing: -0.5px;
+  }
+
+  .article-header .subtitle {
+    font-size: 22px;
+    color: #757575;
+    line-height: 1.5;
+    font-style: italic;
+  }
+
+  .article-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    color: #757575;
+  }
+
+  .article-meta .author-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #DC143C, #8B0000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .article-meta .author-info .author-name {
+    color: #1A1A1A;
+    font-weight: 600;
+    font-size: 16px;
+  }
+
+  /* Section headers */
+  h2 {
+    font-family: Georgia, serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin: 56px 0 24px;
+    line-height: 1.3;
+    letter-spacing: -0.3px;
+  }
+
+  h3 {
+    font-family: Georgia, serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin: 40px 0 16px;
+    line-height: 1.3;
+  }
+
+  h4 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin: 32px 0 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  p {
+    margin-bottom: 24px;
+  }
+
+  /* Bold crimson for stats */
+  .stat {
+    font-weight: 700;
+    color: #DC143C;
+  }
+
+  /* Inline code */
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+    font-size: 17px;
+    background: #F0F0F0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #1A1A2E;
+  }
+
+  /* Code blocks */
+  pre {
+    background: #1A1A2E;
+    border-radius: 8px;
+    padding: 24px;
+    overflow-x: auto;
+    margin: 24px 0 32px;
+    line-height: 1.5;
+    font-size: 15px;
+    position: relative;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    color: #E0E0E0;
+    font-size: 15px;
+  }
+
+  /* Copy button on code blocks */
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #aaa;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 5;
+  }
+
+  .copy-btn:hover {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+  }
+
+  .copy-btn.copied {
+    background: #4CAF50;
+    color: white;
+    border-color: #4CAF50;
+  }
+
+  /* Syntax colors */
+  .cmd { color: #50FA7B; }
+  .flag { color: #8BE9FD; }
+  .str { color: #F1FA8C; }
+  .comment { color: #6272A4; font-style: italic; }
+  .keyword { color: #FF79C6; }
+  .func { color: #50FA7B; }
+  .var { color: #FFB86C; }
+  .num { color: #BD93F9; }
+  .op { color: #FF79C6; }
+
+  /* Callout boxes */
+  .callout {
+    border-left: 4px solid #DC143C;
+    background: #FAFAFA;
+    padding: 20px 24px;
+    margin: 32px 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout-title {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #DC143C;
+    margin-bottom: 8px;
+  }
+
+  .callout p {
+    margin-bottom: 0;
+    font-size: 19px;
+  }
+
+  .callout.insight {
+    border-left-color: #2196F3;
+  }
+
+  .callout.insight .callout-title {
+    color: #2196F3;
+  }
+
+  .callout.takeaway {
+    border-left-color: #4CAF50;
+    background: #F5FFF5;
+  }
+
+  .callout.takeaway .callout-title {
+    color: #4CAF50;
+  }
+
+  /* Separator */
+  .section-break {
+    text-align: center;
+    margin: 48px 0;
+    color: #BDBDBD;
+    font-size: 24px;
+    letter-spacing: 8px;
+  }
+
+  /* Off-white sections */
+  .section-alt {
+    background: #FAFAFA;
+    margin: 0 -20px;
+    padding: 40px 20px;
+  }
+
+  .section-alt .section-inner {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  /* Lists */
+  ul, ol {
+    margin: 0 0 24px 24px;
+  }
+
+  li {
+    margin-bottom: 8px;
+  }
+
+  /* Scenario cards */
+  .scenario-card {
+    background: #FAFAFA;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 24px 0;
+    border: 1px solid #E8E8E8;
+  }
+
+  .scenario-card h4 {
+    margin-top: 0;
+    color: #DC143C;
+  }
+
+  /* Table */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 24px 0 32px;
+    font-size: 17px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .data-table th {
+    background: #1A1A2E;
+    color: white;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .data-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #E8E8E8;
+  }
+
+  .data-table tr:nth-child(even) {
+    background: #FAFAFA;
+  }
+
+  /* Footer */
+  .article-footer {
+    margin-top: 56px;
+    padding-top: 32px;
+    border-top: 1px solid #E6E6E6;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    color: #757575;
+    text-align: center;
+  }
+
+  .article-footer a {
+    color: #DC143C;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .article-footer a:hover {
+    text-decoration: underline;
+  }
+
+  /* Tags */
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+    justify-content: center;
+  }
+
+  .tag {
+    background: #F0F0F0;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    color: #757575;
+  }
+
+  /* Scroll-reveal animations */
+  .reveal-section {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .reveal-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Collapsible code walkthrough */
+  .code-walkthrough {
+    margin: 16px 0 32px;
+  }
+
+  .code-toggle {
+    background: none;
+    border: none;
+    color: #DC143C;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+  }
+
+  .code-toggle:hover {
+    color: #8B0000;
+  }
+
+  .code-toggle .arrow {
+    display: inline-block;
+    transition: transform 0.3s;
+    font-size: 12px;
+  }
+
+  .code-toggle.open .arrow {
+    transform: rotate(90deg);
+  }
+
+  .code-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.5s ease;
+  }
+
+  .code-content.open {
+    max-height: 2000px;
+  }
+
+  .code-annotation {
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px;
+    color: #757575;
+    margin: 4px 0 12px;
+    padding-left: 16px;
+    border-left: 2px solid #E0E0E0;
+    line-height: 1.5;
+  }
+
+  /* SVG Architecture Diagram */
+  .arch-diagram-container {
+    margin: 24px 0 32px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #E0E0E0;
+  }
+
+  @keyframes pulse-line {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .pulse-line {
+    animation: pulse-line 2s ease-in-out infinite;
+  }
+
+  .pulse-line-delay1 {
+    animation: pulse-line 2s ease-in-out 0.3s infinite;
+  }
+
+  .pulse-line-delay2 {
+    animation: pulse-line 2s ease-in-out 0.6s infinite;
+  }
+
+  .pulse-line-delay3 {
+    animation: pulse-line 2s ease-in-out 0.9s infinite;
+  }
+
+  /* Performance Benchmarks */
+  .benchmark-section {
+    margin: 24px 0 32px;
+  }
+
+  .benchmark-chart {
+    margin: 20px 0;
+  }
+
+  @keyframes grow-bar {
+    from { width: 0; }
+  }
+
+  .bar-animated {
+    transition: width 1.2s ease-out;
+  }
+
+  /* Floating Table of Contents */
+  .toc-nav {
+    position: fixed;
+    right: 30px;
+    top: 120px;
+    width: 220px;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 13px;
+    z-index: 100;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+  }
+
+  .toc-nav .toc-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #999;
+    margin-bottom: 12px;
+  }
+
+  .toc-nav a {
+    display: block;
+    color: #999;
+    text-decoration: none;
+    padding: 4px 0 4px 12px;
+    border-left: 2px solid #E0E0E0;
+    transition: all 0.2s;
+    line-height: 1.4;
+    margin-bottom: 2px;
+  }
+
+  .toc-nav a:hover {
+    color: #1A1A1A;
+  }
+
+  .toc-nav a.active {
+    color: #DC143C;
+    border-left-color: #DC143C;
+    font-weight: 600;
+  }
+
+  /* Author bio */
+  .author-bio {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    background: #FAFAFA;
+    border-radius: 12px;
+    padding: 28px;
+    margin: 48px 0;
+    border: 1px solid #E8E8E8;
+  }
+
+  .author-bio .bio-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #DC143C, #8B0000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 26px;
+    flex-shrink: 0;
+  }
+
+  .author-bio .bio-text {
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #555;
+  }
+
+  .author-bio .bio-text .bio-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin-bottom: 2px;
+  }
+
+  .author-bio .bio-text .bio-role {
+    font-size: 14px;
+    color: #999;
+    margin-bottom: 8px;
+  }
+
+  .author-bio .bio-text a {
+    color: #DC143C;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .author-bio .bio-text a:hover {
+    text-decoration: underline;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .article-header h1 {
+      font-size: 32px;
+    }
+    .article-header .subtitle {
+      font-size: 18px;
+    }
+    h2 { font-size: 26px; }
+    h3 { font-size: 22px; }
+    body { font-size: 19px; }
+    pre { padding: 16px; font-size: 13px; }
+    code { font-size: 15px; }
+    .toc-nav { display: none; }
+    .author-bio { flex-direction: column; align-items: center; text-align: center; }
+  }
+
+  @media (max-width: 1200px) {
+    .toc-nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Reading Progress Bar -->
+<div id="reading-progress"></div>
+
+<!-- Floating Table of Contents -->
+<nav class="toc-nav" id="toc-nav">
+  <div class="toc-title">Contents</div>
+  <a href="#section-problem" data-section="section-problem">The Problem</a>
+  <a href="#section-scenarios" data-section="section-scenarios">Four Scenarios</a>
+  <a href="#section-what" data-section="section-what">What Clone-Xs Does</a>
+  <a href="#section-architecture" data-section="section-architecture">Architecture</a>
+  <a href="#section-wizard" data-section="section-wizard">Clone Wizard</a>
+  <a href="#section-sync" data-section="section-sync">Incremental Sync</a>
+  <a href="#section-audit" data-section="section-audit">Audit Trail</a>
+  <a href="#section-plan" data-section="section-plan">Execution Plan</a>
+  <a href="#section-benchmarks" data-section="section-benchmarks">Benchmarks</a>
+  <a href="#section-realworld" data-section="section-realworld">Real-World Scenarios</a>
+  <a href="#section-started" data-section="section-started">Getting Started</a>
+  <a href="#section-closing" data-section="section-closing">Closing</a>
+</nav>
+
+<div class="article-container">
+
+<!-- HEADER -->
+<header class="article-header">
+  <h1>Stop Writing SQL Scripts to Clone Your Databricks Catalogs</h1>
+  <p class="subtitle">How we built Clone-Xs: an open-source toolkit that clones, syncs, and governs Unity Catalog &mdash; with 56 CLI commands, a 31-page Web UI, and zero manual SQL</p>
+  <div class="article-meta">
+    <div class="author-avatar">VP</div>
+    <div class="author-info">
+      <div class="author-name">Viral Patel</div>
+      <div>Data &amp; Platform Engineering &middot; 18 min read</div>
+    </div>
+  </div>
+</header>
+
+<!-- SECTION 1: THE HOOK -->
+<div class="reveal-section" id="section-problem">
+<p>Every data platform team has that one notebook. The one with <span class="stat">200 lines</span> of handwritten SQL that clones a Unity Catalog catalog by running <code>CREATE TABLE ... CLONE</code> for each table, one at a time. It takes <span class="stat">3 hours</span> to run. It silently drops permissions, tags, and ownership. Nobody knows when it last succeeded. And when it fails at table #147 out of 300, you start over from scratch.</p>
+
+<p>We have all been there. The consequences compound: dev environments drift from production, DR copies are weeks stale, CI pipelines cannot create isolated test catalogs, and compliance audits reveal that nobody can answer "who cloned what, when?" The manual approach does not just waste time. It creates risk. Every hand-rolled clone script is a ticking time bomb of broken permissions, missing tables, and invisible drift. We built Clone-Xs because we got tired of defusing them.</p>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 2: THE PROBLEM IN DETAIL -->
+<div class="reveal-section" id="section-scenarios">
+<h2>Four Scenarios Where Manual Cloning Falls Apart</h2>
+
+<h3>1. Dev Environment Refresh</h3>
+
+<p>Data engineers need fresh copies of production catalogs in their development workspaces, ideally every week. The typical workflow looks like this: someone runs a notebook that lists every schema, then iterates through every table, executing <code>CREATE TABLE ... DEEP CLONE</code> on each one. On a catalog with <span class="stat">24 schemas</span> and <span class="stat">166 tables</span>, this takes the better part of a morning. But the real problem is not speed &mdash; it is fidelity. The script copies the data, but it does not copy the permissions. It does not preserve ownership. It does not carry over tags, comments, or column-level security policies. By the time a developer opens the cloned catalog, it is a structurally incomplete facsimile of production. Schema drift goes undetected because nobody is comparing the source and destination after the clone. New columns added in production last Tuesday? They might or might not be there, depending on whether the clone ran before or after the migration. And when an engineer asks "is my dev catalog current?" the honest answer is usually "we don't know."</p>
+
+<h3>2. Disaster Recovery</h3>
+
+<p>DR copies should be nightly. In practice, they are monthly at best, because the clone script is fragile and nobody wants to maintain it. The script was written by an engineer who left the team six months ago. It hardcodes warehouse IDs. It has no retry logic, so a single transient API error at 2 AM causes the entire job to fail silently. The on-call engineer discovers the failure three days later when someone asks about the DR catalog. There is no alerting, no validation step to confirm that the destination catalog actually matches the source, and no rollback mechanism if the clone produces a corrupt result. The consequence is stark: when an actual disaster strikes, the DR catalog is <span class="stat">weeks stale</span>, and the team spends the crisis manually re-cloning tables under pressure &mdash; exactly the scenario DR was supposed to prevent.</p>
+
+<h3>3. CI/CD Pipelines</h3>
+
+<p>Modern data engineering teams want the same workflow that software engineers take for granted: every pull request gets an isolated environment, tests run against real data, and the environment is torn down after merge. In Unity Catalog terms, that means creating a fresh catalog clone for each PR, running integration tests against it, and then dropping it. Manual cloning cannot scale to this. You cannot have a human run a notebook for every PR. You need a CLI command that can be embedded in a GitHub Action or Azure DevOps pipeline, that runs in under a minute, that creates a named clone with a TTL (time to live), and that automatically cleans itself up. Without this, teams compromise: they share a single "test" catalog across all PRs, tests interfere with each other, and CI becomes unreliable. Some teams give up on integration testing entirely, pushing untested transformations straight to production.</p>
+
+<h3>4. Compliance and Audit</h3>
+
+<p>Regulators and internal auditors ask a simple question: "Show me every data copy operation in the last 90 days." With manual cloning, you cannot answer it. There is no centralized log. There is no record of who ran the clone, when it started, when it finished, which tables succeeded, which failed, or what permissions were applied. The best you can do is search through notebook run histories and hope the clone notebooks have descriptive names. For organizations in regulated industries &mdash; finance, healthcare, insurance &mdash; this gap is not just inconvenient. It is a compliance violation. Every untracked copy of production data is a potential data governance failure. And the manual response &mdash; building a custom audit log on top of an already fragile clone script &mdash; adds complexity to a system that was already too brittle to maintain.</p>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 3: WHAT CLONE-XS DOES -->
+<div class="reveal-section" id="section-what">
+<h2>What Clone-Xs Does</h2>
+
+<p>Clone-Xs is an open-source toolkit that replaces all of the above with a single, governed system. It is not a wrapper around <code>CREATE TABLE ... CLONE</code>. It is a full catalog lifecycle manager that handles cloning, incremental sync, permission copying, tag propagation, validation, rollback, audit logging, and more &mdash; across <span class="stat">56 CLI commands</span>, a <span class="stat">31-page web UI</span>, and <span class="stat">61+ REST API endpoints</span>.</p>
+
+<p>Under the hood, Clone-Xs is built as a three-tier application. A React frontend communicates with a FastAPI backend, which delegates to a Python core library of <span class="stat">88 modules</span>. That core library talks to Databricks through the official Databricks SDK and the Statement Execution API, orchestrating every operation against Unity Catalog. There are <span class="stat">12 configuration templates</span> for common scenarios, from nightly staging refresh to PR-specific ephemeral clones.</p>
+
+<div class="callout insight">
+  <div class="callout-title">Key Architectural Insight</div>
+  <p>All SQL in Clone-Xs flows through a single <code>execute_sql()</code> function with a pluggable executor. When running against a SQL warehouse, it calls the Statement Execution API with automatic retry logic, rate limiting, and polling for long-running queries. In a serverless Databricks notebook, you swap the executor to <code>spark.sql()</code> using <code>set_sql_executor()</code>. One codebase, two compute modes &mdash; no code changes required.</p>
+</div>
+</div>
+
+<!-- SVG Architecture Diagram -->
+<div class="reveal-section" id="section-architecture">
+<div class="arch-diagram-container">
+<svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;background:#0D0D1A;">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="36" text-anchor="middle" fill="#DC143C" font-family="Inter,sans-serif" font-size="16" font-weight="700" letter-spacing="3">CLONE-XS ARCHITECTURE</text>
+
+  <!-- Row 1: React Web UI -->
+  <rect x="40" y="60" width="220" height="72" rx="8" fill="#1A1A2E" stroke="#DC143C" stroke-width="1.5"/>
+  <text x="150" y="90" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">React Web UI</text>
+  <text x="150" y="112" text-anchor="middle" fill="#DC143C" font-family="Inter,sans-serif" font-size="12" font-weight="600">31 pages</text>
+
+  <!-- FastAPI Backend -->
+  <rect x="340" y="60" width="220" height="72" rx="8" fill="#1A1A2E" stroke="#DC143C" stroke-width="1.5"/>
+  <text x="450" y="90" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">FastAPI Backend</text>
+  <text x="450" y="112" text-anchor="middle" fill="#DC143C" font-family="Inter,sans-serif" font-size="12" font-weight="600">61+ endpoints</text>
+
+  <!-- Python Core -->
+  <rect x="640" y="60" width="220" height="72" rx="8" fill="#1A1A2E" stroke="#DC143C" stroke-width="1.5"/>
+  <text x="750" y="90" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">Python Core</text>
+  <text x="750" y="112" text-anchor="middle" fill="#DC143C" font-family="Inter,sans-serif" font-size="12" font-weight="600">88 modules</text>
+
+  <!-- Arrow: React -> FastAPI -->
+  <line x1="260" y1="96" x2="340" y2="96" stroke="#DC143C" stroke-width="2" class="pulse-line" filter="url(#glow)"/>
+  <polygon points="336,90 348,96 336,102" fill="#DC143C" class="pulse-line"/>
+
+  <!-- Arrow: FastAPI -> Python Core -->
+  <line x1="560" y1="96" x2="640" y2="96" stroke="#DC143C" stroke-width="2" class="pulse-line-delay1" filter="url(#glow)"/>
+  <polygon points="636,90 648,96 636,102" fill="#DC143C" class="pulse-line-delay1"/>
+
+  <!-- Row 2: CLI Interface -->
+  <rect x="40" y="180" width="220" height="72" rx="8" fill="#1A1A2E" stroke="#DC143C" stroke-width="1.5"/>
+  <text x="150" y="210" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">CLI Interface</text>
+  <text x="150" y="232" text-anchor="middle" fill="#DC143C" font-family="Inter,sans-serif" font-size="12" font-weight="600">56 commands</text>
+
+  <!-- Arrow: CLI -> Python Core -->
+  <line x1="260" y1="216" x2="640" y2="96" stroke="#DC143C" stroke-width="2" class="pulse-line-delay2" filter="url(#glow)"/>
+  <polygon points="636,90 648,96 636,102" fill="#DC143C" class="pulse-line-delay2"/>
+
+  <!-- execute_sql() -->
+  <rect x="340" y="220" width="320" height="72" rx="8" fill="#1A1A2E" stroke="#50FA7B" stroke-width="1.5"/>
+  <text x="500" y="250" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">execute_sql()</text>
+  <text x="500" y="272" text-anchor="middle" fill="#50FA7B" font-family="Inter,sans-serif" font-size="12" font-weight="600">pluggable executor</text>
+
+  <!-- Arrow: Python Core -> execute_sql() -->
+  <line x1="750" y1="132" x2="500" y2="220" stroke="#50FA7B" stroke-width="2" class="pulse-line-delay1" filter="url(#glow)"/>
+  <polygon points="495,216 505,216 500,226" fill="#50FA7B" class="pulse-line-delay1"/>
+
+  <!-- SQL Warehouse -->
+  <rect x="280" y="340" width="200" height="72" rx="8" fill="#1A1A2E" stroke="#8BE9FD" stroke-width="1.5"/>
+  <text x="380" y="367" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="13" font-weight="700">SQL Warehouse</text>
+  <text x="380" y="390" text-anchor="middle" fill="#8BE9FD" font-family="Inter,sans-serif" font-size="11" font-weight="600">Statement Execution API</text>
+
+  <!-- Serverless -->
+  <rect x="520" y="340" width="200" height="72" rx="8" fill="#1A1A2E" stroke="#8BE9FD" stroke-width="1.5"/>
+  <text x="620" y="367" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="13" font-weight="700">Serverless</text>
+  <text x="620" y="390" text-anchor="middle" fill="#8BE9FD" font-family="Inter,sans-serif" font-size="11" font-weight="600">spark.sql()</text>
+
+  <!-- Arrows: execute_sql -> SQL Warehouse, Serverless -->
+  <line x1="440" y1="292" x2="380" y2="340" stroke="#8BE9FD" stroke-width="2" class="pulse-line-delay2" filter="url(#glow)"/>
+  <polygon points="375,336 385,336 380,346" fill="#8BE9FD" class="pulse-line-delay2"/>
+
+  <line x1="560" y1="292" x2="620" y2="340" stroke="#8BE9FD" stroke-width="2" class="pulse-line-delay3" filter="url(#glow)"/>
+  <polygon points="615,336 625,336 620,346" fill="#8BE9FD" class="pulse-line-delay3"/>
+
+  <!-- Unity Catalog -->
+  <rect x="280" y="450" width="440" height="56" rx="8" fill="#1A1A2E" stroke="#FFB86C" stroke-width="1.5"/>
+  <text x="500" y="476" text-anchor="middle" fill="#FFFFFF" font-family="Inter,sans-serif" font-size="14" font-weight="700">Databricks Unity Catalog</text>
+  <text x="500" y="496" text-anchor="middle" fill="#FFB86C" font-family="Inter,sans-serif" font-size="11" font-weight="600">Catalogs &middot; Schemas &middot; Tables &middot; Views &middot; Volumes &middot; Functions</text>
+
+  <!-- Arrows: SQL Warehouse -> UC, Serverless -> UC -->
+  <line x1="380" y1="412" x2="430" y2="450" stroke="#FFB86C" stroke-width="2" class="pulse-line-delay3" filter="url(#glow)"/>
+  <polygon points="425,446 435,446 430,456" fill="#FFB86C" class="pulse-line-delay3"/>
+
+  <line x1="620" y1="412" x2="570" y2="450" stroke="#FFB86C" stroke-width="2" class="pulse-line" filter="url(#glow)"/>
+  <polygon points="565,446 575,446 570,456" fill="#FFB86C" class="pulse-line"/>
+</svg>
+</div>
+</div>
+
+<p>The architecture is deliberately modular. The CLI, the web UI, and the notebook integration all share the same Python core. If you fix a bug in the clone logic, it is fixed everywhere. If you add a new feature &mdash; say, column-level masking during clone &mdash; it surfaces in all three interfaces without duplication.</p>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 4: CLONE WIZARD -->
+<div class="reveal-section" id="section-wizard">
+<h2>Feature Deep-Dive: The Clone Wizard</h2>
+
+<p>The Clone Wizard is the primary interface for catalog cloning, available both as a <span class="stat">4-step</span> guided flow in the web UI and as a single CLI command. In the UI, the wizard walks you through source and destination selection, schema filtering, clone options, and review. In the CLI, the same operation is a single command with explicit flags.</p>
+
+<h3>The 4-Step Flow</h3>
+
+<p><strong>Step 1: Source &amp; Destination.</strong> Select the source catalog and name the destination. Clone-Xs validates that the source exists and that you have read permissions. If the destination already exists, you are warned and given the option to overwrite, merge, or abort.</p>
+
+<p><strong>Step 2: Schema &amp; Table Filtering.</strong> Choose which schemas to include or exclude. Apply regex filters to table names. Tag-based filtering lets you clone only schemas or tables with specific Unity Catalog tags &mdash; useful for cloning only "approved-for-dev" data.</p>
+
+<p><strong>Step 3: Clone Options.</strong> This is where Clone-Xs differentiates itself. There are <span class="stat">15 configurable options</span> beyond the basic clone type. You control whether to copy permissions, ownership, tags, comments, table properties, CHECK constraints, row-level security, and column masks. You can enable post-clone validation (which compares row counts and schema fingerprints between source and destination), enable rollback (which records every created object so the entire clone can be undone), and enable reporting (which generates a detailed HTML report of every operation).</p>
+
+<p><strong>Step 4: Review &amp; Execute.</strong> A summary screen shows the execution plan: how many schemas, tables, views, volumes, and functions will be cloned, estimated time, and estimated cost. You confirm and the clone begins, with a real-time progress bar showing per-schema and per-table status.</p>
+
+<h3>CLI Equivalent</h3>
+
+<p>The same wizard flow is available as a single CLI command:</p>
+
+<pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
+  <span class="flag">--clone-type</span> <span class="str">DEEP</span> <span class="flag">\</span>
+  <span class="flag">--copy-permissions</span> <span class="flag">--copy-ownership</span> <span class="flag">--copy-tags</span> <span class="flag">\</span>
+  <span class="flag">--validate</span> <span class="flag">--enable-rollback</span> <span class="flag">--report</span></code></pre>
+
+<p>Every flag maps directly to a wizard option. There is no hidden behavior and no magic. The CLI and the UI produce identical results because they both call the same <code>clone_catalog()</code> function in the Python core.</p>
+
+<!-- Collapsible code walkthrough: Clone Wizard -->
+<div class="code-walkthrough">
+  <button class="code-toggle" onclick="toggleCode(this)">
+    <span class="arrow">&#9654;</span> Show Code
+  </button>
+  <div class="code-content">
+    <p class="code-annotation">The <code>clone_catalog()</code> function orchestrates the entire flow. It validates inputs, resolves schemas, iterates tables, and delegates each operation to specialized handlers.</p>
+<pre><code><span class="keyword">def</span> <span class="func">clone_catalog</span>(<span class="var">client</span>, <span class="var">config</span>: <span class="var">dict</span>) -> <span class="var">dict</span>:
+    <span class="comment"># Step 1: Validate source exists, resolve destination</span>
+    <span class="func">validate_catalog_access</span>(<span class="var">client</span>, <span class="var">config</span>[<span class="str">"source_catalog"</span>])
+    <span class="func">ensure_destination</span>(<span class="var">client</span>, <span class="var">config</span>[<span class="str">"destination_catalog"</span>])
+
+    <span class="comment"># Step 2: List schemas, apply include/exclude filters</span>
+    <span class="var">schemas</span> <span class="op">=</span> <span class="func">list_schemas</span>(<span class="var">client</span>, <span class="var">config</span>[<span class="str">"source_catalog"</span>])
+    <span class="var">schemas</span> <span class="op">=</span> <span class="func">apply_filters</span>(<span class="var">schemas</span>, <span class="var">config</span>)
+
+    <span class="comment"># Step 3: Clone each schema's objects</span>
+    <span class="keyword">for</span> <span class="var">schema</span> <span class="keyword">in</span> <span class="var">schemas</span>:
+        <span class="func">clone_schema</span>(<span class="var">client</span>, <span class="var">schema</span>, <span class="var">config</span>)
+
+    <span class="comment"># Step 4: Post-clone validation, permissions, tags</span>
+    <span class="keyword">if</span> <span class="var">config</span>.<span class="func">get</span>(<span class="str">"copy_permissions"</span>):
+        <span class="func">copy_all_permissions</span>(<span class="var">client</span>, <span class="var">config</span>)
+    <span class="keyword">if</span> <span class="var">config</span>.<span class="func">get</span>(<span class="str">"validate"</span>):
+        <span class="func">validate_clone</span>(<span class="var">client</span>, <span class="var">config</span>)</code></pre>
+    <p class="code-annotation">Each <code>clone_schema()</code> call handles tables, views, volumes, and functions within that schema, delegating to the pluggable <code>execute_sql()</code> for all DDL operations.</p>
+  </div>
+</div>
+
+<h3>Serverless Mode</h3>
+
+<p>For organizations that do not want to provision or pay for a dedicated SQL warehouse for cloning, Clone-Xs supports serverless execution. In this mode, Clone-Xs packages itself as a wheel, uploads it to a Unity Catalog Volume, and submits a Databricks job that runs on serverless compute. Inside the job, it wires <code>spark.sql()</code> as the SQL executor, so every clone operation runs directly on the serverless Spark cluster &mdash; no SQL warehouse needed.</p>
+
+<pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
+  <span class="flag">--serverless</span> <span class="flag">--volume</span> <span class="str">/Volumes/catalog/schema/vol</span></code></pre>
+
+<p>The <code>--serverless</code> flag triggers the volume-based deployment. The <code>--volume</code> flag specifies where to upload the wheel and runner script. Clone-Xs handles the rest: building the wheel, uploading artifacts, submitting the job, polling for completion, and streaming logs back to the terminal.</p>
+
+<div class="callout takeaway">
+  <div class="callout-title">Key Takeaway</div>
+  <p>The Clone Wizard gives you 15 clone options, post-clone validation, automatic rollback, and HTML reporting &mdash; all from a single CLI command or a 4-step UI flow. Serverless mode eliminates the need for a dedicated SQL warehouse entirely.</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 5: INCREMENTAL SYNC -->
+<div class="reveal-section" id="section-sync">
+<h2>Feature Deep-Dive: Incremental Sync</h2>
+
+<p>Full catalog re-clones are wasteful. If your production catalog has <span class="stat">166 tables</span> across <span class="stat">24 schemas</span>, but only <span class="stat">3 tables</span> changed since the last sync, re-cloning all 166 tables burns compute for no reason. Incremental sync solves this by comparing Delta table versions between the source and destination catalogs.</p>
+
+<p>The mechanism is straightforward. Clone-Xs runs <code>DESCRIBE HISTORY</code> on every table in both the source and destination catalogs, extracts the current Delta version, and compares them. Tables where the source version is ahead of the destination version are flagged for re-sync. Tables that are already current are skipped entirely. The result is a targeted sync that only touches what has changed.</p>
+
+<p>In practice, this reduces clone times dramatically. A full clone of 166 tables might take <span class="stat">45 minutes</span>. An incremental sync of the 3 tables that actually changed takes <span class="stat">under 2 minutes</span>. The sync state is persisted to a JSON file between runs, so Clone-Xs remembers which version of each table was last synced and picks up where it left off.</p>
+
+<h3>Running Incremental Sync in a Databricks Notebook</h3>
+
+<p>For teams that prefer to run sync operations inside Databricks rather than from an external CLI, Clone-Xs provides a clean notebook integration pattern. The key is the <code>set_sql_executor()</code> function, which redirects all SQL execution through <code>spark.sql()</code>:</p>
+
+<pre><code><span class="keyword">from</span> <span class="var">src.client</span> <span class="keyword">import</span> <span class="func">set_sql_executor</span>
+<span class="keyword">from</span> <span class="var">src.clone_catalog</span> <span class="keyword">import</span> <span class="func">clone_catalog</span>
+<span class="keyword">from</span> <span class="var">databricks.sdk</span> <span class="keyword">import</span> <span class="func">WorkspaceClient</span>
+
+<span class="comment"># Wire spark.sql() as the SQL executor</span>
+<span class="func">set_sql_executor</span>(<span class="keyword">lambda</span> <span class="var">sql</span>: [<span class="var">row</span>.<span class="func">asDict</span>() <span class="keyword">for</span> <span class="var">row</span> <span class="keyword">in</span> <span class="var">spark</span>.<span class="func">sql</span>(<span class="var">sql</span>).<span class="func">collect</span>()])
+<span class="var">client</span> <span class="op">=</span> <span class="func">WorkspaceClient</span>()
+
+<span class="var">result</span> <span class="op">=</span> <span class="func">clone_catalog</span>(<span class="var">client</span>, {
+    <span class="str">"source_catalog"</span>: <span class="str">"edp_dev"</span>,
+    <span class="str">"destination_catalog"</span>: <span class="str">"edp_dev_00"</span>,
+    <span class="str">"clone_type"</span>: <span class="str">"SHALLOW"</span>,
+    <span class="str">"load_type"</span>: <span class="str">"INCREMENTAL"</span>,
+    <span class="str">"sql_warehouse_id"</span>: <span class="str">"SERVERLESS"</span>,
+    <span class="str">"copy_permissions"</span>: <span class="num">True</span>,
+    <span class="str">"copy_tags"</span>: <span class="num">True</span>,
+    <span class="str">"save_run_logs"</span>: <span class="num">True</span>,
+})</code></pre>
+
+<p>This pattern is powerful because it means you can schedule incremental syncs as a Databricks Workflow, running on serverless compute, with no external infrastructure. The notebook imports the Clone-Xs library, swaps in the Spark executor, and calls the same <code>clone_catalog()</code> function that the CLI uses. Every feature &mdash; permissions, tags, validation, audit logging &mdash; works identically.</p>
+
+<!-- Collapsible code walkthrough: Incremental Sync -->
+<div class="code-walkthrough">
+  <button class="code-toggle" onclick="toggleCode(this)">
+    <span class="arrow">&#9654;</span> Show Code
+  </button>
+  <div class="code-content">
+    <p class="code-annotation">The incremental sync engine compares Delta versions between source and destination, then re-clones only the tables that have diverged.</p>
+<pre><code><span class="keyword">def</span> <span class="func">incremental_sync</span>(<span class="var">client</span>, <span class="var">config</span>):
+    <span class="var">src_versions</span> <span class="op">=</span> <span class="func">get_table_versions</span>(<span class="var">config</span>[<span class="str">"source_catalog"</span>])
+    <span class="var">dst_versions</span> <span class="op">=</span> <span class="func">get_table_versions</span>(<span class="var">config</span>[<span class="str">"destination_catalog"</span>])
+
+    <span class="var">stale_tables</span> <span class="op">=</span> [
+        <span class="var">t</span> <span class="keyword">for</span> <span class="var">t</span> <span class="keyword">in</span> <span class="var">src_versions</span>
+        <span class="keyword">if</span> <span class="var">src_versions</span>[<span class="var">t</span>] <span class="op">></span> <span class="var">dst_versions</span>.<span class="func">get</span>(<span class="var">t</span>, <span class="op">-</span><span class="num">1</span>)
+    ]
+
+    <span class="func">log</span>(<span class="str">f"</span><span class="var">{len(stale_tables)}</span><span class="str"> tables need re-sync"</span>)
+    <span class="keyword">for</span> <span class="var">table</span> <span class="keyword">in</span> <span class="var">stale_tables</span>:
+        <span class="func">execute_sql</span>(<span class="str">f"CREATE OR REPLACE TABLE ... CLONE ..."</span>)
+    <span class="func">save_sync_state</span>(<span class="var">src_versions</span>)</code></pre>
+    <p class="code-annotation"><code>get_table_versions()</code> runs <code>DESCRIBE HISTORY</code> on each table and extracts the latest Delta version number. The sync state is saved to JSON so subsequent runs can detect new changes.</p>
+  </div>
+</div>
+
+<div class="callout takeaway">
+  <div class="callout-title">Key Takeaway</div>
+  <p>Incremental sync compares Delta table versions and only re-clones what has changed. On a 166-table catalog where 3 tables changed, that turns a 45-minute full clone into a 2-minute targeted sync. The same code runs from the CLI, the API, or a Databricks notebook.</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 6: AUDIT TRAIL -->
+<div class="reveal-section" id="section-audit">
+<h2>Feature Deep-Dive: Audit Trail to Delta</h2>
+
+<p>Every clone operation in Clone-Xs is automatically logged to <span class="stat">three Delta tables</span> in a dedicated audit catalog. This is enabled by default &mdash; you do not have to configure it, opt in, or remember to turn it on. The moment you run your first clone, Clone-Xs creates the <code>clone_audit</code> catalog, the <code>logs</code> schema, and the three audit tables if they do not already exist.</p>
+
+<h3>The Three Audit Tables</h3>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Table</th>
+      <th>Purpose</th>
+      <th>Key Columns</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>run_logs</code></td>
+      <td>Full execution trace for every job &mdash; the complete log output, start/end times, and final status</td>
+      <td>job_id, job_type, status, duration_seconds, started_at, logs_json</td>
+    </tr>
+    <tr>
+      <td><code>clone_operations</code></td>
+      <td>Operation-level audit trail &mdash; who cloned what, when, and the full configuration used</td>
+      <td>operation_id, source_catalog, destination_catalog, user_name, config_json, summary_json</td>
+    </tr>
+    <tr>
+      <td><code>clone_metrics</code></td>
+      <td>Per-table performance metrics &mdash; clone duration, row counts, and byte sizes for capacity planning</td>
+      <td>schema, table, duration_seconds, row_count, size_bytes, success</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The <code>clone_operations</code> table has Change Data Feed enabled, which means you can query the history of changes to the audit trail itself. The <code>tags</code> column is a <code>MAP&lt;STRING, STRING&gt;</code> that captures any Unity Catalog tags associated with the operation, enabling tag-based audit queries.</p>
+
+<p>When an auditor asks "show me every data copy operation in the last 90 days," the answer is a single SQL query:</p>
+
+<pre><code><span class="keyword">SELECT</span> <span class="var">operation_id</span>, <span class="var">operation_type</span>, <span class="var">source_catalog</span>,
+       <span class="var">destination_catalog</span>, <span class="var">status</span>, <span class="var">duration_seconds</span>,
+       <span class="var">started_at</span>, <span class="var">user_name</span>
+<span class="keyword">FROM</span>   <span class="var">clone_audit</span>.<span class="var">logs</span>.<span class="var">clone_operations</span>
+<span class="keyword">WHERE</span>  <span class="var">started_at</span> <span class="op">>=</span> <span class="func">DATEADD</span>(<span class="str">DAY</span>, <span class="op">-</span><span class="num">90</span>, <span class="func">CURRENT_TIMESTAMP</span>())
+<span class="keyword">ORDER BY</span> <span class="var">started_at</span> <span class="keyword">DESC</span>;</code></pre>
+
+<p>No digging through notebook histories. No scraping Spark UI logs. The data is in a governed Delta table with full lineage, accessible to any BI tool or SQL query.</p>
+
+<!-- Collapsible code walkthrough: Audit -->
+<div class="code-walkthrough">
+  <button class="code-toggle" onclick="toggleCode(this)">
+    <span class="arrow">&#9654;</span> Show Code
+  </button>
+  <div class="code-content">
+    <p class="code-annotation">The audit logger writes structured records to Delta tables after every clone operation completes, regardless of success or failure.</p>
+<pre><code><span class="keyword">def</span> <span class="func">log_clone_operation</span>(<span class="var">config</span>, <span class="var">result</span>):
+    <span class="var">record</span> <span class="op">=</span> {
+        <span class="str">"operation_id"</span>: <span class="func">str</span>(<span class="func">uuid4</span>()),
+        <span class="str">"source_catalog"</span>: <span class="var">config</span>[<span class="str">"source_catalog"</span>],
+        <span class="str">"destination_catalog"</span>: <span class="var">config</span>[<span class="str">"destination_catalog"</span>],
+        <span class="str">"status"</span>: <span class="var">result</span>[<span class="str">"status"</span>],
+        <span class="str">"duration_seconds"</span>: <span class="var">result</span>[<span class="str">"duration"</span>],
+        <span class="str">"user_name"</span>: <span class="func">get_current_user</span>(),
+        <span class="str">"config_json"</span>: <span class="func">json.dumps</span>(<span class="var">config</span>),
+    }
+    <span class="func">execute_sql</span>(<span class="func">build_insert</span>(<span class="str">"clone_audit.logs.clone_operations"</span>, <span class="var">record</span>))</code></pre>
+    <p class="code-annotation">The <code>clone_audit</code> catalog and its tables are auto-created on first use. Change Data Feed is enabled on <code>clone_operations</code> so you can track audit trail modifications over time.</p>
+  </div>
+</div>
+
+<div class="callout takeaway">
+  <div class="callout-title">Key Takeaway</div>
+  <p>Clone-Xs automatically persists every operation to three Delta tables: run_logs (execution traces), clone_operations (audit trail), and clone_metrics (performance data). Audit compliance becomes a SQL query, not a forensic investigation.</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 7: EXECUTION PLAN -->
+<div class="reveal-section" id="section-plan">
+<h2>Feature Deep-Dive: Execution Plan</h2>
+
+<p>Sometimes you do not want to clone immediately. You want to see what <em>would</em> happen first. The <code>plan</code> command runs a full dry-run of the clone, captures every SQL statement that would be executed, classifies them by type, and writes them to a file for review.</p>
+
+<pre><code><span class="cmd">clone-catalog plan</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
+  <span class="flag">--capture-sql</span> <span class="str">plan_statements.sql</span></code></pre>
+
+<p>The output is a summary of the execution plan, broken down by statement category. For a production catalog with 24 schemas, the output might look like this:</p>
+
+<pre><code><span class="comment">Execution Plan Summary</span>
+<span class="comment">--------------------------------------</span>
+<span class="var">Total statements</span>:  <span class="num">203</span>
+<span class="var">CREATE_SCHEMA</span>:      <span class="num">24</span>
+<span class="var">CLONE</span>:              <span class="num">166</span>
+<span class="var">CREATE_VIEW</span>:        <span class="num">4</span>
+<span class="var">CREATE_VOLUME</span>:      <span class="num">9</span>
+<span class="comment">--------------------------------------</span>
+<span class="comment">Plan written to: plan_statements.sql</span></code></pre>
+
+<p>The captured SQL file contains every statement, in execution order, with comments indicating the category and target object. This enables a DBA review workflow that many enterprise teams require: a data engineer generates the plan, a DBA reviews the SQL, approves it (or requests changes), and then the engineer executes the approved plan. This separation of concerns is particularly important for production-to-production clones, where an unreviewed clone could create unexpected objects or grant unintended permissions.</p>
+
+<p>Under the hood, the plan command works by setting a SQL capture hook via <code>set_sql_capture()</code>. The <code>execute_sql()</code> function fires this hook for every statement, even in dry-run mode. The <code>SqlCapture</code> class classifies each statement using pattern matching &mdash; a <code>CREATE TABLE ... CLONE</code> is categorized as "CLONE", a <code>CREATE VIEW</code> as "CREATE_VIEW", and so on. The classification logic lives in the <code>classify_sql()</code> function and handles all the standard Unity Catalog DDL patterns.</p>
+
+<!-- Collapsible code walkthrough: Execution Plan -->
+<div class="code-walkthrough">
+  <button class="code-toggle" onclick="toggleCode(this)">
+    <span class="arrow">&#9654;</span> Show Code
+  </button>
+  <div class="code-content">
+    <p class="code-annotation">The SQL capture hook intercepts every statement during a dry run, classifies it, and accumulates a summary report.</p>
+<pre><code><span class="keyword">class</span> <span class="func">SqlCapture</span>:
+    <span class="keyword">def</span> <span class="func">__init__</span>(<span class="var">self</span>):
+        <span class="var">self</span>.<span class="var">statements</span> <span class="op">=</span> []
+        <span class="var">self</span>.<span class="var">counts</span> <span class="op">=</span> <span class="func">defaultdict</span>(<span class="var">int</span>)
+
+    <span class="keyword">def</span> <span class="func">capture</span>(<span class="var">self</span>, <span class="var">sql</span>: <span class="var">str</span>):
+        <span class="var">category</span> <span class="op">=</span> <span class="func">classify_sql</span>(<span class="var">sql</span>)
+        <span class="var">self</span>.<span class="var">statements</span>.<span class="func">append</span>((<span class="var">category</span>, <span class="var">sql</span>))
+        <span class="var">self</span>.<span class="var">counts</span>[<span class="var">category</span>] <span class="op">+=</span> <span class="num">1</span>
+
+<span class="comment"># Usage: wire into execute_sql during plan mode</span>
+<span class="var">capture</span> <span class="op">=</span> <span class="func">SqlCapture</span>()
+<span class="func">set_sql_capture</span>(<span class="var">capture</span>.<span class="var">capture</span>)</code></pre>
+    <p class="code-annotation"><code>classify_sql()</code> uses regex pattern matching to categorize each SQL statement. The captured plan can be written to a file and reviewed before execution.</p>
+  </div>
+</div>
+
+<div class="callout takeaway">
+  <div class="callout-title">Key Takeaway</div>
+  <p>The execution plan command gives DBAs full visibility into every SQL statement before it runs. Generate, review, approve, execute &mdash; proper change management for catalog clones, not just "run and hope."</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 8: PERFORMANCE BENCHMARKS -->
+<div class="reveal-section" id="section-benchmarks">
+<h2>Performance Benchmarks</h2>
+
+<p>Numbers matter more than narratives when evaluating a tool. Here are real-world benchmarks from a production Unity Catalog with <span class="stat">24 schemas</span> and <span class="stat">166 tables</span>, measured on Databricks serverless compute.</p>
+
+<h3>Clone Type Comparison</h3>
+
+<p>Shallow clones reference source data files without copying them, making them dramatically faster for dev/test scenarios where data isolation is not required.</p>
+
+<div class="benchmark-chart" id="bench-clone-type">
+  <svg viewBox="0 0 700 140" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+    <!-- Labels -->
+    <text x="0" y="38" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="14" font-weight="600">Shallow Clone</text>
+    <text x="0" y="100" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="14" font-weight="600">Deep Clone</text>
+
+    <!-- Bars background -->
+    <rect x="160" y="20" width="540" height="32" rx="4" fill="#F0F0F0"/>
+    <rect x="160" y="82" width="540" height="32" rx="4" fill="#F0F0F0"/>
+
+    <!-- Shallow bar: ~8 min / 45 min => 17.8% of width => 96px -->
+    <rect x="160" y="20" width="0" height="32" rx="4" fill="#DC143C" class="bench-bar" data-target-width="96"/>
+    <text x="264" y="42" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="13" font-weight="700" class="bench-label" style="opacity:0;">~8 min</text>
+
+    <!-- Deep bar: 45 min / 45 min => 100% => 540px -->
+    <rect x="160" y="82" width="0" height="32" rx="4" fill="#1A1A2E" class="bench-bar" data-target-width="540"/>
+    <text x="708" y="104" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="13" font-weight="700" text-anchor="end" class="bench-label" style="opacity:0;">~45 min</text>
+
+    <!-- Speed comparison -->
+    <text x="160" y="132" fill="#DC143C" font-family="Inter,sans-serif" font-size="12" font-weight="700">5.6x faster</text>
+  </svg>
+</div>
+
+<h3>Incremental Sync vs Full Re-Clone</h3>
+
+<p>When only 3 out of 166 tables have changed, incremental sync avoids re-processing the 163 unchanged tables entirely.</p>
+
+<div class="benchmark-chart" id="bench-incremental">
+  <svg viewBox="0 0 700 140" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+    <!-- Labels -->
+    <text x="0" y="38" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="14" font-weight="600">Incremental Sync</text>
+    <text x="0" y="100" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="14" font-weight="600">Full Re-Clone</text>
+
+    <!-- Bars background -->
+    <rect x="180" y="20" width="520" height="32" rx="4" fill="#F0F0F0"/>
+    <rect x="180" y="82" width="520" height="32" rx="4" fill="#F0F0F0"/>
+
+    <!-- Incremental bar: 2 min / 45 min => 4.4% => ~23px -->
+    <rect x="180" y="20" width="0" height="32" rx="4" fill="#4CAF50" class="bench-bar" data-target-width="23"/>
+    <text x="211" y="42" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="13" font-weight="700" class="bench-label" style="opacity:0;">~2 min</text>
+
+    <!-- Full re-clone bar: 45 min / 45 min => 100% => 520px -->
+    <rect x="180" y="82" width="0" height="32" rx="4" fill="#1A1A2E" class="bench-bar" data-target-width="520"/>
+    <text x="708" y="104" fill="#1A1A1A" font-family="Inter,sans-serif" font-size="13" font-weight="700" text-anchor="end" class="bench-label" style="opacity:0;">~45 min</text>
+
+    <!-- Speed comparison -->
+    <text x="180" y="132" fill="#4CAF50" font-family="Inter,sans-serif" font-size="12" font-weight="700">22.5x faster (3 tables changed out of 166)</text>
+  </svg>
+</div>
+
+<div class="callout insight">
+  <div class="callout-title">Why this matters</div>
+  <p>Shallow clones and incremental sync are not just faster &mdash; they are cheaper. Serverless compute bills by the second. An 8-minute shallow clone costs roughly <span class="stat">82% less</span> than a 45-minute deep clone. Incremental sync of 3 tables costs <span class="stat">96% less</span> than a full re-clone. Over a year of nightly syncs, the savings are substantial.</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 9: REAL-WORLD SCENARIOS -->
+<div class="reveal-section" id="section-realworld">
+<h2>Real-World Scenarios</h2>
+
+<div class="scenario-card">
+  <h4>Nightly Staging Refresh</h4>
+  <p>Your analytics team needs a fresh copy of production in the staging catalog every night. The clone should validate itself after completion, and if validation fails, it should roll back to the previous state automatically. Schedule this as a cron job or a Databricks Workflow:</p>
+  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
+  <span class="flag">--clone-type</span> <span class="str">DEEP</span> <span class="flag">\</span>
+  <span class="flag">--validate</span> <span class="flag">--enable-rollback</span> <span class="flag">\</span>
+  <span class="flag">--copy-permissions</span> <span class="flag">--copy-tags</span> <span class="flag">\</span>
+  <span class="flag">--report</span> <span class="flag">--notify-slack</span> <span class="str">#data-ops</span></code></pre>
+  <p>If any table fails validation (row count mismatch, schema difference), the clone is rolled back and Slack is notified. The HTML report is generated regardless, so the morning team can review what happened.</p>
+</div>
+
+<div class="scenario-card">
+  <h4>PR-Specific Catalogs for CI/CD</h4>
+  <p>Every pull request should get its own isolated catalog clone for integration testing. The catalog should be created quickly (shallow clone), tagged with the PR number, and automatically cleaned up after a time-to-live expires:</p>
+  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">ci_pr_1234</span> <span class="flag">\</span>
+  <span class="flag">--clone-type</span> <span class="str">SHALLOW</span> <span class="flag">\</span>
+  <span class="flag">--ttl</span> <span class="str">24h</span>
+
+<span class="comment"># After tests pass, or after TTL expires:</span>
+<span class="cmd">clone-catalog ttl-cleanup</span></code></pre>
+  <p>Shallow clones are nearly instant because they reference the source data files without copying them. The TTL manager runs as a background task and drops expired catalogs automatically. Your CI pipeline creates the catalog, runs tests, and the cleanup happens on its own.</p>
+</div>
+
+<div class="scenario-card">
+  <h4>Cross-Workspace Disaster Recovery</h4>
+  <p>Your DR workspace is in a different region. Clone-Xs supports cross-workspace cloning by accepting destination workspace credentials separately from the source:</p>
+  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">production_dr</span> <span class="flag">\</span>
+  <span class="flag">--dest-host</span> <span class="str">https://dr-workspace.cloud.databricks.com</span> <span class="flag">\</span>
+  <span class="flag">--dest-token</span> <span class="str">$DR_TOKEN</span> <span class="flag">\</span>
+  <span class="flag">--validate</span> <span class="flag">--report</span></code></pre>
+  <p>The multi-workspace clone module handles authentication to both workspaces, coordinates the clone operation, and validates the result by querying both source and destination. This is the building block for automated DR that actually works.</p>
+</div>
+
+<div class="scenario-card">
+  <h4>PII-Safe Development Copies</h4>
+  <p>Before cloning production data to a development catalog, you need to verify that no PII (personally identifiable information) will leak into an environment with relaxed access controls. Clone-Xs includes a PII scanner that checks column names, comments, and sample data for common PII patterns:</p>
+  <pre><code><span class="comment"># Scan first, then clone only if clean</span>
+<span class="cmd">clone-catalog pii-scan</span> <span class="flag">--catalog</span> <span class="str">production</span>
+
+<span class="comment"># Or combine scan + clone with auto-masking</span>
+<span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">dev_safe</span> <span class="flag">\</span>
+  <span class="flag">--pii-scan</span> <span class="flag">--mask-pii</span></code></pre>
+  <p>The PII scanner uses pattern matching on column names (looking for patterns like "ssn", "email", "phone", "date_of_birth") and can optionally sample data to detect PII in values. When combined with the masking module, PII columns are automatically masked in the destination &mdash; the original data never leaves the production catalog.</p>
+</div>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 10: GETTING STARTED -->
+<div class="reveal-section" id="section-started">
+<h2>Getting Started</h2>
+
+<p>Clone-Xs is designed to be running in under five minutes. Pick the installation method that fits your workflow.</p>
+
+<h3>From Source (Recommended for Development)</h3>
+
+<pre><code><span class="cmd">git clone</span> <span class="str">https://github.com/viral0216/clone-xs.git</span>
+<span class="cmd">cd</span> <span class="str">clone-xs</span>
+<span class="cmd">pip install</span> <span class="flag">-e</span> <span class="str">.</span></code></pre>
+
+<p>This installs Clone-Xs in editable mode, so you can modify the source and see changes immediately. The CLI command <code>clone-catalog</code> is available globally after installation.</p>
+
+<h3>Docker (Recommended for Production)</h3>
+
+<pre><code><span class="cmd">docker compose up</span> <span class="flag">-d</span></code></pre>
+
+<p>This starts both the FastAPI backend and the React UI. The web dashboard is available at <code>http://localhost:3000</code> and the API at <code>http://localhost:8000</code>. All 31 UI pages and 61+ API endpoints are included.</p>
+
+<h3>CLI Only</h3>
+
+<pre><code><span class="cmd">pip install</span> <span class="str">clone-xs</span>
+<span class="cmd">clone-catalog</span> <span class="flag">--help</span></code></pre>
+
+<p>If you only need the CLI and do not need the web UI or API server, a simple pip install gives you all 56 commands. Configure your Databricks credentials via environment variables (<code>DATABRICKS_HOST</code>, <code>DATABRICKS_TOKEN</code>), a CLI profile (<code>--profile</code>), or interactive browser-based OAuth (<code>clone-catalog login</code>).</p>
+
+<h3>Databricks Notebook</h3>
+
+<p>For teams that want to run Clone-Xs entirely within Databricks, no external installation is needed beyond uploading the wheel to a Volume. The <code>set_sql_executor()</code> pattern lets you use the full library from any notebook:</p>
+
+<pre><code><span class="comment"># Cell 1: Install the wheel (uploaded to a Volume)</span>
+<span class="cmd">%pip install</span> <span class="str">/Volumes/my_catalog/my_schema/wheels/clone_xs-latest.whl</span>
+
+<span class="comment"># Cell 2: Wire spark.sql() and run</span>
+<span class="keyword">from</span> <span class="var">src.client</span> <span class="keyword">import</span> <span class="func">set_sql_executor</span>
+<span class="func">set_sql_executor</span>(<span class="keyword">lambda</span> <span class="var">sql</span>: [<span class="var">r</span>.<span class="func">asDict</span>() <span class="keyword">for</span> <span class="var">r</span> <span class="keyword">in</span> <span class="var">spark</span>.<span class="func">sql</span>(<span class="var">sql</span>).<span class="func">collect</span>()])
+
+<span class="keyword">from</span> <span class="var">src.clone_catalog</span> <span class="keyword">import</span> <span class="func">clone_catalog</span>
+<span class="keyword">from</span> <span class="var">databricks.sdk</span> <span class="keyword">import</span> <span class="func">WorkspaceClient</span>
+
+<span class="func">clone_catalog</span>(<span class="func">WorkspaceClient</span>(), {
+    <span class="str">"source_catalog"</span>: <span class="str">"production"</span>,
+    <span class="str">"destination_catalog"</span>: <span class="str">"staging"</span>,
+    <span class="str">"clone_type"</span>: <span class="str">"SHALLOW"</span>,
+    <span class="str">"sql_warehouse_id"</span>: <span class="str">"SERVERLESS"</span>,
+})</code></pre>
+
+<p>This is the same code path that the CLI and API use. No feature is missing, no behavior is different. The notebook is a first-class execution environment, not a second-class wrapper.</p>
+</div>
+
+<div class="section-break">&bull; &bull; &bull;</div>
+
+<!-- SECTION 11: CLOSING -->
+<div class="reveal-section" id="section-closing">
+<h2>Stop Maintaining That Notebook</h2>
+
+<p>The manual clone notebook was always a stopgap. It was never supposed to be permanent. But without a better option, it persisted &mdash; growing more brittle with each schema change, each new team member who did not understand its assumptions, each silent failure that went unnoticed for days.</p>
+
+<p>Clone-Xs replaces that notebook with a real tool. It handles the hard parts &mdash; permissions, tags, ownership, constraints, views, volumes, functions, incremental sync, rollback, validation, audit logging, and PII detection &mdash; so you can focus on the work that actually matters. It runs from the CLI, a web UI, an API, or a Databricks notebook. It works with SQL warehouses or serverless compute. It is tested, documented, and actively maintained.</p>
+
+<p>The project is open source under the MIT license. The code is at <a href="https://github.com/viral0216/clone-xs" style="color: #DC143C; font-weight: 600;">github.com/viral0216/clone-xs</a>. Star the repo if it solves a problem you have. Open an issue if it does not solve a problem you need. And if you are currently maintaining one of those 200-line clone notebooks, give Clone-Xs thirty minutes. You will not go back.</p>
+
+<div class="callout">
+  <div class="callout-title">Get Started</div>
+  <p><strong>GitHub:</strong> <a href="https://github.com/viral0216/clone-xs" style="color: #DC143C;">github.com/viral0216/clone-xs</a><br>
+  <strong>License:</strong> MIT<br>
+  <strong>Install:</strong> <code>pip install clone-xs</code><br>
+  <strong>First clone:</strong> <code>clone-catalog clone --source prod --dest staging</code></p>
+</div>
+</div>
+
+<!-- AUTHOR BIO -->
+<div class="author-bio">
+  <div class="bio-avatar">VP</div>
+  <div class="bio-text">
+    <div class="bio-name">Viral Patel</div>
+    <div class="bio-role">Data &amp; Platform Engineering</div>
+    <p>Builder of developer tools for the Databricks ecosystem. Viral focuses on automating data platform operations &mdash; from catalog lifecycle management to governance-at-scale. Clone-Xs is his open-source contribution to eliminating the manual toil of Unity Catalog cloning.</p>
+    <p style="margin-bottom:0;margin-top:8px;">
+      <a href="https://github.com/viral0216">GitHub: github.com/viral0216</a>
+    </p>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer class="article-footer">
+  <div class="tags">
+    <span class="tag">Databricks</span>
+    <span class="tag">Unity Catalog</span>
+    <span class="tag">Data Engineering</span>
+    <span class="tag">DevOps</span>
+    <span class="tag">Open Source</span>
+    <span class="tag">Python</span>
+    <span class="tag">Delta Lake</span>
+  </div>
+</footer>
+
+</div>
+
+<script>
+// ===== Reading Progress Bar =====
+(function() {
+  var bar = document.getElementById('reading-progress');
+  window.addEventListener('scroll', function() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    var pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    bar.style.width = pct + '%';
+  });
+})();
+
+// ===== Scroll-Reveal Animations =====
+(function() {
+  var sections = document.querySelectorAll('.reveal-section');
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.08 });
+
+  sections.forEach(function(s) { observer.observe(s); });
+})();
+
+// ===== Floating TOC: Highlight Active Section =====
+(function() {
+  var tocLinks = document.querySelectorAll('.toc-nav a[data-section]');
+  var sectionEls = [];
+  tocLinks.forEach(function(link) {
+    var el = document.getElementById(link.getAttribute('data-section'));
+    if (el) sectionEls.push({ el: el, link: link });
+  });
+
+  window.addEventListener('scroll', function() {
+    var scrollY = window.scrollY + 120;
+    var current = null;
+    sectionEls.forEach(function(item) {
+      if (item.el.offsetTop <= scrollY) {
+        current = item.link;
+      }
+    });
+    tocLinks.forEach(function(l) { l.classList.remove('active'); });
+    if (current) current.classList.add('active');
+  });
+})();
+
+// ===== Copy Buttons on Code Blocks =====
+(function() {
+  var pres = document.querySelectorAll('pre');
+  pres.forEach(function(pre) {
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', function() {
+      var code = pre.querySelector('code');
+      var text = code ? code.textContent : pre.textContent;
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    });
+    pre.appendChild(btn);
+  });
+})();
+
+// ===== Collapsible Code Walkthroughs =====
+function toggleCode(btn) {
+  var content = btn.parentElement.querySelector('.code-content');
+  var isOpen = content.classList.contains('open');
+  content.classList.toggle('open');
+  btn.classList.toggle('open');
+  btn.innerHTML = isOpen
+    ? '<span class="arrow">&#9654;</span> Show Code'
+    : '<span class="arrow">&#9654;</span> Hide Code';
+}
+
+// ===== Benchmark Bar Animations =====
+(function() {
+  var charts = document.querySelectorAll('.benchmark-chart');
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        var bars = entry.target.querySelectorAll('.bench-bar');
+        var labels = entry.target.querySelectorAll('.bench-label');
+        bars.forEach(function(bar, i) {
+          var tw = bar.getAttribute('data-target-width');
+          setTimeout(function() {
+            bar.style.transition = 'width 1.2s ease-out';
+            bar.setAttribute('width', tw);
+          }, i * 200);
+        });
+        labels.forEach(function(label, i) {
+          setTimeout(function() {
+            label.style.transition = 'opacity 0.5s ease';
+            label.style.opacity = '1';
+          }, 800 + i * 200);
+        });
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.3 });
+
+  charts.forEach(function(c) { observer.observe(c); });
+})();
+</script>
+
+</body>
+</html>

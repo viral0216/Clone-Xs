@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
+  Briefcase,
   Copy,
   FolderTree,
   GitCompare,
@@ -67,6 +68,7 @@ const navSections: NavSection[] = [
       { href: "/rollback", label: "Rollback", icon: Undo2 },
       { href: "/templates", label: "Templates", icon: LayoutTemplate },
       { href: "/schedule", label: "Schedule", icon: CalendarClock },
+      { href: "/create-job", label: "Create Job", icon: Briefcase },
       { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
     ],
   },

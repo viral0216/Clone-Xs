@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clone-Xs API</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg-app: #1C1C1C;
+  --bg-sidebar: #212121;
+  --bg-content: #1C1C1C;
+  --bg-card: #2C2C2C;
+  --bg-input: #181818;
+  --bg-hover: #2A2A2A;
+  --bg-active: #FF6C370D;
+  --text: #E0E0E0;
+  --text-secondary: #9E9E9E;
+  --text-muted: #666;
+  --border: #333;
+  --accent: #FF6C37;
+  --get: #61AFFE;
+  --post: #49CC90;
+  --put: #FCA130;
+  --delete: #F93E3E;
+  --patch: #50E3C2;
+}
+body { background:var(--bg-app); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+
+/* Top Bar */
+.topbar { height:48px; background:#161616; border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 16px; gap:12px; flex-shrink:0; }
+.topbar-logo { width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,#FF3621,#E02F1B); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px; color:white; }
+.topbar-title { font-size:14px; font-weight:600; color:white; }
+.topbar-sep { width:1px; height:20px; background:var(--border); }
+.topbar-tabs { display:flex; gap:2px; flex:1; }
+.topbar-tab { padding:6px 14px; border-radius:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; transition:all .15s; }
+.topbar-tab:hover { background:var(--bg-hover); color:var(--text); }
+.topbar-tab.active { background:var(--bg-card); color:white; }
+.topbar-right { display:flex; gap:8px; align-items:center; }
+.topbar-badge { padding:3px 10px; border-radius:12px; font-size:10px; font-weight:600; border:1px solid; }
+.topbar-link { color:var(--text-muted); font-size:12px; padding:4px 8px; border-radius:4px; }
+.topbar-link:hover { color:white; background:rgba(255,255,255,.06); text-decoration:none; }
+
+/* Layout */
+.layout { display:flex; flex:1; overflow:hidden; }
+
+/* Sidebar */
+.sidebar { width:280px; background:var(--bg-sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
+.sidebar-header { padding:12px 14px 8px; border-bottom:1px solid var(--border); }
+.sidebar-header input { width:100%; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; padding:7px 10px; color:var(--text); font-size:12px; outline:none; }
+.sidebar-header input:focus { border-color:var(--accent); }
+.sidebar-header input::placeholder { color:var(--text-muted); }
+.sidebar-nav { flex:1; overflow-y:auto; padding:6px 0; }
+.sidebar-section { margin-bottom:2px; }
+.sidebar-section-title { padding:6px 14px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+.sidebar-section-title:hover { color:var(--text-secondary); }
+.sidebar-section-title .count { font-size:10px; background:var(--bg-card); padding:1px 6px; border-radius:8px; font-weight:500; }
+.sidebar-items { }
+.sidebar-item { display:flex; align-items:center; gap:8px; padding:5px 14px 5px 20px; font-size:12px; cursor:pointer; transition:all .1s; border-left:2px solid transparent; }
+.sidebar-item:hover { background:var(--bg-hover); }
+.sidebar-item.active { background:var(--bg-active); border-left-color:var(--accent); }
+.sidebar-item .method { font-size:10px; font-weight:700; min-width:42px; padding:2px 0; text-align:center; border-radius:3px; }
+.sidebar-item .method.get { color:var(--get); }
+.sidebar-item .method.post { color:var(--post); }
+.sidebar-item .method.put { color:var(--put); }
+.sidebar-item .method.delete { color:var(--delete); }
+.sidebar-item .path { color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-item.active .path { color:var(--text); }
+.sidebar-footer { padding:10px 14px; border-top:1px solid var(--border); font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; }
+
+/* Content */
+.content { flex:1; overflow-y:auto; padding:24px 32px; }
+.content-empty { display:flex; align-items:center; justify-content:center; height:100%; flex-direction:column; gap:16px; color:var(--text-muted); }
+.content-empty .logo { width:64px; height:64px; border-radius:16px; background:linear-gradient(135deg,#FF3621,#E02F1B); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:24px; color:white; }
+
+/* Endpoint Detail */
+.ep-header { margin-bottom:20px; }
+.ep-title { font-size:20px; font-weight:600; margin-bottom:4px; }
+.ep-url { display:flex; align-items:center; gap:8px; margin-bottom:12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+.ep-url .method-badge { font-size:12px; font-weight:700; padding:4px 10px; border-radius:4px; color:white; }
+.ep-url .method-badge.get { background:var(--get); }
+.ep-url .method-badge.post { background:var(--post); }
+.ep-url .method-badge.put { background:var(--put); }
+.ep-url .method-badge.delete { background:var(--delete); }
+.ep-url .url-text { font-family:'SF Mono',Consolas,monospace; font-size:14px; color:var(--text); flex:1; }
+.ep-url .try-btn { background:var(--accent); color:white; border:none; padding:6px 16px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; }
+.ep-url .try-btn:hover { background:#FF8C5A; }
+.ep-desc { color:var(--text-secondary); font-size:13px; line-height:1.6; margin-bottom:20px; }
+
+/* Sections */
+.section { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; overflow:hidden; }
+.section-header { padding:10px 16px; font-size:13px; font-weight:600; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+.section-header .tag { font-size:10px; padding:2px 8px; border-radius:4px; background:var(--bg-input); color:var(--text-muted); font-weight:500; }
+.section-body { padding:0; }
+
+/* Table */
+.params-table { width:100%; border-collapse:collapse; font-size:12px; }
+.params-table th { text-align:left; padding:8px 16px; color:var(--text-muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.3px; border-bottom:1px solid var(--border); }
+.params-table td { padding:8px 16px; border-bottom:1px solid #2A2A2A; vertical-align:top; }
+.params-table tr:last-child td { border-bottom:none; }
+.param-name { color:var(--text); font-weight:500; font-family:'SF Mono',Consolas,monospace; }
+.param-required { color:var(--delete); font-size:10px; margin-left:4px; }
+.param-type { color:var(--text-muted); font-size:11px; }
+.param-desc { color:var(--text-secondary); }
+
+/* Code block */
+.code-block { background:var(--bg-input); border-radius:6px; padding:14px 16px; font-family:'SF Mono',Consolas,monospace; font-size:12px; line-height:1.5; color:var(--text); overflow-x:auto; margin:12px 16px; white-space:pre; }
+
+/* Response */
+.response-status { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:4px; font-size:11px; font-weight:600; }
+.response-status.s200 { background:rgba(73,204,144,.12); color:#49CC90; }
+.response-status.s422 { background:rgba(252,161,48,.12); color:#FCA130; }
+
+/* Overview cards */
+.overview-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-bottom:24px; }
+.overview-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:16px; }
+.overview-card .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:6px; }
+.overview-card .value { font-size:22px; font-weight:700; }
+.overview-card .sub { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#3A3A3A; border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:#555; }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="topbar-logo">CX</div>
+  <span class="topbar-title">Clone-Xs API</span>
+  <div class="topbar-sep"></div>
+  <div class="topbar-tabs">
+    <div class="topbar-tab active" onclick="showOverview()">Overview</div>
+    <div class="topbar-tab" onclick="window.open('/redoc','_blank')">ReDoc</div>
+  </div>
+  <div class="topbar-right">
+    <span class="topbar-badge" style="color:#49CC90;border-color:rgba(73,204,144,.3)">v0.5.0</span>
+    <span class="topbar-badge" style="color:#61AFFE;border-color:rgba(97,175,254,.3)" id="ep-count">...</span>
+    <a href="/" class="topbar-link">Web UI</a>
+    <a href="https://github.com/viral0216/clone-xs" target="_blank" class="topbar-link">GitHub</a>
+  </div>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <input type="text" id="search" placeholder="Search endpoints..." oninput="filterEndpoints(this.value)">
+    </div>
+    <div class="sidebar-nav" id="sidebar-nav"></div>
+    <div class="sidebar-footer">
+      <span>Clone-Xs API</span>
+      <span>MIT License</span>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="content">
+    <div class="content-empty" id="content-empty">
+      <div class="logo">CX</div>
+      <div style="font-size:18px;color:var(--text);font-weight:600">Clone-Xs API</div>
+      <div style="font-size:13px;max-width:400px;text-align:center;line-height:1.6">
+        Enterprise Unity Catalog cloning toolkit.<br>
+        Select an endpoint from the sidebar to view details.
+      </div>
+    </div>
+    <div id="content-detail" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+let spec = null;
+let allEndpoints = [];
+
+async function loadSpec() {
+  const res = await fetch('/openapi.json');
+  spec = await res.json();
+  buildSidebar();
+  document.getElementById('ep-count').textContent = allEndpoints.length + ' endpoints';
+}
+
+function buildSidebar() {
+  const nav = document.getElementById('sidebar-nav');
+  const tagMap = {};
+
+  // Group endpoints by tag
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (method === 'parameters') continue;
+      const tag = (op.tags && op.tags[0]) || 'default';
+      if (!tagMap[tag]) tagMap[tag] = [];
+      const ep = { method: method.toUpperCase(), path, summary: op.summary || '', description: op.description || '', operationId: op.operationId || '', op };
+      tagMap[tag].push(ep);
+      allEndpoints.push({ ...ep, tag });
+    }
+  }
+
+  // Tag descriptions
+  const tagDescs = {};
+  if (spec.tags) spec.tags.forEach(t => tagDescs[t.name] = t.description || '');
+
+  // Render
+  let html = '';
+  for (const [tag, eps] of Object.entries(tagMap)) {
+    html += `<div class="sidebar-section" data-tag="${tag}">`;
+    html += `<div class="sidebar-section-title" onclick="toggleSection(this)">
+      <span>${tag.charAt(0).toUpperCase() + tag.slice(1)}</span>
+      <span class="count">${eps.length}</span>
+    </div>`;
+    html += `<div class="sidebar-items">`;
+    eps.forEach((ep, i) => {
+      const id = `${tag}-${i}`;
+      html += `<div class="sidebar-item" data-id="${id}" onclick="showEndpoint('${tag}',${i})">
+        <span class="method ${ep.method.toLowerCase()}">${ep.method}</span>
+        <span class="path" title="${ep.path}">${ep.summary || ep.path}</span>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+  nav.innerHTML = html;
+  window._tagMap = tagMap;
+}
+
+function toggleSection(el) {
+  const items = el.nextElementSibling;
+  items.style.display = items.style.display === 'none' ? '' : 'none';
+}
+
+function filterEndpoints(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(q) ? '' : 'none';
+  });
+  document.querySelectorAll('.sidebar-section').forEach(sec => {
+    const visible = sec.querySelectorAll('.sidebar-item[style=""],.sidebar-item:not([style])');
+    const hasVisible = Array.from(sec.querySelectorAll('.sidebar-item')).some(i => i.style.display !== 'none');
+    sec.style.display = hasVisible ? '' : 'none';
+  });
+}
+
+function showOverview() {
+  document.getElementById('content-empty').style.display = 'flex';
+  document.getElementById('content-detail').style.display = 'none';
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  document.querySelectorAll('.topbar-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.topbar-tab')[0].classList.add('active');
+}
+
+function showEndpoint(tag, idx) {
+  const ep = window._tagMap[tag][idx];
+  const op = ep.op;
+  const detail = document.getElementById('content-detail');
+
+  // Active state
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  document.querySelector(`.sidebar-item[data-id="${tag}-${idx}"]`).classList.add('active');
+  document.getElementById('content-empty').style.display = 'none';
+  detail.style.display = '';
+
+  let html = '';
+
+  // Header
+  html += `<div class="ep-header">`;
+  html += `<div class="ep-title">${ep.summary || ep.operationId}</div>`;
+  html += `<div class="ep-url">
+    <span class="method-badge ${ep.method.toLowerCase()}">${ep.method}</span>
+    <span class="url-text">${ep.path}</span>
+    <button class="try-btn" onclick="window.open('/docs#','_blank')">Try it</button>
+  </div>`;
+  if (ep.description) {
+    html += `<div class="ep-desc">${ep.description.replace(/\\n/g, '<br>')}</div>`;
+  }
+  html += `</div>`;
+
+  // Request Body
+  if (op.requestBody) {
+    const content = op.requestBody.content;
+    const jsonSchema = content && content['application/json'] && content['application/json'].schema;
+    if (jsonSchema) {
+      const schemaRef = jsonSchema['$ref'];
+      const schema = schemaRef ? resolveRef(schemaRef) : jsonSchema;
+      const props = schema.properties || {};
+      const required = schema.required || [];
+
+      html += `<div class="section">`;
+      html += `<div class="section-header">Request Body <span class="tag">application/json</span></div>`;
+      html += `<div class="section-body">`;
+
+      // Show example JSON
+      const example = {};
+      for (const [k, v] of Object.entries(props)) {
+        if (v.default !== undefined) example[k] = v.default;
+        else if (v.type === 'string') example[k] = v.example || k;
+        else if (v.type === 'integer' || v.type === 'number') example[k] = v.example || 0;
+        else if (v.type === 'boolean') example[k] = v.default || false;
+        else if (v.type === 'array') example[k] = [];
+        else example[k] = null;
+      }
+      html += `<div class="code-block">${JSON.stringify(example, null, 2)}</div>`;
+
+      // Params table
+      html += `<table class="params-table">`;
+      html += `<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>`;
+      for (const [k, v] of Object.entries(props)) {
+        const req = required.includes(k) ? '<span class="param-required">*required</span>' : '';
+        const type = v.type || 'object';
+        const desc = v.description || v.title || '';
+        const def = v.default !== undefined ? ` (default: ${JSON.stringify(v.default)})` : '';
+        html += `<tr>
+          <td><span class="param-name">${k}</span>${req}</td>
+          <td><span class="param-type">${type}</span></td>
+          <td><span class="param-desc">${desc}${def}</span></td>
+        </tr>`;
+      }
+      html += `</tbody></table>`;
+      html += `</div></div>`;
+    }
+  }
+
+  // Responses
+  if (op.responses) {
+    html += `<div class="section">`;
+    html += `<div class="section-header">Responses</div>`;
+    html += `<div class="section-body" style="padding:12px 16px">`;
+    for (const [code, resp] of Object.entries(op.responses)) {
+      const cls = code.startsWith('2') ? 's200' : code.startsWith('4') ? 's422' : 's200';
+      html += `<div style="margin-bottom:8px">
+        <span class="response-status ${cls}">${code}</span>
+        <span style="color:var(--text-secondary);font-size:12px;margin-left:8px">${resp.description || ''}</span>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // External docs
+  const tagInfo = spec.tags && spec.tags.find(t => t.name === tag);
+  if (tagInfo && tagInfo.externalDocs) {
+    html += `<div style="margin-top:12px;font-size:12px">
+      <a href="${tagInfo.externalDocs.url}" target="_blank">${tagInfo.externalDocs.description || 'Documentation'} ↗</a>
+    </div>`;
+  }
+
+  detail.innerHTML = html;
+  detail.scrollTop = 0;
+}
+
+function resolveRef(ref) {
+  const parts = ref.replace('#/', '').split('/');
+  let obj = spec;
+  for (const p of parts) obj = obj[p];
+  return obj || {};
+}
+
+loadSpec();
+</script>
+</body>
+</html>

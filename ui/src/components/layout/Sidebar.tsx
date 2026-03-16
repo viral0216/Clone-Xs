@@ -241,10 +241,15 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-white/10">
+      <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between">
         <span className="text-[10px] text-gray-600">
-          {collapsed ? "v0.4" : "v0.4.0"}
+          {collapsed ? "v0.5" : "v0.5.0"}
         </span>
+        {!collapsed && (
+          <span className="text-[10px] text-gray-700">
+            33 pages &middot; 60 commands
+          </span>
+        )}
       </div>
     </>
   );

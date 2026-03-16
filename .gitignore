@@ -94,6 +94,9 @@ checkpoints/
 databricks_workflow.json
 clone_queue_state.json
 
+# Marketplace (contains partner application with contact info)
+marketplace/
+
 # Misc
 *.bak
 *.tmp

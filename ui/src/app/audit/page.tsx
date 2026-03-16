@@ -57,7 +57,10 @@ export default function AuditPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Audit Trail</h1>
-          <p className="text-muted-foreground mt-1">Track all clone operations and changes</p>
+          <p className="text-muted-foreground mt-1">Query clone operation history stored in Delta tables — who ran what, when, duration, status, and configuration. All operations are automatically logged.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta Lake audit</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">System tables</a>
+          </p>
         </div>
         <Button onClick={loadAudit} disabled={loading} variant="outline">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />

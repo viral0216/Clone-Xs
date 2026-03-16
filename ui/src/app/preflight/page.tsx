@@ -44,7 +44,7 @@ export default function PreflightPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Preflight Checks</h1>
-        <p className="text-gray-500 mt-1">Validate prerequisites before cloning</p>
+        <p className="text-gray-500 mt-1">Pre-clone validation checklist — verifies workspace connectivity, warehouse availability, catalog permissions, destination writability, and schema compatibility before executing.</p>
       </div>
 
       {/* Input */}

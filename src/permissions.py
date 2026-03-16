@@ -16,7 +16,7 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-_SESSION_FILE = os.path.expanduser("~/.clone-catalog-session.json")
+_SESSION_FILE = os.path.expanduser("~/.clxs-session.json")
 
 
 def _resolve_warehouse_id(warehouse_id: str) -> str:

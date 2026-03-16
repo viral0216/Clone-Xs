@@ -45,6 +45,16 @@ class StorageMetricsRequest(CatalogRequest):
     table_filter: str | None = None
 
 
+class TableMaintenanceRequest(BaseModel):
+    """Request to run OPTIMIZE or VACUUM on selected tables."""
+    source_catalog: str
+    warehouse_id: str | None = None
+    tables: list[dict] | None = None  # [{"schema": "x", "table": "y"}]
+    schema_filter: str | None = None
+    retention_hours: int = 168  # VACUUM only
+    dry_run: bool = False
+
+
 class ExportRequest(CatalogRequest):
     format: Literal["csv", "json"] = "csv"
     output_path: str | None = None

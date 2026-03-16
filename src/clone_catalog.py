@@ -64,7 +64,7 @@ def get_schemas(
         if "TABLE_OR_VIEW_NOT_FOUND" in str(e):
             raise RuntimeError(
                 f"Catalog '{catalog}' not found. Verify the catalog exists and you have access.\n"
-                f"List available catalogs: clone-catalog run-sql --sql \"SHOW CATALOGS\""
+                f"List available catalogs: clxs run-sql --sql \"SHOW CATALOGS\""
             ) from e
         raise
     return [row["schema_name"] for row in rows]

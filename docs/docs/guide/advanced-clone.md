@@ -19,12 +19,12 @@ Your `production.sales.transactions` table has 5 years of data — 2 billion row
 
 ```bash
 # Apply a global filter to all tables
-clone-catalog clone \
+clxs clone \
   --source production --dest dev \
   --where "created_at >= '2026-01-01'"
 
 # Per-table filters
-clone-catalog clone \
+clxs clone \
   --source production --dest dev \
   --table-filter "sales.transactions:created_at >= '2026-01-01'" \
   --table-filter "sales.orders:region = 'US'" \
@@ -102,24 +102,24 @@ Your CI pipeline creates a fresh cloned catalog for every pull request. Without 
 
 ```bash
 # Clone with a 7-day TTL
-clone-catalog clone \
+clxs clone \
   --source production --dest pr_1234 \
   --ttl 7d
 
 # Set TTL on an existing catalog
-clone-catalog ttl set --dest pr_1234 --days 14
+clxs ttl set --dest pr_1234 --days 14
 
 # Check TTL status for all catalogs
-clone-catalog ttl check
+clxs ttl check
 
 # Clean up expired catalogs
-clone-catalog ttl cleanup
+clxs ttl cleanup
 
 # Extend TTL (e.g., PR review is taking longer)
-clone-catalog ttl extend --dest pr_1234 --days 7
+clxs ttl extend --dest pr_1234 --days 7
 
 # Remove TTL (make permanent)
-clone-catalog ttl remove --dest pr_1234
+clxs ttl remove --dest pr_1234
 ```
 
 **Output (ttl check):**
@@ -134,7 +134,7 @@ TTL STATUS
   pr_1198          7d          2026-03-12 11:00:00  EXPIRED
   dev_sandbox      30d         2026-04-13 02:00:00  ACTIVE (30 days left)
 ============================================================
-  1 catalog expired. Run 'clone-catalog ttl cleanup' to remove.
+  1 catalog expired. Run 'clxs ttl cleanup' to remove.
 ```
 
 ### TTL duration formats
@@ -186,19 +186,19 @@ After every clone, your team needs to run `OPTIMIZE` on all large tables and `AN
 
 ```bash
 # List installed plugins
-clone-catalog plugin list
+clxs plugin list
 
 # Install a built-in plugin
-clone-catalog plugin install optimize
+clxs plugin install optimize
 
 # Install from a directory
-clone-catalog plugin install /path/to/my-plugin
+clxs plugin install /path/to/my-plugin
 
 # Remove a plugin
-clone-catalog plugin remove optimize
+clxs plugin remove optimize
 
 # View plugin details
-clone-catalog plugin info optimize
+clxs plugin info optimize
 ```
 
 **Output (plugin list):**
@@ -282,7 +282,7 @@ class MyCustomPlugin(PluginBase):
 
 ### Auto-loading
 
-Plugins in the `~/.clone-catalog/plugins/` directory are loaded automatically. You can also specify a custom plugin directory:
+Plugins in the `~/.clxs/plugins/` directory are loaded automatically. You can also specify a custom plugin directory:
 
 ```yaml
 plugins:
@@ -312,33 +312,33 @@ You are setting up a new clone pipeline for a 500-table catalog. Before running 
 
 ```bash
 # Generate an execution plan (console output)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging
 
 # Save plan as JSON (for CI/CD pipelines)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format json --output plan.json
 
 # Save plan as HTML (shareable report)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format html --output plan.html
 
 # Save plan as SQL (DBA review, manual execution)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format sql --output plan_statements.sql
 
 # Capture SQL separately (in addition to console output)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --capture-sql plan_statements.sql
 ```
 
 ### Example: Real execution plan output
 
-Running `clone-catalog plan --source production --dest staging` produces:
+Running `clxs plan --source production --dest staging` produces:
 
 ```
 ======================================================================
@@ -424,7 +424,7 @@ Each statement is categorised with `[CLONE]`, `[CREATE_SCHEMA]`, `[CREATE_VIEW]`
 | Capture SQL | `--capture-sql plan.sql` | Save write statements alongside any format |
 
 :::tip
-**CI/CD usage:** Run `clone-catalog plan --source prod --dest staging --format json --output plan.json` in your pipeline as a validation step. Parse the JSON to check statement counts, verify no unexpected drops, and auto-approve or flag for review.
+**CI/CD usage:** Run `clxs plan --source prod --dest staging --format json --output plan.json` in your pipeline as a validation step. Parse the JSON to check statement counts, verify no unexpected drops, and auto-approve or flag for review.
 :::
 
 :::tip

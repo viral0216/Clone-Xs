@@ -90,7 +90,7 @@ export default function ConfigDiffPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Config Diff</h1>
-        <p className="text-gray-500 mt-1">Compare two configurations side by side</p>
+        <p className="text-gray-500 mt-1">Side-by-side comparison of two clone configurations — highlights differences in settings, permissions, and options between config files or profiles.</p>
       </div>
 
       {/* Profile Loader */}

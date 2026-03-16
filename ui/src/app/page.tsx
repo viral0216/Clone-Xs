@@ -14,7 +14,10 @@ export default function Dashboard() {
     <div className="space-y-8">
       <div className="border-l-4 border-[#FF3621] pl-4">
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-gray-500 mt-1">Unity Catalog Clone Utility</p>
+        <p className="text-gray-500 mt-1">Overview of your Unity Catalog clone operations — active jobs, recent runs, success rates, and catalog health at a glance.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog overview</a>
+        </p>
       </div>
 
       {/* Auth Status */}

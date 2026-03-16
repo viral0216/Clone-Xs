@@ -778,6 +778,76 @@ def cmd_storage_metrics(args):
     )
 
 
+def cmd_optimize(args):
+    """Execute the optimize command."""
+    from src.table_maintenance import run_optimize, _enumerate_tables, check_predictive_optimization
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    catalog = config["source_catalog"]
+    wid = config["sql_warehouse_id"]
+
+    # Check predictive optimization
+    po = check_predictive_optimization(client, wid, catalog, config["exclude_schemas"])
+    if po["enabled"]:
+        logger.warning(
+            "Predictive Optimization is enabled — OPTIMIZE may run automatically. "
+            "Manual execution may be unnecessary."
+        )
+
+    tables = _enumerate_tables(
+        client, wid, catalog,
+        schema_filter=args.schema, table_filter=args.table,
+        exclude_schemas=config["exclude_schemas"],
+    )
+    run_optimize(client, wid, tables, dry_run=args.dry_run)
+
+
+def cmd_vacuum(args):
+    """Execute the vacuum command."""
+    from src.table_maintenance import run_vacuum, _enumerate_tables, check_predictive_optimization
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    if args.source:
+        config["source_catalog"] = args.source
+    _resolve_warehouse_id(args, config)
+
+    client = _get_auth_client(args)
+    catalog = config["source_catalog"]
+    wid = config["sql_warehouse_id"]
+
+    # Check predictive optimization
+    po = check_predictive_optimization(client, wid, catalog, config["exclude_schemas"])
+    if po["enabled"]:
+        logger.warning(
+            "Predictive Optimization is enabled — VACUUM may run automatically. "
+            "Manual execution may be unnecessary."
+        )
+
+    tables = _enumerate_tables(
+        client, wid, catalog,
+        schema_filter=args.schema, table_filter=args.table,
+        exclude_schemas=config["exclude_schemas"],
+    )
+    run_vacuum(client, wid, tables, retention_hours=args.retention_hours, dry_run=args.dry_run)
+
+
 def cmd_profile(args):
     """Execute the profile command."""
     from src.profiling import profile_catalog
@@ -1402,7 +1472,7 @@ def cmd_auth(args):
         profiles = list_profiles()
         if not profiles:
             print("  No profiles found in ~/.databrickscfg")
-            print("  Run: clone-catalog auth --login --host <workspace-url>")
+            print("  Run: clxs auth --login --host <workspace-url>")
             return
         print("  Available Databricks CLI profiles:")
         print(f"  {'Name':<20} {'Host':<50} {'Auth Type'}")
@@ -2122,6 +2192,25 @@ def build_parser() -> argparse.ArgumentParser:
     sm_parser.add_argument("--schema", help="Filter to a specific schema")
     sm_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     sm_parser.set_defaults(func=cmd_storage_metrics)
+
+    # --- optimize command ---
+    opt_parser = subparsers.add_parser("optimize", help="Run OPTIMIZE on tables to compact small files")
+    add_common_args(opt_parser)
+    opt_parser.add_argument("--source", help="Override source catalog name")
+    opt_parser.add_argument("--schema", help="Filter to a specific schema")
+    opt_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
+    opt_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
+    opt_parser.set_defaults(func=cmd_optimize)
+
+    # --- vacuum command ---
+    vac_parser = subparsers.add_parser("vacuum", help="Run VACUUM on tables to reclaim storage from old files")
+    add_common_args(vac_parser)
+    vac_parser.add_argument("--source", help="Override source catalog name")
+    vac_parser.add_argument("--schema", help="Filter to a specific schema")
+    vac_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
+    vac_parser.add_argument("--retention-hours", type=int, default=168, help="Data retention in hours (default: 168 = 7 days)")
+    vac_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
+    vac_parser.set_defaults(func=cmd_vacuum)
 
     # --- profile command ---
     prof_parser = subparsers.add_parser("profile", help="Profile table data quality (nulls, distinct, min/max)")

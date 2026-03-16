@@ -69,7 +69,10 @@ export default function WarehousePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Warehouse Manager</h1>
-          <p className="text-muted-foreground mt-1">Manage SQL warehouses</p>
+          <p className="text-muted-foreground mt-1">View and manage SQL warehouses in your workspace — status, cluster size, auto-stop settings, and select the active warehouse for operations.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SQL warehouses</a>
+          </p>
         </div>
         <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />Refresh

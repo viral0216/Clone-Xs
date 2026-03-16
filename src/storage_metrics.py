@@ -76,41 +76,80 @@ def get_table_storage_metrics(
         "error": None,
     }
 
+    # Try ANALYZE TABLE first (Runtime 18.0+), fall back to DESCRIBE DETAIL
+    analyze_succeeded = False
     try:
         rows = execute_sql(
             client, warehouse_id,
             f"ANALYZE TABLE {fqn} COMPUTE STORAGE METRICS",
         )
-        if not rows:
-            metrics["error"] = "No results returned"
-            return metrics
+        if rows:
+            # Databricks returns rows (one per metric) with columns:
+            #   metric_name | metric_value | metric_description
+            # Pivot into a single dict keyed by metric_name
+            first_keys = set(rows[0].keys())
+            if "metric_name" in first_keys or "metric_value" in first_keys:
+                # Row-per-metric format — pivot to dict
+                data = {}
+                for r in rows:
+                    name = (r.get("metric_name") or "").lower()
+                    val = r.get("metric_value")
+                    if name:
+                        data[name] = _safe_int(val)
+            else:
+                # Single-row format (column-per-metric) — use directly
+                data = {k.lower(): _safe_int(v) for k, v in rows[0].items()}
 
-        row = rows[0]
-        total = _safe_int(row.get("total_bytes"))
-        active = _safe_int(row.get("active_bytes"))
-        vacuumable = _safe_int(row.get("vacuumable_bytes"))
-        time_travel = _safe_int(row.get("time_travel_bytes"))
+            logger.info(f"Storage metrics for {fqn}: {data}")
 
-        metrics.update({
-            "total_bytes": total,
-            "total_display": _format_bytes(total),
-            "num_total_files": _safe_int(row.get("num_total_files") or row.get("total_num_files")),
-            "active_bytes": active,
-            "active_display": _format_bytes(active),
-            "active_pct": _pct(active, total),
-            "num_active_files": _safe_int(row.get("num_active_files")),
-            "vacuumable_bytes": vacuumable,
-            "vacuumable_display": _format_bytes(vacuumable),
-            "vacuumable_pct": _pct(vacuumable, total),
-            "num_vacuumable_files": _safe_int(row.get("num_vacuumable_files")),
-            "time_travel_bytes": time_travel,
-            "time_travel_display": _format_bytes(time_travel),
-            "time_travel_pct": _pct(time_travel, total),
-            "num_time_travel_files": _safe_int(row.get("num_time_travel_files")),
-        })
+            total = data.get("total_bytes", 0)
+            active = data.get("active_bytes", 0)
+            vacuumable = data.get("vacuumable_bytes", 0)
+            time_travel = data.get("time_travel_bytes", 0)
+
+            if total > 0 or active > 0:
+                analyze_succeeded = True
+                metrics.update({
+                    "total_bytes": total,
+                    "total_display": _format_bytes(total),
+                    "num_total_files": data.get("num_total_files", 0),
+                    "active_bytes": active,
+                    "active_display": _format_bytes(active),
+                    "active_pct": _pct(active, total),
+                    "num_active_files": data.get("num_active_files", 0),
+                    "vacuumable_bytes": vacuumable,
+                    "vacuumable_display": _format_bytes(vacuumable),
+                    "vacuumable_pct": _pct(vacuumable, total),
+                    "num_vacuumable_files": data.get("num_vacuumable_files", 0),
+                    "time_travel_bytes": time_travel,
+                    "time_travel_display": _format_bytes(time_travel),
+                    "time_travel_pct": _pct(time_travel, total),
+                    "num_time_travel_files": data.get("num_time_travel_files", 0),
+                })
     except Exception as e:
-        logger.debug(f"Storage metrics failed for {fqn}: {e}")
-        metrics["error"] = str(e)
+        logger.debug(f"ANALYZE TABLE failed for {fqn}: {e}")
+
+    # Fallback: use DESCRIBE DETAIL (works on all runtimes)
+    if not analyze_succeeded:
+        try:
+            detail = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL {fqn}")
+            if detail:
+                d = detail[0]
+                size = _safe_int(d.get("sizeInBytes"))
+                files = _safe_int(d.get("numFiles"))
+                metrics.update({
+                    "total_bytes": size,
+                    "total_display": _format_bytes(size),
+                    "num_total_files": files,
+                    "active_bytes": size,
+                    "active_display": _format_bytes(size),
+                    "active_pct": 100.0 if size > 0 else 0.0,
+                    "num_active_files": files,
+                    "note": "DESCRIBE DETAIL fallback — vacuumable/time-travel breakdown requires Runtime 18.0+",
+                })
+        except Exception as e2:
+            logger.debug(f"DESCRIBE DETAIL also failed for {fqn}: {e2}")
+            metrics["error"] = str(e2)
 
     return metrics
 

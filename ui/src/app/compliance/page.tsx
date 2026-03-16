@@ -61,7 +61,10 @@ export default function CompliancePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Compliance</h1>
-        <p className="text-muted-foreground mt-1">Generate compliance and governance reports</p>
+        <p className="text-muted-foreground mt-1">Generate governance and compliance reports — permission audits, tag coverage, PII exposure, ownership mapping, and access control analysis across catalogs.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog governance</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-show-grants" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SHOW GRANTS</a>
+        </p>
       </div>
 
       <Card className="bg-card border-border">

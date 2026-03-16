@@ -68,7 +68,7 @@ The tool uses `CREATE CATALOG IF NOT EXISTS` — it won't overwrite an existing 
 Yes. Use `--include-tables-regex` with a regex:
 
 ```bash
-clone-catalog clone --source prod --dest staging --include-tables-regex "^dim_.*"
+clxs clone --source prod --dest staging --include-tables-regex "^dim_.*"
 ```
 
 ### What about views that reference the source catalog?
@@ -84,7 +84,7 @@ View definitions are automatically rewritten to reference the destination catalo
 Your workspace uses Default Storage and requires a managed location when creating catalogs. Use the `--location` flag:
 
 ```bash
-clone-catalog clone --source prod --dest staging \
+clxs clone --source prod --dest staging \
   --location "abfss://catalog@storage.dfs.core.windows.net/staging"
 ```
 
@@ -111,13 +111,13 @@ Pre-flight is advisory. The clone command doesn't require pre-flight to pass. Co
 Use verbose mode:
 
 ```bash
-clone-catalog clone --source prod --dest staging -v
+clxs clone --source prod --dest staging -v
 ```
 
 Or use dry run to see all SQL without executing:
 
 ```bash
-clone-catalog clone --source prod --dest staging --dry-run
+clxs clone --source prod --dest staging --dry-run
 ```
 
 ---
@@ -130,15 +130,15 @@ When `--auto-rollback` is enabled, the clone pipeline runs post-clone validation
 
 ### What are clone templates?
 
-Templates are predefined configuration profiles for common scenarios. Use `clone-catalog templates list` to see all available templates, then apply one with `clone-catalog clone --template dev-refresh`. Built-in templates include `dev-refresh` (shallow, no permissions), `dr-replica` (deep with checksums), `pii-safe` (deep with masking), and more.
+Templates are predefined configuration profiles for common scenarios. Use `clxs templates list` to see all available templates, then apply one with `clxs clone --template dev-refresh`. Built-in templates include `dev-refresh` (shallow, no permissions), `dr-replica` (deep with checksums), `pii-safe` (deep with masking), and more.
 
 ### How do I schedule recurring clones?
 
-Use `clone-catalog schedule --interval 6h` for interval-based scheduling, or `--cron "0 */6 * * *"` for cron expressions. The scheduler includes drift detection — if no changes are found between source and destination, the clone is skipped. Use `--no-drift-check` to force cloning every run.
+Use `clxs schedule --interval 6h` for interval-based scheduling, or `--cron "0 */6 * * *"` for cron expressions. The scheduler includes drift detection — if no changes are found between source and destination, the clone is skipped. Use `--no-drift-check` to force cloning every run.
 
 ### What is the API server mode?
 
-`clone-catalog serve` starts a REST API server that exposes clone operations as HTTP endpoints. You can submit clone jobs via `POST /api/clone`, check status via `GET /api/clone/{id}`, and run diffs or validations. Secure it with `--api-key`.
+`clxs serve` starts a REST API server that exposes clone operations as HTTP endpoints. You can submit clone jobs via `POST /api/clone`, check status via `GET /api/clone/{id}`, and run diffs or validations. Secure it with `--api-key`.
 
 ### How does RBAC work?
 
@@ -146,7 +146,7 @@ RBAC policies are defined in a YAML file (default: `~/.clone-xs/rbac_policy.yaml
 
 ### What are TTL policies?
 
-TTL (Time-To-Live) policies automatically track expiration dates for cloned catalogs. Set a TTL during clone with `--ttl 7d`, then use `clone-catalog ttl cleanup --confirm` to drop expired catalogs. Useful for ephemeral dev/test environments.
+TTL (Time-To-Live) policies automatically track expiration dates for cloned catalogs. Set a TTL during clone with `--ttl 7d`, then use `clxs ttl cleanup --confirm` to drop expired catalogs. Useful for ephemeral dev/test environments.
 
 ### How do I use the WHERE clause filter?
 

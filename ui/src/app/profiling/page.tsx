@@ -37,7 +37,10 @@ export default function ProfilingPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Data Profiling</h1>
-        <p className="text-muted-foreground mt-1">Analyze data quality and column statistics</p>
+        <p className="text-muted-foreground mt-1">Per-column data quality profiling — null rates, distinct counts, min/max values, and string length distributions. Helps assess data completeness before and after cloning.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-table" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ANALYZE TABLE</a>
+        </p>
       </div>
 
       <Card className="bg-card border-border">

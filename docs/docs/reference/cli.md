@@ -29,7 +29,7 @@ These flags are available on all subcommands:
 Clone an entire Unity Catalog catalog.
 
 ```bash
-clone-catalog clone [options]
+clxs clone [options]
 ```
 
 | Flag | Description |
@@ -74,7 +74,7 @@ clone-catalog clone [options]
 Compare structure of two catalogs.
 
 ```bash
-clone-catalog diff --source <catalog> --dest <catalog> [options]
+clxs diff --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -90,7 +90,7 @@ clone-catalog diff --source <catalog> --dest <catalog> [options]
 Deep compare with row counts and checksums.
 
 ```bash
-clone-catalog compare --source <catalog> --dest <catalog> [options]
+clxs compare --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -106,7 +106,7 @@ clone-catalog compare --source <catalog> --dest <catalog> [options]
 Post-clone validation.
 
 ```bash
-clone-catalog validate --source <catalog> --dest <catalog> [options]
+clxs validate --source <catalog> --dest <catalog> [options]
 ```
 
 ---
@@ -116,7 +116,7 @@ clone-catalog validate --source <catalog> --dest <catalog> [options]
 Pre-flight checks before cloning.
 
 ```bash
-clone-catalog preflight --source <catalog> --dest <catalog> [options]
+clxs preflight --source <catalog> --dest <catalog> [options]
 ```
 
 ---
@@ -126,7 +126,7 @@ clone-catalog preflight --source <catalog> --dest <catalog> [options]
 Two-way sync between catalogs.
 
 ```bash
-clone-catalog sync --source <catalog> --dest <catalog> [options]
+clxs sync --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -140,7 +140,7 @@ clone-catalog sync --source <catalog> --dest <catalog> [options]
 Undo a clone operation.
 
 ```bash
-clone-catalog rollback --rollback-log <file> [options]
+clxs rollback --rollback-log <file> [options]
 ```
 
 | Flag | Description |
@@ -155,7 +155,7 @@ clone-catalog rollback --rollback-log <file> [options]
 Detect schema changes over time.
 
 ```bash
-clone-catalog schema-drift --source <catalog> [options]
+clxs schema-drift --source <catalog> [options]
 ```
 
 ---
@@ -165,7 +165,7 @@ clone-catalog schema-drift --source <catalog> [options]
 Catalog statistics and inventory.
 
 ```bash
-clone-catalog stats --source <catalog> [options]
+clxs stats --source <catalog> [options]
 ```
 
 ---
@@ -175,7 +175,7 @@ clone-catalog stats --source <catalog> [options]
 Search catalog metadata.
 
 ```bash
-clone-catalog search --source <catalog> --pattern <regex> [options]
+clxs search --source <catalog> --pattern <regex> [options]
 ```
 
 ---
@@ -185,7 +185,7 @@ clone-catalog search --source <catalog> --pattern <regex> [options]
 Column-level data profiling.
 
 ```bash
-clone-catalog profile --source <catalog> [options]
+clxs profile --source <catalog> [options]
 ```
 
 ---
@@ -195,7 +195,7 @@ clone-catalog profile --source <catalog> [options]
 Continuous monitoring.
 
 ```bash
-clone-catalog monitor --source <catalog> --interval <seconds> [options]
+clxs monitor --source <catalog> --interval <seconds> [options]
 ```
 
 ---
@@ -205,7 +205,7 @@ clone-catalog monitor --source <catalog> --interval <seconds> [options]
 Export metadata to CSV or JSON.
 
 ```bash
-clone-catalog export --source <catalog> --format <csv|json> --output <file> [options]
+clxs export --source <catalog> --format <csv|json> --output <file> [options]
 ```
 
 ---
@@ -215,7 +215,7 @@ clone-catalog export --source <catalog> --format <csv|json> --output <file> [opt
 Point-in-time catalog snapshot.
 
 ```bash
-clone-catalog snapshot --source <catalog> [options]
+clxs snapshot --source <catalog> [options]
 ```
 
 ---
@@ -225,7 +225,7 @@ clone-catalog snapshot --source <catalog> [options]
 Cost estimation for clone operations.
 
 ```bash
-clone-catalog estimate --source <catalog> [options]
+clxs estimate --source <catalog> [options]
 ```
 
 ---
@@ -235,7 +235,7 @@ clone-catalog estimate --source <catalog> [options]
 Generate Databricks Workflow JSON.
 
 ```bash
-clone-catalog generate-workflow [options]
+clxs generate-workflow [options]
 ```
 
 | Flag | Description |
@@ -250,7 +250,7 @@ clone-catalog generate-workflow [options]
 Export catalog as Terraform or Pulumi.
 
 ```bash
-clone-catalog export-iac --source <catalog> --format <terraform|pulumi> --output <file>
+clxs export-iac --source <catalog> --format <terraform|pulumi> --output <file>
 ```
 
 ---
@@ -260,7 +260,7 @@ clone-catalog export-iac --source <catalog> --format <terraform|pulumi> --output
 Compare two config files.
 
 ```bash
-clone-catalog config-diff <file_a> <file_b>
+clxs config-diff <file_a> <file_b>
 ```
 
 ---
@@ -270,7 +270,7 @@ clone-catalog config-diff <file_a> <file_b>
 Create default config file.
 
 ```bash
-clone-catalog init
+clxs init
 ```
 
 ---
@@ -280,7 +280,7 @@ clone-catalog init
 Authentication management.
 
 ```bash
-clone-catalog auth [options]
+clxs auth [options]
 ```
 
 | Flag | Description |
@@ -296,7 +296,7 @@ clone-catalog auth [options]
 Generate shell completions.
 
 ```bash
-clone-catalog completion <bash|zsh|fish>
+clxs completion <bash|zsh|fish>
 ```
 
 ---
@@ -306,7 +306,7 @@ clone-catalog completion <bash|zsh|fish>
 Execute arbitrary SQL.
 
 ```bash
-clone-catalog run-sql --warehouse-id <id> --sql "<statement>"
+clxs run-sql --warehouse-id <id> --sql "<statement>"
 ```
 
 ---
@@ -316,7 +316,7 @@ clone-catalog run-sql --warehouse-id <id> --sql "<statement>"
 Generate an execution plan (enhanced dry-run) showing all SQL that would be executed, with cost estimates.
 
 ```bash
-clone-catalog plan --source <catalog> --dest <catalog> [options]
+clxs plan --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -333,7 +333,7 @@ clone-catalog plan --source <catalog> --dest <catalog> [options]
 Validate and lint the configuration file.
 
 ```bash
-clone-catalog lint [options]
+clxs lint [options]
 ```
 
 | Flag | Description |
@@ -349,7 +349,7 @@ clone-catalog lint [options]
 Analyze table access patterns to find unused tables.
 
 ```bash
-clone-catalog usage-analysis --source <catalog> [options]
+clxs usage-analysis --source <catalog> [options]
 ```
 
 | Flag | Description |
@@ -367,7 +367,7 @@ clone-catalog usage-analysis --source <catalog> [options]
 Side-by-side data preview comparing source and destination tables.
 
 ```bash
-clone-catalog preview --source <catalog> --dest <catalog> [options]
+clxs preview --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -387,7 +387,7 @@ clone-catalog preview --source <catalog> --dest <catalog> [options]
 View clone operation metrics and performance history.
 
 ```bash
-clone-catalog metrics [options]
+clxs metrics [options]
 ```
 
 | Flag | Description |
@@ -404,7 +404,7 @@ clone-catalog metrics [options]
 Git-style clone operation history.
 
 ```bash
-clone-catalog history <list|show|diff> [options]
+clxs history <list|show|diff> [options]
 ```
 
 | Flag | Description |
@@ -422,7 +422,7 @@ clone-catalog history <list|show|diff> [options]
 Manage data retention (TTL) policies on cloned catalogs.
 
 ```bash
-clone-catalog ttl <set|check|cleanup|extend|remove> [options]
+clxs ttl <set|check|cleanup|extend|remove> [options]
 ```
 
 | Flag | Description |
@@ -443,7 +443,7 @@ clone-catalog ttl <set|check|cleanup|extend|remove> [options]
 RBAC policy management.
 
 ```bash
-clone-catalog rbac <check|show> [options]
+clxs rbac <check|show> [options]
 ```
 
 | Flag | Description |
@@ -459,7 +459,7 @@ clone-catalog rbac <check|show> [options]
 Clone approval workflow management.
 
 ```bash
-clone-catalog approval <list|approve|deny|status> [request-id]
+clxs approval <list|approve|deny|status> [request-id]
 ```
 
 | Flag | Description |
@@ -478,7 +478,7 @@ clone-catalog approval <list|approve|deny|status> [request-id]
 Analyze downstream impact before cloning.
 
 ```bash
-clone-catalog impact --source <catalog> [options]
+clxs impact --source <catalog> [options]
 ```
 
 | Flag | Description |
@@ -494,7 +494,7 @@ clone-catalog impact --source <catalog> [options]
 Generate audit-ready compliance reports.
 
 ```bash
-clone-catalog compliance-report [options]
+clxs compliance-report [options]
 ```
 
 | Flag | Description |
@@ -511,7 +511,7 @@ clone-catalog compliance-report [options]
 Plugin marketplace management.
 
 ```bash
-clone-catalog plugin <list|install|remove|info|update> [name]
+clxs plugin <list|install|remove|info|update> [name]
 ```
 
 | Flag | Description |
@@ -530,7 +530,7 @@ clone-catalog plugin <list|install|remove|info|update> [name]
 Run clones on a recurring schedule with drift detection.
 
 ```bash
-clone-catalog schedule --source <catalog> --dest <catalog> [options]
+clxs schedule --source <catalog> --dest <catalog> [options]
 ```
 
 | Flag | Description |
@@ -547,7 +547,7 @@ clone-catalog schedule --source <catalog> --dest <catalog> [options]
 Start a REST API server for clone operations.
 
 ```bash
-clone-catalog serve [options]
+clxs serve [options]
 ```
 
 | Flag | Description |
@@ -563,7 +563,7 @@ clone-catalog serve [options]
 Sync only changed tables using Delta table version history.
 
 ```bash
-clone-catalog incremental-sync [options]
+clxs incremental-sync [options]
 ```
 
 | Flag | Description |
@@ -581,7 +581,7 @@ clone-catalog incremental-sync [options]
 Preview or compare table data samples.
 
 ```bash
-clone-catalog sample --schema S --table T [options]
+clxs sample --schema S --table T [options]
 ```
 
 | Flag | Description |
@@ -599,7 +599,7 @@ clone-catalog sample --schema S --table T [options]
 Analyze view and function dependencies with creation order.
 
 ```bash
-clone-catalog view-deps --schema S [options]
+clxs view-deps --schema S [options]
 ```
 
 | Flag | Description |
@@ -615,7 +615,7 @@ clone-catalog view-deps --schema S [options]
 Start a Slack bot for clone operations via Socket Mode.
 
 ```bash
-clone-catalog slack-bot [options]
+clxs slack-bot [options]
 ```
 
 | Flag | Description |

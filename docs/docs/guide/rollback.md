@@ -20,7 +20,7 @@ You accidentally cloned `production` into the wrong destination catalog. You nee
 You must have run the original clone with `--enable-rollback`:
 
 ```bash
-clone-catalog clone --enable-rollback
+clxs clone --enable-rollback
 ```
 
 This creates a rollback log file that records every object created.
@@ -28,7 +28,7 @@ This creates a rollback log file that records every object created.
 ## List available rollback logs
 
 ```bash
-clone-catalog rollback --list
+clxs rollback --list
 ```
 
 **Output:**
@@ -43,11 +43,11 @@ Available rollback logs:
 
 ```bash
 # Rollback a specific clone operation
-clone-catalog rollback \
+clxs rollback \
   --rollback-log rollback_logs/rollback_staging_20260310_143022.json
 
 # Also drop the destination catalog itself
-clone-catalog rollback \
+clxs rollback \
   --rollback-log rollback_logs/rollback_staging_20260310_143022.json \
   --drop-catalog
 ```
@@ -57,7 +57,7 @@ clone-catalog rollback \
 Preview what would be dropped:
 
 ```bash
-clone-catalog rollback \
+clxs rollback \
   --rollback-log rollback_logs/rollback_staging_20260310_143022.json
 ```
 
@@ -79,9 +79,9 @@ A clone operation failed partway through? Instead of rolling back, you can resum
 
 ```bash
 # Original clone with rollback enabled
-clone-catalog clone --enable-rollback
+clxs clone --enable-rollback
 # ... fails at table #1,500
 
 # Resume — skips already-cloned tables and continues
-clone-catalog clone --resume rollback_logs/rollback_staging_20260310_143022.json
+clxs clone --resume rollback_logs/rollback_staging_20260310_143022.json
 ```

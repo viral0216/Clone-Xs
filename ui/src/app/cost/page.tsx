@@ -35,7 +35,10 @@ export default function CostPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Cost Estimator</h1>
-        <p className="text-muted-foreground mt-1">Estimate storage and compute costs for clone operations</p>
+        <p className="text-muted-foreground mt-1">Estimate storage cost (GB x price) and compute cost (DBUs) for deep vs. shallow clone operations. Breaks down cost by schema and highlights the largest tables.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/pricing" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Pricing</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-describe-detail" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">DESCRIBE DETAIL</a>
+        </p>
       </div>
 
       <Card className="bg-card border-border">

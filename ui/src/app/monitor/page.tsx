@@ -35,7 +35,7 @@ export default function MonitorPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Monitor</h1>
-        <p className="text-gray-500 mt-1">Check sync status between catalogs</p>
+        <p className="text-gray-500 mt-1">Continuous monitoring of catalog sync status — compares source and destination in real-time, tracks drift, and shows sync freshness for each table.</p>
       </div>
 
       <Card>

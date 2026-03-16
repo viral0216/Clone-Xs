@@ -135,7 +135,10 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Reports</h1>
-        <p className="text-gray-500 mt-1">Clone history, cost estimation, and rollback logs</p>
+        <p className="text-gray-500 mt-1">Consolidated reporting — clone operation history, cost estimates, metadata snapshots, and exportable data. Query and export from Delta audit tables.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta Lake</a>
+        </p>
       </div>
 
       {/* Clone History */}

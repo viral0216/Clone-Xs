@@ -65,7 +65,7 @@ pip install clone-xs
 Verify:
 
 ```bash
-clone-catalog --help
+clxs --help
 ```
 
 ## Next steps

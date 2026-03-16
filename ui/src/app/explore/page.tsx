@@ -58,7 +58,10 @@ export default function ExplorePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Catalog Explorer</h1>
-        <p className="text-gray-500 mt-1">Browse, search, and analyze catalog contents</p>
+        <p className="text-gray-500 mt-1">Browse Unity Catalog hierarchy — catalogs, schemas, tables, views, and columns with row counts, sizes, and metadata. Search across objects by name or pattern.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog objects</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/information-schema" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">INFORMATION_SCHEMA</a>
+        </p>
       </div>
 
       {/* Catalog Input */}

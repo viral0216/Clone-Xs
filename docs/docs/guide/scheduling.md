@@ -19,23 +19,23 @@ Your staging environment needs a fresh copy of production every night at 2 AM. R
 
 ```bash
 # Clone every night at 2 AM
-clone-catalog schedule \
+clxs schedule \
   --source production --dest staging \
   --cron "0 2 * * *"
 
 # Clone every 6 hours
-clone-catalog schedule \
+clxs schedule \
   --source production --dest staging \
   --interval 6h
 
 # Skip drift detection (always clone, even if nothing changed)
-clone-catalog schedule \
+clxs schedule \
   --source production --dest staging \
   --cron "0 2 * * *" \
   --no-drift-check
 
 # Limit total runs (useful for testing)
-clone-catalog schedule \
+clxs schedule \
   --source production --dest staging \
   --interval 1h --max-runs 5
 ```
@@ -81,7 +81,7 @@ The scheduler handles `SIGINT` (Ctrl+C) and `SIGTERM` gracefully:
 
 ```bash
 # The scheduler logs its PID for clean shutdown
-# kill -SIGTERM $(cat .clone-catalog/scheduler.pid)
+# kill -SIGTERM $(cat .clxs/scheduler.pid)
 ```
 
 :::tip
@@ -102,20 +102,20 @@ Your organization has several common cloning patterns: refreshing dev environmen
 
 ```bash
 # List available templates
-clone-catalog templates list
+clxs templates list
 
 # Use a built-in template
-clone-catalog clone \
+clxs clone \
   --source production --dest dev_sandbox \
   --template dev-refresh
 
 # Use a custom template file
-clone-catalog clone \
+clxs clone \
   --source production --dest dr_replica \
   --template config/templates/dr-replica.yaml
 
 # Preview what a template does (dry run)
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --template pii-safe --dry-run
 ```
@@ -183,7 +183,7 @@ CLI flags override template settings. This lets you use a template as a base and
 
 ```bash
 # Use dev-refresh template but with deep clone instead of shallow
-clone-catalog clone \
+clxs clone \
   --source production --dest dev_sandbox \
   --template dev-refresh \
   --clone-type DEEP
@@ -207,13 +207,13 @@ Your platform team builds a self-service portal where data engineers can request
 
 ```bash
 # Start on default port (8080)
-clone-catalog serve
+clxs serve
 
 # Custom port and host
-clone-catalog serve --host 0.0.0.0 --port 9090
+clxs serve --host 0.0.0.0 --port 9090
 
 # With API key authentication
-clone-catalog serve --api-key "your-secret-key"
+clxs serve --api-key "your-secret-key"
 ```
 
 ### REST API endpoints
@@ -300,12 +300,12 @@ During business hours, your SQL warehouse is shared between the clone job and an
 
 ```bash
 # Use a preset throttle profile
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --throttle low
 
 # Time-based throttle (low during business hours, max overnight)
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --throttle low
 ```
@@ -344,7 +344,7 @@ throttle:
 For fine-grained control, set a hard cap on how many tables can be cloned per minute:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --max-rps 10
 ```
@@ -352,5 +352,5 @@ clone-catalog clone \
 This is useful when you know your warehouse can handle exactly N concurrent clone statements without queuing.
 
 :::tip
-Monitor your SQL warehouse's query queue during clone operations. If queries start queuing, reduce the throttle level. The `clone-catalog metrics` command (see [Analytics & Insights](./analytics.md)) can help you find the right throttle settings over time.
+Monitor your SQL warehouse's query queue during clone operations. If queries start queuing, reduce the throttle level. The `clxs metrics` command (see [Analytics & Insights](./analytics.md)) can help you find the right throttle settings over time.
 :::

@@ -16,7 +16,7 @@ You want to quickly see what objects exist in the source but are missing in the 
 After a week of development, several new tables were added to `production`. You want to see exactly what's missing in `staging` before running a sync.
 
 ```bash
-clone-catalog diff --source production --dest staging
+clxs diff --source production --dest staging
 ```
 
 **Output:**
@@ -54,7 +54,7 @@ Differences found: 4 missing in dest, 0 extra in dest
 ### Diff output
 
 ```bash
-clone-catalog diff --source production --dest staging
+clxs diff --source production --dest staging
 ```
 
 ---
@@ -67,7 +67,7 @@ clone-catalog diff --source production --dest staging
 A shallow diff says both catalogs have the same 247 tables. But you suspect some table schemas might have diverged. Deep compare checks column definitions and row counts for every matching table.
 
 ```bash
-clone-catalog compare --source production --dest staging
+clxs compare --source production --dest staging
 ```
 
 ---
@@ -80,7 +80,7 @@ clone-catalog compare --source production --dest staging
 After a production deployment added new columns to several tables, you want to check if your `staging` catalog is still schema-compatible before running integration tests.
 
 ```bash
-clone-catalog schema-drift --source production --dest staging
+clxs schema-drift --source production --dest staging
 ```
 
 **Output:**
@@ -117,10 +117,10 @@ Before migrating to a new data platform, the data governance team needs a data q
 
 ```bash
 # Profile entire catalog
-clone-catalog profile --source production
+clxs profile --source production
 
 # Save results to JSON for further analysis
-clone-catalog profile --source production --output reports/prod_profile.json
+clxs profile --source production --output reports/prod_profile.json
 ```
 
 **Output:**
@@ -159,10 +159,10 @@ You cloned `production` to `staging` for QA testing. Before the QA team starts, 
 
 ```bash
 # Row count validation
-clone-catalog validate --source production --dest staging
+clxs validate --source production --dest staging
 
 # With checksum (slower but catches data corruption)
-clone-catalog validate --source production --dest staging --checksum
+clxs validate --source production --dest staging --checksum
 ```
 
 **Output:**
@@ -185,5 +185,5 @@ VALIDATION SUMMARY: production vs staging
 
 ```bash
 # Clone + auto-validate in one command
-clone-catalog clone --validate --checksum
+clxs clone --validate --checksum
 ```

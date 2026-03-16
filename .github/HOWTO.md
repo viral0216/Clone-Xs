@@ -114,7 +114,7 @@ You're setting up the tool for the first time on your laptop. You want to authen
 ### Interactive browser login
 
 ```bash
-clone-catalog auth --login
+clxs auth --login
 ```
 
 This walks you through:
@@ -164,26 +164,26 @@ This walks you through:
   ============================================
 ```
 
-The session is saved to `~/.clone-catalog-session.json` and persists for **8 hours**. Subsequent commands use the saved session automatically.
+The session is saved to `~/.clxs-session.json` and persists for **8 hours**. Subsequent commands use the saved session automatically.
 
 ### Profile management
 
 ```bash
 # List configured profiles
-clone-catalog auth --list-profiles
+clxs auth --list-profiles
 
 # Use a specific profile
-clone-catalog clone --auth-profile staging --source prod --dest staging
+clxs clone --auth-profile staging --source prod --dest staging
 
 # Check current auth status
-clone-catalog auth
+clxs auth
 ```
 
 ### Verify authentication
 
 ```bash
 # Force verification before running a command
-clone-catalog clone --verify-auth --source prod --dest staging
+clxs clone --verify-auth --source prod --dest staging
 ```
 
 ### CI/CD authentication
@@ -221,7 +221,7 @@ Your team doesn't have a dedicated SQL warehouse and you want to clone a catalog
 ┌────────────────────┐         ┌──────────────────────────────┐
 │  Your Machine      │         │  Databricks Serverless Job   │
 │                    │         │                              │
-│  clone-catalog     │  1. Upload wheel to UC Volume         │
+│  clxs     │  1. Upload wheel to UC Volume         │
 │  --serverless      │──2. Create notebook in workspace──────▶│
 │                    │  3. Submit job                         │  %pip install wheel
 │                    │                                        │  spark.sql() executor
@@ -234,7 +234,7 @@ Your team doesn't have a dedicated SQL warehouse and you want to clone a catalog
 
 ```bash
 # Serverless clone — no warehouse needed
-clone-catalog clone \
+clxs clone \
   --source prod --dest staging \
   --serverless \
   --volume /Volumes/shared/packages/wheels \
@@ -277,7 +277,7 @@ The selected warehouse (or serverless choice) is saved to the session file for s
 ### Full serverless clone with all options
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev \
   --dest edp_dev_clone \
   --serverless \
@@ -319,13 +319,13 @@ Your data engineering team maintains a `production` catalog. Analysts need a `sa
 
 ```bash
 # Minimal — uses config file defaults
-clone-catalog clone
+clxs clone
 
 # Override source and destination from CLI
-clone-catalog clone --source production --dest sandbox
+clxs clone --source production --dest sandbox
 
 # With all the bells and whistles
-clone-catalog clone \
+clxs clone \
   --source production --dest sandbox \
   --clone-type DEEP \
   --validate --enable-rollback --report --progress \
@@ -366,10 +366,10 @@ Your QA team needs an isolated copy of `production` to run integration tests tha
 
 ```bash
 # Deep clone for QA (full data copy — takes longer, uses storage)
-clone-catalog clone --source production --dest qa_env --clone-type DEEP
+clxs clone --source production --dest qa_env --clone-type DEEP
 
 # Shallow clone for dev (fast, near-zero storage cost)
-clone-catalog clone --source production --dest dev_env --clone-type SHALLOW
+clxs clone --source production --dest dev_env --clone-type SHALLOW
 ```
 
 ### When to choose which
@@ -399,10 +399,10 @@ You do a full clone every Sunday night. On weekdays, you run incremental loads t
 
 ```bash
 # Sunday: full refresh
-clone-catalog clone --source production --dest staging --load-type FULL
+clxs clone --source production --dest staging --load-type FULL
 
 # Mon-Sat: only clone new objects
-clone-catalog clone --source production --dest staging --load-type INCREMENTAL
+clxs clone --source production --dest staging --load-type INCREMENTAL
 ```
 
 ### Config
@@ -431,12 +431,12 @@ A data pipeline had a bug on March 5th that corrupted the `orders` table. You wa
 
 ```bash
 # Clone from a specific timestamp
-clone-catalog clone \
+clxs clone \
   --source production --dest recovery \
   --as-of-timestamp "2026-03-04T23:59:59"
 
 # Clone from a specific Delta version
-clone-catalog clone \
+clxs clone \
   --source production --dest recovery_v42 \
   --as-of-version 42
 ```
@@ -460,7 +460,7 @@ You're setting up a new clone config and want to verify it will clone the right 
 
 ```bash
 # Preview all operations
-clone-catalog clone --dry-run -v
+clxs clone --dry-run -v
 
 # Output shows:
 # [DRY RUN] Would execute: CREATE CATALOG IF NOT EXISTS `staging`
@@ -486,25 +486,25 @@ You are onboarding a 200-table production catalog to a new staging environment. 
 
 ```bash
 # Console plan (default)
-clone-catalog plan --source production --dest staging
+clxs plan --source production --dest staging
 
 # Save all write SQL statements to a file for DBA review
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --capture-sql plan_statements.sql
 
 # Output as SQL format (equivalent to --capture-sql)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format sql --output plan_statements.sql
 
 # Output as JSON (CI/CD validation)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format json --output plan.json
 
 # Output as HTML (shareable report)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format html --output plan.html
 ```
@@ -553,7 +553,7 @@ Your clone job runs at 2 AM via a scheduled workflow. Instead of failing 30 minu
 
 ```bash
 # Run all checks
-clone-catalog preflight
+clxs preflight
 ```
 
 **Output:**
@@ -576,14 +576,14 @@ All critical checks passed. Ready to proceed.
 
 ```bash
 # Skip the write permission check (e.g., for read-only analysis commands)
-clone-catalog preflight --no-write-check
+clxs preflight --no-write-check
 ```
 
 ### Automate it
 Add pre-flight as a step before clone in your pipeline:
 
 ```bash
-clone-catalog preflight && clone-catalog clone
+clxs preflight && clxs clone
 ```
 
 ---
@@ -602,7 +602,7 @@ Your `production` catalog has 50 schemas, but you only need `sales` and `marketi
 
 ```bash
 # Only clone specific schemas
-clone-catalog clone --include-schemas sales marketing analytics
+clxs clone --include-schemas sales marketing analytics
 
 # Exclude schemas via config
 ```
@@ -640,13 +640,13 @@ Your `analytics` schema contains 200 tables, but you only need the star schema t
 
 ```bash
 # Only clone fact and dimension tables
-clone-catalog clone --include-tables-regex "^fact_|^dim_"
+clxs clone --include-tables-regex "^fact_|^dim_"
 
 # Exclude temp and backup tables
-clone-catalog clone --exclude-tables-regex "_tmp$|_backup$|_old$"
+clxs clone --exclude-tables-regex "_tmp$|_backup$|_old$"
 
 # Combine both
-clone-catalog clone \
+clxs clone \
   --include-tables-regex "^fact_|^dim_" \
   --exclude-tables-regex "_v1$"
 ```
@@ -689,7 +689,7 @@ Your `warehouse` catalog has 30 schemas and 2,000 tables. Sequential cloning tak
 
 ```bash
 # 8 schemas in parallel, 4 tables in parallel within each schema
-clone-catalog clone --max-workers 8 --parallel-tables 4
+clxs clone --max-workers 8 --parallel-tables 4
 ```
 
 ### Config
@@ -703,7 +703,7 @@ max_parallel_queries: 10    # Max concurrent SQL queries across all operations
 Or via CLI:
 
 ```bash
-clone-catalog clone --max-workers 8 --parallel-tables 4 --max-parallel-queries 20
+clxs clone --max-workers 8 --parallel-tables 4 --max-parallel-queries 20
 ```
 
 ### What runs in parallel
@@ -739,17 +739,17 @@ Catalog Clone
 
 ```bash
 # Fast clone: 20 parallel queries, 8 schemas, 4 tables per schema
-clone-catalog clone --source prod --dest staging \
+clxs clone --source prod --dest staging \
   --max-parallel-queries 20 --max-workers 8 --parallel-tables 4
 
 # Conservative: shared warehouse, limit to 5 parallel queries
-clone-catalog clone --source prod --dest staging --max-parallel-queries 5
+clxs clone --source prod --dest staging --max-parallel-queries 5
 
 # Fast stats gathering
-clone-catalog stats --source prod --max-parallel-queries 20
+clxs stats --source prod --max-parallel-queries 20
 
 # Fast profiling
-clone-catalog profile --source prod --max-parallel-queries 15
+clxs profile --source prod --max-parallel-queries 15
 ```
 
 ### Sizing guidance
@@ -780,10 +780,10 @@ You want to control the order in which tables are cloned based on their size.
 
 ```bash
 # Clone smallest tables first
-clone-catalog clone --order-by-size asc
+clxs clone --order-by-size asc
 
 # Clone largest tables first (better for total time with parallel workers)
-clone-catalog clone --order-by-size desc
+clxs clone --order-by-size desc
 ```
 
 ---
@@ -801,7 +801,7 @@ Your shared serverless warehouse has a concurrency limit. By capping the clone a
 ### Example
 
 ```bash
-clone-catalog clone --max-rps 5
+clxs clone --max-rps 5
 ```
 
 ### Config
@@ -826,10 +826,10 @@ Your `production` catalog has fine-grained grants: the `analysts` group can SELE
 
 ```bash
 # Clone with all permissions and ownership
-clone-catalog clone --source production --dest staging
+clxs clone --source production --dest staging
 
 # Skip permissions (useful for dev environments with different access model)
-clone-catalog clone --source production --dest dev --no-permissions --no-ownership
+clxs clone --source production --dest dev --no-permissions --no-ownership
 ```
 
 ### Config
@@ -861,10 +861,10 @@ Tables in `production` are tagged with `data_classification: confidential` and h
 
 ```bash
 # Clone with tags and properties
-clone-catalog clone
+clxs clone
 
 # Skip tags and properties (faster clone)
-clone-catalog clone --no-tags --no-properties
+clxs clone --no-tags --no-properties
 ```
 
 ### Config
@@ -890,10 +890,10 @@ The `customers` table has a row filter that restricts users to seeing only their
 
 ```bash
 # Clone with security policies
-clone-catalog clone
+clxs clone
 
 # Skip security (useful when destination uses different policies)
-clone-catalog clone --no-security
+clxs clone --no-security
 ```
 
 ### Config
@@ -918,10 +918,10 @@ Your `orders` table has a CHECK constraint `amount > 0` and column comments docu
 
 ```bash
 # Clone with constraints and comments
-clone-catalog clone
+clxs clone
 
 # Skip them
-clone-catalog clone --no-constraints --no-comments
+clxs clone --no-constraints --no-comments
 ```
 
 ### Config
@@ -1052,10 +1052,10 @@ You cloned `production` to `staging` for QA testing. Before the QA team starts, 
 
 ```bash
 # Row count validation
-clone-catalog validate --source production --dest staging
+clxs validate --source production --dest staging
 
 # With checksum (slower but catches data corruption)
-clone-catalog validate --source production --dest staging --checksum
+clxs validate --source production --dest staging --checksum
 ```
 
 **Output:**
@@ -1078,7 +1078,7 @@ VALIDATION SUMMARY: production vs staging
 
 ```bash
 # Clone + auto-validate in one command
-clone-catalog clone --validate --checksum
+clxs clone --validate --checksum
 ```
 
 ---
@@ -1096,7 +1096,7 @@ After a production deployment added new columns to several tables, you want to c
 ### Example
 
 ```bash
-clone-catalog schema-drift --source production --dest staging
+clxs schema-drift --source production --dest staging
 ```
 
 **Output:**
@@ -1135,10 +1135,10 @@ Before migrating to a new data platform, the data governance team needs a data q
 
 ```bash
 # Profile entire catalog
-clone-catalog profile --source production
+clxs profile --source production
 
 # Save results to JSON for further analysis
-clone-catalog profile --source production --output reports/prod_profile.json
+clxs profile --source production --output reports/prod_profile.json
 ```
 
 **Output:**
@@ -1179,10 +1179,10 @@ A GDPR data subject access request comes in. You need to find every table and co
 
 ```bash
 # Find all tables with "customer" in the name
-clone-catalog search --source production --pattern "customer"
+clxs search --source production --pattern "customer"
 
 # Find all tables AND columns with "email" or "phone"
-clone-catalog search --source production --pattern "email|phone" --columns
+clxs search --source production --pattern "email|phone" --columns
 ```
 
 **Output:**
@@ -1222,7 +1222,7 @@ Your cloud cost report shows Databricks storage costs jumped 40% this month. You
 ### Example
 
 ```bash
-clone-catalog stats --source production
+clxs stats --source production
 ```
 
 **Output:**
@@ -1271,7 +1271,7 @@ After a week of development, several new tables were added to `production`. You 
 ### Example
 
 ```bash
-clone-catalog diff --source production --dest staging
+clxs diff --source production --dest staging
 ```
 
 **Output:**
@@ -1321,7 +1321,7 @@ A shallow diff says both catalogs have the same 247 tables. But you suspect some
 ### Example
 
 ```bash
-clone-catalog compare --source production --dest staging
+clxs compare --source production --dest staging
 ```
 
 ---
@@ -1340,13 +1340,13 @@ Your `staging` catalog is refreshed weekly, but sometimes developers create temp
 
 ```bash
 # Add missing objects only
-clone-catalog sync --source production --dest staging
+clxs sync --source production --dest staging
 
 # Full sync: add missing + drop extras in destination
-clone-catalog sync --source production --dest staging --drop-extra
+clxs sync --source production --dest staging --drop-extra
 
 # Preview what would happen
-clone-catalog sync --source production --dest staging --drop-extra --dry-run
+clxs sync --source production --dest staging --drop-extra --dry-run
 ```
 
 ---
@@ -1365,18 +1365,18 @@ Your DR (disaster recovery) catalog must mirror production. A monitoring job run
 
 ```bash
 # One-time check (e.g., in a CI pipeline)
-clone-catalog monitor --source production --dest dr_catalog --once
+clxs monitor --source production --dest dr_catalog --once
 
 # Continuous monitoring every 30 minutes
-clone-catalog monitor --source production --dest dr_catalog --interval 30
+clxs monitor --source production --dest dr_catalog --interval 30
 
 # Include row count checks (more thorough, slower)
-clone-catalog monitor \
+clxs monitor \
   --source production --dest dr_catalog \
   --interval 60 --check-counts
 
 # Run 10 checks then stop
-clone-catalog monitor --source production --dest dr_catalog --max-checks 10
+clxs monitor --source production --dest dr_catalog --max-checks 10
 ```
 
 ### Pair with notifications
@@ -1398,10 +1398,10 @@ You accidentally cloned `production` into the wrong destination catalog. You nee
 
 ```bash
 # Enable rollback logging during clone
-clone-catalog clone --enable-rollback
+clxs clone --enable-rollback
 
 # List available rollback logs
-clone-catalog rollback --list
+clxs rollback --list
 ```
 
 **Output:**
@@ -1414,10 +1414,10 @@ Available rollback logs:
 
 ```bash
 # Rollback a specific clone operation
-clone-catalog rollback --log-file rollback_logs/rollback_staging_20260310_143022.json
+clxs rollback --log-file rollback_logs/rollback_staging_20260310_143022.json
 
 # Also drop the destination catalog itself
-clone-catalog rollback --log-file rollback_logs/rollback_staging_20260310_143022.json --drop-catalog
+clxs rollback --log-file rollback_logs/rollback_staging_20260310_143022.json --drop-catalog
 ```
 
 ---
@@ -1436,11 +1436,11 @@ Your clone of 2,000 tables failed at table #1,500. Instead of re-cloning all 2,0
 
 ```bash
 # Original clone with rollback enabled
-clone-catalog clone --enable-rollback
+clxs clone --enable-rollback
 # ... fails at some point
 
 # Resume from the rollback log
-clone-catalog clone --resume rollback_logs/rollback_staging_20260310_143022.json
+clxs clone --resume rollback_logs/rollback_staging_20260310_143022.json
 ```
 
 ---
@@ -1459,13 +1459,13 @@ Before a major migration, you take a snapshot of the current catalog structure. 
 
 ```bash
 # Take a snapshot
-clone-catalog snapshot --source production
+clxs snapshot --source production
 
 # Custom output path
-clone-catalog snapshot --source production --output snapshots/pre_migration.json
+clxs snapshot --source production --output snapshots/pre_migration.json
 
 # Later, take another snapshot and compare
-clone-catalog snapshot --source production --output snapshots/post_migration.json
+clxs snapshot --source production --output snapshots/post_migration.json
 ```
 
 The snapshot JSON includes full column definitions, view SQL, function definitions, and volume metadata.
@@ -1486,7 +1486,7 @@ The compliance team needs a spreadsheet of all tables and columns in `production
 
 ```bash
 # Export to CSV (produces two files: tables + columns)
-clone-catalog export --source production --format csv
+clxs export --source production --format csv
 ```
 
 **Produces:**
@@ -1498,10 +1498,10 @@ exports/production_20260310_143022_columns.csv   # Columns: catalog, schema, tab
 
 ```bash
 # Export to JSON
-clone-catalog export --source production --format json --output catalog_inventory.json
+clxs export --source production --format json --output catalog_inventory.json
 
 # Export specific schemas only (via config include_schemas)
-clone-catalog export --source production --format csv
+clxs export --source production --format csv
 ```
 
 ### CSV output example
@@ -1537,10 +1537,10 @@ Your finance team asks: "How much will it cost to maintain a deep clone of the p
 
 ```bash
 # Default pricing ($0.023/GB/month — AWS S3 standard)
-clone-catalog estimate --source production
+clxs estimate --source production
 
 # Custom pricing
-clone-catalog estimate --source production --price-per-gb 0.03
+clxs estimate --source production --price-per-gb 0.03
 ```
 
 **Output:**
@@ -1607,9 +1607,9 @@ profiles:
 ### Usage
 
 ```bash
-clone-catalog clone --profile dev
-clone-catalog clone --profile staging
-clone-catalog clone --profile dr
+clxs clone --profile dev
+clxs clone --profile staging
+clxs clone --profile dr
 ```
 
 ---
@@ -1627,7 +1627,7 @@ A team member updated the staging config. Before merging the PR, you want to see
 ### Example
 
 ```bash
-clone-catalog config-diff config/staging_old.yaml config/staging_new.yaml
+clxs config-diff config/staging_old.yaml config/staging_new.yaml
 ```
 
 **Output:**
@@ -1667,14 +1667,14 @@ Your team wants a nightly clone at 2 AM that refreshes the staging environment. 
 
 ```bash
 # Generate Databricks Jobs JSON
-clone-catalog generate-workflow \
+clxs generate-workflow \
   --schedule "0 0 2 * * ?" \
   --job-name "nightly-staging-clone" \
   --cluster-id "0310-abc123-def456" \
   --notification-email "data-team@company.com"
 
 # Generate Asset Bundle YAML
-clone-catalog generate-workflow --format yaml --output bundle/clone_job.yaml
+clxs generate-workflow --format yaml --output bundle/clone_job.yaml
 ```
 
 Import the generated JSON into Databricks Workflows, or include the YAML in your Databricks Asset Bundle.
@@ -1695,11 +1695,11 @@ Your platform team is adopting Terraform for all Databricks resources. You need 
 
 ```bash
 # Generate Terraform JSON
-clone-catalog export-iac --source production
+clxs export-iac --source production
 # Output: terraform_catalog.tf.json
 
 # Generate Pulumi Python
-clone-catalog export-iac --source production --format pulumi --output pulumi/catalog.py
+clxs export-iac --source production --format pulumi --output pulumi/catalog.py
 ```
 
 ---
@@ -1717,7 +1717,7 @@ Your production workspace is in `us-east-1` and your DR workspace is in `us-west
 ### Example
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production \
   --dest dr_production \
   --dest-host "https://dr-workspace.cloud.databricks.com" \
@@ -1778,7 +1778,7 @@ After each nightly clone, the report is saved and linked in the Slack notificati
 ### Example
 
 ```bash
-clone-catalog clone --report
+clxs clone --report
 ```
 
 **Produces:**
@@ -1916,34 +1916,34 @@ def flaky_api_call():
 > **Docs:** [Python argparse](https://docs.python.org/3/library/argparse.html)
 
 ### When to use
-You want tab completion for `clone-catalog` commands and flags in your terminal — faster typing and fewer typos.
+You want tab completion for `clxs` commands and flags in your terminal — faster typing and fewer typos.
 
 ### Setup
 
 ```bash
 # Bash — add to ~/.bashrc
-eval "$(clone-catalog completion bash)"
+eval "$(clxs completion bash)"
 
 # Zsh — add to ~/.zshrc
-eval "$(clone-catalog completion zsh)"
+eval "$(clxs completion zsh)"
 
 # Fish
-clone-catalog completion fish | source
+clxs completion fish | source
 ```
 
 ### What gets completed
 
 ```bash
-clone-catalog <TAB>
+clxs <TAB>
 # clone  diff  compare  validate  sync  rollback  estimate  snapshot
 # schema-drift  generate-workflow  export-iac  init  preflight  search
 # stats  profile  monitor  export  config-diff  completion
 
-clone-catalog clone --<TAB>
+clxs clone --<TAB>
 # --source  --dest  --clone-type  --load-type  --dry-run  --validate
 # --checksum  --parallel-tables  --as-of-timestamp  --as-of-version  ...
 
-clone-catalog clone --clone-type <TAB>
+clxs clone --clone-type <TAB>
 # DEEP  SHALLOW
 ```
 
@@ -1959,7 +1959,7 @@ You're setting up the tool for the first time and want an interactive guide to g
 ### Example
 
 ```bash
-clone-catalog init
+clxs init
 ```
 
 The wizard walks you through:
@@ -1975,7 +1975,7 @@ The wizard walks you through:
 
 ```bash
 # Save to a custom path
-clone-catalog init --output config/my_project.yaml
+clxs init --output config/my_project.yaml
 ```
 
 ---
@@ -1994,13 +1994,13 @@ A clone of 2,000 tables takes 2 hours. The progress bar shows how many schemas a
 
 ```bash
 # Show progress bar
-clone-catalog clone --progress
+clxs clone --progress
 
 # Save logs to file
-clone-catalog clone --log-file clone_20260310.log
+clxs clone --log-file clone_20260310.log
 
 # Verbose mode (DEBUG level) + progress + log file
-clone-catalog clone --progress -v --log-file clone_debug.log
+clxs clone --progress -v --log-file clone_debug.log
 ```
 
 ### Progress bar output
@@ -2024,13 +2024,13 @@ Cloning catalog: production -> staging
 # daily_dev_refresh.sh
 
 # Pre-flight check
-clone-catalog preflight --profile dev || exit 1
+clxs preflight --profile dev || exit 1
 
 # Incremental shallow clone (fast, low cost)
-clone-catalog clone --profile dev --load-type INCREMENTAL
+clxs clone --profile dev --load-type INCREMENTAL
 
 # Verify
-clone-catalog validate --source production --dest dev_catalog
+clxs validate --source production --dest dev_catalog
 ```
 
 ### Weekly Staging Full Refresh
@@ -2039,9 +2039,9 @@ clone-catalog validate --source production --dest dev_catalog
 #!/bin/bash
 # weekly_staging_refresh.sh
 
-clone-catalog preflight --profile staging || exit 1
+clxs preflight --profile staging || exit 1
 
-clone-catalog clone \
+clxs clone \
   --profile staging \
   --load-type FULL \
   --validate --checksum \
@@ -2054,7 +2054,7 @@ clone-catalog clone \
 ```bash
 #!/bin/bash
 # Monitor DR catalog continuously, alert on drift
-clone-catalog monitor \
+clxs monitor \
   --source production --dest dr_catalog \
   --interval 30 --check-drift --check-counts
 ```
@@ -2066,23 +2066,23 @@ clone-catalog monitor \
 # Capture everything about the current catalog before migration
 
 # Snapshot (full metadata)
-clone-catalog snapshot --source production --output pre_migration_snapshot.json
+clxs snapshot --source production --output pre_migration_snapshot.json
 
 # Statistics (sizes and counts)
-clone-catalog stats --source production
+clxs stats --source production
 
 # Data profile (quality metrics)
-clone-catalog profile --source production --output pre_migration_profile.json
+clxs profile --source production --output pre_migration_profile.json
 
 # Export for compliance team
-clone-catalog export --source production --format csv
+clxs export --source production --format csv
 ```
 
 ### GDPR Data Subject Search
 
 ```bash
 # Find all tables/columns that might contain PII
-clone-catalog search --source production --pattern "email|phone|ssn|address|name" --columns
+clxs search --source production --pattern "email|phone|ssn|address|name" --columns
 ```
 
 ---
@@ -2245,7 +2245,7 @@ make test                  # Run all 276 unit tests
 make test-howto            # Run 131 HOWTO example validation tests
 make test-all              # Run all 407 tests
 make build                 # Clean + test + build wheel (output in dist/)
-make install               # Build + install locally (clone-catalog CLI ready)
+make install               # Build + install locally (clxs CLI ready)
 make upload                # Build + upload wheel to Databricks Volume
 make deploy                # Build + install locally + upload to Volume
 make clean                 # Remove build artifacts
@@ -2447,9 +2447,9 @@ Every execution path saves logs:
 | Path | Saves to Delta |
 |------|:---:|
 | Web UI clone/sync/validate | Yes (with full 500-line execution logs) |
-| CLI `clone-catalog clone` | Yes |
-| CLI `clone-catalog sync` | Yes |
-| CLI `clone-catalog validate` | Yes |
+| CLI `clxs clone` | Yes |
+| CLI `clxs sync` | Yes |
+| CLI `clxs validate` | Yes |
 | Notebook `clone_full_catalog()` | Yes |
 | Serverless compute | Yes |
 
@@ -2472,7 +2472,7 @@ Every execution path saves logs:
 ### What Happens Behind the Scenes
 
 1. Clone-Xs uploads its wheel package to the selected UC Volume
-2. Creates a runner notebook in `/Workspace/Shared/.clone-catalog/`
+2. Creates a runner notebook in `/Workspace/Shared/.clxs/`
 3. Submits a serverless notebook task via the Databricks Jobs API
 4. The notebook installs the wheel, wires `spark.sql()` as the executor, and calls `clone_full_catalog()`
 5. All options (permissions, tags, validation, rollback, etc.) are passed through
@@ -2481,7 +2481,7 @@ Every execution path saves logs:
 ### CLI
 
 ```bash
-clone-catalog clone --source my_catalog --dest my_clone \
+clxs clone --source my_catalog --dest my_clone \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/my_volume
 ```

@@ -12,6 +12,7 @@ from api.models.analysis import (
     SearchRequest,
     SnapshotRequest,
     StorageMetricsRequest,
+    TableMaintenanceRequest,
     ValidateRequest,
 )
 
@@ -122,6 +123,47 @@ async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_clie
         table_filter=req.table_filter,
     )
     return result
+
+
+@router.post("/optimize")
+async def optimize_tables(req: TableMaintenanceRequest, client=Depends(get_db_client)):
+    """Run OPTIMIZE on selected tables."""
+    from src.table_maintenance import run_optimize, _enumerate_tables
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    if req.tables:
+        tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
+    else:
+        tables = _enumerate_tables(
+            client, wid, req.source_catalog,
+            schema_filter=req.schema_filter,
+        )
+    return run_optimize(client, wid, tables, dry_run=req.dry_run)
+
+
+@router.post("/vacuum")
+async def vacuum_tables(req: TableMaintenanceRequest, client=Depends(get_db_client)):
+    """Run VACUUM on selected tables."""
+    from src.table_maintenance import run_vacuum, _enumerate_tables
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    if req.tables:
+        tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
+    else:
+        tables = _enumerate_tables(
+            client, wid, req.source_catalog,
+            schema_filter=req.schema_filter,
+        )
+    return run_vacuum(client, wid, tables, retention_hours=req.retention_hours, dry_run=req.dry_run)
+
+
+@router.post("/check-predictive-optimization")
+async def check_predictive_opt(req: CatalogRequest, client=Depends(get_db_client)):
+    """Check if Predictive Optimization is enabled."""
+    from src.table_maintenance import check_predictive_optimization
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    return check_predictive_optimization(client, wid, req.source_catalog, req.exclude_schemas)
 
 
 @router.post("/export")

@@ -29,7 +29,7 @@ from databricks.sdk.service.jobs import (
 logger = logging.getLogger(__name__)
 
 _uploaded_volume: str | None = None
-_WORKSPACE_DIR = "/Workspace/Shared/.clone-catalog"
+_WORKSPACE_DIR = "/Workspace/Shared/.clxs"
 
 
 def _find_wheel() -> str:
@@ -129,7 +129,7 @@ def _upload_to_volume(
     return dest_path
 
 
-_NOTEBOOK_PATH = "/Shared/.clone-catalog/run_clone"
+_NOTEBOOK_PATH = "/Shared/.clxs/run_clone"
 
 
 def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> str:
@@ -159,7 +159,7 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
     cell_3 = "\n".join([
         "import json, logging",
         "logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')",
-        "logger = logging.getLogger('clone-catalog')",
+        "logger = logging.getLogger('clxs')",
         "",
         "dbutils.widgets.text('config', '{}')",
         "config = json.loads(dbutils.widgets.get('config'))",
@@ -291,7 +291,7 @@ def submit_clone_job(
     job_config = build_job_config(config)
 
     config_json = json.dumps(job_config)
-    run_name = f"clone-catalog-{source}-to-{dest}"
+    run_name = f"clxs-{source}-to-{dest}"
 
     logger.info("Submitting serverless clone job: %s -> %s", source, dest)
     logger.info("Wheel: %s", vol_wheel)

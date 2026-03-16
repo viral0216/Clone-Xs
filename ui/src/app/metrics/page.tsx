@@ -55,7 +55,10 @@ export default function MetricsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Metrics Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Clone operation metrics and analytics</p>
+          <p className="text-muted-foreground mt-1">Performance metrics across all clone operations — throughput (tables/min), success rate, average duration, and failure trends. Data sourced from Delta metric tables.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta Lake</a>
+          </p>
         </div>
         <Button onClick={load} disabled={loading} variant="outline">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />

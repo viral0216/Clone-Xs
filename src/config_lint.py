@@ -1,4 +1,4 @@
-"""Configuration validation and linting for clone-catalog."""
+"""Configuration validation and linting for clxs."""
 
 import logging
 from dataclasses import dataclass

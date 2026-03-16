@@ -63,7 +63,10 @@ export default function RbacPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Access Control</h1>
-          <p className="text-muted-foreground mt-1">Manage roles and permissions for clone operations</p>
+          <p className="text-muted-foreground mt-1">Role-based access control for Clone-Xs operations — define who can clone which catalogs, enforce approval workflows, and audit permission usage.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog privileges</a>
+          </p>
         </div>
         <Button onClick={() => setShowForm(!showForm)}>
           <Plus className="h-4 w-4 mr-2" />Add Policy

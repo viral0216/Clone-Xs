@@ -63,7 +63,10 @@ export default function LineagePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Lineage</h1>
-        <p className="text-muted-foreground mt-1">Track data flow from source to cloned tables</p>
+        <p className="text-muted-foreground mt-1">Visualize data lineage from source tables through clone and sync operations to destination tables. Trace how data flows across catalogs.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog lineage</a>
+        </p>
       </div>
 
       <Card>

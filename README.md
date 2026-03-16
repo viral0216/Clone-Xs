@@ -3,7 +3,7 @@
 **Enterprise-grade Unity Catalog cloning toolkit for Databricks — clone, compare, and manage catalogs from CLI, Web UI, or REST API.**
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.4.0-green.svg)
+![Version](https://img.shields.io/badge/version-0.5.0-green.svg)
 ![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Databricks%20App%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
@@ -20,8 +20,9 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
 - **33-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
 - **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
-- **58 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, and more
-- **Storage Metrics** — Analyze active, vacuumable, and time-travel storage per table using `ANALYZE TABLE COMPUTE STORAGE METRICS` (Runtime 18.0+)
+- **60 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, optimize, vacuum, and more
+- **Storage Metrics + OPTIMIZE/VACUUM** — Analyze storage breakdown per table, then run OPTIMIZE and VACUUM on selected tables directly from the UI with multi-select
+- **Predictive Optimization Detection** — Warns when Databricks Predictive Optimization is enabled, so you can skip manual maintenance
 - **Create Databricks Job** — Create persistent scheduled jobs directly from the UI or CLI — no manual JSON or `databricks` CLI needed
 - **Serverless Compute** — Run clones without a SQL warehouse (uploads wheel, submits notebook job)
 - **Full Metadata Copy** — Permissions, ownership, tags, properties, security, constraints, comments
@@ -32,6 +33,7 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 - **12 Clone Templates** — Pre-built configs for Production Mirror, Dev Sandbox, DR Copy, and more
 - **Multi-Clone** — Clone to multiple workspaces simultaneously
 - **IaC Generation** — Export as Terraform, Pulumi, or Databricks Workflows
+- **Contextual Help** — Every page includes a detailed description and links to official Azure Databricks documentation
 
 ---
 
@@ -88,7 +90,7 @@ Authentication is automatic via workspace service principal — no PAT tokens ne
 
 ```bash
 pip install -e .
-clone-catalog clone --source my_catalog --dest my_catalog_clone
+clxs clone --source my_catalog --dest my_catalog_clone
 ```
 
 ---
@@ -114,6 +116,8 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ## Web UI (33 Pages)
 
+Every page includes a detailed description and links to official [Azure Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/).
+
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
@@ -127,32 +131,36 @@ Open the Web UI and go to **Settings** to complete the following:
 ## CLI Reference
 
 ```bash
-clone-catalog clone --source X --dest Y           # Clone a catalog
-clone-catalog clone --source X --dest Y --dry-run  # Preview without executing
-clone-catalog plan --source X --dest Y             # Execution plan (SQL, cost, duration)
-clone-catalog plan --source X --dest Y --capture-sql plan.sql  # Save SQL to file
-clone-catalog diff --source X --dest Y             # Object-level diff
-clone-catalog sync --source X --dest Y             # Two-way sync
-clone-catalog validate --source X --dest Y         # Row count validation
-clone-catalog rollback --list                       # List available rollback logs
-clone-catalog stats --source X                     # Catalog statistics
-clone-catalog search --source X --pattern "email"  # Search tables/columns
-clone-catalog schema-drift --source X --dest Y     # Detect schema changes
-clone-catalog pii-scan --source X                  # Scan for PII
-clone-catalog estimate --source X                  # Cost estimation
-clone-catalog profile --source X                   # Data quality profiling
-clone-catalog storage-metrics --source X             # Storage breakdown (active/vacuumable/time-travel)
-clone-catalog storage-metrics --source X --schema S  # Single schema storage metrics
-clone-catalog templates                            # List clone templates
-clone-catalog audit                                # Query audit trail
-clone-catalog serve                                # Start API server
-clone-catalog incremental-sync --source X --dest Y # Sync only changed tables
-clone-catalog sample --schema S --table T          # Preview table data
-clone-catalog view-deps --schema S                 # View/function dependency graph
-clone-catalog create-job --source X --dest Y        # Create persistent Databricks Job
-clone-catalog create-job --source X --dest Y \
+clxs clone --source X --dest Y           # Clone a catalog
+clxs clone --source X --dest Y --dry-run  # Preview without executing
+clxs plan --source X --dest Y             # Execution plan (SQL, cost, duration)
+clxs plan --source X --dest Y --capture-sql plan.sql  # Save SQL to file
+clxs diff --source X --dest Y             # Object-level diff
+clxs sync --source X --dest Y             # Two-way sync
+clxs validate --source X --dest Y         # Row count validation
+clxs rollback --list                       # List available rollback logs
+clxs stats --source X                     # Catalog statistics
+clxs search --source X --pattern "email"  # Search tables/columns
+clxs schema-drift --source X --dest Y     # Detect schema changes
+clxs pii-scan --source X                  # Scan for PII
+clxs estimate --source X                  # Cost estimation
+clxs profile --source X                   # Data quality profiling
+clxs storage-metrics --source X             # Storage breakdown (active/vacuumable/time-travel)
+clxs storage-metrics --source X --schema S  # Single schema storage metrics
+clxs optimize --source X                    # OPTIMIZE all tables in catalog
+clxs optimize --source X --schema S --table T  # OPTIMIZE single table
+clxs vacuum --source X                      # VACUUM all tables (7-day retention)
+clxs vacuum --source X --retention-hours 48  # Custom retention period
+clxs templates                            # List clone templates
+clxs audit                                # Query audit trail
+clxs serve                                # Start API server
+clxs incremental-sync --source X --dest Y # Sync only changed tables
+clxs sample --schema S --table T          # Preview table data
+clxs view-deps --schema S                 # View/function dependency graph
+clxs create-job --source X --dest Y        # Create persistent Databricks Job
+clxs create-job --source X --dest Y \
   --schedule "0 0 6 * * ?" --notification-email t@co.com  # Scheduled job with alerts
-clone-catalog slack-bot                            # Start Slack bot
+clxs slack-bot                            # Start Slack bot
 ```
 
 For the complete reference with real-world examples, see **[HOWTO.md](.github/HOWTO.md)**.
@@ -215,10 +223,10 @@ audit_trail:
 
 | Metric | Value |
 |--------|-------|
-| CLI commands | 58 |
-| Python modules | 90 |
+| CLI commands | 60 |
+| Python modules | 91 |
 | Web UI pages | 33 |
-| REST API endpoints | 63+ |
+| REST API endpoints | 66+ |
 | Clone templates | 12 |
 | Pages with catalog dropdowns | 19 |
 | Desktop platforms | macOS, Windows |
@@ -236,7 +244,7 @@ Run clones on Databricks serverless compute — no SQL warehouse needed:
 
 ```bash
 # CLI
-clone-catalog clone --source X --dest Y --serverless --volume /Volumes/cat/schema/vol
+clxs clone --source X --dest Y --serverless --volume /Volumes/cat/schema/vol
 ```
 
 ---
@@ -280,7 +288,7 @@ Navigate to **Operations > Create Job**, configure your clone options, set a cro
 ### From the CLI
 
 ```bash
-clone-catalog create-job \
+clxs create-job \
   --source edp_dev \
   --dest edp_dev_00 \
   --volume /Volumes/edp_dev/packages/wheels \
@@ -293,7 +301,7 @@ clone-catalog create-job \
 Update an existing job:
 
 ```bash
-clone-catalog create-job \
+clxs create-job \
   --update-job-id 12345 \
   --schedule "0 0 12 * * ?"
 ```
@@ -309,20 +317,28 @@ Analyze per-table storage breakdown using `ANALYZE TABLE ... COMPUTE STORAGE MET
 Navigate to **Analysis > Storage Metrics**, select a catalog (optionally filter by schema/table), and click **Analyze Storage**. The page shows:
 
 - **Summary cards** — Total storage, active data, vacuumable (reclaimable via VACUUM), and time-travel bytes with percentages
+- **Predictive Optimization warning** — Detects if PO is enabled and advises that manual maintenance may be unnecessary
 - **Top Reclaimable Tables** — The 10 tables with the most vacuumable storage
-- **Detail table** — Per-table breakdown with conditional coloring on vacuum percentage
+- **Detail table** — Per-table breakdown with checkboxes for multi-select
+- **OPTIMIZE / VACUUM buttons** — Select tables and run maintenance directly from the UI with configurable retention hours
 
 ### From the CLI
 
 ```bash
 # Full catalog
-clone-catalog storage-metrics --source my_catalog
+clxs storage-metrics --source my_catalog
 
 # Single schema
-clone-catalog storage-metrics --source my_catalog --schema sales
+clxs storage-metrics --source my_catalog --schema sales
 
 # Single table
-clone-catalog storage-metrics --source my_catalog --schema sales --table orders
+clxs storage-metrics --source my_catalog --schema sales --table orders
+
+# OPTIMIZE and VACUUM from CLI
+clxs optimize --source my_catalog                      # Optimize all tables
+clxs optimize --source my_catalog --schema sales       # Optimize one schema
+clxs vacuum --source my_catalog --retention-hours 48   # Vacuum with 48h retention
+clxs vacuum --source my_catalog --dry-run              # Preview without executing
 ```
 
 ---

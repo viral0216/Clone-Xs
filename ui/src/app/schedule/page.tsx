@@ -66,7 +66,10 @@ export default function SchedulePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Schedule</h1>
-          <p className="text-muted-foreground mt-1">Schedule recurring clone operations</p>
+          <p className="text-muted-foreground mt-1">Schedule clone operations on a cron-based schedule — daily, hourly, or custom intervals. Runs are tracked in the audit trail.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Jobs</a>
+          </p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"}>

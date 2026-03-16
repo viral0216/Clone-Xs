@@ -41,7 +41,7 @@ The page displays:
 ### Full catalog analysis
 
 ```bash
-clone-catalog storage-metrics --source my_catalog
+clxs storage-metrics --source my_catalog
 ```
 
 Output:
@@ -72,13 +72,13 @@ STORAGE METRICS: my_catalog
 ### Filter to a single schema
 
 ```bash
-clone-catalog storage-metrics --source my_catalog --schema sales
+clxs storage-metrics --source my_catalog --schema sales
 ```
 
 ### Filter to a single table
 
 ```bash
-clone-catalog storage-metrics --source my_catalog --schema sales --table transactions
+clxs storage-metrics --source my_catalog --schema sales --table transactions
 ```
 
 ### CLI Options
@@ -144,9 +144,62 @@ Both `schema_filter` and `table_filter` are optional. Omit them to analyze the f
 - **Materialized views and streaming tables:** `total_bytes` includes metadata; `active_bytes` excludes vacuumable/time-travel portions.
 - **Shallow clones:** `total_bytes` includes only the clone's metadata and delta log. `active_bytes` is zero because the clone references the source table's data files.
 
+## OPTIMIZE and VACUUM
+
+After analyzing storage, you can run OPTIMIZE and VACUUM directly on selected tables.
+
+### From the Web UI
+
+1. Run **Analyze Storage** to see per-table metrics
+2. **Select tables** using checkboxes (or "Select All")
+3. Click **OPTIMIZE** or **VACUUM** in the action bar
+4. For VACUUM, set retention hours (default: 168 = 7 days)
+5. Confirm execution — results show success/failure per table
+
+### Predictive Optimization
+
+If [Predictive Optimization](https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization) is enabled, a blue info banner warns that OPTIMIZE and VACUUM may run automatically. You can skip manual maintenance in this case.
+
+### From the CLI
+
+```bash
+# OPTIMIZE
+clxs optimize --source my_catalog                       # All tables
+clxs optimize --source my_catalog --schema sales        # One schema
+clxs optimize --source my_catalog --schema sales --table orders  # One table
+clxs optimize --source my_catalog --dry-run             # Preview only
+
+# VACUUM
+clxs vacuum --source my_catalog                         # All tables, 7-day retention
+clxs vacuum --source my_catalog --retention-hours 48    # Custom retention
+clxs vacuum --source my_catalog --schema sales          # One schema
+clxs vacuum --source my_catalog --dry-run               # Preview only
+```
+
+### API Endpoints
+
+```
+POST /api/optimize
+POST /api/vacuum
+POST /api/check-predictive-optimization
+```
+
+Request body for OPTIMIZE/VACUUM:
+```json
+{
+  "source_catalog": "my_catalog",
+  "tables": [{"schema": "sales", "table": "orders"}],
+  "retention_hours": 168,
+  "dry_run": false
+}
+```
+
+Omit `tables` to run on all tables. The `retention_hours` field is only used by VACUUM.
+
 ## Common Use Cases
 
-1. **Pre-VACUUM analysis** — Identify which tables would benefit most from `VACUUM`
+1. **Analyze then act** — Run storage metrics, identify reclaimable tables, then OPTIMIZE/VACUUM directly
 2. **Storage cost optimization** — Find tables where time-travel or old versions are consuming significant storage
 3. **Post-clone audit** — Verify storage footprint of cloned catalogs
 4. **Periodic reporting** — Run on a schedule (via Create Job) to track storage trends over time
+5. **Skip if PO enabled** — Check Predictive Optimization status before running manual maintenance

@@ -109,7 +109,10 @@ export default function GeneratePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Generate</h1>
-        <p className="text-gray-500 mt-1">Generate workflows, Terraform, and Pulumi configurations</p>
+        <p className="text-gray-500 mt-1">Export clone operations as Terraform HCL, Pulumi code, or Databricks Workflow JSON — ready for CI/CD pipelines and infrastructure-as-code.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Terraform provider</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Workflows</a>
+        </p>
       </div>
 
       {/* Workflow Generation */}

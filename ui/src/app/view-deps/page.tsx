@@ -92,7 +92,10 @@ export default function ViewDepsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">View Dependencies</h1>
-        <p className="text-muted-foreground mt-1">Analyze view and function dependency graphs with creation order</p>
+        <p className="text-muted-foreground mt-1">Map view and function dependencies within a schema — shows which views depend on which tables, and computes the correct creation order for cloning.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-ddl-create-view" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Views</a>
+        </p>
       </div>
 
       <Card className="bg-card border-border">

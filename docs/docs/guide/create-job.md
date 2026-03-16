@@ -47,7 +47,7 @@ Enter a **Job ID** in the "Update Existing Job ID" field to modify an existing j
 ### Create a scheduled job
 
 ```bash
-clone-catalog create-job \
+clxs create-job \
   --source edp_dev \
   --dest edp_dev_00 \
   --volume /Volumes/edp_dev/packages/wheels \
@@ -60,7 +60,7 @@ clone-catalog create-job \
 ### Create a job without schedule (manual trigger)
 
 ```bash
-clone-catalog create-job \
+clxs create-job \
   --source edp_dev \
   --dest edp_dev_00 \
   --volume /Volumes/edp_dev/packages/wheels
@@ -69,7 +69,7 @@ clone-catalog create-job \
 ### Update an existing job
 
 ```bash
-clone-catalog create-job \
+clxs create-job \
   --update-job-id 12345 \
   --source edp_dev \
   --dest edp_dev_00 \

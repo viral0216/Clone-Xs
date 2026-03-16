@@ -1,4 +1,4 @@
-"""Plugin registry — discover, install, and manage clone-catalog plugins."""
+"""Plugin registry — discover, install, and manage clxs plugins."""
 
 import json
 import logging

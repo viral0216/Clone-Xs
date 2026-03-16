@@ -6,7 +6,7 @@
 # Destructive operations use --dry-run. Read-only operations run live.
 #
 # Prerequisites:
-#   - Authenticated: clone-catalog auth  (or DATABRICKS_HOST + DATABRICKS_TOKEN set)
+#   - Authenticated: clxs auth  (or DATABRICKS_HOST + DATABRICKS_TOKEN set)
 #   - A source catalog with at least one schema and one table
 #
 # Usage:
@@ -319,10 +319,10 @@ EOF
 # ══════════════════════════════════════════════════════════════
 echo -e "${BOLD}--- Section 0: Authentication ---${NC}"
 run_test "0" "Auth status check" \
-    "clone-catalog auth"
+    "clxs auth"
 
 run_test "0" "Auth list profiles" \
-    "clone-catalog auth --list-profiles"
+    "clxs auth --list-profiles"
 
 # ══════════════════════════════════════════════════════════════
 # Section 0b: Serverless (dry-run — needs --volume)
@@ -342,32 +342,32 @@ echo -e "${BOLD}--- Sections 1-5: Clone Basics (dry-run) ---${NC}"
 
 # Section 1: Basic clone
 run_test "1" "Clone basic (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run"
 
 # Section 2: Deep vs Shallow
 run_test "2a" "Clone DEEP (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --clone-type DEEP --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --clone-type DEEP --dry-run"
 
 run_test "2b" "Clone SHALLOW (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --clone-type SHALLOW --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --clone-type SHALLOW --dry-run"
 
 # Section 3: Full vs Incremental
 run_test "3a" "Clone FULL load (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --load-type FULL --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --load-type FULL --dry-run"
 
 run_test "3b" "Clone INCREMENTAL load (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --load-type INCREMENTAL --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --load-type INCREMENTAL --dry-run"
 
 # Section 4: Time Travel
 run_test "4a" "Clone with --as-of-timestamp (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --as-of-timestamp '2026-01-01T00:00:00' --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --as-of-timestamp '2026-01-01T00:00:00' --dry-run"
 
 run_test "4b" "Clone with --as-of-version (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --as-of-version 0 --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --as-of-version 0 --dry-run"
 
 # Section 5: Dry Run
 run_test "5" "Dry run with verbose" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run -v"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run -v"
 
 # ══════════════════════════════════════════════════════════════
 # Section 6: Pre-Flight Checks
@@ -375,10 +375,10 @@ run_test "5" "Dry run with verbose" \
 echo ""
 echo -e "${BOLD}--- Section 6: Pre-Flight Checks ---${NC}"
 run_test "6a" "Pre-flight checks" \
-    "clone-catalog preflight -c $CFG --source $SOURCE --dest $DEST"
+    "clxs preflight -c $CFG --source $SOURCE --dest $DEST"
 
 run_test "6b" "Pre-flight (no write check)" \
-    "clone-catalog preflight -c $CFG --source $SOURCE --dest $DEST --no-write-check"
+    "clxs preflight -c $CFG --source $SOURCE --dest $DEST --no-write-check"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 7-9: Filtering (dry-run)
@@ -388,18 +388,18 @@ echo -e "${BOLD}--- Sections 7-9: Filtering (dry-run) ---${NC}"
 
 # Section 7: Schema filtering
 run_test "7a" "Clone --include-schemas (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --include-schemas information_schema --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --include-schemas information_schema --dry-run"
 
 # Section 8: Regex table filtering
 run_test "8a" "Clone --include-tables-regex (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --include-tables-regex '.*' --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --include-tables-regex '.*' --dry-run"
 
 run_test "8b" "Clone --exclude-tables-regex (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --exclude-tables-regex '_tmp\$' --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --exclude-tables-regex '_tmp\$' --dry-run"
 
 # Section 9: Tag-based filtering
 run_test "9" "Clone with filter_by_tags config (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_tags.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_tags.yaml --dry-run"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 10-12: Performance (dry-run)
@@ -409,21 +409,21 @@ echo -e "${BOLD}--- Sections 10-12: Performance (dry-run) ---${NC}"
 
 # Section 10: Parallel processing
 run_test "10a" "Clone --max-workers 8 (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --max-workers 8 --parallel-tables 4 --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --max-workers 8 --parallel-tables 4 --dry-run"
 
 run_test "10b" "Clone --max-parallel-queries 20 (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --max-parallel-queries 20 --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --max-parallel-queries 20 --dry-run"
 
 # Section 11: Table size ordering
 run_test "11a" "Clone --order-by-size asc (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --order-by-size asc --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --order-by-size asc --dry-run"
 
 run_test "11b" "Clone --order-by-size desc (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --order-by-size desc --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --order-by-size desc --dry-run"
 
 # Section 12: Rate limiting
 run_test "12" "Clone --max-rps 5 (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --max-rps 5 --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --max-rps 5 --dry-run"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 13-18: Metadata & Security (dry-run)
@@ -433,36 +433,36 @@ echo -e "${BOLD}--- Sections 13-18: Metadata & Security (dry-run) ---${NC}"
 
 # Section 13: Permissions & Ownership
 run_test "13a" "Clone --no-permissions (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-permissions --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-permissions --dry-run"
 
 run_test "13b" "Clone --no-ownership (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-ownership --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-ownership --dry-run"
 
 # Section 14: Tags & Properties
 run_test "14a" "Clone --no-tags (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-tags --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-tags --dry-run"
 
 run_test "14b" "Clone --no-properties (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-properties --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-properties --dry-run"
 
 # Section 15: Security Policies
 run_test "15" "Clone --no-security (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-security --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-security --dry-run"
 
 # Section 16: Constraints & Comments
 run_test "16a" "Clone --no-constraints (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-constraints --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-constraints --dry-run"
 
 run_test "16b" "Clone --no-comments (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --no-comments --dry-run"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --no-comments --dry-run"
 
 # Section 17: Data Masking
 run_test "17" "Clone with masking_rules config (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_masking.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_masking.yaml --dry-run"
 
 # Section 18: Pre/Post Hooks
 run_test "18" "Clone with hooks config (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_hooks.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_hooks.yaml --dry-run"
 
 # ══════════════════════════════════════════════════════════════
 # Section 19: Validation
@@ -471,13 +471,13 @@ echo ""
 echo -e "${BOLD}--- Section 19: Validation ---${NC}"
 # Compare source to itself (dest may not exist yet)
 run_test "19a" "Validate catalogs (self-check)" \
-    "clone-catalog validate -c $CFG --source $SOURCE --dest $SOURCE"
+    "clxs validate -c $CFG --source $SOURCE --dest $SOURCE"
 
 run_test "19b" "Clone with --validate (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --validate"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --validate"
 
 run_test "19c" "Clone with --validate --checksum (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --validate --checksum"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --validate --checksum"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 20-25: Analysis (read-only)
@@ -487,30 +487,30 @@ echo -e "${BOLD}--- Sections 20-25: Analysis (read-only) ---${NC}"
 
 # Section 20: Schema Drift (compare source to itself — dest may not exist)
 run_test "20" "Schema drift detection (self-check)" \
-    "clone-catalog schema-drift -c $CFG --source $SOURCE --dest $SOURCE"
+    "clxs schema-drift -c $CFG --source $SOURCE --dest $SOURCE"
 
 # Section 21: Data Profiling
 run_test "21" "Data profiling" \
-    "clone-catalog profile -c $CFG --source $SOURCE --output $TEST_DIR/profile.json"
+    "clxs profile -c $CFG --source $SOURCE --output $TEST_DIR/profile.json"
 
 # Section 22: Catalog Search
 run_test "22a" "Search tables" \
-    "clone-catalog search -c $CFG --source $SOURCE --pattern '.*'"
+    "clxs search -c $CFG --source $SOURCE --pattern '.*'"
 
 run_test "22b" "Search columns" \
-    "clone-catalog search -c $CFG --source $SOURCE --pattern 'id' --columns"
+    "clxs search -c $CFG --source $SOURCE --pattern 'id' --columns"
 
 # Section 23: Catalog Statistics
 run_test "23" "Catalog statistics" \
-    "clone-catalog stats -c $CFG --source $SOURCE"
+    "clxs stats -c $CFG --source $SOURCE"
 
 # Section 24: Catalog Diff (compare source to itself — dest may not exist)
 run_test "24" "Catalog diff (self-check)" \
-    "clone-catalog diff -c $CFG --source $SOURCE --dest $SOURCE"
+    "clxs diff -c $CFG --source $SOURCE --dest $SOURCE"
 
 # Section 25: Deep Compare (compare source to itself)
 run_test "25" "Deep compare (self-check)" \
-    "clone-catalog compare -c $CFG --source $SOURCE --dest $SOURCE"
+    "clxs compare -c $CFG --source $SOURCE --dest $SOURCE"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 26-27: Sync & Monitor
@@ -520,14 +520,14 @@ echo -e "${BOLD}--- Sections 26-27: Sync & Monitor ---${NC}"
 
 # Section 26: Two-Way Sync (compare source to itself — dest may not exist)
 run_test "26a" "Sync (dry-run, self-check)" \
-    "clone-catalog sync -c $CFG --source $SOURCE --dest $SOURCE --dry-run"
+    "clxs sync -c $CFG --source $SOURCE --dest $SOURCE --dry-run"
 
 run_test "26b" "Sync --drop-extra (dry-run, self-check)" \
-    "clone-catalog sync -c $CFG --source $SOURCE --dest $SOURCE --dry-run --drop-extra"
+    "clxs sync -c $CFG --source $SOURCE --dest $SOURCE --dry-run --drop-extra"
 
 # Section 27: Continuous Monitoring (compare source to itself)
 run_test "27" "Monitor (single check, self-check)" \
-    "clone-catalog monitor -c $CFG --source $SOURCE --dest $SOURCE --once"
+    "clxs monitor -c $CFG --source $SOURCE --dest $SOURCE --once"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 28-29: Rollback & Resume (dry-run)
@@ -537,15 +537,15 @@ echo -e "${BOLD}--- Sections 28-29: Rollback & Resume ---${NC}"
 
 # Section 28: Rollback - list
 run_test "28a" "Rollback --list" \
-    "clone-catalog rollback -c $CFG --list"
+    "clxs rollback -c $CFG --list"
 
 # Section 28: Rollback-enabled clone dry-run
 run_test "28b" "Clone with --enable-rollback (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --enable-rollback"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --enable-rollback"
 
 # Section 29: Resume - dry-run with non-existent file (just tests the flag)
 run_test "29" "Clone with --resume flag (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --resume /dev/null"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --resume /dev/null"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 30-32: Export & Cost
@@ -556,24 +556,24 @@ echo -e "${BOLD}--- Sections 30-32: Export & Cost ---${NC}"
 # Section 30: Catalog Snapshot
 # Known issue: snapshot queries routines per schema — fails if a schema has restricted permissions
 run_test "30" "Catalog snapshot" \
-    "clone-catalog snapshot -c $CFG --source $SOURCE --output $TEST_DIR/snapshot.json"
+    "clxs snapshot -c $CFG --source $SOURCE --output $TEST_DIR/snapshot.json"
 
 # Section 31: Export Metadata
 run_test "31a" "Export metadata (CSV)" \
-    "clone-catalog export -c $CFG --source $SOURCE --format csv --output $TEST_DIR/export.csv"
+    "clxs export -c $CFG --source $SOURCE --format csv --output $TEST_DIR/export.csv"
 
 run_test "31b" "Export metadata (JSON)" \
-    "clone-catalog export -c $CFG --source $SOURCE --format json --output $TEST_DIR/export.json"
+    "clxs export -c $CFG --source $SOURCE --format json --output $TEST_DIR/export.json"
 
 # Section 32: Cost Estimation
 run_test "32a" "Cost estimation (default price)" \
-    "clone-catalog estimate -c $CFG --source $SOURCE"
+    "clxs estimate -c $CFG --source $SOURCE"
 
 run_test "32b" "Cost estimation (custom price)" \
-    "clone-catalog estimate -c $CFG --source $SOURCE --price-per-gb 0.03"
+    "clxs estimate -c $CFG --source $SOURCE --price-per-gb 0.03"
 
 run_test "32c" "Detailed cost estimate" \
-    "clone-catalog cost-estimate -c $CFG --source $SOURCE --clone-type DEEP"
+    "clxs cost-estimate -c $CFG --source $SOURCE --clone-type DEEP"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 33-34: Config
@@ -583,14 +583,14 @@ echo -e "${BOLD}--- Sections 33-34: Config ---${NC}"
 
 # Section 33: Config Profiles
 run_test "33a" "Clone with --profile dev (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_profiles.yaml --profile dev --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_profiles.yaml --profile dev --dry-run"
 
 run_test "33b" "Clone with --profile staging (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_profiles.yaml --profile staging --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_profiles.yaml --profile staging --dry-run"
 
 # Section 34: Config Diff
 run_test "34" "Config diff" \
-    "clone-catalog config-diff $TEST_DIR/config_a.yaml $TEST_DIR/config_b.yaml"
+    "clxs config-diff $TEST_DIR/config_a.yaml $TEST_DIR/config_b.yaml"
 
 # ══════════════════════════════════════════════════════════════
 # Sections 35-36: IaC & Workflow Generation
@@ -600,17 +600,17 @@ echo -e "${BOLD}--- Sections 35-36: IaC & Workflow ---${NC}"
 
 # Section 35: Workflow Generation
 run_test "35a" "Generate workflow (JSON)" \
-    "clone-catalog generate-workflow -c $CFG --format json --output $TEST_DIR/workflow.json"
+    "clxs generate-workflow -c $CFG --format json --output $TEST_DIR/workflow.json"
 
 run_test "35b" "Generate workflow (YAML)" \
-    "clone-catalog generate-workflow -c $CFG --format yaml --output $TEST_DIR/workflow.yaml"
+    "clxs generate-workflow -c $CFG --format yaml --output $TEST_DIR/workflow.yaml"
 
 # Section 36: Terraform / Pulumi Export
 run_test "36a" "Terraform export" \
-    "clone-catalog export-iac -c $CFG --source $SOURCE --format terraform --output $TEST_DIR/catalog.tf.json"
+    "clxs export-iac -c $CFG --source $SOURCE --format terraform --output $TEST_DIR/catalog.tf.json"
 
 run_test "36b" "Pulumi export" \
-    "clone-catalog export-iac -c $CFG --source $SOURCE --format pulumi --output $TEST_DIR/catalog_pulumi.py"
+    "clxs export-iac -c $CFG --source $SOURCE --format pulumi --output $TEST_DIR/catalog_pulumi.py"
 
 # ══════════════════════════════════════════════════════════════
 # Section 37: Cross-Workspace (dry-run)
@@ -621,7 +621,7 @@ echo -e "${BOLD}--- Section 37: Cross-Workspace ---${NC}"
 CURRENT_HOST="${DATABRICKS_HOST:-}"
 if [[ -n "$CURRENT_HOST" ]]; then
     run_test "37" "Cross-workspace clone (dry-run)" \
-        "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dest-host $CURRENT_HOST --dest-token dummy --dry-run"
+        "clxs clone -c $CFG --source $SOURCE --dest $DEST --dest-host $CURRENT_HOST --dest-token dummy --dry-run"
 else
     skip_test "37" "Cross-workspace clone" "DATABRICKS_HOST not set"
 fi
@@ -632,7 +632,7 @@ fi
 echo ""
 echo -e "${BOLD}--- Section 38: Lineage Tracking ---${NC}"
 run_test "38a" "Lineage config loaded" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_lineage.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_lineage.yaml --dry-run"
 
 # Lineage init creates a catalog — needs --location on Default Storage workspaces.
 # Test the config loading instead; init is covered by the dry-run clone above.
@@ -644,7 +644,7 @@ skip_test "38b" "Lineage init (CREATE CATALOG)" "requires storage location for n
 echo ""
 echo -e "${BOLD}--- Section 39: Reporting ---${NC}"
 run_test "39" "Clone with --report (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --report"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --report"
 
 # ══════════════════════════════════════════════════════════════
 # Section 40: Notifications
@@ -652,7 +652,7 @@ run_test "39" "Clone with --report (dry-run)" \
 echo ""
 echo -e "${BOLD}--- Section 40: Notifications ---${NC}"
 run_test "40" "Clone with notification config (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_notify.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_notify.yaml --dry-run"
 
 # ══════════════════════════════════════════════════════════════
 # Section 41: Audit Logging
@@ -660,7 +660,7 @@ run_test "40" "Clone with notification config (dry-run)" \
 echo ""
 echo -e "${BOLD}--- Section 41: Audit Logging ---${NC}"
 run_test "41a" "Audit config loaded (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_audit.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_audit.yaml --dry-run"
 
 # Audit init creates a catalog — needs --location on Default Storage workspaces.
 skip_test "41b" "Audit init (CREATE CATALOG)" "requires storage location for new catalog"
@@ -674,7 +674,7 @@ skip_test "41c" "Audit query" "requires audit table (41b skipped)"
 echo ""
 echo -e "${BOLD}--- Section 42: Retry Policy ---${NC}"
 run_test "42" "Clone with retry config (dry-run)" \
-    "clone-catalog clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_retry.yaml --dry-run"
+    "clxs clone --source $SOURCE --dest $DEST -c $TEST_DIR/config_retry.yaml --dry-run"
 
 # ══════════════════════════════════════════════════════════════
 # Section 43: Shell Completions
@@ -682,13 +682,13 @@ run_test "42" "Clone with retry config (dry-run)" \
 echo ""
 echo -e "${BOLD}--- Section 43: Shell Completions ---${NC}"
 run_test "43a" "Completion (bash)" \
-    "clone-catalog completion bash"
+    "clxs completion bash"
 
 run_test "43b" "Completion (zsh)" \
-    "clone-catalog completion zsh"
+    "clxs completion zsh"
 
 run_test "43c" "Completion (fish)" \
-    "clone-catalog completion fish"
+    "clxs completion fish"
 
 # ══════════════════════════════════════════════════════════════
 # Section 44: Config Wizard (non-interactive test)
@@ -698,7 +698,7 @@ echo -e "${BOLD}--- Section 44: Config Wizard ---${NC}"
 # The wizard is interactive, so we can only test it starts without error
 # by piping empty input and accepting the default exit
 run_test "44" "Config wizard (starts ok)" \
-    "echo '' | timeout 3 clone-catalog init --output $TEST_DIR/wizard_config.yaml || true"
+    "echo '' | timeout 3 clxs init --output $TEST_DIR/wizard_config.yaml || true"
 
 # ══════════════════════════════════════════════════════════════
 # Section 45: Progress Bar & Logging
@@ -706,13 +706,13 @@ run_test "44" "Config wizard (starts ok)" \
 echo ""
 echo -e "${BOLD}--- Section 45: Progress Bar & Logging ---${NC}"
 run_test "45a" "Clone with --progress (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --progress"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --progress"
 
 run_test "45b" "Clone with --no-progress (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --no-progress"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --no-progress"
 
 run_test "45c" "Clone with --log-file (dry-run)" \
-    "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --dry-run --log-file $TEST_DIR/clone.log -v"
+    "clxs clone -c $CFG --source $SOURCE --dest $DEST --dry-run --log-file $TEST_DIR/clone.log -v"
 
 # ══════════════════════════════════════════════════════════════
 # Section 46: Notebook API (import test)
@@ -728,7 +728,7 @@ run_test "46" "Python API imports" \
 echo ""
 echo -e "${BOLD}--- Bonus: PII Scan ---${NC}"
 run_test "PII" "PII scan" \
-    "clone-catalog pii-scan -c $CFG --source $SOURCE --no-exit-code"
+    "clxs pii-scan -c $CFG --source $SOURCE --no-exit-code"
 
 # ══════════════════════════════════════════════════════════════
 # Full Clone (opt-in — creates real objects)
@@ -750,19 +750,19 @@ if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     fi
 
     run_test "1-REAL" "Clone $SOURCE -> $DEST (SHALLOW)" \
-        "clone-catalog clone -c $CFG --source $SOURCE --dest $DEST --clone-type SHALLOW --enable-rollback --validate --report --progress $LOCATION_FLAG"
+        "clxs clone -c $CFG --source $SOURCE --dest $DEST --clone-type SHALLOW --enable-rollback --validate --report --progress $LOCATION_FLAG"
 
     run_test "19-REAL" "Validate clone" \
-        "clone-catalog validate -c $CFG --source $SOURCE --dest $DEST"
+        "clxs validate -c $CFG --source $SOURCE --dest $DEST"
 
     run_test "24-REAL" "Diff after clone" \
-        "clone-catalog diff -c $CFG --source $SOURCE --dest $DEST"
+        "clxs diff -c $CFG --source $SOURCE --dest $DEST"
 
     echo -e "  ${YELLOW}Rolling back the clone...${NC}"
     LATEST_LOG=$(ls -t rollback_logs/rollback_${DEST}_*.json 2>/dev/null | head -1 || echo "")
     if [[ -n "$LATEST_LOG" ]]; then
         run_test "28-REAL" "Rollback clone" \
-            "clone-catalog rollback -c $CFG --rollback-log $LATEST_LOG --drop-catalog"
+            "clxs rollback -c $CFG --rollback-log $LATEST_LOG --drop-catalog"
     else
         skip_test "28-REAL" "Rollback clone" "no rollback log found"
     fi

@@ -141,7 +141,7 @@ def run_wizard(output_path: str = "config/clone_config.yaml") -> str:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     print(f"\nConfig written to: {output_path}")
-    print(f"Run clone with: clone-catalog clone -c {output_path}")
+    print(f"Run clone with: clxs clone -c {output_path}")
 
     return output_path
 

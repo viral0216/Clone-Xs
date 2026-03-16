@@ -9,7 +9,7 @@ Clone Catalog supports multiple authentication methods with automatic fallback. 
 
 ## How the CLI authenticates
 
-When you run any `clone-catalog` command, the auth module checks credentials in this order:
+When you run any `clxs` command, the auth module checks credentials in this order:
 
 | Priority | Method | Required variables |
 |----------|--------|--------------------|
@@ -66,7 +66,7 @@ token = dapi...
 Use a named profile with the `--auth-profile` flag:
 
 ```bash
-clone-catalog clone --auth-profile staging --source production --dest staging_clone
+clxs clone --auth-profile staging --source production --dest staging_clone
 ```
 
 ### CLI flags
@@ -74,7 +74,7 @@ clone-catalog clone --auth-profile staging --source production --dest staging_cl
 Override credentials per-command:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --host https://adb-1234567890.14.azuredatabricks.net \
   --token dapi... \
   --source production \
@@ -88,7 +88,7 @@ For interactive use, Clone Catalog supports browser-based OAuth — similar to `
 ### Quick login
 
 ```bash
-clone-catalog auth --login --host https://adb-1234567890.14.azuredatabricks.net
+clxs auth --login --host https://adb-1234567890.14.azuredatabricks.net
 ```
 
 This opens your browser for OAuth authentication. Once complete, the session is stored in `~/.databrickscfg`.
@@ -98,7 +98,7 @@ This opens your browser for OAuth authentication. Once complete, the session is 
 For the full interactive experience (tenant selection, subscription picker, workspace discovery):
 
 ```bash
-clone-catalog auth --login
+clxs auth --login
 ```
 
 This walks you through:
@@ -160,13 +160,13 @@ This walks you through:
 List all configured profiles:
 
 ```bash
-clone-catalog auth --list-profiles
+clxs auth --list-profiles
 ```
 
 Switch between profiles:
 
 ```bash
-clone-catalog clone --auth-profile staging ...
+clxs clone --auth-profile staging ...
 ```
 
 ### Verify authentication
@@ -174,13 +174,13 @@ clone-catalog clone --auth-profile staging ...
 Check your current auth status:
 
 ```bash
-clone-catalog auth
+clxs auth
 ```
 
 Force verification before running a command:
 
 ```bash
-clone-catalog clone --verify-auth --source production --dest staging
+clxs clone --verify-auth --source production --dest staging
 ```
 
 ## What's needed
@@ -215,7 +215,7 @@ env:
 steps:
   - run: |
       pip install clone-xs
-      clone-catalog clone --source production --dest staging
+      clxs clone --source production --dest staging
 ```
 
 ```yaml
@@ -228,7 +228,7 @@ variables:
 steps:
   - script: |
       pip install clone-xs
-      clone-catalog clone --source production --dest staging
+      clxs clone --source production --dest staging
 ```
 
 See [CI/CD](cicd) for more pipeline examples.

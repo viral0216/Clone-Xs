@@ -80,7 +80,10 @@ export default function MultiClonePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Multi-Clone</h1>
-        <p className="text-muted-foreground mt-1">Clone to multiple workspaces simultaneously</p>
+        <p className="text-muted-foreground mt-1">Clone a catalog to multiple Databricks workspaces in parallel — useful for multi-region deployments, disaster recovery, and dev/staging/prod provisioning.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/create-metastore" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog metastore</a>
+        </p>
       </div>
 
       {error && (

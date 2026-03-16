@@ -50,7 +50,7 @@ build: clean test ## Build wheel package (runs tests first)
 
 install: build ## Build and install locally
 	pip install --force-reinstall --no-deps $$(ls $(DIST_DIR)/*.whl | head -1)
-	@echo "Installed. Verify: clone-catalog --help"
+	@echo "Installed. Verify: clxs --help"
 
 install-dev: ## Install in editable mode for development
 	pip install -e ".[dev]"

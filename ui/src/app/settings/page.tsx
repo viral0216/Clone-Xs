@@ -418,7 +418,10 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-gray-500 mt-1">Configure Databricks connection and preferences</p>
+        <p className="text-gray-500 mt-1">Databricks workspace connection settings — workspace URL, authentication (PAT/OAuth), SQL warehouse selection, and audit table initialization.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/pat" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Personal access tokens</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SQL warehouses</a>
+        </p>
       </div>
 
       {/* Connection Status Card */}

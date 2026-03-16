@@ -442,8 +442,9 @@ export default function IncrementalSyncPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Incremental Sync</h1>
-        <p className="text-muted-foreground mt-1">
-          Sync only changed tables using Delta table version history
+        <p className="text-muted-foreground mt-1">Sync only tables that have changed since the last operation using Delta table version history. Dramatically faster than full sync for large catalogs.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/history" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta table history</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-describe-history" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">DESCRIBE HISTORY</a>
         </p>
       </div>
 

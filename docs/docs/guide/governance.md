@@ -19,16 +19,16 @@ Your organization has multiple teams sharing a Databricks workspace. The data en
 
 ```bash
 # Check if the current user can perform a clone
-clone-catalog rbac check
+clxs rbac check
 
 # Show all policies that apply to the current user
-clone-catalog rbac show
+clxs rbac show
 
 # Show policies for a specific user
-clone-catalog rbac show --user "data-engineering@company.com"
+clxs rbac show --user "data-engineering@company.com"
 
 # Validate RBAC policy file syntax
-clone-catalog policy-check --policy-file rbac_policy.yaml
+clxs policy-check --policy-file rbac_policy.yaml
 ```
 
 **Output (rbac check):**
@@ -116,7 +116,7 @@ RBAC checks run automatically before every clone operation. If the current princ
 
 ```bash
 # RBAC is enforced automatically
-clone-catalog clone --source production --dest production_backup
+clxs clone --source production --dest production_backup
 
 # Output:
 # [RBAC] Denied: Cloning into the production catalog is prohibited.
@@ -141,22 +141,22 @@ Your team wants to clone the `finance` catalog — which contains sensitive reve
 
 ```bash
 # Submit a clone for approval
-clone-catalog clone \
+clxs clone \
   --source finance --dest finance_qa \
   --require-approval
 
 # List pending approvals
-clone-catalog approval list
+clxs approval list
 
 # Approve a pending request (by ID)
-clone-catalog approval approve ap-2026031401
+clxs approval approve ap-2026031401
 
 # Deny a request with a reason
-clone-catalog approval deny ap-2026031401 \
+clxs approval deny ap-2026031401 \
   --reason "Use the existing QA catalog instead"
 
 # Check status of a specific request
-clone-catalog approval status ap-2026031401
+clxs approval status ap-2026031401
 ```
 
 **Output (approval list):**
@@ -191,16 +191,16 @@ approval:
 
 ### How it works
 
-1. User runs `clone-catalog clone --require-approval`
+1. User runs `clxs clone --require-approval`
 2. The tool creates an approval request and sends a notification (Slack/webhook/CLI)
 3. The clone process enters a waiting state — it polls for approval status
-4. An approver runs `clone-catalog approval approve <id>` (or clicks the Slack button)
+4. An approver runs `clxs approval approve <id>` (or clicks the Slack button)
 5. The clone resumes automatically
 
 If the timeout expires or the request is denied, the clone is aborted.
 
 :::note
-Approval state is stored locally in `.clone-catalog/approvals/`. In team environments, consider using the API server mode (`clone-catalog serve`) for shared approval state.
+Approval state is stored locally in `.clxs/approvals/`. In team environments, consider using the API server mode (`clxs serve`) for shared approval state.
 :::
 
 ---
@@ -217,17 +217,17 @@ Your compliance team needs a quarterly report covering: which catalogs were clon
 
 ```bash
 # Generate a compliance report for the last 30 days
-clone-catalog compliance-report
+clxs compliance-report
 
 # Custom date range
-clone-catalog compliance-report \
+clxs compliance-report \
   --from 2026-01-01 --to 2026-03-14
 
 # Output as HTML (shareable with non-technical stakeholders)
-clone-catalog compliance-report --format html --output-dir reports/
+clxs compliance-report --format html --output-dir reports/
 
 # Output as JSON (for integration with GRC tools)
-clone-catalog compliance-report --format json --output-dir reports/
+clxs compliance-report --format json --output-dir reports/
 ```
 
 **Output (console):**
@@ -312,10 +312,10 @@ Your `production` catalog contains customer PII — emails, phone numbers, socia
 
 ```bash
 # Scan a catalog for PII columns
-clone-catalog pii-scan --source production
+clxs pii-scan --source production
 
 # Scan specific schemas
-clone-catalog pii-scan --source production
+clxs pii-scan --source production
 ```
 
 **Output:**
@@ -350,7 +350,7 @@ Combine PII scanning with masking rules to automatically protect sensitive data.
 
 ```bash
 # Clone using a config file with masking rules defined
-clone-catalog clone \
+clxs clone \
   --source production --dest dev \
   --config config/clone_config.yaml
 ```

@@ -46,7 +46,10 @@ export default function PiiPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">PII Scanner</h1>
-        <p className="text-gray-500 mt-1">Scan catalog columns for personally identifiable information</p>
+        <p className="text-gray-500 mt-1">Scan column names and sample data for PII patterns — emails, phone numbers, SSNs, credit cards, IP addresses, and more. Supports regex-based and heuristic detection.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/column-masking" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Column masking</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/row-filters" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Row filters</a>
+        </p>
       </div>
 
       {/* Input */}

@@ -21,11 +21,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - CLI expanded to **58 commands** (added `create-job`, `storage-metrics`)
 - Extracted `build_job_config()` helper in `serverless.py` for reuse across serverless submit and create-job
 
+- **OPTIMIZE and VACUUM** — new `optimize` and `vacuum` CLI commands and API endpoints. Run table maintenance on selected tables from the Storage Metrics UI with multi-select checkboxes, confirmation dialog, and per-table results
+- **Predictive Optimization detection** — checks if Predictive Optimization is enabled on a catalog and warns users that manual OPTIMIZE/VACUUM may be unnecessary
+- **New module** `src/table_maintenance.py` — parallel OPTIMIZE/VACUUM execution with progress tracking, dry-run mode, and configurable retention hours
+- **API endpoints** `POST /api/optimize`, `POST /api/vacuum`, `POST /api/check-predictive-optimization`
+- CLI expanded to **60 commands** (added `optimize`, `vacuum`)
+- **Contextual help on every page** — all 33 UI pages now include detailed feature descriptions and links to official Azure Databricks documentation (CREATE TABLE CLONE, VACUUM, Delta time travel, Unity Catalog, INFORMATION_SCHEMA, etc.)
+- **CLI renamed** from `clone-catalog` to `clxs` — shorter, branded command name
+- **Storage Metrics DESCRIBE DETAIL fallback** — when `ANALYZE TABLE COMPUTE STORAGE METRICS` is unavailable (Runtime < 18.0), falls back to `DESCRIBE DETAIL` for total size/files
+- **Storage Metrics row-per-metric parsing** — correctly handles Databricks' `metric_name`/`metric_value` result format
+- **CSV/JSON export** on Storage Metrics page — download per-table storage data
+
 ### Changed
 - `ui/vite.config.ts` — set `base: "./"` for Electron `file://` compatibility
+- CLI entry point renamed from `clone-catalog` to `clxs` in `pyproject.toml` and 54 files across the codebase
 - Sidebar Operations section updated with Create Job entry
 - Sidebar Analysis section updated with Storage Metrics entry
 - Platform badge updated to include Desktop
+- Version badge updated to 0.5.0
 
 ## [0.4.0] - 2026-03-15
 

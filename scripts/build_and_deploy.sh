@@ -94,7 +94,7 @@ if [ "$UPLOAD_ONLY" = false ]; then
     # Clear all __pycache__ to avoid stale bytecode
     find "$PROJECT_ROOT" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
-    echo "      Verify: clone-catalog --help"
+    echo "      Verify: clxs --help"
 else
     echo ""
     echo "[4/5] Skipping local install (--upload-only)"
@@ -134,7 +134,7 @@ echo "============================================"
 echo "  Wheel:  $DIST_DIR/$WHEEL_NAME"
 
 if [ "$UPLOAD_ONLY" = false ]; then
-    echo "  Local:  installed (clone-catalog CLI ready)"
+    echo "  Local:  installed (clxs CLI ready)"
 fi
 
 if [ "$UPLOAD" = true ]; then

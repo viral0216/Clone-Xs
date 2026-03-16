@@ -13,13 +13,13 @@ The `clone` command replicates an entire Unity Catalog catalog — schemas, tabl
 
 ```bash
 # Minimal — uses config file defaults
-clone-catalog clone
+clxs clone
 
 # Override source and destination from CLI
-clone-catalog clone --source production --dest sandbox
+clxs clone --source production --dest sandbox
 
 # With all the bells and whistles
-clone-catalog clone \
+clxs clone \
   --source production --dest sandbox \
   --clone-type DEEP \
   --validate --enable-rollback --report --progress \
@@ -58,10 +58,10 @@ Your QA team needs an isolated copy of `production` to run integration tests tha
 
 ```bash
 # Deep clone for QA (full data copy — takes longer, uses storage)
-clone-catalog clone --source production --dest qa_env --clone-type DEEP
+clxs clone --source production --dest qa_env --clone-type DEEP
 
 # Shallow clone for dev (fast, near-zero storage cost)
-clone-catalog clone --source production --dest dev_env --clone-type SHALLOW
+clxs clone --source production --dest dev_env --clone-type SHALLOW
 ```
 
 | Criterion | Deep Clone | Shallow Clone |
@@ -87,10 +87,10 @@ You do a full clone every Sunday night. On weekdays, you run incremental loads t
 
 ```bash
 # Sunday: full refresh
-clone-catalog clone --source production --dest staging --load-type FULL
+clxs clone --source production --dest staging --load-type FULL
 
 # Mon-Sat: only clone new objects
-clone-catalog clone --source production --dest staging --load-type INCREMENTAL
+clxs clone --source production --dest staging --load-type INCREMENTAL
 ```
 
 ```yaml
@@ -115,12 +115,12 @@ A data pipeline had a bug on March 5th that corrupted the `orders` table. You wa
 
 ```bash
 # Clone from a specific timestamp
-clone-catalog clone \
+clxs clone \
   --source production --dest recovery \
   --as-of-timestamp "2026-03-04T23:59:59"
 
 # Clone from a specific Delta version
-clone-catalog clone \
+clxs clone \
   --source production --dest recovery_v42 \
   --as-of-version 42
 ```
@@ -141,7 +141,7 @@ Your `production` catalog has 50 schemas, but you only need `sales` and `marketi
 
 ```bash
 # Only clone specific schemas
-clone-catalog clone --include-schemas sales marketing analytics
+clxs clone --include-schemas sales marketing analytics
 
 # Exclude schemas via config
 ```
@@ -175,13 +175,13 @@ Your `analytics` schema contains 200 tables, but you only need the star schema t
 
 ```bash
 # Only clone fact and dimension tables
-clone-catalog clone --include-tables-regex "^fact_|^dim_"
+clxs clone --include-tables-regex "^fact_|^dim_"
 
 # Exclude temp and backup tables
-clone-catalog clone --exclude-tables-regex "_tmp$|_backup$|_old$"
+clxs clone --exclude-tables-regex "_tmp$|_backup$|_old$"
 
 # Combine both
-clone-catalog clone \
+clxs clone \
   --include-tables-regex "^fact_|^dim_" \
   --exclude-tables-regex "_v1$"
 ```
@@ -220,7 +220,7 @@ Your `warehouse` catalog has 30 schemas and 2,000 tables. Sequential cloning tak
 
 ```bash
 # 8 schemas in parallel, 4 tables in parallel within each schema
-clone-catalog clone --max-workers 8 --parallel-tables 4
+clxs clone --max-workers 8 --parallel-tables 4
 ```
 
 ```yaml
@@ -250,10 +250,10 @@ Monitor your warehouse's query queue — if queries start queuing, reduce parall
 
 ```bash
 # Clone smallest tables first
-clone-catalog clone --order-by-size asc
+clxs clone --order-by-size asc
 
 # Clone largest tables first (better for total time with parallel workers)
-clone-catalog clone --order-by-size desc
+clxs clone --order-by-size desc
 ```
 
 ---
@@ -269,7 +269,7 @@ You're cloning during business hours or sharing a SQL warehouse with other teams
 Your shared serverless warehouse has a concurrency limit. By capping the clone at 5 SQL requests per second, other team members' queries continue to run smoothly.
 
 ```bash
-clone-catalog clone --max-rps 5
+clxs clone --max-rps 5
 ```
 
 ```yaml
@@ -290,7 +290,7 @@ You're setting up a new clone config and want to verify it will clone the right 
 
 ```bash
 # Preview all operations
-clone-catalog clone --dry-run -v
+clxs clone --dry-run -v
 
 # Output shows:
 # [DRY RUN] Would execute: CREATE CATALOG IF NOT EXISTS `staging`
@@ -311,10 +311,10 @@ Your `production` catalog has fine-grained grants: the `analysts` group can SELE
 
 ```bash
 # Clone with all permissions and ownership
-clone-catalog clone --source production --dest staging
+clxs clone --source production --dest staging
 
 # Skip permissions (useful for dev environments with different access model)
-clone-catalog clone --source production --dest dev --no-permissions --no-ownership
+clxs clone --source production --dest dev --no-permissions --no-ownership
 ```
 
 ```yaml
@@ -339,10 +339,10 @@ Tables in `production` are tagged with `data_classification: confidential` and h
 
 ```bash
 # Clone with tags and properties
-clone-catalog clone
+clxs clone
 
 # Skip tags and properties (faster clone)
-clone-catalog clone --no-tags --no-properties
+clxs clone --no-tags --no-properties
 ```
 
 ```yaml
@@ -361,10 +361,10 @@ The `customers` table has a row filter that restricts users to seeing only their
 
 ```bash
 # Clone with security policies
-clone-catalog clone
+clxs clone
 
 # Skip security (useful when destination uses different policies)
-clone-catalog clone --no-security
+clxs clone --no-security
 ```
 
 ```yaml
@@ -382,10 +382,10 @@ Your `orders` table has a CHECK constraint `amount > 0` and column comments docu
 
 ```bash
 # Clone with constraints and comments
-clone-catalog clone
+clxs clone
 
 # Skip them
-clone-catalog clone --no-constraints --no-comments
+clxs clone --no-constraints --no-comments
 ```
 
 ```yaml
@@ -501,7 +501,7 @@ post_schema_hooks:
 If your workspace uses Default Storage, you may need to specify a storage location when creating the destination catalog:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --location "abfss://catalog@storage.dfs.core.windows.net/staging"
 ```
@@ -516,7 +516,7 @@ clone-catalog clone \
 Your production workspace is in `uksouth` and your DR workspace is in `ukwest`. You need to clone the production catalog to the DR workspace.
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production \
   --dest dr_production \
   --dest-host "https://dr-workspace.cloud.databricks.com" \
@@ -547,13 +547,13 @@ Your CI pipeline creates a cloned catalog for every pull request. Instead of kee
 
 ```bash
 # Serverless clone
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/libs
 
 # With full options
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/libs \
@@ -580,9 +580,9 @@ Your clone of 2,000 tables failed at table #1,500. Instead of re-cloning all 2,0
 
 ```bash
 # Original clone with rollback enabled
-clone-catalog clone --enable-rollback
+clxs clone --enable-rollback
 # ... fails at some point
 
 # Resume from the rollback log
-clone-catalog clone --resume rollback_logs/rollback_staging_20260310_143022.json
+clxs clone --resume rollback_logs/rollback_staging_20260310_143022.json
 ```

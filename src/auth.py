@@ -43,7 +43,7 @@ _cached_client_key: str = ""  # tracks which credentials produced the cached cli
 _client_verified: bool = False
 _client_verify_time: float = 0
 _VERIFY_TTL = 3600  # re-verify every hour
-_SESSION_FILE = os.path.expanduser("~/.clone-catalog-session.json")
+_SESSION_FILE = os.path.expanduser("~/.clxs-session.json")
 
 
 def _cache_key(host: str = "", token: str = "", profile: str = "") -> str:
@@ -185,7 +185,7 @@ def ensure_logged_in(host: str | None = None, force: bool = False) -> str:
     if not workspace_host:
         raise RuntimeError(
             "Workspace host required for browser login. Provide --host or set DATABRICKS_HOST.\n"
-            "Example: clone-catalog auth --login --host https://adb-xxx.azuredatabricks.net"
+            "Example: clxs auth --login --host https://adb-xxx.azuredatabricks.net"
         )
 
     print(f"Opening Databricks login in browser for {workspace_host}...")
@@ -528,7 +528,7 @@ def interactive_login() -> dict:
 
     except Exception as e:
         print(f"  Error connecting to workspace: {e}")
-        print("  Try: clone-catalog auth --login --host " + host)
+        print("  Try: clxs auth --login --host " + host)
         raise SystemExit(1)
 
 

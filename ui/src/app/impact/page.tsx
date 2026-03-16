@@ -48,7 +48,10 @@ export default function ImpactPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Impact Analysis</h1>
-        <p className="text-muted-foreground mt-1">Analyze downstream effects before making changes</p>
+        <p className="text-muted-foreground mt-1">Assess the blast radius of schema changes — shows which views, functions, and downstream consumers would be affected before you modify a table.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog lineage</a>
+        </p>
       </div>
 
       <Card className="bg-card border-border">

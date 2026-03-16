@@ -78,7 +78,7 @@ The Clone Wizard is the primary interface for catalog cloning, available both as
 ### CLI Equivalent
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest edp_dev_00 \
   --clone-type DEEP \
   --copy-permissions --copy-ownership --copy-tags \
@@ -92,7 +92,7 @@ Every flag maps directly to a wizard option. The CLI and the UI produce identica
 For organizations that do not want to provision or pay for a dedicated SQL warehouse for cloning, Clone-Xs supports serverless execution:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest edp_dev_00 \
   --serverless --volume /Volumes/catalog/schema/vol
 ```
@@ -174,7 +174,7 @@ No digging through notebook histories. No scraping Spark UI logs. The data is in
 Sometimes you do not want to clone immediately. You want to see what *would* happen first. The `plan` command runs a full dry-run of the clone, captures every SQL statement that would be executed, and writes them to a file for review.
 
 ```bash
-clone-catalog plan \
+clxs plan \
   --source edp_dev --dest edp_dev_00 \
   --capture-sql plan_statements.sql
 ```
@@ -217,7 +217,7 @@ Serverless execution eliminates warehouse provisioning time entirely. No cluster
 ### Nightly Staging Refresh
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest edp_dev_00 \
   --clone-type DEEP \
   --validate --enable-rollback \
@@ -230,13 +230,13 @@ If any table fails validation (row count mismatch, schema difference), the clone
 ### PR-Specific Catalogs for CI/CD
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest ci_pr_1234 \
   --clone-type SHALLOW \
   --ttl 24h
 
 # After tests pass, or after TTL expires:
-clone-catalog ttl-cleanup
+clxs ttl-cleanup
 ```
 
 Shallow clones are nearly instant because they reference the source data files without copying them. The TTL manager drops expired catalogs automatically.
@@ -244,7 +244,7 @@ Shallow clones are nearly instant because they reference the source data files w
 ### Cross-Workspace Disaster Recovery
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest edp_dev_dr \
   --dest-host https://dr-workspace.cloud.databricks.com \
   --dest-token $DR_TOKEN \
@@ -255,10 +255,10 @@ clone-catalog clone \
 
 ```bash
 # Scan first, then clone only if clean
-clone-catalog pii-scan --source edp_dev
+clxs pii-scan --source edp_dev
 
 # Or combine scan + clone
-clone-catalog clone \
+clxs clone \
   --source edp_dev --dest dev_safe \
   --pii-scan
 ```
@@ -288,7 +288,7 @@ The Ib dashboard is available at `http://localhost:3000` and the API at `http://
 
 ```bash
 pip install clone-xs
-clone-catalog --help
+clxs --help
 ```
 
 ### Databricks Notebook
@@ -327,7 +327,7 @@ The project is open source under the MIT license. The code is at [github.com/vir
 **GitHub:** [github.com/viral0216/Clone-Xs](https://github.com/viral0216/Clone-Xs)
 **License:** MIT
 **Install:** `pip install clone-xs`
-**First clone:** `clone-catalog clone --source edp_dev --dest edp_dev_00`
+**First clone:** `clxs clone --source edp_dev --dest edp_dev_00`
 
 ---
 

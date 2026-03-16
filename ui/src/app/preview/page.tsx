@@ -70,7 +70,7 @@ export default function PreviewPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Data Preview</h1>
-        <p className="text-muted-foreground mt-1">Compare source and destination data side by side</p>
+        <p className="text-muted-foreground mt-1">Sample and compare data between source and destination tables side by side — verify row-level accuracy after clone or sync operations.</p>
       </div>
 
       <Card className="bg-card border-border">

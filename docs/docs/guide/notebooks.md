@@ -71,14 +71,14 @@ Run clones on Databricks serverless compute — **no SQL warehouse or cluster ne
 
 ```bash
 # Basic serverless clone
-clone-catalog clone \
+clxs clone \
   --source production \
   --dest staging \
   --serverless \
   --volume /Volumes/my_catalog/my_schema/libs
 
 # With all options
-clone-catalog clone \
+clxs clone \
   --source production \
   --dest staging \
   --serverless \
@@ -173,7 +173,7 @@ print(result)
 Incremental sync also supports serverless execution:
 
 ```bash
-clone-catalog incremental-sync \
+clxs incremental-sync \
   --source production \
   --dest staging \
   --serverless \

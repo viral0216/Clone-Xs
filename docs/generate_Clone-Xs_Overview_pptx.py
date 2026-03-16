@@ -413,7 +413,7 @@ add_rounded_rect(s, Inches(6.8), Inches(4.9), Inches(5.8), Inches(1.3), CARD_BG,
 add_textbox(s, Inches(7.0), Inches(5.0), Inches(5.4), Inches(0.25), "CLI Usage", size=11, bold=True, color=BLACK)
 add_rounded_rect(s, Inches(7.0), Inches(5.3), Inches(5.4), Inches(0.75), DARK_BG)
 add_textbox(s, Inches(7.1), Inches(5.35), Inches(5.2), Inches(0.65),
-            "clone-catalog clone\n  --source edp_dev\n  --dest edp_dev_00\n  --serverless\n  --volume /Volumes/cat/schema/vol",
+            "clxs clone\n  --source edp_dev\n  --dest edp_dev_00\n  --serverless\n  --volume /Volumes/cat/schema/vol",
             size=9, color=SUCCESS)
 add_slide_number(s, "8 / 14")
 
@@ -561,7 +561,7 @@ add_subtitle(s, "Up and running in 3 commands")
 install_options = [
     ("OPTION 1: FROM SOURCE", "git clone github.com/viral0216/clone-xs\ncd clone-xs\npip install -e \".[dev]\"\nmake web-start", "Frontend on :3000 • API on :8000"),
     ("OPTION 2: DOCKER", "docker-compose up --build\n\n# Open http://localhost:8000", "Full stack in one container"),
-    ("OPTION 3: CLI ONLY", "pip install -e .\nclone-catalog clone \\\n  --source my_catalog \\\n  --dest my_catalog_clone", "No server needed for CLI usage"),
+    ("OPTION 3: CLI ONLY", "pip install -e .\nclxs clone \\\n  --source my_catalog \\\n  --dest my_catalog_clone", "No server needed for CLI usage"),
 ]
 card_w = Inches(3.75)
 for i, (hdr, code, outcome) in enumerate(install_options):

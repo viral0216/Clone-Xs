@@ -16,7 +16,7 @@ You want a high-level overview of your catalog — how many tables, total storag
 Your cloud cost report shows Databricks storage costs jumped 40% this month. You need to quickly identify which schemas and tables are consuming the most storage.
 
 ```bash
-clone-catalog stats --source production
+clxs stats --source production
 ```
 
 **Output:**
@@ -64,10 +64,10 @@ A GDPR data subject access request comes in. You need to find every table and co
 
 ```bash
 # Find all tables with "customer" in the name
-clone-catalog search --source production --pattern "customer"
+clxs search --source production --pattern "customer"
 
 # Find all tables AND columns with "email" or "phone"
-clone-catalog search --source production --pattern "email|phone" --columns
+clxs search --source production --pattern "email|phone" --columns
 ```
 
 **Output:**
@@ -106,18 +106,18 @@ Your DR (disaster recovery) catalog must mirror production. A monitoring job run
 
 ```bash
 # One-time check (e.g., in a CI pipeline)
-clone-catalog monitor --source production --dest dr_catalog --once
+clxs monitor --source production --dest dr_catalog --once
 
 # Continuous monitoring every 30 minutes
-clone-catalog monitor --source production --dest dr_catalog --interval 30
+clxs monitor --source production --dest dr_catalog --interval 30
 
 # Include row count checks (more thorough, slower)
-clone-catalog monitor \
+clxs monitor \
   --source production --dest dr_catalog \
   --interval 60 --check-counts
 
 # Run 10 checks then stop
-clone-catalog monitor --source production --dest dr_catalog --max-checks 10
+clxs monitor --source production --dest dr_catalog --max-checks 10
 ```
 
 Pair with notifications — configure Slack/webhook in the config. When drift is detected, your team gets alerted.
@@ -136,10 +136,10 @@ The compliance team needs a spreadsheet of all tables and columns in `production
 
 ```bash
 # Export to CSV (produces two files: tables + columns)
-clone-catalog export --source production --format csv
+clxs export --source production --format csv
 
 # Export to JSON
-clone-catalog export --source production --format json --output catalog_inventory.json
+clxs export --source production --format json --output catalog_inventory.json
 ```
 
 **Produces:**
@@ -180,13 +180,13 @@ Before a major migration, you take a snapshot of the current catalog structure. 
 
 ```bash
 # Take a snapshot
-clone-catalog snapshot --source production
+clxs snapshot --source production
 
 # Custom output path
-clone-catalog snapshot --source production --output snapshots/pre_migration.json
+clxs snapshot --source production --output snapshots/pre_migration.json
 
 # Later, take another snapshot and compare
-clone-catalog snapshot --source production --output snapshots/post_migration.json
+clxs snapshot --source production --output snapshots/post_migration.json
 ```
 
 The snapshot JSON includes full column definitions, view SQL, function definitions, and volume metadata.
@@ -226,13 +226,13 @@ audit_trail:
 
 ```bash
 # Query audit trail
-clone-catalog audit --limit 20
+clxs audit --limit 20
 
 # Filter by source catalog
-clone-catalog audit --source production
+clxs audit --source production
 
 # Filter by status
-clone-catalog audit --status failed
+clxs audit --status failed
 ```
 
 ### API path vs CLI path

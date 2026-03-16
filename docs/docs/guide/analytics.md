@@ -19,16 +19,16 @@ Your `production` catalog has 500 tables, but your clone takes 3 hours and costs
 
 ```bash
 # Analyze table usage patterns
-clone-catalog usage-analysis --source production
+clxs usage-analysis --source production
 
 # Analyze with a custom lookback period
-clone-catalog usage-analysis --source production --days 90
+clxs usage-analysis --source production --days 90
 
 # Get skip recommendations
-clone-catalog usage-analysis --source production --recommend
+clxs usage-analysis --source production --recommend
 
 # Clone with automatic unused table skipping
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --skip-unused
 ```
@@ -111,16 +111,16 @@ Your team runs nightly clones across 5 catalogs. You want to track clone duratio
 
 ```bash
 # View current metrics
-clone-catalog metrics
+clxs metrics
 
 # View metrics filtered by source catalog
-clone-catalog metrics --source monitoring.clone_metrics
+clxs metrics --source monitoring.clone_metrics
 
 # View metrics in JSON format
-clone-catalog metrics --format json
+clxs metrics --format json
 
 # Enable Prometheus metrics endpoint (when running in serve mode)
-clone-catalog serve --port 9090
+clxs serve --port 9090
 ```
 
 **Output:**
@@ -215,21 +215,21 @@ A data engineer notices that the staging environment has stale data. They want t
 
 ```bash
 # List recent clone operations
-clone-catalog history list
+clxs history list
 
 # Show details of a specific operation
-clone-catalog history show clone-20260314-020000
+clxs history show clone-20260314-020000
 
 # Diff two operations (what changed between runs)
-clone-catalog history diff \
+clxs history diff \
   clone-20260313-020000 \
   clone-20260314-020000
 
 # Filter by catalog
-clone-catalog history list --source production
+clxs history list --source production
 
 # Limit results
-clone-catalog history list --limit 5
+clxs history list --limit 5
 ```
 
 **Output (history list):**
@@ -271,7 +271,7 @@ CLONE DIFF: clone-20260313-020000 → clone-20260314-020000
 
 ### History storage
 
-Clone history is stored locally in `.clone-catalog/history/` as JSON files. Each operation creates a timestamped record with full details including:
+Clone history is stored locally in `.clxs/history/` as JSON files. Each operation creates a timestamped record with full details including:
 
 - Source and destination catalogs
 - All options and flags used
@@ -297,17 +297,17 @@ After cloning, a data analyst reports that the numbers in a dashboard "look wron
 
 ```bash
 # Preview a specific table
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --table sales.orders
 
 # Preview all tables (summary mode)
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --all
 
 # Limit rows for preview
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --table sales.orders --limit 20
 ```
@@ -363,7 +363,7 @@ DATA PREVIEW SUMMARY: production vs staging
 When mismatches are found, use the `diff` command to compare catalogs in detail:
 
 ```bash
-clone-catalog diff \
+clxs diff \
   --source production --dest staging
 ```
 

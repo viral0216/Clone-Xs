@@ -60,7 +60,10 @@ export default function TemplatesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Clone Templates</h1>
-        <p className="text-muted-foreground mt-1">Pre-built configurations for common clone patterns</p>
+        <p className="text-muted-foreground mt-1">12 pre-built clone recipes — Production Mirror, Dev Sandbox, DR Copy, Compliance Snapshot, and more. Each template pre-fills optimal settings for its use case.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-create-table-clone" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Clone best practices</a>
+        </p>
       </div>
 
       {error && (

@@ -653,7 +653,10 @@ export default function ClonePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Clone Catalog</h1>
-        <p className="text-gray-500 mt-1">Clone a Unity Catalog catalog with full control</p>
+        <p className="text-gray-500 mt-1">Deep or shallow clone of a Unity Catalog catalog — copies tables, views, permissions, tags, properties, and constraints across schemas. Supports serverless compute, incremental clone, time-travel, and post-clone validation.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-create-table-clone" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">CREATE TABLE CLONE</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog</a>
+        </p>
       </div>
 
       {/* Step indicators */}
@@ -988,7 +991,7 @@ export default function ClonePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm space-y-1">
-              <p>clone-catalog clone \</p>
+              <p>clxs clone \</p>
               <p>  --source {config.source_catalog} --dest {config.destination_catalog} \</p>
               <p>  --clone-type {config.clone_type} --load-type {config.load_type} \</p>
               <p>  --max-workers {config.max_workers} --parallel-tables {config.parallel_tables} \</p>

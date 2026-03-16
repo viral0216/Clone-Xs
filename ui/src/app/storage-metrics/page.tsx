@@ -1,11 +1,15 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
-import { Loader2, XCircle, HardDrive, Database, Trash2, Clock, AlertTriangle, Download } from "lucide-react";
+import {
+  Loader2, XCircle, HardDrive, Database, Trash2, Clock,
+  AlertTriangle, Download, Zap, CheckCircle, Info,
+} from "lucide-react";
 
 function vacuumColor(pct: number) {
   if (pct >= 30) return "text-red-500";
@@ -21,10 +25,24 @@ export default function StorageMetricsPage() {
   const [error, setError] = useState("");
   const [results, setResults] = useState<any>(null);
 
+  // Selection state
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Maintenance action state
+  const [actionLoading, setActionLoading] = useState("");
+  const [actionResult, setActionResult] = useState<any>(null);
+  const [retentionHours, setRetentionHours] = useState(168);
+
+  // Predictive Optimization state
+  const [poCheck, setPoCheck] = useState<any>(null);
+
   async function analyze() {
     setLoading(true);
     setError("");
     setResults(null);
+    setSelected(new Set());
+    setActionResult(null);
+    setPoCheck(null);
     try {
       const data = await api.post("/storage-metrics", {
         source_catalog: catalog,
@@ -32,10 +50,60 @@ export default function StorageMetricsPage() {
         table_filter: table || undefined,
       });
       setResults(data);
+      // Check predictive optimization in background
+      try {
+        const po = await api.post("/check-predictive-optimization", { source_catalog: catalog });
+        setPoCheck(po);
+      } catch {}
     } catch (e: any) {
       setError(e.message || "Storage metrics analysis failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function toggleSelect(key: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === tables.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(tables.map((t: any) => `${t.schema}.${t.table}`)));
+    }
+  }
+
+  function getSelectedTables() {
+    return tables
+      .filter((t: any) => selected.has(`${t.schema}.${t.table}`))
+      .map((t: any) => ({ schema: t.schema, table: t.table }));
+  }
+
+  async function runAction(action: "optimize" | "vacuum") {
+    const selectedTables = getSelectedTables();
+    if (!selectedTables.length) return;
+
+    const label = action === "optimize" ? "OPTIMIZE" : "VACUUM";
+    if (!confirm(`Run ${label} on ${selectedTables.length} table(s)?`)) return;
+
+    setActionLoading(action);
+    setActionResult(null);
+    try {
+      const data = await api.post(`/${action}`, {
+        source_catalog: catalog,
+        tables: selectedTables,
+        retention_hours: retentionHours,
+      });
+      setActionResult(data);
+    } catch (e: any) {
+      setActionResult({ operation: label, error: e.message });
+    } finally {
+      setActionLoading("");
     }
   }
 
@@ -74,7 +142,12 @@ export default function StorageMetricsPage() {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Storage Metrics</h1>
         <p className="text-muted-foreground mt-1">
-          Analyze storage breakdown — active, vacuumable, and time-travel data per table
+          Analyze per-table storage breakdown using <code className="text-xs bg-muted px-1 py-0.5 rounded">ANALYZE TABLE ... COMPUTE STORAGE METRICS</code>.
+          Shows active data, vacuumable bytes (reclaimable via VACUUM), and time-travel/tombstone storage.
+          Helps identify tables consuming excess storage and optimize costs.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Requires <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-compute-storage-metrics" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Runtime 18.0+</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-vacuum" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">VACUUM</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-optimize" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">OPTIMIZE</a> &middot; <a href="https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Predictive Optimization</a>
         </p>
       </div>
 
@@ -131,6 +204,44 @@ export default function StorageMetricsPage() {
         </Card>
       )}
 
+      {results && !results.runtime_error && results.tables?.some((t: any) => t.note) && (
+        <Card className="border-blue-500/30 bg-card">
+          <CardContent className="pt-6 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-blue-500 font-medium">Using DESCRIBE DETAIL fallback</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                ANALYZE TABLE ... COMPUTE STORAGE METRICS returned no data. Showing total size from DESCRIBE DETAIL instead.
+                Vacuumable and time-travel breakdown requires Databricks Runtime 18.0+.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Predictive Optimization Warning */}
+      {poCheck?.enabled && (
+        <Card className="border-blue-500/30 bg-card">
+          <CardContent className="pt-6 flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-blue-500 font-medium">Predictive Optimization is enabled</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Databricks may automatically run OPTIMIZE and VACUUM on managed tables in this catalog.
+                Manual execution may be unnecessary.{" "}
+                <a href="https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Learn more</a>
+              </p>
+              {poCheck.tables_with_po?.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tables with PO: {poCheck.tables_with_po.slice(0, 5).join(", ")}
+                  {poCheck.tables_with_po.length > 5 && ` +${poCheck.tables_with_po.length - 5} more`}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {results?.num_errors > 0 && !results?.runtime_error && (
         <Card className="border-yellow-500/30 bg-card">
           <CardContent className="pt-6 flex items-start gap-3">
@@ -141,6 +252,39 @@ export default function StorageMetricsPage() {
                 These tables may require Runtime 18.0+ or may have unsupported formats.
                 Tables with errors show 0 B in the results below.
               </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Action Result */}
+      {actionResult && (
+        <Card className={`border-${actionResult.error ? "red" : "green"}-500/30 bg-card`}>
+          <CardContent className="pt-6 flex items-start gap-3">
+            {actionResult.error ? (
+              <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <p className={`font-medium ${actionResult.error ? "text-red-500" : "text-green-500"}`}>
+                {actionResult.operation} {actionResult.error ? "Failed" : "Complete"}
+              </p>
+              {actionResult.error ? (
+                <p className="text-sm text-muted-foreground mt-1">{actionResult.error}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-1">
+                  {actionResult.succeeded} succeeded, {actionResult.failed} failed out of {actionResult.total} table(s)
+                  {actionResult.dry_run && " (dry run)"}
+                </p>
+              )}
+              {actionResult.results?.filter((r: any) => r.status === "failed").length > 0 && (
+                <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                  {actionResult.results.filter((r: any) => r.status === "failed").map((r: any, i: number) => (
+                    <p key={i} className="text-red-400">{r.schema}.{r.table}: {r.error}</p>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -212,15 +356,47 @@ export default function StorageMetricsPage() {
             </Card>
           )}
 
-          {/* Detail Table */}
+          {/* Detail Table with Selection */}
           {tables.length > 0 && (
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-3">
                   <CardTitle className="text-lg">
                     All Tables ({tables.length})
                   </CardTitle>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center flex-wrap">
+                    {/* Action buttons — visible when tables are selected */}
+                    {selected.size > 0 && (
+                      <>
+                        <Badge variant="secondary" className="text-xs">{selected.size} selected</Badge>
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => runAction("optimize")}
+                          disabled={!!actionLoading}
+                        >
+                          {actionLoading === "optimize" ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+                          OPTIMIZE
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline" size="sm"
+                            onClick={() => runAction("vacuum")}
+                            disabled={!!actionLoading}
+                          >
+                            {actionLoading === "vacuum" ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1.5" />}
+                            VACUUM
+                          </Button>
+                          <Input
+                            type="number"
+                            value={retentionHours}
+                            onChange={(e) => setRetentionHours(parseInt(e.target.value) || 168)}
+                            className="w-16 h-8 text-xs"
+                            title="Retention hours"
+                          />
+                          <span className="text-xs text-muted-foreground">hrs</span>
+                        </div>
+                      </>
+                    )}
                     <Button variant="outline" size="sm" onClick={exportCSV}>
                       <Download className="h-3.5 w-3.5 mr-1.5" />CSV
                     </Button>
@@ -235,6 +411,14 @@ export default function StorageMetricsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-background">
                       <tr className="border-b border-border">
+                        <th className="py-2 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            checked={selected.size === tables.length && tables.length > 0}
+                            onChange={toggleSelectAll}
+                            className="rounded border-border"
+                          />
+                        </th>
                         <th className="text-left py-2 px-3 font-medium text-foreground">Schema</th>
                         <th className="text-left py-2 px-3 font-medium text-foreground">Table</th>
                         <th className="text-right py-2 px-3 font-medium text-foreground">Total</th>
@@ -248,28 +432,45 @@ export default function StorageMetricsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {tables.map((row: any, i: number) => (
-                        <tr key={i} className={`border-b border-border ${row.error ? "opacity-60" : ""}`}>
-                          <td className="py-2 px-3 text-muted-foreground">{row.schema}</td>
-                          <td className="py-2 px-3 font-medium text-foreground">{row.table}</td>
-                          <td className="py-2 px-3 text-right text-foreground">{row.total_display}</td>
-                          <td className="py-2 px-3 text-right text-foreground">{row.active_display}</td>
-                          <td className="py-2 px-3 text-right text-yellow-500">{row.vacuumable_display}</td>
-                          <td className="py-2 px-3 text-right">
-                            <span className={vacuumColor(row.vacuumable_pct)}>{row.vacuumable_pct}%</span>
-                          </td>
-                          <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_display}</td>
-                          <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_pct}%</td>
-                          <td className="py-2 px-3 text-right text-muted-foreground">{row.num_total_files?.toLocaleString()}</td>
-                          <td className="py-2 px-3 text-center">
-                            {row.error ? (
-                              <span title={row.error}><XCircle className="h-4 w-4 text-red-500 inline" /></span>
-                            ) : (
-                              <span className="text-green-500 text-xs">OK</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {tables.map((row: any, i: number) => {
+                        const key = `${row.schema}.${row.table}`;
+                        const isSelected = selected.has(key);
+                        return (
+                          <tr
+                            key={i}
+                            className={`border-b border-border cursor-pointer ${row.error ? "opacity-60" : ""} ${isSelected ? "bg-blue-500/5" : "hover:bg-muted/30"}`}
+                            onClick={() => toggleSelect(key)}
+                          >
+                            <td className="py-2 px-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelect(key)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border-border"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-muted-foreground">{row.schema}</td>
+                            <td className="py-2 px-3 font-medium text-foreground">{row.table}</td>
+                            <td className="py-2 px-3 text-right text-foreground">{row.total_display}</td>
+                            <td className="py-2 px-3 text-right text-foreground">{row.active_display}</td>
+                            <td className="py-2 px-3 text-right text-yellow-500">{row.vacuumable_display}</td>
+                            <td className="py-2 px-3 text-right">
+                              <span className={vacuumColor(row.vacuumable_pct)}>{row.vacuumable_pct}%</span>
+                            </td>
+                            <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_display}</td>
+                            <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_pct}%</td>
+                            <td className="py-2 px-3 text-right text-muted-foreground">{row.num_total_files?.toLocaleString()}</td>
+                            <td className="py-2 px-3 text-center">
+                              {row.error ? (
+                                <span title={row.error}><XCircle className="h-4 w-4 text-red-500 inline" /></span>
+                              ) : (
+                                <span className="text-green-500 text-xs">OK</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

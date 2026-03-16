@@ -56,7 +56,10 @@ export default function RollbackPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Rollback</h1>
-          <p className="text-muted-foreground mt-1">Undo previous clone operations</p>
+          <p className="text-muted-foreground mt-1">Restore destination tables to their pre-clone state using Delta time travel. Browse rollback snapshots, preview changes, and undo with one click.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/history" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta time travel</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-restore" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">RESTORE TABLE</a>
+          </p>
         </div>
         <Button onClick={loadLogs} disabled={loading} variant="outline">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />

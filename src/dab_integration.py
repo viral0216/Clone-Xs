@@ -86,7 +86,7 @@ def generate_dab_bundle(
             "description": "Run pre-flight checks before cloning",
             "python_wheel_task": {
                 "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
+                "entry_point": "clxs",
                 "parameters": [
                     "preflight",
                     "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
@@ -103,7 +103,7 @@ def generate_dab_bundle(
             "description": f"Clone {source} -> {dest}",
             "python_wheel_task": {
                 "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
+                "entry_point": "clxs",
                 "parameters": [
                     "clone",
                     "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
@@ -122,7 +122,7 @@ def generate_dab_bundle(
             "description": "Validate the clone with row counts",
             "python_wheel_task": {
                 "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
+                "entry_point": "clxs",
                 "parameters": [
                     "validate",
                     "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",

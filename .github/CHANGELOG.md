@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-03-17
+
+### Added
+- **PII Detection Engine Overhaul** — complete rewrite of the PII scanner with multi-phase detection, structural validators, cross-column correlation, Unity Catalog tag integration, scan history tracking, and remediation workflows
+- **Structural Validators** — new `src/pii_validators.py` with Luhn checksum (credit cards), IBAN mod-97 validation, and IP address octet verification. Post-regex validators reduce false positives by requiring both regex match AND structural validity
+- **Weighted Confidence Scoring** — numeric confidence scores (0.0–1.0) replace simple high/medium labels. Column name matches score 0.85, data sampling scores scale with match rate (+0.15 validator bonus), UC tag detections score 0.95. String labels preserved for backward compatibility
+- **Cross-column Correlation** — detections grouped by table; co-occurring PII types trigger confidence boosts and flags: `identity_cluster` (name+DOB+address, +0.10), `identity_partial` (name+DOB, +0.05), `compensation_risk` (name+financial, +0.05), `credential_pair` (credential+email, +0.10)
+- **Expanded Patterns** — 5 new value-level regex patterns (IBAN, US passport, Aadhaar, UK NINO, MAC address) and 2 new column name patterns (MAC_ADDRESS, VIN) with corresponding masking mappings
+- **Custom Patterns** — user-defined PII patterns via `pii_detection` config key in `clone_config.yaml`. Supports `disabled_patterns`, `custom_column_patterns`, `custom_value_patterns`, `masking_overrides`, and tunable `sample_size`/`match_threshold`. Configurable from both YAML and Web UI
+- **Unity Catalog Tag Detection** — new `detect_pii_from_uc_tags()` reads `information_schema.column_tags` for known PII tag names (`pii_type`, `pii`, `sensitive`, `classification`), maps values to PII types with 0.95 confidence. Enabled via `--read-uc-tags` CLI flag
+- **PII Tagging** — new `src/pii_tagging.py` with `apply_pii_tags()` that applies `ALTER TABLE ... ALTER COLUMN ... SET TAGS` to tag detected PII columns in Unity Catalog. Supports `--tag-prefix`, `min_confidence` threshold, and dry-run mode. CLI flags: `--apply-tags`, `--tag-prefix`
+- **Scan History & Tracking** — new `src/pii_scan_store.py` with `PIIScanStore` class storing scan results in three Delta tables (`clone_audit.pii.pii_scans`, `pii_detections`, `pii_remediation`). Methods: `save_scan`, `get_scan_history`, `get_scan_detections`, `diff_scans`, `update_remediation`. Enabled via `--save-history` CLI flag
+- **Scan Diff** — compare two historical scans to see new, removed, and changed PII detections. Available via API (`GET /pii-scans/diff`) and Web UI "Compare Selected" button
+- **Remediation Tracking** — track PII column status through a workflow: detected → reviewed → masked → accepted → false_positive. Web UI Remediation tab with inline status updates
+- **Optional Presidio NLP** — new `src/pii_nlp.py` with `detect_pii_with_presidio()` for NLP-based entity detection. Install via `pip install 'clone-xs[nlp]'`. Maps Presidio entities (PERSON, EMAIL_ADDRESS, US_SSN, etc.) to Clone-Xs PII types
+- **7 New API Endpoints** — `GET /pii-patterns` (effective patterns), `GET /pii-scans` (history), `GET /pii-scans/{id}` (detail), `GET /pii-scans/diff` (compare), `POST /pii-tag` (apply UC tags), `POST /pii-remediation` (update status), `GET /pii-remediation` (list statuses)
+- **PII UI Enhancements** — tabbed interface (Current Scan / Scan History / Remediation), collapsible Custom Patterns editor with regex tester, "UC Tags" and "Save History" checkboxes, "Apply UC Tags (Dry Run)" button, detection method column, correlation flags column. New components: `PiiHistory.tsx`, `PiiRemediation.tsx`, `PiiPatternEditor.tsx`
+- **4 New CLI Flags** — `--read-uc-tags`, `--save-history`, `--apply-tags`, `--tag-prefix` on `pii-scan` command
+- **TUI Enhancements** — UC tag reading prompt, post-scan "Apply PII tags to Unity Catalog?" prompt
+- **PII Documentation** — comprehensive Docusaurus guide page (`docs/guide/pii-detection.md`) with 15 sections covering all detection methods, validators, confidence scoring, correlation, custom patterns, UC tagging, scan history, remediation, API reference, CLI reference, and configuration. Standalone HTML reference page (`docs/PII_Detection_Reference.html`)
+
+### Fixed
+- **PII scan return key** — fixed `result["total_pii_columns"]` → `result["summary"]["pii_columns_found"]` in both `cmd_pii_scan` (`src/main.py`) and `_tui_pii_scan` (`src/tui.py`)
+
+### Changed
+- **PII scan deduplication** — now prefers highest-confidence detection when the same column is detected by multiple methods (previously kept first seen)
+- **Governance docs** — PII section in `governance.md` condensed to a summary with link to the new dedicated PII Detection & Protection guide
+
 ## [0.5.1] - 2026-03-17
 
 ### Added

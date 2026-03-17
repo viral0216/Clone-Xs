@@ -3,7 +3,14 @@
 from fastapi import APIRouter, Depends, Request
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.management import PIIScanRequest, PreflightRequest, RollbackRequest, SyncRequest
+from api.models.management import (
+    PIIRemediationRequest,
+    PIIScanRequest,
+    PIITagRequest,
+    PreflightRequest,
+    RollbackRequest,
+    SyncRequest,
+)
 from api.queue.job_manager import JobManager
 
 router = APIRouter()
@@ -56,11 +63,141 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
     from src.pii_detection import scan_catalog_for_pii
     config = await get_app_config()
     wid = req.warehouse_id or config["sql_warehouse_id"]
+
+    # Merge request pii_config with file-based config (request overrides file)
+    pii_config = config.get("pii_detection") or {}
+    if req.pii_config:
+        pii_config.update(req.pii_config)
+
+    state_catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
     result = scan_catalog_for_pii(
         client, wid, req.source_catalog, req.exclude_schemas,
         sample_data=req.sample_data, max_workers=req.max_workers,
+        pii_config=pii_config or None,
+        read_uc_tags=req.read_uc_tags,
+        save_history=True,
+        state_catalog=state_catalog,
     )
     return result
+
+
+@router.get("/pii-patterns")
+async def get_pii_patterns():
+    """Return the effective PII detection patterns (built-in + config)."""
+    from src.pii_detection import (
+        COLUMN_NAME_PATTERNS, VALUE_PATTERNS, SUGGESTED_MASKING, build_effective_patterns,
+    )
+    config = await get_app_config()
+    pii_config = config.get("pii_detection")
+    col_patterns, val_patterns, masking, threshold, sample_size = build_effective_patterns(pii_config)
+    return {
+        "column_patterns": {v: k for k, v in col_patterns.items()},
+        "value_patterns": val_patterns,
+        "masking": masking,
+        "match_threshold": threshold,
+        "sample_size": sample_size,
+        "built_in_types": list(COLUMN_NAME_PATTERNS.values()),
+    }
+
+
+@router.get("/pii-scans")
+async def get_pii_scan_history(catalog: str, limit: int = 20, client=Depends(get_db_client)):
+    """Get PII scan history for a catalog."""
+    from src.pii_scan_store import PIIScanStore
+    config = await get_app_config()
+    wid = config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    store = PIIScanStore(client, wid, state_catalog=sc)
+    return store.get_scan_history(catalog, limit=limit)
+
+
+@router.get("/pii-scans/{scan_id}")
+async def get_pii_scan_detail(scan_id: str, client=Depends(get_db_client)):
+    """Get full details for a specific PII scan."""
+    from src.pii_scan_store import PIIScanStore
+    config = await get_app_config()
+    wid = config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    store = PIIScanStore(client, wid, state_catalog=sc)
+    detections = store.get_scan_detections(scan_id)
+    return {"scan_id": scan_id, "detections": detections}
+
+
+@router.get("/pii-scans/diff")
+async def diff_pii_scans(scan_a: str, scan_b: str, client=Depends(get_db_client)):
+    """Compare two PII scans and return differences."""
+    from src.pii_scan_store import PIIScanStore
+    config = await get_app_config()
+    wid = config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    store = PIIScanStore(client, wid, state_catalog=sc)
+    return store.diff_scans(scan_a, scan_b)
+
+
+@router.post("/pii-tag")
+async def apply_pii_tags(req: PIITagRequest, client=Depends(get_db_client)):
+    """Apply PII tags to detected columns in Unity Catalog."""
+    from src.pii_tagging import apply_pii_tags as do_tag
+    from src.pii_scan_store import PIIScanStore
+    from src.pii_detection import scan_catalog_for_pii
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+
+    # Get detections from a specific scan or run a fresh scan
+    if req.scan_id:
+        store = PIIScanStore(client, wid, state_catalog=sc)
+        raw_dets = store.get_scan_detections(req.scan_id)
+        # Remap keys from store format to detection format
+        detections = [{
+            "schema": d.get("schema_name", ""),
+            "table": d.get("table_name", ""),
+            "column": d.get("column_name", ""),
+            "pii_type": d.get("pii_type", ""),
+            "confidence_score": d.get("confidence_score", 0),
+        } for d in raw_dets]
+    else:
+        result = scan_catalog_for_pii(client, wid, req.source_catalog)
+        detections = result.get("columns", [])
+
+    return do_tag(
+        client, wid, req.source_catalog, detections,
+        tag_prefix=req.tag_prefix,
+        dry_run=req.dry_run,
+        min_confidence=req.min_confidence,
+    )
+
+
+@router.post("/pii-remediation")
+async def update_pii_remediation(req: PIIRemediationRequest, client=Depends(get_db_client)):
+    """Update remediation status for a PII column."""
+    from src.pii_scan_store import PIIScanStore
+    config = await get_app_config()
+    wid = config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    store = PIIScanStore(client, wid, state_catalog=sc)
+    store.init_tables()
+    store.update_remediation(
+        catalog=req.catalog,
+        schema_name=req.schema_name,
+        table_name=req.table_name,
+        column_name=req.column_name,
+        pii_type=req.pii_type,
+        status=req.status,
+        notes=req.notes,
+    )
+    return {"status": "ok"}
+
+
+@router.get("/pii-remediation")
+async def get_pii_remediation(catalog: str, client=Depends(get_db_client)):
+    """Get remediation statuses for a catalog."""
+    from src.pii_scan_store import PIIScanStore
+    config = await get_app_config()
+    wid = config["sql_warehouse_id"]
+    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    store = PIIScanStore(client, wid, state_catalog=sc)
+    return store.get_remediation_status(catalog)
 
 
 @router.post("/sync")
@@ -293,6 +430,55 @@ async def get_audit_log(client=Depends(get_db_client)):
         return []
 
 
+@router.get("/audit/sync-history")
+async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, client=Depends(get_db_client)):
+    """Get incremental sync history for a source→dest pair from Delta tables."""
+    try:
+        from src.client import execute_sql
+        from src.run_logs import get_run_logs_fqn
+        from src.audit_trail import get_audit_table_fqn
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
+
+        # Try run_logs first (has job_type field)
+        run_fqn = get_run_logs_fqn(config)
+        audit_fqn = get_audit_table_fqn(config)
+
+        queries = [
+            f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+                       clone_type, status, started_at, completed_at,
+                       duration_seconds, tables_cloned, tables_failed,
+                       error_message, user_name
+                FROM {run_fqn}
+                WHERE job_type IN ('sync', 'incremental_sync', 'incremental')
+                  {f"AND source_catalog = '{source}'" if source else ""}
+                  {f"AND destination_catalog = '{dest}'" if dest else ""}
+                ORDER BY started_at DESC LIMIT {limit}""",
+            f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                       source_catalog, destination_catalog,
+                       clone_type, status, started_at, completed_at,
+                       duration_seconds, tables_cloned, tables_failed,
+                       error_message, user_name
+                FROM {audit_fqn}
+                WHERE (operation_type IN ('sync', 'incremental_sync', 'incremental')
+                       OR clone_mode = 'incremental')
+                  {f"AND source_catalog = '{source}'" if source else ""}
+                  {f"AND destination_catalog = '{dest}'" if dest else ""}
+                ORDER BY started_at DESC LIMIT {limit}""",
+        ]
+
+        for sql in queries:
+            try:
+                rows = execute_sql(client, wid, sql)
+                if rows:
+                    return rows
+            except Exception:
+                continue
+        return []
+    except Exception:
+        return []
+
+
 @router.post("/audit/init")
 async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     """Initialize audit and run log Delta tables in Unity Catalog."""
@@ -393,6 +579,17 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         tables_created.append(rollback_fqn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create rollback table: {e}")
+    # Create PII scan tables
+    try:
+        from src.pii_scan_store import PIIScanStore
+        catalog = req.get("catalog", "clone_audit")
+        pii_store = PIIScanStore(client, wid, state_catalog=catalog)
+        pii_store.init_tables()
+        tables_created.append(f"{catalog}.pii.pii_scans")
+        tables_created.append(f"{catalog}.pii.pii_detections")
+        tables_created.append(f"{catalog}.pii.pii_remediation")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create PII tables: {e}")
     # Describe the tables we just created
     schemas = {}
     for fqn in tables_created:
@@ -429,6 +626,9 @@ async def describe_audit_tables(req: dict, client=Depends(get_db_client)):
         f"{catalog}.{schema}.clone_operations",
         f"{catalog}.{schema}.rollback_logs",
         f"{catalog}.metrics.clone_metrics",
+        f"{catalog}.pii.pii_scans",
+        f"{catalog}.pii.pii_detections",
+        f"{catalog}.pii.pii_remediation",
     ]
     schemas = {}
     from src.client import execute_sql
@@ -457,15 +657,21 @@ async def get_job_run_log(job_id: str, client=Depends(get_db_client)):
 
 
 @router.post("/compliance")
-async def generate_compliance_report(req: dict, client=Depends(get_db_client)):
+async def compliance_report(req: dict, client=Depends(get_db_client)):
     """Generate a compliance report."""
-    from src.compliance import generate_report
+    from src.compliance_api import generate_compliance_report_api
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     try:
-        return generate_report(client, wid, req.get("catalog", ""), req.get("report_type", "data_governance"))
+        return generate_compliance_report_api(
+            client, wid, config,
+            catalog=req.get("catalog", ""),
+            report_type=req.get("report_type", "data_governance"),
+            from_date=req.get("from_date"),
+            to_date=req.get("to_date"),
+        )
     except Exception as e:
-        return {"error": str(e), "sections": [], "score": 0}
+        return {"error": str(e), "sections": [], "score": 0, "status": "ERROR"}
 
 
 @router.get("/templates")
@@ -876,6 +1082,25 @@ async def preview_data(req: dict, client=Depends(get_db_client)):
         )
     except Exception as e:
         return {"source_rows": [], "dest_rows": [], "error": str(e)}
+
+
+@router.post("/execute-sql")
+async def execute_sql_endpoint(req: dict, client=Depends(get_db_client)):
+    """Execute arbitrary SQL via the configured warehouse (for testing/admin)."""
+    from fastapi import HTTPException
+    config = await get_app_config()
+    wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
+    sql = req.get("sql", "")
+    if not sql:
+        raise HTTPException(status_code=400, detail="sql is required")
+    if not wid:
+        raise HTTPException(status_code=400, detail="No warehouse configured")
+    try:
+        from src.client import execute_sql
+        rows = execute_sql(client, wid, sql)
+        return rows if rows else []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/warehouse/start")

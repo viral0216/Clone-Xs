@@ -88,8 +88,27 @@ function LogDetailPanel({ jobId }: { jobId: string }) {
   if (loading) return <div className="py-4 text-center text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading logs...</div>;
   if (!detail || detail.error) return <div className="py-4 text-center text-muted-foreground text-sm">No detailed logs available</div>;
 
-  const logLines = detail.log_lines || [];
-  const resultJson = detail.result_json ? JSON.parse(detail.result_json) : null;
+  // log_lines can be: array, JSON string, or comma-separated string from Delta
+  let logLines: string[] = [];
+  if (Array.isArray(detail.log_lines)) {
+    logLines = detail.log_lines;
+  } else if (typeof detail.log_lines === "string") {
+    try {
+      const parsed = JSON.parse(detail.log_lines);
+      logLines = Array.isArray(parsed) ? parsed : [detail.log_lines];
+    } catch {
+      logLines = detail.log_lines.split("\n").filter(Boolean);
+    }
+  }
+
+  let resultJson = null;
+  if (detail.result_json) {
+    try {
+      resultJson = typeof detail.result_json === "string" ? JSON.parse(detail.result_json) : detail.result_json;
+    } catch {
+      resultJson = null;
+    }
+  }
 
   return (
     <div className="space-y-3">

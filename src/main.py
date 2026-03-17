@@ -1112,10 +1112,27 @@ def cmd_pii_scan(args):
         client, config["sql_warehouse_id"], config["source_catalog"],
         config.get("exclude_schemas", []),
         sample_data=args.sample_data, max_workers=config.get("max_workers", 4),
+        pii_config=config.get("pii_detection"),
+        read_uc_tags=getattr(args, "read_uc_tags", False),
+        save_history=getattr(args, "save_history", False),
     )
     _save_cli_run_log(client, config, "pii-scan", result, start_time)
 
-    if result["total_pii_columns"] > 0 and not args.no_exit_code:
+    # Apply UC tags if requested
+    if getattr(args, "apply_tags", False):
+        from src.pii_tagging import apply_pii_tags
+        tag_result = apply_pii_tags(
+            client, config["sql_warehouse_id"], config["source_catalog"],
+            result.get("columns", []),
+            tag_prefix=getattr(args, "tag_prefix", "pii"),
+            min_confidence=0.7,
+        )
+        logger.info(
+            f"PII tagging: {tag_result['tagged']} tagged, "
+            f"{tag_result['skipped']} skipped, {tag_result['errors']} errors"
+        )
+
+    if result["summary"]["pii_columns_found"] > 0 and not args.no_exit_code:
         sys.exit(1)
 
 
@@ -2321,6 +2338,10 @@ def build_parser() -> argparse.ArgumentParser:
     pii_parser.add_argument("--source", help="Override source catalog name")
     pii_parser.add_argument("--sample-data", action="store_true", help="Sample actual data values (slower)")
     pii_parser.add_argument("--no-exit-code", action="store_true", help="Don't exit with error if PII found")
+    pii_parser.add_argument("--read-uc-tags", action="store_true", help="Read UC column tags to enhance detection")
+    pii_parser.add_argument("--save-history", action="store_true", help="Save scan results to Delta tables")
+    pii_parser.add_argument("--apply-tags", action="store_true", help="Apply PII tags to Unity Catalog after scan")
+    pii_parser.add_argument("--tag-prefix", default="pii", help="Prefix for UC tags (default: pii)")
     pii_parser.set_defaults(func=cmd_pii_scan)
 
     # --- policy-check command ---

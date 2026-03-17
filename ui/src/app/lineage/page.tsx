@@ -636,6 +636,8 @@ export default function LineagePage() {
           columns={tableColumns}
           searchable searchPlaceholder="Search lineage entries..."
           pageSize={25}
+          draggableColumns
+          tableId="lineage-tables"
         />
       )}
 
@@ -646,6 +648,8 @@ export default function LineagePage() {
           columns={columnColumns}
           searchable searchPlaceholder="Search column lineage..."
           pageSize={25}
+          draggableColumns
+          tableId="lineage-columns"
         />
       )}
 

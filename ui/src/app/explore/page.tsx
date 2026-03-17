@@ -942,6 +942,7 @@ export default function ExplorePage() {
           {/* ═══ All Tables Tab ═══ */}
           {activeTab === "tables" && (
             <DataTable data={tables} columns={tableColumns} searchable searchPlaceholder="Filter tables..." pageSize={25} emptyMessage="No tables found"
+              draggableColumns tableId="explore-tables"
               onRowClick={(row) => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
           )}
 
@@ -969,7 +970,7 @@ export default function ExplorePage() {
                       { key: "table", label: "Table", sortable: true, render: (v: string, r: any) => <span className="text-sm font-medium">{v || r.table_name || "—"}</span> },
                       ...(searchColumns ? [{ key: "column", label: "Column", sortable: true, render: (v: string, r: any) => <Badge variant="secondary" className="text-xs font-mono">{v || r.column_name || "—"}</Badge> }] : []),
                       { key: "table_type", label: "Type", sortable: true, render: (v: string, r: any) => typeBadge(v || r.type || r.data_type || "TABLE") },
-                    ]} searchable={false} pageSize={25} />
+                    ]} searchable={false} pageSize={25} draggableColumns tableId="explore-search" />
                   </>
                 )}
                 {!search.data && !search.isPending && (
@@ -1084,6 +1085,7 @@ export default function ExplorePage() {
                 { key: "num_columns", label: "Columns", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                 { key: "row_count", label: "Rows", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs font-mono">{v ? formatNumber(v) : "—"}</span> },
               ]} searchable searchPlaceholder="Filter views..." pageSize={25} emptyMessage="No views found"
+                draggableColumns tableId="explore-views"
                 onRowClick={(row) => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
             )
           )}
@@ -1116,7 +1118,7 @@ export default function ExplorePage() {
                 )},
                 { key: "full_name", label: "Full Name", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground font-mono truncate">{v || "—"}</span> },
                 { key: "data_type", label: "Return Type", sortable: true, render: (v: string) => v ? <Badge variant="secondary" className="text-[10px] font-mono">{v}</Badge> : <span className="text-xs text-muted-foreground">—</span> },
-              ]} searchable searchPlaceholder="Filter functions..." pageSize={25} emptyMessage="No functions found" />
+              ]} searchable searchPlaceholder="Filter functions..." pageSize={25} emptyMessage="No functions found" draggableColumns tableId="explore-functions" />
             )
           )}
 
@@ -1152,7 +1154,7 @@ export default function ExplorePage() {
                   </Badge>
                 )},
                 { key: "path", label: "Storage Path", sortable: false, render: (v: string) => <span className="text-xs text-muted-foreground font-mono truncate max-w-[300px] block">{v || "—"}</span> },
-              ]} searchable searchPlaceholder="Filter volumes..." pageSize={25} emptyMessage="No volumes found" />
+              ]} searchable searchPlaceholder="Filter volumes..." pageSize={25} emptyMessage="No volumes found" draggableColumns tableId="explore-volumes" />
             )
           )}
 

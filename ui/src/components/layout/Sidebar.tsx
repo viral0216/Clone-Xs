@@ -177,8 +177,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <Icon
-                      className="h-5 w-5 shrink-0"
-                      style={{ color: active ? '#1A73E8' : '#5F6368' }}
+                      className={`h-5 w-5 shrink-0 ${active ? 'text-[#1A73E8]' : 'text-[#5F6368]'}`}
                     />
                     <span className="truncate">{item.label}</span>
                   </Link>

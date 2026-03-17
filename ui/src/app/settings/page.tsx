@@ -921,6 +921,9 @@ function AuditSettings() {
           <p className="text-sm font-mono">{auditCatalog}.{auditSchema}.clone_operations</p>
           <p className="text-sm font-mono">{auditCatalog}.{auditSchema}.rollback_logs</p>
           <p className="text-sm font-mono">{auditCatalog}.metrics.clone_metrics</p>
+          <p className="text-sm font-mono">{auditCatalog}.pii.pii_scans</p>
+          <p className="text-sm font-mono">{auditCatalog}.pii.pii_detections</p>
+          <p className="text-sm font-mono">{auditCatalog}.pii.pii_remediation</p>
         </div>
 
         <div className="flex gap-2">

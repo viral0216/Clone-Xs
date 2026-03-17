@@ -1,13 +1,44 @@
 // @ts-nocheck
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 
 /**
- * Global job state that persists across page navigation.
+ * Global job state that persists across page navigation AND browser refresh.
  *
  * Each page stores its results under a unique key (e.g. "pii", "preflight", "diff").
- * When a user navigates away and comes back, the page reads from this context
- * instead of starting fresh.
+ * State is mirrored to sessionStorage so a page refresh restores previous results.
+ * Closing the tab clears the cache automatically (sessionStorage behavior).
  */
+
+const STORAGE_KEY = "clonexs_job_state";
+const MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes — discard stale results on hydration
+
+function hydrateFromSession(): Record<string, JobEntry> {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, JobEntry>;
+    const now = Date.now();
+    // Filter out stale entries and reset stuck "loading" jobs
+    const cleaned: Record<string, JobEntry> = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      const ts = entry.completedAt || entry.startedAt;
+      if (ts && now - new Date(ts).getTime() > MAX_AGE_MS) continue; // too old
+      if (entry.status === "loading") continue; // was in-flight when page closed
+      cleaned[key] = entry;
+    }
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function persistToSession(jobs: Record<string, JobEntry>) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(jobs));
+  } catch {
+    // storage full or unavailable — silently ignore
+  }
+}
 
 export interface JobEntry {
   /** Current status: idle, loading, success, error */
@@ -42,7 +73,17 @@ interface JobContextValue {
 const JobContext = createContext<JobContextValue | null>(null);
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
-  const [jobs, setJobs] = useState<Record<string, JobEntry>>({});
+  const [jobs, setJobs] = useState<Record<string, JobEntry>>(hydrateFromSession);
+  const isFirstRender = useRef(true);
+
+  // Sync to sessionStorage whenever jobs change (skip initial hydration)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    persistToSession(jobs);
+  }, [jobs]);
 
   const getJob = useCallback(
     (key: string) => jobs[key] || null,

@@ -9,6 +9,64 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v1.6.0 — PII Detection Overhaul
+
+### PII Detection Engine
+- Multi-phase detection: column name regex + data value sampling + Unity Catalog tag reading
+- **Structural validators** — Luhn checksum (credit cards), IBAN mod-97, IP octet range validation reduce false positives
+- **Weighted confidence scoring** — numeric 0.0–1.0 scores: column name (0.85), sampling (match rate + validator bonus), UC tags (0.95)
+- **Cross-column correlation** — tables with co-occurring PII types (e.g., name + DOB + address) flagged as `identity_cluster` with confidence boosts
+- **5 new value patterns** — IBAN, US passport, Aadhaar, UK NINO, MAC address
+- **2 new column patterns** — MAC_ADDRESS, VIN
+
+### Custom Patterns
+- User-defined PII patterns via `pii_detection` config key in YAML
+- Disable built-in patterns, add custom column/value patterns, override masking strategies
+- Web UI pattern editor with regex tester and enable/disable toggles
+
+### Unity Catalog Integration
+- Read existing UC column tags (`pii_type`, `sensitive`, `classification`) to enhance detection
+- Auto-tag detected PII columns with `ALTER TABLE ... ALTER COLUMN ... SET TAGS`
+- Dry-run mode, configurable tag prefix and minimum confidence threshold
+
+### Scan History & Remediation
+- Scan results persisted to 3 Delta tables (`pii_scans`, `pii_detections`, `pii_remediation`)
+- Compare two scans to see new, removed, and changed detections
+- Remediation workflow: detected → reviewed → masked → accepted → false_positive
+
+### New API Endpoints
+- `GET /pii-patterns` — effective patterns (built-in + custom)
+- `GET /pii-scans` — scan history
+- `GET /pii-scans/{id}` — scan detail
+- `GET /pii-scans/diff` — compare two scans
+- `POST /pii-tag` — apply UC tags
+- `POST /pii-remediation` — update remediation status
+- `GET /pii-remediation` — list remediation statuses
+
+### UI Enhancements
+- Tabbed interface: Current Scan / Scan History / Remediation
+- Custom Patterns editor (collapsible panel)
+- "Apply UC Tags" button with dry-run preview
+- Detection method and correlation flags columns in results table
+
+### CLI & TUI
+- New flags: `--read-uc-tags`, `--save-history`, `--apply-tags`, `--tag-prefix`
+- TUI prompts for UC tag reading and post-scan tagging
+
+### Optional NLP
+- `pip install 'clone-xs[nlp]'` enables Microsoft Presidio entity detection
+- Maps Presidio entities to Clone-Xs PII types
+
+### Bug Fixes
+- Fixed `result["total_pii_columns"]` → `result["summary"]["pii_columns_found"]` in CLI and TUI
+
+### Documentation
+- New dedicated [PII Detection & Protection](/docs/guide/pii-detection) guide (15 sections)
+- Standalone HTML reference page (`PII_Detection_Reference.html`)
+- Governance page updated with link to new PII guide
+
+---
+
 ## v1.5.3
 
 ### True Delta Rollback with RESTORE TABLE

@@ -304,79 +304,34 @@ Schedule compliance report generation in your CI/CD pipeline or cron job to ensu
 
 > Detect and mask personally identifiable information during cloning to protect sensitive data in non-production environments.
 
-### Real-world scenario
+Clone Catalog includes a comprehensive PII detection engine with structural validators, cross-column correlation, Unity Catalog tag integration, scan history tracking, and remediation workflows.
 
-Your `production` catalog contains customer PII — emails, phone numbers, social security numbers. When cloning to `dev` for development work, PII must be masked so developers never see real customer data. Clone Catalog can scan for PII columns and apply masking rules automatically.
+For the full PII detection documentation, see the dedicated **[PII Detection & Protection](./pii-detection)** guide.
 
-### PII scanning
-
-```bash
-# Scan a catalog for PII columns
-clxs pii-scan --source production
-
-# Scan specific schemas
-clxs pii-scan --source production
-```
-
-**Output:**
-
-```
-============================================================
-PII SCAN RESULTS: production
-============================================================
-  Tables scanned:    247
-  PII columns found: 15
-
-  sales.customers:
-    email           STRING    [PII: email_address]
-    phone           STRING    [PII: phone_number]
-    address         STRING    [PII: physical_address]
-
-  hr.employees:
-    ssn             STRING    [PII: ssn]
-    personal_email  STRING    [PII: email_address]
-    date_of_birth   DATE      [PII: date_of_birth]
-    salary          DECIMAL   [PII: financial]
-
-  marketing.contacts:
-    email_address   STRING    [PII: email_address]
-    mobile          STRING    [PII: phone_number]
-============================================================
-```
-
-### Masking during clone
-
-Combine PII scanning with masking rules to automatically protect sensitive data. Define masking rules in your config YAML and reference the config file when cloning:
+### Quick example
 
 ```bash
-# Clone using a config file with masking rules defined
-clxs clone \
-  --source production --dest dev \
+# Scan with all detection methods enabled
+clxs pii-scan --source production \
+  --sample-data --read-uc-tags --save-history
+
+# Clone with masking rules to protect PII
+clxs clone --source production --dest dev \
   --config config/clone_config.yaml
 ```
 
 ```yaml
-# config/masking_rules.yaml
+# config/clone_config.yaml
 masking_rules:
-  - column: "email|email_address|personal_email|work_email"
+  - column: "email|email_address"
     strategy: "email_mask"
     match_type: "regex"
-
   - column: "ssn|social_security"
-    strategy: "redact"
-    match_type: "regex"
-
-  - column: "phone|mobile|phone_number"
-    strategy: "redact"
-    match_type: "regex"
-
-  - column: "salary|compensation"
     strategy: "hash"
     match_type: "regex"
-
-  - column: "date_of_birth"
-    strategy: "null"
-    match_type: "exact"
+  - column: "phone|mobile"
+    strategy: "partial"
+    match_type: "regex"
 ```
 
 ### Tie-in with compliance
@@ -387,6 +342,6 @@ When PII masking is applied during a clone, the compliance report automatically 
 - Which masking strategy was used
 - Whether any PII columns were left unmasked (flagged as a compliance risk)
 
-:::caution
-PII detection uses heuristic column-name matching. Always review the PII scan results and define explicit masking rules for complete coverage. Column-name detection may miss PII stored in generically named columns like `field1` or `data`.
+:::tip
+Use `clxs pii-scan --apply-tags` to automatically tag PII columns in Unity Catalog, enabling downstream data governance policies.
 :::

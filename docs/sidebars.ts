@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
         'guide/rollback',
         'guide/safety',
         'guide/governance',
+        'guide/pii-detection',
         'guide/scheduling',
         'guide/analytics',
         'guide/validation',

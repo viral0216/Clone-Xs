@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql
+from src.client import execute_sql, list_tables_sdk
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.permissions import copy_table_permissions, update_ownership
@@ -24,13 +24,8 @@ def get_tables(
     Args:
         order_by_size: "asc" (smallest first), "desc" (largest first), or None.
     """
-    sql = f"""
-        SELECT table_name, table_type
-        FROM {catalog}.information_schema.tables
-        WHERE table_schema = '{schema}'
-        AND table_type IN ('MANAGED', 'EXTERNAL')
-    """
-    tables = execute_sql(client, warehouse_id, sql)
+    all_tables = list_tables_sdk(client, catalog, schema)
+    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
 
     if order_by_size and tables:
         # Get sizes for ordering
@@ -62,12 +57,7 @@ def get_existing_tables(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> set[str]:
     """Get set of existing table names in destination schema."""
-    sql = f"""
-        SELECT table_name
-        FROM {catalog}.information_schema.tables
-        WHERE table_schema = '{schema}'
-    """
-    rows = execute_sql(client, warehouse_id, sql)
+    rows = list_tables_sdk(client, catalog, schema)
     return {row["table_name"] for row in rows}
 
 

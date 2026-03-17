@@ -247,3 +247,21 @@ async def create_snapshot(req: SnapshotRequest, client=Depends(get_db_client)):
     wid = req.warehouse_id or config["sql_warehouse_id"]
     output = create_snapshot(client, wid, req.source_catalog, req.exclude_schemas, output_path=req.output_path)
     return {"output_path": output}
+
+
+@router.post("/column-usage", summary="Column usage analytics")
+async def column_usage(req: dict, client=Depends(get_db_client)):
+    """Analyze most frequently used columns and who accesses them.
+
+    Queries system.access.column_lineage and system.query.history
+    to show top columns by usage, downstream consumers, and active users.
+    """
+    from src.column_usage import get_column_usage_summary
+    config = await get_app_config()
+    wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
+    return get_column_usage_summary(
+        client, wid,
+        catalog=req.get("catalog", ""),
+        table_fqn=req.get("table"),
+        days=req.get("days", 90),
+    )

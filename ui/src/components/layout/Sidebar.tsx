@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Briefcase, Copy, FolderTree, GitCompare, Activity,
@@ -9,10 +9,25 @@ import {
   X, Plus,
 } from "lucide-react";
 
-interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
-interface NavSection { title: string; items: NavItem[]; }
+export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
+export interface NavSection { title: string; items: NavItem[]; }
 
-const navSections: NavSection[] = [
+// Get disabled pages from localStorage
+function getDisabledPages(): Set<string> {
+  try {
+    const saved = localStorage.getItem("clxs-disabled-pages");
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  } catch { return new Set(); }
+}
+
+export function getFilteredSections(): NavSection[] {
+  const disabled = getDisabledPages();
+  return allNavSections
+    .map(s => ({ ...s, items: s.items.filter(i => !disabled.has(i.href)) }))
+    .filter(s => s.items.length > 0);
+}
+
+export const allNavSections: NavSection[] = [
   {
     title: "Overview",
     items: [
@@ -30,7 +45,6 @@ const navSections: NavSection[] = [
       { href: "/generate", label: "Generate", icon: Wand2 },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
       { href: "/templates", label: "Templates", icon: LayoutTemplate },
-      { href: "/schedule", label: "Schedule", icon: CalendarClock },
       { href: "/create-job", label: "Create Job", icon: Briefcase },
       { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
     ],
@@ -77,9 +91,21 @@ interface SidebarProps { mobileOpen?: boolean; onMobileClose?: () => void; }
 
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { pathname } = useLocation();
+  const [, forceUpdate] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(navSections.map((s) => s.title))
+    () => new Set(getFilteredSections().map((s) => s.title))
   );
+
+  // Re-render when feature toggles change from Settings page
+  useEffect(() => {
+    const handler = () => forceUpdate(n => n + 1);
+    window.addEventListener("storage", handler);
+    window.addEventListener("clxs-features-changed", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("clxs-features-changed", handler);
+    };
+  }, []);
 
   const toggleSection = (title: string) => {
     setExpandedSections((prev) => {
@@ -105,7 +131,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
-        {navSections.map((section, sIdx) => {
+        {getFilteredSections().map((section, sIdx) => {
           const isExpanded = expandedSections.has(section.title);
           return (
             <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
@@ -185,7 +211,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
-        {navSections.map((section, sIdx) => {
+        {getFilteredSections().map((section, sIdx) => {
           const isExpanded = expandedSections.has(section.title);
           return (
             <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>

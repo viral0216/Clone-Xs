@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -34,16 +34,12 @@ def get_checksum(
     """
     # Get columns if not specified
     if not columns:
-        col_sql = f"""
-            SELECT column_name
-            FROM {catalog}.information_schema.columns
-            WHERE table_schema = '{schema}'
-            AND table_name = '{table_name}'
-            ORDER BY ordinal_position
-        """
         try:
-            col_rows = execute_sql(client, warehouse_id, col_sql)
-            columns = [r["column_name"] for r in col_rows]
+            table_info = get_table_info_sdk(client, f"{catalog}.{schema}.{table_name}")
+            if table_info and table_info.get("columns"):
+                columns = [c["column_name"] for c in table_info["columns"]]
+            else:
+                columns = []
         except Exception as e:
             logger.debug(f"Could not get columns for checksum: {e}")
             return None
@@ -145,22 +141,17 @@ def validate_schema(
     use_checksum: bool = False,
 ) -> list[dict]:
     """Validate all tables in a schema."""
-    sql = f"""
-        SELECT table_name
-        FROM {dest_catalog}.information_schema.tables
-        WHERE table_schema = '{schema}'
-        AND table_type IN ('MANAGED', 'EXTERNAL')
-    """
-    tables = execute_sql(client, warehouse_id, sql)
+    all_tables = list_tables_sdk(client, dest_catalog, schema)
+    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
     results = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
                 validate_table, client, warehouse_id, source_catalog, dest_catalog,
-                schema, row["table_name"], use_checksum,
-            ): row["table_name"]
-            for row in tables
+                schema, t["table_name"], use_checksum,
+            ): t["table_name"]
+            for t in tables
         }
 
         for future in as_completed(futures):
@@ -185,20 +176,13 @@ def validate_catalog(
         logger.info("Checksum validation enabled (this may be slow for large tables)")
 
     # Get schemas from destination
-    exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-    sql = f"""
-        SELECT schema_name
-        FROM {dest_catalog}.information_schema.schemata
-        WHERE schema_name NOT IN ({exclude_clause})
-    """
-    schemas = execute_sql(client, warehouse_id, sql)
+    schema_names = list_schemas_sdk(client, dest_catalog, exclude=exclude_schemas)
 
     all_results = []
-    progress = ProgressTracker(len(schemas), "Validating")
+    progress = ProgressTracker(len(schema_names), "Validating")
     progress.start()
 
-    for schema_row in schemas:
-        schema = schema_row["schema_name"]
+    for schema in schema_names:
         results = validate_schema(
             client, warehouse_id, source_catalog, dest_catalog,
             schema, exclude_schemas, max_workers, use_checksum,

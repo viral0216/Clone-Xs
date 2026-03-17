@@ -3,6 +3,7 @@ import {
   Sun, Moon, Settings2, Wifi, WifiOff, Menu, Search,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import NotificationPanel from "@/components/NotificationPanel";
 
 const ALL_PAGES = [
   { href: "/", label: "Dashboard", keywords: "home overview" },
@@ -53,6 +54,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
     return false;
   });
   const [connected, setConnected] = useState(false);
+  const [connInfo, setConnInfo] = useState<{user?: string; host?: string; auth_method?: string}>({});
   const [query, setQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -74,6 +76,10 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
       fetch("/api/health")
         .then((r) => setConnected(r.ok))
         .catch(() => setConnected(false));
+      fetch("/api/auth/status")
+        .then((r) => r.json())
+        .then((d) => { if (d.authenticated) setConnInfo({ user: d.user, host: d.host, auth_method: d.auth_method }); })
+        .catch(() => {});
     };
     check();
     const id = setInterval(check, 15000);
@@ -137,10 +143,8 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           </button>
         )}
         <Link to="/">
-          <span className="flex flex-col items-center" style={{lineHeight:1.1}}>
-            <span className="text-[18px] font-bold tracking-tight"><span className="text-gray-900 dark:text-white">Clone</span><span className="text-[#E8453C] mx-0.5">→</span><span className="text-gray-900 dark:text-white">Xs</span></span>
-            <span className="text-[8px] text-gray-400 dark:text-gray-500 tracking-[0.15em] uppercase">Unity Catalog Toolkit</span>
-          </span>
+          <img src="/logo.svg" alt="Clone→Xs" className="h-10 dark:hidden" />
+          <img src="/logo-dark.svg" alt="Clone→Xs" className="h-10 hidden dark:block" />
         </Link>
         <span className="text-gray-300 dark:text-gray-600">/</span>
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{pageName}</span>
@@ -195,15 +199,36 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
 
       {/* Right */}
       <div className="flex items-center gap-0.5">
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-          connected
-            ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
-            : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
-        }`}>
-          {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-          <span className="hidden sm:inline">{connected ? "Connected" : "Offline"}</span>
+        <div className="relative group">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-default ${
+            connected
+              ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+              : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+          }`}>
+            {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+            <span className="hidden sm:inline">{connected ? "Connected" : "Offline"}</span>
+          </div>
+          {connected && connInfo.user && (
+            <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <div className="text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">User</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{connInfo.user}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Host</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100 truncate ml-2 max-w-[180px]">{connInfo.host}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Auth</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{connInfo.auth_method}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1.5 hidden sm:block" />
+        <NotificationPanel />
         <button onClick={() => setDark(p => !p)} className={iconBtn} title={dark ? "Light mode" : "Dark mode"}>
           {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>

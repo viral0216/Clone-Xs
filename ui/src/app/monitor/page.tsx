@@ -5,31 +5,15 @@ import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import { Activity, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
 
 export default function MonitorPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { job, run, isRunning } = usePageJob("monitor");
+  const [source, setSource] = useState(job?.params?.source || "");
+  const [dest, setDest] = useState(job?.params?.dest || "");
 
-  const runCheck = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await api.post<Record<string, unknown>>("/monitor", {
-        source_catalog: source,
-        destination_catalog: dest,
-        check_drift: true,
-        check_counts: false,
-      });
-      setResult(res);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-    setLoading(false);
-  };
+  const result = job?.data as Record<string, unknown> | null;
 
   return (
     <div className="space-y-6">
@@ -53,8 +37,8 @@ export default function MonitorPage() {
               showSchema={false}
               showTable={false}
             />
-            <Button onClick={runCheck} disabled={!source || !dest || loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            <Button onClick={() => run({ source, dest }, () => api.post("/monitor", { source_catalog: source, destination_catalog: dest, check_drift: true, check_counts: false }))} disabled={!source || !dest || isRunning}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRunning ? "animate-spin" : ""}`} />
               Check Now
             </Button>
           </div>
@@ -231,9 +215,9 @@ export default function MonitorPage() {
         );
       })()}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200">
-          <CardContent className="pt-6 text-red-600">{error}</CardContent>
+          <CardContent className="pt-6 text-red-600">{job.error}</CardContent>
         </Card>
       )}
     </div>

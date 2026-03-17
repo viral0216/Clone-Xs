@@ -569,7 +569,9 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
 export default function ClonePage() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [config, setConfig] = useState({
+
+  // Default config
+  const defaults = {
     source_catalog: "",
     destination_catalog: "",
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
@@ -619,6 +621,37 @@ export default function ClonePage() {
     throttle: "" as "" | "low" | "medium" | "high" | "max",
     ttl: "",
     template: "",
+  };
+
+  // Apply URL query params from template selection on mount
+  const [config, setConfig] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.size === 0) return defaults;
+
+    const merged = { ...defaults };
+    // Boolean config keys
+    const boolKeys = [
+      "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
+      "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
+      "validate_after_clone", "validate_checksum", "dry_run", "force_reclone",
+      "generate_report", "show_progress", "auto_rollback", "checkpoint",
+      "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
+    ];
+    // Number config keys
+    const numKeys = ["max_workers", "parallel_tables", "max_parallel_queries", "max_rps", "rollback_threshold"];
+
+    for (const [key, val] of params.entries()) {
+      if (key in merged) {
+        if (boolKeys.includes(key)) {
+          (merged as any)[key] = val === "true" || val === "True";
+        } else if (numKeys.includes(key)) {
+          (merged as any)[key] = parseInt(val, 10) || (merged as any)[key];
+        } else {
+          (merged as any)[key] = val;
+        }
+      }
+    }
+    return merged;
   });
 
   const startClone = useStartClone();

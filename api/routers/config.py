@@ -34,10 +34,31 @@ async def update_config(req: ConfigUpdateRequest):
 
 @router.post("/diff")
 async def config_diff(req: ConfigDiffRequest):
-    """Compare two config files."""
-    from src.config_diff import diff_configs
-    result = diff_configs(req.file_a, req.file_b)
-    return result
+    """Compare two configs (dicts or YAML/JSON strings)."""
+    from src.config_diff import diff_config_dicts
+
+    def _resolve(val):
+        if isinstance(val, dict):
+            return val
+        try:
+            return yaml.safe_load(val) or {}
+        except Exception:
+            return {}
+
+    dict_a = _resolve(req.config_a)
+    dict_b = _resolve(req.config_b)
+    raw = diff_config_dicts(dict_a, dict_b)
+
+    # Transform {added, removed, changed} → flat array for the UI
+    differences = []
+    for key, vals in raw.get("changed", {}).items():
+        differences.append({"key": key, "value_a": vals["old"], "value_b": vals["new"], "changed": True})
+    for key, val in raw.get("added", {}).items():
+        differences.append({"key": key, "value_a": None, "value_b": val, "changed": True})
+    for key, val in raw.get("removed", {}).items():
+        differences.append({"key": key, "value_a": val, "value_b": None, "changed": True})
+    differences.sort(key=lambda x: x["key"])
+    return {"differences": differences}
 
 
 @router.post("/audit")

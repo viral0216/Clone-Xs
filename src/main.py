@@ -526,7 +526,15 @@ def cmd_create_job(args):
     print(f"  Wheel:    {result['volume_wheel_path']}")
     if result.get("schedule"):
         print(f"  Schedule: {result['schedule']}")
-    print(f"\n  Run or schedule this job from the Databricks Jobs UI.")
+    if getattr(args, "run_now", False) and result.get("job_id"):
+        print(f"\n  Running job now...")
+        try:
+            run = client.jobs.run_now(result["job_id"])
+            print(f"  Run started! Run ID: {run.run_id}")
+        except Exception as e:
+            print(f"  Failed to start run: {e}")
+    else:
+        print(f"\n  Run or schedule this job from the Databricks Jobs UI.")
 
 
 def cmd_compare(args):
@@ -2122,6 +2130,7 @@ def build_parser() -> argparse.ArgumentParser:
     cj_parser.add_argument("--timeout", type=int, default=7200, help="Job timeout in seconds (default: 7200)")
     cj_parser.add_argument("--tag", action="append", default=[], help="Job tag as key=value (repeatable)")
     cj_parser.add_argument("--update-job-id", type=int, help="Update an existing job instead of creating a new one")
+    cj_parser.add_argument("--run-now", action="store_true", help="Run the job immediately after creation")
     cj_parser.set_defaults(func=cmd_create_job)
 
     # --- sync command ---

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, get_max_parallel_queries
+from src.client import execute_sql, get_max_parallel_queries, list_functions_sdk
 from src.permissions import copy_function_permissions
 from src.rollback import record_object
 
@@ -15,14 +15,7 @@ def get_functions(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> list[dict]:
     """List all user-defined functions in a schema."""
-    sql = f"""
-        SELECT routine_name AS function_name, data_type, full_data_type, routine_definition,
-               routine_body, external_language
-        FROM {catalog}.information_schema.routines
-        WHERE routine_schema = '{schema}'
-        AND routine_type = 'FUNCTION'
-    """
-    return execute_sql(client, warehouse_id, sql)
+    return list_functions_sdk(client, catalog, schema)
 
 
 def get_function_details(
@@ -59,12 +52,7 @@ def get_existing_functions(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> set[str]:
     """Get set of existing function names in destination schema."""
-    sql = f"""
-        SELECT routine_name AS function_name
-        FROM {catalog}.information_schema.routines
-        WHERE routine_schema = '{schema}'
-    """
-    rows = execute_sql(client, warehouse_id, sql)
+    rows = list_functions_sdk(client, catalog, schema)
     return {row["function_name"] for row in rows}
 
 

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuthStatus, useWarehouses } from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
+import { allNavSections } from "@/components/layout/Sidebar";
 import {
   Settings2,
   Database,
@@ -790,16 +791,38 @@ export default function SettingsPage() {
 
       {/* Audit & Logging Configuration */}
       <AuditSettings />
+
+      {/* Navigation & Feature Toggles */}
+      <FeatureToggles />
     </div>
   );
 }
 
 function AuditSettings() {
-  const [auditCatalog, setAuditCatalog] = useState(() => sessionStorage.getItem("audit_catalog") || "clone_audit");
-  const [auditSchema, setAuditSchema] = useState(() => sessionStorage.getItem("audit_schema") || "logs");
+  const [auditCatalog, setAuditCatalog] = useState("clone_audit");
+  const [auditSchema, setAuditSchema] = useState("logs");
   const [saving, setSaving] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [tableSchemas, setTableSchemas] = useState<Record<string, any[]> | null>(null);
+
+  // Load actual values from config YAML on mount
+  useEffect(() => {
+    api.get<Record<string, any>>("/config").then((config) => {
+      const at = config.audit_trail || {};
+      const cat = at.catalog || "clone_audit";
+      const sch = at.schema || "logs";
+      setAuditCatalog(cat);
+      setAuditSchema(sch);
+      sessionStorage.setItem("audit_catalog", cat);
+      sessionStorage.setItem("audit_schema", sch);
+    }).catch(() => {
+      // Fallback to sessionStorage if config API fails
+      const cat = sessionStorage.getItem("audit_catalog") || "clone_audit";
+      const sch = sessionStorage.getItem("audit_schema") || "logs";
+      setAuditCatalog(cat);
+      setAuditSchema(sch);
+    });
+  }, []);
 
   const handleSave = async () => {
     sessionStorage.setItem("audit_catalog", auditCatalog);
@@ -947,6 +970,95 @@ function AuditSettings() {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FeatureToggles() {
+  const [disabled, setDisabled] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("clxs-disabled-pages");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const togglePage = (href: string) => {
+    // Don't allow disabling Dashboard or Settings
+    if (href === "/" || href === "/settings") return;
+    setDisabled(prev => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href); else next.add(href);
+      localStorage.setItem("clxs-disabled-pages", JSON.stringify([...next]));
+      window.dispatchEvent(new Event("clxs-features-changed"));
+      return next;
+    });
+  };
+
+  const enableAll = () => {
+    setDisabled(new Set());
+    localStorage.removeItem("clxs-disabled-pages");
+    window.dispatchEvent(new Event("clxs-features-changed"));
+  };
+
+  const totalPages = allNavSections.reduce((n: number, s: any) => n + s.items.length, 0);
+  const enabledCount = totalPages - disabled.size;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings2 className="h-5 w-5" />
+          Navigation & Features
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Enable or disable sidebar pages. Disabled pages are hidden from the sidebar but remain accessible via direct URL.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm text-muted-foreground">{enabledCount} of {totalPages} pages enabled</span>
+          <Button variant="outline" size="sm" onClick={enableAll} disabled={disabled.size === 0}>
+            Enable All
+          </Button>
+        </div>
+        <div className="space-y-6">
+          {allNavSections.map((section: any) => (
+            <div key={section.title}>
+              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{section.title}</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {section.items.map((item: any) => {
+                  const isCore = item.href === "/" || item.href === "/settings";
+                  const isEnabled = !disabled.has(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <label
+                      key={item.href}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                        isCore
+                          ? "bg-muted/30 border-muted opacity-60 cursor-not-allowed"
+                          : isEnabled
+                          ? "border-border hover:bg-muted/50"
+                          : "border-border bg-muted/20 opacity-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={() => togglePage(item.href)}
+                        disabled={isCore}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                      />
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{item.label}</span>
+                      {isCore && <span className="text-xs text-muted-foreground ml-auto">Required</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

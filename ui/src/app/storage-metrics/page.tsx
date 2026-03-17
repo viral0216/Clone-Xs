@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
   Loader2, XCircle, HardDrive, Database, Trash2, Clock,
@@ -19,12 +20,12 @@ function vacuumColor(pct: number) {
 }
 
 export default function StorageMetricsPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [table, setTable] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("storage-metrics");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [schema, setSchema] = useState(job?.params?.schema || "");
+  const [table, setTable] = useState(job?.params?.table || "");
+
+  const results = job?.data as any;
 
   // Selection state
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -38,29 +39,22 @@ export default function StorageMetricsPage() {
   const [poCheck, setPoCheck] = useState<any>(null);
 
   async function analyze() {
-    setLoading(true);
-    setError("");
-    setResults(null);
     setSelected(new Set());
     setActionResult(null);
     setPoCheck(null);
-    try {
+    await run({ catalog, schema, table }, async () => {
       const data = await api.post("/storage-metrics", {
         source_catalog: catalog,
         schema_filter: schema || undefined,
         table_filter: table || undefined,
       });
-      setResults(data);
       // Check predictive optimization in background
       try {
         const po = await api.post("/check-predictive-optimization", { source_catalog: catalog });
         setPoCheck(po);
       } catch {}
-    } catch (e: any) {
-      setError(e.message || "Storage metrics analysis failed");
-    } finally {
-      setLoading(false);
-    }
+      return data;
+    });
   }
 
   function toggleSelect(key: string) {
@@ -162,15 +156,15 @@ export default function StorageMetricsPage() {
               showSchema={true}
               showTable={true}
             />
-            <Button onClick={analyze} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <HardDrive className="h-4 w-4 mr-2" />}
-              {loading ? "Analyzing..." : "Analyze Storage"}
+            <Button onClick={analyze} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <HardDrive className="h-4 w-4 mr-2" />}
+              {isRunning ? "Analyzing..." : "Analyze Storage"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {loading && (
+      {isRunning && (
         <Card className="bg-card border-border">
           <CardContent className="pt-6 text-center py-12">
             <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
@@ -182,10 +176,10 @@ export default function StorageMetricsPage() {
         </Card>
       )}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5 shrink-0" />{error}
+            <XCircle className="h-5 w-5 shrink-0" />{job.error}
           </CardContent>
         </Card>
       )}

@@ -35,7 +35,22 @@ def check_warehouse(client: WorkspaceClient, warehouse_id: str) -> dict:
 def check_catalog_access(
     client: WorkspaceClient, warehouse_id: str, catalog: str, label: str = "catalog",
 ) -> dict:
-    """Verify the caller can access a catalog."""
+    """Verify the caller can access a catalog via SDK (falls back to SQL)."""
+    # Try SDK first — no warehouse needed
+    try:
+        info = client.catalogs.get(catalog)
+        return {
+            "check": f"{label}_access ({catalog})", "status": "OK",
+            "detail": f"Accessible (owner: {getattr(info, 'owner', 'unknown')})",
+        }
+    except Exception as sdk_err:
+        sdk_detail = str(sdk_err)
+        if label == "destination" and ("cannot be found" in sdk_detail.lower() or "not found" in sdk_detail.lower() or "NO_SUCH_CATALOG" in sdk_detail or "does not exist" in sdk_detail.lower()):
+            return {
+                "check": f"{label}_access ({catalog})", "status": "WARN",
+                "detail": f"Catalog '{catalog}' does not exist yet — it will be created automatically during clone",
+            }
+    # Fallback to SQL
     try:
         rows = execute_sql(
             client, warehouse_id,
@@ -58,15 +73,45 @@ def check_catalog_access(
 def check_permissions(
     client: WorkspaceClient, warehouse_id: str, dest_catalog: str,
 ) -> dict:
-    """Check if the caller can create objects in the destination catalog."""
+    """Check if the caller can create objects in the destination catalog.
+
+    Uses SDK schemas.create/delete first; falls back to SQL if SDK fails.
+    """
+    schema_name = "__preflight_check__"
+    full_name = f"{dest_catalog}.{schema_name}"
+
+    # Try SDK first — no warehouse needed
+    try:
+        try:
+            client.schemas.create(name=schema_name, catalog_name=dest_catalog)
+        except Exception as create_err:
+            # Schema may already exist — that's OK
+            if "already exists" not in str(create_err).lower():
+                raise
+        try:
+            client.schemas.delete(full_name)
+        except Exception:
+            pass  # Best-effort cleanup
+        return {"check": "write_permissions", "status": "OK", "detail": "Can create/drop schemas (SDK)"}
+    except Exception as sdk_err:
+        sdk_detail = str(sdk_err)
+        if "not found" in sdk_detail.lower() or "NO_SUCH_CATALOG" in sdk_detail or "does not exist" in sdk_detail.lower():
+            return {
+                "check": "write_permissions", "status": "WARN",
+                "detail": f"Catalog '{dest_catalog}' does not exist yet — will be created automatically during clone",
+            }
+        # SDK failed for another reason — fall through to SQL
+        pass
+
+    # Fallback to SQL
     try:
         execute_sql(
             client, warehouse_id,
-            f"CREATE SCHEMA IF NOT EXISTS `{dest_catalog}`.`__preflight_check__`",
+            f"CREATE SCHEMA IF NOT EXISTS `{dest_catalog}`.`{schema_name}`",
         )
         execute_sql(
             client, warehouse_id,
-            f"DROP SCHEMA IF EXISTS `{dest_catalog}`.`__preflight_check__`",
+            f"DROP SCHEMA IF EXISTS `{dest_catalog}`.`{schema_name}`",
         )
         return {"check": "write_permissions", "status": "OK", "detail": "Can create/drop schemas"}
     except Exception as e:

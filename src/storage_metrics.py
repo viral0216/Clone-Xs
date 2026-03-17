@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, get_max_parallel_queries
+from src.client import execute_sql, get_max_parallel_queries, list_schemas_sdk, list_tables_sdk
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -169,12 +169,8 @@ def _process_schema_storage_metrics(
         result = get_table_storage_metrics(client, warehouse_id, catalog, schema, table_filter)
         return schema, [result]
 
-    table_sql = f"""
-        SELECT table_name
-        FROM {catalog}.information_schema.tables
-        WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-    """
-    tables = execute_sql(client, warehouse_id, table_sql)
+    all_tables = list_tables_sdk(client, catalog, schema)
+    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
 
     if not tables:
         return schema, []
@@ -183,9 +179,9 @@ def _process_schema_storage_metrics(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                get_table_storage_metrics, client, warehouse_id, catalog, schema, row["table_name"]
-            ): row["table_name"]
-            for row in tables
+                get_table_storage_metrics, client, warehouse_id, catalog, schema, t["table_name"]
+            ): t["table_name"]
+            for t in tables
         }
         for future in as_completed(futures):
             schema_tables.append(future.result())
@@ -216,14 +212,7 @@ def catalog_storage_metrics(
     elif include_schemas:
         schemas = [s for s in include_schemas if s not in exclude_schemas]
     else:
-        exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-        sql = f"""
-            SELECT schema_name
-            FROM {catalog}.information_schema.schemata
-            WHERE schema_name NOT IN ({exclude_clause})
-        """
-        rows = execute_sql(client, warehouse_id, sql)
-        schemas = [r["schema_name"] for r in rows]
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
 
     # Process schemas in parallel with progress tracking
     all_tables = []

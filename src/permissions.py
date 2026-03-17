@@ -1,8 +1,9 @@
 """Permission and ownership copying for Unity Catalog objects.
 
-Uses SQL-based SHOW GRANTS / GRANT instead of the SDK Grants API,
-because the SDK API doesn't work on managed catalog workspaces
-(returns "SECURABLETYPE.X is not a valid securable type").
+Tries the SDK Grants API first (no SQL warehouse needed), then falls
+back to SQL-based SHOW GRANTS / GRANT if the SDK fails (known issue
+with managed catalog workspaces where the SDK returns
+"SECURABLETYPE.X is not a valid securable type").
 """
 
 import json
@@ -50,6 +51,63 @@ def _show_grants_sql(securable_type: str, full_name: str) -> str:
     return f"SHOW GRANTS ON {securable_type} `{'`.`'.join(full_name.split('.'))}`"
 
 
+def _securable_type_enum(securable_type: str) -> SecurableType:
+    """Map SQL securable type string to SDK SecurableType enum."""
+    mapping = {
+        "CATALOG": SecurableType.CATALOG,
+        "SCHEMA": SecurableType.SCHEMA,
+        "TABLE": SecurableType.TABLE,
+        "VOLUME": SecurableType.VOLUME,
+        "FUNCTION": SecurableType.FUNCTION,
+    }
+    return mapping.get(securable_type.upper(), SecurableType.TABLE)
+
+
+def _copy_grants_via_sdk(
+    client: WorkspaceClient,
+    securable_type: str,
+    source_name: str,
+    dest_name: str,
+    label: str,
+) -> bool:
+    """Try to copy grants using the SDK Grants API.
+
+    Returns True if successful, False if SDK grants API fails
+    (known issue with managed catalogs).
+    """
+    from databricks.sdk.service.catalog import PermissionsChange, Privilege
+    try:
+        sec_type = _securable_type_enum(securable_type)
+        effective = client.grants.get_effective(sec_type, source_name)
+        if not effective.privilege_assignments:
+            return True
+
+        changes = []
+        for assignment in effective.privilege_assignments:
+            principal = assignment.principal or ""
+            if not principal:
+                continue
+            privs = []
+            for p in (assignment.privileges or []):
+                priv_name = p.privilege.value if hasattr(p.privilege, "value") else str(p.privilege)
+                if priv_name.upper() in _SKIP_PRIVILEGES:
+                    continue
+                try:
+                    privs.append(Privilege(priv_name))
+                except Exception:
+                    continue
+            if privs:
+                changes.append(PermissionsChange(add=privs, principal=principal))
+
+        if changes:
+            client.grants.update(sec_type, dest_name, changes=changes)
+            logger.info(f"Copied {len(changes)} grant(s) via SDK: {source_name} -> {dest_name}")
+        return True
+    except Exception as e:
+        logger.debug(f"SDK grants failed for {label}, will fall back to SQL: {e}")
+        return False
+
+
 def _copy_grants_via_sql(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -58,7 +116,16 @@ def _copy_grants_via_sql(
     dest_name: str,
     label: str,
 ) -> None:
-    """Copy grants from source to destination using SQL SHOW GRANTS / GRANT."""
+    """Copy grants from source to destination.
+
+    Tries SDK Grants API first; falls back to SQL SHOW GRANTS / GRANT
+    if SDK fails (known issue with managed catalogs).
+    """
+    # Try SDK first — no warehouse needed
+    if _copy_grants_via_sdk(client, securable_type, source_name, dest_name, label):
+        return
+
+    # Fallback to SQL
     warehouse_id = _resolve_warehouse_id(warehouse_id)
     if not warehouse_id:
         logger.debug(f"Skipping permissions for {label}: no warehouse ID available")

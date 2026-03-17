@@ -4,13 +4,13 @@ slug: /intro
 title: Introduction
 ---
 
-# Clone Catalog
+# Clone → Xs
 
-A standalone CLI tool for cloning Databricks Unity Catalog catalogs — including schemas, tables, views, functions, volumes, permissions, tags, security policies, and ownership.
+Enterprise-grade Unity Catalog Toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, Desktop App, Databricks App, or REST API.
 
 ## What it does
 
-Clone Catalog replicates an entire Unity Catalog catalog to a new catalog in the same (or different) workspace, preserving:
+Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same (or different) workspace, preserving:
 
 - **Schemas** — all schemas are recreated in the destination
 - **Tables** — deep or shallow Delta Lake clone with time travel support
@@ -55,6 +55,12 @@ Clone Catalog replicates an entire Unity Catalog catalog to a new catalog in the
 | Cost Estimation | Estimate storage and compute costs |
 | Terraform / Pulumi Export | Generate IaC from your catalog |
 | Notebook API | Run from Databricks notebooks via wheel or repo import |
+| Storage Metrics | Analyze per-table storage (active, vacuumable, time-travel) via `ANALYZE TABLE COMPUTE STORAGE METRICS` |
+| OPTIMIZE & VACUUM | Run table maintenance directly from the UI with multi-select and dry-run |
+| Create Databricks Job | Create persistent scheduled jobs from UI or CLI — no manual JSON needed |
+| Desktop App | Native macOS/Windows app via Electron — no terminal required |
+| Databricks App | Deploy as a native Databricks App with automatic service principal auth |
+| Marketplace | Publish to Databricks Marketplace as Solution Accelerator |
 
 ## Quick install
 
@@ -68,6 +74,21 @@ Verify:
 clxs --help
 ```
 
+## Why multiple run modes?
+
+Clone-Xs provides several deployment options because different teams and workflows have different needs. Here's when to use each:
+
+| Mode | How to run | Best for |
+|------|-----------|----------|
+| **CLI** | `clxs clone --source X --dest Y` | Engineers who prefer the terminal. Scriptable, pipeable, works in CI/CD pipelines. Fastest for one-off clones. |
+| **Web UI** | `make web-start` → http://localhost:3000 | Teams who need a visual interface. 33 pages covering clone, diff, sync, storage metrics, and more. Great for demos and non-technical stakeholders. |
+| **Desktop App** | `make desktop-dev` | Users who want a native app without managing terminals or servers. Double-click to launch — the backend starts automatically. Available for macOS and Windows. |
+| **Databricks App** | `make deploy-dbx-app` | Production teams who want Clone-Xs embedded in their Databricks workspace. Uses workspace service principal for authentication — no PAT tokens needed. Accessible to anyone with workspace access. |
+| **Wheel Package** | `pip install clone-xs` | Notebook users and data engineers. Import Clone-Xs as a Python library in Databricks notebooks or jobs. Install once, call from any notebook cell. |
+| **Serverless Job** | `clxs clone --serverless --volume /Volumes/...` | Cost-conscious teams. Uploads the wheel to a UC Volume and submits a serverless notebook job — $0 warehouse cost, auto-scaling, zero cluster wait time. |
+| **REST API** | `clxs serve` → http://localhost:8000/docs | Platform teams building internal tools. Embed Clone-Xs operations into custom dashboards, Slack bots, or CI/CD workflows via HTTP endpoints. |
+| **Databricks Job** | `clxs create-job --source X --dest Y --schedule "..."` | Scheduled production clones. Creates a persistent Databricks Job with cron scheduling, email alerts, retries, and tags — runs unattended. |
+
 ## Next steps
 
 - [Quickstart](guide/quickstart) — clone your first catalog in 5 minutes
@@ -78,4 +99,11 @@ clxs --help
 - [Governance](guide/governance) — RBAC, approval workflows, compliance reports
 - [Scheduling & Automation](guide/scheduling) — scheduled clones, templates, API server, throttling
 - [Analytics & Insights](guide/analytics) — usage analysis, metrics, history, data preview
+- [Storage Metrics](guide/storage-metrics) — analyze and optimize table storage
+- [Create Job](guide/create-job) — schedule clone operations as Databricks Jobs
+- [Desktop App](guide/desktop) — run as a native desktop application
+- [Databricks App](guide/databricks-app) — deploy to your Databricks workspace
+- [Web UI](guide/web-ui) — all 33 pages of the web interface
 - [CLI Reference](reference/cli) — full command reference
+- [API Reference](reference/api) — REST API endpoint reference
+- [Changelog](reference/changelog) — version history

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { usePreflight } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import {
   ClipboardCheck, Loader2, XCircle, CheckCircle, AlertTriangle, ArrowRight,
 } from "lucide-react";
@@ -29,10 +30,10 @@ function statusBadge(status: string) {
 }
 
 export default function PreflightPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
-  const preflight = usePreflight();
-  const data = preflight.data as any;
+  const { job, run, isRunning } = usePageJob("preflight");
+  const [source, setSource] = useState(job?.params?.source || "");
+  const [dest, setDest] = useState(job?.params?.dest || "");
+  const data = job?.data as any;
 
   const checks = data?.checks || data?.results || [];
 
@@ -67,11 +68,11 @@ export default function PreflightPage() {
               showTable={false}
             />
             <Button
-              onClick={() => preflight.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || preflight.isPending}
+              onClick={() => run({ source, dest }, () => api.post("/preflight", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isRunning}
             >
-              {preflight.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ClipboardCheck className="h-4 w-4 mr-2" />}
-              {preflight.isPending ? "Running..." : "Run Preflight"}
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ClipboardCheck className="h-4 w-4 mr-2" />}
+              {isRunning ? "Running..." : "Run Preflight"}
             </Button>
           </div>
         </CardContent>
@@ -158,11 +159,11 @@ export default function PreflightPage() {
       )}
 
       {/* Error */}
-      {preflight.isError && (
+      {job?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(preflight.error as Error).message}
+            {job.error}
           </CardContent>
         </Card>
       )}

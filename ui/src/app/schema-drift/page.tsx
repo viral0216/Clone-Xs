@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { useSchemaDrift } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import {
   GitBranch, Loader2, XCircle, ArrowRight, Plus, Minus, RefreshCw,
 } from "lucide-react";
@@ -29,10 +30,10 @@ function changeIcon(changeType: string) {
 }
 
 export default function SchemaDriftPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
-  const schemaDrift = useSchemaDrift();
-  const data = schemaDrift.data as any;
+  const { job, run, isRunning } = usePageJob("schema-drift");
+  const [source, setSource] = useState(job?.params?.source || "");
+  const [dest, setDest] = useState(job?.params?.dest || "");
+  const data = job?.data as any;
 
   const summary = data?.summary;
   const drifts = data?.drifts || data?.results || [];
@@ -80,11 +81,11 @@ export default function SchemaDriftPage() {
               showTable={false}
             />
             <Button
-              onClick={() => schemaDrift.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || schemaDrift.isPending}
+              onClick={() => run({ source, dest }, () => api.post("/schema-drift", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isRunning}
             >
-              {schemaDrift.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitBranch className="h-4 w-4 mr-2" />}
-              {schemaDrift.isPending ? "Detecting..." : "Detect Drift"}
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitBranch className="h-4 w-4 mr-2" />}
+              {isRunning ? "Detecting..." : "Detect Drift"}
             </Button>
           </div>
         </CardContent>
@@ -168,11 +169,11 @@ export default function SchemaDriftPage() {
       )}
 
       {/* Error */}
-      {schemaDrift.isError && (
+      {job?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(schemaDrift.error as Error).message}
+            {job.error}
           </CardContent>
         </Card>
       )}

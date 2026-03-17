@@ -4,31 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, BarChart3, CheckCircle, ScanSearch } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
 export default function ProfilingPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("profiling");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [schema, setSchema] = useState(job?.params?.schema || "");
 
-  async function runProfile() {
-    setLoading(true);
-    setError("");
-    setResults(null);
-    try {
-      const data = await api.post("/profile", { source_catalog: catalog, schema: schema || undefined });
-      setResults(data);
-    } catch (e: any) {
-      setError(e.message || "Profiling failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  const results = job?.data as any;
   const columns = results?.columns || results?.results || [];
   const totalCols = results?.total_columns ?? columns.length;
   const nullRate = results?.null_rate ?? 0;
@@ -57,15 +43,15 @@ export default function ProfilingPage() {
               onTableChange={() => {}}
               showTable={false}
             />
-            <Button onClick={runProfile} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
-              {loading ? "Profiling..." : "Run Profile"}
+            <Button onClick={() => run({ catalog, schema }, () => api.post("/profile", { source_catalog: catalog, schema: schema || undefined }))} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
+              {isRunning ? "Profiling..." : "Run Profile"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {loading && (
+      {isRunning && (
         <Card className="bg-card border-border">
           <CardContent className="pt-6 text-center py-12">
             <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
@@ -140,10 +126,10 @@ export default function ProfilingPage() {
         </Card>
       )}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />{error}
+            <XCircle className="h-5 w-5" />{job.error}
           </CardContent>
         </Card>
       )}

@@ -37,6 +37,23 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 
 ---
 
+## Why Multiple Run Modes?
+
+Different teams have different workflows — Clone-Xs meets you where you are:
+
+| Mode | Best for |
+|------|----------|
+| **CLI** (`clxs`) | Engineers who prefer the terminal. Scriptable, works in CI/CD. |
+| **Web UI** | Teams who need a visual interface — 33 pages for clone, diff, sync, storage metrics, and more. |
+| **Desktop App** | Users who want a native app. Double-click to launch — no terminal needed. macOS + Windows. |
+| **Databricks App** | Production teams. Runs inside your workspace with automatic service principal auth — no PAT tokens. |
+| **Wheel Package** | Notebook users. `pip install clone-xs` and call from any Databricks notebook cell. |
+| **Serverless Job** | Cost-conscious teams. $0 warehouse cost, auto-scaling, zero cluster wait. |
+| **REST API** | Platform teams building internal tools, Slack bots, or CI/CD integrations. |
+| **Databricks Job** | Scheduled production clones with cron, email alerts, retries, and tags — runs unattended. |
+
+---
+
 ## Screenshots
 
 | Clone Wizard | Audit Trail |
@@ -116,14 +133,14 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ---
 
-## Web UI (33 Pages)
+## Web UI (32 Pages)
 
 Every page includes a detailed description and links to official [Azure Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/).
 
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
-| **Operations** (9) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Schedule, Create Job, Multi-Clone |
+| **Operations** (8) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Create Job, Multi-Clone |
 | **Discovery** (7) | Explorer, Diff & Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview |
 | **Analysis** (7) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Storage Metrics, Compliance |
 | **Management** (7) | Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins |
@@ -162,6 +179,7 @@ clxs view-deps --schema S                 # View/function dependency graph
 clxs create-job --source X --dest Y        # Create persistent Databricks Job
 clxs create-job --source X --dest Y \
   --schedule "0 0 6 * * ?" --notification-email t@co.com  # Scheduled job with alerts
+clxs create-job --source X --dest Y --run-now  # Create and run immediately
 clxs slack-bot                            # Start Slack bot
 ```
 

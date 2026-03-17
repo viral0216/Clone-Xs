@@ -4,33 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, DollarSign, HardDrive, Cpu, Calculator } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
 export default function CostPage() {
-  const [catalog, setCatalog] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("cost");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
 
-  async function estimate() {
-    setLoading(true);
-    setError("");
-    setResults(null);
-    try {
-      const data = await api.post("/estimate", { source_catalog: catalog });
-      setResults(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to estimate cost");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const breakdown = results?.schema_breakdown || results?.breakdown || [];
-  const deepCost = results?.deep_clone_cost ?? results?.deep_cost;
-  const shallowCost = results?.shallow_clone_cost ?? results?.shallow_cost;
+  const results = job?.data as any;
+  const topTables = results?.top_tables || [];
 
   return (
     <div className="space-y-6">
@@ -56,88 +40,106 @@ export default function CostPage() {
               showSchema={false}
               showTable={false}
             />
-            <Button onClick={estimate} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <DollarSign className="h-4 w-4 mr-2" />}
-              {loading ? "Estimating..." : "Estimate Cost"}
+            <Button onClick={() => run({ catalog }, () => api.post("/estimate", { source_catalog: catalog }))} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <DollarSign className="h-4 w-4 mr-2" />}
+              {isRunning ? "Estimating..." : "Estimate Cost"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
+      {/* Summary Stats */}
       {results && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
               <HardDrive className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-              <p className="text-2xl font-bold text-foreground">{results.total_size || "—"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Total Size</p>
+              <p className="text-2xl font-bold text-foreground">{results.total_gb ?? 0} GB</p>
+              <p className="text-xs text-muted-foreground mt-1">Total Size ({results.total_tb ?? 0} TB)</p>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
               <Cpu className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-              <p className="text-2xl font-bold text-foreground">{results.estimated_dbus ?? "—"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Estimated DBUs</p>
+              <p className="text-2xl font-bold text-foreground">{results.table_count ?? 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">Tables Scanned</p>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
               <DollarSign className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-              <p className="text-2xl font-bold text-foreground">{results.total_cost ?? "—"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Estimated Total Cost</p>
+              <p className="text-2xl font-bold text-foreground">${results.monthly_cost_usd ?? 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">Monthly Cost (at ${results.price_per_gb}/GB)</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-6 text-center">
+              <DollarSign className="h-5 w-5 mx-auto mb-1 text-green-600" />
+              <p className="text-2xl font-bold text-green-600">${results.yearly_cost_usd ?? 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">Yearly Cost</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {(deepCost != null || shallowCost != null) && (
+      {/* Deep vs Shallow comparison */}
+      {results && (
         <div className="grid grid-cols-2 gap-4">
           <Card className="bg-card border-border">
             <CardHeader className="pb-2"><CardTitle className="text-lg">DEEP Clone</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-foreground">{deepCost ?? "—"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Full data copy - higher cost, independent storage</p>
+              <p className="text-3xl font-bold text-foreground">${results.monthly_cost_usd ?? 0}<span className="text-sm font-normal text-muted-foreground">/month</span></p>
+              <p className="text-xs text-muted-foreground mt-1">Full data copy ({results.total_gb ?? 0} GB) — independent storage, supports time travel</p>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
             <CardHeader className="pb-2"><CardTitle className="text-lg">SHALLOW Clone</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-green-600">{shallowCost ?? "—"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Reference only - lower cost, shared storage</p>
+              <p className="text-3xl font-bold text-green-600">~$0<span className="text-sm font-normal text-muted-foreground">/month</span></p>
+              <p className="text-xs text-muted-foreground mt-1">Metadata-only reference — negligible additional storage, shares source data files</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {breakdown.length > 0 && (
+      {/* Top Tables by Size */}
+      {topTables.length > 0 && (
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Cost Breakdown by Schema</CardTitle>
+            <CardTitle className="text-lg">Top {topTables.length} Largest Tables</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto border border-border rounded">
               <table className="w-full text-sm">
                 <thead className="bg-background">
                   <tr className="border-b border-border">
+                    <th className="text-left py-2 px-3 font-medium text-foreground">#</th>
                     <th className="text-left py-2 px-3 font-medium text-foreground">Schema</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">Tables</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">Size</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">DBUs</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">Cost</th>
+                    <th className="text-left py-2 px-3 font-medium text-foreground">Table</th>
+                    <th className="text-right py-2 px-3 font-medium text-foreground">Size (GB)</th>
+                    <th className="text-right py-2 px-3 font-medium text-foreground">% of Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {breakdown.map((row: any, i: number) => (
-                    <tr key={i} className="border-b border-border">
-                      <td className="py-2 px-3 font-medium text-foreground">{row.schema || row.name}</td>
-                      <td className="py-2 px-3 text-right text-foreground">{row.table_count ?? row.tables ?? "—"}</td>
-                      <td className="py-2 px-3 text-right text-muted-foreground">{row.size ?? "—"}</td>
-                      <td className="py-2 px-3 text-right text-muted-foreground">{row.dbus ?? "—"}</td>
-                      <td className="py-2 px-3 text-right text-foreground">
-                        <Badge variant="outline">{row.cost ?? "—"}</Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {topTables.map((row: any, i: number) => {
+                    const pct = results.total_gb > 0 ? ((row.size_gb / results.total_gb) * 100).toFixed(1) : 0;
+                    return (
+                      <tr key={i} className="border-b border-border">
+                        <td className="py-2 px-3 text-muted-foreground">{i + 1}</td>
+                        <td className="py-2 px-3 text-muted-foreground">{row.schema}</td>
+                        <td className="py-2 px-3 font-medium text-foreground">{row.table}</td>
+                        <td className="py-2 px-3 text-right text-foreground">{row.size_gb?.toFixed(2)}</td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -145,10 +147,10 @@ export default function CostPage() {
         </Card>
       )}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />{error}
+            <XCircle className="h-5 w-5" />{job.error}
           </CardContent>
         </Card>
       )}

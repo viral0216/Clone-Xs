@@ -5,7 +5,15 @@ from datetime import datetime
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import (
+    execute_sql,
+    list_schemas_sdk,
+    list_tables_sdk,
+    list_views_sdk,
+    list_functions_sdk,
+    list_volumes_sdk,
+    get_table_info_sdk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +33,7 @@ def create_snapshot(
     """
     logger.info(f"Creating snapshot of catalog: {catalog}")
 
-    exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-    schema_sql = f"""
-        SELECT schema_name, comment
-        FROM {catalog}.information_schema.schemata
-        WHERE schema_name NOT IN ({exclude_clause})
-    """
-    schemas = execute_sql(client, warehouse_id, schema_sql)
+    schema_names = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
 
     snapshot = {
         "catalog": catalog,
@@ -39,13 +41,12 @@ def create_snapshot(
         "schemas": [],
     }
 
-    for schema_row in schemas:
-        schema_name = schema_row["schema_name"]
+    for schema_name in schema_names:
         logger.info(f"  Snapshotting schema: {schema_name}")
 
         schema_data = {
             "name": schema_name,
-            "comment": schema_row.get("comment"),
+            "comment": None,
             "tables": [],
             "views": [],
             "functions": [],
@@ -53,42 +54,37 @@ def create_snapshot(
         }
 
         # Tables
-        table_sql = f"""
-            SELECT table_name, table_type, comment
-            FROM {catalog}.information_schema.tables
-            WHERE table_schema = '{schema_name}'
-            AND table_type IN ('MANAGED', 'EXTERNAL')
-        """
-        tables = execute_sql(client, warehouse_id, table_sql)
+        all_tables = list_tables_sdk(client, catalog, schema_name)
+        tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
 
         for t in tables:
             table_name = t["table_name"]
 
-            # Get columns
-            col_sql = f"""
-                SELECT column_name, data_type, is_nullable, column_default,
-                       ordinal_position, comment
-                FROM {catalog}.information_schema.columns
-                WHERE table_schema = '{schema_name}'
-                AND table_name = '{table_name}'
-                ORDER BY ordinal_position
-            """
-            columns = execute_sql(client, warehouse_id, col_sql)
+            # Get columns via SDK
+            table_info = get_table_info_sdk(client, f"{catalog}.{schema_name}.{table_name}")
+            columns = []
+            if table_info and table_info.get("columns"):
+                columns = [
+                    {
+                        "column_name": c["column_name"],
+                        "data_type": c["data_type"],
+                        "is_nullable": str(c.get("nullable", True)).upper(),
+                        "column_default": None,
+                        "ordinal_position": idx + 1,
+                        "comment": c.get("comment", ""),
+                    }
+                    for idx, c in enumerate(table_info["columns"])
+                ]
 
             schema_data["tables"].append({
                 "name": table_name,
                 "type": t.get("table_type"),
-                "comment": t.get("comment"),
+                "comment": table_info.get("comment") if table_info else None,
                 "columns": columns,
             })
 
         # Views
-        view_sql = f"""
-            SELECT table_name, view_definition
-            FROM {catalog}.information_schema.views
-            WHERE table_schema = '{schema_name}'
-        """
-        views = execute_sql(client, warehouse_id, view_sql)
+        views = list_views_sdk(client, catalog, schema_name)
         for v in views:
             schema_data["views"].append({
                 "name": v["table_name"],
@@ -97,39 +93,27 @@ def create_snapshot(
 
         # Functions
         try:
-            func_sql = f"""
-                SELECT function_name, data_type, routine_definition
-                FROM {catalog}.information_schema.routines
-                WHERE routine_schema = '{schema_name}'
-                AND routine_type = 'FUNCTION'
-            """
-            functions = execute_sql(client, warehouse_id, func_sql)
+            functions = list_functions_sdk(client, catalog, schema_name)
             for fn in functions:
                 schema_data["functions"].append({
                     "name": fn["function_name"],
                     "return_type": fn.get("data_type"),
-                    "definition": fn.get("routine_definition"),
+                    "definition": None,
                 })
         except Exception:
             logger.debug(f"  Could not query routines for {schema_name}")
-            pass  # Routines info schema may not be accessible for all schemas
 
         # Volumes
         try:
-            vol_sql = f"""
-                SELECT volume_name, volume_type, comment
-                FROM {catalog}.information_schema.volumes
-                WHERE volume_schema = '{schema_name}'
-            """
-            volumes = execute_sql(client, warehouse_id, vol_sql)
+            volumes = list_volumes_sdk(client, catalog, schema_name)
             for vol in volumes:
                 schema_data["volumes"].append({
                     "name": vol["volume_name"],
                     "type": vol.get("volume_type"),
-                    "comment": vol.get("comment"),
+                    "comment": None,
                 })
         except Exception:
-            pass  # Volumes info schema may not be available
+            pass  # Volumes SDK may not be available
 
         snapshot["schemas"].append(schema_data)
 

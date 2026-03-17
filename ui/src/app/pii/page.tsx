@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { usePiiScan } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import {
   Shield, Loader2, XCircle, AlertTriangle, CheckCircle,
 } from "lucide-react";
@@ -35,12 +36,16 @@ function confidenceBadge(confidence: number | string) {
 }
 
 export default function PiiPage() {
-  const [sourceCatalog, setSourceCatalog] = useState("");
-  const piiScan = usePiiScan();
-  const data = piiScan.data as any;
+  const { job, run, isRunning } = usePageJob("pii");
+  const [sourceCatalog, setSourceCatalog] = useState(job?.params?.sourceCatalog || "");
 
+  const data = job?.data as any;
   const summary = data?.summary;
   const columns = data?.columns || data?.results || [];
+
+  const handleScan = () => {
+    run({ sourceCatalog }, () => api.post("/pii-scan", { source_catalog: sourceCatalog, no_exit_code: true }));
+  };
 
   return (
     <div className="space-y-6">
@@ -63,11 +68,11 @@ export default function PiiPage() {
               showTable={false}
             />
             <Button
-              onClick={() => piiScan.mutate({ source_catalog: sourceCatalog, no_exit_code: true })}
-              disabled={!sourceCatalog || piiScan.isPending}
+              onClick={handleScan}
+              disabled={!sourceCatalog || isRunning}
             >
-              {piiScan.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
-              {piiScan.isPending ? "Scanning..." : "Scan for PII"}
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
+              {isRunning ? "Scanning..." : "Scan for PII"}
             </Button>
           </div>
         </CardContent>
@@ -171,11 +176,11 @@ export default function PiiPage() {
       )}
 
       {/* Error */}
-      {piiScan.isError && (
+      {job?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(piiScan.error as Error).message}
+            {job.error}
           </CardContent>
         </Card>
       )}

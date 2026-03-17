@@ -9,5 +9,5 @@ class ConfigUpdateRequest(BaseModel):
 
 
 class ConfigDiffRequest(BaseModel):
-    file_a: str
-    file_b: str
+    config_a: dict | str
+    config_b: dict | str

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
   AlertTriangle, Loader2, XCircle, Network, Eye, FunctionSquare, Database,
@@ -19,27 +20,12 @@ function riskBadge(level: string) {
 }
 
 export default function ImpactPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [table, setTable] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("impact");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [schema, setSchema] = useState(job?.params?.schema || "");
+  const [table, setTable] = useState(job?.params?.table || "");
 
-  async function analyze() {
-    setLoading(true);
-    setError("");
-    setResults(null);
-    try {
-      const data = await api.post("/impact", { catalog, schema: schema || undefined, table: table || undefined });
-      setResults(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to analyze impact");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  const results = job?.data as any;
   const views = results?.affected_views || [];
   const functions = results?.affected_functions || [];
   const downstream = results?.downstream_tables || [];
@@ -65,15 +51,15 @@ export default function ImpactPage() {
               onSchemaChange={setSchema}
               onTableChange={setTable}
             />
-            <Button onClick={analyze} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Network className="h-4 w-4 mr-2" />}
-              {loading ? "Analyzing..." : "Analyze Impact"}
+            <Button onClick={() => run({ catalog, schema, table }, () => api.post("/impact", { catalog, schema: schema || undefined, table: table || undefined }))} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Network className="h-4 w-4 mr-2" />}
+              {isRunning ? "Analyzing..." : "Analyze Impact"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {!results && !loading && !error && (
+      {!results && !isRunning && job?.status !== "error" && (
         <Card className="bg-card border-border">
           <CardContent className="pt-6 text-center text-muted-foreground py-12">
             <Network className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -139,10 +125,10 @@ export default function ImpactPage() {
           )
       )}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />{error}
+            <XCircle className="h-5 w-5" />{job.error}
           </CardContent>
         </Card>
       )}

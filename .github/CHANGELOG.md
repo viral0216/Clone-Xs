@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-03-17
+
+### Added
+- **Lineage Graph** — interactive SVG lineage visualization with pan/zoom, multi-hop tracing (up to 5 hops), upstream/downstream tabs, column-level lineage from `system.access.column_lineage`, notebook/job attribution via `entity_type`/`entity_id`, time range filtering, and JSON/CSV export
+- **Column Usage Analytics** — new `POST /api/column-usage` endpoint and `src/column_usage.py` module querying `system.access.column_lineage` and `system.query.history` for most frequently used columns and who accesses them. Integrated into both Lineage Insights tab and Explorer page
+- **Lineage Insights panel** — most connected tables, root sources, terminal sinks, top columns by usage (dual bar: lineage + query), and active users with query counts
+- **Create Job enhancements** — auto-populated storage location from source catalog's `DESCRIBE CATALOG EXTENDED`, Clone-Xs job dropdown (filters by `created_by=clone-xs` tag) for updating existing jobs, new `GET /api/generate/clone-jobs` and `GET /api/catalogs/{catalog}/info` endpoints
+- **Logo enhancement** — icon mark (overlapping catalog shapes with arrow) added to header, SVGs, PageHeader breadcrumbs, and API docs
+- **Run job after creation** — new "Run job immediately after creation" checkbox on Create Job page, `POST /api/generate/run-job/{job_id}` endpoint, and `--run-now` CLI flag for `clxs create-job`
+- **Navigation & Feature Toggles** — new Settings section to enable/disable sidebar pages per user (persisted in localStorage), with "Enable All" reset and live sidebar updates
+- **Connection tooltip** — removed connection banner from Dashboard, moved connection details (user, host, auth method) to a hover tooltip on the header "Connected" badge
+
+### Fixed
+- **Databricks Job audit logging** — jobs now correctly write to the audit trail Delta table configured in Settings (e.g., `edp_dev.logs.clone_operations`) instead of defaulting to `clone_audit`. Fixed by passing `audit_trail` nested dict through `build_job_config()` to the clone notebook, and adding `_get_audit_catalog()`/`_get_audit_schema()` helpers that resolve from multiple config shapes
+- **Job notebook audit INSERT** — rewrote from multi-line `spark.sql(f"""...""")` to single-line f-string + Spark DataFrame API to avoid escaping issues with JSON strings containing single quotes
+- **Storage location passthrough** — added `location` field to `CreateJobRequest` model and `config["catalog_location"] = req.location` in the API router, so the storage location from the UI reaches the notebook's `CREATE CATALOG ... MANAGED LOCATION`
+- **Audit Trail** — fixed field name mismatch between API response (`started_at`, `user_name`, `source_catalog`, `duration_seconds`) and UI column keys; rebuilt as expandable card layout with log drill-down
+- **Config Diff** — fixed API model (`file_a`/`file_b` → `config_a`/`config_b`), endpoint now accepts JSON dicts or YAML strings directly, response transformed to flat `{key, value_a, value_b, changed}` array
+- **Lineage** — fixed `get_lineage` import error (function didn't exist), now calls `query_lineage` with correct args, added 4-tier data source fallback (UC system tables → Clone-Xs lineage → run_logs → audit_trail)
+- **Impact Analysis** — fixed function signature mismatch (was passing `schema`/`table` as positional args, backend expected `config: dict`), mapped response fields (`dependent_views` → `affected_views`, `dependent_functions` → `affected_functions`)
+
+### Changed
+- **SDK-first metadata access** — replaced ~42 SQL warehouse queries with Databricks SDK API calls for metadata listing (schemas, tables, views, functions, volumes) and retrieval (table info, columns, catalog details). Reduces SQL warehouse compute costs and enables metadata browsing without a running warehouse. SQL fallback is kept where SDK fails. Affected modules: `clone_catalog`, `clone_tables`, `clone_views`, `clone_functions`, `clone_volumes`, `compare`, `diff`, `validation`, `stats`, `profiling`, `snapshot`, `storage_metrics`, `preflight`, `permissions`, and API router endpoints.
+- Added SDK helper functions in `src/client.py`: `list_schemas_sdk`, `list_tables_sdk`, `list_views_sdk`, `list_functions_sdk`, `list_volumes_sdk`, `get_table_info_sdk`, `get_catalog_info_sdk`, `delete_table_sdk`
+
+### Removed
+- **Schedule page** — removed from sidebar navigation (scheduling is handled by Create Databricks Job page)
+
 ## [0.5.0] - 2026-03-16
 
 ### Added
@@ -35,6 +63,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **`databricks-app/` directory** — moved `app.yaml`, `.databricksignore`, and deploy script into dedicated `databricks-app/` folder with its own README documenting authentication, UC permissions, and troubleshooting
 - **Improved deploy script** — uses staging directory + `workspace import-dir` (avoids `.gitignore` excluding `ui/dist/`), auto-creates app, waits for compute, shows app URL on completion
 - **Robust frontend path resolution** — `api/main.py` searches multiple candidate paths for `ui/dist/` with logging, works reliably on Databricks App runtime
+- **Databricks-style UI redesign** — white sidebar with light blue active state (`#E8F0FE`), coral accents (`#E8453C`), Google-style typography (14px, `#3C4043` text), section headers matching Databricks workspace layout
+- **Light + Dark mode toggle** — full theme support with CSS variables, light mode as default matching Databricks workspace
+- **New logo** — "Clone → Xs" with "UNITY CATALOG TOOLKIT" subtitle, applied across sidebar, header, README, docs, and favicon
+- **Command palette search** — functional search bar in header that filters pages by name with keyboard navigation and instant navigation
+- **Marketplace listing assets** — setup notebook, Solution Accelerator README, MCP server listing, and Databricks Data Partner Program application draft in `marketplace/` directory
 
 ### Changed
 - `ui/vite.config.ts` — set `base: "./"` for Electron `file://` compatibility
@@ -43,6 +76,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Sidebar Analysis section updated with Storage Metrics entry
 - Platform badge updated to include Desktop
 - Version badge updated to 0.5.0
+- UI redesigned from dark theme to Databricks-inspired light theme with white sidebar
+- Logo updated from "CX" monogram to "Clone → Xs" with subtitle
+- Header icons simplified — removed terminal and GitHub links, added API docs link
+- Button styling updated to use lighter coral (`#FCE8E6` bg / `#E8453C` text) matching Databricks "+ New" button
+- Header height increased to 80px (`h-20`)
+- All toggle buttons (Clone Type, Load Type, Order by Size, Throttle Profile) updated to softer coral palette
 
 ## [0.4.0] - 2026-03-15
 

@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'guide/setup',
         'guide/authentication',
         'guide/architecture',
+        'guide/web-ui',
         'guide/clone',
         'guide/advanced-clone',
         'guide/diff-and-compare',
@@ -37,8 +38,10 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'reference/cli',
+        'reference/api',
         'reference/configuration',
         'reference/faq',
+        'reference/changelog',
       ],
     },
   ],

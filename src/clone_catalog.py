@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql, set_rate_limit
+from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, set_rate_limit
 from src.clone_functions import clone_functions_in_schema
 from src.clone_tables import clone_tables_in_schema
 from src.clone_tags import copy_catalog_tags, copy_schema_tags
@@ -53,21 +53,14 @@ def get_schemas(
     if include:
         return [s for s in include if s not in exclude_set]
 
-    sql = f"""
-        SELECT schema_name
-        FROM {catalog}.information_schema.schemata
-        WHERE schema_name NOT IN ({','.join(f"'{s}'" for s in exclude_set)})
-    """
-    try:
-        rows = execute_sql(client, warehouse_id, sql)
-    except RuntimeError as e:
-        if "TABLE_OR_VIEW_NOT_FOUND" in str(e):
-            raise RuntimeError(
-                f"Catalog '{catalog}' not found. Verify the catalog exists and you have access.\n"
-                f"List available catalogs: clxs run-sql --sql \"SHOW CATALOGS\""
-            ) from e
-        raise
-    return [row["schema_name"] for row in rows]
+    schemas = list_schemas_sdk(client, catalog, exclude=list(exclude_set))
+    if not schemas:
+        # Fallback: the SDK call may return [] if the catalog doesn't exist
+        raise RuntimeError(
+            f"Catalog '{catalog}' not found or has no schemas. Verify the catalog exists and you have access.\n"
+            f"List available catalogs: clxs run-sql --sql \"SHOW CATALOGS\""
+        )
+    return schemas
 
 
 def _filter_schemas_by_tags(
@@ -254,11 +247,8 @@ def process_schema(
         if masking_rules and not dry_run:
             from src.masking import apply_masking_rules
             # Get all tables that were just cloned
-            table_sql = f"""
-                SELECT table_name FROM {dest}.information_schema.tables
-                WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-            """
-            tables = execute_sql(client, warehouse_id, table_sql)
+            tables = list_tables_sdk(client, dest, schema)
+            tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             for row in tables:
                 apply_masking_rules(
                     client, warehouse_id, dest, schema, row["table_name"],
@@ -269,11 +259,8 @@ def process_schema(
         lineage_config = config.get("lineage")
         if lineage_config and not dry_run:
             from src.lineage import record_lineage_to_uc
-            table_sql = f"""
-                SELECT table_name FROM {dest}.information_schema.tables
-                WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-            """
-            tables = execute_sql(client, warehouse_id, table_sql)
+            tables = list_tables_sdk(client, dest, schema)
+            tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             for row in tables:
                 record_lineage_to_uc(
                     client, warehouse_id,

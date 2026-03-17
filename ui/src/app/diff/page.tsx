@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { useDiff, useValidate } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import {
   GitCompare, CheckCircle, XCircle, Loader2, AlertCircle,
   Plus, Minus, Equal, ArrowRight,
@@ -116,14 +117,13 @@ function DiffSection({ title, data }: { title: string; data: any }) {
 }
 
 export default function DiffPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
+  const { job: diffJob, run: runDiff, isRunning: isDiffRunning } = usePageJob("diff");
+  const { job: valJob, run: runValidate, isRunning: isValRunning } = usePageJob("validate");
+  const [source, setSource] = useState(diffJob?.params?.source || valJob?.params?.source || "");
+  const [dest, setDest] = useState(diffJob?.params?.dest || valJob?.params?.dest || "");
 
-  const diff = useDiff();
-  const validate = useValidate();
-
-  const diffData = diff.data as any;
-  const valData = validate.data as any;
+  const diffData = diffJob?.data as any;
+  const valData = valJob?.data as any;
 
   // Summary counts
   const summaryItems = diffData
@@ -168,19 +168,19 @@ export default function DiffPage() {
               showTable={false}
             />
             <Button
-              onClick={() => diff.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || diff.isPending}
+              onClick={() => runDiff({ source, dest }, () => api.post("/diff", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isDiffRunning}
             >
-              {diff.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
-              {diff.isPending ? "Comparing..." : "Diff"}
+              {isDiffRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
+              {isDiffRunning ? "Comparing..." : "Diff"}
             </Button>
             <Button
               variant="outline"
-              onClick={() => validate.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || validate.isPending}
+              onClick={() => runValidate({ source, dest }, () => api.post("/validate", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isValRunning}
             >
-              {validate.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-              {validate.isPending ? "Validating..." : "Validate"}
+              {isValRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+              {isValRunning ? "Validating..." : "Validate"}
             </Button>
           </div>
         </CardContent>
@@ -357,19 +357,19 @@ export default function DiffPage() {
       )}
 
       {/* Errors */}
-      {diff.isError && (
+      {diffJob?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(diff.error as Error).message}
+            {diffJob.error}
           </CardContent>
         </Card>
       )}
-      {validate.isError && (
+      {valJob?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(validate.error as Error).message}
+            {valJob.error}
           </CardContent>
         </Card>
       )}

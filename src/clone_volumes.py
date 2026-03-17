@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql, get_max_parallel_queries
+from src.client import execute_sql, get_max_parallel_queries, list_volumes_sdk
 from src.permissions import copy_volume_permissions, update_ownership
 from src.rollback import record_object
 
@@ -15,24 +15,19 @@ def get_volumes(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> list[dict]:
     """List all volumes in a schema."""
-    sql = f"""
-        SELECT volume_name, volume_type, storage_location, comment
-        FROM {catalog}.information_schema.volumes
-        WHERE volume_schema = '{schema}'
-    """
-    return execute_sql(client, warehouse_id, sql)
+    volumes = list_volumes_sdk(client, catalog, schema)
+    # Ensure volume_type is a string (SDK may return enum)
+    for v in volumes:
+        if v.get("volume_type") is not None:
+            v["volume_type"] = str(v["volume_type"]).replace("VolumeType.", "")
+    return volumes
 
 
 def get_existing_volumes(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> set[str]:
     """Get set of existing volume names in destination schema."""
-    sql = f"""
-        SELECT volume_name
-        FROM {catalog}.information_schema.volumes
-        WHERE volume_schema = '{schema}'
-    """
-    rows = execute_sql(client, warehouse_id, sql)
+    rows = list_volumes_sdk(client, catalog, schema)
     return {row["volume_name"] for row in rows}
 
 

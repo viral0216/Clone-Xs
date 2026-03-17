@@ -34,6 +34,7 @@ class CreateJobRequest(BaseModel):
     timeout: int = 7200
     tags: dict[str, str] = {}
     update_job_id: int | None = None
+    location: str = ""
     # Clone configuration
     clone_type: Literal["DEEP", "SHALLOW"] = "DEEP"
     load_type: Literal["FULL", "INCREMENTAL"] = "FULL"

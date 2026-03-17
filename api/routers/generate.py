@@ -100,6 +100,8 @@ async def create_databricks_job(
     # Time travel
     config["as_of_timestamp"] = req.as_of_timestamp
     config["as_of_version"] = req.as_of_version
+    # Storage location
+    config["catalog_location"] = req.location
 
     result = create_persistent_job(
         client,
@@ -116,3 +118,35 @@ async def create_databricks_job(
     )
 
     return result
+
+
+@router.post("/run-job/{job_id}")
+async def run_job_now(job_id: int, client=Depends(get_db_client)):
+    """Trigger an immediate run of an existing Databricks Job."""
+    try:
+        run = client.jobs.run_now(job_id)
+        return {"run_id": run.run_id, "message": f"Job {job_id} triggered successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to run job: {e}")
+
+
+@router.get("/clone-jobs")
+async def list_clone_xs_jobs(client=Depends(get_db_client)):
+    """List Databricks Jobs created by Clone-Xs (tagged with created_by=clone-xs)."""
+    try:
+        jobs = client.jobs.list()
+        results = []
+        for job in jobs:
+            tags = {}
+            if job.settings and hasattr(job.settings, "tags") and job.settings.tags:
+                tags = job.settings.tags
+            if tags.get("created_by") == "clone-xs":
+                name = job.settings.name if job.settings else ""
+                results.append({
+                    "job_id": job.job_id,
+                    "job_name": name,
+                    "tags": tags,
+                })
+        return results
+    except Exception as e:
+        return []

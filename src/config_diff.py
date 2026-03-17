@@ -5,6 +5,11 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def diff_config_dicts(config_a: dict, config_b: dict) -> dict:
+    """Compare two config dicts and return differences."""
+    return _diff_dicts(config_a, config_b)
+
+
 def diff_configs(path_a: str, path_b: str) -> dict:
     """Compare two YAML config files and return differences.
 

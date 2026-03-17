@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, ShieldCheck, Download, FileText } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
@@ -24,25 +25,11 @@ const REPORT_TYPES = [
 ];
 
 export default function CompliancePage() {
-  const [catalog, setCatalog] = useState("");
-  const [reportType, setReportType] = useState("data_governance");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("compliance");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [reportType, setReportType] = useState(job?.params?.reportType || "data_governance");
 
-  async function generateReport() {
-    setLoading(true);
-    setError("");
-    setResults(null);
-    try {
-      const data = await api.post("/compliance", { catalog, report_type: reportType });
-      setResults(data);
-    } catch (e: any) {
-      setError(e.message || "Failed to generate report");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const results = job?.data as any;
 
   function downloadReport() {
     if (!results) return;
@@ -94,9 +81,9 @@ export default function CompliancePage() {
                 ))}
               </select>
             </div>
-            <Button onClick={generateReport} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
-              {loading ? "Generating..." : "Generate Report"}
+            <Button onClick={() => run({ catalog, reportType }, () => api.post("/compliance", { catalog, report_type: reportType }))} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+              {isRunning ? "Generating..." : "Generate Report"}
             </Button>
             {results && (
               <Button variant="outline" onClick={downloadReport}>
@@ -156,10 +143,10 @@ export default function CompliancePage() {
         </Card>
       ))}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />{error}
+            <XCircle className="h-5 w-5" />{job.error}
           </CardContent>
         </Card>
       )}

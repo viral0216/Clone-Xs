@@ -81,13 +81,58 @@ async def list_catalogs(client=Depends(get_db_client)):
         return []
 
 
-@router.get("/catalogs/{catalog}/schemas")
-async def list_schemas(catalog: str, client=Depends(get_db_client)):
-    """List schemas in a catalog."""
+@router.get("/catalogs/{catalog}/info")
+async def get_catalog_info(catalog: str, client=Depends(get_db_client)):
+    """Get catalog details including storage location via DESCRIBE CATALOG EXTENDED."""
+    from src.client import execute_sql
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
+    result = {"name": catalog, "storage_root": "", "owner": "", "comment": ""}
+
+    # Try DESCRIBE CATALOG EXTENDED — most reliable for storage location
+    try:
+        rows = execute_sql(client, wid, f"DESCRIBE CATALOG EXTENDED `{catalog}`")
+        for row in rows:
+            key = (row.get("info_name") or row.get("col_name") or "").lower().strip()
+            val = row.get("info_value") or row.get("data_type") or ""
+            if key in ("location", "storage_root", "storage root", "managed location"):
+                result["storage_root"] = val
+            elif key == "owner":
+                result["owner"] = val
+            elif key == "comment":
+                result["comment"] = val
+        if result["storage_root"]:
+            return result
+    except Exception:
+        pass
+
+    # Fallback to SDK
+    try:
+        info = client.catalogs.get(catalog)
+        result["storage_root"] = getattr(info, "storage_root", None) or getattr(info, "storage_location", None) or ""
+        result["owner"] = getattr(info, "owner", "") or ""
+        result["comment"] = getattr(info, "comment", "") or ""
+    except Exception:
+        pass
+
+    return result
+
+
+@router.get("/catalogs/{catalog}/schemas")
+async def list_schemas(catalog: str, client=Depends(get_db_client)):
+    """List schemas in a catalog using the SDK (no SQL warehouse needed)."""
+    from src.client import list_schemas_sdk
+    try:
+        schemas = list_schemas_sdk(client, catalog, exclude=["information_schema", "default"])
+        if schemas:
+            return sorted(schemas)
+    except Exception:
+        pass
+    # Fallback to SQL if SDK fails
     try:
         from src.client import execute_sql
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
         rows = execute_sql(client, wid, f"SELECT schema_name FROM {catalog}.information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'default') ORDER BY schema_name")
         return [r["schema_name"] for r in rows]
     except Exception:
@@ -96,11 +141,19 @@ async def list_schemas(catalog: str, client=Depends(get_db_client)):
 
 @router.get("/catalogs/{catalog}/{schema}/tables")
 async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
-    """List tables in a schema."""
-    config = await get_app_config()
-    wid = config.get("sql_warehouse_id", "")
+    """List tables in a schema using the SDK (no SQL warehouse needed)."""
+    from src.client import list_tables_sdk
+    try:
+        tables = list_tables_sdk(client, catalog, schema)
+        if tables:
+            return sorted([t["table_name"] for t in tables])
+    except Exception:
+        pass
+    # Fallback to SQL if SDK fails
     try:
         from src.client import execute_sql
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
         rows = execute_sql(client, wid, f"SELECT table_name FROM {catalog}.information_schema.tables WHERE table_schema = '{schema}' ORDER BY table_name")
         return [r["table_name"] for r in rows]
     except Exception:
@@ -195,6 +248,9 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
             avg_table_clone_seconds DOUBLE,
             total_row_count BIGINT,
             total_size_bytes BIGINT,
+            user_name STRING,
+            status STRING,
+            job_type STRING,
             metrics_json STRING,
             recorded_at TIMESTAMP
         )
@@ -205,6 +261,12 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         )
         """)
         tables_created.append(metrics_fqn)
+        # Add new columns to existing metrics table
+        for col_name, col_type in [("user_name", "STRING"), ("status", "STRING"), ("job_type", "STRING")]:
+            try:
+                execute_sql(client, wid, f"ALTER TABLE {metrics_fqn} ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass  # Column already exists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create metrics table: {e}")
     # Describe the tables we just created
@@ -285,7 +347,7 @@ async def generate_compliance_report(req: dict, client=Depends(get_db_client)):
 async def list_templates():
     """List available clone templates."""
     from src.clone_templates import TEMPLATES
-    return [{"name": k, **v} for k, v in TEMPLATES.items()]
+    return [{"key": k, **v} for k, v in TEMPLATES.items()]
 
 
 @router.get("/schedule")
@@ -325,25 +387,353 @@ async def multi_clone(req: dict, client=Depends(get_db_client), jm: JobManager =
 
 
 @router.post("/lineage")
-async def query_lineage(req: dict, client=Depends(get_db_client)):
-    """Query lineage for a catalog or table."""
+async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
+    """Query lineage for a catalog or table.
+
+    Merges data from up to 4 sources, supports multi-hop tracing,
+    notebook/job attribution, time range filtering, and column lineage.
+    """
+    from src.client import execute_sql as _exec
+
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    catalog = req.get("catalog", "")
+    table = req.get("table")  # may be "schema.table"
+    include_columns = req.get("include_columns", False)
+    depth = min(req.get("depth", 1), 5)  # multi-hop depth, max 5
+    date_from = req.get("date_from")  # ISO date string
+    date_to = req.get("date_to")  # ISO date string
+
+    table_entries = []
+    column_entries = []
+    sources_used = []
+    target_fqn = f"{catalog}.{table}" if table else None
+
+    # Time range WHERE clause fragment
+    def _time_filter(col: str) -> str:
+        parts = []
+        if date_from:
+            parts.append(f"{col} >= '{date_from}'")
+        if date_to:
+            parts.append(f"{col} <= '{date_to}T23:59:59'")
+        return (" AND " + " AND ".join(parts)) if parts else ""
+
+    # ── Source 1: system.access.table_lineage (with multi-hop + attribution) ──
     try:
-        from src.lineage_tracker import get_lineage
-        return get_lineage(req.get("catalog", ""), req.get("table"))
-    except Exception as e:
-        return {"entries": [], "error": str(e)}
+        time_flt = _time_filter("event_time")
+        if target_fqn:
+            # Multi-hop: iteratively discover upstream/downstream
+            visited_up = set()
+            visited_down = set()
+            frontier_up = {target_fqn}
+            frontier_down = {target_fqn}
+
+            for hop in range(depth):
+                # Upstream hop
+                if frontier_up:
+                    placeholders = ",".join(f"'{t}'" for t in frontier_up)
+                    up_sql = f"""
+                        SELECT source_table_full_name, target_table_full_name,
+                               source_type, target_type, entity_type,
+                               entity_id, event_time
+                        FROM system.access.table_lineage
+                        WHERE target_table_full_name IN ({placeholders})
+                          AND source_table_full_name IS NOT NULL
+                          {time_flt}
+                        ORDER BY event_time DESC LIMIT 200
+                    """
+                    rows = _exec(client, wid, up_sql)
+                    next_up = set()
+                    for r in rows:
+                        src = r.get("source_table_full_name", "")
+                        dst = r.get("target_table_full_name", "")
+                        edge = (src, dst)
+                        if edge not in visited_up:
+                            visited_up.add(edge)
+                            table_entries.append({
+                                "source": src,
+                                "destination": dst,
+                                "clone_type": r.get("source_type", "READ"),
+                                "timestamp": str(r.get("event_time", "")),
+                                "direction": "upstream",
+                                "data_source": "system_table",
+                                "hop": hop + 1,
+                                "entity_type": r.get("entity_type", ""),
+                                "entity_id": r.get("entity_id", ""),
+                            })
+                            next_up.add(src)
+                    frontier_up = next_up - {t for s, t in visited_up}
+
+                # Downstream hop
+                if frontier_down:
+                    placeholders = ",".join(f"'{t}'" for t in frontier_down)
+                    down_sql = f"""
+                        SELECT source_table_full_name, target_table_full_name,
+                               source_type, target_type, entity_type,
+                               entity_id, event_time
+                        FROM system.access.table_lineage
+                        WHERE source_table_full_name IN ({placeholders})
+                          AND target_table_full_name IS NOT NULL
+                          {time_flt}
+                        ORDER BY event_time DESC LIMIT 200
+                    """
+                    rows = _exec(client, wid, down_sql)
+                    next_down = set()
+                    for r in rows:
+                        src = r.get("source_table_full_name", "")
+                        dst = r.get("target_table_full_name", "")
+                        edge = (src, dst)
+                        if edge not in visited_down:
+                            visited_down.add(edge)
+                            table_entries.append({
+                                "source": src,
+                                "destination": dst,
+                                "clone_type": r.get("target_type", "WRITE"),
+                                "timestamp": str(r.get("event_time", "")),
+                                "direction": "downstream",
+                                "data_source": "system_table",
+                                "hop": hop + 1,
+                                "entity_type": r.get("entity_type", ""),
+                                "entity_id": r.get("entity_id", ""),
+                            })
+                            next_down.add(dst)
+                    frontier_down = next_down - {s for s, t in visited_down}
+        else:
+            # Catalog-level
+            cat_sql = f"""
+                SELECT source_table_full_name, target_table_full_name,
+                       source_type, target_type, entity_type, entity_id, event_time
+                FROM system.access.table_lineage
+                WHERE (source_table_full_name LIKE '{catalog}.%'
+                   OR target_table_full_name LIKE '{catalog}.%')
+                   {time_flt}
+                ORDER BY event_time DESC LIMIT 300
+            """
+            rows = _exec(client, wid, cat_sql)
+            for r in rows:
+                src = r.get("source_table_full_name", "")
+                dst = r.get("target_table_full_name", "")
+                direction = "downstream" if src.startswith(f"{catalog}.") else "upstream"
+                table_entries.append({
+                    "source": src, "destination": dst,
+                    "clone_type": r.get("source_type", ""),
+                    "timestamp": str(r.get("event_time", "")),
+                    "direction": direction,
+                    "data_source": "system_table",
+                    "hop": 1,
+                    "entity_type": r.get("entity_type", ""),
+                    "entity_id": r.get("entity_id", ""),
+                })
+        if table_entries:
+            sources_used.append("system.access.table_lineage")
+    except Exception:
+        pass
+
+    # ── Source 2: system.access.column_lineage ──
+    if include_columns and target_fqn:
+        try:
+            time_flt = _time_filter("event_time")
+            col_sql = f"""
+                SELECT source_table_full_name, source_column_name,
+                       target_table_full_name, target_column_name,
+                       event_time
+                FROM system.access.column_lineage
+                WHERE (target_table_full_name = '{target_fqn}'
+                   OR source_table_full_name = '{target_fqn}')
+                   {time_flt}
+                ORDER BY event_time DESC LIMIT 300
+            """
+            col_rows = _exec(client, wid, col_sql)
+            for r in col_rows:
+                column_entries.append({
+                    "source_table": r.get("source_table_full_name", ""),
+                    "source_column": r.get("source_column_name", ""),
+                    "target_table": r.get("target_table_full_name", ""),
+                    "target_column": r.get("target_column_name", ""),
+                    "timestamp": str(r.get("event_time", "")),
+                })
+            if column_entries:
+                sources_used.append("system.access.column_lineage")
+        except Exception:
+            pass
+
+    # ── Source 3: Clone-Xs lineage tracker ──
+    try:
+        from src.lineage_tracker import query_lineage
+        fqn = f"{catalog}.{table}" if table else None
+        rows = query_lineage(client, wid, table_fqn=fqn, limit=100)
+        if not table and catalog:
+            rows = [r for r in rows if catalog in r.get("source_fqn", "") or catalog in r.get("dest_fqn", "")]
+        for r in rows:
+            ts = str(r.get("cloned_at", ""))
+            if date_from and ts < date_from:
+                continue
+            if date_to and ts > date_to + "T23:59:59":
+                continue
+            table_entries.append({
+                "source": r.get("source_fqn", ""),
+                "destination": r.get("dest_fqn", ""),
+                "clone_type": r.get("clone_type", "CLONE"),
+                "timestamp": ts,
+                "direction": "downstream",
+                "data_source": "clone_xs",
+                "hop": 1,
+                "entity_type": "CLONE_XS",
+                "entity_id": r.get("operation_id", ""),
+            })
+        if rows:
+            sources_used.append("clone_xs_lineage")
+    except Exception:
+        pass
+
+    # ── Source 4: run_logs / audit_trail fallback ──
+    if not table_entries:
+        try:
+            from src.run_logs import query_run_logs
+            logs = query_run_logs(client, wid, config=config, limit=100)
+            if catalog:
+                logs = [r for r in logs if catalog in (r.get("source_catalog") or "") or catalog in (r.get("destination_catalog") or "")]
+            for r in logs:
+                if r.get("source_catalog") and r.get("destination_catalog"):
+                    ts = str(r.get("started_at", ""))
+                    if date_from and ts < date_from:
+                        continue
+                    if date_to and ts > date_to + "T23:59:59":
+                        continue
+                    table_entries.append({
+                        "source": r.get("source_catalog", ""),
+                        "destination": r.get("destination_catalog", ""),
+                        "clone_type": r.get("clone_type", "CLONE"),
+                        "timestamp": ts,
+                        "direction": "downstream",
+                        "data_source": "run_logs",
+                        "hop": 1,
+                        "entity_type": r.get("job_type", ""),
+                        "entity_id": r.get("job_id", ""),
+                    })
+            if table_entries:
+                sources_used.append("run_logs")
+        except Exception:
+            pass
+
+    if not table_entries:
+        try:
+            from src.audit_trail import query_audit_history
+            rows = query_audit_history(client, wid, config, limit=100, source_catalog=catalog or None)
+            for r in rows:
+                if r.get("source_catalog") and r.get("destination_catalog"):
+                    ts = str(r.get("started_at", ""))
+                    if date_from and ts < date_from:
+                        continue
+                    if date_to and ts > date_to + "T23:59:59":
+                        continue
+                    table_entries.append({
+                        "source": r.get("source_catalog", ""),
+                        "destination": r.get("destination_catalog", ""),
+                        "clone_type": r.get("clone_type", "CLONE"),
+                        "timestamp": ts,
+                        "direction": "downstream",
+                        "data_source": "audit_trail",
+                        "hop": 1,
+                        "entity_type": r.get("operation_type", ""),
+                        "entity_id": r.get("operation_id", ""),
+                    })
+            if table_entries:
+                sources_used.append("audit_trail")
+        except Exception:
+            pass
+
+    # Deduplicate by source+destination (keep first = most recent)
+    seen = set()
+    unique_entries = []
+    for e in table_entries:
+        key = (e["source"], e["destination"])
+        if key not in seen:
+            seen.add(key)
+            unique_entries.append(e)
+
+    # Compute graph stats
+    all_nodes = set()
+    in_degree = {}
+    out_degree = {}
+    for e in unique_entries:
+        s, d = e["source"], e["destination"]
+        all_nodes.add(s)
+        all_nodes.add(d)
+        out_degree[s] = out_degree.get(s, 0) + 1
+        in_degree[d] = in_degree.get(d, 0) + 1
+
+    orphans = [n for n in all_nodes if in_degree.get(n, 0) == 0 and out_degree.get(n, 0) > 0]
+    sinks = [n for n in all_nodes if out_degree.get(n, 0) == 0 and in_degree.get(n, 0) > 0]
+
+    # Most connected = highest total degree
+    total_degree = {}
+    for n in all_nodes:
+        total_degree[n] = in_degree.get(n, 0) + out_degree.get(n, 0)
+    most_connected = sorted(total_degree.items(), key=lambda x: -x[1])[:10]
+
+    # Build graph nodes/edges for visualization
+    node_set = set()
+    graph_nodes = []
+    for e in unique_entries:
+        for n in (e["source"], e["destination"]):
+            if n and n not in node_set:
+                node_set.add(n)
+                graph_nodes.append({
+                    "id": n,
+                    "label": n.split(".")[-1] if "." in n else n,
+                    "full_name": n,
+                    "in_degree": in_degree.get(n, 0),
+                    "out_degree": out_degree.get(n, 0),
+                    "is_target": n == target_fqn,
+                })
+    graph_edges = [
+        {"source": e["source"], "target": e["destination"], "type": e.get("clone_type", ""),
+         "hop": e.get("hop", 1), "direction": e.get("direction", "")}
+        for e in unique_entries
+    ]
+
+    return {
+        "entries": unique_entries,
+        "column_lineage": column_entries,
+        "sources": sources_used,
+        "total": len(unique_entries),
+        "graph": {"nodes": graph_nodes, "edges": graph_edges},
+        "stats": {
+            "total_nodes": len(all_nodes),
+            "total_edges": len(unique_entries),
+            "orphans": orphans[:20],
+            "sinks": sinks[:20],
+            "most_connected": [{"name": n, "degree": d} for n, d in most_connected],
+        },
+    }
 
 
 @router.post("/impact")
-async def analyze_impact(req: dict, client=Depends(get_db_client)):
+async def analyze_impact_endpoint(req: dict, client=Depends(get_db_client)):
     """Analyze downstream impact of changes."""
     try:
         from src.impact_analysis import analyze_impact
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
-        return analyze_impact(client, wid, req.get("catalog", ""), req.get("schema"), req.get("table"))
+
+        # Build config dict that analyze_impact expects as 4th arg
+        impact_config = dict(config)
+        impact_config["schema"] = req.get("schema")
+        impact_config["table"] = req.get("table")
+
+        result = analyze_impact(client, wid, req.get("catalog", ""), impact_config)
+
+        # Map field names to what the UI expects
+        return {
+            "affected_views": result.get("dependent_views", []),
+            "affected_functions": result.get("dependent_functions", []),
+            "downstream_tables": [],
+            "risk_level": result.get("risk_level", "unknown"),
+            "total_dependent_objects": result.get("total_dependent_objects", 0),
+        }
     except Exception as e:
-        return {"affected": [], "risk_level": "unknown", "error": str(e)}
+        return {"affected_views": [], "affected_functions": [], "downstream_tables": [], "risk_level": "unknown", "error": str(e)}
 
 
 @router.post("/preview")
@@ -424,10 +814,223 @@ async def toggle_plugin(req: dict):
 
 
 @router.get("/monitor/metrics")
-async def get_metrics():
-    """Get clone operation metrics."""
+async def get_metrics(client=Depends(get_db_client)):
+    """Get clone operation metrics from Delta tables."""
     try:
         from src.metrics import get_metrics_summary
-        return get_metrics_summary()
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
+        return get_metrics_summary(client, wid, config)
     except Exception:
-        return {"total_clones": 0, "success_rate": 0, "avg_duration": 0, "tables_per_hour": 0, "by_status": {}}
+        from src.metrics import _empty_summary
+        return _empty_summary()
+
+
+@router.get("/notifications")
+async def get_notifications(client=Depends(get_db_client)):
+    """Get recent notifications from run logs (completions, failures, TTL warnings)."""
+    try:
+        from src.client import execute_sql
+        from src.run_logs import get_run_logs_fqn
+        from src.audit_trail import get_audit_table_fqn
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
+
+        run_logs_fqn = get_run_logs_fqn(config)
+        audit_fqn = get_audit_table_fqn(config)
+        metrics_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+
+        # Normalize column names via SQL aliases for each table
+        queries = [
+            # run_logs: job_id, job_type
+            f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+                       status, completed_at, duration_seconds, error_message
+                FROM {run_logs_fqn}
+                WHERE completed_at IS NOT NULL
+                ORDER BY completed_at DESC LIMIT 20""",
+            # clone_operations: operation_id → job_id, operation_type → job_type
+            f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                       source_catalog, destination_catalog,
+                       status, completed_at, duration_seconds, error_message
+                FROM {audit_fqn}
+                WHERE completed_at IS NOT NULL
+                ORDER BY completed_at DESC LIMIT 20""",
+            # clone_metrics: operation_id → job_id, derive status from failed count
+            f"""SELECT operation_id AS job_id, 'clone' AS job_type,
+                       source_catalog, destination_catalog,
+                       CASE WHEN failed > 0 THEN 'completed_with_errors'
+                            ELSE 'success' END AS status,
+                       completed_at, duration_seconds,
+                       CAST(NULL AS STRING) AS error_message
+                FROM {metrics_fqn}
+                WHERE completed_at IS NOT NULL
+                ORDER BY completed_at DESC LIMIT 20""",
+        ]
+
+        rows = []
+        for sql in queries:
+            try:
+                rows = execute_sql(client, wid, sql)
+                if rows:
+                    break
+            except Exception:
+                continue
+
+        items = []
+        for r in rows:
+            status = r.get("status", "")
+            src = r.get("source_catalog", "")
+            dest = r.get("destination_catalog", "")
+            job_type = r.get("job_type") or "clone"
+
+            if status in ("completed", "success"):
+                msg = f"{job_type.capitalize()} completed: {src} → {dest}"
+                ntype = "success"
+            elif status == "failed":
+                err = r.get("error_message", "")
+                msg = f"{job_type.capitalize()} failed: {src} → {dest}"
+                if err:
+                    msg += f" — {err[:80]}"
+                ntype = "error"
+            else:
+                msg = f"{job_type.capitalize()} {status}: {src} → {dest}"
+                ntype = "info"
+
+            items.append({
+                "type": ntype,
+                "message": msg,
+                "timestamp": str(r.get("completed_at", "")),
+                "status": status,
+                "job_id": r.get("job_id") or "",
+            })
+
+        return {"unread_count": len(items), "items": items}
+    except Exception:
+        return {"unread_count": 0, "items": []}
+
+
+@router.get("/catalog-health")
+async def get_catalog_health(client=Depends(get_db_client)):
+    """Get aggregate catalog health score based on recent operations."""
+    try:
+        from src.client import execute_sql
+        from src.run_logs import get_run_logs_fqn
+        from src.audit_trail import get_audit_table_fqn
+        config = await get_app_config()
+        wid = config.get("sql_warehouse_id", "")
+
+        # Get recent operation stats per source catalog
+        run_logs_fqn = get_run_logs_fqn(config)
+        audit_fqn = get_audit_table_fqn(config)
+        metrics_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+
+        catalogs = {}
+
+        # Queries with normalized status column
+        health_queries = [
+            # run_logs & clone_operations have status column
+            f"""SELECT source_catalog, status, COUNT(*) as cnt,
+                       MAX(completed_at) as last_operation
+                FROM {run_logs_fqn}
+                WHERE source_catalog IS NOT NULL AND source_catalog != ''
+                GROUP BY source_catalog, status ORDER BY source_catalog""",
+            f"""SELECT source_catalog, status, COUNT(*) as cnt,
+                       MAX(completed_at) as last_operation
+                FROM {audit_fqn}
+                WHERE source_catalog IS NOT NULL AND source_catalog != ''
+                GROUP BY source_catalog, status ORDER BY source_catalog""",
+            # clone_metrics: derive status from failed column
+            f"""SELECT source_catalog,
+                       CASE WHEN failed > 0 THEN 'completed_with_errors'
+                            ELSE 'success' END AS status,
+                       COUNT(*) as cnt,
+                       MAX(completed_at) as last_operation
+                FROM {metrics_fqn}
+                WHERE source_catalog IS NOT NULL AND source_catalog != ''
+                GROUP BY source_catalog, CASE WHEN failed > 0 THEN 'completed_with_errors' ELSE 'success' END
+                ORDER BY source_catalog""",
+        ]
+
+        rows = []
+        for sql in health_queries:
+            try:
+                rows = execute_sql(client, wid, sql)
+                if rows:
+                    break
+            except Exception:
+                continue
+        for r in rows:
+            cat = r.get("source_catalog", "")
+            if not cat:
+                continue
+            if cat not in catalogs:
+                catalogs[cat] = {"catalog": cat, "total": 0, "succeeded": 0, "failed": 0, "last_operation": None, "score": 100}
+            cnt = int(r.get("cnt", 0))
+            catalogs[cat]["total"] += cnt
+            if r.get("status") in ("completed", "success"):
+                catalogs[cat]["succeeded"] += cnt
+            elif r.get("status") == "failed":
+                catalogs[cat]["failed"] += cnt
+            lo = r.get("last_operation")
+            if lo:
+                catalogs[cat]["last_operation"] = str(lo)
+
+        # Query for object counts — try clone_operations first, then clone_metrics
+        # clone_operations: tables_cloned, tables_failed, total_size_bytes
+        # clone_metrics: total_tables, failed, total_size_bytes
+        obj_queries = [
+            f"""SELECT source_catalog,
+                       SUM(tables_cloned) as tables,
+                       SUM(tables_failed) as tables_failed,
+                       SUM(total_size_bytes) as total_bytes
+                FROM {audit_fqn}
+                WHERE source_catalog IS NOT NULL AND source_catalog != ''
+                GROUP BY source_catalog""",
+            f"""SELECT source_catalog,
+                       SUM(total_tables) as tables,
+                       SUM(failed) as tables_failed,
+                       SUM(total_size_bytes) as total_bytes
+                FROM {metrics_fqn}
+                WHERE source_catalog IS NOT NULL AND source_catalog != ''
+                GROUP BY source_catalog""",
+        ]
+        for obj_sql in obj_queries:
+            try:
+                agg_rows = execute_sql(client, wid, obj_sql)
+                if agg_rows:
+                    for r in agg_rows:
+                        cat = r.get("source_catalog", "")
+                        if cat in catalogs:
+                            catalogs[cat]["tables_cloned"] = int(r.get("tables", 0) or 0)
+                            catalogs[cat]["tables_failed"] = int(r.get("tables_failed", 0) or 0)
+                            catalogs[cat]["total_bytes"] = int(r.get("total_bytes", 0) or 0)
+                    break
+            except Exception:
+                continue
+
+        # Compute health scores
+        for cat in catalogs.values():
+            score = 100
+            total = cat.get("total", 0)
+            failed = cat.get("failed", 0)
+            if total > 0 and failed > 0:
+                failure_rate = failed / total
+                if failure_rate > 0.5:
+                    score -= 30
+                elif failure_rate > 0.2:
+                    score -= 20
+                elif failure_rate > 0:
+                    score -= 10
+            tf = cat.get("tables_failed", 0)
+            if tf and tf > 5:
+                score -= 15
+            elif tf and tf > 0:
+                score -= 5
+            if not cat.get("last_operation"):
+                score -= 10
+            cat["score"] = max(0, min(100, score))
+
+        result = sorted(catalogs.values(), key=lambda c: c["score"])
+        return {"catalogs": result}
+    except Exception:
+        return {"catalogs": []}

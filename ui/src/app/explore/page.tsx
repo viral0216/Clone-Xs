@@ -1,14 +1,14 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { useSearch, useStats } from "@/hooks/useApi";
+import { useSearch, useStats, useColumnUsage } from "@/hooks/useApi";
 import {
   Search, BarChart3, Database, Table2, HardDrive, Rows3,
-  ArrowUpDown, Loader2, FolderTree,
+  ArrowUpDown, Loader2, FolderTree, Columns, Users,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
@@ -34,6 +34,16 @@ export default function ExplorePage() {
 
   const search = useSearch();
   const stats = useStats();
+  const columnUsage = useColumnUsage();
+
+  // Auto-fetch column usage when stats load (once per catalog)
+  const colUsageCatalogRef = useRef("");
+  useEffect(() => {
+    if (stats.data && catalog && colUsageCatalogRef.current !== catalog) {
+      colUsageCatalogRef.current = catalog;
+      columnUsage.mutate({ catalog });
+    }
+  }, [stats.data, catalog]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -209,6 +219,108 @@ export default function ExplorePage() {
               </div>
             </CardContent>
           </Card>
+          {/* Column Usage */}
+          {columnUsage.isPending && (
+            <div className="flex items-center justify-center py-6 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />Loading column usage...
+            </div>
+          )}
+          {columnUsage.data && (columnUsage.data.top_columns?.length > 0 || columnUsage.data.top_users?.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Most Used Columns */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Columns className="h-4 w-4 text-cyan-600" />
+                    Most Used Columns
+                    {columnUsage.data.period_days && (
+                      <Badge variant="outline" className="text-[10px] font-normal">last {columnUsage.data.period_days}d</Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!columnUsage.data.top_columns?.length ? (
+                    <p className="text-sm text-muted-foreground">No column usage data. Ensure system tables are enabled.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {columnUsage.data.top_columns.slice(0, 10).map((col: any, i: number) => {
+                        const maxCount = columnUsage.data.top_columns[0]?.lineage_count + columnUsage.data.top_columns[0]?.query_count || 1;
+                        const total = (col.lineage_count || 0) + (col.query_count || 0);
+                        return (
+                          <div key={`${col.table}-${col.column}-${i}`} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-xs font-mono font-semibold text-foreground">{col.column}</span>
+                                  <span className="text-[10px] text-muted-foreground truncate">{col.table?.split(".").slice(1).join(".")}</span>
+                                </div>
+                                <div className="flex items-center gap-2 ml-2 shrink-0">
+                                  {col.user_count > 0 && (
+                                    <span className="text-[10px] text-muted-foreground">{col.user_count} user{col.user_count > 1 ? "s" : ""}</span>
+                                  )}
+                                  <span className="text-xs font-semibold text-foreground">{total}</span>
+                                </div>
+                              </div>
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-cyan-600 rounded-full" style={{ width: `${(total / maxCount) * 100}%` }} />
+                              </div>
+                              {col.users?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {col.users.slice(0, 3).map((u: any) => (
+                                    <span key={u.user} className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                                      {u.user?.split("@")[0]} ({u.count})
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Active Users */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4 text-purple-600" />
+                    Active Users
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!columnUsage.data.top_users?.length ? (
+                    <p className="text-sm text-muted-foreground">No user data available.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {columnUsage.data.top_users.slice(0, 10).map((u: any) => {
+                        const maxQ = columnUsage.data.top_users[0]?.query_count || 1;
+                        return (
+                          <div key={u.user} className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-semibold text-foreground shrink-0">
+                              {u.user?.charAt(0)?.toUpperCase() || "?"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs text-foreground truncate">{u.user?.split("@")[0] || u.user}</span>
+                                <span className="text-xs font-semibold text-foreground ml-2">{u.query_count} queries</span>
+                              </div>
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${(u.query_count / maxQ) * 100}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </>
       )}
 

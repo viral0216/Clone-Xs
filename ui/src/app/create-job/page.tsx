@@ -12,9 +12,15 @@ import {
   Briefcase, Loader2, CheckCircle, XCircle, ExternalLink, Copy, CalendarClock, Bell, RotateCcw, Clock, Tag, Settings2, Filter, Gauge,
 } from "lucide-react";
 
-function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function DestinationCatalogPicker({ value, onChange, isNewCatalog, onIsNewChange, location, onLocationChange }: {
+  value: string;
+  onChange: (v: string) => void;
+  isNewCatalog: boolean;
+  onIsNewChange: (v: boolean) => void;
+  location: string;
+  onLocationChange: (v: string) => void;
+}) {
   const [catalogs, setCatalogs] = useState<string[]>([]);
-  const [isNew, setIsNew] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -29,52 +35,72 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
-    <div>
-      <label className="text-sm font-medium mb-1 block">Destination Catalog</label>
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
-        </div>
-      ) : isNew ? (
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <input
-              className={selectClass}
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="Enter new catalog name (e.g. my_catalog_clone)"
-              autoFocus
-            />
-            <button
-              onClick={() => { setIsNew(false); onChange(""); }}
-              className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted/50 text-muted-foreground whitespace-nowrap"
-            >
-              Cancel
-            </button>
+    <div className="space-y-3">
+      <div>
+        <label className="text-sm font-medium mb-1 block">Destination Catalog</label>
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
           </div>
-          <p className="text-xs text-muted-foreground">
-            This catalog will be created automatically during the clone operation
+        ) : isNewCatalog ? (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                className={selectClass}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Enter new catalog name (e.g. my_catalog_clone)"
+                autoFocus
+              />
+              <button
+                onClick={() => { onIsNewChange(false); onChange(""); onLocationChange(""); }}
+                className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted/50 text-muted-foreground whitespace-nowrap"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This catalog will be created automatically during the clone operation
+            </p>
+          </div>
+        ) : (
+          <select
+            className={selectClass}
+            value={value}
+            onChange={(e) => {
+              if (e.target.value === "__NEW__") {
+                onIsNewChange(true);
+                onChange("");
+              } else {
+                onIsNewChange(false);
+                onLocationChange("");
+                onChange(e.target.value);
+              }
+            }}
+          >
+            <option value="">Select catalog...</option>
+            <option value="__NEW__">+ Create New Catalog</option>
+            {catalogs.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Storage location — shown when creating a new catalog */}
+      {isNewCatalog && (
+        <div>
+          <label className="text-sm font-medium mb-1 block">Storage Location (optional)</label>
+          <input
+            className={selectClass}
+            value={location}
+            onChange={(e) => onLocationChange(e.target.value)}
+            placeholder="abfss://container@storage.dfs.core.windows.net/path"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Required if your workspace uses external or default storage. Leave blank to use workspace default.
           </p>
         </div>
-      ) : (
-        <select
-          className={selectClass}
-          value={value}
-          onChange={(e) => {
-            if (e.target.value === "__NEW__") {
-              setIsNew(true);
-              onChange("");
-            } else {
-              onChange(e.target.value);
-            }
-          }}
-        >
-          <option value="">Select catalog...</option>
-          <option value="__NEW__">+ Create New Catalog</option>
-          {catalogs.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
       )}
     </div>
   );
@@ -83,6 +109,54 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
 export default function CreateJobPage() {
   const [sourceCatalog, setSourceCatalog] = useState("");
   const [destCatalog, setDestCatalog] = useState("");
+  const [isNewCatalog, setIsNewCatalog] = useState(false);
+  const [storageLocation, setStorageLocation] = useState("");
+  const [sourceStorageRoot, setSourceStorageRoot] = useState("");
+
+  // Fetch source catalog storage root when source catalog changes
+  useEffect(() => {
+    if (!sourceCatalog) { setSourceStorageRoot(""); return; }
+    api.get<{ storage_root?: string }>(`/catalogs/${sourceCatalog}/info`)
+      .then((info) => setSourceStorageRoot(info.storage_root || ""))
+      .catch(() => setSourceStorageRoot(""));
+  }, [sourceCatalog]);
+
+  // Auto-populate storage location from source catalog's storage root
+  // Parse source: abfss://container@account.dfs.core.windows.net/path/source_cat
+  // Build dest:   abfss://container@account.dfs.core.windows.net/path/dest_cat
+  // Container stays same, only the path folder gets the dest catalog name
+  useEffect(() => {
+    if (sourceStorageRoot && destCatalog && sourceCatalog) {
+      // Parse: abfss://container@account.dfs.core.windows.net/some/path
+      const m = sourceStorageRoot.match(/^(abfss?:\/\/)([^@]+)@([^/]+)(\/.*)?$/);
+      if (m) {
+        const protocol = m[1];   // abfss://
+        const container = m[2];  // container name — keep as-is
+        const account = m[3];    // storage account host
+        const pathPart = (m[4] || "").replace(/\/+$/, ""); // /poc/demo
+
+        // Replace source catalog name in path with dest catalog name
+        let newPath = pathPart;
+        if (pathPart) {
+          const escaped = sourceCatalog.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          newPath = pathPart.replace(new RegExp(escaped, "g"), destCatalog);
+          // If source name wasn't in path, replace last segment
+          if (newPath === pathPart) {
+            const segs = pathPart.split("/");
+            segs[segs.length - 1] = destCatalog;
+            newPath = segs.join("/");
+          }
+        } else {
+          newPath = "/" + destCatalog;
+        }
+
+        setStorageLocation(`${protocol}${container}@${account}${newPath}`);
+      } else {
+        // Non-abfss format — just replace source name in path
+        setStorageLocation(sourceStorageRoot);
+      }
+    }
+  }, [sourceStorageRoot, destCatalog, sourceCatalog]);
   const [jobName, setJobName] = useState("");
   const [volume, setVolume] = useState("");
   const [schedule, setSchedule] = useState("");
@@ -125,10 +199,22 @@ export default function CreateJobPage() {
   const [asOfVersion, setAsOfVersion] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [runAfterCreate, setRunAfterCreate] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   const volumes = useVolumes();
+
+  // Load Clone-Xs jobs for the dropdown
+  const [cloneJobs, setCloneJobs] = useState<{ job_id: number; job_name: string }[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  useEffect(() => {
+    setJobsLoading(true);
+    api.get<{ job_id: number; job_name: string }[]>("/generate/clone-jobs")
+      .then((data) => setCloneJobs(Array.isArray(data) ? data : []))
+      .catch(() => setCloneJobs([]))
+      .finally(() => setJobsLoading(false));
+  }, []);
 
   const handleSubmit = async () => {
     if (!sourceCatalog || !destCatalog) {
@@ -183,6 +269,7 @@ export default function CreateJobPage() {
         as_of_timestamp: asOfTimestamp,
         as_of_version: asOfVersion,
       };
+      if (storageLocation) payload.location = storageLocation;
       if (jobName) payload.job_name = jobName;
       if (schedule) payload.schedule = schedule;
       if (notificationEmail) {
@@ -198,6 +285,17 @@ export default function CreateJobPage() {
       const res = await api.post("/generate/create-job", payload);
       setResult(res);
       toast.success(updateJobId ? "Job updated successfully" : "Job created successfully");
+
+      // Run the job immediately if requested
+      if (runAfterCreate && res.job_id) {
+        try {
+          toast.info("Starting job run...");
+          await api.post(`/generate/run-job/${res.job_id}`);
+          toast.success("Job run started");
+        } catch (runErr) {
+          toast.error(`Job created but failed to run: ${(runErr as Error).message}`);
+        }
+      }
     } catch (e) {
       const msg = (e as Error).message;
       setError(msg);
@@ -240,7 +338,14 @@ export default function CreateJobPage() {
               <label className="text-sm font-medium mb-1 block">Source Catalog</label>
               <CatalogPicker catalog={sourceCatalog} onCatalogChange={setSourceCatalog} showSchema={false} showTable={false} />
             </div>
-            <DestinationCatalogPicker value={destCatalog} onChange={setDestCatalog} />
+            <DestinationCatalogPicker
+              value={destCatalog}
+              onChange={setDestCatalog}
+              isNewCatalog={isNewCatalog}
+              onIsNewChange={setIsNewCatalog}
+              location={storageLocation}
+              onLocationChange={setStorageLocation}
+            />
           </div>
 
           {/* Job Name */}
@@ -286,14 +391,36 @@ export default function CreateJobPage() {
           <div>
             <label className="text-sm font-medium mb-1 block flex items-center gap-2">
               <RotateCcw className="h-3.5 w-3.5" />
-              Update Existing Job ID (optional)
+              Update Existing Job (optional)
             </label>
-            <Input
-              placeholder="Leave blank to create a new job"
-              value={updateJobId}
-              onChange={(e) => setUpdateJobId(e.target.value)}
-              type="number"
-            />
+            {jobsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading Clone-Xs jobs...
+              </div>
+            ) : cloneJobs.length > 0 ? (
+              <select
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
+                value={updateJobId}
+                onChange={(e) => setUpdateJobId(e.target.value)}
+              >
+                <option value="">Create new job</option>
+                {cloneJobs.map((j) => (
+                  <option key={j.job_id} value={String(j.job_id)}>
+                    {j.job_name} (ID: {j.job_id})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                placeholder="No existing Clone-Xs jobs found — enter Job ID manually, or leave blank"
+                value={updateJobId}
+                onChange={(e) => setUpdateJobId(e.target.value)}
+                type="number"
+              />
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Select an existing Clone-Xs job to update, or leave blank to create a new one
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -594,6 +721,15 @@ export default function CreateJobPage() {
           )}
           {loading ? "Creating Job..." : updateJobId ? "Update Job" : "Create Databricks Job"}
         </Button>
+        <label className="flex items-center gap-2 ml-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={runAfterCreate}
+            onChange={(e) => setRunAfterCreate(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+          />
+          <span className="text-sm text-gray-600">Run job immediately after creation</span>
+        </label>
       </div>
 
       {/* Result */}

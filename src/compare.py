@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import execute_sql, list_schemas_sdk, list_tables_sdk
 from src.progress import ProgressTracker
 from src.schema_drift import compare_table_schema
 
@@ -96,37 +96,27 @@ def compare_catalogs_deep(
     logger.info(f"Deep comparison: {source_catalog} vs {dest_catalog}")
 
     # Get schemas in destination
-    exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-    sql = f"""
-        SELECT schema_name
-        FROM {dest_catalog}.information_schema.schemata
-        WHERE schema_name NOT IN ({exclude_clause})
-    """
-    schemas = execute_sql(client, warehouse_id, sql)
+    schema_names = list_schemas_sdk(client, dest_catalog, exclude=exclude_schemas)
 
     all_results = []
-    progress = ProgressTracker(len(schemas), "Comparing")
+    progress = ProgressTracker(len(schema_names), "Comparing")
     progress.start()
 
-    for schema_row in schemas:
-        schema = schema_row["schema_name"]
+    for schema in schema_names:
 
         # Get tables in destination
-        sql = f"""
-            SELECT table_name
-            FROM {dest_catalog}.information_schema.tables
-            WHERE table_schema = '{schema}'
-            AND table_type IN ('MANAGED', 'EXTERNAL')
-        """
-        tables = execute_sql(client, warehouse_id, sql)
+        tables = list_tables_sdk(client, dest_catalog, schema)
+
+        # Filter to MANAGED/EXTERNAL only
+        filtered_tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
                     compare_table_deep, client, warehouse_id,
-                    source_catalog, dest_catalog, schema, row["table_name"],
-                ): row["table_name"]
-                for row in tables
+                    source_catalog, dest_catalog, schema, t["table_name"],
+                ): t["table_name"]
+                for t in filtered_tables
             }
             for future in as_completed(futures):
                 try:

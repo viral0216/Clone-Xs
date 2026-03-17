@@ -623,3 +623,80 @@ clxs slack-bot [options]
 | `-c, --config` | Config file path |
 
 Requires environment variables: `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`.
+
+---
+
+### `storage-metrics`
+
+Analyze per-table storage breakdown using `ANALYZE TABLE ... COMPUTE STORAGE METRICS`.
+
+```bash
+clxs storage-metrics --source <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Catalog to analyze |
+| `--schema` | Filter to specific schema |
+| `--table` | Filter to specific table |
+| `--format` | Output format: `console`, `json`, `csv` |
+
+---
+
+### `optimize`
+
+Run OPTIMIZE on tables to compact small files.
+
+```bash
+clxs optimize --source <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Catalog name |
+| `--schema` | Specific schema |
+| `--table` | Specific table |
+| `--dry-run` | Preview without executing |
+
+---
+
+### `vacuum`
+
+Run VACUUM on tables to remove old files beyond retention period.
+
+```bash
+clxs vacuum --source <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Catalog name |
+| `--schema` | Specific schema |
+| `--table` | Specific table |
+| `--retention-hours` | Retention period in hours (default: 168 / 7 days) |
+| `--dry-run` | Preview files that would be deleted |
+
+---
+
+### `create-job`
+
+Create a persistent Databricks Job that runs Clone-Xs on a schedule.
+
+```bash
+clxs create-job --source <catalog> --dest <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Source catalog name |
+| `--dest` | Destination catalog name |
+| `--volume` | UC Volume path for wheel upload |
+| `--job-name` | Custom job name (default: `Clone-Xs: source -> dest`) |
+| `--schedule` | Quartz cron expression |
+| `--timezone` | Schedule timezone (default: UTC) |
+| `--notification-email` | Comma-separated email addresses |
+| `--max-retries` | Retries on failure (default: 0) |
+| `--timeout` | Job timeout in seconds (default: 7200) |
+| `--tag` | Job tag as `key=value` (repeatable) |
+| `--update-job-id` | Update existing job instead of creating new |
+| `--run-now` | Run the job immediately after creation |

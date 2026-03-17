@@ -2510,7 +2510,7 @@ The Web UI provides 31 pages organized into 5 categories:
 | Audit Trail | `/audit` | Query clone history from Delta tables with filters |
 | Metrics | `/metrics` | Clone success rates, durations, throughput charts |
 
-### Operations (8 pages)
+### Operations (7 pages)
 
 | Page | URL | Description |
 |------|-----|-------------|
@@ -2520,19 +2520,19 @@ The Web UI provides 31 pages organized into 5 categories:
 | Generate | `/generate` | Generate Terraform, Pulumi, or Databricks Workflows |
 | Rollback | `/rollback` | Undo previous clone operations from rollback logs |
 | Templates | `/templates` | Pre-built clone configs (Production Mirror, Dev Sandbox, DR Copy, etc.) |
-| Schedule | `/schedule` | Schedule recurring clone operations with cron expressions |
+| Create Job | `/create-job` | Create persistent Databricks Job with auto-populated storage, job dropdown, cron schedule |
 | Multi-Clone | `/multi-clone` | Clone to multiple workspaces simultaneously |
 
 ### Discovery (7 pages)
 
 | Page | URL | Description |
 |------|-----|-------------|
-| Explorer | `/explore` | Browse catalogs, get stats, search tables/columns |
+| Explorer | `/explore` | Browse catalogs with stats, search, and column usage analytics |
 | Diff & Compare | `/diff` | Visual diff between catalogs, validate clones |
-| Config Diff | `/config-diff` | Compare configuration profiles side by side |
-| Lineage | `/lineage` | Track data flow from source to cloned tables |
+| Config Diff | `/config-diff` | Compare two configs (JSON/YAML/profiles) side by side |
+| Lineage | `/lineage` | Interactive graph with multi-hop tracing, column lineage, UC system tables, and export |
 | Dependencies | `/view-deps` | View/function dependency graphs with creation order |
-| Impact Analysis | `/impact` | Analyze downstream effects before making changes |
+| Impact Analysis | `/impact` | Analyze affected views, functions, and risk level before changes |
 | Data Preview | `/preview` | Side-by-side source vs destination data comparison |
 
 ### Analysis (6 pages)
@@ -2623,3 +2623,132 @@ import CatalogPicker from "@/components/CatalogPicker";
   tableLabel="Table"     // customize label
 />
 ```
+
+---
+
+## 47. Storage Metrics
+
+> **Docs:** [ANALYZE TABLE COMPUTE STORAGE METRICS](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-compute-storage-metrics) | [VACUUM](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-vacuum)
+
+Analyze per-table storage breakdown to identify reclaimable space.
+
+### CLI
+
+```bash
+# Full catalog
+clxs storage-metrics --source my_catalog
+
+# Single schema
+clxs storage-metrics --source my_catalog --schema sales
+
+# Single table
+clxs storage-metrics --source my_catalog --schema sales --table orders
+```
+
+### Web UI
+
+Navigate to **Analysis > Storage Metrics**, select a catalog, and click **Analyze Storage**. The page shows summary cards (total, active, vacuumable, time-travel), top reclaimable tables, and a detail table with multi-select for bulk OPTIMIZE/VACUUM.
+
+---
+
+## 48. OPTIMIZE and VACUUM
+
+Run table maintenance from the CLI or directly from the Storage Metrics UI.
+
+### CLI
+
+```bash
+# OPTIMIZE all tables in a catalog
+clxs optimize --source my_catalog
+
+# OPTIMIZE a single table
+clxs optimize --source my_catalog --schema sales --table orders
+
+# VACUUM with custom retention
+clxs vacuum --source my_catalog --retention-hours 48
+
+# Dry run (preview only)
+clxs vacuum --source my_catalog --dry-run
+```
+
+### Web UI
+
+In **Storage Metrics**, select tables via checkboxes, then click **OPTIMIZE Selected** or **VACUUM Selected**. A confirmation dialog shows which tables will be affected and allows setting retention hours.
+
+> **Note:** If Databricks Predictive Optimization is enabled on your catalog, the UI displays a warning that manual OPTIMIZE/VACUUM may be unnecessary.
+
+---
+
+## 49. Create Databricks Job
+
+> **Docs:** [Databricks Jobs](https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs)
+
+Create persistent scheduled jobs that run Clone-Xs automatically.
+
+### CLI
+
+```bash
+# Scheduled job with notifications
+clxs create-job \
+  --source edp_dev \
+  --dest edp_dev_00 \
+  --volume /Volumes/edp_dev/packages/wheels \
+  --schedule "0 0 6 * * ?" \
+  --timezone "America/New_York" \
+  --notification-email team@company.com \
+  --tag env=production
+
+# Update an existing job
+clxs create-job \
+  --update-job-id 12345 \
+  --schedule "0 0 12 * * ?"
+
+# Create and run immediately
+clxs create-job \
+  --source edp_dev \
+  --dest edp_dev_00 \
+  --volume /Volumes/edp_dev/packages/wheels \
+  --run-now
+```
+
+### Web UI
+
+Navigate to **Operations > Create Job**, configure source/destination catalogs, clone options, schedule, and notifications. Check **"Run job immediately after creation"** to trigger the first run automatically, then click **Create Databricks Job**. You get a direct link to the job in the Databricks workspace.
+
+---
+
+## 50. Desktop App
+
+Run Clone-Xs as a native desktop application — no terminal needed.
+
+```bash
+# Install dependencies (one-time)
+make desktop-install
+
+# Launch in dev mode
+make desktop-dev
+
+# Build distributable
+make build-desktop-mac   # macOS
+make build-desktop-win   # Windows
+```
+
+The Electron wrapper auto-starts the Python backend, waits for `/api/health`, then opens the Web UI in a native window.
+
+---
+
+## 51. Databricks App Deployment
+
+> **Docs:** [Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/apps/)
+
+Deploy Clone-Xs as a native Databricks App with automatic authentication.
+
+```bash
+# Deploy to your workspace
+make deploy-dbx-app
+
+# Or use the script directly
+./databricks-app/deploy.sh
+```
+
+Authentication is automatic — the app uses the workspace service principal, so no PAT tokens are needed. Users access the app via their Databricks workspace URL.

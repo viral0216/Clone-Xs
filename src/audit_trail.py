@@ -69,6 +69,10 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
         functions_cloned INT,
         volumes_cloned INT,
         total_size_bytes BIGINT,
+        tables_skipped INT,
+        clone_mode STRING,
+        trigger STRING,
+        destination_existed BOOLEAN,
         config_json STRING,
         summary_json STRING,
         error_message STRING,
@@ -82,6 +86,20 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     )
     """
     execute_sql(client, warehouse_id, create_sql)
+
+    # Add new columns to existing tables (ALTER TABLE is idempotent-safe with try/except)
+    new_columns = [
+        ("tables_skipped", "INT"),
+        ("clone_mode", "STRING"),
+        ("trigger", "STRING"),
+        ("destination_existed", "BOOLEAN"),
+    ]
+    for col_name, col_type in new_columns:
+        try:
+            execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            pass  # Column already exists
+
     logger.info(f"Audit table ready: {fqn}")
     return fqn
 
@@ -106,13 +124,25 @@ def log_operation_start(
     safe_config = {k: v for k, v in config.items() if "token" not in k.lower()}
     config_json = json.dumps(safe_config).replace("'", "''")
 
+    # Determine clone_mode from config
+    clone_mode = "full"
+    if config.get("data_filters") or config.get("table_filters"):
+        clone_mode = "filtered"
+    elif config.get("load_type", "").upper() == "INCREMENTAL":
+        clone_mode = "incremental"
+
+    # Determine trigger source
+    trigger = config.get("_trigger", "manual")
+
     sql = f"""
     INSERT INTO {fqn}
     (operation_id, operation_type, source_catalog, destination_catalog,
-     clone_type, started_at, status, user_name, host, config_json)
+     clone_type, started_at, status, user_name, host,
+     clone_mode, trigger, config_json)
     VALUES
     ('{operation_id}', '{operation_type}', '{source}', '{dest}',
-     '{clone_type}', '{now}', 'running', '{user}', '{host}', '{config_json}')
+     '{clone_type}', '{now}', 'running', '{user}', '{host}',
+     '{clone_mode}', '{trigger}', '{config_json}')
     """
     try:
         execute_sql(client, warehouse_id, sql)
@@ -152,6 +182,14 @@ def log_operation_complete(
     vols_info = summary.get("volumes", {})
     volumes_cloned = vols_info.get("cloned", 0) or vols_info.get("success", 0) if isinstance(vols_info, dict) else 0
 
+    # New columns
+    tables_skipped = 0
+    if isinstance(tables_info, dict):
+        tables_skipped = tables_info.get("skipped", 0) or tables_info.get("excluded", 0)
+    else:
+        tables_skipped = summary.get("tables_skipped", 0) or summary.get("skipped", 0)
+    destination_existed = summary.get("destination_existed", False)
+
     status = "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
     summary_json = json.dumps(summary).replace("'", "''")
     error_msg = (error_message or "").replace("'", "''")
@@ -163,9 +201,11 @@ def log_operation_complete(
         status = '{status}',
         tables_cloned = {tables_cloned},
         tables_failed = {tables_failed},
+        tables_skipped = {tables_skipped},
         views_cloned = {views_cloned},
         functions_cloned = {functions_cloned},
         volumes_cloned = {volumes_cloned},
+        destination_existed = {str(destination_existed).lower()},
         summary_json = '{summary_json}',
         error_message = '{error_msg}'
     WHERE operation_id = '{operation_id}'

@@ -66,6 +66,7 @@ clxs clone [options]
 | `--impact-check` | Run impact analysis before cloning |
 | `--ttl` | Set TTL on destination (e.g., `7d`, `30d`) |
 | `--skip-unused` | Skip tables with no recent queries |
+| `--schema-only` | Create empty tables (structure only, no data) with all other artifacts |
 
 ---
 

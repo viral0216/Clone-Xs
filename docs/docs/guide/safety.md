@@ -50,11 +50,26 @@ checksum_validation: false   # Set to true for hash-based validation
 
 ### How it works
 
-1. Clone completes normally — all schemas, tables, views, and functions are created
-2. Post-clone validation runs automatically (row counts + optional checksums)
-3. If the percentage of mismatched tables exceeds the threshold, automatic rollback is triggered
-4. All cloned objects are dropped in reverse order (tables → schemas → catalog if empty)
-5. Notification sent (Slack/Teams if configured)
+1. **Before each table clone**, the destination table's current Delta version is recorded (if the table already exists)
+2. Clone completes normally — all schemas, tables, views, and functions are created
+3. Post-clone validation runs automatically (row counts + optional checksums)
+4. If the percentage of mismatched tables exceeds the threshold, automatic rollback is triggered
+5. **Tables that existed before the clone** are restored using `RESTORE TABLE ... TO VERSION AS OF {pre_clone_version}` — this is non-destructive and preserves Delta history
+6. **Tables that were newly created** by the clone are dropped
+7. Views, functions, volumes, and empty schemas are dropped (RESTORE not supported for these types)
+8. Notification sent (Slack/Teams if configured)
+
+### Rollback modes
+
+Clone-Xs supports three rollback strategies, selected automatically based on available data:
+
+| Mode | When used | SQL executed | Data loss |
+|---|---|---|---|
+| **Version-based** | Pre-clone version was recorded | `RESTORE TABLE {fqn} TO VERSION AS OF {N}` | None — table reverts to exact pre-clone state |
+| **Timestamp-based** | No version recorded, but clone start time exists | `RESTORE TABLE {fqn} TO TIMESTAMP AS OF '{ts}'` | None — table reverts to state before clone started |
+| **Legacy DROP** | Old rollback logs without version info | `DROP TABLE IF EXISTS {fqn}` | Table is deleted entirely |
+
+Version-based is the default for all new clone operations. The pre-clone version is captured using `DESCRIBE HISTORY` before each `CREATE TABLE ... CLONE` statement.
 
 | Option | Default | Description |
 |---|---|---|

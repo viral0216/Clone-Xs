@@ -20,6 +20,9 @@ import {
   Globe,
   User,
   Terminal,
+  Download,
+  FolderTree,
+  DollarSign,
 } from "lucide-react";
 
 type AuthTab = "profile" | "token" | "oauth" | "azure" | "sp" | "env";
@@ -792,6 +795,9 @@ export default function SettingsPage() {
       {/* Audit & Logging Configuration */}
       <AuditSettings />
 
+      {/* UI Preferences */}
+      <UIPreferences />
+
       {/* Navigation & Feature Toggles */}
       <FeatureToggles />
     </div>
@@ -913,6 +919,7 @@ function AuditSettings() {
           <p className="text-xs font-medium text-muted-foreground">Tables that will be created:</p>
           <p className="text-sm font-mono">{auditCatalog}.{auditSchema}.run_logs</p>
           <p className="text-sm font-mono">{auditCatalog}.{auditSchema}.clone_operations</p>
+          <p className="text-sm font-mono">{auditCatalog}.{auditSchema}.rollback_logs</p>
           <p className="text-sm font-mono">{auditCatalog}.metrics.clone_metrics</p>
         </div>
 
@@ -970,6 +977,135 @@ function AuditSettings() {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UIPreferences() {
+  const makeToggle = (key: string, defaultVal = true) => {
+    const [val, setVal] = useState(() => {
+      try { return localStorage.getItem(key) !== "false"; } catch { return defaultVal; }
+    });
+    const toggle = () => {
+      const next = !val;
+      setVal(next);
+      localStorage.setItem(key, String(next));
+      window.dispatchEvent(new Event("clxs-settings-changed"));
+    };
+    return [val, toggle] as const;
+  };
+
+  const [showExports, toggleExports] = makeToggle("clxs-show-exports");
+  const [showBrowser, toggleBrowser] = makeToggle("clxs-show-catalog-browser");
+
+  const prefs = [
+    { key: "exports", icon: Download, label: "Export & Download Buttons", desc: "Show CSV, JSON, and download buttons across Explorer, Lineage, Audit, and other pages", checked: showExports, toggle: toggleExports },
+    { key: "browser", icon: FolderTree, label: "Catalog Browser Panel", desc: "Show the Databricks-style catalog tree browser on the Explorer page", checked: showBrowser, toggle: toggleBrowser },
+  ];
+
+  // Storage price per GB/month
+  const [pricePerGb, setPricePerGb] = useState(() => {
+    try { return parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023; } catch { return 0.023; }
+  });
+  const savePricePerGb = (val: number) => {
+    setPricePerGb(val);
+    localStorage.setItem("clxs-price-per-gb", String(val));
+    window.dispatchEvent(new Event("clxs-settings-changed"));
+  };
+
+  // Currency
+  const currencies = [
+    { code: "USD", symbol: "$", label: "US Dollar ($)" },
+    { code: "EUR", symbol: "\u20ac", label: "Euro (\u20ac)" },
+    { code: "GBP", symbol: "\u00a3", label: "British Pound (\u00a3)" },
+    { code: "AUD", symbol: "A$", label: "Australian Dollar (A$)" },
+    { code: "CAD", symbol: "C$", label: "Canadian Dollar (C$)" },
+    { code: "INR", symbol: "\u20b9", label: "Indian Rupee (\u20b9)" },
+    { code: "JPY", symbol: "\u00a5", label: "Japanese Yen (\u00a5)" },
+    { code: "CHF", symbol: "CHF", label: "Swiss Franc (CHF)" },
+    { code: "SEK", symbol: "kr", label: "Swedish Krona (kr)" },
+    { code: "BRL", symbol: "R$", label: "Brazilian Real (R$)" },
+  ];
+  const [currency, setCurrency] = useState(() => {
+    try { return localStorage.getItem("clxs-currency") || "USD"; } catch { return "USD"; }
+  });
+  const saveCurrency = (val: string) => {
+    setCurrency(val);
+    localStorage.setItem("clxs-currency", val);
+    window.dispatchEvent(new Event("clxs-settings-changed"));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings2 className="h-5 w-5" />
+          UI Preferences
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Control visibility of UI elements and cost settings across all pages.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {prefs.map(({ key, icon: Icon, label, desc, checked, toggle }) => (
+            <label key={key} className="flex items-center justify-between px-3 py-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors">
+              <div className="flex items-center gap-3">
+                <Icon className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+              </div>
+              <input type="checkbox" checked={checked} onChange={toggle} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4" />
+            </label>
+          ))}
+
+          {/* Storage price + currency */}
+          <div className="px-3 py-3 rounded-lg border border-border space-y-3">
+            <div className="flex items-center gap-3">
+              <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Cost Estimation Settings</p>
+                <p className="text-xs text-muted-foreground">
+                  Used for cost estimates on Explorer and Cost Estimator pages.{" "}
+                  <a href="https://azure.microsoft.com/en-gb/pricing/calculator/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Azure Pricing Calculator</a>
+                  {" \u00b7 "}
+                  <a href="https://www.databricks.com/product/pricing" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Pricing</a>
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 ml-7">
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground block mb-1">Price per GB/month</label>
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={pricePerGb}
+                  onChange={(e) => savePricePerGb(parseFloat(e.target.value) || 0.023)}
+                  className="w-28 text-right text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground block mb-1">Currency</label>
+                <select
+                  value={currency}
+                  onChange={(e) => saveCurrency(e.target.value)}
+                  className="h-9 px-3 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-blue-600"
+                >
+                  {currencies.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground ml-7">
+              Default: $0.023/GB/month (Azure ADLS Gen2 / AWS S3 Standard). Adjust based on your storage tier and region.
+            </p>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

@@ -131,7 +131,19 @@ export function useJobContext() {
 export function usePageJob(key: string) {
   const { getJob, startJob, completeJob, failJob, clearJob, isLoading } = useJobContext();
 
-  const job = getJob(key);
+  const rawJob = getJob(key);
+
+  // Auto-clear stale "loading" jobs (stuck for > 5 minutes)
+  const job = rawJob?.status === "loading" && rawJob.startedAt
+    ? (() => {
+        const elapsed = Date.now() - new Date(rawJob.startedAt).getTime();
+        if (elapsed > 5 * 60 * 1000) {
+          // Stale — treat as idle (don't show spinner)
+          return null;
+        }
+        return rawJob;
+      })()
+    : rawJob;
 
   const run = useCallback(
     async (params: Record<string, any>, fn: () => Promise<any>) => {
@@ -154,6 +166,6 @@ export function usePageJob(key: string) {
     job,
     run,
     clear,
-    isRunning: isLoading(key),
+    isRunning: job?.status === "loading",
   };
 }

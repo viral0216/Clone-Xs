@@ -6,25 +6,111 @@
 
 /* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #E8453C;
+  --ifm-color-primary-dark: #d93a31;
+  --ifm-color-primary-darker: #cd372e;
+  --ifm-color-primary-darkest: #a82d26;
+  --ifm-color-primary-light: #eb5b53;
+  --ifm-color-primary-lighter: #ed675f;
+  --ifm-color-primary-lightest: #f18d87;
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
+  --ifm-color-primary: #E8453C;
+  --ifm-color-primary-dark: #d93a31;
+  --ifm-color-primary-darker: #cd372e;
+  --ifm-color-primary-darkest: #a82d26;
+  --ifm-color-primary-light: #eb5b53;
+  --ifm-color-primary-lighter: #ed675f;
+  --ifm-color-primary-lightest: #f18d87;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* ── Navbar Brand ── */
+
+/* Hide the default SVG logo */
+.navbar__logo {
+  display: none !important;
+}
+
+/* Custom CSS brand replaces the SVG */
+.navbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.navbar__brand::before {
+  content: 'Clone';
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #111;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.navbar__brand::after {
+  content: '→ Xs';
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-left: 2px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Arrow in red, "Xs" in black */
+.navbar__brand::after {
+  background: linear-gradient(90deg, #E8453C 0%, #E8453C 28%, #111 28%, #111 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Dark mode: white text with glossy sheen */
+[data-theme='dark'] .navbar__brand::before {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 20px rgba(255,255,255,0.05);
+}
+
+[data-theme='dark'] .navbar__brand::after {
+  background: linear-gradient(90deg, #E8453C 0%, #E8453C 28%, #fff 28%, #fff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
+}
+
+/* Glossy pill badge for "UNITY CATALOG TOOLKIT" */
+.navbar__brand {
+  position: relative;
+}
+
+.navbar__items:first-child::after {
+  content: 'UNITY CATALOG TOOLKIT';
+  position: absolute;
+  left: 16px;
+  top: 42px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: #9CA3AF;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[data-theme='dark'] .navbar__items:first-child::after {
+  color: #6B7280;
+}
+
+/* Navbar height to fit two-line brand */
+.navbar {
+  height: 64px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+[data-theme='dark'] .navbar {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 1px rgba(255,255,255,0.05);
 }

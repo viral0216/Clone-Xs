@@ -23,10 +23,21 @@ async def run_preflight(req: PreflightRequest, client=Depends(get_db_client)):
 
 
 @router.get("/rollback/logs")
-async def list_rollback_logs():
-    """List available rollback logs."""
-    from src.rollback import list_rollback_logs
-    return list_rollback_logs()
+async def list_rollback_logs(client=Depends(get_db_client)):
+    """List available rollback logs from Delta table, falling back to local files."""
+    from src.rollback import query_rollback_logs_delta, list_rollback_logs as list_local
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    # Try Delta first
+    if wid:
+        try:
+            delta_logs = query_rollback_logs_delta(client, wid, config)
+            if delta_logs:
+                return delta_logs
+        except Exception:
+            pass
+    # Fallback to local JSON files
+    return list_local()
 
 
 @router.post("/rollback")
@@ -35,7 +46,7 @@ async def rollback(req: RollbackRequest, client=Depends(get_db_client)):
     from src.rollback import rollback
     config = await get_app_config()
     wid = req.warehouse_id or config["sql_warehouse_id"]
-    result = rollback(client, wid, req.log_file, drop_catalog=req.drop_catalog)
+    result = rollback(client, wid, req.log_file, drop_catalog=req.drop_catalog, config=config)
     return result
 
 
@@ -160,6 +171,107 @@ async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
         return []
 
 
+@router.get("/uc-objects")
+async def list_uc_objects(client=Depends(get_db_client)):
+    """List all Unity Catalog workspace-level objects using the SDK (no SQL warehouse needed)."""
+    result = {}
+
+    # External Locations
+    try:
+        result["external_locations"] = [
+            {"name": e.name, "url": getattr(e, "url", ""), "credential_name": getattr(e, "credential_name", ""),
+             "owner": getattr(e, "owner", ""), "comment": getattr(e, "comment", ""),
+             "read_only": getattr(e, "read_only", False)}
+            for e in client.external_locations.list() if e.name
+        ]
+    except Exception:
+        result["external_locations"] = []
+
+    # Storage Credentials
+    try:
+        result["storage_credentials"] = [
+            {"name": c.name, "owner": getattr(c, "owner", ""), "comment": getattr(c, "comment", ""),
+             "read_only": getattr(c, "read_only", False),
+             "used_for_managed_storage": getattr(c, "used_for_managed_storage", False)}
+            for c in client.storage_credentials.list() if c.name
+        ]
+    except Exception:
+        result["storage_credentials"] = []
+
+    # Connections (for Lakehouse Federation)
+    try:
+        result["connections"] = [
+            {"name": c.name, "connection_type": str(getattr(c, "connection_type", "")),
+             "owner": getattr(c, "owner", ""), "comment": getattr(c, "comment", "")}
+            for c in client.connections.list() if c.name
+        ]
+    except Exception:
+        result["connections"] = []
+
+    # Registered Models (ML)
+    try:
+        models = []
+        for m in client.registered_models.list():
+            if m.name:
+                models.append({
+                    "name": m.name, "full_name": getattr(m, "full_name", ""),
+                    "owner": getattr(m, "owner", ""), "comment": getattr(m, "comment", ""),
+                    "catalog_name": getattr(m, "catalog_name", ""), "schema_name": getattr(m, "schema_name", ""),
+                })
+            if len(models) >= 500:
+                break
+        result["registered_models"] = models
+    except Exception:
+        result["registered_models"] = []
+
+    # Metastores
+    try:
+        current = client.metastores.current()
+        result["metastore"] = {
+            "name": getattr(current, "name", ""),
+            "metastore_id": getattr(current, "metastore_id", ""),
+            "owner": getattr(current, "owner", ""),
+            "cloud": getattr(current, "cloud", ""),
+            "region": getattr(current, "region", ""),
+            "storage_root": getattr(current, "storage_root", ""),
+            "default_data_access_config_id": getattr(current, "default_data_access_config_id", ""),
+        }
+    except Exception:
+        result["metastore"] = None
+
+    # Shares (Delta Sharing)
+    try:
+        result["shares"] = [
+            {"name": s.name, "owner": getattr(s, "owner", ""), "comment": getattr(s, "comment", "")}
+            for s in client.shares.list() if s.name
+        ]
+    except Exception:
+        result["shares"] = []
+
+    # Recipients (Delta Sharing)
+    try:
+        result["recipients"] = [
+            {"name": r.name, "owner": getattr(r, "owner", ""), "comment": getattr(r, "comment", ""),
+             "authentication_type": str(getattr(r, "authentication_type", ""))}
+            for r in client.recipients.list() if r.name
+        ]
+    except Exception:
+        result["recipients"] = []
+
+    return result
+
+
+@router.get("/catalogs/{catalog}/{schema}/{table}/info")
+async def get_table_info(catalog: str, schema: str, table: str, client=Depends(get_db_client)):
+    """Get detailed table metadata using the SDK (no SQL warehouse needed)."""
+    from src.client import get_table_info_sdk
+    full_name = f"{catalog}.{schema}.{table}"
+    info = get_table_info_sdk(client, full_name)
+    if info:
+        return info
+    return {"error": f"Table {full_name} not found", "name": table, "full_name": full_name}
+
+
 @router.get("/audit")
 async def get_audit_log(client=Depends(get_db_client)):
     """Get clone audit trail entries from Unity Catalog Delta table."""
@@ -261,14 +373,26 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         )
         """)
         tables_created.append(metrics_fqn)
-        # Add new columns to existing metrics table
-        for col_name, col_type in [("user_name", "STRING"), ("status", "STRING"), ("job_type", "STRING")]:
-            try:
-                execute_sql(client, wid, f"ALTER TABLE {metrics_fqn} ADD COLUMN {col_name} {col_type}")
-            except Exception:
-                pass  # Column already exists
+        # Add new columns only if they don't already exist
+        try:
+            existing = {r["col_name"].lower() for r in execute_sql(client, wid, f"DESCRIBE TABLE {metrics_fqn}") if r.get("col_name")}
+            for col_name, col_type in [("user_name", "STRING"), ("status", "STRING"), ("job_type", "STRING")]:
+                if col_name.lower() not in existing:
+                    try:
+                        execute_sql(client, wid, f"ALTER TABLE {metrics_fqn} ADD COLUMN {col_name} {col_type}")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create metrics table: {e}")
+    # Create rollback logs table
+    try:
+        from src.rollback import ensure_rollback_table
+        rollback_fqn = ensure_rollback_table(client, wid, audit_config)
+        tables_created.append(rollback_fqn)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create rollback table: {e}")
     # Describe the tables we just created
     schemas = {}
     for fqn in tables_created:
@@ -303,6 +427,7 @@ async def describe_audit_tables(req: dict, client=Depends(get_db_client)):
     tables = [
         f"{catalog}.{schema}.run_logs",
         f"{catalog}.{schema}.clone_operations",
+        f"{catalog}.{schema}.rollback_logs",
         f"{catalog}.metrics.clone_metrics",
     ]
     schemas = {}

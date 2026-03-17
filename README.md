@@ -3,7 +3,7 @@
 **Enterprise-grade Unity Catalog Toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API.**
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.5.0-green.svg)
+![Version](https://img.shields.io/badge/version-0.5.1-green.svg)
 ![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Databricks%20App%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
@@ -62,7 +62,7 @@ Different teams have different workflows — Clone-Xs meets you where you are:
 
 | Explorer | Templates |
 |---|---|
-| Browse catalogs with stats and search | Pre-built clone configurations |
+| Catalog browser tree, UC objects, table detail drawer, donut charts, cost estimates | Pre-built clone configurations |
 
 ---
 
@@ -133,7 +133,7 @@ Open the Web UI and go to **Settings** to complete the following:
 
 ---
 
-## Web UI (32 Pages)
+## Web UI (33 Pages)
 
 Every page includes a detailed description and links to official [Azure Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/).
 
@@ -180,6 +180,7 @@ clxs create-job --source X --dest Y        # Create persistent Databricks Job
 clxs create-job --source X --dest Y \
   --schedule "0 0 6 * * ?" --notification-email t@co.com  # Scheduled job with alerts
 clxs create-job --source X --dest Y --run-now  # Create and run immediately
+clxs clone --source X --dest Y --schema-only   # Empty tables + all artifacts (no data)
 clxs slack-bot                            # Start Slack bot
 ```
 
@@ -247,7 +248,7 @@ audit_trail:
 | CLI commands | 60 |
 | Python modules | 91 |
 | Web UI pages | 33 |
-| REST API endpoints | 66+ |
+| REST API endpoints | 69+ |
 | Clone templates | 12 |
 | Pages with catalog dropdowns | 19 |
 | Desktop platforms | macOS, Windows |

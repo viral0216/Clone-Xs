@@ -9,6 +9,107 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v1.5.3
+
+### True Delta Rollback with RESTORE TABLE
+- Rollback now uses `RESTORE TABLE ... TO VERSION AS OF` instead of destructive DROP
+- Pre-clone Delta versions recorded for each destination table before clone overwrites it
+- Three rollback modes: version-based (precise), timestamp-based (fallback), legacy DROP (old logs)
+- Tables that existed before clone: RESTORED to pre-clone version
+- Tables newly created by clone: DROPped
+- Rollback UI shows per-table plan: green "RESTORE to vN" badges vs red "DROP" badges
+- `clone_started_at` timestamp recorded in rollback logs for timestamp-based restore
+- New rollback_logs Delta table with full history (schemas_count, tables_count, restored_count, etc.)
+
+### Explorer Page Enhancements
+- Added Monthly Cost and Yearly Cost estimate cards (8 stat cards total)
+- Storage price configurable from Settings (default $0.023/GB/month)
+- Currency selection in Settings (USD, EUR, GBP, AUD, CAD, INR, JPY, CHF, SEK, BRL)
+- Cost Estimator page now reads price from Settings
+- Column usage fallback to information_schema when system tables unavailable
+
+### Error Handling Improvements
+- `/api/column-usage` — returns empty result instead of 500 when system tables unavailable
+- `/api/dependencies/functions` — returns empty result instead of 500
+- `/api/dependencies/views` — returns empty result instead of 500
+- `/api/dependencies/order` — returns empty result instead of 500
+
+### Template Fixes
+- Template API now returns `key` field (was returning `name` as dict key)
+- Template API now returns full `config` dict for config badges
+- Category filter fixed: `schema-only` added to Development, fallback inference for unknown keys
+
+---
+
+## v1.5.2
+
+### Dashboard Enhancements
+- Extended dashboard from 4 to 10 stat cards: added Avg Duration, Tables Cloned, Data Moved, Views Cloned, Volumes Cloned, Week-over-Week trend
+- Added 3 new charts: Clone Type Split (DEEP vs SHALLOW donut), Operation Type Split (clone/sync/rollback donut), Peak Usage Hours (bar chart)
+- Added 2 insight tables: Top Source Catalogs (bar progress), Active Users (avatar + bar progress)
+- Added Catalog Health Score card with per-catalog scoring (0-100) based on failure rates and operation history
+- Added Pinned Catalog Pairs — localStorage-based favorites for quick clone access
+- Added Notification Center — bell icon in header with recent clone events from Delta tables
+- Dashboard now queries all 3 Delta tables (run_logs, clone_operations, clone_metrics) with SQL alias normalization for column name differences
+
+### Templates Page Redesign
+- Category filter pills (All, Development, Production, Disaster Recovery, Security)
+- Unique icon and color per template
+- Config detail badges (Permissions, Validate, Rollback, Checksum, PII Masking)
+- Expandable "More details" with full long_description for each template
+- Click-anywhere-on-card to use template
+- Templates now pass ALL config values as URL params to clone page
+
+### Clone Page Improvements
+- Clone page reads URL query params on mount — template settings (checkboxes, clone type, workers) are now correctly applied
+- Auto-populate Storage Location from source catalog's storage root via `GET /catalogs/{catalog}/info`
+
+### Audit Trail Redesign
+- Summary stats bar (Total Operations, Succeeded, Failed, Avg Duration)
+- Enhanced filters: free-text search, status dropdown, operation type, catalog filter, date range, "Clear all" button
+- Expandable entry rows with detail grid (User, Host, Started, Completed, Tables Cloned/Failed, Data Size, Clone Mode, Trigger)
+- Log Detail Panel — fetches full execution logs from `/audit/{job_id}/logs` with color-coded log viewer
+- Error message display with mono-font
+- Download Full Log as JSON
+
+### Cost Estimator Fix
+- Fixed field name mismatch between API response and frontend (total_gb vs total_size, monthly_cost_usd vs total_cost, etc.)
+- Now shows: Total Size (GB/TB), Tables Scanned, Monthly Cost, Yearly Cost
+- Deep vs Shallow comparison cards
+- Top 10 Largest Tables with size percentage bars
+
+### Page State Persistence (JobContext)
+- New React Context (`JobContext`) that persists scan/operation results across page navigation
+- 10 pages updated: PII Scanner, Schema Drift, Preflight, Diff & Compare, Cost Estimator, Profiling, Impact Analysis, Compliance, Monitor, Storage Metrics
+- Navigate away and come back — results are preserved
+
+### New Delta Table Columns
+- `clone_operations`: added tables_skipped (INT), clone_mode (STRING), trigger (STRING), destination_existed (BOOLEAN)
+- `run_logs`: added tables_cloned (INT), tables_failed (INT), total_size_bytes (BIGINT)
+- `clone_metrics`: added user_name (STRING), status (STRING), job_type (STRING)
+- ALTER TABLE ADD COLUMN on init for existing tables
+
+### Backend Improvements
+- New endpoints: `GET /notifications`, `GET /catalog-health`
+- `GET /monitor/metrics` now queries all 3 Delta tables with SQL alias normalization
+- Metrics enabled by default in config
+- Template API now returns full config dict and key field
+- Settings page loads audit catalog/schema from YAML config instead of stale sessionStorage
+
+### Documentation
+- New API Reference page (69+ endpoints across 12 router groups)
+- New Web UI Guide (all 33 pages documented)
+- New Changelog page
+- Updated sidebars.ts and intro.md with links to new docs
+- Updated TTL documentation with native Databricks comparison
+
+### Docs Site
+- Navbar logo: SVG icon only + CSS-rendered text for crisp display
+- Increased subtitle readability
+- Primary color changed to Clone-Xs red (#E8453C)
+
+---
+
 ## v1.5.1
 
 ### Lineage Enhancements
@@ -20,10 +121,43 @@ All notable changes to Clone-Xs are documented here.
 - JSON and CSV export
 - Insights panel: most connected tables, root sources, terminal sinks, top columns by usage, active users
 
+### Explorer Page Major Enhancements
+- **Catalog Browser** — Databricks-style tree sidebar showing all catalogs, schemas, and tables with lazy loading, search filter, expandable tree nodes, hideable via Settings toggle or X button, and resizable via drag
+- **UC Objects tab** — lists all Unity Catalog workspace objects: External Locations, Storage Credentials, Connections, Registered Models (ML), Metastore info, Shares, and Recipients via new `GET /uc-objects` endpoint
+- **Views tab** — dedicated tab listing all views with column counts
+- **Functions tab** — lists all UDFs across schemas with lazy loading
+- **Volumes tab** — lists volumes with type and path
+- **PII Detection tab** — inline PII scanner within Explorer
+- **Feature Store tab** — auto-detects feature tables by naming convention
+- **Table Detail Drawer** — click any table to open a slide-out panel with columns, properties, owner, storage location, and dates via `GET /catalogs/{catalog}/{schema}/{table}/info`
+- **Schema size donut chart** and **Table type distribution donut** on overview
+- **Top Used Tables** card from `POST /table-usage` endpoint
+- **Most Used Columns** on overview from column usage data
+- **Schema filter pills** — toggle schemas on/off to filter displayed tables
+- **Quick actions** — Preview, Clone, Profile buttons per table row
+- **Compare shortcut** — button to jump to Diff page with current catalog pre-filled
+- **Export CSV** — download all table data as CSV
+- **Cost estimates** — Monthly/Yearly cost cards with configurable currency
+
+### Settings Enhancements
+- **UI Preferences** section with toggles for Export Buttons and Catalog Browser visibility
+- **Currency selector** — 10 currencies (USD, EUR, GBP, AUD, CAD, INR, JPY, CHF, SEK, BRL)
+- **Storage price** — configurable $/GB/month with links to Azure Pricing Calculator and Databricks Pricing
+
+### Resizable Panels
+- Main sidebar, Catalog Browser, Table Detail Drawer, and Lineage Graph all support drag-to-resize with widths persisted in localStorage
+- Reusable `ResizeHandle` component
+
 ### Column Usage Analytics
 - New `POST /api/column-usage` endpoint querying `system.access.column_lineage` and `system.query.history`
 - Most frequently used columns with per-user breakdown
 - Integrated into both Lineage Insights tab and Explorer page
+- Default mode uses `information_schema.columns` (fast, < 2s); system tables (`system.access.column_lineage`) only when `use_system_tables: true`; query history only when `include_query_history: true`
+
+### New API Endpoints
+- `GET /uc-objects` — list all UC workspace objects (External Locations, Storage Credentials, Connections, Models, Metastore, Shares, Recipients) via SDK
+- `POST /table-usage` — top used tables by query frequency
+- `POST /column-usage` — optimized with fast/full modes
 
 ### Create Job Enhancements
 - Auto-populated storage location from source catalog's `DESCRIBE CATALOG EXTENDED`
@@ -38,7 +172,7 @@ All notable changes to Clone-Xs are documented here.
 
 ### Changed
 - **SDK-first metadata access** — ~42 SQL warehouse queries replaced with Databricks SDK API calls (`client.schemas.list()`, `client.tables.list()`, `client.functions.list()`, etc.). Metadata browsing (list catalogs, schemas, tables) now works without a running SQL warehouse. SQL fallback preserved for reliability.
-- New SDK helpers in `src/client.py`: `list_schemas_sdk`, `list_tables_sdk`, `list_views_sdk`, `list_functions_sdk`, `list_volumes_sdk`, `get_table_info_sdk`, `get_catalog_info_sdk`
+- New SDK helpers in `src/client.py`: `list_schemas_sdk`, `list_tables_sdk`, `list_views_sdk`, `list_functions_sdk`, `list_volumes_sdk`, `get_table_info_sdk`, `get_catalog_info_sdk`, `delete_table_sdk`
 
 ### Removed
 - Schedule page removed from sidebar (scheduling handled by Create Job)

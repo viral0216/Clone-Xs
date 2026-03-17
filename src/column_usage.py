@@ -207,67 +207,127 @@ def query_column_users(
     return {"columns": columns[:50], "top_users": top_users[:20]}
 
 
+def query_column_stats_fallback(
+    client, warehouse_id: str, catalog: str, limit: int = 50,
+) -> list[dict]:
+    """Fallback: query information_schema for column statistics when system tables aren't available.
+
+    Returns most referenced columns by counting their occurrence across tables.
+    """
+    sql = f"""
+        SELECT
+            column_name,
+            CONCAT(table_catalog, '.', table_schema, '.', table_name) AS table_name,
+            data_type,
+            COUNT(*) OVER (PARTITION BY column_name) AS name_frequency
+        FROM {catalog}.information_schema.columns
+        WHERE table_schema NOT IN ('information_schema', 'default')
+        ORDER BY name_frequency DESC, column_name
+        LIMIT {limit}
+    """
+    try:
+        rows = execute_sql(client, warehouse_id, sql)
+        logger.info(f"Column stats fallback: {len(rows)} columns from information_schema")
+        return rows
+    except Exception as e:
+        logger.debug(f"information_schema fallback failed: {e}")
+        return []
+
+
 def get_column_usage_summary(
     client,
     warehouse_id: str,
     catalog: str,
     table_fqn: str | None = None,
     days: int = 90,
+    include_query_history: bool = False,
+    use_system_tables: bool = False,
 ) -> dict:
-    """Combined column usage summary from lineage + query history.
+    """Column usage summary — fast by default.
 
-    Returns merged analytics for both the Lineage Insights tab and Explorer page.
+    Default mode (use_system_tables=False):
+      - Uses information_schema.columns only (< 2s)
+      - Shows column frequency across tables (no user attribution)
+
+    Full mode (use_system_tables=True):
+      - Queries system.access.column_lineage (~5-15s)
+      - Optionally queries system.query.history for user attribution (~10-30s)
     """
-    # Column lineage (write flow)
-    lineage_cols = query_column_usage(client, warehouse_id, catalog, table_fqn, days)
-
-    # Column users (read access from query history)
-    user_data = query_column_users(client, warehouse_id, catalog, table_fqn, days)
-
-    # Merge lineage data with user data
-    # Create lookup from user_data by (table, column)
-    user_lookup = {}
-    for c in user_data.get("columns", []):
-        key = (c["table"], c["column"].lower())
-        user_lookup[key] = c
-
     top_columns = []
-    for lc in lineage_cols:
-        col_name = lc.get("column_name", "")
-        tbl_name = lc.get("table_name", "")
-        key = (tbl_name, col_name.lower())
-        user_info = user_lookup.pop(key, None)
 
-        top_columns.append({
-            "column": col_name,
-            "table": tbl_name,
-            "lineage_count": lc.get("usage_count", 0),
-            "downstream_count": lc.get("downstream_count", 0),
-            "last_used": str(lc.get("last_used", "")),
-            "query_count": user_info["usage_count"] if user_info else 0,
-            "user_count": user_info["user_count"] if user_info else 0,
-            "users": user_info["users"] if user_info else [],
-        })
+    if use_system_tables:
+        # Full mode: query system tables
+        lineage_cols = query_column_usage(
+            client, warehouse_id, catalog, table_fqn,
+            days=min(days, 30), limit=30,
+        )
 
-    # Add columns only found in query history (not in lineage)
-    for key, c in user_lookup.items():
-        top_columns.append({
-            "column": c["column"],
-            "table": c["table"],
-            "lineage_count": 0,
-            "downstream_count": 0,
-            "last_used": "",
-            "query_count": c["usage_count"],
-            "user_count": c["user_count"],
-            "users": c["users"],
-        })
+        user_data = {"columns": [], "top_users": []}
+        if include_query_history:
+            user_data = query_column_users(
+                client, warehouse_id, catalog, table_fqn,
+                days=min(days, 30), limit=100,
+            )
 
-    # Sort by combined usage
-    top_columns.sort(key=lambda x: -(x["lineage_count"] + x["query_count"]))
+        user_lookup = {}
+        for c in user_data.get("columns", []):
+            key = (c["table"], c["column"].lower())
+            user_lookup[key] = c
+
+        for lc in lineage_cols:
+            col_name = lc.get("column_name", "")
+            tbl_name = lc.get("table_name", "")
+            key = (tbl_name, col_name.lower())
+            user_info = user_lookup.pop(key, None)
+            top_columns.append({
+                "column": col_name, "table": tbl_name,
+                "lineage_count": lc.get("usage_count", 0),
+                "downstream_count": lc.get("downstream_count", 0),
+                "last_used": str(lc.get("last_used", "")),
+                "query_count": user_info["usage_count"] if user_info else 0,
+                "user_count": user_info["user_count"] if user_info else 0,
+                "users": user_info["users"] if user_info else [],
+            })
+
+        for key, c in user_lookup.items():
+            top_columns.append({
+                "column": c["column"], "table": c["table"],
+                "lineage_count": 0, "downstream_count": 0, "last_used": "",
+                "query_count": c["usage_count"], "user_count": c["user_count"],
+                "users": c["users"],
+            })
+
+        top_columns.sort(key=lambda x: -(x["lineage_count"] + x["query_count"]))
+
+    # Fast path: information_schema fallback (runs when no system table data)
+    if not top_columns and not table_fqn:
+        fallback_cols = query_column_stats_fallback(client, warehouse_id, catalog)
+        if fallback_cols:
+            seen = set()
+            for fc in fallback_cols:
+                col = fc.get("column_name", "")
+                tbl = fc.get("table_name", "")
+                freq = int(fc.get("name_frequency", 1))
+                key = (tbl, col)
+                if key in seen:
+                    continue
+                seen.add(key)
+                top_columns.append({
+                    "column": col,
+                    "table": tbl,
+                    "data_type": fc.get("data_type", ""),
+                    "lineage_count": freq,
+                    "downstream_count": 0,
+                    "last_used": "",
+                    "query_count": 0,
+                    "user_count": 0,
+                    "users": [],
+                    "source": "information_schema",
+                })
 
     return {
         "top_columns": top_columns[:50],
-        "top_users": user_data.get("top_users", []),
+        "top_users": [],
         "total_columns_tracked": len(top_columns),
         "period_days": days,
     }

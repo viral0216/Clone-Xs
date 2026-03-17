@@ -240,6 +240,7 @@ def process_schema(
             resumed_tables=resumed_tables, order_by_size=order_by_size,
             as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
             force_reclone=force_reclone, where_clauses=where_clause,
+            schema_only=config.get("schema_only", False),
         )
 
         # Apply data masking after table cloning

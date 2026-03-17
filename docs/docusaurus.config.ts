@@ -46,7 +46,7 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Clone → Xs',
+      title: '',
       logo: {
         alt: 'Clone → Xs',
         src: 'img/logo.svg',

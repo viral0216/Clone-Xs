@@ -13,8 +13,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Create Job enhancements** — auto-populated storage location from source catalog's `DESCRIBE CATALOG EXTENDED`, Clone-Xs job dropdown (filters by `created_by=clone-xs` tag) for updating existing jobs, new `GET /api/generate/clone-jobs` and `GET /api/catalogs/{catalog}/info` endpoints
 - **Logo enhancement** — icon mark (overlapping catalog shapes with arrow) added to header, SVGs, PageHeader breadcrumbs, and API docs
 - **Run job after creation** — new "Run job immediately after creation" checkbox on Create Job page, `POST /api/generate/run-job/{job_id}` endpoint, and `--run-now` CLI flag for `clxs create-job`
+- **Schema-only clone** — new `--schema-only` CLI flag and "Schema Only (empty tables)" checkbox in Clone UI. Creates empty tables with `CREATE TABLE ... LIKE` (structure only, no data) while cloning all other artifacts (views, functions, volumes, permissions). Useful for setting up dev/test environments
 - **Navigation & Feature Toggles** — new Settings section to enable/disable sidebar pages per user (persisted in localStorage), with "Enable All" reset and live sidebar updates
 - **Connection tooltip** — removed connection banner from Dashboard, moved connection details (user, host, auth method) to a hover tooltip on the header "Connected" badge
+- **Explorer: Catalog Browser** — Databricks-style tree sidebar showing all catalogs → schemas → tables with lazy loading, search filter, expandable tree nodes, hideable via Settings toggle or X button, and resizable via drag
+- **Explorer: UC Objects tab** — lists all Unity Catalog workspace objects: External Locations, Storage Credentials, Connections, Registered Models (ML), Metastore info, Shares, and Recipients. New `GET /uc-objects` endpoint
+- **Explorer: Views tab** — dedicated tab listing all views with column counts
+- **Explorer: Functions tab** — lists all UDFs across schemas with lazy loading
+- **Explorer: Volumes tab** — lists volumes with type and path
+- **Explorer: PII Detection tab** — inline PII scanner within Explorer page
+- **Explorer: Feature Store tab** — auto-detects feature tables by naming convention
+- **Explorer: Table Detail Drawer** — click any table to open a slide-out panel with columns, properties, owner, storage location, and dates. New `GET /catalogs/{catalog}/{schema}/{table}/info` endpoint
+- **Explorer: Schema size donut chart** and **Table type distribution donut**
+- **Explorer: Top Used Tables** card from `POST /table-usage` endpoint
+- **Explorer: Most Used Columns** on overview from column usage data
+- **Explorer: Schema filter pills** — toggle schemas on/off to filter tables
+- **Explorer: Quick actions** — Preview, Clone, Profile buttons per table row
+- **Explorer: Compare shortcut** — button to jump to Diff page with current catalog pre-filled
+- **Explorer: Export CSV** — download all table data as CSV
+- **Explorer: Cost estimates** — Monthly/Yearly cost cards with configurable currency
+- **Settings: UI Preferences** — toggles for Export Buttons and Catalog Browser visibility
+- **Settings: Currency selector** — 10 currencies (USD, EUR, GBP, AUD, CAD, INR, JPY, CHF, SEK, BRL)
+- **Settings: Storage price** — configurable $/GB/month with links to Azure Pricing Calculator and Databricks Pricing
+- **Resizable panels** — Main sidebar, Catalog Browser, Table Detail Drawer, and Lineage Graph all support drag-to-resize with widths persisted in localStorage. Reusable `ResizeHandle` component
+- **New API endpoints** — `GET /uc-objects` (list UC workspace objects via SDK), `POST /table-usage` (top used tables by query frequency)
 
 ### Fixed
 - **Databricks Job audit logging** — jobs now correctly write to the audit trail Delta table configured in Settings (e.g., `edp_dev.logs.clone_operations`) instead of defaulting to `clone_audit`. Fixed by passing `audit_trail` nested dict through `build_job_config()` to the clone notebook, and adding `_get_audit_catalog()`/`_get_audit_schema()` helpers that resolve from multiple config shapes
@@ -28,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Changed
 - **SDK-first metadata access** — replaced ~42 SQL warehouse queries with Databricks SDK API calls for metadata listing (schemas, tables, views, functions, volumes) and retrieval (table info, columns, catalog details). Reduces SQL warehouse compute costs and enables metadata browsing without a running warehouse. SQL fallback is kept where SDK fails. Affected modules: `clone_catalog`, `clone_tables`, `clone_views`, `clone_functions`, `clone_volumes`, `compare`, `diff`, `validation`, `stats`, `profiling`, `snapshot`, `storage_metrics`, `preflight`, `permissions`, and API router endpoints.
 - Added SDK helper functions in `src/client.py`: `list_schemas_sdk`, `list_tables_sdk`, `list_views_sdk`, `list_functions_sdk`, `list_volumes_sdk`, `get_table_info_sdk`, `get_catalog_info_sdk`, `delete_table_sdk`
+- **Column Usage optimization** — default mode now uses `information_schema.columns` (fast, < 2s). System tables (`system.access.column_lineage`) used only when `use_system_tables: true`. Query history only when `include_query_history: true`
 
 ### Removed
 - **Schedule page** — removed from sidebar navigation (scheduling is handled by Create Databricks Job page)

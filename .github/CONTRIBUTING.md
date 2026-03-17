@@ -40,7 +40,7 @@ This starts:
 clone-xs/
   src/              91 Python modules (shared by CLI + API)
   api/              FastAPI backend (routers, models, job queue)
-  ui/               React frontend (32 pages, shadcn/ui components)
+  ui/               React frontend (33 pages, shadcn/ui components)
   databricks-app/   Databricks App deployment (app.yaml, deploy script)
   desktop/          Electron desktop app (macOS + Windows)
   marketplace/      Marketplace listing assets and provider application
@@ -111,6 +111,7 @@ clone-xs/
   - `list_volumes_sdk(client, catalog, schema)` -- list volumes
   - `get_table_info_sdk(client, full_name)` -- get table metadata + columns
   - `get_catalog_info_sdk(client, catalog)` -- get catalog metadata
+  - `delete_table_sdk(client, full_name)` -- delete a table
 
 ### Commit Messages
 

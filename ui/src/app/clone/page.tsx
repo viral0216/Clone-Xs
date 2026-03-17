@@ -594,6 +594,7 @@ export default function ClonePage() {
     validate_after_clone: false,
     validate_checksum: false,
     force_reclone: false,
+    schema_only: false,
     generate_report: false,
     show_progress: true,
     auto_rollback: false,
@@ -633,7 +634,7 @@ export default function ClonePage() {
     const boolKeys = [
       "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
       "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
-      "validate_after_clone", "validate_checksum", "dry_run", "force_reclone",
+      "validate_after_clone", "validate_checksum", "dry_run", "force_reclone", "schema_only",
       "generate_report", "show_progress", "auto_rollback", "checkpoint",
       "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
     ];
@@ -653,6 +654,40 @@ export default function ClonePage() {
     }
     return merged;
   });
+
+  // Auto-populate storage location from source catalog's storage root
+  const [sourceStorageRoot, setSourceStorageRoot] = useState("");
+  useEffect(() => {
+    if (!config.source_catalog) { setSourceStorageRoot(""); return; }
+    api.get(`/catalogs/${config.source_catalog}/info`)
+      .then((info: any) => setSourceStorageRoot(info.storage_root || ""))
+      .catch(() => setSourceStorageRoot(""));
+  }, [config.source_catalog]);
+
+  useEffect(() => {
+    if (sourceStorageRoot && config.destination_catalog && config.source_catalog) {
+      const m = sourceStorageRoot.match(/^(abfss?:\/\/)([^@]+)@([^/]+)(\/.*)?$/);
+      if (m) {
+        const protocol = m[1];
+        const container = m[2];
+        const account = m[3];
+        const pathPart = (m[4] || "").replace(/\/+$/, "");
+        let newPath = pathPart;
+        if (pathPart) {
+          const escaped = config.source_catalog.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          newPath = pathPart.replace(new RegExp(escaped, "g"), config.destination_catalog);
+          if (newPath === pathPart) {
+            const segs = pathPart.split("/");
+            segs[segs.length - 1] = config.destination_catalog;
+            newPath = segs.join("/");
+          }
+        } else {
+          newPath = "/" + config.destination_catalog;
+        }
+        setConfig((prev) => ({ ...prev, location: `${protocol}${container}@${account}${newPath}` }));
+      }
+    }
+  }, [sourceStorageRoot, config.destination_catalog, config.source_catalog]);
 
   const startClone = useStartClone();
   const volumes = useVolumes();
@@ -913,6 +948,7 @@ export default function ClonePage() {
                   ["validate_after_clone", "Validate After Clone"],
                   ["validate_checksum", "Checksum Validation"],
                   ["force_reclone", "Force Re-clone"],
+                  ["schema_only", "Schema Only (empty tables)"],
                   ["generate_report", "Generate Report"],
                   ["show_progress", "Show Progress"],
                   ["checkpoint", "Enable Checkpoint"],
@@ -1086,6 +1122,7 @@ export default function ClonePage() {
               {config.generate_report && <Badge className="bg-blue-100 text-blue-800 text-xs">Report</Badge>}
               {config.checkpoint && <Badge className="bg-blue-100 text-blue-800 text-xs">Checkpoint</Badge>}
               {config.force_reclone && <Badge className="bg-orange-100 text-orange-800 text-xs">Force Re-clone</Badge>}
+              {config.schema_only && <Badge className="bg-cyan-100 text-cyan-800 text-xs">Schema Only</Badge>}
               {config.skip_unused && <Badge className="bg-orange-100 text-orange-800 text-xs">Skip Unused</Badge>}
               {config.impact_check && <Badge className="bg-purple-100 text-purple-800 text-xs">Impact Check</Badge>}
               {config.require_approval && <Badge className="bg-purple-100 text-purple-800 text-xs">Approval Required</Badge>}

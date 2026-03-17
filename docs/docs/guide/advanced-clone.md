@@ -215,6 +215,34 @@ In CI/CD pipelines, always set a TTL when creating PR-specific catalogs. Combine
 
 ---
 
+## Clone templates
+
+> Pre-built configurations that set all clone options in one click.
+
+### Template long descriptions
+
+Each of the 13 built-in templates now includes a detailed `long_description` field that explains:
+
+- The intended use case (e.g., "Create a lightweight dev environment with only the last 30 days of data")
+- Which settings are enabled and which are disabled (e.g., "Enables shallow clone, disables validation and TTL")
+- Why those defaults were chosen (e.g., "Shallow clone is used to minimize storage costs for short-lived environments")
+
+The long description is displayed in the UI when a user expands a template card, giving full context before they commit to a configuration.
+
+### How templates populate the clone page
+
+When a user selects a template, all configuration values are passed to the clone page as **URL parameters**. This means:
+
+- Every field on the clone form (source, destination, clone mode, TTL, filters, etc.) is pre-filled from the template
+- Users can review and override any value before starting the clone
+- The URL is shareable -- teammates can open the same pre-configured clone page
+
+### Storage Location auto-population
+
+The clone page automatically populates the **Storage Location** field from the source catalog's metadata. When a source catalog is selected (either manually or via a template), the app reads the catalog's default storage location and fills it in as the suggested destination storage path. Users can override this value if needed.
+
+---
+
 ## Plugin system
 
 > Extend Clone Catalog with custom logic that runs at specific points in the clone lifecycle.

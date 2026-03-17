@@ -87,18 +87,23 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     """
     execute_sql(client, warehouse_id, create_sql)
 
-    # Add new columns to existing tables (ALTER TABLE is idempotent-safe with try/except)
+    # Add new columns only if they don't already exist
     new_columns = [
         ("tables_skipped", "INT"),
         ("clone_mode", "STRING"),
         ("trigger", "STRING"),
         ("destination_existed", "BOOLEAN"),
     ]
-    for col_name, col_type in new_columns:
-        try:
-            execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
-        except Exception:
-            pass  # Column already exists
+    try:
+        existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
+        for col_name, col_type in new_columns:
+            if col_name.lower() not in existing:
+                try:
+                    execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     logger.info(f"Audit table ready: {fqn}")
     return fqn

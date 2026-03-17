@@ -55,6 +55,7 @@ class CreateJobRequest(BaseModel):
     validate_after_clone: bool = False
     validate_checksum: bool = False
     force_reclone: bool = False
+    schema_only: bool = False
     show_progress: bool = True
     # Filtering
     exclude_schemas: list[str] = ["information_schema", "default"]

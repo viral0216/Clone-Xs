@@ -35,6 +35,7 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Cross-Workspace Clone | Clone catalogs across Databricks workspaces |
 | Dry Run & Execution Plan | Preview all SQL with cost estimates |
 | Auto-Rollback | Automatically undo clone if validation fails |
+| Delta RESTORE Rollback | Non-destructive rollback using `RESTORE TABLE ... TO VERSION AS OF` with pre-clone version tracking |
 | Checkpointing | Resume long clones from where they left off |
 | Scheduled Cloning | Cron or interval-based scheduling with drift detection |
 | Throttle Controls | Rate-limit clones with low/medium/high/max presets |
@@ -61,6 +62,13 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Desktop App | Native macOS/Windows app via Electron — no terminal required |
 | Databricks App | Deploy as a native Databricks App with automatic service principal auth |
 | Marketplace | Publish to Databricks Marketplace as Solution Accelerator |
+| Analytics Dashboard | 10 stat cards, 5 charts, catalog health scores, pinned favorites, notifications |
+| Notification Center | Real-time bell icon showing clone completions, failures, and TTL warnings |
+| Catalog Health Score | Per-catalog health scoring (0-100) based on failure rates and operation history |
+| Pinned Catalog Pairs | Quick-access favorites for frequently used source→destination pairs |
+| Page State Persistence | Navigate away and come back — scan results are preserved across all pages |
+| Auto Storage Location | Clone and Create Job pages auto-populate storage location from source catalog |
+| Template Config Pass-through | Templates pre-fill all clone checkboxes, not just clone type |
 
 ## Quick install
 

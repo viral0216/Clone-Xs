@@ -40,7 +40,10 @@ export default function CostPage() {
               showSchema={false}
               showTable={false}
             />
-            <Button onClick={() => run({ catalog }, () => api.post("/estimate", { source_catalog: catalog }))} disabled={!catalog || isRunning}>
+            <Button onClick={() => {
+              const pricePerGb = (() => { try { return parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023; } catch { return 0.023; } })();
+              run({ catalog }, () => api.post("/estimate", { source_catalog: catalog, price_per_gb: pricePerGb }));
+            }} disabled={!catalog || isRunning}>
               {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <DollarSign className="h-4 w-4 mr-2" />}
               {isRunning ? "Estimating..." : "Estimate Cost"}
             </Button>

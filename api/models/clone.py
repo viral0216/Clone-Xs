@@ -36,6 +36,8 @@ class CloneRequest(BaseModel):
     profile: str | None = None
     serverless: bool = False
     volume: str | None = None
+    force_reclone: bool = False
+    schema_only: bool = False
 
 
 class CloneJobResponse(BaseModel):

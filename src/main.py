@@ -290,6 +290,8 @@ def cmd_clone(args):
         config["ttl"] = args.ttl
     if getattr(args, "skip_unused", False):
         config["skip_unused"] = True
+    if getattr(args, "schema_only", False):
+        config["schema_only"] = True
 
     # Cross-workspace destination
     if args.dest_host and args.dest_token:
@@ -2067,6 +2069,7 @@ def build_parser() -> argparse.ArgumentParser:
     clone_parser.add_argument("--impact-check", action="store_true", help="Run impact analysis before cloning")
     clone_parser.add_argument("--ttl", help="Set TTL on destination (e.g., 7d, 30d, 2w)")
     clone_parser.add_argument("--skip-unused", action="store_true", help="Skip tables with no recent queries")
+    clone_parser.add_argument("--schema-only", action="store_true", help="Create empty tables (structure only, no data) with all other artifacts (views, functions, volumes, permissions)")
     clone_parser.set_defaults(func=cmd_clone)
 
     # --- diff command ---

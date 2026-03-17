@@ -766,12 +766,20 @@ Run pre-flight checks before cloning (permissions, connectivity, catalog existen
 
 ### `GET /api/rollback/logs`
 
-List available rollback log files.
+List available rollback logs. Queries the Delta audit table first and falls back to local JSON files if the Delta table is unavailable.
 
 **Example response:**
 
 ```json
-["rollback_2025-01-15_10-30-00.json", "rollback_2025-01-14_08-00-00.json"]
+[
+  {
+    "rollback_id": "rb-20260315-103000",
+    "log_file": "rollback_2026-03-15_10-30-00.json",
+    "table_versions": {"sales.orders": 12, "sales.customers": 8},
+    "restore_mode": "RESTORE",
+    "timestamp": "2026-03-15T10:30:00Z"
+  }
+]
 ```
 
 ### `POST /api/rollback`
@@ -841,6 +849,34 @@ List tables in a schema.
 |-----------|--------|------|----------|--------------|
 | `catalog` | string | path | Yes      | Catalog name |
 | `schema`  | string | path | Yes      | Schema name  |
+
+### `GET /api/catalogs/{catalog}/{schema}/{table}/info`
+
+Get table metadata (owner, type, storage location, properties, columns) via the Databricks SDK.
+
+| Parameter | Type   | In   | Required | Description  |
+|-----------|--------|------|----------|--------------|
+| `catalog` | string | path | Yes      | Catalog name |
+| `schema`  | string | path | Yes      | Schema name  |
+| `table`   | string | path | Yes      | Table name   |
+
+**Example response:**
+
+```json
+{
+  "name": "orders",
+  "catalog": "prod",
+  "schema": "sales",
+  "table_type": "MANAGED",
+  "owner": "data-team",
+  "storage_location": "dbfs:/user/hive/warehouse/prod.db/sales/orders",
+  "columns": [
+    {"name": "order_id", "type": "BIGINT", "nullable": false},
+    {"name": "customer_id", "type": "BIGINT", "nullable": true}
+  ],
+  "properties": {"delta.minReaderVersion": "1"}
+}
+```
 
 ### `GET /api/audit`
 
@@ -1041,7 +1077,7 @@ Get clone operation metrics from Delta tables (throughput, failure rates, durati
 
 ### `GET /api/notifications`
 
-Get recent notifications from run logs (completions, failures, TTL warnings).
+Returns recent clone events from Delta tables (completions, failures, TTL warnings). Events are sourced from `run_logs` and `clone_operations` Delta tables.
 
 **Example response:**
 
@@ -1062,7 +1098,7 @@ Get recent notifications from run logs (completions, failures, TTL warnings).
 
 ### `GET /api/catalog-health`
 
-Get aggregate catalog health scores based on recent operations.
+Returns per-catalog health scores based on recent operations (success rate, trend, skipped-table ratio).
 
 **Example response:**
 
@@ -1210,9 +1246,35 @@ Compare sample rows between source and destination tables.
 
 Dependency analysis -- map view and function dependencies, compute creation order for cloning.
 
+### `POST /api/column-usage`
+
+Get column usage analytics for a catalog. Default (fast) mode uses `information_schema.columns` (< 2s). Set `use_system_tables: true` to query `system.access.column_lineage` for richer data. Set `include_query_history: true` to also query `system.query.history`. Returns graceful error instead of 500 when system tables are unavailable.
+
+| Field                    | Type    | Required | Default | Description                                      |
+|--------------------------|---------|----------|---------|--------------------------------------------------|
+| `catalog`                | string  | Yes      |         | Catalog name                                     |
+| `schema_name`            | string  | No       |         | Filter by schema                                 |
+| `warehouse_id`           | string  | No       |         | SQL warehouse ID                                 |
+| `use_system_tables`      | boolean | No       | `false` | Use `system.access.column_lineage` for usage data |
+| `include_query_history`  | boolean | No       | `false` | Include query history analysis                   |
+
+**Example response:**
+
+```json
+{
+  "catalog": "prod",
+  "columns": [
+    {"column": "customer_id", "table": "sales.orders", "usage_count": 1230},
+    {"column": "order_date", "table": "sales.orders", "usage_count": 980}
+  ],
+  "source": "system.access.column_lineage",
+  "fallback": false
+}
+```
+
 ### `POST /api/dependencies/views`
 
-Get the view dependency graph for a schema.
+Get the view dependency graph for a schema. Returns graceful error instead of 500 when system tables are unavailable.
 
 | Field          | Type   | Required | Description      |
 |----------------|--------|----------|------------------|
@@ -1234,7 +1296,7 @@ Get the view dependency graph for a schema.
 
 ### `POST /api/dependencies/functions`
 
-Get the function dependency graph for a schema.
+Get the function dependency graph for a schema. Returns graceful error instead of 500 when system tables are unavailable.
 
 | Field          | Type   | Required | Description      |
 |----------------|--------|----------|------------------|
@@ -1244,7 +1306,7 @@ Get the function dependency graph for a schema.
 
 ### `POST /api/dependencies/order`
 
-Get topologically sorted creation order for views (ensures views are created after their dependencies).
+Get topologically sorted creation order for views (ensures views are created after their dependencies). Returns graceful error instead of 500 when system tables are unavailable.
 
 | Field          | Type   | Required | Description      |
 |----------------|--------|----------|------------------|
@@ -1259,5 +1321,75 @@ Get topologically sorted creation order for views (ensures views are created aft
   "catalog": "prod",
   "schema": "sales",
   "creation_order": ["base_view", "mid_view", "top_view"]
+}
+```
+
+---
+
+## Explorer
+
+Endpoints powering the Explorer page's catalog browsing, UC object discovery, and table usage analytics.
+
+### `GET /api/uc-objects`
+
+List all Unity Catalog workspace objects: External Locations, Storage Credentials, Connections, Registered Models (ML), Metastore info, Shares, and Recipients. Uses the Databricks SDK directly (no SQL warehouse required).
+
+**Example request:**
+
+```bash
+curl http://localhost:8080/api/uc-objects \
+  -H "X-Databricks-Host: https://adb-123456.azuredatabricks.net" \
+  -H "X-Databricks-Token: dapi..."
+```
+
+**Example response:**
+
+```json
+{
+  "external_locations": [
+    {"name": "my_location", "url": "abfss://container@storage.dfs.core.windows.net/path"}
+  ],
+  "storage_credentials": [
+    {"name": "my_credential", "type": "AZURE_MANAGED_IDENTITY"}
+  ],
+  "connections": [],
+  "registered_models": [
+    {"name": "fraud_model", "catalog": "ml", "schema": "models"}
+  ],
+  "metastore": {"name": "main", "owner": "admin"},
+  "shares": [],
+  "recipients": []
+}
+```
+
+### `POST /api/table-usage`
+
+Get the most frequently used tables in a catalog based on query frequency. Queries `system.query.history` for table access counts.
+
+| Field          | Type    | Required | Description                        |
+|----------------|---------|----------|------------------------------------|
+| `catalog`      | string  | Yes      | Catalog name                       |
+| `schema_name`  | string  | No       | Filter by schema                   |
+| `warehouse_id` | string  | No       | SQL warehouse ID                   |
+| `limit`        | integer | No       | Max tables to return (default 10)  |
+
+**Example request:**
+
+```bash
+curl -X POST http://localhost:8080/api/table-usage \
+  -H "Content-Type: application/json" \
+  -d '{"catalog": "prod", "limit": 5}'
+```
+
+**Example response:**
+
+```json
+{
+  "catalog": "prod",
+  "tables": [
+    {"table": "sales.orders", "query_count": 4521, "last_accessed": "2026-03-17T10:30:00Z"},
+    {"table": "sales.customers", "query_count": 3102, "last_accessed": "2026-03-17T09:15:00Z"},
+    {"table": "inventory.products", "query_count": 1890, "last_accessed": "2026-03-16T22:45:00Z"}
+  ]
 }
 ```

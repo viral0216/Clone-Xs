@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
+import ResizeHandle from "@/components/ResizeHandle";
 import {
   LayoutDashboard, Briefcase, Copy, FolderTree, GitCompare, Activity,
   Settings2, FileText, Wrench, Shield, GitBranch, ClipboardCheck, RefreshCw,
@@ -95,6 +96,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     () => new Set(getFilteredSections().map((s) => s.title))
   );
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try { return Number(localStorage.getItem("clxs-sidebar-width")) || 208; } catch { return 208; }
+  });
+  const handleSidebarResize = useCallback((w: number) => {
+    setSidebarWidth(w);
+    try { localStorage.setItem("clxs-sidebar-width", String(w)); } catch {}
+  }, []);
 
   // Re-render when feature toggles change from Settings page
   useEffect(() => {
@@ -274,10 +282,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </aside>
 
       {/* Desktop */}
-      <aside className="w-52 sidebar-bg flex-col hidden lg:flex relative">
+      <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0" style={{ width: sidebarWidth }}>
         <div className="hidden dark:block h-full">{darkSidebar}</div>
         <div className="dark:hidden h-full">{sidebarContent}</div>
       </aside>
+      <div className="hidden lg:block">
+        <ResizeHandle width={sidebarWidth} onResize={handleSidebarResize} min={160} max={320} side="right" />
+      </div>
     </>
   );
 }

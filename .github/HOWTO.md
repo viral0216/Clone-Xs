@@ -2329,12 +2329,12 @@ docker-compose up
 |------|-----|-------------|
 | Dashboard | `/` | Connection status, recent jobs, quick actions |
 | Clone | `/clone` | 4-step wizard: Source, Options, Preview, Execute |
-| Explorer | `/explore` | Browse catalogs, get stats, search tables/columns |
+| Explorer | `/explore` | Catalog browser tree, stats, UC objects, views, functions, volumes, PII, feature store, table detail drawer, cost estimates |
 | Diff & Compare | `/diff` | Visual diff between catalogs, validate clones |
 | Monitor | `/monitor` | Real-time sync status and drift detection |
 | Config | `/config` | View/edit YAML config, compare profiles |
 | Reports | `/reports` | Clone history, cost estimation, rollback logs |
-| Settings | `/settings` | Databricks connection, warehouse selection |
+| Settings | `/settings` | Connection, warehouse, audit config, UI preferences, currency, storage price |
 | PII Scanner | `/pii` | Scan catalogs for PII columns |
 | Schema Drift | `/schema-drift` | Detect column changes between catalogs |
 | Preflight | `/preflight` | Pre-clone validation checks |
@@ -2527,7 +2527,7 @@ The Web UI provides 31 pages organized into 5 categories:
 
 | Page | URL | Description |
 |------|-----|-------------|
-| Explorer | `/explore` | Browse catalogs with stats, search, and column usage analytics |
+| Explorer | `/explore` | Catalog browser tree sidebar, UC objects, views, functions, volumes, PII detection, feature store, table detail drawer, schema donut charts, top used tables, cost estimates, export CSV |
 | Diff & Compare | `/diff` | Visual diff between catalogs, validate clones |
 | Config Diff | `/config-diff` | Compare two configs (JSON/YAML/profiles) side by side |
 | Lineage | `/lineage` | Interactive graph with multi-hop tracing, column lineage, UC system tables, and export |
@@ -2553,7 +2553,7 @@ The Web UI provides 31 pages organized into 5 categories:
 | Monitor | `/monitor` | Real-time sync status and drift detection |
 | Preflight | `/preflight` | Pre-clone validation checks |
 | Config | `/config` | View/edit YAML config, compare profiles |
-| Settings | `/settings` | Connection, warehouse, audit log configuration |
+| Settings | `/settings` | Connection, warehouse, audit config, UI preferences (Export Buttons, Catalog Browser toggles), currency selector, storage price |
 | Warehouse | `/warehouse` | Manage SQL warehouses (start, stop, scale) |
 | RBAC | `/rbac` | Role-based access control for clone operations |
 | Plugins | `/plugins` | Extend Clone-Xs with plugins |
@@ -2717,7 +2717,32 @@ Navigate to **Operations > Create Job**, configure source/destination catalogs, 
 
 ---
 
-## 50. Desktop App
+## 50. Schema-Only Clone (Empty Tables)
+
+Create the full catalog structure (schemas, tables, views, functions, volumes, permissions) without copying any data. Tables are created empty with the same schema.
+
+### CLI
+
+```bash
+# Clone structure only — empty tables, all other artifacts
+clxs clone --source production --dest dev_sandbox --schema-only
+
+# Combined with other options
+clxs clone --source production --dest dev_sandbox \
+  --schema-only \
+  --include-schemas bronze,silver \
+  --copy-permissions
+```
+
+### Web UI
+
+In the Clone wizard, check **"Schema Only (empty tables)"** under Features. This uses `CREATE TABLE ... LIKE` for tables, which copies column definitions, partitioning, and table properties but not data.
+
+> **When to use:** Setting up dev/test environments where you need the full catalog structure but not the data. Much faster than a full clone and uses zero storage.
+
+---
+
+## 51. Desktop App
 
 Run Clone-Xs as a native desktop application — no terminal needed.
 
@@ -2737,7 +2762,7 @@ The Electron wrapper auto-starts the Python backend, waits for `/api/health`, th
 
 ---
 
-## 51. Databricks App Deployment
+## 52. Databricks App Deployment
 
 > **Docs:** [Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/apps/)
 

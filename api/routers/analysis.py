@@ -255,13 +255,34 @@ async def column_usage(req: dict, client=Depends(get_db_client)):
 
     Queries system.access.column_lineage and system.query.history
     to show top columns by usage, downstream consumers, and active users.
+    Falls back to information_schema column stats if system tables unavailable.
     """
-    from src.column_usage import get_column_usage_summary
+    try:
+        from src.column_usage import get_column_usage_summary
+        config = await get_app_config()
+        wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
+        return get_column_usage_summary(
+            client, wid,
+            catalog=req.get("catalog", ""),
+            table_fqn=req.get("table"),
+            days=req.get("days", 90),
+            include_query_history=req.get("include_query_history", False),
+            use_system_tables=req.get("use_system_tables", False),
+        )
+    except Exception as e:
+        return {"top_columns": [], "top_users": [], "total_columns_tracked": 0, "period_days": 90, "error": str(e)}
+
+
+@router.post("/table-usage", summary="Top used tables by query frequency")
+async def table_usage(req: dict, client=Depends(get_db_client)):
+    """Get most frequently queried tables from system.access.audit or system.query.history."""
+    from src.usage_analysis import query_table_access_patterns
     config = await get_app_config()
     wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
-    return get_column_usage_summary(
+    rows = query_table_access_patterns(
         client, wid,
         catalog=req.get("catalog", ""),
-        table_fqn=req.get("table"),
         days=req.get("days", 90),
+        limit=req.get("limit", 50),
     )
+    return {"tables": rows, "period_days": req.get("days", 90)}

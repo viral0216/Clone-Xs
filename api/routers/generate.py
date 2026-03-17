@@ -90,6 +90,7 @@ async def create_databricks_job(
     config["validate_after_clone"] = req.validate_after_clone
     config["validate_checksum"] = req.validate_checksum
     config["force_reclone"] = req.force_reclone
+    config["schema_only"] = req.schema_only
     config["show_progress"] = req.show_progress
     # Filtering
     config["exclude_schemas"] = req.exclude_schemas

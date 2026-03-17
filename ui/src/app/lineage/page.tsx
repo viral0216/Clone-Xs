@@ -8,6 +8,7 @@ import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
+import { useShowExports, usePersistedNumber } from "@/hooks/useSettings";
 import {
   GitBranch, Search, ArrowRight, ArrowLeft, Loader2, Database,
   ArrowUpRight, ArrowDownRight, Columns, Info, Layers, Download,
@@ -88,7 +89,7 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 // ─── Lineage Graph Component (pure SVG) ───
-function LineageGraph({ nodes, edges, targetFqn }: { nodes: GraphNode[]; edges: GraphEdge[]; targetFqn?: string }) {
+function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: { nodes: GraphNode[]; edges: GraphEdge[]; targetFqn?: string; graphHeight: number; onHeightChange: (h: number) => void }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -196,7 +197,7 @@ function LineageGraph({ nodes, edges, targetFqn }: { nodes: GraphNode[]; edges: 
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-hidden border-t border-border" style={{ height: "420px", cursor: dragging ? "grabbing" : "grab" }}>
+        <div className="overflow-hidden border-t border-border" style={{ height: graphHeight, cursor: dragging ? "grabbing" : "grab" }}>
           <svg
             ref={svgRef}
             width="100%"
@@ -286,6 +287,32 @@ function LineageGraph({ nodes, edges, targetFqn }: { nodes: GraphNode[]; edges: 
             </g>
           </svg>
         </div>
+        {/* Bottom resize handle */}
+        <div
+          className="h-1.5 cursor-row-resize group hover:bg-blue-600/20 active:bg-blue-600/30 transition-colors relative"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const startY = e.clientY;
+            const startH = graphHeight;
+            const onMove = (ev: MouseEvent) => {
+              const newH = Math.min(800, Math.max(200, startH + ev.clientY - startY));
+              onHeightChange(newH);
+            };
+            const onUp = () => {
+              document.removeEventListener("mousemove", onMove);
+              document.removeEventListener("mouseup", onUp);
+              document.body.style.cursor = "";
+              document.body.style.userSelect = "";
+            };
+            document.body.style.cursor = "row-resize";
+            document.body.style.userSelect = "none";
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+          }}
+          title="Drag to resize graph height"
+        >
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-border group-hover:bg-blue-600 transition-colors" />
+        </div>
       </CardContent>
     </Card>
   );
@@ -322,6 +349,8 @@ export default function LineagePage() {
   const [response, setResponse] = useState<LineageResponse | null>(null);
   const [tab, setTab] = useState<"graph" | "all" | "upstream" | "downstream" | "columns" | "stats">("graph");
   const [depth, setDepth] = useState(1);
+  const showExports = useShowExports();
+  const [graphHeight, setGraphHeight] = usePersistedNumber("clxs-lineage-graph-height", 420);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [colUsage, setColUsage] = useState<any>(null);
@@ -508,7 +537,7 @@ export default function LineagePage() {
             </Button>
 
             {/* Export */}
-            {entries.length > 0 && (
+            {entries.length > 0 && showExports && (
               <div className="flex items-center gap-1 ml-auto">
                 <Button variant="outline" size="sm" onClick={() => exportJSON(response, `lineage-${catalog}.json`)}>
                   <Download className="h-3.5 w-3.5 mr-1.5" />JSON
@@ -597,7 +626,7 @@ export default function LineagePage() {
 
       {/* Graph view */}
       {tab === "graph" && graph?.nodes?.length > 0 && (
-        <LineageGraph nodes={graph.nodes} edges={graph.edges} targetFqn={targetFqn} />
+        <LineageGraph nodes={graph.nodes} edges={graph.edges} targetFqn={targetFqn} graphHeight={graphHeight} onHeightChange={setGraphHeight} />
       )}
 
       {/* Table views */}

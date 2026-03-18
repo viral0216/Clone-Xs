@@ -280,6 +280,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Warehouse header middleware — extracts X-Databricks-Warehouse into context
+# so get_app_config() can override sql_warehouse_id from the UI selection.
+from starlette.middleware.base import BaseHTTPMiddleware
+from api.dependencies import warehouse_header_middleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=warehouse_header_middleware)
+
 # Custom API docs with Postman-style dark theme
 from fastapi.responses import HTMLResponse, FileResponse
 import os as _os2
@@ -302,6 +308,9 @@ app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(incremental.router, prefix="/api", tags=["incremental"])
 app.include_router(sampling.router, prefix="/api", tags=["sampling"])
 app.include_router(deps.router, prefix="/api", tags=["dependencies"])
+
+from api.routers import governance
+app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 
 # Serve frontend static files in production
 import os

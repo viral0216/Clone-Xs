@@ -231,6 +231,20 @@ async def list_warehouses(client=Depends(get_db_client)) -> list[WarehouseInfo]:
     return [WarehouseInfo(**wh) for wh in warehouses]
 
 
+@router.post("/test-warehouse")
+async def test_warehouse(req: dict, client=Depends(get_db_client)):
+    """Test a SQL warehouse by running SELECT 1."""
+    warehouse_id = req.get("warehouse_id", "").strip()
+    if not warehouse_id:
+        raise HTTPException(status_code=400, detail="warehouse_id is required")
+    from src.client import execute_sql
+    try:
+        result = execute_sql(client, warehouse_id, "SELECT 1 AS ok", max_retries=1)
+        return {"status": "ok", "message": "Warehouse is reachable", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Warehouse test failed: {e}")
+
+
 @router.get("/volumes")
 async def list_volumes(client=Depends(get_db_client)):
     """List available Unity Catalog volumes."""

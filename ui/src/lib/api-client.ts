@@ -18,14 +18,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     url += `?${searchParams.toString()}`;
   }
 
-  // Get credentials from sessionStorage
+  // Get credentials from sessionStorage, warehouse from localStorage (persists across sessions)
   const host = sessionStorage.getItem("dbx_host") || "";
   const token = sessionStorage.getItem("dbx_token") || "";
+  const warehouse = localStorage.getItem("dbx_warehouse_id") || "";
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(host && { "X-Databricks-Host": host }),
     ...(token && { "X-Databricks-Token": token }),
+    ...(warehouse && { "X-Databricks-Warehouse": warehouse }),
     ...(options.headers as Record<string, string>),
   };
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import HeaderBar from "@/components/layout/HeaderBar";
@@ -37,6 +37,24 @@ import ViewDepsPage from "@/app/view-deps/page";
 import CreateJobPage from "@/app/create-job/page";
 import StorageMetricsPage from "@/app/storage-metrics/page";
 import DemoDataPage from "@/app/demo-data/page";
+import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
+import GovernanceOverview from "@/app/governance/page";
+
+// Lazy-load governance pages
+const GovDictionary = lazy(() => import("@/app/governance/dictionary/page"));
+const GovSearch = lazy(() => import("@/app/governance/search/page"));
+const GovDQRules = lazy(() => import("@/app/governance/dq-rules/page"));
+const GovDQDashboard = lazy(() => import("@/app/governance/dq-dashboard/page"));
+const GovDQResults = lazy(() => import("@/app/governance/dq-results/page"));
+const GovCertifications = lazy(() => import("@/app/governance/certifications/page"));
+const GovApprovals = lazy(() => import("@/app/governance/approvals/page"));
+const GovSLA = lazy(() => import("@/app/governance/sla/page"));
+const GovContracts = lazy(() => import("@/app/governance/contracts/page"));
+const GovChanges = lazy(() => import("@/app/governance/changes/page"));
+const GovODCS = lazy(() => import("@/app/governance/odcs/page"));
+const GovODCSDetail = lazy(() => import("@/app/governance/odcs/[id]/page"));
+const GovODCSValidate = lazy(() => import("@/app/governance/odcs/validate/[id]/page"));
+const GovDQX = lazy(() => import("@/app/governance/dqx/page"));
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -50,11 +68,13 @@ export default function App() {
 
         {/* Main Layout: Sidebar + Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar */}
-          <Sidebar
-            mobileOpen={mobileMenuOpen}
-            onMobileClose={() => setMobileMenuOpen(false)}
-          />
+          {/* Conditional Sidebar: Governance vs Clone-Xs */}
+          <Routes>
+            <Route path="/governance/*" element={<GovernanceSidebar />} />
+            <Route path="*" element={
+              <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+            } />
+          </Routes>
 
           {/* Center Content */}
           <main className="flex-1 bg-background overflow-auto p-3 sm:p-4 md:p-6">
@@ -93,6 +113,24 @@ export default function App() {
               <Route path="/view-deps" element={<ViewDepsPage />} />
               <Route path="/create-job" element={<CreateJobPage />} />
               <Route path="/storage-metrics" element={<StorageMetricsPage />} />
+
+              {/* Governance Portal Routes */}
+              <Route path="/governance" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><GovernanceOverview /></Suspense>} />
+              <Route path="/governance/dictionary" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDictionary /></Suspense>} />
+              <Route path="/governance/search" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovSearch /></Suspense>} />
+              <Route path="/governance/dqx" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQX /></Suspense>} />
+              <Route path="/governance/dq-rules" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQRules /></Suspense>} />
+              <Route path="/governance/dq-dashboard" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQDashboard /></Suspense>} />
+              <Route path="/governance/dq-results" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQResults /></Suspense>} />
+              <Route path="/governance/certifications" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovCertifications /></Suspense>} />
+              <Route path="/governance/approvals" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovApprovals /></Suspense>} />
+              <Route path="/governance/sla" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovSLA /></Suspense>} />
+              <Route path="/governance/contracts" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovContracts /></Suspense>} />
+              <Route path="/governance/odcs" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCS /></Suspense>} />
+              <Route path="/governance/odcs/new" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSDetail /></Suspense>} />
+              <Route path="/governance/odcs/:contractId" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSDetail /></Suspense>} />
+              <Route path="/governance/odcs/validate/:contractId" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSValidate /></Suspense>} />
+              <Route path="/governance/changes" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovChanges /></Suspense>} />
             </Routes>
           </main>
         </div>

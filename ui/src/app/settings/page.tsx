@@ -261,6 +261,7 @@ export default function SettingsPage() {
 
   // Warehouse state
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
+  const [testingWarehouse, setTestingWarehouse] = useState<string>("");
 
   const auth = useAuthStatus();
   const warehouses = useWarehouses();
@@ -278,15 +279,19 @@ export default function SettingsPage() {
   useEffect(() => {
     setHost(sessionStorage.getItem("dbx_host") || "");
     setToken(sessionStorage.getItem("dbx_token") || "");
-    // Load active warehouse from backend config (source of truth)
-    api.get<any>("/config").then((config) => {
-      const wid = config?.sql_warehouse_id || "";
-      setSelectedWarehouse(wid);
-      sessionStorage.setItem("dbx_warehouse_id", wid);
-    }).catch(() => {
-      setSelectedWarehouse(sessionStorage.getItem("dbx_warehouse_id") || "");
-    });
+    // Load active warehouse from localStorage (browser is source of truth)
+    const wid = localStorage.getItem("dbx_warehouse_id") || "";
+    setSelectedWarehouse(wid);
   }, []);
+
+  // Auto-select first running warehouse when list loads and none is selected
+  useEffect(() => {
+    if (warehouses.data && warehouses.data.length > 0 && !selectedWarehouse) {
+      const running = warehouses.data.find((w) => w.state === "RUNNING");
+      const pick = running || warehouses.data[0];
+      handleSelectWarehouse(pick.id);
+    }
+  }, [warehouses.data]);
 
   // Fetch profiles when profile tab is selected
   useEffect(() => {
@@ -339,6 +344,7 @@ export default function SettingsPage() {
       if (result.authenticated) {
         toast.success(`Connected as ${result.user}`);
         auth.refetch();
+        warehouses.refetch();
       }
     } catch (e: any) {
       toast.error(e.message || "Connection failed");
@@ -356,6 +362,7 @@ export default function SettingsPage() {
       if (result.authenticated) {
         toast.success(`Connected as ${result.user} via OAuth`);
         auth.refetch();
+        warehouses.refetch();
       }
     } catch (e: any) {
       toast.error(e.message || "OAuth login failed");
@@ -375,6 +382,7 @@ export default function SettingsPage() {
       if (result.authenticated) {
         toast.success(`Connected as ${result.user} via profile "${selectedProfile}"`);
         auth.refetch();
+        warehouses.refetch();
       }
     } catch (e: any) {
       toast.error(e.message || "Failed to use profile");
@@ -404,6 +412,7 @@ export default function SettingsPage() {
       if (result.authenticated) {
         toast.success(`Connected as ${result.user} via service principal`);
         auth.refetch();
+        warehouses.refetch();
       }
     } catch (e: any) {
       toast.error(e.message || "Service principal login failed");
@@ -412,15 +421,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSelectWarehouse = async (warehouseId: string) => {
-    setSelectedWarehouse(warehouseId);
-    sessionStorage.setItem("dbx_warehouse_id", warehouseId);
+  const handleTestWarehouse = async (warehouseId: string) => {
+    setTestingWarehouse(warehouseId);
     try {
-      await api.patch("/config/warehouse", { warehouse_id: warehouseId });
-      toast.success("Warehouse saved to config");
-    } catch {
-      toast.error("Warehouse selected locally but failed to save to config");
+      await api.post("/auth/test-warehouse", { warehouse_id: warehouseId });
+      toast.success("Warehouse is reachable — SELECT 1 succeeded");
+    } catch (e: any) {
+      toast.error(e.message || "Warehouse test failed");
+    } finally {
+      setTestingWarehouse("");
     }
+  };
+
+  const handleSelectWarehouse = (warehouseId: string) => {
+    setSelectedWarehouse(warehouseId);
+    localStorage.setItem("dbx_warehouse_id", warehouseId);
+    toast.success("Warehouse selected");
   };
 
   const tabs: { key: AuthTab; label: string; icon: React.ReactNode }[] = [
@@ -786,13 +802,28 @@ export default function SettingsPage() {
                     </Badge>
                     <span className="text-xs text-muted-foreground font-mono">{wh.id}</span>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={selectedWarehouse === wh.id ? "secondary" : "outline"}
-                    onClick={() => handleSelectWarehouse(wh.id)}
-                  >
-                    {selectedWarehouse === wh.id ? "Selected" : "Select"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleTestWarehouse(wh.id)}
+                      disabled={testingWarehouse === wh.id}
+                    >
+                      {testingWarehouse === wh.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : (
+                        <Zap className="h-3 w-3 mr-1" />
+                      )}
+                      Test
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={selectedWarehouse === wh.id ? "secondary" : "outline"}
+                      onClick={() => handleSelectWarehouse(wh.id)}
+                    >
+                      {selectedWarehouse === wh.id ? "Selected" : "Select"}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

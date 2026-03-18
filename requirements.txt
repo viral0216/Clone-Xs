@@ -6,3 +6,5 @@ python-dotenv>=1.0.0
 fastapi>=0.100.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
+databricks-labs-dqx>=0.13.0
+databricks-connect>=15.0

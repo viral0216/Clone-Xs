@@ -4,6 +4,8 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
+import PortalSwitcher from "@/components/PortalSwitcher";
+import { api } from "@/lib/api-client";
 
 const ALL_PAGES = [
   { href: "/", label: "Dashboard", keywords: "home overview" },
@@ -73,11 +75,10 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
 
   useEffect(() => {
     const check = () => {
-      fetch("/api/health")
-        .then((r) => setConnected(r.ok))
+      api.get<{ status?: string }>("/health")
+        .then(() => setConnected(true))
         .catch(() => setConnected(false));
-      fetch("/api/auth/status")
-        .then((r) => r.json())
+      api.get<{ authenticated?: boolean; user?: string; host?: string; auth_method?: string }>("/auth/status")
         .then((d) => { if (d.authenticated) setConnInfo({ user: d.user, host: d.host, auth_method: d.auth_method }); })
         .catch(() => {});
     };
@@ -146,6 +147,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           <img src="/logo.svg" alt="Clone→Xs" className="h-10 dark:hidden" />
           <img src="/logo-dark.svg" alt="Clone→Xs" className="h-10 hidden dark:block" />
         </Link>
+        <PortalSwitcher />
         <span className="text-gray-300 dark:text-gray-600">/</span>
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{pageName}</span>
       </div>

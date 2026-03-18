@@ -741,6 +741,61 @@ Create a persistent Databricks Job for scheduled catalog cloning.
 }
 ```
 
+### `POST /api/generate/demo-data`
+
+Generate a demo catalog with synthetic data across multiple industries.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `catalog_name` | string | required | Name of the catalog to create |
+| `industries` | string[] | all 10 | Industries to generate |
+| `owner` | string | `null` | Set as catalog owner |
+| `scale_factor` | float | `1.0` | Row multiplier (0.01=10M, 0.1=100M, 1.0=2B) |
+| `batch_size` | int | `5000000` | Rows per INSERT batch |
+| `max_workers` | int | `4` | Parallel SQL workers |
+| `storage_location` | string | `null` | Optional managed location |
+| `warehouse_id` | string | `null` | Override SQL warehouse |
+| `drop_existing` | bool | `false` | Drop existing catalog first |
+| `medallion` | bool | `true` | Generate bronze/silver/gold schemas |
+| `create_functions` | bool | `true` | Generate UDFs (20 per industry) |
+| `create_volumes` | bool | `true` | Generate volumes and sample files |
+| `start_date` | string | `"2020-01-01"` | Start of generated date range (YYYY-MM-DD) |
+| `end_date` | string | `"2025-01-01"` | End of generated date range (YYYY-MM-DD) |
+| `dest_catalog` | string | `null` | Optional destination catalog — auto-clones the generated catalog to this target |
+
+**Example request:**
+
+```json
+{
+  "catalog_name": "demo_source",
+  "industries": ["healthcare", "financial", "retail"],
+  "scale_factor": 0.1,
+  "medallion": true
+}
+```
+
+**Example response:**
+
+```json
+{"job_id": "abc123", "status": "queued", "message": "Demo data generation submitted"}
+```
+
+### `DELETE /api/generate/demo-data/{catalog_name}`
+
+Remove a demo catalog and all its contents.
+
+**Example request:**
+
+```bash
+curl -X DELETE http://localhost:8080/api/generate/demo-data/demo_source
+```
+
+**Example response:**
+
+```json
+{"catalog": "demo_source", "status": "cleaned", "schemas_dropped": 45, "tables_dropped": 312}
+```
+
 ---
 
 ## Management

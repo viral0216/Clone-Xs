@@ -61,6 +61,7 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Create Databricks Job | Create persistent scheduled jobs from UI or CLI — no manual JSON needed |
 | Desktop App | Native macOS/Windows app via Electron — no terminal required |
 | Databricks App | Deploy as a native Databricks App with automatic service principal auth |
+| Demo Data Generator | Generate realistic demo catalogs with 10 industries, 200+ tables, medallion architecture, and comprehensive enrichment (PII tags, FK constraints, partitioning, SCD2, volumes). |
 | Marketplace | Publish to Databricks Marketplace as Solution Accelerator |
 | Analytics Dashboard | 10 stat cards, 5 charts, catalog health scores, pinned favorites, notifications |
 | Notification Center | Real-time bell icon showing clone completions, failures, and TTL warnings |

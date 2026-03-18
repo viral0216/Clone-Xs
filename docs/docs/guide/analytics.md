@@ -174,6 +174,10 @@ Notifications appear as a bell icon badge in the app header and are stored in th
 
 Users can **pin** frequently monitored source-destination catalog pairs to the top of the dashboard. Pinned pairs persist across sessions and show a condensed summary card with last run status, health score, and next scheduled run.
 
+:::tip
+The **Demo Data Generator** (`/demo-data`) can pre-populate the dashboard with 20 fake clone operations via audit log enrichment, so new installations see meaningful data on the Dashboard immediately.
+:::
+
 ### Integration notes
 
 - **Explorer cost cards** read the storage price from Settings (persisted in localStorage), so changing the price on the Settings page is immediately reflected in Explorer stat cards.

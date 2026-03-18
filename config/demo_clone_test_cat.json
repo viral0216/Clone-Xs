@@ -1,0 +1,23 @@
+{
+  "name": "Clone test_cat",
+  "description": "Pre-configured template to clone the demo catalog 'test_cat' with all features enabled.",
+  "source_catalog": "test_cat",
+  "destination_catalog": "test_cat_clone",
+  "clone_type": "DEEP",
+  "load_type": "FULL",
+  "copy_permissions": true,
+  "copy_ownership": true,
+  "copy_tags": true,
+  "copy_properties": true,
+  "copy_security": true,
+  "copy_comments": true,
+  "copy_constraints": true,
+  "validate": true,
+  "checksum": false,
+  "rollback_on_failure": true,
+  "include_schemas": [
+    "healthcare"
+  ],
+  "exclude_schemas": [],
+  "max_workers": 4
+}

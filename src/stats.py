@@ -93,10 +93,13 @@ def _process_schema_stats(
     """Get stats for all tables in a schema in parallel."""
     max_workers = max_workers or get_max_parallel_queries()
     all_tables = list_tables_sdk(client, catalog, schema)
-    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
+    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL", "VIEW")]
 
     if not tables:
         return schema, []
+
+    # Build a lookup: table_name -> table_type from SDK data
+    type_lookup = {t["table_name"]: t["table_type"] for t in tables}
 
     schema_tables = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -107,7 +110,10 @@ def _process_schema_stats(
             for t in tables
         }
         for future in as_completed(futures):
-            schema_tables.append(future.result())
+            result = future.result()
+            tname = result.get("table", "")
+            result["table_type"] = type_lookup.get(tname, "MANAGED")
+            schema_tables.append(result)
 
     return schema, schema_tables
 

@@ -32,6 +32,7 @@ const sidebars: SidebarsConfig = {
         'guide/desktop',
         'guide/databricks-app',
         'guide/cicd',
+        'guide/demo-data',
       ],
     },
     {

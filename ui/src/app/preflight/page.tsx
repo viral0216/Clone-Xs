@@ -7,8 +7,10 @@ import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
+import PageHeader from "@/components/PageHeader";
 import {
   ClipboardCheck, Loader2, XCircle, CheckCircle, AlertTriangle, ArrowRight,
+  Shield, Copy,
 } from "lucide-react";
 
 function statusIcon(status: string) {
@@ -43,10 +45,14 @@ export default function PreflightPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Preflight Checks</h1>
-        <p className="text-gray-500 mt-1">Pre-clone validation checklist — verifies workspace connectivity, warehouse availability, catalog permissions, destination writability, and schema compatibility before executing.</p>
-      </div>
+      <PageHeader
+        title="Preflight Checks"
+        icon={ClipboardCheck}
+        breadcrumbs={["Management", "Preflight"]}
+        description="Pre-clone validation — verifies connectivity, warehouse, catalog permissions, UC grants (MANAGE, CREATE CATALOG, CREATE TABLE), and destination writability."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/"
+        docsLabel="Unity Catalog privileges"
+      />
 
       {/* Input */}
       <Card>
@@ -123,34 +129,60 @@ export default function PreflightPage() {
       {checks.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Check Results</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Check Results
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto border rounded">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-2 px-3 font-medium w-8"></th>
-                    <th className="text-left py-2 px-3 font-medium">Check</th>
-                    <th className="text-center py-2 px-3 font-medium">Status</th>
-                    <th className="text-left py-2 px-3 font-medium">Message</th>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2.5 px-3 font-medium w-8"></th>
+                    <th className="text-left py-2.5 px-3 font-medium">Check</th>
+                    <th className="text-center py-2.5 px-3 font-medium">Status</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {checks.map((check: any, i: number) => (
-                    <tr
-                      key={i}
-                      className={`border-b ${
-                        check.status?.toUpperCase() === "FAIL" ? "bg-red-50/50" :
-                        check.status?.toUpperCase() === "WARN" ? "bg-yellow-50/50" : ""
-                      }`}
-                    >
-                      <td className="py-2 px-3">{statusIcon(check.status)}</td>
-                      <td className="py-2 px-3 font-medium">{check.name || check.check}</td>
-                      <td className="py-2 px-3 text-center">{statusBadge(check.status)}</td>
-                      <td className="py-2 px-3 text-gray-600">{check.message || "—"}</td>
-                    </tr>
-                  ))}
+                  {checks.map((check: any, i: number) => {
+                    const detail = check.detail || check.message || "—";
+                    // Extract GRANT command if present
+                    const grantMatch = detail.match(/Grant with:\s*(GRANT\s+.+)/i);
+                    const mainMsg = grantMatch ? detail.replace(grantMatch[0], "").trim().replace(/[.—]\s*$/, "") : detail;
+
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b ${
+                          check.status?.toUpperCase() === "FAIL" ? "bg-red-500/5" :
+                          check.status?.toUpperCase() === "WARN" ? "bg-yellow-500/5" : ""
+                        }`}
+                      >
+                        <td className="py-2.5 px-3">{statusIcon(check.status)}</td>
+                        <td className="py-2.5 px-3 font-medium whitespace-nowrap">{check.name || check.check}</td>
+                        <td className="py-2.5 px-3 text-center">{statusBadge(check.status)}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">
+                          <span>{mainMsg}</span>
+                          {grantMatch && (
+                            <div className="mt-1.5">
+                              <code
+                                className="inline-flex items-center gap-2 text-xs bg-muted px-2.5 py-1.5 rounded font-mono cursor-pointer hover:bg-muted/80 transition-colors"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(grantMatch[1]);
+                                }}
+                                title="Click to copy"
+                              >
+                                {grantMatch[1]}
+                                <Copy className="h-3 w-3 text-muted-foreground shrink-0" />
+                              </code>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

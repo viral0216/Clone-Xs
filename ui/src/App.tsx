@@ -36,6 +36,7 @@ import IncrementalSyncPage from "@/app/incremental-sync/page";
 import ViewDepsPage from "@/app/view-deps/page";
 import CreateJobPage from "@/app/create-job/page";
 import StorageMetricsPage from "@/app/storage-metrics/page";
+import DemoDataPage from "@/app/demo-data/page";
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -78,6 +79,7 @@ export default function App() {
               <Route path="/templates" element={<TemplatesPage />} />
               <Route path="/schedule" element={<SchedulePage />} />
               <Route path="/multi-clone" element={<MultiClonePage />} />
+              <Route path="/demo-data" element={<DemoDataPage />} />
               <Route path="/lineage" element={<LineagePage />} />
               <Route path="/impact" element={<ImpactPage />} />
               <Route path="/preview" element={<PreviewPage />} />

@@ -133,8 +133,43 @@ function generateReport(job: any): string {
   return lines.join("\n");
 }
 
+type LogFilter = "all" | "errors" | "warnings" | "info";
+
+function groupLogs(logs: string[]): { line: string; count: number }[] {
+  const grouped: { line: string; count: number }[] = [];
+  for (const line of logs) {
+    // Normalize: strip object names to group similar permission/tag errors
+    const normalized = line
+      .replace(/for \S+:/, "for <object>:")
+      .replace(/on \S+:/, "on <object>:");
+    const prev = grouped[grouped.length - 1];
+    if (prev) {
+      const prevNorm = prev.line
+        .replace(/for \S+:/, "for <object>:")
+        .replace(/on \S+:/, "on <object>:");
+      if (prevNorm === normalized) {
+        prev.count++;
+        prev.line = line; // keep the latest actual line
+        continue;
+      }
+    }
+    grouped.push({ line, count: 1 });
+  }
+  return grouped;
+}
+
+function getLogClass(line: string): string {
+  if (line.includes("ERROR")) return "text-red-400";
+  if (line.includes("WARNING")) return "text-yellow-400";
+  if (line.includes("OK") || line.includes("completed") || line.includes("success")) return "text-green-400";
+  if (line.includes("Scanning") || line.includes("Cloning") || line.includes("Validating") || line.includes("Schemas")) return "text-blue-400";
+  return "";
+}
+
 function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; isRunning: boolean }) {
   const [copied, setCopied] = useState(false);
+  const [filter, setFilter] = useState<LogFilter>("all");
+  const [expanded, setExpanded] = useState(false);
 
   const logText = logs.join("\n");
 
@@ -148,6 +183,17 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
     downloadFile(logText, `clone-logs-${jobId}.log`, "text/plain");
   };
 
+  const filteredLogs = logs.filter((line) => {
+    if (filter === "all") return true;
+    if (filter === "errors") return line.includes("ERROR");
+    if (filter === "warnings") return line.includes("WARNING") || line.includes("ERROR");
+    return !line.includes("WARNING") && !line.includes("ERROR");
+  });
+
+  const errorCount = logs.filter((l) => l.includes("ERROR")).length;
+  const warnCount = logs.filter((l) => l.includes("WARNING")).length;
+  const grouped = groupLogs(filteredLogs);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -157,7 +203,28 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
             Logs
           </span>
           <div className="flex items-center gap-2">
+            {errorCount > 0 && (
+              <Badge
+                variant={filter === "errors" ? "default" : "outline"}
+                className="text-xs cursor-pointer text-red-500 border-red-500/30"
+                onClick={() => setFilter(filter === "errors" ? "all" : "errors")}
+              >
+                {errorCount} errors
+              </Badge>
+            )}
+            {warnCount > 0 && (
+              <Badge
+                variant={filter === "warnings" ? "default" : "outline"}
+                className="text-xs cursor-pointer text-yellow-500 border-yellow-500/30"
+                onClick={() => setFilter(filter === "warnings" ? "all" : "warnings")}
+              >
+                {warnCount} warnings
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs">{logs.length} lines</Badge>
+            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setExpanded(!expanded)}>
+              <span className="text-xs">{expanded ? "Collapse" : "Expand"}</span>
+            </Button>
             <Button variant="ghost" size="sm" className="h-7 px-2" onClick={handleCopy}>
               {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
               <span className="ml-1 text-xs">{copied ? "Copied" : "Copy"}</span>
@@ -171,21 +238,17 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
       </CardHeader>
       <CardContent>
         <div
-          className="bg-gray-900 text-gray-300 p-3 rounded-lg font-mono text-xs max-h-64 overflow-y-auto"
+          className={`bg-gray-900 text-gray-300 p-3 rounded-lg font-mono text-xs overflow-y-auto ${expanded ? "max-h-[600px]" : "max-h-72"}`}
           ref={(el) => { if (el && isRunning) el.scrollTop = el.scrollHeight; }}
         >
-          {logs.map((line: string, i: number) => (
-            <div
-              key={i}
-              className={
-                line.includes("ERROR") ? "text-red-400" :
-                line.includes("WARNING") ? "text-yellow-400" :
-                line.includes("OK") || line.includes("completed") || line.includes("success") ? "text-green-400" :
-                line.includes("Scanning") || line.includes("Cloning") || line.includes("Validating") || line.includes("Schemas") ? "text-blue-400" :
-                ""
-              }
-            >
-              {line}
+          {grouped.map((entry, i: number) => (
+            <div key={i} className={`${getLogClass(entry.line)} leading-5`}>
+              {entry.line}
+              {entry.count > 1 && (
+                <span className="ml-2 text-gray-500 text-[10px]">
+                  (repeated {entry.count}x)
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -654,6 +717,36 @@ export default function ClonePage() {
     }
     return merged;
   });
+
+  // Load saved config from backend on mount (overrides hardcoded defaults)
+  useEffect(() => {
+    api.get<any>("/config").then((saved) => {
+      if (!saved) return;
+      setConfig((prev: any) => ({
+        ...prev,
+        source_catalog: prev.source_catalog || saved.source_catalog || "",
+        destination_catalog: prev.destination_catalog || saved.destination_catalog || "",
+        clone_type: saved.clone_type || prev.clone_type,
+        load_type: saved.load_type || prev.load_type,
+        max_workers: saved.max_workers ?? prev.max_workers,
+        parallel_tables: saved.parallel_tables ?? prev.parallel_tables,
+        max_parallel_queries: saved.max_parallel_queries ?? prev.max_parallel_queries,
+        max_rps: saved.max_rps ?? prev.max_rps,
+        copy_permissions: saved.copy_permissions ?? prev.copy_permissions,
+        copy_ownership: saved.copy_ownership ?? prev.copy_ownership,
+        copy_tags: saved.copy_tags ?? prev.copy_tags,
+        copy_properties: saved.copy_properties ?? prev.copy_properties,
+        copy_constraints: saved.copy_constraints ?? prev.copy_constraints,
+        copy_comments: saved.copy_comments ?? prev.copy_comments,
+        exclude_schemas: saved.exclude_schemas?.length ? saved.exclude_schemas : prev.exclude_schemas,
+        include_schemas: saved.include_schemas?.length ? saved.include_schemas : prev.include_schemas,
+        include_tables_regex: saved.include_tables_regex || prev.include_tables_regex,
+        exclude_tables_regex: saved.exclude_tables_regex || prev.exclude_tables_regex,
+        location: saved.catalog_location || prev.location,
+        ttl: saved.ttl || prev.ttl,
+      }));
+    }).catch(() => {});
+  }, []);
 
   // Auto-populate storage location from source catalog's storage root
   const [sourceStorageRoot, setSourceStorageRoot] = useState("");
@@ -1174,6 +1267,12 @@ export default function ClonePage() {
               >
                 Back to Preview
               </Button>
+              <a
+                href={`/preview?source=${encodeURIComponent(sourceCatalog)}&dest=${encodeURIComponent(destCatalog)}`}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-blue-300 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950 text-sm font-medium"
+              >
+                Compare Data →
+              </a>
             </div>
           </CardContent>
         </Card>

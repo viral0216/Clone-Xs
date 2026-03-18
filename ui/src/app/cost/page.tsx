@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,10 +8,22 @@ import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, DollarSign, HardDrive, Cpu, Calculator } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { useCurrency } from "@/hooks/useSettings";
 
 export default function CostPage() {
   const { job, run, isRunning } = usePageJob("cost");
   const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [pricePerGb, setPricePerGb] = useState(0.023);
+  const { symbol: currSymbol } = useCurrency();
+
+  // Load pricing from backend config
+  useEffect(() => {
+    api.get<any>("/config").then((config) => {
+      if (config?.price_per_gb != null) setPricePerGb(config.price_per_gb);
+    }).catch(() => {
+      try { setPricePerGb(parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023); } catch {}
+    });
+  }, []);
 
   const results = job?.data as any;
   const topTables = results?.top_tables || [];
@@ -41,7 +53,6 @@ export default function CostPage() {
               showTable={false}
             />
             <Button onClick={() => {
-              const pricePerGb = (() => { try { return parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023; } catch { return 0.023; } })();
               run({ catalog }, () => api.post("/estimate", { source_catalog: catalog, price_per_gb: pricePerGb }));
             }} disabled={!catalog || isRunning}>
               {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <DollarSign className="h-4 w-4 mr-2" />}
@@ -70,15 +81,15 @@ export default function CostPage() {
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
-              <DollarSign className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-              <p className="text-2xl font-bold text-foreground">${results.monthly_cost_usd ?? 0}</p>
-              <p className="text-xs text-muted-foreground mt-1">Monthly Cost (at ${results.price_per_gb}/GB)</p>
+              <span className="text-muted-foreground font-bold text-lg block mb-1">{currSymbol}</span>
+              <p className="text-2xl font-bold text-foreground">{currSymbol}{results.monthly_cost_usd ?? 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">Monthly Cost (at {currSymbol}{results.price_per_gb}/GB)</p>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
-              <DollarSign className="h-5 w-5 mx-auto mb-1 text-green-600" />
-              <p className="text-2xl font-bold text-green-600">${results.yearly_cost_usd ?? 0}</p>
+              <span className="text-green-600 font-bold text-lg block mb-1">{currSymbol}</span>
+              <p className="text-2xl font-bold text-green-600">{currSymbol}{results.yearly_cost_usd ?? 0}</p>
               <p className="text-xs text-muted-foreground mt-1">Yearly Cost</p>
             </CardContent>
           </Card>

@@ -47,6 +47,14 @@ max_workers: 4
 Go to your Databricks workspace → **SQL Warehouses** → click your warehouse → the ID is in the URL or shown in the details panel (e.g. `1a86a25830e584b7`).
 :::
 
+## Step 2b: Select your warehouse (Web UI)
+
+If you are using the Web UI, go to **Settings** and select your SQL warehouse from the dropdown. This persists to the backend config and is used as the default for all operations. You can also set the active warehouse from the **Warehouse** page by clicking **Set as Active** on any running warehouse.
+
+:::tip
+The Settings page loads all configuration from the API backend — it is the single source of truth. Changes made in Settings are immediately available to the Clone page and all other operations.
+:::
+
 ## Step 3: Run pre-flight checks
 
 ```bash

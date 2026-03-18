@@ -145,7 +145,15 @@ function LogDetailPanel({ jobId }: { jobId: string }) {
       {/* Log lines */}
       {logLines.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1">Execution Log ({logLines.length} lines)</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-medium text-muted-foreground">Execution Log ({logLines.length} lines)</p>
+            <Button variant="ghost" size="sm" className="h-6 px-2" onClick={async () => {
+              await navigator.clipboard.writeText(logLines.join("\n"));
+            }}>
+              <Copy className="h-3 w-3 mr-1" />
+              <span className="text-xs">Copy</span>
+            </Button>
+          </div>
           <div className="bg-black/80 rounded-lg p-3 max-h-64 overflow-y-auto font-mono text-xs leading-relaxed">
             {logLines.map((line: string, i: number) => (
               <div key={i} className={`${line.includes("ERROR") || line.includes("FAIL") ? "text-red-400" : line.includes("WARN") ? "text-yellow-400" : line.includes("SUCCESS") || line.includes("✓") ? "text-green-400" : "text-gray-300"}`}>

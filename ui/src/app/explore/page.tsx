@@ -409,26 +409,23 @@ export default function ExplorePage() {
     setPiiScanned(false);
   };
 
-  // Lazy-load functions when tab is activated
+  // Load functions when catalog changes — uses dedicated list endpoint
   const fnCatalogRef = useRef("");
   useEffect(() => {
-    if (activeTab === "functions" && catalog && fnCatalogRef.current !== catalog) {
+    if (catalog && fnCatalogRef.current !== catalog) {
       fnCatalogRef.current = catalog;
       setFunctionsLoading(true);
-      const schemas = (stats.data?.schema_summaries || []).map((s: any) => s.schema);
-      Promise.all(schemas.map((s: string) =>
-        api.post("/dependencies/functions", { catalog, schema_name: s }).then((r: any) =>
-          (r.dependencies || []).map((f: any) => ({ ...f, schema: s }))
-        ).catch(() => [])
-      )).then((results) => setFunctionsData(results.flat()))
+      api.get<any[]>(`/functions/${catalog}`)
+        .then((data) => setFunctionsData(Array.isArray(data) ? data : []))
+        .catch(() => setFunctionsData([]))
         .finally(() => setFunctionsLoading(false));
     }
-  }, [activeTab, catalog, stats.data]);
+  }, [catalog]);
 
-  // Lazy-load volumes when tab is activated
+  // Eagerly load volumes when catalog changes
   const volCatalogRef = useRef("");
   useEffect(() => {
-    if (activeTab === "volumes" && catalog && volCatalogRef.current !== catalog) {
+    if (catalog && volCatalogRef.current !== catalog) {
       volCatalogRef.current = catalog;
       setVolumesLoading(true);
       api.get("/auth/volumes")
@@ -436,7 +433,7 @@ export default function ExplorePage() {
         .catch(() => setVolumesData([]))
         .finally(() => setVolumesLoading(false));
     }
-  }, [activeTab, catalog]);
+  }, [catalog]);
 
   // Lazy-load UC objects when tab is activated
   const ucLoadedRef = useRef(false);
@@ -473,10 +470,28 @@ export default function ExplorePage() {
   const topColumns = columnUsage.data?.top_columns || [];
   const topUsedTables = tableUsage?.tables || [];
 
-  // Derived: Views (client-side filter)
-  const viewTables = useMemo(() =>
+  // Derived: Views — from stats tables first, fallback to dedicated endpoint
+  const [viewsFromApi, setViewsFromApi] = useState<any[]>([]);
+  const viewsCatalogRef = useRef("");
+  const viewsFromStats = useMemo(() =>
     tables.filter((t: any) => (t.table_type || t.type || "").toUpperCase() === "VIEW"),
   [tables]);
+
+  // If stats doesn't include views, fetch from dedicated endpoint
+  useEffect(() => {
+    if (catalog && viewsCatalogRef.current !== catalog) {
+      viewsCatalogRef.current = catalog;
+      if (viewsFromStats.length === 0) {
+        api.get<any[]>(`/views/${catalog}`)
+          .then((data) => setViewsFromApi(Array.isArray(data) ? data : []))
+          .catch(() => setViewsFromApi([]));
+      } else {
+        setViewsFromApi([]);
+      }
+    }
+  }, [catalog, viewsFromStats.length]);
+
+  const viewTables = viewsFromStats.length > 0 ? viewsFromStats : viewsFromApi;
 
   // Derived: Feature store tables (convention-based detection)
   const featureStoreTables = useMemo(() =>

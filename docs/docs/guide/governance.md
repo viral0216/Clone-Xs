@@ -361,6 +361,34 @@ Schedule compliance report generation in your CI/CD pipeline or cron job to ensu
 
 ---
 
+## Pre-flight permission checks
+
+> Validate Unity Catalog permissions before cloning, with implicit and inherited grant detection.
+
+Pre-flight checks (`clxs preflight`) now detect implicit UC privileges that previous versions would miss:
+
+| Check | Detects |
+|-------|---------|
+| `dest_manage_permission` | Catalog ownership, catalog-level MANAGE, schema-level MANAGE |
+| `dest_create_table` | Ownership, MANAGE (implies CREATE TABLE), schema-level CREATE TABLE |
+| `source_use_catalog` | Ownership (shows "(owner)"), USE CATALOG grant |
+| `create_catalog_permission` | Metastore-level CREATE CATALOG grant |
+
+When a check fails, the CLI and Web UI display the exact `GRANT` command needed to fix it:
+
+```sql
+GRANT USE CATALOG ON CATALOG my_catalog TO `user@company.com`;
+GRANT CREATE TABLE ON SCHEMA my_catalog.bronze TO `user@company.com`;
+```
+
+In the Web UI, these commands are clickable code blocks (click to copy) with links to the [Unity Catalog privileges documentation](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/index.html).
+
+:::tip
+Run `clxs preflight` before every clone in CI/CD pipelines. Failed permission checks now give actionable GRANT commands instead of generic error messages.
+:::
+
+---
+
 ## PII and data masking
 
 > Detect and mask personally identifiable information during cloning to protect sensitive data in non-production environments.

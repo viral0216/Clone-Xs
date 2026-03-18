@@ -21,6 +21,7 @@ import {
   Table2, TrendingUp, Download, Clock, CheckCircle, XCircle,
   Undo2, Camera, FileDown,
 } from "lucide-react";
+import { useCurrency } from "@/hooks/useSettings";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
@@ -32,6 +33,7 @@ function formatBytes(bytes: number): string {
 
 export default function ReportsPage() {
   const jobs = useCloneJobs();
+  const { symbol: currSymbol } = useCurrency();
   const [catalog, setCatalog] = useState("");
   const [costResult, setCostResult] = useState<any>(null);
   const [rollbackLogs, setRollbackLogs] = useState<any[]>([]);
@@ -248,9 +250,9 @@ export default function ReportsPage() {
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
-                      <DollarSign className="h-4 w-4 text-green-600" />
+                      <span className="text-green-600 font-bold">{currSymbol}</span>
                     </div>
-                    <p className="text-2xl font-bold text-green-700">${costResult.monthly_cost_usd?.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-green-700">{currSymbol}{costResult.monthly_cost_usd?.toFixed(2)}</p>
                     <p className="text-xs text-gray-500">Monthly Cost</p>
                   </CardContent>
                 </Card>
@@ -259,14 +261,14 @@ export default function ReportsPage() {
                     <div className="flex items-center justify-center gap-2 mb-1">
                       <TrendingUp className="h-4 w-4 text-orange-600" />
                     </div>
-                    <p className="text-2xl font-bold text-orange-700">${costResult.yearly_cost_usd?.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-orange-700">{currSymbol}{costResult.yearly_cost_usd?.toFixed(2)}</p>
                     <p className="text-xs text-gray-500">Yearly Cost</p>
                   </CardContent>
                 </Card>
               </div>
 
               <p className="text-xs text-gray-400">
-                Price: ${costResult.price_per_gb}/GB &middot; Storage cost only — does not include compute (DBU) costs for running the clone
+                Price: {currSymbol}{costResult.price_per_gb}/GB &middot; Storage cost only — does not include compute (DBU) costs for running the clone
               </p>
 
               {/* Top Tables by Size */}

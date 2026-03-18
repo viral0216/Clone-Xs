@@ -7,7 +7,7 @@ import {
   GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
   Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
   ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
-  X, Plus,
+  X, Plus, Database,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -48,6 +48,7 @@ export const allNavSections: NavSection[] = [
       { href: "/templates", label: "Templates", icon: LayoutTemplate },
       { href: "/create-job", label: "Create Job", icon: Briefcase },
       { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
+      { href: "/demo-data", label: "Demo Data", icon: Database },
     ],
   },
   {

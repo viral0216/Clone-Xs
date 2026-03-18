@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
-import { Loader2, XCircle, Server, Play, Square, RefreshCw } from "lucide-react";
+import { Loader2, XCircle, Server, Play, Square, RefreshCw, Check, Star } from "lucide-react";
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
@@ -21,6 +21,15 @@ export default function WarehousePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activeWarehouseId, setActiveWarehouseId] = useState<string>("");
+  const [setActiveSuccess, setSetActiveSuccess] = useState<string>("");
+
+  async function loadConfig() {
+    try {
+      const config = await api.get<any>("/config");
+      setActiveWarehouseId(config?.sql_warehouse_id || "");
+    } catch {}
+  }
 
   async function loadWarehouses() {
     try {
@@ -34,8 +43,23 @@ export default function WarehousePage() {
     }
   }
 
+  async function setAsActive(id: string) {
+    setActionLoading(id);
+    try {
+      await api.patch("/config/warehouse", { warehouse_id: id });
+      setActiveWarehouseId(id);
+      setSetActiveSuccess(id);
+      setTimeout(() => setSetActiveSuccess(""), 2000);
+    } catch (e: any) {
+      setError(e.message || "Failed to set active warehouse");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   useEffect(() => {
     loadWarehouses();
+    loadConfig();
     const interval = setInterval(loadWarehouses, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -102,13 +126,20 @@ export default function WarehousePage() {
           const id = wh.id || wh.warehouse_id;
           const status = (wh.state || wh.status || "").toUpperCase();
           const isActing = actionLoading === id;
+          const isActive = id === activeWarehouseId;
+          const justSet = setActiveSuccess === id;
           return (
-            <Card key={id} className="bg-card border-border">
+            <Card key={id} className={`bg-card ${isActive ? "border-green-500 ring-1 ring-green-500/30" : "border-border"}`}>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Server className="h-4 w-4 text-muted-foreground" />
                     {wh.name || "Unnamed"}
+                    {isActive && (
+                      <Badge className="bg-green-600 text-white text-[10px] px-1.5 py-0">
+                        <Star className="h-2.5 w-2.5 mr-0.5 fill-current" />ACTIVE
+                      </Badge>
+                    )}
                   </div>
                   {statusBadge(status)}
                 </CardTitle>
@@ -122,6 +153,12 @@ export default function WarehousePage() {
                   <span className="text-muted-foreground">ID</span>
                   <span className="font-mono text-xs text-muted-foreground">{id}</span>
                 </div>
+                {wh.auto_stop_mins != null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Auto-stop</span>
+                    <span className="text-foreground">{wh.auto_stop_mins} min</span>
+                  </div>
+                )}
                 <div className="flex gap-2 pt-2">
                   {(status === "STOPPED" || status === "STOPPING") && (
                     <Button size="sm" onClick={() => startWarehouse(id)} disabled={isActing}>
@@ -134,6 +171,16 @@ export default function WarehousePage() {
                       {isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Square className="h-3 w-3 mr-1" />}
                       Stop
                     </Button>
+                  )}
+                  {!isActive ? (
+                    <Button size="sm" variant="outline" onClick={() => setAsActive(id)} disabled={isActing}>
+                      {justSet ? <Check className="h-3 w-3 mr-1 text-green-500" /> : isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Star className="h-3 w-3 mr-1" />}
+                      {justSet ? "Saved!" : "Set as Active"}
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-green-500 flex items-center gap-1 pt-1">
+                      <Check className="h-3 w-3" /> Used for all operations
+                    </span>
                   )}
                 </div>
               </CardContent>

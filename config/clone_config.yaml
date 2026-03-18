@@ -1,6 +1,6 @@
 source_catalog: supplier_portal
 destination_catalog: supplier_portal_clone
-sql_warehouse_id: 1a86a25830e584b7
+sql_warehouse_id: efc54e7fd5932992
 clone_type: DEEP
 load_type: FULL
 catalog_location: ''

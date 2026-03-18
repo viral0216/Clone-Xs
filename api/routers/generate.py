@@ -5,6 +5,7 @@ import os
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
+from api.models.demo import DemoDataRequest
 from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
@@ -151,3 +152,45 @@ async def list_clone_xs_jobs(client=Depends(get_db_client)):
         return results
     except Exception as e:
         return []
+
+
+@router.post("/demo-data")
+async def generate_demo_data(
+    req: DemoDataRequest,
+    client=Depends(get_db_client),
+    jm: JobManager = Depends(get_job_manager),
+):
+    """Generate a demo catalog with synthetic data across multiple industries."""
+    config = dict(await get_app_config())
+    config["catalog_name"] = req.catalog_name
+    config["industries"] = req.industries
+    config["owner"] = req.owner
+    config["scale_factor"] = req.scale_factor
+    config["batch_size"] = req.batch_size
+    config["max_workers"] = req.max_workers
+    config["storage_location"] = req.storage_location
+    config["drop_existing"] = req.drop_existing
+    config["medallion"] = req.medallion
+    config["uc_best_practices"] = req.uc_best_practices
+    config["create_functions"] = req.create_functions
+    config["create_volumes"] = req.create_volumes
+    config["start_date"] = req.start_date
+    config["end_date"] = req.end_date
+    config["dest_catalog"] = req.dest_catalog
+    if req.warehouse_id:
+        config["sql_warehouse_id"] = req.warehouse_id
+    job_id = await jm.submit_job("demo-data", config, client)
+    return {"job_id": job_id, "status": "queued", "message": "Demo data generation submitted"}
+
+
+@router.delete("/demo-data/{catalog_name}")
+async def cleanup_demo_data(catalog_name: str, client=Depends(get_db_client)):
+    """Remove a demo catalog and all its contents."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    if not wid:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No SQL warehouse configured")
+    from src.demo_generator import cleanup_demo_catalog
+    result = cleanup_demo_catalog(client, wid, catalog_name)
+    return result

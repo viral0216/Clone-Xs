@@ -9,7 +9,119 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v1.8.2 — Demo Data Generator Testing & Hardening
+
+### Bug Fixes
+- **Parameter validation** — `generate_demo_catalog()` now validates all inputs: `catalog_name` (non-empty, valid identifier), `scale_factor` (between 0 and 10), `batch_size` (1000 to 50M), `max_workers` (1 to 16), date format (YYYY-MM-DD), start before end, valid industry names
+- **Silent exception logging** — 6+ bare `except: pass` blocks in medallion generation replaced with `logger.warning()` — failures are now visible in logs
+- **Audit log insertion** — Changed `break` on first error to `continue` — remaining audit entries are now inserted even if one fails
+- **SCD2 atomic swap** — Changed non-atomic DROP+RENAME to `CREATE OR REPLACE TABLE AS SELECT` — original table preserved if operation fails
+- **Seasonal patterns** — Now uses `add_months()` to actually shift dates into peak months (was duplicating rows without date shift)
+- **FK regex safety** — Added `re.escape()` and `\b` word boundary to prevent partial column name matches
+- **UC Objects metastore fix** — `client.metastores.get(id)` now used instead of `.current()` for full metastore details; cloud inferred from workspace host
+
+### New Features
+- **Referential integrity** — FK values now scaled to match actual dimension table sizes at the given `scale_factor`. JOINs return results instead of empty sets
+- **Seasonal data patterns** — Healthcare (winter peak), Retail (Q4 spike), Energy (summer peak), Education (fall), Insurance (spring) — creates realistic chart distributions
+- **Business table comments** — 26 detailed business descriptions across industries (e.g., "Insurance claims submitted by healthcare providers...")
+- **CHECK constraints** — 32 business rule constraints (e.g., `claim_amount >= 0`, `rating BETWEEN 1 AND 5`)
+- **Grants/permissions** — Auto-grants to `data_analysts` (SELECT) and `data_engineers` (ALL PRIVILEGES)
+- **Pre-built clone template** — Saves `config/demo_clone_{catalog}.json` with optimal settings
+- **Configurable date range** — CLI: `--start-date`, `--end-date`. API: `start_date`, `end_date` fields. UI: date picker inputs
+- **Progress ETA** — UI shows estimated time remaining based on elapsed time and industries completed
+- **Multi-catalog generation** — CLI: `--dest-catalog`. API: `dest_catalog`. Auto-clones generated catalog to destination
+- **33 unit/integration tests** — Full test suite in `tests/test_demo_generator.py` covering FK ranges, parameter validation, data coverage, generation flow, cleanup
+
+### Testing
+- 33 tests in `tests/test_demo_generator.py` covering:
+  - Parameter validation (invalid catalog names, out-of-range scale factors, bad dates)
+  - FK referential integrity (value ranges match dimension table sizes)
+  - Seasonal data coverage (peak months present per industry)
+  - Full generation flow (end-to-end with mocked SQL execution)
+  - Cleanup and error handling paths
+- Run with: `python3 -m pytest tests/test_demo_generator.py -v`
+
+---
+
+## v1.8.1 — Demo Data Generator Fixes & Parallel Generation
+
+### Bug Fixes
+- **DELTA_METADATA_CHANGED** — Column comments now run sequentially instead of parallel to avoid concurrent metadata conflicts
+- **PK on nullable columns** — ID columns now set to NOT NULL before adding PRIMARY KEY constraint
+- **Volume CSV export** — Changed from external LOCATION (invalid cloud path) to managed sample tables via CTAS
+- **Row filter syntax** — Row filter functions now accept column value as parameter (`state_val STRING`) instead of referencing column directly
+- **SCD2 non-deterministic UPDATE** — Replaced UPDATE with CTAS + table swap to avoid Databricks `INVALID_NON_DETERMINISTIC_EXPRESSIONS` error
+- **Progress bar capped at 100%** — Fixed enrichment phase showing >100% progress
+
+### New Features
+- **Parallel medallion generation** — Bronze/Silver/Gold schemas now generate in 3 parallel phases across industries instead of sequential per-industry. ~3x faster for multi-industry runs.
+- **Create UDFs checkbox** — New UI checkbox to toggle UDF creation (20 per industry)
+- **Create Volumes checkbox** — New UI checkbox to toggle volume and sample file creation
+
+---
+
+## v1.8.0 — Demo Data Generator
+
+### Demo Data Generator
+- New `demo-data` CLI command and Web UI page for generating realistic demo catalogs
+- 10 industries: Healthcare, Financial, Retail, Telecom, Manufacturing, Energy, Education, Real Estate, Logistics, Insurance
+- Each industry generates 20 tables, 20 views, 20 UDFs (200 total of each)
+- Medallion architecture: Bronze (raw ingestion), Silver (cleaned), Gold (aggregated) schemas per industry
+- Scale factor: 0.01 (~10M rows) to 1.0 (~2B rows) — all data generated server-side via Databricks SQL
+- Post-generation enrichment:
+  - Column comments and Unity Catalog tags on PII tables
+  - Primary key and foreign key constraints (39 FK relationships)
+  - Table partitioning by date columns on large fact tables
+  - Business metadata table properties (owner_team, sla_tier, refresh_frequency, etc.)
+  - Data quality issues injection (nulls, duplicates, outliers)
+  - Delta version history via UPDATEs for time travel demos
+  - Cross-industry views (5 JOINs across industries)
+  - Managed volumes with sample CSV files (1000 rows per table)
+  - Column masks on PII columns (email, phone, name)
+  - Row filters on dimension tables
+  - SCD2 columns (valid_from, valid_to, is_current) on dimension tables
+  - OPTIMIZE + Z-ORDER on large fact tables
+  - Data catalog views (table_inventory, column_inventory, pii_columns)
+  - Pre-populated audit logs (20 fake clone operations for Dashboard)
+- Cleanup command: `clxs demo-data --cleanup --catalog demo_source`
+- API: `POST /api/generate/demo-data`, `DELETE /api/generate/demo-data/:catalog_name`
+- UI: Template presets (Quick/Sales/Full), generation preview with cost estimate, per-industry progress bars, cleanup button, explore link
+
+---
+
 ## v1.7.0 — Plugin System, Schedule Backend, RBAC Enforcement
+
+### Preflight UC Permission Checks (ENHANCED)
+- Enhanced all permission checks to recognize implicit and inherited Unity Catalog privileges
+- `dest_manage_permission`: Checks ownership first, then catalog-level grants, then schema-level MANAGE grants
+- `dest_create_table`: Recognizes ownership and MANAGE as implying CREATE TABLE; checks schema-level grants
+- `source_use_catalog`: Shows "(owner)" when user owns catalog; displays `GRANT` command on failure
+- `create_catalog_permission`: Checks metastore-level CREATE CATALOG grant
+- Web UI preflight page shows `GRANT` commands as clickable code blocks (click to copy) with links to UC privileges documentation
+
+### Settings & Config — API as Source of Truth (NEW)
+- Settings page now loads config from `GET /config` (backend is the single source of truth, replaces sessionStorage)
+- Warehouse selection persists to backend via `PATCH /config/warehouse`
+- Consistent card heights across Settings: `CardHeader className="pb-2"`, `text-base` titles, `h-4` icons
+- Auth status endpoint now reflects the actual auth method from the resolved client (pat, cli-profile, service-principal, azure-cli, oauth)
+
+### Clone Page — Config from API (ENHANCED)
+- Clone page now loads saved config from `GET /config` on mount (source_catalog, dest_catalog, clone_type, load_type, max_workers, etc.) instead of hardcoded defaults
+
+### Warehouse Page — Set as Active (NEW)
+- Added "Set as Active" button on warehouse page with green border and ACTIVE badge on the selected warehouse
+- New `PATCH /config/warehouse` API endpoint in `api/routers/config.py`
+- Added `patch` method to `ui/src/lib/api-client.ts`
+
+### Demo Data Generator Fixes (FIXED)
+- Replaced all `timestamp_add()` calls with `dateadd()` for Databricks SQL compatibility
+- Fixed column comments: now only applies to columns that actually exist in the table DDL
+- Fixed sample data export: replaced invalid `COPY INTO` (load-only) with `CREATE OR REPLACE TABLE ... AS SELECT`
+- Added `uc_best_practices` parameter for medallion schema naming:
+  - `true` (default): shared `bronze`, `silver`, `gold` schemas with industry-prefixed tables
+  - `false`: legacy `healthcare_bronze`, `healthcare_silver` naming
+- Added volume creation before sample data export
+- Web UI: New "UC Best Practices Naming" checkbox on demo-data page with link to Microsoft documentation
 
 ### Plugin System (NEW)
 - Full plugin lifecycle: load, enable, disable, and hook execution
@@ -44,13 +156,18 @@ All notable changes to Clone-Xs are documented here.
 - `include_schemas` config option now passed through on `schema-drift`, `storage-metrics`, `profile`
 
 ### PII Detection Enhancements
-- Batch insert for scan store (was inserting row by row, now bulk)
+- Batch insert for scan store: changed from single-row INSERT to multi-row INSERT with 50-row chunks (reduces N SQL calls to ceil(N/50))
 - Schema filter and table filter support in Web UI and API
 - Web UI has new filter input fields on the PII scan page
 
+### API Enhancements
+- New `PATCH /config/warehouse` endpoint for setting the active warehouse
+- Added `patch` method to the TypeScript API client
+- Auth status (`/auth/status`) now reports the actual auth method from the resolved Databricks client
+
 ### Test Coverage
 - 25 new test files added covering previously untested modules
-- Total tests: ~640+ (up from 539)
+- Total tests: 856 (up from 539)
 
 ---
 

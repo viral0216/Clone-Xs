@@ -23,6 +23,8 @@ import {
   Download,
   FolderTree,
   DollarSign,
+  Server,
+  Zap,
 } from "lucide-react";
 
 type AuthTab = "profile" | "token" | "oauth" | "azure" | "sp" | "env";
@@ -276,7 +278,14 @@ export default function SettingsPage() {
   useEffect(() => {
     setHost(sessionStorage.getItem("dbx_host") || "");
     setToken(sessionStorage.getItem("dbx_token") || "");
-    setSelectedWarehouse(sessionStorage.getItem("dbx_warehouse_id") || "");
+    // Load active warehouse from backend config (source of truth)
+    api.get<any>("/config").then((config) => {
+      const wid = config?.sql_warehouse_id || "";
+      setSelectedWarehouse(wid);
+      sessionStorage.setItem("dbx_warehouse_id", wid);
+    }).catch(() => {
+      setSelectedWarehouse(sessionStorage.getItem("dbx_warehouse_id") || "");
+    });
   }, []);
 
   // Fetch profiles when profile tab is selected
@@ -403,10 +412,15 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSelectWarehouse = (warehouseId: string) => {
+  const handleSelectWarehouse = async (warehouseId: string) => {
     setSelectedWarehouse(warehouseId);
     sessionStorage.setItem("dbx_warehouse_id", warehouseId);
-    toast.success("Warehouse selected");
+    try {
+      await api.patch("/config/warehouse", { warehouse_id: warehouseId });
+      toast.success("Warehouse saved to config");
+    } catch {
+      toast.error("Warehouse selected locally but failed to save to config");
+    }
   };
 
   const tabs: { key: AuthTab; label: string; icon: React.ReactNode }[] = [
@@ -429,14 +443,8 @@ export default function SettingsPage() {
       </div>
 
       {/* Connection Status Card */}
-      <Card className={`border-2 ${auth.data?.authenticated ? "border-green-500" : "border-red-400"}`}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Connection Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Card className={`border ${auth.data?.authenticated ? "border-green-500/50" : "border-red-400/50"}`}>
+        <CardContent className="py-4">
           <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-2">
               {auth.data?.authenticated ? (
@@ -444,23 +452,23 @@ export default function SettingsPage() {
               ) : (
                 <XCircle className="h-5 w-5 text-red-400" />
               )}
-              <span className="font-medium">
+              <span className="font-semibold">
                 {auth.data?.authenticated ? "Connected" : "Not Connected"}
               </span>
             </div>
             {auth.data?.user && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <User className="h-4 w-4" />
                 <span>{auth.data.user}</span>
               </div>
             )}
             {auth.data?.host && (
-              <div className="text-sm text-gray-500 font-mono truncate max-w-md">
+              <div className="text-sm text-muted-foreground font-mono truncate max-w-md">
                 {auth.data.host}
               </div>
             )}
             {auth.data?.auth_method && (
-              <Badge variant="outline">{auth.data.auth_method}</Badge>
+              <Badge variant="outline" className="text-xs">{auth.data.auth_method}</Badge>
             )}
           </div>
         </CardContent>
@@ -485,8 +493,8 @@ export default function SettingsPage() {
 
       {/* Auth Method Tabs */}
       {!isDatabricksApp && <Card>
-        <CardHeader className="pb-0">
-          <CardTitle className="flex items-center gap-2">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
             <Key className="h-5 w-5" />
             Authentication Method
           </CardTitle>
@@ -739,20 +747,20 @@ export default function SettingsPage() {
 
       {/* SQL Warehouses */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Server className="h-4 w-4" />
             SQL Warehouses
           </CardTitle>
         </CardHeader>
         <CardContent>
           {warehouses.isLoading ? (
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-muted-foreground py-3">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading warehouses...
             </div>
           ) : warehouses.isError ? (
-            <p className="text-gray-400">Connect to Databricks first to see warehouses.</p>
+            <p className="text-muted-foreground text-sm py-3">Connect to Databricks first to see warehouses.</p>
           ) : (
             <div className="space-y-2">
               {warehouses.data?.map((wh) => (
@@ -760,23 +768,23 @@ export default function SettingsPage() {
                   key={wh.id}
                   className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                     selectedWarehouse === wh.id
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 bg-gray-50"
+                      ? "border-green-500/50 bg-green-500/5"
+                      : "border-border bg-muted/30"
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     {selectedWarehouse === wh.id && (
-                      <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                      <Star className="h-4 w-4 text-green-500 fill-green-500" />
                     )}
                     <span className="font-medium text-sm">{wh.name}</span>
-                    <Badge variant="outline">{wh.size}</Badge>
+                    <Badge variant="outline" className="text-xs">{wh.size}</Badge>
                     <Badge
                       variant={wh.state === "RUNNING" ? "default" : "secondary"}
-                      className={wh.state === "RUNNING" ? "bg-green-600" : ""}
+                      className={wh.state === "RUNNING" ? "bg-green-600 text-xs" : "text-xs"}
                     >
                       {wh.state}
                     </Badge>
-                    <span className="text-xs text-gray-400 font-mono">{wh.id}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{wh.id}</span>
                   </div>
                   <Button
                     size="sm"
@@ -798,9 +806,101 @@ export default function SettingsPage() {
       {/* UI Preferences */}
       <UIPreferences />
 
+      {/* Performance Settings */}
+      <PerformanceSettings />
+
       {/* Navigation & Feature Toggles */}
       <FeatureToggles />
     </div>
+  );
+}
+
+function PerformanceSettings() {
+  const [maxWorkers, setMaxWorkers] = useState(10);
+  const [parallelTables, setParallelTables] = useState(10);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<any>("/config").then((config) => {
+      if (config?.max_workers != null) setMaxWorkers(config.max_workers);
+      if (config?.parallel_tables != null) setParallelTables(config.parallel_tables);
+      if (config?.max_parallel_queries != null) setMaxParallelQueries(config.max_parallel_queries);
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      await api.patch("/config/performance", {
+        max_workers: maxWorkers,
+        parallel_tables: parallelTables,
+        max_parallel_queries: maxParallelQueries,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success("Performance settings saved");
+    } catch {
+      toast.error("Failed to save performance settings");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Zap className="h-4 w-4" />
+          Performance & Parallelism
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Control how many concurrent operations run during clone, sync, and analysis jobs.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-sm font-medium mb-1 block">Max Workers</label>
+            <Input
+              type="number"
+              min={1}
+              max={32}
+              value={maxWorkers}
+              onChange={(e) => setMaxWorkers(parseInt(e.target.value) || 1)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">Thread pool size for schema-level parallelism</p>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Parallel Tables</label>
+            <Input
+              type="number"
+              min={1}
+              max={32}
+              value={parallelTables}
+              onChange={(e) => setParallelTables(parseInt(e.target.value) || 1)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">Tables cloned concurrently per schema</p>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Max Parallel Queries</label>
+            <Input
+              type="number"
+              min={1}
+              max={64}
+              value={maxParallelQueries}
+              onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 1)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">SQL warehouse concurrent query limit</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={handleSave}>
+            {saved ? "Saved!" : "Save Performance Settings"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Higher values = faster but more warehouse load. Recommended: 4–10 for serverless, 2–4 for classic warehouses.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -884,16 +984,16 @@ function AuditSettings() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Database className="h-5 w-5" />
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Database className="h-4 w-4" />
           Audit & Log Storage
         </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Configure where clone run logs, audit trail, and metrics are stored in Unity Catalog.
         </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Audit Catalog</label>
@@ -1007,15 +1107,10 @@ function UIPreferences() {
     { key: "browser", icon: FolderTree, label: "Catalog Browser Panel", desc: "Show the Databricks-style catalog tree browser on the Explorer page", checked: showBrowser, toggle: toggleBrowser },
   ];
 
-  // Storage price per GB/month
+  // Storage price per GB/month — load from backend config, fallback to localStorage
   const [pricePerGb, setPricePerGb] = useState(() => {
     try { return parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023; } catch { return 0.023; }
   });
-  const savePricePerGb = (val: number) => {
-    setPricePerGb(val);
-    localStorage.setItem("clxs-price-per-gb", String(val));
-    window.dispatchEvent(new Event("clxs-settings-changed"));
-  };
 
   // Currency
   const currencies = [
@@ -1033,17 +1128,40 @@ function UIPreferences() {
   const [currency, setCurrency] = useState(() => {
     try { return localStorage.getItem("clxs-currency") || "USD"; } catch { return "USD"; }
   });
+
+  // Load pricing from backend config on mount
+  useEffect(() => {
+    api.get<any>("/config").then((config) => {
+      if (config?.price_per_gb != null) {
+        setPricePerGb(config.price_per_gb);
+        localStorage.setItem("clxs-price-per-gb", String(config.price_per_gb));
+      }
+      if (config?.currency) {
+        setCurrency(config.currency);
+        localStorage.setItem("clxs-currency", config.currency);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const savePricePerGb = (val: number) => {
+    setPricePerGb(val);
+    localStorage.setItem("clxs-price-per-gb", String(val));
+    window.dispatchEvent(new Event("clxs-settings-changed"));
+    api.patch("/config/pricing", { price_per_gb: val }).catch(() => {});
+  };
+
   const saveCurrency = (val: string) => {
     setCurrency(val);
     localStorage.setItem("clxs-currency", val);
     window.dispatchEvent(new Event("clxs-settings-changed"));
+    api.patch("/config/pricing", { currency: val }).catch(() => {});
   };
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Settings2 className="h-5 w-5" />
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Settings2 className="h-4 w-4" />
           UI Preferences
         </CardTitle>
         <p className="text-sm text-muted-foreground">
@@ -1145,9 +1263,9 @@ function FeatureToggles() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Settings2 className="h-5 w-5" />
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FolderTree className="h-4 w-4" />
           Navigation & Features
         </CardTitle>
         <p className="text-sm text-muted-foreground">

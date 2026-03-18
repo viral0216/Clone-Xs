@@ -82,6 +82,59 @@ async def save_audit_settings(req: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.patch("/warehouse")
+async def set_active_warehouse(req: dict):
+    """Update the sql_warehouse_id in the config file."""
+    warehouse_id = req.get("warehouse_id", "").strip()
+    if not warehouse_id:
+        raise HTTPException(status_code=400, detail="warehouse_id is required")
+    config_path = "config/clone_config.yaml"
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        raw["sql_warehouse_id"] = warehouse_id
+        with open(config_path, "w") as f:
+            yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        return {"status": "saved", "sql_warehouse_id": warehouse_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/performance")
+async def set_performance(req: dict):
+    """Update performance settings (max_workers, parallel_tables, max_parallel_queries)."""
+    config_path = "config/clone_config.yaml"
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        for key in ("max_workers", "parallel_tables", "max_parallel_queries"):
+            if key in req:
+                raw[key] = int(req[key])
+        with open(config_path, "w") as f:
+            yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        return {"status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/pricing")
+async def set_pricing(req: dict):
+    """Update storage pricing settings in the config file."""
+    config_path = "config/clone_config.yaml"
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        if "price_per_gb" in req:
+            raw["price_per_gb"] = float(req["price_per_gb"])
+        if "currency" in req:
+            raw["currency"] = str(req["currency"])
+        with open(config_path, "w") as f:
+            yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        return {"status": "saved", "price_per_gb": raw.get("price_per_gb"), "currency": raw.get("currency")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/profiles")
 async def list_profiles(path: str = "config/clone_config.yaml"):
     """List available config profiles."""

@@ -45,15 +45,41 @@ async def login(req: LoginRequest):
 
 @router.get("/status")
 async def auth_status(client=Depends(get_db_client)):
-    """Check current authentication status."""
-    from src.auth import ensure_authenticated
+    """Check current authentication status using the resolved client."""
     try:
-        info = ensure_authenticated()
+        # Use the actual client resolved from request headers or server auth
+        me = client.current_user.me()
+        user = me.user_name or me.display_name or ""
+        host = str(client.config.host or "")
+
+        # Determine auth method from the client config
+        auth_type = getattr(client.config, "auth_type", None) or ""
+        # Map to user-friendly label
+        import os
+        profile = os.environ.get("DATABRICKS_CONFIG_PROFILE", "")
+        client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
+        azure_auth = os.environ.get("DATABRICKS_AUTH_TYPE", "")
+
+        if azure_auth == "azure-cli":
+            method = "azure-cli"
+        elif client_id:
+            method = "service-principal"
+        elif auth_type == "pat":
+            method = "pat"
+        elif auth_type in ("oauth-m2m", "oauth-u2m"):
+            method = auth_type
+        elif profile:
+            method = f"cli-profile:{profile}"
+        elif auth_type:
+            method = auth_type
+        else:
+            method = "cli-profile:DEFAULT"
+
         return AuthStatus(
             authenticated=True,
-            user=info.get("user"),
-            host=info.get("host"),
-            auth_method=info.get("auth_method"),
+            user=user,
+            host=host,
+            auth_method=method,
         )
     except Exception:
         return AuthStatus(authenticated=False)

@@ -368,15 +368,42 @@ async def list_uc_objects(client=Depends(get_db_client)):
     # Metastores
     try:
         current = client.metastores.current()
-        result["metastore"] = {
-            "name": getattr(current, "name", ""),
-            "metastore_id": getattr(current, "metastore_id", ""),
-            "owner": getattr(current, "owner", ""),
-            "cloud": getattr(current, "cloud", ""),
-            "region": getattr(current, "region", ""),
-            "storage_root": getattr(current, "storage_root", ""),
-            "default_data_access_config_id": getattr(current, "default_data_access_config_id", ""),
-        }
+        ms_id = getattr(current, "metastore_id", "")
+        ms_info = {"name": "", "metastore_id": ms_id, "owner": "", "cloud": "", "region": "", "storage_root": "", "default_data_access_config_id": ""}
+        # current() often returns sparse data — try get() with the ID for full details
+        if ms_id:
+            try:
+                full = client.metastores.get(ms_id)
+                ms_info = {
+                    "name": getattr(full, "name", "") or "",
+                    "metastore_id": ms_id,
+                    "owner": getattr(full, "owner", "") or "",
+                    "cloud": getattr(full, "cloud", "") or "",
+                    "region": getattr(full, "region", "") or "",
+                    "storage_root": getattr(full, "storage_root", "") or getattr(full, "storage_root_credential_id", "") or "",
+                    "default_data_access_config_id": getattr(full, "default_data_access_config_id", "") or "",
+                }
+            except Exception:
+                # Fall back to current() data
+                ms_info = {
+                    "name": getattr(current, "name", "") or "",
+                    "metastore_id": ms_id,
+                    "owner": getattr(current, "owner", "") or "",
+                    "cloud": getattr(current, "cloud", "") or "",
+                    "region": getattr(current, "region", "") or "",
+                    "storage_root": getattr(current, "storage_root", "") or "",
+                    "default_data_access_config_id": getattr(current, "default_data_access_config_id", "") or "",
+                }
+        # Try to infer cloud/region from workspace host if still empty
+        if not ms_info["cloud"]:
+            host = getattr(getattr(client, "config", None), "host", "") or ""
+            if "azure" in host:
+                ms_info["cloud"] = "azure"
+            elif "gcp" in host:
+                ms_info["cloud"] = "gcp"
+            elif host:
+                ms_info["cloud"] = "aws"
+        result["metastore"] = ms_info
     except Exception:
         result["metastore"] = None
 

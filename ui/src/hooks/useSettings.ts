@@ -45,13 +45,21 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "\u20b9", JPY: "\u00a5", CHF: "CHF", SEK: "kr", BRL: "R$",
 };
 
-/** Get the configured currency code and symbol. */
+/** Get the configured currency code and symbol. Loads from backend config, falls back to localStorage. */
 export function useCurrency(): { code: string; symbol: string } {
   const [code, setCode] = useState(() => {
     try { return localStorage.getItem("clxs-currency") || "USD"; } catch { return "USD"; }
   });
 
   useEffect(() => {
+    // Load from backend config (source of truth)
+    fetch("/api/config").then(r => r.json()).then(config => {
+      if (config?.currency) {
+        setCode(config.currency);
+        try { localStorage.setItem("clxs-currency", config.currency); } catch {}
+      }
+    }).catch(() => {});
+
     const handler = () => {
       try { setCode(localStorage.getItem("clxs-currency") || "USD"); } catch {}
     };
@@ -62,13 +70,21 @@ export function useCurrency(): { code: string; symbol: string } {
   return { code, symbol: CURRENCY_SYMBOLS[code] || "$" };
 }
 
-/** Get the configured storage price per GB/month. */
+/** Get the configured storage price per GB/month. Loads from backend config, falls back to localStorage. */
 export function useStoragePrice(): number {
   const [price, setPrice] = useState(() => {
     try { return parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023; } catch { return 0.023; }
   });
 
   useEffect(() => {
+    // Load from backend config (source of truth)
+    fetch("/api/config").then(r => r.json()).then(config => {
+      if (config?.price_per_gb != null) {
+        setPrice(config.price_per_gb);
+        try { localStorage.setItem("clxs-price-per-gb", String(config.price_per_gb)); } catch {}
+      }
+    }).catch(() => {});
+
     const handler = () => {
       try { setPrice(parseFloat(localStorage.getItem("clxs-price-per-gb") || "0.023") || 0.023); } catch {}
     };

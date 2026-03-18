@@ -9,9 +9,10 @@ import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
   Loader2, XCircle, HardDrive, Database, Trash2, Clock,
-  AlertTriangle, Download, Zap, CheckCircle, Info,
+  AlertTriangle, Download, Zap, CheckCircle, Info, DollarSign, TrendingUp,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { useCurrency, useStoragePrice } from "@/hooks/useSettings";
 
 function vacuumColor(pct: number) {
   if (pct >= 30) return "text-red-500";
@@ -26,6 +27,14 @@ export default function StorageMetricsPage() {
   const [table, setTable] = useState(job?.params?.table || "");
 
   const results = job?.data as any;
+  const { symbol: currSymbol } = useCurrency();
+  const storagePrice = useStoragePrice();
+
+  // Compute costs from total bytes
+  const totalBytes = results?.total_bytes || 0;
+  const totalGb = totalBytes / (1024 * 1024 * 1024);
+  const monthlyCost = totalGb * storagePrice;
+  const yearlyCost = monthlyCost * 12;
 
   // Selection state
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -285,7 +294,7 @@ export default function StorageMetricsPage() {
       {results && !results.runtime_error && (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card className="bg-card border-border">
               <CardContent className="pt-6 text-center">
                 <HardDrive className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
@@ -316,6 +325,22 @@ export default function StorageMetricsPage() {
                 <p className="text-2xl font-bold text-foreground">{results.time_travel_display}</p>
                 <p className="text-xs text-muted-foreground mt-1">Time Travel</p>
                 <Badge variant="outline" className="mt-1 text-purple-500 border-purple-500/30">{results.time_travel_pct}%</Badge>
+              </CardContent>
+            </Card>
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6 text-center">
+                <span className="text-green-500 font-bold text-lg block mb-1">{currSymbol}</span>
+                <p className="text-2xl font-bold text-green-500">{currSymbol}{monthlyCost < 1 ? monthlyCost.toFixed(4) : monthlyCost.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground mt-1">Monthly Cost</p>
+                <p className="text-[10px] text-muted-foreground">at {currSymbol}{storagePrice}/GB</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6 text-center">
+                <TrendingUp className="h-5 w-5 mx-auto mb-1 text-orange-500" />
+                <p className="text-2xl font-bold text-orange-500">{currSymbol}{yearlyCost < 10 ? yearlyCost.toFixed(2) : yearlyCost.toFixed(0)}</p>
+                <p className="text-xs text-muted-foreground mt-1">Yearly Cost</p>
+                <p className="text-[10px] text-muted-foreground">estimated</p>
               </CardContent>
             </Card>
           </div>

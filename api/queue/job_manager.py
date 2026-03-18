@@ -25,9 +25,13 @@ class JobLogHandler(logging.Handler):
         self.max_lines = max_lines
         self._run_id_re = re.compile(r"run_id[=:]?\s*(\d+)")
 
+    _config_noise_re = re.compile(r"\. Config: .*$")
+
     def emit(self, record):
         try:
             msg = self.format(record)
+            # Strip verbose SDK config/env details from error messages
+            msg = self._config_noise_re.sub("", msg)
             self.job_logs.append(msg)
             # Keep only the last N lines
             if len(self.job_logs) > self.max_lines:
@@ -135,6 +139,9 @@ class JobManager:
         log_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         src_logger = logging.getLogger("src")
         src_logger.addHandler(log_handler)
+        # Ensure INFO level is captured (default root may be WARNING)
+        if src_logger.level > logging.INFO or src_logger.level == logging.NOTSET:
+            src_logger.setLevel(logging.INFO)
 
         # Capture stderr (progress bars)
         original_stderr = sys.stderr
@@ -273,6 +280,28 @@ class JobManager:
                 except Exception:
                     pass
                 result = {"output_path": output, "content": content, "format": fmt}
+            elif job_type == "demo-data":
+                from src.demo_generator import generate_demo_catalog
+                # Use the job dict's "progress" key for live progress updates
+                self.jobs[job_id]["progress"] = {}
+                result = generate_demo_catalog(
+                    client, config["sql_warehouse_id"],
+                    config["catalog_name"],
+                    industries=config.get("industries"),
+                    owner=config.get("owner"),
+                    scale_factor=config.get("scale_factor", 1.0),
+                    batch_size=config.get("batch_size", 5_000_000),
+                    max_workers=config.get("max_workers", 4),
+                    storage_location=config.get("storage_location"),
+                    drop_existing=config.get("drop_existing", False),
+                    medallion=config.get("medallion", True),
+                    uc_best_practices=config.get("uc_best_practices", True),
+                    create_functions=config.get("create_functions", True),
+                    create_volumes=config.get("create_volumes", True),
+                    start_date=config.get("start_date", "2020-01-01"),
+                    end_date=config.get("end_date", "2025-01-01"),
+                    progress_dict=self.jobs[job_id]["progress"],
+                )
             else:
                 result = {"error": f"Unknown job type: {job_type}"}
 

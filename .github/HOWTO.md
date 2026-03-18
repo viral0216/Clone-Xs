@@ -88,6 +88,9 @@ Each section links to the relevant **official Databricks documentation** so you 
 53. [Plugin System](#53-plugin-system)
 54. [Schedule Management](#54-schedule-management)
 55. [RBAC Policy Management](#55-rbac-policy-management)
+56. [Preflight UC Permission Checks](#56-preflight-uc-permission-checks)
+57. [Demo Data Generator — UC Best Practices](#57-demo-data-generator--uc-best-practices)
+58. [Warehouse Selection via Settings UI](#58-warehouse-selection-via-settings-ui)
 
 ---
 
@@ -581,6 +584,25 @@ All critical checks passed. Ready to proceed.
 # Skip the write permission check (e.g., for read-only analysis commands)
 clxs preflight --no-write-check
 ```
+
+### UC permission checks (implicit grant detection)
+
+Pre-flight checks now recognize implicit and inherited Unity Catalog privileges, reducing false negatives:
+
+| Check | What it detects |
+|-------|-----------------|
+| `dest_manage_permission` | Ownership first, then catalog-level grants, then schema-level MANAGE grants |
+| `dest_create_table` | Ownership and MANAGE as implying CREATE TABLE; checks schema-level grants |
+| `source_use_catalog` | Shows "(owner)" when user owns catalog; displays `GRANT` command on failure |
+| `create_catalog_permission` | Metastore-level CREATE CATALOG grant |
+
+When a check fails, the Web UI displays the required `GRANT` command as a clickable code block (click to copy). For example:
+
+```sql
+GRANT USE CATALOG ON CATALOG my_catalog TO `user@company.com`;
+```
+
+A link to the [Unity Catalog privileges documentation](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/index.html) is shown alongside each failed check.
 
 ### Automate it
 Add pre-flight as a step before clone in your pipeline:
@@ -2991,3 +3013,138 @@ RBAC is now enforced on all of these operations:
 - `incremental-sync` — delta-based sync
 
 If a user attempts an operation not listed in their `allowed_operations`, the request is denied.
+
+---
+
+## 56. Preflight UC Permission Checks
+
+> **Docs:** [Unity Catalog Privileges](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/index.html)
+
+### When to use
+You want to verify that your user or service principal has the correct Unity Catalog permissions before starting a clone, especially when using inherited or implicit grants (e.g., catalog ownership implying MANAGE).
+
+### Real-world scenario
+Your service principal owns the destination catalog but does not have an explicit `MANAGE` grant. The old preflight check would flag this as a failure. The enhanced checks now detect ownership as an implicit grant and report `[PASS] dest_manage_permission: Owner of catalog`.
+
+### What the enhanced checks detect
+
+| Check | Logic |
+|-------|-------|
+| `dest_manage_permission` | 1. Ownership check 2. Catalog-level MANAGE grant 3. Schema-level MANAGE grants |
+| `dest_create_table` | 1. Ownership 2. MANAGE (implies CREATE TABLE) 3. Schema-level CREATE TABLE grants |
+| `source_use_catalog` | 1. Ownership (shows "(owner)") 2. USE CATALOG grant. On failure, shows `GRANT USE CATALOG` command |
+| `create_catalog_permission` | Metastore-level CREATE CATALOG grant |
+
+### Interpreting GRANT commands in the Web UI
+
+When a check fails, the preflight page displays the required SQL grant as a clickable code block. Click it to copy the command to your clipboard, then run it in a SQL editor:
+
+```sql
+-- Example: grant USE CATALOG to a service principal
+GRANT USE CATALOG ON CATALOG my_catalog TO `sp-clone-xs@company.com`;
+
+-- Example: grant CREATE TABLE on a schema
+GRANT CREATE TABLE ON SCHEMA my_catalog.bronze TO `sp-clone-xs@company.com`;
+```
+
+Each failed check also links to the [UC privileges documentation](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/index.html).
+
+---
+
+## 57. Demo Data Generator — UC Best Practices
+
+> **Docs:** [Unity Catalog Best Practices](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/best-practices)
+
+### When to use
+You are generating demo data and want schema naming that follows Unity Catalog best practices (shared medallion schemas) rather than legacy per-industry schema naming.
+
+### Real-world scenario
+Your team is setting up a demo workspace. You want `bronze`, `silver`, and `gold` schemas with industry-prefixed table names (e.g., `bronze.healthcare_patients`) instead of `healthcare_bronze.patients`.
+
+### UC Best Practices naming (default)
+
+```
+demo_source/
+  bronze/
+    healthcare_patients
+    financial_transactions
+    retail_orders
+  silver/
+    healthcare_patients_cleaned
+    financial_transactions_cleaned
+  gold/
+    healthcare_patient_summary
+    financial_revenue_by_month
+```
+
+### Legacy naming (`uc_best_practices: false`)
+
+```
+demo_source/
+  healthcare_bronze/
+    patients
+  healthcare_silver/
+    patients_cleaned
+  healthcare_gold/
+    patient_summary
+```
+
+### CLI
+
+```bash
+# Default: UC best practices naming
+clxs demo-data --catalog demo_source --scale 0.1
+
+# Legacy naming
+clxs demo-data --catalog demo_source --scale 0.1 --no-uc-best-practices
+```
+
+### Web UI
+
+On the demo-data page, check or uncheck the **UC Best Practices Naming** checkbox. A link to the Microsoft documentation is shown next to the checkbox.
+
+### Other fixes in this release
+- `timestamp_add()` replaced with `dateadd()` for Databricks SQL compatibility
+- Column comments now only applied to columns that exist in the table DDL
+- Sample data export uses `CREATE OR REPLACE TABLE ... AS SELECT` instead of `COPY INTO`
+- Volumes are created before sample data export
+
+---
+
+## 58. Warehouse Selection via Settings UI
+
+> **Docs:** [SQL Warehouses](https://docs.databricks.com/en/compute/sql-warehouse/index.html)
+
+### When to use
+You want to select which SQL warehouse Clone-Xs uses for all operations, and have that selection persist across sessions.
+
+### Real-world scenario
+You have multiple SQL warehouses (Dev, Staging, Production). You want to set the Dev warehouse as active so all clone, preflight, and scan operations use it by default.
+
+### Settings page
+
+1. Go to **Settings** in the Web UI
+2. Select a warehouse from the dropdown
+3. The selection is saved to the backend via `PATCH /config/warehouse`
+4. All subsequent operations use the selected warehouse
+
+The Settings page loads all config from the API backend (`GET /config`), making it the single source of truth. SessionStorage is no longer used for configuration.
+
+### Warehouse page — Set as Active
+
+1. Go to **Warehouse** in the Web UI
+2. Each warehouse card has a **Set as Active** button
+3. The active warehouse shows a green border and an **ACTIVE** badge
+4. Clicking "Set as Active" calls `PATCH /config/warehouse` with the warehouse ID
+
+### API
+
+```bash
+# Set the active warehouse
+curl -X PATCH http://localhost:8080/config/warehouse \
+  -H "Content-Type: application/json" \
+  -d '{"warehouse_id": "1a86a25830e584b7"}'
+
+# Read current config (includes active warehouse)
+curl http://localhost:8080/config
+```

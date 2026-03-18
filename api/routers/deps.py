@@ -3,9 +3,64 @@
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config
+from src.client import execute_sql
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+@router.get("/functions/{catalog}")
+async def list_functions(catalog: str, client=Depends(get_db_client)):
+    """List all user-defined functions across all schemas in a catalog."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    try:
+        rows = execute_sql(client, wid, f"""
+            SELECT routine_catalog, routine_schema, routine_name, routine_type,
+                   data_type, routine_definition
+            FROM {catalog}.information_schema.routines
+            WHERE routine_type = 'FUNCTION'
+            AND routine_schema NOT IN ('information_schema', '__internal')
+            ORDER BY routine_schema, routine_name
+        """)
+        return [
+            {
+                "name": r.get("routine_name", ""),
+                "schema": r.get("routine_schema", ""),
+                "full_name": f"{catalog}.{r.get('routine_schema', '')}.{r.get('routine_name', '')}",
+                "data_type": r.get("data_type", ""),
+                "definition": (r.get("routine_definition", "") or "")[:200],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        return []
+
+
+@router.get("/views/{catalog}")
+async def list_views(catalog: str, client=Depends(get_db_client)):
+    """List all views across all schemas in a catalog."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    try:
+        rows = execute_sql(client, wid, f"""
+            SELECT table_catalog, table_schema, table_name, view_definition
+            FROM {catalog}.information_schema.tables
+            WHERE table_type = 'VIEW'
+            AND table_schema NOT IN ('information_schema', '__internal')
+            ORDER BY table_schema, table_name
+        """)
+        return [
+            {
+                "name": r.get("table_name", ""),
+                "schema": r.get("table_schema", ""),
+                "full_name": f"{catalog}.{r.get('table_schema', '')}.{r.get('table_name', '')}",
+                "definition": (r.get("view_definition", "") or "")[:200],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        return []
 
 
 class DepsRequest(BaseModel):

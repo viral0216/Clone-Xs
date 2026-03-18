@@ -2050,6 +2050,84 @@ def cmd_serve(args):
     start_server(host=host, port=port, config=config, client=client, api_key=api_key)
 
 
+def cmd_demo_data(args):
+    """Generate a demo catalog with synthetic data across multiple industries."""
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    client = _get_auth_client(args)
+    _resolve_warehouse_id(args, config, client)
+
+    from src.demo_generator import generate_demo_catalog, cleanup_demo_catalog, ALL_INDUSTRIES
+
+    catalog_name = args.catalog
+
+    # Handle cleanup mode
+    if getattr(args, "cleanup", False):
+        result = cleanup_demo_catalog(client, config["sql_warehouse_id"], catalog_name)
+        print(f"\nCatalog '{catalog_name}' cleaned up: {result['schemas_dropped']} schemas, {result['tables_dropped']} objects dropped")
+        if result["errors"]:
+            for err in result["errors"]:
+                print(f"  Error: {err}")
+        return
+    industries = args.industry if args.industry else None
+    scale_factor = args.scale if hasattr(args, "scale") else 1.0
+    batch_size_val = args.batch_size if hasattr(args, "batch_size") else 5_000_000
+    max_workers_val = args.max_workers if hasattr(args, "max_workers") and args.max_workers else config.get("max_workers", 4)
+    storage_loc = getattr(args, "storage_location", None)
+    drop_existing = getattr(args, "drop_existing", False)
+    medallion = not getattr(args, "no_medallion", False)
+    owner = getattr(args, "owner", None)
+
+    result = generate_demo_catalog(
+        client, config["sql_warehouse_id"], catalog_name,
+        industries=industries,
+        owner=owner,
+        scale_factor=scale_factor,
+        batch_size=batch_size_val,
+        max_workers=max_workers_val,
+        storage_location=storage_loc,
+        drop_existing=drop_existing,
+        medallion=medallion,
+        start_date=getattr(args, "start_date", "2020-01-01"),
+        end_date=getattr(args, "end_date", "2025-01-01"),
+    )
+
+    # Multi-catalog: clone to destination if specified
+    dest_catalog = getattr(args, "dest_catalog", None)
+    if dest_catalog and result.get("catalog"):
+        logger.info(f"Cloning {catalog_name} → {dest_catalog}...")
+        from src.clone_catalog import clone_catalog
+        clone_config = dict(config)
+        clone_config["source_catalog"] = catalog_name
+        clone_config["destination_catalog"] = dest_catalog
+        clone_config["clone_type"] = "DEEP"
+        clone_config["load_type"] = "FULL"
+        try:
+            clone_result = clone_catalog(client, clone_config)
+            print(f"\nCloned to {dest_catalog}: {clone_result.get('tables', {}).get('success', 0)} tables")
+        except Exception as e:
+            print(f"\nClone to {dest_catalog} failed: {e}")
+
+    print(f"\n{'='*60}")
+    print(f"Demo catalog '{result['catalog']}' generated successfully!")
+    print(f"  Industries: {', '.join(result['industries'])}")
+    print(f"  Schemas:    {result['schemas_created']}")
+    print(f"  Tables:     {result['tables_created']}")
+    print(f"  Views:      {result['views_created']}")
+    print(f"  UDFs:       {result['udfs_created']}")
+    print(f"  Total rows: {result['total_rows']:,}")
+    print(f"  Duration:   {result['elapsed_seconds']}s")
+    if result["errors"]:
+        print(f"  Errors:     {len(result['errors'])}")
+        for err in result["errors"]:
+            print(f"    - {err}")
+    print(f"{'='*60}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the CLI. Separated for testability."""
     parser = argparse.ArgumentParser(
@@ -2611,6 +2689,24 @@ def build_parser() -> argparse.ArgumentParser:
     sb_parser = subparsers.add_parser("slack-bot", help="Start Slack bot for clone operations (requires SLACK_BOT_TOKEN, SLACK_APP_TOKEN)")
     sb_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
     sb_parser.set_defaults(func=cmd_slack_bot)
+
+    # --- demo-data command ---
+    demo_parser = subparsers.add_parser("demo-data", help="Generate a demo catalog with synthetic data across industries")
+    add_common_args(demo_parser)
+    demo_parser.add_argument("--catalog", required=True, help="Name of the catalog to create")
+    demo_parser.add_argument("--industry", nargs="+", choices=["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"], help="Industries to generate (default: all)")
+    demo_parser.add_argument("--owner", help="Set catalog owner")
+    demo_parser.add_argument("--scale", type=float, default=1.0, help="Scale factor: 1.0 = ~1B rows, 0.1 = ~100M rows, 0.01 = ~10M rows")
+    demo_parser.add_argument("--batch-size", type=int, default=5_000_000, help="Rows per INSERT batch (default: 5000000)")
+    demo_parser.add_argument("--max-workers", type=int, help="Parallel SQL workers")
+    demo_parser.add_argument("--storage-location", help="Managed location for catalog (e.g., abfss://...)")
+    demo_parser.add_argument("--drop-existing", action="store_true", help="Drop and recreate if catalog exists")
+    demo_parser.add_argument("--no-medallion", action="store_true", help="Skip generating bronze/silver/gold schemas")
+    demo_parser.add_argument("--cleanup", action="store_true", help="Remove the demo catalog instead of generating")
+    demo_parser.add_argument("--start-date", default="2020-01-01", help="Data start date (default: 2020-01-01)")
+    demo_parser.add_argument("--end-date", default="2025-01-01", help="Data end date (default: 2025-01-01)")
+    demo_parser.add_argument("--dest-catalog", help="Clone generated catalog to this destination")
+    demo_parser.set_defaults(func=cmd_demo_data)
 
     return parser
 

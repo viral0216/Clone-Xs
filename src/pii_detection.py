@@ -463,6 +463,8 @@ def scan_catalog_for_pii(
     read_uc_tags: bool = False,
     save_history: bool = False,
     state_catalog: str = "clone_audit",
+    schema_filter: list[str] | None = None,
+    table_filter: str | None = None,
 ) -> dict:
     """Full PII scan of a catalog — column names + optional data sampling + UC tags.
 
@@ -470,7 +472,12 @@ def scan_catalog_for_pii(
         Summary with all detections and suggested masking config.
     """
     scan_id = str(uuid.uuid4())
-    logger.info(f"Scanning catalog '{catalog}' for PII (scan_id={scan_id})...")
+    filter_msg = ""
+    if schema_filter:
+        filter_msg += f" schemas={schema_filter}"
+    if table_filter:
+        filter_msg += f" table_filter='{table_filter}'"
+    logger.info(f"Scanning catalog '{catalog}' for PII (scan_id={scan_id}){filter_msg}...")
 
     # Resolve effective config
     _, _, masking, _, cfg_sample_size = build_effective_patterns(pii_config)
@@ -503,6 +510,13 @@ def scan_catalog_for_pii(
         """
         tables = execute_sql(client, warehouse_id, tables_sql)
         tables = [t for t in tables if t["table_schema"] not in exclude]
+        if schema_filter:
+            sf_lower = [s.lower() for s in schema_filter]
+            tables = [t for t in tables if t["table_schema"].lower() in sf_lower]
+        if table_filter:
+            import re as _re
+            tbl_re = _re.compile(table_filter, _re.IGNORECASE)
+            tables = [t for t in tables if tbl_re.search(t["table_name"])]
 
         logger.info(f"Sampling data from {len(tables)} tables...")
 
@@ -535,6 +549,17 @@ def scan_catalog_for_pii(
         if key not in seen or d.get("confidence_score", 0) > seen[key].get("confidence_score", 0):
             seen[key] = d
     unique_detections = list(seen.values())
+
+    # Apply schema and table filters
+    if schema_filter:
+        sf_lower = [s.lower() for s in schema_filter]
+        unique_detections = [d for d in unique_detections if d["schema"].lower() in sf_lower]
+        logger.info(f"Schema filter applied: {len(unique_detections)} detections in {schema_filter}")
+    if table_filter:
+        import re as _re
+        tbl_re = _re.compile(table_filter, _re.IGNORECASE)
+        unique_detections = [d for d in unique_detections if tbl_re.search(d["table"])]
+        logger.info(f"Table filter applied: {len(unique_detections)} detections matching '{table_filter}'")
 
     # Apply cross-column correlation
     unique_detections = _apply_correlation(unique_detections)

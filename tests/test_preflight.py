@@ -44,17 +44,19 @@ def test_check_warehouse_stopped():
     assert result["status"] == "WARN"
 
 
-@patch("src.preflight.execute_sql")
-def test_check_catalog_access_success(mock_sql):
-    mock_sql.return_value = [{"schema_name": "public"}]
-    result = check_catalog_access(MagicMock(), "wh-123", "my_catalog")
+def test_check_catalog_access_success():
+    client = MagicMock()
+    client.catalogs.get.return_value = MagicMock(owner="user@test.com")
+    result = check_catalog_access(client, "wh-123", "my_catalog")
     assert result["status"] == "OK"
 
 
 @patch("src.preflight.execute_sql")
 def test_check_catalog_access_failure(mock_sql):
+    client = MagicMock()
+    client.catalogs.get.side_effect = Exception("permission denied")
     mock_sql.side_effect = Exception("CATALOG_DOES_NOT_EXIST")
-    result = check_catalog_access(MagicMock(), "wh-123", "missing_catalog")
+    result = check_catalog_access(client, "wh-123", "missing_catalog")
     assert result["status"] == "FAIL"
 
 

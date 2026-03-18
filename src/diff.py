@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from databricks.sdk import WorkspaceClient
 
 from src.client import (
-    execute_sql,
     list_schemas_sdk,
     list_tables_sdk,
     list_views_sdk,
@@ -90,8 +89,19 @@ def compare_catalogs(
     source_catalog: str,
     dest_catalog: str,
     exclude_schemas: list[str],
+    **kwargs,
 ) -> dict:
     """Compare source and destination catalogs. Returns diff report."""
+    # RBAC enforcement
+    if kwargs.get("rbac_enabled"):
+        from src.rbac import enforce_rbac
+        rbac_config = {
+            "source_catalog": source_catalog,
+            "destination_catalog": dest_catalog,
+            "rbac_policy_path": kwargs.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
+        }
+        enforce_rbac(client, rbac_config, operation="diff")
+
     logger.info(f"Comparing catalogs: {source_catalog} vs {dest_catalog}")
 
     # Fetch source and dest metadata in parallel with progress

@@ -411,6 +411,14 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
 
     # --- End pre-clone checks ---
 
+    # --- Plugin system (opt-in) ---
+    pm = None
+    if config.get("plugins"):
+        from src.plugin_system import PluginManager
+        pm = PluginManager()
+        pm.load_plugins_from_config(config)
+        config = pm.run_on_clone_start(config, client, warehouse_id)
+
     mode = "[DRY RUN] " if dry_run else ""
     logger.info(f"{mode}Starting catalog clone: {source} -> {dest}")
     logger.info(f"Clone type: {config['clone_type']}, Load type: {config['load_type']}")
@@ -488,9 +496,13 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         for future in as_completed(futures):
             schema_name = futures[future]
             try:
+                if pm:
+                    pm.run_on_table_start(schema_name, config, client, warehouse_id)
                 result = future.result()
                 all_results.append(result)
                 progress.schema_done(result)
+                if pm:
+                    pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
                 if dashboard:
                     dashboard.schema_completed(schema_name, result)
             except Exception as e:
@@ -498,6 +510,8 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 error_result = {"schema": schema_name, "error": str(e)}
                 all_results.append(error_result)
                 progress.schema_done(error_result)
+                if pm:
+                    pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
                 if dashboard:
                     dashboard.schema_completed(schema_name, error_result)
 
@@ -634,6 +648,16 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
             smtp_password=email_config.get("smtp_password"),
             use_tls=email_config.get("use_tls", True),
         )
+
+    # Plugin: on_clone_complete / on_clone_error
+    if pm:
+        try:
+            if summary.get("errors"):
+                pm.run_on_clone_error(config, RuntimeError("; ".join(summary["errors"])), client, warehouse_id)
+            else:
+                pm.run_on_clone_complete(config, summary, client, warehouse_id)
+        except Exception as e:
+            logger.warning(f"Plugin post-clone hook failed: {e}")
 
     if rollback_log:
         logger.info(f"Rollback log saved: {rollback_log}")

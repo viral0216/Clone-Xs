@@ -1,9 +1,7 @@
 """Slack bot mode — trigger and monitor clone operations from Slack."""
 
-import json
 import logging
 import os
-import re
 import sys
 import threading
 

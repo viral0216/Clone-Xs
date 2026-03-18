@@ -159,7 +159,6 @@ def save_operation_metrics(
         return
 
     table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
-    import uuid
 
     started = job.get("started_at", "")
     completed = job.get("completed_at", "")

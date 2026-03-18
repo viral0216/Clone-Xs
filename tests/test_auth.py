@@ -1,7 +1,6 @@
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import os
 import json
-import pytest
 
 from src.auth import (
     _cache_key,

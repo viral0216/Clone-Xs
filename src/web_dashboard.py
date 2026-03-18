@@ -1,11 +1,8 @@
 """Web dashboard for the catalog clone utility using Streamlit."""
 
-import json
 import logging
 import os
 import sys
-import threading
-from io import StringIO
 
 logger = logging.getLogger(__name__)
 

@@ -1,11 +1,12 @@
 import logging
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 from dotenv import load_dotenv
+
+from src.metadata_cache import MISSING as _MISSING, metadata_cache as _cache
 
 load_dotenv()
 
@@ -219,10 +220,15 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
 
 def list_schemas_sdk(client: WorkspaceClient, catalog: str, exclude: list[str] | None = None) -> list[str]:
     """List schema names in a catalog using the SDK (no SQL warehouse needed)."""
+    key = ("schemas", catalog, frozenset(exclude or []))
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
         schemas = [s.name for s in client.schemas.list(catalog_name=catalog) if s.name]
         if exclude:
             schemas = [s for s in schemas if s not in exclude]
+        _cache.put(key, schemas)
         return schemas
     except Exception as e:
         logger.warning(f"SDK schemas.list failed for {catalog}: {e}")
@@ -234,8 +240,12 @@ def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[
 
     Returns list of dicts with: table_name, table_type, data_source_format.
     """
+    key = ("tables", catalog, schema)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
-        return [
+        result = [
             {
                 "table_name": t.name,
                 "table_type": t.table_type.value if t.table_type else "UNKNOWN",
@@ -244,6 +254,8 @@ def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[
             for t in client.tables.list(catalog_name=catalog, schema_name=schema)
             if t.name
         ]
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK tables.list failed for {catalog}.{schema}: {e}")
         return []
@@ -254,8 +266,12 @@ def list_views_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[d
 
     Returns list of dicts with: table_name, view_definition.
     """
+    key = ("views", catalog, schema)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
-        return [
+        result = [
             {
                 "table_name": t.name,
                 "view_definition": getattr(t, "view_text", "") or getattr(t, "view_definition", "") or "",
@@ -263,6 +279,8 @@ def list_views_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[d
             for t in client.tables.list(catalog_name=catalog, schema_name=schema)
             if t.name and t.table_type and t.table_type.value == "VIEW"
         ]
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK views list failed for {catalog}.{schema}: {e}")
         return []
@@ -273,8 +291,12 @@ def list_functions_sdk(client: WorkspaceClient, catalog: str, schema: str) -> li
 
     Returns list of dicts with: function_name, full_name, data_type.
     """
+    key = ("functions", catalog, schema)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
-        return [
+        result = [
             {
                 "function_name": f.name,
                 "full_name": f.full_name or f"{catalog}.{schema}.{f.name}",
@@ -283,6 +305,8 @@ def list_functions_sdk(client: WorkspaceClient, catalog: str, schema: str) -> li
             for f in client.functions.list(catalog_name=catalog, schema_name=schema)
             if f.name
         ]
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK functions.list failed for {catalog}.{schema}: {e}")
         return []
@@ -293,8 +317,12 @@ def list_volumes_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list
 
     Returns list of dicts with: volume_name, volume_type, storage_location.
     """
+    key = ("volumes", catalog, schema)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
-        return [
+        result = [
             {
                 "volume_name": v.name,
                 "volume_type": getattr(v, "volume_type", None),
@@ -303,6 +331,8 @@ def list_volumes_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list
             for v in client.volumes.list(catalog_name=catalog, schema_name=schema)
             if v.name
         ]
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK volumes.list failed for {catalog}.{schema}: {e}")
         return []
@@ -313,6 +343,10 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
 
     Returns dict with: name, table_type, columns, storage_location, data_source_format, etc.
     """
+    key = ("table_info", full_name)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
         t = client.tables.get(full_name)
         columns = []
@@ -324,7 +358,7 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
                     "comment": getattr(c, "comment", ""),
                     "nullable": getattr(c, "nullable", True),
                 })
-        return {
+        result = {
             "name": t.name,
             "full_name": t.full_name,
             "table_type": t.table_type.value if t.table_type else "UNKNOWN",
@@ -337,6 +371,8 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
             "created_at": str(getattr(t, "created_at", "")),
             "updated_at": str(getattr(t, "updated_at", "")),
         }
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK tables.get failed for {full_name}: {e}")
         return None
@@ -344,15 +380,21 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
 
 def get_catalog_info_sdk(client: WorkspaceClient, catalog: str) -> dict | None:
     """Get catalog metadata using the SDK (no SQL warehouse needed)."""
+    key = ("catalog_info", catalog)
+    cached = _cache.get(key)
+    if cached is not _MISSING:
+        return cached
     try:
         c = client.catalogs.get(catalog)
-        return {
+        result = {
             "name": c.name,
             "owner": getattr(c, "owner", ""),
             "comment": getattr(c, "comment", ""),
             "storage_root": getattr(c, "storage_root", None) or getattr(c, "storage_location", None) or "",
             "properties": dict(c.properties) if c.properties else {},
         }
+        _cache.put(key, result)
+        return result
     except Exception as e:
         logger.warning(f"SDK catalogs.get failed for {catalog}: {e}")
         return None
@@ -366,6 +408,21 @@ def delete_table_sdk(client: WorkspaceClient, full_name: str) -> bool:
     except Exception as e:
         logger.warning(f"SDK tables.delete failed for {full_name}: {e}")
         return False
+
+
+def invalidate_catalog_cache(catalog: str) -> int:
+    """Invalidate all cached metadata for a specific catalog."""
+    return _cache.invalidate_catalog(catalog)
+
+
+def clear_metadata_cache() -> None:
+    """Clear all cached metadata."""
+    _cache.clear()
+
+
+def get_metadata_cache_stats() -> dict:
+    """Return cache statistics."""
+    return _cache.stats()
 
 
 def set_max_parallel_queries(n: int) -> None:

@@ -301,6 +301,17 @@ class JobManager:
             src_logger.removeHandler(log_handler)
             self._executor_semaphore.release()
 
+            # Invalidate metadata cache for catalogs modified by this job
+            if job_type in ("clone", "sync", "incremental_sync"):
+                try:
+                    from src.client import invalidate_catalog_cache
+                    for cat_key in ("source_catalog", "destination_catalog"):
+                        cat = config.get(cat_key, "")
+                        if cat:
+                            invalidate_catalog_cache(cat)
+                except Exception:
+                    pass
+
             # Persist run logs to Unity Catalog Delta table
             try:
                 from src.run_logs import save_run_log, ensure_run_logs_table

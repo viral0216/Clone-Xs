@@ -155,6 +155,8 @@ export default function PiiPage() {
   const [tagging, setTagging] = useState(false);
   const [tagResult, setTagResult] = useState<any>(null);
   const [readUcTags, setReadUcTags] = useState(false);
+  const [schemaFilter, setSchemaFilter] = useState("");
+  const [tableFilter, setTableFilter] = useState("");
 
   const data = job?.data as any;
   const summary = data?.summary;
@@ -173,12 +175,15 @@ export default function PiiPage() {
   const handleScan = () => {
     setFilterType("all");
     setTagResult(null);
+    const schemaList = schemaFilter.trim() ? schemaFilter.split(/[,\s]+/).filter(Boolean) : null;
     run({ sourceCatalog }, () =>
       api.post("/pii-scan", {
         source_catalog: sourceCatalog,
         no_exit_code: true,
         pii_config: piiConfig,
         read_uc_tags: readUcTags,
+        schema_filter: schemaList,
+        table_filter: tableFilter.trim() || null,
       })
     );
   };
@@ -248,6 +253,28 @@ export default function PiiPage() {
                 <input type="checkbox" checked={readUcTags} onChange={(e) => setReadUcTags(e.target.checked)} className="rounded" />
                 UC Tags
               </label>
+            </div>
+          </div>
+          <div className="flex gap-4 mt-3">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground mb-1 block">Schema filter <span className="text-muted-foreground/60">(comma-separated, optional)</span></label>
+              <input
+                type="text"
+                value={schemaFilter}
+                onChange={(e) => setSchemaFilter(e.target.value)}
+                placeholder="e.g. bronze, silver"
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground mb-1 block">Table filter <span className="text-muted-foreground/60">(regex, optional)</span></label>
+              <input
+                type="text"
+                value={tableFilter}
+                onChange={(e) => setTableFilter(e.target.value)}
+                placeholder="e.g. customer|user"
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
             </div>
           </div>
           <div className="mt-3">

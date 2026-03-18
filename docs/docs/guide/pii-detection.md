@@ -49,6 +49,9 @@ The PII scanner operates in multiple detection phases to maximize coverage and m
 # Basic scan (column name detection only)
 clxs pii-scan --source production
 
+# Using the --catalog alias (equivalent to --source)
+clxs pii-scan --catalog production
+
 # Full scan with data sampling and UC tag reading
 clxs pii-scan --source production --sample-data --read-uc-tags
 
@@ -57,6 +60,15 @@ clxs pii-scan --source production --sample-data --save-history
 
 # Scan and auto-tag detected PII columns in Unity Catalog
 clxs pii-scan --source production --apply-tags --tag-prefix pii
+
+# Filter to specific schemas
+clxs pii-scan --catalog production --schema-filter bronze
+
+# Filter tables by regex pattern
+clxs pii-scan --catalog production --table-filter "customer.*"
+
+# Combine schema and table filters
+clxs pii-scan --catalog edp_dev --schema-filter bronze --table-filter "orders|transactions"
 ```
 
 ### Web UI
@@ -504,12 +516,14 @@ clxs pii-scan [OPTIONS]
 
 | Flag | Description | Default |
 |---|---|---|
-| `--source` | Source catalog name | from config |
+| `--source`, `--catalog` | Source catalog name | from config |
 | `--sample-data` | Enable data value sampling | off |
 | `--read-uc-tags` | Read UC column tags for detection | off |
 | `--save-history` | Save results to Delta tables | off |
 | `--apply-tags` | Apply PII tags to UC columns after scan | off |
 | `--tag-prefix` | Prefix for UC tags | `pii` |
+| `--schema-filter` | Filter to specific schemas | — |
+| `--table-filter` | Regex filter on table names | — |
 | `--no-exit-code` | Don't exit with code 1 if PII found | off |
 | `--config` | Path to config file | `config/clone_config.yaml` |
 | `--profile` | Config profile to use | — |

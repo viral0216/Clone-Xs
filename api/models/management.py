@@ -25,6 +25,8 @@ class PIIScanRequest(BaseModel):
     pii_config: dict | None = None
     read_uc_tags: bool = False
     save_history: bool = False
+    schema_filter: list[str] | None = None
+    table_filter: str | None = None
 
 
 class PIITagRequest(BaseModel):
@@ -53,3 +55,20 @@ class SyncRequest(BaseModel):
     exclude_schemas: list[str] = ["information_schema", "default"]
     dry_run: bool = False
     drop_extra: bool = False
+
+
+class ScheduleRequest(BaseModel):
+    name: str
+    source_catalog: str
+    destination_catalog: str
+    cron: str
+    template: str | None = None
+    clone_type: str = "DEEP"
+
+
+class RbacPolicyRequest(BaseModel):
+    principals: list[str]
+    allowed_sources: list[str] = [".*"]
+    allowed_destinations: list[str] = [".*"]
+    allowed_operations: list[str] = ["*"]
+    deny: bool = False

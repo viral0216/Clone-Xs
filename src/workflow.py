@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 
 import yaml
 
@@ -153,6 +152,6 @@ def generate_workflow_yaml(
         yaml.dump(bundle, f, default_flow_style=False, sort_keys=False)
 
     logger.info(f"Databricks Asset Bundle YAML saved: {output_path}")
-    logger.info(f"Deploy with: databricks bundle deploy")
+    logger.info("Deploy with: databricks bundle deploy")
 
     return output_path

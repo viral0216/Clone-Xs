@@ -6,7 +6,6 @@ from datetime import datetime
 from databricks.sdk import WorkspaceClient
 
 from src.client import (
-    execute_sql,
     list_schemas_sdk,
     list_tables_sdk,
     list_views_sdk,

@@ -73,6 +73,19 @@ def save_sync_version(
         json.dump(state, f, indent=2)
 
 
+def enforce_rbac_for_sync(client, source_catalog: str, dest_catalog: str, config: dict | None = None) -> None:
+    """Enforce RBAC for incremental sync operations."""
+    rbac_config = config or {}
+    if not rbac_config.get("rbac_enabled"):
+        return
+    from src.rbac import enforce_rbac
+    enforce_rbac(client, {
+        "source_catalog": source_catalog,
+        "destination_catalog": dest_catalog,
+        "rbac_policy_path": rbac_config.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
+    }, operation="sync")
+
+
 def get_tables_needing_sync(
     client: WorkspaceClient,
     warehouse_id: str,

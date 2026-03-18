@@ -208,7 +208,7 @@ def _prompt_hooks(phase: str) -> list[dict]:
         sql = _prompt(f"    {phase} SQL", default="")
         if not sql:
             break
-        desc = _prompt(f"    Description", default=f"{phase} hook {len(hooks) + 1}")
+        desc = _prompt("    Description", default=f"{phase} hook {len(hooks) + 1}")
         on_error = _prompt_choice("    On error", choices=["warn", "fail", "ignore"], default="warn")
         hooks.append({"sql": sql, "description": desc, "on_error": on_error})
     return hooks

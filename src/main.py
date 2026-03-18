@@ -152,8 +152,8 @@ def _resolve_warehouse_id(args, config: dict, client=None) -> str:
     warehouses = list_warehouses(client)
 
     # Build options: serverless + warehouses
-    print(f"\n  Compute options:")
-    print(f"    1. Serverless compute (no SQL warehouse needed)")
+    print("\n  Compute options:")
+    print("    1. Serverless compute (no SQL warehouse needed)")
     for i, wh in enumerate(warehouses, 2):
         state_icon = "*" if wh["state"] == "RUNNING" else " "
         print(f"    {i}. {wh['name']:<30} {wh['size']:<12} {wh['state']:<10} {wh['type']}{state_icon}")
@@ -529,14 +529,14 @@ def cmd_create_job(args):
     if result.get("schedule"):
         print(f"  Schedule: {result['schedule']}")
     if getattr(args, "run_now", False) and result.get("job_id"):
-        print(f"\n  Running job now...")
+        print("\n  Running job now...")
         try:
             run = client.jobs.run_now(result["job_id"])
             print(f"  Run started! Run ID: {run.run_id}")
         except Exception as e:
             print(f"  Failed to start run: {e}")
     else:
-        print(f"\n  Run or schedule this job from the Databricks Jobs UI.")
+        print("\n  Run or schedule this job from the Databricks Jobs UI.")
 
 
 def cmd_compare(args):
@@ -645,6 +645,7 @@ def cmd_schema_drift(args):
         client, config["sql_warehouse_id"],
         config["source_catalog"], config["destination_catalog"],
         config["exclude_schemas"],
+        include_schemas=config.get("include_schemas"),
     )
     _save_cli_run_log(client, config, "schema-drift", summary, start_time)
 
@@ -785,6 +786,7 @@ def cmd_storage_metrics(args):
         config["exclude_schemas"],
         schema_filter=args.schema,
         table_filter=args.table,
+        include_schemas=config.get("include_schemas"),
     )
 
 
@@ -879,6 +881,7 @@ def cmd_profile(args):
         client, config["sql_warehouse_id"], config["source_catalog"],
         config["exclude_schemas"], config["max_workers"],
         output_path=args.output,
+        include_schemas=config.get("include_schemas"),
     )
     _save_cli_run_log(client, config, "profile", result or {}, start_time)
 
@@ -1106,25 +1109,29 @@ def cmd_pii_scan(args):
         config["source_catalog"] = args.source
     _resolve_warehouse_id(args, config)
 
+    # Schema filtering: if --schema-filter given, exclude everything else
+    exclude_schemas = config.get("exclude_schemas", [])
     client = _get_auth_client(args)
     start_time = time.time()
     result = scan_catalog_for_pii(
         client, config["sql_warehouse_id"], config["source_catalog"],
-        config.get("exclude_schemas", []),
+        exclude_schemas,
         sample_data=args.sample_data, max_workers=config.get("max_workers", 4),
         pii_config=config.get("pii_detection"),
-        read_uc_tags=getattr(args, "read_uc_tags", False),
-        save_history=getattr(args, "save_history", False),
+        read_uc_tags=args.read_uc_tags,
+        save_history=args.save_history,
+        schema_filter=args.schema_filter,
+        table_filter=args.table_filter,
     )
     _save_cli_run_log(client, config, "pii-scan", result, start_time)
 
     # Apply UC tags if requested
-    if getattr(args, "apply_tags", False):
+    if args.apply_tags:
         from src.pii_tagging import apply_pii_tags
         tag_result = apply_pii_tags(
             client, config["sql_warehouse_id"], config["source_catalog"],
             result.get("columns", []),
-            tag_prefix=getattr(args, "tag_prefix", "pii"),
+            tag_prefix=args.tag_prefix,
             min_confidence=0.7,
         )
         logger.info(
@@ -1258,7 +1265,7 @@ def cmd_incremental_sync(args):
 
 def cmd_sample(args):
     """Execute the sample command."""
-    from src.sampling import sample_table, compare_samples, preview_table
+    from src.sampling import compare_samples, preview_table
 
     logger = logging.getLogger(__name__)
     try:
@@ -1405,9 +1412,9 @@ def cmd_run_sql(args):
     from src.client import execute_sql as _execute_sql
     logger = logging.getLogger(__name__)
     client = _get_auth_client(args)
-    warehouse_id = args.warehouse_id
-    if not warehouse_id:
-        warehouse_id = select_warehouse(client)
+    config = {"sql_warehouse_id": args.warehouse_id or ""}
+    _resolve_warehouse_id(args, config, client)
+    warehouse_id = config["sql_warehouse_id"]
     try:
         rows = _execute_sql(client, warehouse_id, args.sql)
         if rows:
@@ -1457,6 +1464,10 @@ def cmd_state(args):
         logger.error(f"Config error: {e}")
         sys.exit(1)
 
+    if args.source:
+        config["source_catalog"] = args.source
+    if args.dest:
+        config["destination_catalog"] = args.dest
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
@@ -1529,7 +1540,7 @@ def cmd_auth(args):
     # Default: verify and show current auth status
     try:
         info = ensure_authenticated(host, token, auth_profile)
-        print(f"  Status:      Authenticated")
+        print("  Status:      Authenticated")
         print(f"  User:        {info['user']}")
         print(f"  Host:        {info['host']}")
         print(f"  Auth method: {info['auth_method']}")
@@ -1579,7 +1590,7 @@ def cmd_plan(args):
     if capture_sql:
         statements = plan.get("sql_statements", [])
         with open(capture_sql, "w") as f:
-            f.write(f"-- Clone-Xs Execution Plan\n")
+            f.write("-- Clone-Xs Execution Plan\n")
             f.write(f"-- Source: {config.get('source_catalog')} -> Destination: {config.get('destination_catalog')}\n")
             f.write(f"-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"-- Total statements: {len(statements)}\n\n")
@@ -1628,12 +1639,12 @@ def cmd_usage_analysis(args):
     client = _get_auth_client(args)
     _resolve_warehouse_id(args, config, client)
 
-    days = getattr(args, "days", 90)
-    unused_days = getattr(args, "unused_days", 30)
+    days = args.days
+    unused_days = args.unused_days
     source = config["source_catalog"]
     warehouse_id = config["sql_warehouse_id"]
 
-    if getattr(args, "recommend", False):
+    if args.recommend:
         skip = recommend_skip_tables(client, warehouse_id, source,
                                      config["exclude_schemas"], days, unused_days)
         print(f"\nRecommended tables to skip ({len(skip)}):")
@@ -1644,9 +1655,8 @@ def cmd_usage_analysis(args):
         analysis = analyze_usage(access_data, unused_days)
         print(format_usage_report(analysis))
 
-        output = getattr(args, "output", None)
-        if output:
-            export_usage_json(analysis, output)
+        if args.output:
+            export_usage_json(analysis, args.output)
 
 
 def cmd_preview(args):
@@ -1671,10 +1681,10 @@ def cmd_preview(args):
     source = config["source_catalog"]
     dest = config["destination_catalog"]
     warehouse_id = config["sql_warehouse_id"]
-    limit = getattr(args, "limit", 10)
-    order_by = getattr(args, "order_by", None)
+    limit = args.limit
+    order_by = args.order_by
 
-    table = getattr(args, "table", None)
+    table = args.table
     if table:
         parts = table.split(".")
         if len(parts) == 2:
@@ -1682,7 +1692,7 @@ def cmd_preview(args):
                                             parts[0], parts[1], limit=limit, order_by=order_by)
             print(format_side_by_side(comparison))
     elif getattr(args, "all", False):
-        max_tables = getattr(args, "max_tables", 20)
+        max_tables = args.max_tables
         results = preview_catalog(client, warehouse_id, source, dest,
                                    config["exclude_schemas"], limit=limit, max_tables=max_tables)
         for r in results:
@@ -1708,16 +1718,20 @@ def cmd_metrics(args):
 
     warehouse_id = config["sql_warehouse_id"]
     table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
-    limit = getattr(args, "limit", 50)
-    source_filter = getattr(args, "source", None)
+    limit = args.limit
+    source_filter = args.source
 
-    if getattr(args, "init", False):
+    if args.init:
         from src.metrics import save_metrics_delta
         save_metrics_delta(client, warehouse_id, {}, table_fqn)
         print(f"Metrics table initialized: {table_fqn}")
     else:
         history = query_metrics_history(client, warehouse_id, table_fqn, source_filter, limit)
-        print(format_metrics_report(history))
+        if args.format == "json":
+            import json
+            print(json.dumps(history, indent=2, default=str))
+        else:
+            print(format_metrics_report(history))
 
 
 def cmd_history(args):
@@ -1738,8 +1752,8 @@ def cmd_history(args):
 
     action = args.action
     if action == "list":
-        ops = history.list_operations(limit=getattr(args, "limit", 20),
-                                       source_catalog=getattr(args, "source", None))
+        ops = history.list_operations(limit=args.limit,
+                                       source_catalog=args.source)
         print(history.format_log(ops))
     elif action == "show":
         if not args.ids:
@@ -1761,7 +1775,7 @@ def cmd_history(args):
 
 def cmd_ttl(args):
     """Execute the TTL management command."""
-    from src.ttl_manager import TTLManager, parse_ttl_string, format_ttl_report
+    from src.ttl_manager import TTLManager, format_ttl_report
 
     logger = logging.getLogger(__name__)
     try:
@@ -1778,33 +1792,26 @@ def cmd_ttl(args):
 
     action = args.action
     if action == "set":
-        days = getattr(args, "days", None)
-        dest = getattr(args, "dest", None)
-        if not dest or not days:
+        if not args.dest or not args.days:
             logger.error("Provide --dest and --days for ttl set")
             sys.exit(1)
-        mgr.set_ttl(dest, days)
+        mgr.set_ttl(args.dest, args.days)
     elif action == "check":
         policies = mgr.list_all()
         print(format_ttl_report(policies))
     elif action == "cleanup":
-        confirm = getattr(args, "confirm", False)
-        dry_run = getattr(args, "dry_run_ttl", True)
-        result = mgr.cleanup_expired(confirm=confirm, dry_run=dry_run)
+        result = mgr.cleanup_expired(confirm=args.confirm, dry_run=args.dry_run_ttl)
         print(f"Cleanup result: {result}")
     elif action == "extend":
-        dest = getattr(args, "dest", None)
-        days = getattr(args, "days", None)
-        if not dest or not days:
+        if not args.dest or not args.days:
             logger.error("Provide --dest and --days for ttl extend")
             sys.exit(1)
-        mgr.extend_ttl(dest, days)
+        mgr.extend_ttl(args.dest, args.days)
     elif action == "remove":
-        dest = getattr(args, "dest", None)
-        if not dest:
+        if not args.dest:
             logger.error("Provide --dest for ttl remove")
             sys.exit(1)
-        mgr.remove_ttl(dest)
+        mgr.remove_ttl(args.dest)
 
 
 def cmd_rbac(args):
@@ -1826,7 +1833,7 @@ def cmd_rbac(args):
         print_policy(policy)
     elif action == "check":
         client = _get_auth_client(args)
-        user = getattr(args, "user", None) or get_current_user(client)
+        user = args.user or get_current_user(client)
         print_user_permissions(policy, user)
 
 
@@ -1893,6 +1900,7 @@ def cmd_impact(args):
     client = _get_auth_client(args)
     _resolve_warehouse_id(args, config, client)
 
+    config["impact_high_threshold"] = args.threshold
     impact = analyze_impact(client, config["sql_warehouse_id"], catalog, config)
     print_impact_report(impact)
 
@@ -1924,7 +1932,7 @@ def cmd_compliance_report(args):
 
 def cmd_plugin(args):
     """Execute the plugin management command."""
-    from src.plugin_registry import PluginRegistry, format_plugin_list
+    from src.plugin_registry import PluginRegistry, format_plugin_list, list_plugins, toggle_plugin
 
     logger = logging.getLogger(__name__)
 
@@ -1943,9 +1951,26 @@ def cmd_plugin(args):
         if getattr(args, "available", False):
             plugins = registry.list_available()
             print(format_plugin_list(plugins, "Available Plugins"))
-        else:
+        elif getattr(args, "installed", False):
             plugins = registry.list_installed()
             print(format_plugin_list(plugins, "Installed Plugins"))
+        else:
+            plugins = list_plugins()
+            for p in plugins:
+                status = "enabled" if p["enabled"] else "disabled"
+                print(f"  {p['id']:30s} {p['version']:10s} [{p['type']:10s}] {status:10s} {p['description']}")
+    elif action == "enable":
+        if not args.name:
+            logger.error("Provide a plugin name to enable")
+            sys.exit(1)
+        result = toggle_plugin(args.name, enabled=True)
+        print(f"Plugin '{args.name}' enabled.")
+    elif action == "disable":
+        if not args.name:
+            logger.error("Provide a plugin name to disable")
+            sys.exit(1)
+        result = toggle_plugin(args.name, enabled=False)
+        print(f"Plugin '{args.name}' disabled.")
     elif action == "install":
         if not args.name:
             logger.error("Provide a plugin name to install")
@@ -2122,7 +2147,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- estimate command ---
     est_parser = subparsers.add_parser("estimate", help="Estimate storage cost for a deep clone")
     add_common_args(est_parser)
-    est_parser.add_argument("--source", help="Override source catalog name")
+    est_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     est_parser.add_argument("--price-per-gb", type=float, default=0.023, help="Storage price $/GB/month")
     est_parser.set_defaults(func=cmd_estimate)
 
@@ -2165,7 +2190,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- snapshot command ---
     snap_parser = subparsers.add_parser("snapshot", help="Export catalog metadata to a JSON manifest")
     add_common_args(snap_parser)
-    snap_parser.add_argument("--source", help="Override source catalog name")
+    snap_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     snap_parser.add_argument("--output", help="Output file path")
     snap_parser.set_defaults(func=cmd_snapshot)
 
@@ -2200,7 +2225,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- search command ---
     search_parser = subparsers.add_parser("search", help="Search for tables and columns by pattern")
     add_common_args(search_parser)
-    search_parser.add_argument("--source", help="Override source catalog name")
+    search_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     search_parser.add_argument("--pattern", required=True, help="Regex pattern to search for")
     search_parser.add_argument("--columns", action="store_true", help="Also search column names")
     search_parser.set_defaults(func=cmd_search)
@@ -2208,7 +2233,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- stats command ---
     stats_parser = subparsers.add_parser("stats", help="Show catalog statistics (sizes, row counts)")
     add_common_args(stats_parser)
-    stats_parser.add_argument("--source", help="Override source catalog name")
+    stats_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     stats_parser.set_defaults(func=cmd_stats)
 
     # --- storage-metrics command ---
@@ -2217,7 +2242,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Analyze storage metrics (active, vacuumable, time-travel) for all tables",
     )
     add_common_args(sm_parser)
-    sm_parser.add_argument("--source", help="Override source catalog name")
+    sm_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     sm_parser.add_argument("--schema", help="Filter to a specific schema")
     sm_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     sm_parser.set_defaults(func=cmd_storage_metrics)
@@ -2225,7 +2250,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- optimize command ---
     opt_parser = subparsers.add_parser("optimize", help="Run OPTIMIZE on tables to compact small files")
     add_common_args(opt_parser)
-    opt_parser.add_argument("--source", help="Override source catalog name")
+    opt_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     opt_parser.add_argument("--schema", help="Filter to a specific schema")
     opt_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     opt_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
@@ -2234,7 +2259,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- vacuum command ---
     vac_parser = subparsers.add_parser("vacuum", help="Run VACUUM on tables to reclaim storage from old files")
     add_common_args(vac_parser)
-    vac_parser.add_argument("--source", help="Override source catalog name")
+    vac_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     vac_parser.add_argument("--schema", help="Filter to a specific schema")
     vac_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     vac_parser.add_argument("--retention-hours", type=int, default=168, help="Data retention in hours (default: 168 = 7 days)")
@@ -2244,7 +2269,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- profile command ---
     prof_parser = subparsers.add_parser("profile", help="Profile table data quality (nulls, distinct, min/max)")
     add_common_args(prof_parser)
-    prof_parser.add_argument("--source", help="Override source catalog name")
+    prof_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     prof_parser.add_argument("--output", help="Save profile results to JSON file")
     prof_parser.set_defaults(func=cmd_profile)
 
@@ -2263,7 +2288,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- export command ---
     exp_parser = subparsers.add_parser("export", help="Export catalog metadata to CSV or JSON")
     add_common_args(exp_parser)
-    exp_parser.add_argument("--source", help="Override source catalog name")
+    exp_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     exp_parser.add_argument("--format", choices=["csv", "json"], default="csv", help="Export format")
     exp_parser.add_argument("--output", help="Output file path")
     exp_parser.set_defaults(func=cmd_export)
@@ -2309,7 +2334,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- cost-estimate command ---
     ce_parser = subparsers.add_parser("cost-estimate", help="Estimate clone cost (storage + compute)")
     add_common_args(ce_parser)
-    ce_parser.add_argument("--source", help="Override source catalog name")
+    ce_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     ce_parser.add_argument("--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type for estimate")
     ce_parser.add_argument("--warehouse-type", choices=["serverless", "classic"], default="serverless", help="Warehouse type")
     ce_parser.set_defaults(func=cmd_cost_estimate)
@@ -2335,7 +2360,9 @@ def build_parser() -> argparse.ArgumentParser:
     # --- pii-scan command ---
     pii_parser = subparsers.add_parser("pii-scan", help="Scan catalog for PII columns")
     add_common_args(pii_parser)
-    pii_parser.add_argument("--source", help="Override source catalog name")
+    pii_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    pii_parser.add_argument("--schema-filter", nargs="+", help="Only scan these schemas (e.g. --schema-filter bronze silver)")
+    pii_parser.add_argument("--table-filter", help="Regex to filter table names (e.g. 'customer|user')")
     pii_parser.add_argument("--sample-data", action="store_true", help="Sample actual data values (slower)")
     pii_parser.add_argument("--no-exit-code", action="store_true", help="Don't exit with error if PII found")
     pii_parser.add_argument("--read-uc-tags", action="store_true", help="Read UC column tags to enhance detection")
@@ -2362,7 +2389,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- dep-graph command ---
     dg_parser = subparsers.add_parser("dep-graph", help="Build and display table/view dependency graph")
     add_common_args(dg_parser)
-    dg_parser.add_argument("--source", help="Override source catalog name")
+    dg_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     dg_parser.add_argument("--output", help="Export graph to JSON file")
     dg_parser.set_defaults(func=cmd_dep_graph)
 
@@ -2399,6 +2426,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(st_parser)
     st_parser.add_argument("action", choices=["init", "summary", "stale", "failed", "mark-stale", "operations"],
                            help="State store action")
+    st_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog")
+    st_parser.add_argument("--dest", help="Override destination catalog")
     st_parser.add_argument("--limit", type=int, default=20, help="Max results for operations")
     st_parser.set_defaults(func=cmd_state)
 
@@ -2437,7 +2466,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- usage-analysis command ---
     ua_parser = subparsers.add_parser("usage-analysis", help="Analyze table access patterns")
     add_common_args(ua_parser)
-    ua_parser.add_argument("--source", help="Override source catalog name")
+    ua_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     ua_parser.add_argument("--days", type=int, default=90, help="Lookback period in days")
     ua_parser.add_argument("--unused-days", type=int, default=30, help="Threshold for unused tables")
     ua_parser.add_argument("--recommend", action="store_true", help="Show skip recommendations")
@@ -2520,8 +2549,8 @@ def build_parser() -> argparse.ArgumentParser:
     comp_parser.set_defaults(func=cmd_compliance_report)
 
     # --- plugin command ---
-    plug_parser = subparsers.add_parser("plugin", help="Plugin marketplace (install, list, remove)")
-    plug_parser.add_argument("action", choices=["list", "install", "remove", "info", "update"])
+    plug_parser = subparsers.add_parser("plugin", help="Plugin marketplace (install, list, remove, enable, disable)")
+    plug_parser.add_argument("action", choices=["list", "install", "remove", "info", "update", "enable", "disable"])
     plug_parser.add_argument("name", nargs="?", help="Plugin name")
     plug_parser.add_argument("--available", action="store_true", help="Show available plugins")
     plug_parser.add_argument("--installed", action="store_true", help="Show installed plugins")
@@ -2563,7 +2592,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- sample command ---
     samp_parser = subparsers.add_parser("sample", help="Preview or compare table data samples")
     add_common_args(samp_parser)
-    samp_parser.add_argument("--source", help="Source catalog")
+    samp_parser.add_argument("--source", "--catalog", dest="source", help="Source catalog")
     samp_parser.add_argument("--dest", help="Destination catalog (enables compare mode)")
     samp_parser.add_argument("--schema", required=True, help="Schema name")
     samp_parser.add_argument("--table", required=True, help="Table name")
@@ -2573,7 +2602,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- view-deps command ---
     vd_parser = subparsers.add_parser("view-deps", help="Analyze view/function dependencies and creation order")
     add_common_args(vd_parser)
-    vd_parser.add_argument("--source", help="Override source catalog name")
+    vd_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
     vd_parser.add_argument("--schema", required=True, help="Schema to analyze")
     vd_parser.add_argument("--output", help="Export dependency graph to JSON file")
     vd_parser.set_defaults(func=cmd_view_deps)

@@ -8,7 +8,9 @@ from api.models.management import (
     PIIScanRequest,
     PIITagRequest,
     PreflightRequest,
+    RbacPolicyRequest,
     RollbackRequest,
+    ScheduleRequest,
     SyncRequest,
 )
 from api.queue.job_manager import JobManager
@@ -77,6 +79,8 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         read_uc_tags=req.read_uc_tags,
         save_history=True,
         state_catalog=state_catalog,
+        schema_filter=req.schema_filter,
+        table_filter=req.table_filter,
     )
     return result
 
@@ -692,13 +696,47 @@ async def list_schedules():
 
 
 @router.post("/schedule")
-async def create_schedule(req: dict):
+async def create_schedule_endpoint(req: dict, client=Depends(get_db_client)):
     """Create a scheduled clone job."""
     try:
         from src.scheduler import create_schedule
-        return create_schedule(req)
+        config = await get_app_config()
+        return create_schedule(
+            name=req.get("name", ""),
+            source_catalog=req.get("source_catalog", ""),
+            destination_catalog=req.get("destination_catalog", ""),
+            cron=req.get("cron", ""),
+            clone_type=req.get("clone_type", "DEEP"),
+            template=req.get("template"),
+            config=config,
+            client=client,
+        )
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.post("/schedule/{schedule_id}/pause")
+async def pause_schedule_endpoint(schedule_id: str):
+    """Pause a scheduled clone job."""
+    from src.scheduler import pause_schedule
+    result = pause_schedule(schedule_id)
+    return result or {"error": "Schedule not found"}
+
+
+@router.post("/schedule/{schedule_id}/resume")
+async def resume_schedule_endpoint(schedule_id: str):
+    """Resume a paused scheduled clone job."""
+    from src.scheduler import resume_schedule
+    result = resume_schedule(schedule_id)
+    return result or {"error": "Schedule not found"}
+
+
+@router.delete("/schedule/{schedule_id}")
+async def delete_schedule_endpoint(schedule_id: str):
+    """Delete a scheduled clone job."""
+    from src.scheduler import delete_schedule
+    deleted = delete_schedule(schedule_id)
+    return {"status": "ok" if deleted else "not_found"}
 
 
 @router.post("/multi-clone")
@@ -1134,11 +1172,21 @@ async def list_rbac_policies():
 
 
 @router.post("/rbac/policies")
-async def create_rbac_policy(req: dict):
+async def create_rbac_policy(req: RbacPolicyRequest):
     """Create an RBAC policy."""
     try:
         from src.rbac import create_policy
-        return create_policy(req)
+        return create_policy(req.model_dump())
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.delete("/rbac/policies/{index}")
+async def delete_rbac_policy(index: int):
+    """Delete an RBAC policy by index."""
+    try:
+        from src.rbac import delete_policy
+        return delete_policy(index)
     except Exception as e:
         return {"error": str(e)}
 
@@ -1154,11 +1202,31 @@ async def list_plugins():
 
 
 @router.post("/plugins/toggle")
-async def toggle_plugin(req: dict):
-    """Enable or disable a plugin."""
+async def toggle_plugin_body(req: dict):
+    """Enable or disable a plugin (body-based)."""
     try:
         from src.plugin_registry import toggle_plugin
         return toggle_plugin(req.get("name", ""), req.get("enabled", True))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/plugins/{plugin_id}/enable")
+async def enable_plugin(plugin_id: str):
+    """Enable a plugin by ID."""
+    try:
+        from src.plugin_registry import toggle_plugin
+        return toggle_plugin(plugin_id, True)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/plugins/{plugin_id}/disable")
+async def disable_plugin(plugin_id: str):
+    """Disable a plugin by ID."""
+    try:
+        from src.plugin_registry import toggle_plugin
+        return toggle_plugin(plugin_id, False)
     except Exception as e:
         return {"error": str(e)}
 
@@ -1384,3 +1452,32 @@ async def get_catalog_health(client=Depends(get_db_client)):
         return {"catalogs": result}
     except Exception:
         return {"catalogs": []}
+
+
+# ── Cache Management ──────────────────────────────────────────────────
+
+@router.get("/cache/stats")
+async def cache_stats():
+    """Return metadata cache hit/miss/size statistics."""
+    from src.client import get_metadata_cache_stats
+    return get_metadata_cache_stats()
+
+
+@router.post("/cache/clear")
+async def cache_clear():
+    """Clear all cached metadata."""
+    from src.client import clear_metadata_cache
+    clear_metadata_cache()
+    return {"status": "cleared"}
+
+
+@router.post("/cache/invalidate")
+async def cache_invalidate(request: Request):
+    """Invalidate cached metadata for a specific catalog."""
+    body = await request.json()
+    catalog = body.get("catalog", "")
+    if not catalog:
+        return {"error": "catalog is required"}
+    from src.client import invalidate_catalog_cache
+    removed = invalidate_catalog_cache(catalog)
+    return {"status": "invalidated", "catalog": catalog, "entries_removed": removed}

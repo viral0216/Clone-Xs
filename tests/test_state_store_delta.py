@@ -1,6 +1,6 @@
 """Tests for the Delta table-based state store module."""
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from src.state_store import StateStore
 

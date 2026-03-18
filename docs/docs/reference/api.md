@@ -1393,3 +1393,78 @@ curl -X POST http://localhost:8080/api/table-usage \
   ]
 }
 ```
+
+---
+
+## Cache Management
+
+Clone-Xs caches Databricks SDK metadata (schemas, tables, views, functions, volumes, table info, catalog info) in a process-local, in-memory cache with a configurable TTL (default: 5 minutes). This eliminates redundant API calls during operations like diff, stats, and validation that query the same metadata repeatedly.
+
+The cache is **automatically invalidated** after clone, sync, and incremental sync jobs complete. You can also manage it manually via these endpoints.
+
+### `GET /api/cache/stats`
+
+Returns cache hit/miss counters and current size.
+
+**Example request:**
+
+```bash
+curl http://localhost:8080/api/cache/stats
+```
+
+**Example response:**
+
+```json
+{
+  "hits": 42,
+  "misses": 15,
+  "size": 15,
+  "ttl_seconds": 300.0
+}
+```
+
+### `POST /api/cache/clear`
+
+Clear all cached metadata entries and reset counters.
+
+**Example request:**
+
+```bash
+curl -X POST http://localhost:8080/api/cache/clear
+```
+
+**Example response:**
+
+```json
+{
+  "status": "cleared"
+}
+```
+
+### `POST /api/cache/invalidate`
+
+Invalidate cached metadata for a specific catalog. Useful after making changes to a catalog outside of Clone-Xs.
+
+**Request body:**
+
+| Field     | Type   | Required | Description  |
+|-----------|--------|----------|--------------|
+| `catalog` | string | Yes      | Catalog name |
+
+**Example request:**
+
+```bash
+curl -X POST http://localhost:8080/api/cache/invalidate \
+  -H "Content-Type: application/json" \
+  -d '{"catalog": "prod"}'
+```
+
+**Example response:**
+
+```json
+{
+  "status": "invalidated",
+  "catalog": "prod",
+  "entries_removed": 8
+}
+```

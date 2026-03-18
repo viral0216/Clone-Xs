@@ -110,21 +110,82 @@ rbac:
       reason: "Contractors cannot access PII catalogs."
 ```
 
-### Integration with clone pipeline
+### Enforced operations
 
-RBAC checks run automatically before every clone operation. If the current principal is not permitted, the clone is blocked:
+RBAC checks run automatically before every `clone`, `sync`, `diff`, and `incremental-sync` operation. If the current principal is not permitted, the operation is blocked:
 
 ```bash
-# RBAC is enforced automatically
+# RBAC is enforced automatically on clone
 clxs clone --source production --dest production_backup
-
-# Output:
 # [RBAC] Denied: Cloning into the production catalog is prohibited.
 # Clone aborted.
+
+# RBAC is also enforced on sync, diff, and incremental-sync
+clxs sync --source production --dest staging
+# [RBAC] Denied: sync operation not allowed for user@company.com
+```
+
+### Operation-level permissions
+
+The `allowed_operations` field controls which operations a principal can perform. Use `"*"` to allow all operations:
+
+```yaml
+rbac:
+  policies:
+    - name: "Analysts - Read Only"
+      principals:
+        - "analysts@company.com"
+      sources:
+        - "production"
+      destinations: []
+      allowed_operations:
+        - "diff"       # Can compare catalogs
+        - "stats"      # Can view statistics
+        - "search"     # Can search metadata
+        # Cannot clone, sync, or incremental-sync
+
+    - name: "Platform Team - Full Access"
+      principals:
+        - "platform-team@company.com"
+      sources: ["*"]
+      destinations: ["*"]
+      allowed_operations:
+        - "*"          # All operations permitted
+```
+
+### API endpoints
+
+Manage RBAC policies programmatically via the REST API:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/rbac/policies` | List all RBAC policies |
+| `POST` | `/rbac/policies` | Create a new RBAC policy |
+| `DELETE` | `/rbac/policies` | Delete an RBAC policy by name |
+
+```bash
+# List all policies
+curl http://localhost:8080/rbac/policies
+
+# Create a policy
+curl -X POST http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Dev Team Access",
+    "principals": ["dev@company.com"],
+    "sources": ["staging"],
+    "destinations": ["dev_*"],
+    "allowed_operations": ["clone", "sync", "diff"]
+  }'
+
+# Delete a policy
+curl -X DELETE http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Dev Team Access"}'
 ```
 
 :::caution
-RBAC enforcement should only be bypassed in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized clones.
+RBAC enforcement should only be bypassed in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized operations.
 :::
 
 ---

@@ -22,6 +22,16 @@ These flags are available on all subcommands:
 | `--verify-auth` | Verify authentication before running |
 | `--login` | Interactive browser login |
 
+## `--catalog` alias
+
+The following single-catalog commands accept `--catalog` as an alias for `--source`:
+
+`stats`, `storage-metrics`, `optimize`, `vacuum`, `profile`, `export`, `search`, `snapshot`, `estimate`, `cost-estimate`, `dep-graph`, `usage-analysis`, `sample`, `view-deps`, `pii-scan`, `state`
+
+For example, `clxs stats --catalog edp_dev` is equivalent to `clxs stats --source edp_dev`.
+
+---
+
 ## Commands
 
 ### `clone`
@@ -159,6 +169,11 @@ Detect schema changes over time.
 clxs schema-drift --source <catalog> [options]
 ```
 
+| Flag | Description |
+|------|-------------|
+| `--source` | Catalog to analyze |
+| `--include-schemas` | Comma-separated list of schemas to include |
+
 ---
 
 ### `stats`
@@ -167,6 +182,7 @@ Catalog statistics and inventory.
 
 ```bash
 clxs stats --source <catalog> [options]
+clxs stats --catalog <catalog> [options]
 ```
 
 ---
@@ -177,6 +193,7 @@ Search catalog metadata.
 
 ```bash
 clxs search --source <catalog> --pattern <regex> [options]
+clxs search --catalog <catalog> --pattern <regex> [options]
 ```
 
 ---
@@ -187,7 +204,13 @@ Column-level data profiling.
 
 ```bash
 clxs profile --source <catalog> [options]
+clxs profile --catalog <catalog> [options]
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--source`, `--catalog` | Catalog to profile |
+| `--include-schemas` | Comma-separated list of schemas to include |
 
 ---
 
@@ -207,6 +230,7 @@ Export metadata to CSV or JSON.
 
 ```bash
 clxs export --source <catalog> --format <csv|json> --output <file> [options]
+clxs export --catalog <catalog> --format <csv|json> --output <file> [options]
 ```
 
 ---
@@ -217,6 +241,7 @@ Point-in-time catalog snapshot.
 
 ```bash
 clxs snapshot --source <catalog> [options]
+clxs snapshot --catalog <catalog> [options]
 ```
 
 ---
@@ -227,6 +252,7 @@ Cost estimation for clone operations.
 
 ```bash
 clxs estimate --source <catalog> [options]
+clxs estimate --catalog <catalog> [options]
 ```
 
 ---
@@ -351,11 +377,12 @@ Analyze table access patterns to find unused tables.
 
 ```bash
 clxs usage-analysis --source <catalog> [options]
+clxs usage-analysis --catalog <catalog> [options]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Catalog to analyze |
+| `--source`, `--catalog` | Catalog to analyze |
 | `--days` | Lookback period in days (default: 90) |
 | `--unused-days` | Threshold for "unused" (default: 30) |
 | `--recommend` | Show tables recommended to skip |
@@ -396,7 +423,7 @@ clxs metrics [options]
 | `--init` | Create the metrics Delta table |
 | `--source` | Filter by source catalog |
 | `--limit` | Max results (default: 50) |
-| `--format` | Output: `console` or `json` |
+| `--format` | Output: `console` or `json` (JSON outputs machine-readable format) |
 
 ---
 
@@ -486,7 +513,7 @@ clxs impact --source <catalog> [options]
 |------|-------------|
 | `--source` | Catalog to analyze |
 | `--dest` | Destination catalog |
-| `--threshold` | High-impact threshold (default: 10) |
+| `--threshold` | Number of downstream dependents to qualify as high-impact (default: 10) |
 
 ---
 
@@ -509,20 +536,34 @@ clxs compliance-report [options]
 
 ### `plugin`
 
-Plugin marketplace management.
+Manage Clone-Xs plugins: list registered plugins, enable or disable them.
 
 ```bash
-clxs plugin <list|install|remove|info|update> [name]
+clxs plugin <list|enable|disable> [name]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `list` | List plugins |
-| `install <name>` | Install a plugin |
-| `remove <name>` | Remove a plugin |
-| `info <name>` | Show plugin details |
-| `--available` | Show registry plugins |
-| `--installed` | Show installed plugins |
+| `list` | List all registered plugins and their enabled/disabled status |
+| `enable <name>` | Enable a plugin by name |
+| `disable <name>` | Disable a plugin by name |
+
+**Examples:**
+
+```bash
+# List all plugins
+clxs plugin list
+
+# Enable the optimize plugin
+clxs plugin enable optimize
+
+# Disable the slack-notify plugin
+clxs plugin disable slack-notify
+```
+
+Plugins are loaded from paths specified in your config file under `plugins`. State is persisted to `~/.clone-xs/plugin_state.json`.
+
+See the [Plugins Guide](/docs/guide/plugins) for writing custom plugins.
 
 ---
 
@@ -587,7 +628,7 @@ clxs sample --schema S --table T [options]
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Source catalog |
+| `--source`, `--catalog` | Source catalog |
 | `--dest` | Destination catalog (enables compare mode) |
 | `--schema` | Schema name (required) |
 | `--table` | Table name (required) |
@@ -605,7 +646,7 @@ clxs view-deps --schema S [options]
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Catalog name |
+| `--source`, `--catalog` | Catalog name |
 | `--schema` | Schema to analyze (required) |
 | `--output` | Export dependency graph to JSON |
 
@@ -633,14 +674,16 @@ Analyze per-table storage breakdown using `ANALYZE TABLE ... COMPUTE STORAGE MET
 
 ```bash
 clxs storage-metrics --source <catalog> [options]
+clxs storage-metrics --catalog <catalog> [options]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Catalog to analyze |
+| `--source`, `--catalog` | Catalog to analyze |
 | `--schema` | Filter to specific schema |
 | `--table` | Filter to specific table |
 | `--format` | Output format: `console`, `json`, `csv` |
+| `--include-schemas` | Comma-separated list of schemas to include |
 
 ---
 
@@ -650,11 +693,12 @@ Run OPTIMIZE on tables to compact small files.
 
 ```bash
 clxs optimize --source <catalog> [options]
+clxs optimize --catalog <catalog> [options]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Catalog name |
+| `--source`, `--catalog` | Catalog name |
 | `--schema` | Specific schema |
 | `--table` | Specific table |
 | `--dry-run` | Preview without executing |
@@ -667,11 +711,12 @@ Run VACUUM on tables to remove old files beyond retention period.
 
 ```bash
 clxs vacuum --source <catalog> [options]
+clxs vacuum --catalog <catalog> [options]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Catalog name |
+| `--source`, `--catalog` | Catalog name |
 | `--schema` | Specific schema |
 | `--table` | Specific table |
 | `--retention-hours` | Retention period in hours (default: 168 / 7 days) |
@@ -701,3 +746,72 @@ clxs create-job --source <catalog> --dest <catalog> [options]
 | `--tag` | Job tag as `key=value` (repeatable) |
 | `--update-job-id` | Update existing job instead of creating new |
 | `--run-now` | Run the job immediately after creation |
+
+---
+
+### `pii-scan`
+
+Scan a catalog for personally identifiable information.
+
+```bash
+clxs pii-scan --source <catalog> [options]
+clxs pii-scan --catalog <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source`, `--catalog` | Source catalog name |
+| `--sample-data` | Enable data value sampling |
+| `--read-uc-tags` | Read UC column tags for detection |
+| `--save-history` | Save results to Delta tables |
+| `--apply-tags` | Apply PII tags to UC columns after scan |
+| `--tag-prefix` | Prefix for UC tags (default: `pii`) |
+| `--schema-filter` | Filter to specific schemas |
+| `--table-filter` | Regex filter on table names |
+| `--no-exit-code` | Don't exit with code 1 if PII found |
+
+---
+
+### `state`
+
+Show current clone state between source and destination catalogs.
+
+```bash
+clxs state --source <catalog> --dest <catalog> [options]
+clxs state --catalog <catalog> --dest <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source`, `--catalog` | Source catalog name |
+| `--dest` | Destination catalog name |
+
+---
+
+### `cost-estimate`
+
+Estimate storage and compute costs for a catalog.
+
+```bash
+clxs cost-estimate --source <catalog> [options]
+clxs cost-estimate --catalog <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source`, `--catalog` | Catalog to estimate |
+
+---
+
+### `dep-graph`
+
+Generate a dependency graph for catalog objects.
+
+```bash
+clxs dep-graph --source <catalog> [options]
+clxs dep-graph --catalog <catalog> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source`, `--catalog` | Catalog to analyze |

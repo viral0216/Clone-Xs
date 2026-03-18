@@ -1,9 +1,7 @@
 """Tests for approval workflows."""
 
-import json
-import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.approval import (
     ApprovalStatus,
@@ -12,8 +10,6 @@ from src.approval import (
     deny_request,
     needs_approval,
     submit_approval_request,
-    list_pending_requests,
-    APPROVAL_DIR,
 )
 
 

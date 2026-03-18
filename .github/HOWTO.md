@@ -85,6 +85,9 @@ Each section links to the relevant **official Databricks documentation** so you 
 44. [Config Wizard](#44-config-wizard)
 45. [Progress Bar & Logging](#45-progress-bar--logging)
 46. [Notebook API (Wheel & Repo)](#46-notebook-api-wheel--repo)
+53. [Plugin System](#53-plugin-system)
+54. [Schedule Management](#54-schedule-management)
+55. [RBAC Policy Management](#55-rbac-policy-management)
 
 ---
 
@@ -2083,6 +2086,12 @@ clxs export --source production --format csv
 ```bash
 # Find all tables/columns that might contain PII
 clxs search --source production --pattern "email|phone|ssn|address|name" --columns
+
+# Same command using --catalog alias
+clxs search --catalog production --pattern "email|phone|ssn|address|name" --columns
+
+# PII scan with schema and table filters
+clxs pii-scan --catalog production --schema-filter bronze --table-filter "customer.*"
 ```
 
 ---
@@ -2638,6 +2647,9 @@ Analyze per-table storage breakdown to identify reclaimable space.
 # Full catalog
 clxs storage-metrics --source my_catalog
 
+# Using --catalog alias (equivalent to --source)
+clxs storage-metrics --catalog my_catalog
+
 # Single schema
 clxs storage-metrics --source my_catalog --schema sales
 
@@ -2661,11 +2673,14 @@ Run table maintenance from the CLI or directly from the Storage Metrics UI.
 # OPTIMIZE all tables in a catalog
 clxs optimize --source my_catalog
 
+# Using --catalog alias (equivalent to --source)
+clxs optimize --catalog my_catalog
+
 # OPTIMIZE a single table
 clxs optimize --source my_catalog --schema sales --table orders
 
 # VACUUM with custom retention
-clxs vacuum --source my_catalog --retention-hours 48
+clxs vacuum --catalog my_catalog --retention-hours 48
 
 # Dry run (preview only)
 clxs vacuum --source my_catalog --dry-run
@@ -2777,3 +2792,202 @@ make deploy-dbx-app
 ```
 
 Authentication is automatic — the app uses the workspace service principal, so no PAT tokens are needed. Users access the app via their Databricks workspace URL.
+
+---
+
+## 53. Plugin System
+
+> **Docs:** [Plugins Guide](/docs/guide/plugins)
+
+### When to use
+You want to extend clone or sync operations with custom logic — logging, notifications, post-clone optimization, or integration with external systems.
+
+### Real-world scenario
+Your team wants a Slack notification every time a production clone completes, and you want to auto-OPTIMIZE destination tables after cloning to compact small files. Instead of building a wrapper script, you enable two built-in plugins.
+
+### Register plugins
+
+```yaml
+# config/clone_config.yaml
+plugins:
+  - path: "plugins/logging_plugin.py"
+  - path: "plugins/optimize_plugin.py"
+  - path: "plugins/slack_notify_plugin.py"
+```
+
+### Manage via CLI
+
+```bash
+# List all plugins and their status
+clxs plugin list
+
+# Enable the optimize plugin
+clxs plugin enable optimize
+
+# Disable the slack-notify plugin
+clxs plugin disable slack-notify
+```
+
+### Write a custom plugin
+
+```python
+# plugins/my_plugin.py
+from clone_xs.plugin import ClonePlugin
+
+class MyPlugin(ClonePlugin):
+    name = "my-plugin"
+    description = "Custom pre/post clone logic"
+
+    def pre_clone(self, context):
+        print(f"Starting clone: {context['source']} -> {context['dest']}")
+
+    def post_clone(self, context, result):
+        print(f"Done: {result['tables_cloned']} tables cloned")
+
+    def on_error(self, context, error):
+        # Send alert to PagerDuty, log to Splunk, etc.
+        print(f"Clone failed: {error}")
+```
+
+### Available hooks
+
+| Hook | Trigger |
+|------|---------|
+| `pre_clone` | Before clone starts |
+| `post_clone` | After clone completes |
+| `pre_sync` | Before sync starts |
+| `post_sync` | After sync completes |
+| `on_error` | When any operation fails |
+| `on_validate` | After validation runs |
+| `on_rollback` | After rollback |
+| `on_complete` | After any operation finishes |
+
+### API
+
+```bash
+# List plugins
+curl http://localhost:8080/plugins
+
+# Toggle a plugin
+curl -X POST http://localhost:8080/plugins/toggle \
+  -H "Content-Type: application/json" \
+  -d '{"name": "optimize", "enabled": true}'
+```
+
+Plugin state is persisted to `~/.clone-xs/plugin_state.json`.
+
+---
+
+## 54. Schedule Management
+
+### When to use
+You want to create, pause, resume, or delete persistent clone schedules that are backed by Databricks Jobs, all from the CLI or API.
+
+### Real-world scenario
+You set up a nightly clone of `production` to `staging`, but need to pause it during a migration window, then resume it afterward.
+
+### Create a schedule
+
+```bash
+# Via API
+curl -X POST http://localhost:8080/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "production",
+    "dest": "staging",
+    "cron": "0 0 2 * * ?",
+    "timezone": "UTC",
+    "clone_type": "DEEP"
+  }'
+```
+
+### List schedules
+
+```bash
+curl http://localhost:8080/schedule
+```
+
+### Pause and resume
+
+```bash
+# Pause a schedule
+curl -X POST http://localhost:8080/schedule/sched-001/pause
+
+# Resume a schedule
+curl -X POST http://localhost:8080/schedule/sched-001/resume
+```
+
+### Delete a schedule
+
+```bash
+curl -X DELETE http://localhost:8080/schedule/sched-001
+```
+
+Schedules are persisted to `~/.clone-xs/schedules.json` and integrate with Databricks Jobs via `create_persistent_job()`.
+
+---
+
+## 55. RBAC Policy Management
+
+> **Docs:** [Governance Guide](/docs/guide/governance)
+
+### When to use
+You need to create, list, or delete RBAC policies programmatically, or you want to enforce operation-level permissions (not just source/dest restrictions).
+
+### Real-world scenario
+Your CI/CD pipeline needs to ensure that only the `platform-team` service principal can run `sync` operations against production, while developers can only `diff` and `clone` to dev catalogs.
+
+### Policy with operation-level control
+
+```yaml
+rbac:
+  policies:
+    - name: "Dev Team"
+      principals: ["dev-team@company.com"]
+      sources: ["staging"]
+      destinations: ["dev_*"]
+      allowed_operations:
+        - "clone"
+        - "diff"
+        - "compare"
+
+    - name: "Platform Team"
+      principals: ["platform-team@company.com"]
+      sources: ["*"]
+      destinations: ["*"]
+      allowed_operations:
+        - "*"   # All operations
+```
+
+### Manage via API
+
+```bash
+# List all policies
+curl http://localhost:8080/rbac/policies
+
+# Create a policy
+curl -X POST http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "QA Read Only",
+    "principals": ["qa@company.com"],
+    "sources": ["production"],
+    "destinations": [],
+    "allowed_operations": ["diff", "stats", "search"]
+  }'
+
+# Delete a policy
+curl -X DELETE http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{"name": "QA Read Only"}'
+```
+
+### Enforced operations
+
+RBAC is now enforced on all of these operations:
+- `clone` — full catalog clone
+- `sync` — two-way sync
+- `diff` — catalog comparison
+- `incremental-sync` — delta-based sync
+
+If a user attempts an operation not listed in their `allowed_operations`, the request is denied.

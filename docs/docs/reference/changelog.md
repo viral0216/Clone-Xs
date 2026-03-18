@@ -9,6 +9,71 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v1.7.0 — Plugin System, Schedule Backend, RBAC Enforcement
+
+### Plugin System (NEW)
+- Full plugin lifecycle: load, enable, disable, and hook execution
+- Wired into `clone_catalog` and `sync_catalog` operations
+- 3 example plugins shipped: `logging`, `optimize`, `slack-notify`
+- CLI: `clxs plugin list/enable/disable`
+- API: `GET /plugins`, `POST /plugins/toggle`
+- 8 hook points available for custom logic (pre-clone, post-clone, pre-sync, post-sync, on-error, on-validate, on-rollback, on-complete)
+- State persisted to `~/.clone-xs/plugin_state.json`
+- Extend `ClonePlugin` base class to write custom plugins
+- Config: `plugins: [{path: "plugins/my_plugin.py"}]`
+
+### Schedule Backend (NEW)
+- Persistent schedule storage in `~/.clone-xs/schedules.json`
+- Full CRUD: `list_schedules`, `create_schedule`, `pause_schedule`, `resume_schedule`, `delete_schedule`
+- Integrates with Databricks Jobs via `create_persistent_job()`
+- API endpoints: `GET /schedule`, `POST /schedule`, `POST /schedule/{id}/pause`, `POST /schedule/{id}/resume`, `DELETE /schedule/{id}`
+
+### RBAC Enforcement (ENHANCED)
+- RBAC now enforced on `clone`, `sync`, `diff`, and `incremental-sync` operations (previously clone only)
+- Operation-level permissions via `allowed_operations` field in policy (e.g., `clone`, `sync`, `diff`, `*`)
+- API endpoints for policy management: `GET /rbac/policies`, `POST /rbac/policies`, `DELETE /rbac/policies`
+- Policy CRUD functions: `list_policies`, `create_policy`, `delete_policy`
+
+### CLI Improvements
+- `--catalog` alias added to 16 single-catalog commands
+- `pii-scan` now supports `--schema-filter` and `--table-filter`
+- `state` command now accepts `--source`/`--dest` CLI args
+- `impact --threshold` now properly wired up
+- `metrics --format json` now outputs machine-readable JSON
+- `plugin` CLI command added (`list`, `enable`, `disable`)
+- `include_schemas` config option now passed through on `schema-drift`, `storage-metrics`, `profile`
+
+### PII Detection Enhancements
+- Batch insert for scan store (was inserting row by row, now bulk)
+- Schema filter and table filter support in Web UI and API
+- Web UI has new filter input fields on the PII scan page
+
+### Test Coverage
+- 25 new test files added covering previously untested modules
+- Total tests: ~640+ (up from 539)
+
+---
+
+## v1.6.1 — CLI Improvements
+
+### `--catalog` Alias
+- Added `--catalog` as an alias for `--source` on 16 single-catalog commands: `stats`, `storage-metrics`, `optimize`, `vacuum`, `profile`, `export`, `search`, `snapshot`, `estimate`, `cost-estimate`, `dep-graph`, `usage-analysis`, `sample`, `view-deps`, `pii-scan`, `state`
+- Users can now write `clxs stats --catalog edp_dev` instead of `clxs stats --source edp_dev`
+
+### PII Scan Enhancements
+- New `--schema-filter` flag to limit scans to specific schemas (e.g., `--schema-filter bronze`)
+- New `--table-filter` flag for regex filtering on table names (e.g., `--table-filter "customer.*"`)
+
+### Bug Fixes
+- `state` command: added `--source`/`--dest` CLI args (previously only read from config and would crash without them)
+- `impact --threshold`: now properly wired to control the high-impact threshold
+- `metrics --format json`: now properly outputs JSON when `--format json` is specified
+
+### Config Passthrough
+- `include_schemas` config option now correctly passed through on `schema-drift`, `storage-metrics`, and `profile` commands
+
+---
+
 ## v1.6.0 — PII Detection Overhaul
 
 ### PII Detection Engine

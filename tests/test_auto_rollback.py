@@ -50,14 +50,16 @@ class TestEvaluateThreshold:
 
 
 class TestAutoRollbackIntegration:
+    @patch("src.clone_catalog.list_schemas_sdk")
     @patch("src.clone_catalog.execute_sql")
-    def test_auto_rollback_triggers_on_validation_failure(self, mock_sql):
+    def test_auto_rollback_triggers_on_validation_failure(self, mock_sql, mock_list_schemas):
         """Test that auto-rollback is triggered when validation fails threshold."""
         from src.clone_catalog import clone_catalog
 
         mock_client = MagicMock()
         mock_client.current_user.me.return_value.user_name = "test_user"
         mock_sql.return_value = []
+        mock_list_schemas.return_value = ["test_schema"]
 
         config = {
             "source_catalog": "src",
@@ -67,6 +69,7 @@ class TestAutoRollbackIntegration:
             "load_type": "FULL",
             "max_workers": 1,
             "exclude_schemas": ["information_schema", "default"],
+            "exclude_tables": [],
             "dry_run": False,
             "copy_permissions": False,
             "copy_ownership": False,
@@ -78,7 +81,7 @@ class TestAutoRollbackIntegration:
             "validate_after_clone": True,
         }
 
-        # The clone will return quickly since mock_sql returns [] for schema listing
-        # This mainly tests the config path, not the full flow
+        # The clone will process test_schema but the mocked SQL/SDK calls
+        # will make it proceed quickly. This mainly tests the config path.
         result = clone_catalog(mock_client, config)
         assert "duration_seconds" in result

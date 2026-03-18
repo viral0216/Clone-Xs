@@ -27,9 +27,9 @@ def test_clone_view_failure(mock_sql):
     assert result is False
 
 
-@patch("src.clone_views.execute_sql")
-def test_get_views(mock_sql):
-    mock_sql.return_value = [
+@patch("src.clone_views.list_views_sdk")
+def test_get_views(mock_list):
+    mock_list.return_value = [
         {"table_name": "v1", "view_definition": "SELECT 1"},
         {"table_name": "v2", "view_definition": "SELECT 2"},
     ]
@@ -38,10 +38,10 @@ def test_get_views(mock_sql):
     assert views[0]["table_name"] == "v1"
 
 
-@patch("src.clone_views.execute_sql")
+@patch("src.clone_views.list_views_sdk")
 @patch("src.clone_views.clone_view")
-def test_clone_views_in_schema_incremental(mock_clone, mock_sql):
-    mock_sql.side_effect = [
+def test_clone_views_in_schema_incremental(mock_clone, mock_list):
+    mock_list.side_effect = [
         # get_views
         [
             {"table_name": "v1", "view_definition": "SELECT 1"},
@@ -59,10 +59,10 @@ def test_clone_views_in_schema_incremental(mock_clone, mock_sql):
     mock_clone.assert_called_once()  # Only v2 cloned
 
 
-@patch("src.clone_views.execute_sql")
+@patch("src.clone_views.list_views_sdk")
 @patch("src.clone_views.clone_view")
-def test_clone_views_regex_filter(mock_clone, mock_sql):
-    mock_sql.return_value = [
+def test_clone_views_regex_filter(mock_clone, mock_list):
+    mock_list.return_value = [
         {"table_name": "dim_view", "view_definition": "SELECT 1"},
         {"table_name": "tmp_view", "view_definition": "SELECT 2"},
     ]

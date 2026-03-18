@@ -1,6 +1,5 @@
 """Databricks Asset Bundle (DAB) integration for scheduling clone jobs."""
 
-import json
 import logging
 import os
 
@@ -253,13 +252,13 @@ print(f"Clone completed successfully: {summary}")
         f.write(run_script)
 
     logger.info(f"DAB bundle generated at: {output_dir}/")
-    logger.info(f"  databricks.yml — bundle configuration")
-    logger.info(f"  resources/clone_job.yml — job definition with 3 tasks")
-    logger.info(f"  src/run_clone.py — notebook entry point")
-    logger.info(f"")
-    logger.info(f"Deploy with:")
+    logger.info("  databricks.yml — bundle configuration")
+    logger.info("  resources/clone_job.yml — job definition with 3 tasks")
+    logger.info("  src/run_clone.py — notebook entry point")
+    logger.info("")
+    logger.info("Deploy with:")
     logger.info(f"  cd {output_dir}")
-    logger.info(f"  databricks bundle deploy --target dev")
+    logger.info("  databricks bundle deploy --target dev")
     logger.info(f"  databricks bundle run {job_name} --target dev")
 
     return output_dir

@@ -259,7 +259,7 @@ th {{ background: #f0f0f0; font-weight: 600; }}
 def format_plan_sql(plan: dict) -> str:
     """Format execution plan as a .sql file with all statements."""
     lines = []
-    lines.append(f"-- Clone-Xs Execution Plan")
+    lines.append("-- Clone-Xs Execution Plan")
     lines.append(f"-- Source: {plan['source_catalog']} -> Destination: {plan['destination_catalog']}")
     lines.append(f"-- Clone Type: {plan['clone_type']}")
     lines.append(f"-- Generated: {plan['generated_at']}")

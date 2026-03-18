@@ -1,6 +1,5 @@
 """Data lineage tracking — record source→dest mappings for clone operations."""
 
-import json
 import logging
 import os
 from datetime import datetime

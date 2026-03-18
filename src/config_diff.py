@@ -56,7 +56,7 @@ def print_config_diff(path_a: str, path_b: str) -> dict:
     diff = diff_configs(path_a, path_b)
 
     logger.info("=" * 60)
-    logger.info(f"CONFIG DIFF")
+    logger.info("CONFIG DIFF")
     logger.info(f"  A: {path_a}")
     logger.info(f"  B: {path_b}")
     logger.info("=" * 60)

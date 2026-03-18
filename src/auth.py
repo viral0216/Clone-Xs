@@ -96,7 +96,12 @@ def clear_cache() -> None:
     _cached_client_key = ""
     _client_verified = False
     _client_verify_time = 0
-    logger.debug("Auth cache cleared")
+    try:
+        from src.client import clear_metadata_cache
+        clear_metadata_cache()
+    except ImportError:
+        pass
+    logger.debug("Auth and metadata cache cleared")
 
 
 # ── CLI helpers ────────────────────────────────────────────────────────

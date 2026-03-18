@@ -205,6 +205,7 @@ Environment variables override config file values for auth settings:
 | `AZURE_CLIENT_SECRET` | Azure AD service principal secret |
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `DATABRICKS_CONFIG_PROFILE` | Default CLI profile name |
+| `CLXS_CACHE_TTL` | Metadata cache TTL in seconds (default: `300`) |
 
 ## Config diff
 

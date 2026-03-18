@@ -1,6 +1,6 @@
 """Tests for data filtering with WHERE clause."""
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.clone_tables import clone_table
 

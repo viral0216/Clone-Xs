@@ -1,6 +1,5 @@
 """Streamlit dashboard app — launched by src/web_dashboard.py."""
 
-import json
 import os
 import sys
 

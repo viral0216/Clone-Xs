@@ -1,6 +1,5 @@
 """Tests for usage analysis."""
 
-from unittest.mock import MagicMock, patch
 
 from src.usage_analysis import analyze_usage, _parse_query_history, format_usage_report
 

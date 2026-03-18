@@ -1,8 +1,7 @@
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import json
 import os
 import tempfile
-import pytest
 
 from src.rollback import (
     create_rollback_log,

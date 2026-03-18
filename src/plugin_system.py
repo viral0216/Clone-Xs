@@ -4,7 +4,7 @@ import importlib
 import importlib.util
 import logging
 import os
-from abc import ABC, abstractmethod
+from abc import ABC
 
 logger = logging.getLogger(__name__)
 

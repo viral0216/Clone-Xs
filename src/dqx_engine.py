@@ -16,8 +16,26 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from src.client import execute_sql
+
+
+class _SafeEncoder(json.JSONEncoder):
+    """JSON encoder that handles Decimal, datetime, and other non-serializable types."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, set):
+            return list(obj)
+        return super().default(obj)
+
+
+def _json_dumps(obj) -> str:
+    """JSON serialize with Decimal/datetime support."""
+    return json.dumps(obj, cls=_SafeEncoder)
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +191,7 @@ def profile_table(client, warehouse_id, config, table_fqn: str, options: dict | 
                 "profile_id": profile_id,
                 "column": getattr(p, "column", getattr(p, "name", "")),
                 "rule_type": getattr(p, "name", ""),
-                "parameters": json.dumps(getattr(p, "parameters", {}) or {}),
+                "parameters": _json_dumps(getattr(p, "parameters", {}) or {}),
                 "description": getattr(p, "description", ""),
             }
             results.append(profile_dict)
@@ -248,20 +266,37 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
             args = {}
             criticality = "error"
 
-            if hasattr(rule, "check_func"):
-                func_name = getattr(rule.check_func, "__name__", str(rule.check_func))
-            if hasattr(rule, "column"):
-                col_name = rule.column
-            elif hasattr(rule, "columns"):
-                col_name = ",".join(rule.columns) if rule.columns else ""
-            if hasattr(rule, "check_func_kwargs"):
-                args = rule.check_func_kwargs or {}
-            if hasattr(rule, "criticality"):
-                criticality = rule.criticality
+            if isinstance(rule, dict):
+                # generate_dq_rules returns list[dict] with keys: criticality, check, name, filter
+                criticality = rule.get("criticality", "error")
+                check_block = rule.get("check", {})
+                if isinstance(check_block, dict):
+                    func_name = check_block.get("function", "")
+                    args = check_block.get("arguments", {})
+                    # Convert Decimal values to float for JSON serialization
+                    args = {k: float(v) if isinstance(v, Decimal) else v for k, v in args.items()}
+                    col_name = args.get("column", "")
+                name = rule.get("name", "")
+            else:
+                # DQRule object (older DQX versions)
+                if hasattr(rule, "check_func"):
+                    func_name = getattr(rule.check_func, "__name__", str(rule.check_func))
+                if hasattr(rule, "column"):
+                    col_name = rule.column
+                elif hasattr(rule, "columns"):
+                    col_name = ",".join(rule.columns) if rule.columns else ""
+                if hasattr(rule, "check_func_kwargs"):
+                    args = rule.check_func_kwargs or {}
+                if hasattr(rule, "criticality"):
+                    criticality = rule.criticality
+                name = ""
+
+            if not name:
+                name = f"{func_name}_{col_name}" if col_name else func_name
 
             check = {
                 "check_id": check_id,
-                "name": f"{func_name}_{col_name}" if col_name else func_name,
+                "name": name,
                 "table_fqn": table_fqn,
                 "criticality": criticality,
                 "check_function": func_name,
@@ -270,17 +305,34 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
             }
             checks.append(check)
 
-            # Store in Delta
+        # Batch insert all checks in one SQL statement
+        if checks:
+            values_list = []
+            for c in checks:
+                values_list.append(
+                    f"('{c['check_id']}', '{_esc(c['name'])}', '{_esc(table_fqn)}', "
+                    f"'{c['criticality']}', '{_esc(c['check_function'])}', "
+                    f"'{_esc(_json_dumps(c['arguments']))}', '', "
+                    f"true, '{_esc(user)}', '{now}', '{now}')"
+                )
             try:
-                execute_sql(client, warehouse_id, f"""
-                    INSERT INTO {schema}.dqx_checks
-                    VALUES ('{check_id}', '{_esc(check["name"])}', '{_esc(table_fqn)}',
-                            '{criticality}', '{_esc(func_name)}',
-                            '{_esc(json.dumps(args))}', '',
-                            true, '{_esc(user)}', '{now}', '{now}')
-                """)
+                # Batch insert — one SQL statement for all checks
+                batch_sql = f"INSERT INTO {schema}.dqx_checks VALUES {', '.join(values_list)}"
+                execute_sql(client, warehouse_id, batch_sql)
+                logger.info(f"Stored {len(checks)} DQX checks for {table_fqn} in one batch")
             except Exception as e:
-                logger.debug(f"Could not store check: {e}")
+                logger.warning(f"Batch insert failed, falling back to individual inserts: {e}")
+                for c in checks:
+                    try:
+                        execute_sql(client, warehouse_id, f"""
+                            INSERT INTO {schema}.dqx_checks
+                            VALUES ('{c['check_id']}', '{_esc(c['name'])}', '{_esc(table_fqn)}',
+                                    '{c['criticality']}', '{_esc(c['check_function'])}',
+                                    '{_esc(_json_dumps(c['arguments']))}', '',
+                                    true, '{_esc(user)}', '{now}', '{now}')
+                        """)
+                    except Exception:
+                        pass
 
         return {"table_fqn": table_fqn, "checks": checks, "count": len(checks)}
 
@@ -293,26 +345,38 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
 # ---------------------------------------------------------------------------
 
 def generate_checks_for_schema(client, warehouse_id, config, catalog: str, schema_name: str, user: str = "", options: dict | None = None) -> dict:
-    """Profile all tables in a schema and generate DQX checks."""
+    """Profile all tables in a schema and generate DQX checks (parallel)."""
     from src.client import list_tables_sdk
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     tables = list_tables_sdk(client, catalog, schema_name)
+    fqns = []
+    for t in tables:
+        tbl_name = t.get("table_name", "") if isinstance(t, dict) else t
+        if tbl_name:
+            fqns.append(f"{catalog}.{schema_name}.{tbl_name}")
+
+    max_parallel = (options or {}).get("max_parallelism", 4)
     results = []
     total_checks = 0
 
-    for t in tables:
-        tbl_name = t.get("table_name", "") if isinstance(t, dict) else t
-        if not tbl_name:
-            continue
-        fqn = f"{catalog}.{schema_name}.{tbl_name}"
+    def _profile_one(fqn):
         try:
             result = generate_checks_from_profiles(client, warehouse_id, config, fqn, user, options=options)
             result["table_fqn"] = fqn
+            return result
+        except Exception as e:
+            return {"table_fqn": fqn, "error": str(e), "count": 0}
+
+    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+        futures = {executor.submit(_profile_one, fqn): fqn for fqn in fqns}
+        for future in as_completed(futures):
+            result = future.result()
             results.append(result)
             total_checks += result.get("count", 0)
-        except Exception as e:
-            results.append({"table_fqn": fqn, "error": str(e), "count": 0})
 
+    # Sort by table name for consistent output
+    results.sort(key=lambda r: r.get("table_fqn", ""))
     return {"catalog": catalog, "schema": schema_name, "tables": results, "total_checks": total_checks, "tables_processed": len(results)}
 
 
@@ -461,6 +525,59 @@ def delete_check(client, warehouse_id, config, check_id: str):
         f"DELETE FROM {schema}.dqx_checks WHERE check_id = '{_esc(check_id)}'")
 
 
+def clear_all_dqx_data(client, warehouse_id, config) -> dict:
+    """Truncate all DQX Delta tables — checks, profiles, run results, definitions."""
+    schema = _get_schema(config)
+    tables = ["dqx_checks", "dqx_profiles", "dqx_run_results", "dqx_check_definitions"]
+    cleared = []
+    errors = []
+    for t in tables:
+        try:
+            execute_sql(client, warehouse_id, f"DELETE FROM {schema}.{t} WHERE 1=1")
+            cleared.append(t)
+        except Exception as e:
+            errors.append({"table": t, "error": str(e)})
+    return {"cleared": cleared, "errors": errors}
+
+
+def delete_checks_bulk(client, warehouse_id, config, check_ids: list[str] = None, table_fqn: str = "", delete_all: bool = False) -> dict:
+    """Delete multiple DQX checks."""
+    schema = _get_schema(config)
+    try:
+        if delete_all:
+            if table_fqn:
+                execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE table_fqn = '{_esc(table_fqn)}'")
+                return {"deleted": "all", "table_fqn": table_fqn}
+            else:
+                execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE 1=1")
+                return {"deleted": "all"}
+        elif check_ids:
+            ids_str = ",".join(f"'{_esc(c)}'" for c in check_ids)
+            execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE check_id IN ({ids_str})")
+            return {"deleted": len(check_ids)}
+        return {"deleted": 0}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def update_check(client, warehouse_id, config, check_id: str, updates: dict) -> dict:
+    """Update a DQX check's name, criticality, arguments, or filter."""
+    schema = _get_schema(config)
+    now = _now_iso()
+    set_parts = [f"updated_at = '{now}'"]
+    for key in ["name", "criticality", "check_function", "filter_expr"]:
+        if key in updates and updates[key] is not None:
+            set_parts.append(f"{key} = '{_esc(str(updates[key]))}'")
+    if "arguments" in updates:
+        set_parts.append(f"arguments = '{_esc(_json_dumps(updates['arguments']))}'")
+    try:
+        execute_sql(client, warehouse_id,
+            f"UPDATE {schema}.dqx_checks SET {', '.join(set_parts)} WHERE check_id = '{_esc(check_id)}'")
+        return {"status": "updated", "check_id": check_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def toggle_check(client, warehouse_id, config, check_id: str, enabled: bool):
     """Enable or disable a DQX check."""
     schema = _get_schema(config)
@@ -555,7 +672,7 @@ def create_check(client, warehouse_id, config, check: dict, user: str = "") -> d
         VALUES ('{check_id}', '{_esc(check.get("name", ""))}',
                 '{_esc(check["table_fqn"])}', '{check.get("criticality", "error")}',
                 '{_esc(check["check_function"])}',
-                '{_esc(json.dumps(check.get("arguments", {})))}',
+                '{_esc(_json_dumps(check.get("arguments", {})))}',
                 '{_esc(check.get("filter_expr", ""))}',
                 true, '{_esc(user)}', '{now}', '{now}')
     """)
@@ -711,7 +828,7 @@ def import_checks_yaml(client, warehouse_id, config, table_fqn: str, yaml_conten
                 INSERT INTO {schema}.dqx_checks
                 VALUES ('{check_id}', '{_esc(name)}', '{_esc(table_fqn)}',
                         '{criticality}', '{_esc(check_func)}',
-                        '{_esc(json.dumps(args))}', '{_esc(filter_expr)}',
+                        '{_esc(_json_dumps(args))}', '{_esc(filter_expr)}',
                         true, '{_esc(user)}', '{now}', '{now}')
             """)
             imported += 1
@@ -725,8 +842,10 @@ def import_checks_yaml(client, warehouse_id, config, table_fqn: str, yaml_conten
 # Run checks for all monitored tables
 # ---------------------------------------------------------------------------
 
-def run_all_checks(client, warehouse_id, config, user: str = "") -> dict:
-    """Run DQX checks for all tables that have enabled checks."""
+def run_all_checks(client, warehouse_id, config, max_parallelism: int = 4, user: str = "") -> dict:
+    """Run DQX checks for all tables that have enabled checks (parallel)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     schema = _get_schema(config)
     try:
         rows = execute_sql(client, warehouse_id,
@@ -736,10 +855,16 @@ def run_all_checks(client, warehouse_id, config, user: str = "") -> dict:
         return {"error": "No checks found", "results": []}
 
     results = []
-    for fqn in tables:
-        result = run_checks(client, warehouse_id, config, fqn, user=user)
-        results.append(result)
 
+    def _run_one(fqn):
+        return run_checks(client, warehouse_id, config, fqn, user=user)
+
+    with ThreadPoolExecutor(max_workers=max_parallelism) as executor:
+        futures = {executor.submit(_run_one, fqn): fqn for fqn in tables}
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda r: r.get("table_fqn", ""))
     passed = sum(1 for r in results if r.get("status") == "completed" and float(r.get("pass_rate", 0)) >= 95)
     failed = len(results) - passed
     return {"tables_checked": len(results), "passed": passed, "failed": failed, "results": results}

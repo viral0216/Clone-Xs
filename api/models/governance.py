@@ -115,6 +115,7 @@ class DQXProfileRequest(BaseModel):
     max_in_count: int = Field(default=10, description="Generate is_in_list when distinct values below this count")
     max_null_ratio: float = Field(default=0.01, description="Generate is_not_null when null ratio below this (0.0-1.0)")
     remove_outliers: bool = Field(default=True, description="Remove statistical outliers from min/max calculations")
+    max_parallelism: int = Field(default=4, description="Max tables to profile in parallel (1-16)")
     auto_generate_checks: bool = Field(default=True, description="Auto-generate checks from profile results")
 
 

@@ -23,7 +23,7 @@ _spark = None
 _spark_lock = threading.Lock()
 _spark_config = {
     "cluster_id": "",
-    "serverless": False,
+    "serverless": True,  # Default to serverless compute
 }
 
 

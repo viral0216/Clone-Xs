@@ -13,7 +13,7 @@ import {
   Zap, Plus, Play, Trash2, Search, Loader2, CheckCircle2, XCircle,
   BarChart3, Database, Settings, ToggleLeft, ToggleRight, Wand2,
   AlertTriangle, Clock, Download, Upload, PlayCircle, Filter,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Pencil,
 } from "lucide-react";
 import LogPanel from "@/components/LogPanel";
 
@@ -35,7 +35,7 @@ export default function DQXPage() {
   const [profiling, setProfiling] = useState(false);
   const [profileResult, setProfileResult] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [profileOpts, setProfileOpts] = useState({ sample_fraction: 0.3, max_in_count: 10, max_null_ratio: 0.01, remove_outliers: true });
+  const [profileOpts, setProfileOpts] = useState({ sample_fraction: 0.3, max_in_count: 10, max_null_ratio: 0.01, remove_outliers: true, max_parallelism: 4 });
 
   // Create check state
   const [showCreate, setShowCreate] = useState(false);
@@ -49,13 +49,16 @@ export default function DQXPage() {
 
   // Run state
   const [running, setRunning] = useState<string | null>(null);
+  const [selectedChecks, setSelectedChecks] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [editingCheck, setEditingCheck] = useState<any>(null);
   const [runningAll, setRunningAll] = useState(false);
 
   // Spark status
   const [sparkStatus, setSparkStatus] = useState<any>({});
   const [sparkConfiguring, setSparkConfiguring] = useState(false);
   const [sparkClusterId, setSparkClusterId] = useState("");
-  const [sparkServerless, setSparkServerless] = useState(false);
+  const [sparkServerless, setSparkServerless] = useState(true);
 
   // Function browser expand
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
@@ -94,7 +97,7 @@ export default function DQXPage() {
     }
 
     // Single table
-    if (res.checks) {
+    if (res.checks && !res.tables && !res.schemas) {
       lines.push(`[${ts}] Generated ${res.count || res.checks.length} checks for ${res.table_fqn}`);
       for (const c of res.checks) {
         lines.push(`[${ts}]   + ${c.check_function} on ${c.column || 'table'} (${c.criticality})`);
@@ -103,21 +106,34 @@ export default function DQXPage() {
 
     // Schema-level
     if (res.tables) {
-      lines.push(`[${ts}] Processed ${res.tables_processed || res.tables.length} tables, ${res.total_checks || 0} total checks`);
+      const total = res.tables_processed || res.tables.length;
+      const ok = res.tables.filter((t: any) => !t.error).length;
+      const failed = total - ok;
+      lines.push(`[${ts}] Processed ${total} tables in parallel — ${res.total_checks || 0} total checks (${ok} succeeded, ${failed} failed)`);
+      let idx = 0;
       for (const t of res.tables) {
-        if (t.error) lines.push(`[${ts}]   FAILED ${t.table_fqn}: ${t.error}`);
-        else lines.push(`[${ts}]   OK ${t.table_fqn}: ${t.count || 0} checks generated`);
+        idx++;
+        if (t.error) lines.push(`[${ts}]   [${idx}/${total}] FAILED ${t.table_fqn}: ${t.error}`);
+        else lines.push(`[${ts}]   [${idx}/${total}] OK ${t.table_fqn}: ${t.count || 0} checks generated`);
       }
     }
 
     // Catalog-level
     if (res.schemas) {
-      lines.push(`[${ts}] Processed ${res.schemas_processed || res.schemas.length} schemas, ${res.total_checks || 0} total checks`);
+      const totalSchemas = res.schemas_processed || res.schemas.length;
+      const totalTables = res.schemas.reduce((s: number, sch: any) => s + (sch.tables_processed || sch.tables?.length || 0), 0);
+      lines.push(`[${ts}] Processed ${totalSchemas} schemas, ${totalTables} tables in parallel — ${res.total_checks || 0} total checks`);
+      let schIdx = 0;
       for (const s of res.schemas) {
-        lines.push(`[${ts}]   Schema ${s.schema}: ${s.total_checks || 0} checks from ${s.tables_processed || 0} tables`);
+        schIdx++;
+        const schTables = s.tables_processed || s.tables?.length || 0;
+        const schOk = (s.tables || []).filter((t: any) => !t.error).length;
+        lines.push(`[${ts}]   [${schIdx}/${totalSchemas}] Schema ${s.schema}: ${s.total_checks || 0} checks from ${schTables} tables (${schOk} ok)`);
+        let tblIdx = 0;
         for (const t of (s.tables || [])) {
-          if (t.error) lines.push(`[${ts}]     FAILED ${t.table_fqn}: ${t.error}`);
-          else lines.push(`[${ts}]     OK ${t.table_fqn}: ${t.count || 0} checks`);
+          tblIdx++;
+          if (t.error) lines.push(`[${ts}]     [${tblIdx}/${schTables}] FAILED ${t.table_fqn}: ${t.error}`);
+          else lines.push(`[${ts}]     [${tblIdx}/${schTables}] OK ${t.table_fqn}: ${t.count || 0} checks`);
         }
       }
     }
@@ -130,7 +146,8 @@ export default function DQXPage() {
     setProfiling(true);
     setProfileResult(null);
     const ts = new Date().toLocaleTimeString();
-    setLogs([`[${ts}] Starting DQX profiling (${profileScope})...`, `[${ts}] Connecting to Spark and running profiler — this may take a moment...`]);
+    const parallelNote = profileScope !== "table" ? ` (parallelism: ${profileOpts.max_parallelism})` : "";
+    setLogs([`[${ts}] Starting DQX profiling (${profileScope})${parallelNote}...`, `[${ts}] Connecting to Spark and running profiler — this may take a moment...`]);
     try {
       let res: any;
       let target = "";
@@ -208,6 +225,21 @@ export default function DQXPage() {
     try { await api.delete(`/governance/dqx/checks/${checkId}`); toast.success("Deleted"); loadAll(); } catch (e: any) { toast.error(e.message); }
   }
 
+  async function saveEdit() {
+    if (!editingCheck) return;
+    try {
+      const res = await api.put(`/governance/dqx/checks/${editingCheck.check_id}`, {
+        name: editingCheck.name,
+        criticality: editingCheck.criticality,
+        check_function: editingCheck.check_function,
+        arguments: editingCheck.arguments,
+        filter_expr: editingCheck.filter_expr || "",
+      });
+      if (res.error) toast.error(res.error);
+      else { toast.success("Check updated"); setEditingCheck(null); loadAll(); }
+    } catch (e: any) { toast.error(e.message); }
+  }
+
   async function createCheck() {
     if (!newCheck.table_fqn || !newCheck.check_function) { toast.error("Table and function required"); return; }
     try {
@@ -223,7 +255,11 @@ export default function DQXPage() {
   async function exportChecks() {
     try {
       const params = filterTable ? `?table_fqn=${filterTable}` : "";
-      const res = await fetch(`/api/governance/dqx/checks/export${params}`);
+      const headers: Record<string, string> = {};
+      const host = sessionStorage.getItem("dbx_host"); if (host) headers["X-Databricks-Host"] = host;
+      const token = sessionStorage.getItem("dbx_token"); if (token) headers["X-Databricks-Token"] = token;
+      const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
+      const res = await fetch(`/api/governance/dqx/checks/export${params}`, { headers });
       const text = await res.text();
       const blob = new Blob([text], { type: "text/yaml" });
       const url = URL.createObjectURL(blob);
@@ -324,6 +360,18 @@ export default function DQXPage() {
                   Run All Checks
                 </Button>
                 <span className="text-xs text-muted-foreground">{uniqueTables.length} table(s) with checks</span>
+                <Button variant="outline" size="sm" className="ml-auto text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-950"
+                  onClick={async () => {
+                    if (!confirm("Clear ALL DQX data? This will delete all checks, profiles, and run history. This cannot be undone.")) return;
+                    try {
+                      const res = await api.post("/governance/dqx/clear-all", {});
+                      if (res.errors?.length) toast.error(`Some tables failed: ${res.errors.map((e: any) => e.table).join(", ")}`);
+                      else toast.success(`Cleared ${res.cleared?.length || 0} DQX tables`);
+                      loadAll();
+                    } catch (e: any) { toast.error(e.message); }
+                  }}>
+                  <Trash2 className="h-4 w-4 mr-1" />Clear All DQX Data
+                </Button>
               </div>
 
               {logs.length > 0 && (
@@ -356,18 +404,91 @@ export default function DQXPage() {
           {/* ============ CHECKS ============ */}
           {tab === "checks" && (
             <div className="space-y-4">
+              {/* Summary cards */}
+              {checks.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <Card><CardContent className="pt-3 pb-3">
+                    <p className="text-2xl font-bold">{checks.length}</p>
+                    <p className="text-xs text-muted-foreground">Total Checks</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-3 pb-3">
+                    <p className="text-2xl font-bold">{uniqueTables.length}</p>
+                    <p className="text-xs text-muted-foreground">Tables</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-3 pb-3">
+                    <p className="text-2xl font-bold text-green-600">{checks.filter(c => c.enabled === "true" || c.enabled === true).length}</p>
+                    <p className="text-xs text-muted-foreground">Enabled</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-3 pb-3">
+                    <p className="text-2xl font-bold text-red-600">{checks.filter(c => c.criticality === "error").length}</p>
+                    <p className="text-xs text-muted-foreground">Error Level</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-3 pb-3">
+                    <p className="text-2xl font-bold text-amber-600">{checks.filter(c => c.criticality === "warn").length}</p>
+                    <p className="text-xs text-muted-foreground">Warning Level</p>
+                  </CardContent></Card>
+                </div>
+              )}
+
+              {/* Actions bar */}
               <div className="flex items-center gap-2 flex-wrap">
                 <Button size="sm" onClick={() => setShowCreate(!showCreate)}><Plus className="h-4 w-4 mr-1" />New Check</Button>
                 <Button size="sm" variant="outline" onClick={() => setShowImport(!showImport)}><Upload className="h-4 w-4 mr-1" />Import YAML</Button>
                 <Button size="sm" variant="outline" onClick={exportChecks}><Download className="h-4 w-4 mr-1" />Export YAML</Button>
+
+                {/* Bulk delete */}
+                {selectedChecks.size > 0 && (
+                  <Button size="sm" variant="destructive" disabled={deleting} onClick={async () => {
+                    if (!confirm(`Delete ${selectedChecks.size} selected check(s)?`)) return;
+                    setDeleting(true);
+                    try {
+                      const res = await api.post("/governance/dqx/checks/delete-bulk", { check_ids: [...selectedChecks] });
+                      if (res.error) toast.error(res.error);
+                      else { toast.success(`${res.deleted} check(s) deleted`); setSelectedChecks(new Set()); loadAll(); }
+                    } catch (e: any) { toast.error(e.message); }
+                    setDeleting(false);
+                  }}>
+                    {deleting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                    Delete Selected ({selectedChecks.size})
+                  </Button>
+                )}
+
                 <div className="ml-auto flex items-center gap-2">
-                  <select value={filterTable} onChange={(e) => setFilterTable(e.target.value)} className="border rounded px-3 py-1.5 text-sm bg-background">
+                  <select value={filterTable} onChange={(e) => { setFilterTable(e.target.value); setSelectedChecks(new Set()); }} className="border rounded px-3 py-1.5 text-sm bg-background">
                     <option value="">All Tables ({checks.length})</option>
                     {uniqueTables.map(t => <option key={t} value={t}>{t} ({checks.filter(c => c.table_fqn === t).length})</option>)}
                   </select>
                   {filterTable && (
-                    <Button size="sm" variant="outline" onClick={() => runChecks(filterTable)} disabled={!!running}>
-                      {running === filterTable ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}Run
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => runChecks(filterTable)} disabled={!!running}>
+                        {running === filterTable ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}Run
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" disabled={deleting} onClick={async () => {
+                        if (!confirm(`Delete ALL checks for ${filterTable}?`)) return;
+                        setDeleting(true);
+                        try {
+                          const res = await api.post("/governance/dqx/checks/delete-bulk", { table_fqn: filterTable, delete_all: true });
+                          if (res.error) toast.error(res.error);
+                          else { toast.success(`All checks deleted for ${filterTable}`); setFilterTable(""); setSelectedChecks(new Set()); loadAll(); }
+                        } catch (e: any) { toast.error(e.message); }
+                        setDeleting(false);
+                      }}>
+                        <Trash2 className="h-4 w-4 mr-1" />Delete All
+                      </Button>
+                    </>
+                  )}
+                  {!filterTable && checks.length > 0 && (
+                    <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" disabled={deleting} onClick={async () => {
+                      if (!confirm(`Delete ALL ${checks.length} checks? This cannot be undone.`)) return;
+                      setDeleting(true);
+                      try {
+                        const res = await api.post("/governance/dqx/checks/delete-bulk", { delete_all: true });
+                        if (res.error) toast.error(res.error);
+                        else { toast.success("All checks deleted"); setSelectedChecks(new Set()); loadAll(); }
+                      } catch (e: any) { toast.error(e.message); }
+                      setDeleting(false);
+                    }}>
+                      <Trash2 className="h-4 w-4 mr-1" />Delete All ({checks.length})
                     </Button>
                   )}
                 </div>
@@ -441,6 +562,37 @@ export default function DQXPage() {
                 </CardContent></Card>
               )}
 
+              {/* Edit check panel */}
+              {editingCheck && (
+                <Card className="border-amber-200 dark:border-amber-800"><CardContent className="pt-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Pencil className="h-4 w-4 text-amber-600" />
+                    <p className="text-sm font-medium">Edit Check: {editingCheck.name || editingCheck.check_function}</p>
+                    <Badge variant="outline" className="text-xs ml-auto">{editingCheck.check_id}</Badge>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div><label className="text-xs text-muted-foreground">Name</label>
+                      <Input value={editingCheck.name || ""} onChange={(e) => setEditingCheck({...editingCheck, name: e.target.value})} /></div>
+                    <div><label className="text-xs text-muted-foreground">Function</label>
+                      <select value={editingCheck.check_function || ""} onChange={(e) => setEditingCheck({...editingCheck, check_function: e.target.value})} className="w-full border rounded px-3 py-2 text-sm bg-background">
+                        {functions.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                      </select></div>
+                    <div><label className="text-xs text-muted-foreground">Criticality</label>
+                      <select value={editingCheck.criticality || "error"} onChange={(e) => setEditingCheck({...editingCheck, criticality: e.target.value})} className="w-full border rounded px-3 py-2 text-sm bg-background">
+                        <option value="error">Error</option><option value="warn">Warning</option>
+                      </select></div>
+                    <div><label className="text-xs text-muted-foreground">Filter (SQL WHERE)</label>
+                      <Input value={editingCheck.filter_expr || ""} onChange={(e) => setEditingCheck({...editingCheck, filter_expr: e.target.value})} placeholder="Optional" /></div>
+                  </div>
+                  <div><label className="text-xs text-muted-foreground">Arguments (JSON)</label>
+                    <Input value={JSON.stringify(editingCheck.arguments || {})} onChange={(e) => { try { setEditingCheck({...editingCheck, arguments: JSON.parse(e.target.value)}); } catch {} }} className="font-mono text-xs" /></div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={saveEdit}><CheckCircle2 className="h-4 w-4 mr-1" />Save</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingCheck(null)}>Cancel</Button>
+                  </div>
+                </CardContent></Card>
+              )}
+
               {/* Checks table */}
               {filteredChecks.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground"><Settings className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>No checks. Profile a table or create manually.</p></div>
@@ -449,6 +601,14 @@ export default function DQXPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
                       <tr>
+                        <th className="px-3 py-2 w-8">
+                          <input type="checkbox"
+                            checked={selectedChecks.size === filteredChecks.length && filteredChecks.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedChecks(new Set(filteredChecks.map(c => c.check_id)));
+                              else setSelectedChecks(new Set());
+                            }} />
+                        </th>
                         <th className="text-left px-3 py-2 font-medium">Name</th>
                         <th className="text-left px-3 py-2 font-medium">Table</th>
                         <th className="text-left px-3 py-2 font-medium">Function</th>
@@ -460,7 +620,15 @@ export default function DQXPage() {
                     </thead>
                     <tbody>
                       {filteredChecks.map((c) => (
-                        <tr key={c.check_id} className="border-t hover:bg-muted/30">
+                        <tr key={c.check_id} className={`border-t hover:bg-muted/30 ${selectedChecks.has(c.check_id) ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}>
+                          <td className="px-3 py-2">
+                            <input type="checkbox" checked={selectedChecks.has(c.check_id)}
+                              onChange={(e) => {
+                                const next = new Set(selectedChecks);
+                                if (e.target.checked) next.add(c.check_id); else next.delete(c.check_id);
+                                setSelectedChecks(next);
+                              }} />
+                          </td>
                           <td className="px-3 py-2">
                             <span className="font-medium text-xs">{c.name || c.check_function}</span>
                             <Badge className={`ml-2 text-[10px] ${c.criticality === "error" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{c.criticality}</Badge>
@@ -477,6 +645,7 @@ export default function DQXPage() {
                             </button>
                           </td>
                           <td className="px-3 py-2 text-right">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingCheck({...c, arguments: typeof c.arguments === "object" ? c.arguments : {}})}><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="sm" onClick={() => deleteCheck(c.check_id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
                           </td>
                         </tr>
@@ -540,6 +709,15 @@ export default function DQXPage() {
                       <span className="text-xs">Filter outliers from min/max</span>
                     </div>
                   </div>
+                  {profileScope !== "table" && (
+                    <div>
+                      <label className="text-xs text-muted-foreground font-medium">Parallelism</label>
+                      <Input type="number" min="1" max="16" className="h-8 text-xs mt-1"
+                        value={profileOpts.max_parallelism}
+                        onChange={(e) => setProfileOpts({...profileOpts, max_parallelism: parseInt(e.target.value) || 4})} />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Tables profiled in parallel (1–16)</p>
+                    </div>
+                  )}
                 </div>
 
                 <Button onClick={profileAction} disabled={profiling || !profileCatalog || (profileScope !== "catalog" && !profileSchema) || (profileScope === "table" && !profileTable)}>
@@ -624,6 +802,7 @@ export default function DQXPage() {
                         <th className="text-right px-3 py-2 font-medium">Checks</th>
                         <th className="text-right px-3 py-2 font-medium">Time</th>
                         <th className="text-right px-3 py-2 font-medium">Executed</th>
+                        <th className="text-right px-3 py-2 font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -639,6 +818,11 @@ export default function DQXPage() {
                           <td className="px-3 py-2 text-right">{r.checks_applied}</td>
                           <td className="px-3 py-2 text-right text-muted-foreground">{r.execution_time_ms}ms</td>
                           <td className="px-3 py-2 text-right text-xs text-muted-foreground">{r.executed_at?.slice(0, 16)}</td>
+                          <td className="px-3 py-2 text-right">
+                            <Button variant="ghost" size="sm" onClick={() => runChecks(r.table_fqn)} disabled={running === r.table_fqn}>
+                              {running === r.table_fqn ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 
-from api.dependencies import get_db_client, get_app_config
+from api.dependencies import get_db_client, get_app_config, get_credentials
 from api.models.governance import (
     GlossaryTermCreate, GlossaryLinkRequest, MetadataSearchRequest,
     DQRuleCreate, DQRunRequest,
@@ -17,6 +17,47 @@ from api.models.odcs import (
 )
 
 router = APIRouter()
+
+
+def _ensure_spark(host: str | None = None, token: str | None = None, client=None):
+    """Ensure Spark session is configured with the correct workspace credentials.
+
+    Called by DQX endpoints before any Spark operation. Uses host/token from
+    request headers, or extracts from the authenticated WorkspaceClient.
+    """
+    from src.spark_session import configure_spark, _spark_config
+
+    # Try to get host/token from client.config if not provided via headers
+    if not host and client is not None:
+        try:
+            host = getattr(client.config, "host", None)
+            token = token or getattr(client.config, "token", None)
+        except Exception:
+            pass
+
+    current_host = _spark_config.get("host", "")
+
+    # If we have credentials and they differ from current config → reconfigure
+    if host and host != current_host:
+        import logging
+        logging.getLogger(__name__).info(f"Spark: configuring from request (host={host[:40]})")
+        configure_spark(
+            host=host,
+            token=token or "",
+            serverless=_spark_config.get("serverless", True),
+            cluster_id=_spark_config.get("cluster_id", ""),
+        )
+    elif not current_host and not host:
+        # No config at all — try env as last resort
+        import os
+        env_host = os.environ.get("DATABRICKS_HOST", "")
+        if env_host:
+            configure_spark(
+                host=env_host,
+                token=os.environ.get("DATABRICKS_TOKEN", ""),
+                serverless=_spark_config.get("serverless", True),
+                cluster_id=_spark_config.get("cluster_id", ""),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -439,26 +480,30 @@ async def generate_catalog_endpoint(req: ODCSGenerateCatalogRequest, client=Depe
 # ---------------------------------------------------------------------------
 
 @router.get("/dqx/spark-status")
-async def dqx_spark_status_endpoint():
+async def dqx_spark_status_endpoint(client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Check Spark session availability and connection status."""
+    _ensure_spark(creds[0], creds[1], client)
     from src.spark_session import get_spark_status
     return get_spark_status()
 
 
 @router.post("/dqx/spark-configure")
-async def dqx_spark_configure_endpoint(req: dict):
+async def dqx_spark_configure_endpoint(req: dict, creds: tuple = Depends(get_credentials)):
     """Configure Spark session (cluster_id or serverless mode).
 
-    Automatically passes the app's current DATABRICKS_HOST/TOKEN so the
-    Spark session connects to the same workspace the user is authenticated with.
+    Uses the request's authentication credentials so the Spark session
+    connects to the same workspace the user is authenticated with.
     """
     import os
     from src.spark_session import configure_spark
+    # Use request header credentials first, fall back to env vars
+    host = creds[0] or os.environ.get("DATABRICKS_HOST", "")
+    token = creds[1] or os.environ.get("DATABRICKS_TOKEN", "")
     configure_spark(
         cluster_id=req.get("cluster_id", ""),
         serverless=req.get("serverless", False),
-        host=os.environ.get("DATABRICKS_HOST", ""),
-        token=os.environ.get("DATABRICKS_TOKEN", ""),
+        host=host,
+        token=token,
     )
     from src.spark_session import get_spark_status
     return get_spark_status()
@@ -481,8 +526,9 @@ async def dqx_functions_endpoint():
 
 
 @router.post("/dqx/profile")
-async def dqx_profile_endpoint(req: DQXProfileRequest, client=Depends(get_db_client)):
+async def dqx_profile_endpoint(req: DQXProfileRequest, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Profile a table using DQX Profiler and optionally auto-generate checks."""
+    _ensure_spark(creds[0], creds[1], client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     opts = req.model_dump(exclude={"table_fqn", "auto_generate_checks"})
@@ -493,8 +539,9 @@ async def dqx_profile_endpoint(req: DQXProfileRequest, client=Depends(get_db_cli
 
 
 @router.post("/dqx/profile-schema")
-async def dqx_profile_schema_endpoint(req: dict, client=Depends(get_db_client)):
+async def dqx_profile_schema_endpoint(req: dict, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Profile all tables in a schema and auto-generate DQX checks."""
+    _ensure_spark(creds[0], creds[1], client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import generate_checks_for_schema
@@ -506,8 +553,9 @@ async def dqx_profile_schema_endpoint(req: dict, client=Depends(get_db_client)):
 
 
 @router.post("/dqx/profile-catalog")
-async def dqx_profile_catalog_endpoint(req: dict, client=Depends(get_db_client)):
+async def dqx_profile_catalog_endpoint(req: dict, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Profile all tables in a catalog and auto-generate DQX checks."""
+    _ensure_spark(creds[0], creds[1], client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import generate_checks_for_catalog
@@ -546,6 +594,27 @@ async def dqx_delete_check_endpoint(check_id: str, client=Depends(get_db_client)
     return {"status": "deleted"}
 
 
+@router.post("/dqx/checks/delete-bulk")
+async def dqx_delete_bulk_endpoint(req: dict, client=Depends(get_db_client)):
+    """Delete multiple DQX checks by IDs, or all checks for a table."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import delete_checks_bulk
+    check_ids = req.get("check_ids", [])
+    table_fqn = req.get("table_fqn", "")
+    delete_all = req.get("delete_all", False)
+    return delete_checks_bulk(client, wid, config, check_ids, table_fqn, delete_all)
+
+
+@router.post("/dqx/clear-all")
+async def dqx_clear_all_endpoint(client=Depends(get_db_client)):
+    """Clear ALL DQX data — checks, profiles, run results, definitions."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import clear_all_dqx_data
+    return clear_all_dqx_data(client, wid, config)
+
+
 @router.post("/dqx/checks/{check_id}/toggle")
 async def dqx_toggle_check_endpoint(check_id: str, req: dict, client=Depends(get_db_client)):
     """Enable or disable a DQX check."""
@@ -556,9 +625,19 @@ async def dqx_toggle_check_endpoint(check_id: str, req: dict, client=Depends(get
     return {"status": "toggled", "enabled": req.get("enabled", True)}
 
 
+@router.put("/dqx/checks/{check_id}")
+async def dqx_update_check_endpoint(check_id: str, req: dict, client=Depends(get_db_client)):
+    """Update a DQX check (name, criticality, arguments, filter)."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import update_check
+    return update_check(client, wid, config, check_id, req)
+
+
 @router.post("/dqx/run")
-async def dqx_run_endpoint(req: DQXRunRequest, client=Depends(get_db_client)):
+async def dqx_run_endpoint(req: DQXRunRequest, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Execute DQX checks on a table."""
+    _ensure_spark(creds[0], creds[1], client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import run_checks
@@ -575,8 +654,9 @@ async def dqx_results_endpoint(table_fqn: str = "", limit: int = 50, client=Depe
 
 
 @router.post("/dqx/run-all")
-async def dqx_run_all_endpoint(client=Depends(get_db_client)):
+async def dqx_run_all_endpoint(client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
     """Run DQX checks for all monitored tables."""
+    _ensure_spark(creds[0], creds[1], client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import run_all_checks

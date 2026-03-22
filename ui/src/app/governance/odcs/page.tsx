@@ -91,7 +91,11 @@ export default function ODCSContractsPage() {
 
   async function exportYaml(contractId: string) {
     try {
-      const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`);
+      const headers: Record<string, string> = {};
+      const h = sessionStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
+      const tk = sessionStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
+      const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
+      const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`, { headers });
       const text = await res.text();
       const blob = new Blob([text], { type: "text/yaml" });
       const url = URL.createObjectURL(blob);

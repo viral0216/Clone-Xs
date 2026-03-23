@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -119,7 +118,7 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
           const current = stepKeys.indexOf(step);
           return (
             <div key={s} className="flex items-center gap-1">
-              {i > 0 && <span className="text-gray-300 mx-1">&rarr;</span>}
+              {i > 0 && <span className="text-muted-foreground/50 mx-1">&rarr;</span>}
               <Badge variant={i <= current ? "default" : "outline"} className={i < current ? "bg-green-600" : i === current ? "bg-blue-600" : ""}>
                 {i + 1}. {s}
               </Badge>
@@ -131,12 +130,12 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
       {/* Step: Login */}
       {step === "login" && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Sign in with your Azure account to discover Databricks workspaces.</p>
+          <p className="text-sm text-muted-foreground">Sign in with your Azure account to discover Databricks workspaces.</p>
           <Button onClick={handleAzureLogin} disabled={loading} size="lg">
             {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Globe className="h-4 w-4 mr-2" />}
             {loading ? "Opening browser..." : "Login with Azure"}
           </Button>
-          <p className="text-xs text-gray-400">Opens your browser for Azure AD authentication (like `az login`)</p>
+          <p className="text-xs text-muted-foreground/70">Opens your browser for Azure AD authentication (like `az login`)</p>
         </div>
       )}
 
@@ -145,21 +144,21 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
         <div className="space-y-3">
           <p className="text-sm font-medium">Select Tenant ({tenants.length} found)</p>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {tenants.map((t) => (
+            {tenants.map((t: any) => (
               <div
                 key={t.tenant_id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                className="flex items-center justify-between p-3 bg-muted rounded-lg hover:bg-accent cursor-pointer transition-colors"
                 onClick={() => selectTenant(t.tenant_id)}
               >
                 <div>
                   <p className="font-medium text-sm">{t.name}</p>
-                  <p className="text-xs text-gray-400 font-mono">{t.tenant_id}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{t.tenant_id}</p>
                 </div>
-                {t.is_active && <Badge className="bg-green-100 text-green-800 text-xs">Active</Badge>}
+                {t.is_active && <Badge className="bg-green-500/15 text-green-500 text-xs">Active</Badge>}
               </div>
             ))}
           </div>
-          {loading && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading subscriptions...</div>}
+          {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading subscriptions...</div>}
         </div>
       )}
 
@@ -168,24 +167,24 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
         <div className="space-y-3">
           <p className="text-sm font-medium">Select Subscription ({subscriptions.length} found)</p>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {subscriptions.map((s) => (
+            {subscriptions.map((s: any) => (
               <div
                 key={s.subscription_id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                className="flex items-center justify-between p-3 bg-muted rounded-lg hover:bg-accent cursor-pointer transition-colors"
                 onClick={() => selectSubscription(s.subscription_id)}
               >
                 <div>
                   <p className="font-medium text-sm">{s.name}</p>
-                  <p className="text-xs text-gray-400 font-mono">{s.subscription_id}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{s.subscription_id}</p>
                 </div>
-                <Badge variant="outline" className={`text-xs ${s.state === "Enabled" ? "text-green-600" : "text-gray-400"}`}>
+                <Badge variant="outline" className={`text-xs ${s.state === "Enabled" ? "text-green-600" : "text-muted-foreground"}`}>
                   {s.state}
                 </Badge>
               </div>
             ))}
           </div>
           <Button variant="outline" size="sm" onClick={() => setStep("tenant")}>Back to Tenants</Button>
-          {loading && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Discovering workspaces...</div>}
+          {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Discovering workspaces...</div>}
         </div>
       )}
 
@@ -194,22 +193,22 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
         <div className="space-y-3">
           <p className="text-sm font-medium">Select Databricks Workspace ({workspaces.length} found)</p>
           {workspaces.length === 0 ? (
-            <p className="text-sm text-gray-400">No Databricks workspaces found in this subscription.</p>
+            <p className="text-sm text-muted-foreground">No Databricks workspaces found in this subscription.</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {workspaces.map((ws) => (
+              {workspaces.map((ws: any) => (
                 <div
                   key={ws.host || ws.name}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                  className="flex items-center justify-between p-3 bg-muted rounded-lg hover:bg-accent cursor-pointer transition-colors"
                   onClick={() => connectWorkspace(ws.host)}
                 >
                   <div>
                     <p className="font-medium text-sm">{ws.name}</p>
-                    <p className="text-xs text-gray-400">{ws.host}</p>
-                    <p className="text-xs text-gray-300">{ws.location} &middot; {ws.sku} &middot; {ws.resource_group}</p>
+                    <p className="text-xs text-muted-foreground">{ws.host}</p>
+                    <p className="text-xs text-muted-foreground/60">{ws.location} &middot; {ws.sku} &middot; {ws.resource_group}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={`text-xs ${ws.state === "Succeeded" ? "text-green-600" : "text-gray-400"}`}>
+                    <Badge variant="outline" className={`text-xs ${ws.state === "Succeeded" ? "text-green-600" : "text-muted-foreground"}`}>
                       {ws.state}
                     </Badge>
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); connectWorkspace(ws.host); }} disabled={loading}>
@@ -263,8 +262,30 @@ export default function SettingsPage() {
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [testingWarehouse, setTestingWarehouse] = useState<string>("");
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const auth = useAuthStatus();
   const warehouses = useWarehouses();
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await api.post("/auth/logout");
+      sessionStorage.removeItem("dbx_host");
+      sessionStorage.removeItem("dbx_token");
+      localStorage.removeItem("dbx_warehouse_id");
+      setHost("");
+      setToken("");
+      setSelectedWarehouse("");
+      auth.refetch();
+      warehouses.refetch();
+      toast.success("Logged out successfully");
+    } catch (e: any) {
+      toast.error(e.message || "Logout failed");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   // Detect Databricks App runtime and auto-login
   useEffect(() => {
@@ -452,8 +473,8 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-gray-500 mt-1">Databricks workspace connection settings — workspace URL, authentication (PAT/OAuth), SQL warehouse selection, and audit table initialization.</p>
-        <p className="text-xs text-gray-400 mt-1">
+        <p className="text-muted-foreground mt-1">Databricks workspace connection settings — workspace URL, authentication (PAT/OAuth), SQL warehouse selection, and audit table initialization.</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">
           <a href="https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/pat" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Personal access tokens</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SQL warehouses</a>
         </p>
       </div>
@@ -486,19 +507,25 @@ export default function SettingsPage() {
             {auth.data?.auth_method && (
               <Badge variant="outline" className="text-xs">{auth.data.auth_method}</Badge>
             )}
+            {auth.data?.authenticated && (
+              <Button variant="ghost" size="sm" onClick={handleLogout} disabled={loggingOut} className="ml-auto text-muted-foreground hover:text-destructive">
+                {loggingOut ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <XCircle className="h-4 w-4 mr-1" />}
+                Logout
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* Databricks App Banner */}
       {isDatabricksApp && (
-        <Card className="border-blue-200 bg-blue-50">
+        <Card className="border-blue-500/30 bg-blue-500/10">
           <CardContent className="py-4">
             <div className="flex items-center gap-3">
-              <Shield className="h-5 w-5 text-blue-600" />
+              <Shield className="h-5 w-5 text-blue-500" />
               <div>
-                <p className="font-medium text-blue-900">Running as Databricks App</p>
-                <p className="text-sm text-blue-700">
+                <p className="font-medium text-blue-600 dark:text-blue-400">Running as Databricks App</p>
+                <p className="text-sm text-blue-600/80 dark:text-blue-400/80">
                   Authenticated automatically via workspace service principal. No manual credentials required.
                 </p>
               </div>
@@ -521,8 +548,8 @@ export default function SettingsPage() {
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.key
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    ? "border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
                 }`}
               >
                 {tab.icon}
@@ -541,9 +568,9 @@ export default function SettingsPage() {
                   Loading profiles...
                 </div>
               ) : profiles.length === 0 ? (
-                <p className="text-gray-500 text-sm">
+                <p className="text-muted-foreground text-sm">
                   No profiles found in ~/.databrickscfg. Run{" "}
-                  <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">databricks configure</code>{" "}
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs">databricks configure</code>{" "}
                   to create one.
                 </p>
               ) : (
@@ -553,8 +580,8 @@ export default function SettingsPage() {
                       key={p.name}
                       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                         selectedProfile === p.name
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300 bg-gray-50"
+                          ? "border-blue-500 bg-blue-500/10"
+                          : "border-border hover:border-border/80 bg-muted"
                       }`}
                     >
                       <input
@@ -569,10 +596,10 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{p.name}</span>
                           {p.auth_type && <Badge variant="outline" className="text-xs">{p.auth_type}</Badge>}
-                          {p.has_token && <Badge className="bg-green-100 text-green-700 text-xs">has token</Badge>}
+                          {p.has_token && <Badge className="bg-green-500/15 text-green-500 text-xs">has token</Badge>}
                         </div>
                         {p.host && (
-                          <span className="text-xs text-gray-500 font-mono truncate block">{p.host}</span>
+                          <span className="text-xs text-muted-foreground font-mono truncate block">{p.host}</span>
                         )}
                       </div>
                     </label>
@@ -607,7 +634,7 @@ export default function SettingsPage() {
                 />
               </div>
               <Button onClick={saveCredentials}>Save & Connect</Button>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted-foreground/70">
                 Credentials are stored in browser session only (not sent to any server except your Databricks workspace).
               </p>
             </div>
@@ -637,7 +664,7 @@ export default function SettingsPage() {
                 )}
                 Login with Databricks
               </Button>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground/70">
                 Opens browser for Databricks OAuth authentication. Requires Databricks CLI installed.
               </p>
             </div>
@@ -655,7 +682,7 @@ export default function SettingsPage() {
                   className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
                     spAuthType === "databricks"
                       ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+                      : "bg-background text-muted-foreground border-border hover:border-border/80"
                   }`}
                 >
                   Databricks OAuth
@@ -665,7 +692,7 @@ export default function SettingsPage() {
                   className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
                     spAuthType === "azure"
                       ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+                      : "bg-background text-muted-foreground border-border hover:border-border/80"
                   }`}
                 >
                   Azure AD
@@ -723,27 +750,27 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <>
-                  <div className="border rounded-lg overflow-hidden">
+                  <div className="border border-border rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
+                      <thead className="bg-muted">
                         <tr>
-                          <th className="text-left px-4 py-2 font-medium text-gray-600">Variable</th>
-                          <th className="text-left px-4 py-2 font-medium text-gray-600">Value</th>
-                          <th className="text-center px-4 py-2 font-medium text-gray-600">Status</th>
+                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Variable</th>
+                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Value</th>
+                          <th className="text-center px-4 py-2 font-medium text-muted-foreground">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y">
+                      <tbody className="divide-y divide-border">
                         {Object.entries(envVars).map(([key, val]) => (
-                          <tr key={key} className="hover:bg-gray-50">
+                          <tr key={key} className="hover:bg-muted/50">
                             <td className="px-4 py-2 font-mono text-xs">{key}</td>
-                            <td className="px-4 py-2 font-mono text-xs text-gray-600">
-                              {val || <span className="text-gray-300">--</span>}
+                            <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
+                              {val || <span className="text-muted-foreground/40">--</span>}
                             </td>
                             <td className="px-4 py-2 text-center">
                               {val ? (
                                 <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
                               ) : (
-                                <XCircle className="h-4 w-4 text-gray-300 inline-block" />
+                                <XCircle className="h-4 w-4 text-muted-foreground/40 inline-block" />
                               )}
                             </td>
                           </tr>
@@ -751,7 +778,7 @@ export default function SettingsPage() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground/70">
                     Set environment variables before starting the server. Sensitive values are masked for display.
                   </p>
                 </>

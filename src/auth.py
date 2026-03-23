@@ -104,6 +104,16 @@ def clear_cache() -> None:
     logger.debug("Auth and metadata cache cleared")
 
 
+def clear_session() -> None:
+    """Remove the saved session file."""
+    try:
+        if os.path.exists(_SESSION_FILE):
+            os.remove(_SESSION_FILE)
+            logger.debug("Session file removed: %s", _SESSION_FILE)
+    except Exception as e:
+        logger.debug("Failed to remove session file: %s", e)
+
+
 # ── CLI helpers ────────────────────────────────────────────────────────
 
 # Suppress az CLI browser popups, telemetry, and interactive prompts

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client
 from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ProfileRequest, ServicePrincipalRequest, WarehouseInfo
+from src.auth import clear_cache, ensure_authenticated, get_client, is_databricks_app
 
 router = APIRouter()
 
@@ -11,7 +12,6 @@ router = APIRouter()
 @router.get("/auto-login")
 async def auto_login():
     """Auto-login when running as a Databricks App (service principal injected)."""
-    from src.auth import is_databricks_app, ensure_authenticated
     if not is_databricks_app():
         raise HTTPException(status_code=404, detail="Not running as Databricks App")
     try:
@@ -29,9 +29,9 @@ async def auto_login():
 @router.post("/login")
 async def login(req: LoginRequest):
     """Authenticate to a Databricks workspace."""
-    from src.auth import ensure_authenticated, get_client
     try:
-        client = get_client(req.host, req.token)
+        clear_cache()
+        get_client(req.host, req.token)
         info = ensure_authenticated(req.host, req.token)
         return AuthStatus(
             authenticated=True,
@@ -90,8 +90,7 @@ async def oauth_login(req: OAuthLoginRequest):
     """Trigger browser-based OAuth login."""
     from src.auth import ensure_logged_in
     try:
-        host = ensure_logged_in(host=req.host, force=True)
-        from src.auth import ensure_authenticated
+        _username = ensure_logged_in(host=req.host, force=True)
         info = ensure_authenticated()
         return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="oauth-u2m")
     except Exception as e:
@@ -99,12 +98,11 @@ async def oauth_login(req: OAuthLoginRequest):
 
 
 @router.get("/profiles")
-async def list_profiles():
+async def get_profiles():
     """List available Databricks CLI profiles from ~/.databrickscfg."""
     from src.auth import list_profiles
     try:
-        profiles = list_profiles()
-        return profiles
+        return list_profiles()
     except Exception:
         return []
 
@@ -112,13 +110,10 @@ async def list_profiles():
 @router.post("/use-profile")
 async def use_profile(req: ProfileRequest):
     """Switch to a specific CLI profile."""
-    from src.auth import get_client
-    import os
-    os.environ["DATABRICKS_CONFIG_PROFILE"] = req.profile_name
     try:
-        client = get_client()
-        from src.auth import ensure_authenticated
-        info = ensure_authenticated()
+        clear_cache()
+        get_client(profile=req.profile_name)
+        info = ensure_authenticated(profile=req.profile_name)
         return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method=f"cli-profile:{req.profile_name}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -127,17 +122,25 @@ async def use_profile(req: ProfileRequest):
 @router.post("/service-principal")
 async def service_principal_login(req: ServicePrincipalRequest):
     """Authenticate with service principal credentials."""
-    import os
-    os.environ["DATABRICKS_HOST"] = req.host
-    os.environ["DATABRICKS_CLIENT_ID"] = req.client_id
-    os.environ["DATABRICKS_CLIENT_SECRET"] = req.client_secret
-    if req.tenant_id:
-        os.environ["AZURE_TENANT_ID"] = req.tenant_id
-    from src.auth import get_client, ensure_authenticated
+    from databricks.sdk import WorkspaceClient
     try:
-        client = get_client(req.host)
-        info = ensure_authenticated(req.host)
-        return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="service-principal")
+        clear_cache()
+        if req.auth_type == "azure" and req.tenant_id:
+            client = WorkspaceClient(
+                host=req.host,
+                azure_client_id=req.client_id,
+                azure_client_secret=req.client_secret,
+                azure_tenant_id=req.tenant_id,
+            )
+        else:
+            client = WorkspaceClient(
+                host=req.host,
+                client_id=req.client_id,
+                client_secret=req.client_secret,
+            )
+        me = client.current_user.me()
+        user = me.user_name or me.display_name or ""
+        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal")
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -184,16 +187,11 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.config import Config
     try:
-        # Use Azure CLI auth directly — no browser popup
+        clear_cache()
         config = Config(host=req.host, auth_type="azure-cli")
         client = WorkspaceClient(config=config)
-        # Verify by getting current user
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        # Cache this client for subsequent API calls
-        import os
-        os.environ["DATABRICKS_HOST"] = req.host
-        os.environ["DATABRICKS_AUTH_TYPE"] = "azure-cli"
         return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli")
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -253,3 +251,12 @@ async def list_volumes(client=Depends(get_db_client)):
         return _list_volumes(client)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list volumes: {e}")
+
+
+@router.post("/logout")
+async def logout():
+    """Clear authentication cache and session."""
+    from src.auth import clear_session
+    clear_cache()
+    clear_session()
+    return {"status": "ok", "message": "Logged out successfully"}

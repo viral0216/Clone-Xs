@@ -37,7 +37,7 @@ def ensure_configured():
     host_env = os.environ.get("DATABRICKS_HOST", "")
     token_env = os.environ.get("DATABRICKS_TOKEN", "")
     client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
-    client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "")
+    os.environ.get("DATABRICKS_CLIENT_SECRET", "")
     current_host = _spark_config.get("host", "")
 
     logger.debug(f"Spark ensure_configured: env_host={host_env[:30] if host_env else 'NOT SET'}, "

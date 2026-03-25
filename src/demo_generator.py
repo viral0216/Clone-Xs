@@ -6,6 +6,7 @@ from the client.
 """
 
 import logging
+import re
 import time
 
 from databricks.sdk import WorkspaceClient
@@ -1514,7 +1515,7 @@ def _generate_industry(
 
     # Create UDFs (if enabled)
     if not create_functions:
-        logger.info(f"  Skipping UDF creation (disabled)")
+        logger.info("  Skipping UDF creation (disabled)")
     for udf_def in (industry_def.get("udfs", []) if create_functions else []):
         try:
             name, params, return_type, comment, body = udf_def
@@ -2005,8 +2006,6 @@ def _create_volumes(client, warehouse_id, catalog, industry):
 
 def _create_demo_audit_logs(client, warehouse_id, catalog, industries):
     """Pre-populate audit/run_logs tables with fake clone history so Dashboard shows data."""
-    import json
-    from datetime import datetime, timedelta
     import random
 
     # Get audit table config
@@ -2022,7 +2021,6 @@ def _create_demo_audit_logs(client, warehouse_id, catalog, industries):
     audit_schema = audit_trail.get("schema", "logs")
 
     run_logs_fqn = f"{audit_catalog}.{audit_schema}.run_logs"
-    ops_fqn = f"{audit_catalog}.{audit_schema}.clone_operations"
 
     # Generate 20 fake clone operations over the past 30 days
     fake_ops = []
@@ -2334,7 +2332,6 @@ _FK_DIM_ROWS = {
     "insurance": {"policy_id": 100_000_000, "customer_id": 1_000_000, "agent_id": 1_000_000, "claim_id": 50_000_000, "adjuster_id": 5_000, "underwriter_id": 500},
 }
 
-import re
 
 def _fix_fk_ranges(insert_expr: str, industry_name: str, scale_factor: float, start_date: str = "2020-01-01") -> str:
     """Replace hardcoded FK ranges with scaled ranges for referential integrity.

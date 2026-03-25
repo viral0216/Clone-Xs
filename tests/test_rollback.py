@@ -99,7 +99,7 @@ def test_rollback_drops_objects(mock_sql):
         path = f.name
 
     try:
-        results = rollback(MagicMock(), "wh", path)
+        rollback(MagicMock(), "wh", path)
         # Should have called DROP for each object
         all_sql = [c[0][2] for c in mock_sql.call_args_list]
         drop_table = [s for s in all_sql if "DROP TABLE" in s]
@@ -133,7 +133,7 @@ def test_rollback_with_drop_catalog(mock_sql):
         path = f.name
 
     try:
-        results = rollback(MagicMock(), "wh", path, drop_catalog=True)
+        rollback(MagicMock(), "wh", path, drop_catalog=True)
         all_sql = [c[0][2] for c in mock_sql.call_args_list]
         drop_cat = [s for s in all_sql if "DROP CATALOG" in s]
         assert len(drop_cat) >= 1

@@ -1,7 +1,7 @@
 """Tests for scheduled cloning."""
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.scheduler import parse_interval, parse_cron, check_drift, run_scheduled_clone
 

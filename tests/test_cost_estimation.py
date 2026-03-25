@@ -1,6 +1,6 @@
 """Tests for src/cost_estimation.py — storage cost estimation for deep clones."""
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.cost_estimation import estimate_clone_cost, get_table_size_bytes
 

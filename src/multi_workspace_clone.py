@@ -31,7 +31,6 @@ def clone_to_multiple_workspaces(
     source = config.get("source_catalog", "unknown")
     logger.info(f"Starting parallel clone of '{source}' to {len(destinations)} workspaces")
 
-    results = {}
 
     def _clone_to_workspace(dest_config: dict) -> dict:
         host = dest_config["host"]

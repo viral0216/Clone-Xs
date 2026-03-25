@@ -79,60 +79,6 @@ def generate_dab_bundle(
         yaml.dump(bundle_config, f, default_flow_style=False, sort_keys=False)
 
     # --- resources/clone_job.yml ---
-    tasks = [
-        {
-            "task_key": "preflight_checks",
-            "description": "Run pre-flight checks before cloning",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clxs",
-                "parameters": [
-                    "preflight",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-        {
-            "task_key": "clone_catalog",
-            "depends_on": [{"task_key": "preflight_checks"}],
-            "description": f"Clone {source} -> {dest}",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clxs",
-                "parameters": [
-                    "clone",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                    "--enable-rollback",
-                    "--validate",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-        {
-            "task_key": "validate_clone",
-            "depends_on": [{"task_key": "clone_catalog"}],
-            "description": "Validate the clone with row counts",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clxs",
-                "parameters": [
-                    "validate",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-    ]
 
     # Use notebook task as alternative (no wheel needed)
     notebook_tasks = [

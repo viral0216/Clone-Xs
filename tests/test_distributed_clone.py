@@ -3,7 +3,7 @@
 import os
 import tempfile
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.distributed_clone import generate_spark_clone_notebook, submit_distributed_clone
 
@@ -120,7 +120,7 @@ class TestSubmitDistributedClone:
         client.config.host = "https://ws.databricks.com"
 
         config = {"source_catalog": "mycat", "destination_catalog": "dest"}
-        result = submit_distributed_clone(client, "wh-123", config, cluster_id="c1")
+        submit_distributed_clone(client, "wh-123", config, cluster_id="c1")
 
         call_kwargs = client.jobs.submit.call_args
         tasks = call_kwargs.kwargs.get("tasks") or call_kwargs[1].get("tasks")

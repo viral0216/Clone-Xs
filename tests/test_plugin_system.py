@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.plugin_system import ClonePlugin, LoggingPlugin, PluginManager
 

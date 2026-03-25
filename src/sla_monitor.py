@@ -9,7 +9,6 @@ import logging
 import uuid
 from datetime import datetime
 
-from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql
 

@@ -155,7 +155,6 @@ def profile_table(client, warehouse_id, config, table_fqn: str, options: dict | 
     if not _dqx_available():
         return {"error": "DQX not available. Requires Databricks Runtime with PySpark."}
 
-    from databricks.sdk import WorkspaceClient
     from databricks.labs.dqx.profiler.profiler import DQProfiler
 
     opts = options or {}
@@ -226,7 +225,6 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
     if not _dqx_available():
         return {"error": "DQX not available. Requires Databricks Runtime with PySpark."}
 
-    from databricks.sdk import WorkspaceClient
     from databricks.labs.dqx.profiler.profiler import DQProfiler
     from databricks.labs.dqx.profiler.generator import DQGenerator
 
@@ -406,7 +404,6 @@ def run_checks(client, warehouse_id, config, table_fqn: str, check_ids: list[str
         return {"error": "DQX not available. Requires Databricks Runtime with PySpark."}
 
     import time
-    from databricks.sdk import WorkspaceClient
     from databricks.labs.dqx.engine import DQEngine
 
     schema = _get_schema(config)

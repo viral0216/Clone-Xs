@@ -21,7 +21,7 @@ def test_get_schemas_returns_names(mock_sdk):
 @patch("src.clone_catalog.list_schemas_sdk")
 def test_get_schemas_excludes_system_schemas(mock_sdk):
     mock_sdk.return_value = ["sales"]
-    result = get_schemas(MagicMock(), "wh", "prod", [])
+    get_schemas(MagicMock(), "wh", "prod", [])
     # list_schemas_sdk is called with exclude list containing system schemas
     exclude_arg = mock_sdk.call_args[1]["exclude"]
     assert "information_schema" in exclude_arg

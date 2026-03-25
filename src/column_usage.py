@@ -110,9 +110,9 @@ def query_column_users(
             # Also match just schema.table or table name
             table_patterns.append(re.escape(f"{parts[1]}.{parts[2]}"))
             table_patterns.append(re.escape(parts[2]))
-        table_re = "|".join(table_patterns)
+        "|".join(table_patterns)
     else:
-        table_re = rf"`?{re.escape(catalog)}`?\.`?(\w+)`?\.`?(\w+)`?"
+        rf"`?{re.escape(catalog)}`?\.`?(\w+)`?\.`?(\w+)`?"
 
     # Extract columns from SELECT ... FROM patterns
     select_pattern = re.compile(

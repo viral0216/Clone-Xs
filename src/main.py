@@ -1963,13 +1963,13 @@ def cmd_plugin(args):
         if not args.name:
             logger.error("Provide a plugin name to enable")
             sys.exit(1)
-        result = toggle_plugin(args.name, enabled=True)
+        toggle_plugin(args.name, enabled=True)
         print(f"Plugin '{args.name}' enabled.")
     elif action == "disable":
         if not args.name:
             logger.error("Provide a plugin name to disable")
             sys.exit(1)
-        result = toggle_plugin(args.name, enabled=False)
+        toggle_plugin(args.name, enabled=False)
         print(f"Plugin '{args.name}' disabled.")
     elif action == "install":
         if not args.name:
@@ -2061,7 +2061,7 @@ def cmd_demo_data(args):
     client = _get_auth_client(args)
     _resolve_warehouse_id(args, config, client)
 
-    from src.demo_generator import generate_demo_catalog, cleanup_demo_catalog, ALL_INDUSTRIES
+    from src.demo_generator import generate_demo_catalog, cleanup_demo_catalog
 
     catalog_name = args.catalog
 

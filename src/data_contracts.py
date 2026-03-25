@@ -17,7 +17,6 @@ import re
 import uuid
 from datetime import datetime
 
-import yaml
 
 from src.client import execute_sql
 
@@ -420,7 +419,7 @@ def map_dq_rules_to_odcs(client, warehouse_id, config, contract_id: str) -> list
                 "customProperties": [{"property": "dq_rule_id", "value": rule.get("rule_id", "")}],
             }
             # Map threshold to comparison operator
-            threshold = float(rule.get("threshold", 0))
+            float(rule.get("threshold", 0))
             if metric == "rowCount":
                 try:
                     params = json.loads(rule.get("params", "{}")) if isinstance(rule.get("params"), str) else rule.get("params", {})
@@ -589,7 +588,7 @@ def run_dqx_validation(client, warehouse_id, config, contract_id: str) -> dict:
         return {"status": "no_dqx_checks", "message": "No DQX-compatible quality rules found"}
 
     try:
-        from databricks.sdk import WorkspaceClient
+        from databricks.sdk import WorkspaceClient as _WC  # noqa: F401
         from databricks.labs.dqx.engine import DQEngine
     except ImportError:
         return {"status": "dqx_not_installed", "message": "databricks-labs-dqx is not installed. Install with: pip install databricks-labs-dqx"}
@@ -1495,7 +1494,7 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     Introspects: columns, tags, properties, lineage, freshness, row count,
     column masks, row filters, and optionally DQX profiling.
     """
-    from src.client import get_table_info_sdk, list_schemas_sdk, list_tables_sdk
+    from src.client import get_table_info_sdk
 
     opts = {
         "include_quality_rules": True,
@@ -1780,7 +1779,7 @@ def run_dqx_profiling(client, warehouse_id, table_fqn: str, options: dict | None
     Requires databricks-labs-dqx to be installed.
     """
     try:
-        from databricks.sdk import WorkspaceClient
+        from databricks.sdk import WorkspaceClient as _WC2  # noqa: F401
         from databricks.labs.dqx.profiler.profiler import DQProfiler
         from databricks.labs.dqx.profiler.generator import DQGenerator
     except ImportError:

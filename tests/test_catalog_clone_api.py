@@ -49,14 +49,14 @@ def test_build_config_kwargs():
 @patch("src.auth.get_client")
 def test_get_client_no_args(mock_gc):
     mock_gc.return_value = MagicMock()
-    client = _get_client()
+    _get_client()
     mock_gc.assert_called_with(None, None)
 
 
 @patch("src.auth.get_client")
 def test_get_client_with_host_token(mock_gc):
     mock_gc.return_value = MagicMock()
-    client = _get_client("https://host", "token")
+    _get_client("https://host", "token")
     mock_gc.assert_called_with("https://host", "token")
 
 

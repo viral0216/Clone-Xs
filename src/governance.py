@@ -8,7 +8,6 @@ import logging
 import uuid
 from datetime import datetime
 
-from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql
 
@@ -111,7 +110,7 @@ def get_glossary_term(client, warehouse_id, config, term_id: str) -> dict | None
         # Get linked columns
         links = execute_sql(client, warehouse_id,
             f"SELECT column_fqn FROM {schema}.glossary_links WHERE term_id = '{_esc(term_id)}'")
-        term["linked_columns"] = [l["column_fqn"] for l in links]
+        term["linked_columns"] = [link["column_fqn"] for link in links]
         return term
     except Exception:
         return None

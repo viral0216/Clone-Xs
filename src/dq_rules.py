@@ -9,9 +9,8 @@ import logging
 import uuid
 from datetime import datetime
 
-from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, execute_sql_parallel
+from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 

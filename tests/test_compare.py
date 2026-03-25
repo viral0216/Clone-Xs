@@ -1,6 +1,6 @@
 """Tests for src/compare.py — deep catalog comparison."""
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.compare import compare_table_deep, compare_catalogs_deep, _get_tblproperties
 

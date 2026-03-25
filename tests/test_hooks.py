@@ -1,7 +1,7 @@
 """Tests for hooks module."""
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.hooks import run_hooks, run_pre_clone_hooks, run_post_clone_hooks, run_post_schema_hooks
 

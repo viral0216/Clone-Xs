@@ -572,4 +572,4 @@ make docs-start
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency attributions.

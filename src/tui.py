@@ -11,9 +11,8 @@ def run_tui(config_path: str = "config/clone_config.yaml"):
     try:
         from rich.console import Console
         from rich.panel import Panel
-        from rich.prompt import Confirm, IntPrompt, Prompt
+        from rich.prompt import Prompt  # noqa: F401 — Confirm/IntPrompt imported in sub-functions
         from rich.table import Table
-        from rich.tree import Tree
     except ImportError:
         logger.error("Rich is required for the TUI. Install with: pip install rich")
         sys.exit(1)

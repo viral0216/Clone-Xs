@@ -221,7 +221,6 @@ def evolve_catalog_schema(
     logger.info(f"Checking schema evolution for {len(tables)} tables...")
 
     all_changes = []
-    all_applied = []
 
     def _process_table(t):
         schema = t["table_schema"]

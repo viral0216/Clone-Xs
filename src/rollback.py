@@ -405,7 +405,7 @@ def save_rollback_to_delta(
     volumes_count = len(created.get("volumes", []))
     total = schemas_count + tables_count + views_count + functions_count + volumes_count
     dropped = (drop_results or {}).get("dropped", 0)
-    restored = (drop_results or {}).get("restored", 0)
+    (drop_results or {}).get("restored", 0)
     failed = (drop_results or {}).get("failed", 0)
     err = (error_message or "").replace("'", "''")
     clone_started_at = rollback_data.get("clone_started_at", "")

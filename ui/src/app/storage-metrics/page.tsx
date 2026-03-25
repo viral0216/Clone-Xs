@@ -16,8 +16,8 @@ import { useCurrency, useStoragePrice } from "@/hooks/useSettings";
 
 function vacuumColor(pct: number) {
   if (pct >= 30) return "text-red-500";
-  if (pct >= 10) return "text-yellow-500";
-  return "text-green-500";
+  if (pct >= 10) return "text-muted-foreground";
+  return "text-foreground";
 }
 
 export default function StorageMetricsPage() {
@@ -142,7 +142,7 @@ export default function StorageMetricsPage() {
   const topVacuumable = results?.top_tables_by_vacuumable || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Storage Metrics"
         icon={HardDrive}
@@ -194,11 +194,11 @@ export default function StorageMetricsPage() {
       )}
 
       {results?.runtime_error && (
-        <Card className="border-yellow-500/30 bg-card">
+        <Card className="border-border bg-card">
           <CardContent className="pt-6 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
             <div>
-              <p className="text-yellow-500 font-medium">Runtime Compatibility Issue</p>
+              <p className="text-muted-foreground font-medium">Runtime Compatibility Issue</p>
               <p className="text-sm text-muted-foreground mt-1">{results.runtime_error}</p>
             </div>
           </CardContent>
@@ -206,11 +206,11 @@ export default function StorageMetricsPage() {
       )}
 
       {results && !results.runtime_error && results.tables?.some((t: any) => t.note) && (
-        <Card className="border-blue-500/30 bg-card">
+        <Card className="border-[#E8453C]/30 bg-card">
           <CardContent className="pt-6 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-[#E8453C] shrink-0 mt-0.5" />
             <div>
-              <p className="text-blue-500 font-medium">Using DESCRIBE DETAIL fallback</p>
+              <p className="text-[#E8453C] font-medium">Using DESCRIBE DETAIL fallback</p>
               <p className="text-sm text-muted-foreground mt-1">
                 ANALYZE TABLE ... COMPUTE STORAGE METRICS returned no data. Showing total size from DESCRIBE DETAIL instead.
                 Vacuumable and time-travel breakdown requires Databricks Runtime 18.0+.
@@ -222,15 +222,15 @@ export default function StorageMetricsPage() {
 
       {/* Predictive Optimization Warning */}
       {poCheck?.enabled && (
-        <Card className="border-blue-500/30 bg-card">
+        <Card className="border-[#E8453C]/30 bg-card">
           <CardContent className="pt-6 flex items-start gap-3">
-            <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <Info className="h-5 w-5 text-[#E8453C] shrink-0 mt-0.5" />
             <div>
-              <p className="text-blue-500 font-medium">Predictive Optimization is enabled</p>
+              <p className="text-[#E8453C] font-medium">Predictive Optimization is enabled</p>
               <p className="text-sm text-muted-foreground mt-1">
                 Databricks may automatically run OPTIMIZE and VACUUM on managed tables in this catalog.
                 Manual execution may be unnecessary.{" "}
-                <a href="https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Learn more</a>
+                <a href="https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Learn more</a>
               </p>
               {poCheck.tables_with_po?.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
@@ -244,11 +244,11 @@ export default function StorageMetricsPage() {
       )}
 
       {results?.num_errors > 0 && !results?.runtime_error && (
-        <Card className="border-yellow-500/30 bg-card">
+        <Card className="border-border bg-card">
           <CardContent className="pt-6 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
             <div>
-              <p className="text-yellow-500 font-medium">{results.num_errors} of {results.num_tables} table(s) had errors</p>
+              <p className="text-muted-foreground font-medium">{results.num_errors} of {results.num_tables} table(s) had errors</p>
               <p className="text-sm text-muted-foreground mt-1">
                 These tables may require Runtime 18.0+ or may have unsupported formats.
                 Tables with errors show 0 B in the results below.
@@ -265,10 +265,10 @@ export default function StorageMetricsPage() {
             {actionResult.error ? (
               <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
             ) : (
-              <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-foreground shrink-0 mt-0.5" />
             )}
             <div>
-              <p className={`font-medium ${actionResult.error ? "text-red-500" : "text-green-500"}`}>
+              <p className={`font-medium ${actionResult.error ? "text-red-500" : "text-foreground"}`}>
                 {actionResult.operation} {actionResult.error ? "Failed" : "Complete"}
               </p>
               {actionResult.error ? (
@@ -305,40 +305,40 @@ export default function StorageMetricsPage() {
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-6 text-center">
-                <Database className="h-5 w-5 mx-auto mb-1 text-blue-500" />
+                <Database className="h-5 w-5 mx-auto mb-1 text-[#E8453C]" />
                 <p className="text-2xl font-bold text-foreground">{results.active_display}</p>
                 <p className="text-xs text-muted-foreground mt-1">Active Data</p>
-                <Badge variant="outline" className="mt-1 text-blue-500 border-blue-500/30">{results.active_pct}%</Badge>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border border-yellow-500/20">
-              <CardContent className="pt-6 text-center">
-                <Trash2 className="h-5 w-5 mx-auto mb-1 text-yellow-500" />
-                <p className="text-2xl font-bold text-yellow-500">{results.vacuumable_display}</p>
-                <p className="text-xs text-muted-foreground mt-1">Vacuumable</p>
-                <Badge variant="outline" className="mt-1 text-yellow-500 border-yellow-500/30">{results.vacuumable_pct}%</Badge>
+                <Badge variant="outline" className="mt-1 text-[#E8453C] border-[#E8453C]/30">{results.active_pct}%</Badge>
               </CardContent>
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-6 text-center">
-                <Clock className="h-5 w-5 mx-auto mb-1 text-purple-500" />
+                <Trash2 className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-2xl font-bold text-muted-foreground">{results.vacuumable_display}</p>
+                <p className="text-xs text-muted-foreground mt-1">Vacuumable</p>
+                <Badge variant="outline" className="mt-1 text-muted-foreground border-border">{results.vacuumable_pct}%</Badge>
+              </CardContent>
+            </Card>
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6 text-center">
+                <Clock className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
                 <p className="text-2xl font-bold text-foreground">{results.time_travel_display}</p>
                 <p className="text-xs text-muted-foreground mt-1">Time Travel</p>
-                <Badge variant="outline" className="mt-1 text-purple-500 border-purple-500/30">{results.time_travel_pct}%</Badge>
+                <Badge variant="outline" className="mt-1 text-muted-foreground border-border">{results.time_travel_pct}%</Badge>
               </CardContent>
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-6 text-center">
-                <span className="text-green-500 font-bold text-lg block mb-1">{currSymbol}</span>
-                <p className="text-2xl font-bold text-green-500">{currSymbol}{monthlyCost < 1 ? monthlyCost.toFixed(4) : monthlyCost.toFixed(2)}</p>
+                <span className="text-foreground font-bold text-lg block mb-1">{currSymbol}</span>
+                <p className="text-2xl font-bold text-foreground">{currSymbol}{monthlyCost < 1 ? monthlyCost.toFixed(4) : monthlyCost.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground mt-1">Monthly Cost</p>
                 <p className="text-[10px] text-muted-foreground">at {currSymbol}{storagePrice}/GB</p>
               </CardContent>
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-6 text-center">
-                <TrendingUp className="h-5 w-5 mx-auto mb-1 text-orange-500" />
-                <p className="text-2xl font-bold text-orange-500">{currSymbol}{yearlyCost < 10 ? yearlyCost.toFixed(2) : yearlyCost.toFixed(0)}</p>
+                <TrendingUp className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-2xl font-bold text-muted-foreground">{currSymbol}{yearlyCost < 10 ? yearlyCost.toFixed(2) : yearlyCost.toFixed(0)}</p>
                 <p className="text-xs text-muted-foreground mt-1">Yearly Cost</p>
                 <p className="text-[10px] text-muted-foreground">estimated</p>
               </CardContent>
@@ -347,10 +347,10 @@ export default function StorageMetricsPage() {
 
           {/* Top Reclaimable Tables */}
           {topVacuumable.length > 0 && (
-            <Card className="bg-card border-border border-yellow-500/20">
+            <Card className="bg-card border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Trash2 className="h-4 w-4 text-yellow-500" />
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
                   Top Reclaimable Tables
                   <span className="text-xs font-normal text-muted-foreground ml-1">run VACUUM to reclaim</span>
                 </CardTitle>
@@ -455,7 +455,7 @@ export default function StorageMetricsPage() {
                         return (
                           <tr
                             key={i}
-                            className={`border-b border-border cursor-pointer ${row.error ? "opacity-60" : ""} ${isSelected ? "bg-blue-500/5" : "hover:bg-muted/30"}`}
+                            className={`border-b border-border cursor-pointer ${row.error ? "opacity-60" : ""} ${isSelected ? "bg-muted/30" : "hover:bg-muted/30"}`}
                             onClick={() => toggleSelect(key)}
                           >
                             <td className="py-2 px-3">
@@ -471,18 +471,18 @@ export default function StorageMetricsPage() {
                             <td className="py-2 px-3 font-medium text-foreground">{row.table}</td>
                             <td className="py-2 px-3 text-right text-foreground">{row.total_display}</td>
                             <td className="py-2 px-3 text-right text-foreground">{row.active_display}</td>
-                            <td className="py-2 px-3 text-right text-yellow-500">{row.vacuumable_display}</td>
+                            <td className="py-2 px-3 text-right text-muted-foreground">{row.vacuumable_display}</td>
                             <td className="py-2 px-3 text-right">
                               <span className={vacuumColor(row.vacuumable_pct)}>{row.vacuumable_pct}%</span>
                             </td>
-                            <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_display}</td>
-                            <td className="py-2 px-3 text-right text-purple-500">{row.time_travel_pct}%</td>
+                            <td className="py-2 px-3 text-right text-muted-foreground">{row.time_travel_display}</td>
+                            <td className="py-2 px-3 text-right text-muted-foreground">{row.time_travel_pct}%</td>
                             <td className="py-2 px-3 text-right text-muted-foreground">{row.num_total_files?.toLocaleString()}</td>
                             <td className="py-2 px-3 text-center">
                               {row.error ? (
                                 <span title={row.error}><XCircle className="h-4 w-4 text-red-500 inline" /></span>
                               ) : (
-                                <span className="text-green-500 text-xs">OK</span>
+                                <span className="text-foreground text-xs">OK</span>
                               )}
                             </td>
                           </tr>

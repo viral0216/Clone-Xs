@@ -15,8 +15,8 @@ import {
 
 function statusIcon(status: string) {
   switch (status?.toUpperCase()) {
-    case "PASS": case "OK": return <CheckCircle className="h-4 w-4 text-green-500" />;
-    case "WARN": return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+    case "PASS": case "OK": return <CheckCircle className="h-4 w-4 text-foreground" />;
+    case "WARN": return <AlertTriangle className="h-4 w-4 text-muted-foreground" />;
     case "FAIL": return <XCircle className="h-4 w-4 text-red-500" />;
     default: return null;
   }
@@ -24,8 +24,8 @@ function statusIcon(status: string) {
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
-    case "PASS": case "OK": return <Badge className="bg-green-100 text-green-800 text-xs">{status}</Badge>;
-    case "WARN": return <Badge className="bg-yellow-100 text-yellow-800 text-xs">WARN</Badge>;
+    case "PASS": case "OK": return <Badge className="bg-muted/40 text-foreground text-xs">{status}</Badge>;
+    case "WARN": return <Badge className="bg-muted/40 text-foreground text-xs">WARN</Badge>;
     case "FAIL": return <Badge variant="destructive" className="text-xs">FAIL</Badge>;
     default: return <Badge variant="outline" className="text-xs">{status}</Badge>;
   }
@@ -44,7 +44,7 @@ export default function PreflightPage() {
   const failed = checks.filter((c: any) => ["FAIL", "FAILED", "ERROR"].includes(c.status?.toUpperCase())).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Preflight Checks"
         icon={ClipboardCheck}
@@ -86,16 +86,16 @@ export default function PreflightPage() {
 
       {/* Summary Banner */}
       {checks.length > 0 && (
-        <Card className={failed > 0 ? "border-red-200 bg-red-50" : warnings > 0 ? "border-yellow-200 bg-yellow-50" : "border-green-200 bg-green-50"}>
+        <Card className={failed > 0 ? "border-red-200 bg-red-50" : warnings > 0 ? "border-border bg-muted/20" : "border-border bg-muted/20"}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {failed > 0 ? (
                   <XCircle className="h-6 w-6 text-red-600" />
                 ) : warnings > 0 ? (
-                  <AlertTriangle className="h-6 w-6 text-yellow-600" />
+                  <AlertTriangle className="h-6 w-6 text-muted-foreground" />
                 ) : (
-                  <CheckCircle className="h-6 w-6 text-green-600" />
+                  <CheckCircle className="h-6 w-6 text-foreground" />
                 )}
                 <div>
                   <p className="font-semibold text-lg">
@@ -107,12 +107,12 @@ export default function PreflightPage() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="text-center p-2 bg-green-100 rounded min-w-[60px]">
-                  <p className="text-lg font-bold text-green-700">{passed}</p>
+                <div className="text-center p-2 bg-muted/40 rounded min-w-[60px]">
+                  <p className="text-lg font-bold text-foreground">{passed}</p>
                   <p className="text-xs text-gray-500">Passed</p>
                 </div>
-                <div className="text-center p-2 bg-yellow-100 rounded min-w-[60px]">
-                  <p className="text-lg font-bold text-yellow-700">{warnings}</p>
+                <div className="text-center p-2 bg-muted/40 rounded min-w-[60px]">
+                  <p className="text-lg font-bold text-muted-foreground">{warnings}</p>
                   <p className="text-xs text-gray-500">Warnings</p>
                 </div>
                 <div className="text-center p-2 bg-red-100 rounded min-w-[60px]">
@@ -157,7 +157,7 @@ export default function PreflightPage() {
                         key={i}
                         className={`border-b ${
                           check.status?.toUpperCase() === "FAIL" ? "bg-red-500/5" :
-                          check.status?.toUpperCase() === "WARN" ? "bg-yellow-500/5" : ""
+                          check.status?.toUpperCase() === "WARN" ? "bg-muted/200/5" : ""
                         }`}
                       >
                         <td className="py-2.5 px-3">{statusIcon(check.status)}</td>

@@ -41,13 +41,13 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Configuration</h1>
           <p className="text-gray-500 mt-1">View and edit clone configuration — source/destination catalogs, warehouse selection, exclude schemas, copy options, parallelism, and audit settings.</p>
           <p className="text-xs text-gray-400 mt-1">
-            <a href="https://learn.microsoft.com/en-us/azure/databricks/compute/configure" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Cluster configuration</a>
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/compute/configure" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Cluster configuration</a>
           </p>
         </div>
         <div className="flex gap-2">

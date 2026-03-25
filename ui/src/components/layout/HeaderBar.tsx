@@ -173,20 +173,20 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
     ? "Dashboard"
     : pathname.slice(1).split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 
-  const iconBtn = "p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-white/10 transition-all";
+  const iconBtn = "p-1.5 min-h-[32px] min-w-[32px] flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-white/10 transition-all";
 
   return (
-    <header className="h-20 header-bg flex items-center justify-between px-4 shrink-0">
+    <header className="h-12 header-bg flex items-center justify-between px-4 shrink-0">
       {/* Left */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {onMenuToggle && (
           <button onClick={onMenuToggle} className={`lg:hidden ${iconBtn}`} aria-label="Toggle navigation menu">
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" />
           </button>
         )}
         <Link to="/">
-          <img src="/logo.svg" alt="Clone→Xs" className="h-10 dark:hidden" />
-          <img src="/logo-dark.svg" alt="Clone→Xs" className="h-10 hidden dark:block" />
+          <img src="/logo.svg" alt="Clone→Xs" className="h-7 dark:hidden" />
+          <img src="/logo-dark.svg" alt="Clone→Xs" className="h-7 hidden dark:block" />
         </Link>
         <span className="text-gray-300 dark:text-gray-600">/</span>
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{pageName}</span>
@@ -210,7 +210,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
             aria-controls="header-search-results"
             aria-activedescendant={showResults && results[selectedIdx] ? `search-result-${selectedIdx}` : undefined}
             aria-label="Search pages"
-            className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#E8453C]/20 focus:border-[#E8453C]"
           />
         </div>
 
@@ -233,7 +233,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
                 onClick={() => { setShowResults(false); setQuery(""); }}
                 className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                   i === selectedIdx
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
+                    ? "bg-[#E8453C]/5 text-[#E8453C] dark:bg-[#E8453C]/10 dark:text-[#E8453C]"
                     : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
                 }`}
               >
@@ -261,7 +261,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
             aria-label={connected ? "Connected to Databricks" : "Disconnected from Databricks"}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-default ${
               connected
-                ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                ? "bg-muted/30 text-foreground dark:bg-white/5 dark:text-gray-300"
                 : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
             }`}
           >
@@ -326,7 +326,10 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
         <button
           onClick={() => {
             api.post("/auth/logout").catch(() => {});
-            sessionStorage.clear();
+            localStorage.removeItem("dbx_host");
+            localStorage.removeItem("dbx_token");
+            localStorage.removeItem("dbx_warehouse_id");
+            localStorage.removeItem("clxs_session_id");
             window.dispatchEvent(new Event("clxs-logout"));
           }}
           className={iconBtn}

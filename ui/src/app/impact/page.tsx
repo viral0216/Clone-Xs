@@ -13,8 +13,8 @@ import {
 function riskBadge(level: string) {
   switch (level?.toUpperCase()) {
     case "HIGH": return <Badge variant="destructive">{level}</Badge>;
-    case "MEDIUM": return <Badge className="bg-yellow-500 text-white">{level}</Badge>;
-    case "LOW": return <Badge className="bg-green-600 text-white">{level}</Badge>;
+    case "MEDIUM": return <Badge className="bg-muted/200 text-white">{level}</Badge>;
+    case "LOW": return <Badge className="bg-foreground text-white">{level}</Badge>;
     default: return <Badge variant="outline">{level || "Unknown"}</Badge>;
   }
 }
@@ -31,12 +31,12 @@ export default function ImpactPage() {
   const downstream = results?.downstream_tables || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Impact Analysis</h1>
         <p className="text-muted-foreground mt-1">Assess the blast radius of schema changes — shows which views, functions, and downstream consumers would be affected before you modify a table.</p>
         <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog lineage</a>
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Unity Catalog lineage</a>
         </p>
       </div>
 

@@ -657,18 +657,34 @@ def _create_client(
     session = _load_session()
     if session.get("host") and not env_host:
         session_host = session["host"]
-        logger.debug("Auth: using saved session for %s", session_host)
-        return WorkspaceClient(host=session_host)
+        session_token = session.get("token")
+        if session_token:
+            logger.debug("Auth: using saved session for %s (with token)", session_host)
+            return WorkspaceClient(host=session_host, token=session_token)
+        # Host-only session — try azure-cli auth non-interactively
+        import shutil
+        if shutil.which("az"):
+            logger.debug("Auth: using saved session for %s (azure-cli)", session_host)
+            from databricks.sdk.config import Config
+            return WorkspaceClient(config=Config(host=session_host, auth_type="azure-cli"))
+        logger.debug("Auth: saved session for %s but no token or az CLI", session_host)
 
     # Check for default profile in ~/.databrickscfg
     config_path = os.path.expanduser("~/.databrickscfg")
     if os.path.exists(config_path) and not env_host:
         logger.debug("Auth: using default Databricks CLI profile")
-        return WorkspaceClient()
+        try:
+            # Use pat auth type to prevent SDK from opening browser
+            return WorkspaceClient(auth_type="pat")
+        except Exception:
+            # pat auth may fail if profile uses different auth — fall through
+            pass
 
-    # Method 6: Notebook native auth (no args — Databricks Runtime auto-detects)
-    logger.debug("Auth: using notebook native auth (default WorkspaceClient)")
-    return WorkspaceClient()
+    # Final fallback — raise instead of calling WorkspaceClient() which may open browser
+    raise RuntimeError(
+        "No authentication configured. Log in via the Clone-Xs UI (Settings → Authentication) "
+        "or set DATABRICKS_HOST + DATABRICKS_TOKEN environment variables."
+    )
 
 
 def ensure_authenticated(

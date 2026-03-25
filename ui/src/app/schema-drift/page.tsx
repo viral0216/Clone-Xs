@@ -13,18 +13,18 @@ import {
 
 function changeColor(changeType: string) {
   switch (changeType?.toUpperCase()) {
-    case "ADDED": return "text-green-700 bg-green-50 border-green-200";
+    case "ADDED": return "text-foreground bg-muted/20 border-border";
     case "REMOVED": return "text-red-700 bg-red-50 border-red-200";
-    case "MODIFIED": return "text-yellow-700 bg-yellow-50 border-yellow-200";
+    case "MODIFIED": return "text-muted-foreground bg-muted/20 border-border";
     default: return "text-gray-700 bg-gray-50 border-gray-200";
   }
 }
 
 function changeIcon(changeType: string) {
   switch (changeType?.toUpperCase()) {
-    case "ADDED": return <Plus className="h-4 w-4 text-green-500" />;
+    case "ADDED": return <Plus className="h-4 w-4 text-foreground" />;
     case "REMOVED": return <Minus className="h-4 w-4 text-red-500" />;
-    case "MODIFIED": return <RefreshCw className="h-4 w-4 text-yellow-500" />;
+    case "MODIFIED": return <RefreshCw className="h-4 w-4 text-muted-foreground" />;
     default: return null;
   }
 }
@@ -52,12 +52,12 @@ export default function SchemaDriftPage() {
   const totalCount = summary?.total_drift_count ?? drifts.length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold">Schema Drift</h1>
         <p className="text-gray-500 mt-1">Detect schema drift between source and destination — added, removed, or modified columns, data type changes, and nullability differences across all tables.</p>
         <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Schema evolution</a>
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Schema evolution</a>
         </p>
       </div>
 
@@ -96,7 +96,7 @@ export default function SchemaDriftPage() {
         <div className="grid grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-green-700">{addedCount}</p>
+              <p className="text-2xl font-bold text-foreground">{addedCount}</p>
               <p className="text-xs text-gray-500 mt-1">Added Columns</p>
             </CardContent>
           </Card>
@@ -108,13 +108,13 @@ export default function SchemaDriftPage() {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-yellow-700">{modifiedCount}</p>
+              <p className="text-2xl font-bold text-muted-foreground">{modifiedCount}</p>
               <p className="text-xs text-gray-500 mt-1">Modified Columns</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-blue-700">{totalCount}</p>
+              <p className="text-2xl font-bold text-[#E8453C]">{totalCount}</p>
               <p className="text-xs text-gray-500 mt-1">Total Drift</p>
             </CardContent>
           </Card>
@@ -147,7 +147,7 @@ export default function SchemaDriftPage() {
                     </thead>
                     <tbody>
                       {rows.map((row: any, i: number) => (
-                        <tr key={i} className={`border-b ${row.change_type?.toUpperCase() === "ADDED" ? "bg-green-50/50" : row.change_type?.toUpperCase() === "REMOVED" ? "bg-red-50/50" : "bg-yellow-50/50"}`}>
+                        <tr key={i} className={`border-b ${row.change_type?.toUpperCase() === "ADDED" ? "bg-muted/20/50" : row.change_type?.toUpperCase() === "REMOVED" ? "bg-red-50/50" : "bg-muted/20/50"}`}>
                           <td className="py-2 px-3">{changeIcon(row.change_type)}</td>
                           <td className="py-2 px-3 font-medium">{row.column || row.column_name}</td>
                           <td className="py-2 px-3">

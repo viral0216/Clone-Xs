@@ -183,6 +183,56 @@ Force verification before running a command:
 clxs clone --verify-auth --source production --dest staging
 ```
 
+## Web UI Authentication
+
+When running Clone-Xs as a web application, authentication is handled through a dedicated login page and server-side sessions. The web UI supports the same credential methods as the CLI but wraps them in a browser-friendly flow.
+
+### Login page
+
+Clone-Xs shows a login page before granting access to the main application. The login page offers two tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Access Token (PAT)** | Enter your Databricks host URL and personal access token directly. |
+| **Azure Login** | A multi-step wizard that walks through: **Login** (browser OAuth) → **Tenant** selection → **Subscription** selection → **Workspace** selection. |
+
+After successful authentication via either tab, the app transitions to the dashboard.
+
+### Server-side session persistence
+
+All login methods — PAT, OAuth, Azure CLI, and Service Principal — create a server-side session when used through the web UI.
+
+- A unique **session ID** is generated on login and stored in the browser's `localStorage`.
+- Every API call includes the `X-Clone-Session` HTTP header so the server can look up the session.
+- The session persists until the user logs out or the server restarts — there is no need to re-authenticate after closing and reopening the browser.
+- For Azure/OAuth flows the authenticated `WorkspaceClient` is cached server-side; raw tokens are never stored in the browser.
+
+:::tip
+Because the session lives on the server, you can open multiple browser tabs and they will all share the same authenticated context.
+:::
+
+### Settings page
+
+The **Settings** page in the web UI still exposes all four authentication methods (PAT, OAuth, Azure CLI, Service Principal) for switching connections or workspaces without logging out first. Any change on the Settings page updates the active server-side session.
+
+- **Logout** clears the server-side session and returns you to the login page.
+- The session is shared across all API calls automatically — individual components do not need to manage credentials.
+
+### Credential storage in the browser
+
+The web UI stores connection metadata in `localStorage` (not `sessionStorage`), so values survive a browser restart:
+
+| Key | Purpose |
+|-----|---------|
+| `dbx_host` | Databricks workspace URL |
+| `dbx_token` | Personal access token (PAT auth only) |
+| `dbx_warehouse_id` | SQL warehouse ID for query execution |
+| `clxs_session_id` | Server-side session identifier |
+
+:::caution
+`localStorage` is accessible to any JavaScript running on the same origin. In shared or public environments, always log out when you are finished to clear both the local keys and the server-side session.
+:::
+
 ## What's needed
 
 ### For clone operations

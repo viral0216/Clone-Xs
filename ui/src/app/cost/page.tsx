@@ -29,7 +29,7 @@ export default function CostPage() {
   const topTables = results?.top_tables || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Cost Estimator"
         icon={Calculator}
@@ -88,8 +88,8 @@ export default function CostPage() {
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
-              <span className="text-green-600 font-bold text-lg block mb-1">{currSymbol}</span>
-              <p className="text-2xl font-bold text-green-600">{currSymbol}{results.yearly_cost_usd ?? 0}</p>
+              <span className="text-foreground font-bold text-lg block mb-1">{currSymbol}</span>
+              <p className="text-2xl font-bold text-foreground">{currSymbol}{results.yearly_cost_usd ?? 0}</p>
               <p className="text-xs text-muted-foreground mt-1">Yearly Cost</p>
             </CardContent>
           </Card>
@@ -109,7 +109,7 @@ export default function CostPage() {
           <Card className="bg-card border-border">
             <CardHeader className="pb-2"><CardTitle className="text-lg">SHALLOW Clone</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-green-600">~$0<span className="text-sm font-normal text-muted-foreground">/month</span></p>
+              <p className="text-3xl font-bold text-foreground">~$0<span className="text-sm font-normal text-muted-foreground">/month</span></p>
               <p className="text-xs text-muted-foreground mt-1">Metadata-only reference — negligible additional storage, shares source data files</p>
             </CardContent>
           </Card>
@@ -146,7 +146,7 @@ export default function CostPage() {
                         <td className="py-2 px-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+                              <div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
                           </div>

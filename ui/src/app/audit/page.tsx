@@ -56,22 +56,22 @@ function formatBytes(bytes?: number) {
 function statusBadge(status: string) {
   const s = status?.toLowerCase();
   if (s === "success" || s === "completed")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-green-600/30 text-green-600 bg-green-500/5">{status}</Badge>;
+    return <Badge variant="outline" className="text-[10px] font-semibold border-border/30 text-foreground bg-muted/200/5">{status}</Badge>;
   if (s === "failed")
     return <Badge variant="outline" className="text-[10px] font-semibold border-red-500/30 text-red-500 bg-red-500/5">{status}</Badge>;
   if (s === "running")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-blue-600/30 text-blue-600 bg-blue-500/5">{status}</Badge>;
+    return <Badge variant="outline" className="text-[10px] font-semibold border-[#E8453C]/30 text-[#E8453C] bg-muted/300/5">{status}</Badge>;
   if (s === "completed_with_errors")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-yellow-500/30 text-yellow-600 bg-yellow-500/5">with errors</Badge>;
+    return <Badge variant="outline" className="text-[10px] font-semibold border-border/30 text-muted-foreground bg-muted/200/5">with errors</Badge>;
   return <Badge variant="outline" className="text-[10px] font-semibold">{status}</Badge>;
 }
 
 function statusIcon(status: string) {
   const s = status?.toLowerCase();
-  if (s === "success" || s === "completed") return <CheckCircle className="h-4 w-4 text-green-600" />;
+  if (s === "success" || s === "completed") return <CheckCircle className="h-4 w-4 text-foreground" />;
   if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
-  if (s === "running") return <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />;
-  return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+  if (s === "running") return <Loader2 className="h-4 w-4 text-[#E8453C] animate-spin" />;
+  return <AlertTriangle className="h-4 w-4 text-muted-foreground" />;
 }
 
 function LogDetailPanel({ jobId }: { jobId: string }) {
@@ -156,7 +156,7 @@ function LogDetailPanel({ jobId }: { jobId: string }) {
           </div>
           <div className="bg-black/80 rounded-lg p-3 max-h-64 overflow-y-auto font-mono text-xs leading-relaxed">
             {logLines.map((line: string, i: number) => (
-              <div key={i} className={`${line.includes("ERROR") || line.includes("FAIL") ? "text-red-400" : line.includes("WARN") ? "text-yellow-400" : line.includes("SUCCESS") || line.includes("✓") ? "text-green-400" : "text-gray-300"}`}>
+              <div key={i} className={`${line.includes("ERROR") || line.includes("FAIL") ? "text-red-400" : line.includes("WARN") ? "text-gray-400" : line.includes("SUCCESS") || line.includes("✓") ? "text-gray-300" : "text-gray-300"}`}>
                 {line}
               </div>
             ))}
@@ -245,7 +245,7 @@ export default function AuditPage() {
   const statusOptions = useMemo(() => [...new Set(entries.map(e => e.status).filter(Boolean))], [entries]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Audit Trail"
         icon={History}
@@ -267,7 +267,7 @@ export default function AuditPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Operations</span>
-              <BarChart3 className="h-4 w-4 text-blue-600" />
+              <BarChart3 className="h-4 w-4 text-[#E8453C]" />
             </div>
             <p className="text-2xl font-bold text-foreground">{stats.total}</p>
           </CardContent>
@@ -276,9 +276,9 @@ export default function AuditPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Succeeded</span>
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-foreground" />
             </div>
-            <p className="text-2xl font-bold text-green-600">{stats.succeeded}</p>
+            <p className="text-2xl font-bold text-foreground">{stats.succeeded}</p>
           </CardContent>
         </Card>
         <Card className="bg-card border-border">
@@ -294,7 +294,7 @@ export default function AuditPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg Duration</span>
-              <Clock className="h-4 w-4 text-orange-500" />
+              <Clock className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{formatDuration(stats.avgDuration)}</p>
           </CardContent>
@@ -385,7 +385,7 @@ export default function AuditPage() {
             const op = entry.job_type || entry.operation_type || "clone";
 
             return (
-              <Card key={id} className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-blue-600/30" : ""}`}>
+              <Card key={id} className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-[#E8453C]/30" : ""}`}>
                 <CardContent className="py-3 px-4">
                   {/* Main row */}
                   <div
@@ -412,7 +412,7 @@ export default function AuditPage() {
 
                     {/* Clone type */}
                     <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                      entry.clone_type === "DEEP" ? "border-blue-600/30 text-blue-600" : "border-purple-600/30 text-purple-600"
+                      entry.clone_type === "DEEP" ? "border-[#E8453C]/30 text-[#E8453C]" : "border-border/30 text-muted-foreground"
                     }`}>
                       {entry.clone_type || "—"}
                     </Badge>
@@ -461,7 +461,7 @@ export default function AuditPage() {
                         {entry.tables_cloned != null && (
                           <div className="space-y-1">
                             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Tables Cloned</p>
-                            <span className="text-sm font-semibold text-green-600">{entry.tables_cloned}</span>
+                            <span className="text-sm font-semibold text-foreground">{entry.tables_cloned}</span>
                           </div>
                         )}
                         {entry.tables_failed != null && entry.tables_failed > 0 && (

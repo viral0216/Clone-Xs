@@ -79,7 +79,7 @@ export default function ODCSValidatePage() {
   const failedCount = sectionKeys.length - passedCount;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Validation Results"
         icon={Shield}

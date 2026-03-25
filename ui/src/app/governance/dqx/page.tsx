@@ -256,8 +256,9 @@ export default function DQXPage() {
     try {
       const params = filterTable ? `?table_fqn=${filterTable}` : "";
       const headers: Record<string, string> = {};
-      const host = sessionStorage.getItem("dbx_host"); if (host) headers["X-Databricks-Host"] = host;
-      const token = sessionStorage.getItem("dbx_token"); if (token) headers["X-Databricks-Token"] = token;
+      const sid = localStorage.getItem("clxs_session_id"); if (sid) headers["X-Clone-Session"] = sid;
+      const host = localStorage.getItem("dbx_host"); if (host) headers["X-Databricks-Host"] = host;
+      const token = localStorage.getItem("dbx_token"); if (token) headers["X-Databricks-Token"] = token;
       const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
       const res = await fetch(`/api/governance/dqx/checks/export${params}`, { headers });
       const text = await res.text();
@@ -286,7 +287,7 @@ export default function DQXPage() {
   const categories = [...new Set(functions.map(f => f.category).filter(Boolean))].sort();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="DQX Quality Engine" icon={Zap} breadcrumbs={["Governance", "DQX"]}
         description="Data quality powered by databricks-labs-dqx — 57+ row-level checks, dataset validation, profiling, PII detection, and geospatial checks." />
 
@@ -314,11 +315,11 @@ export default function DQXPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {[
-                  { label: "Total Checks", value: dashboard.total_checks || 0, icon: Settings, color: "text-blue-600 bg-blue-100 dark:bg-blue-950" },
-                  { label: "Enabled", value: dashboard.enabled_checks || 0, icon: CheckCircle2, color: "text-green-600 bg-green-100 dark:bg-green-950" },
-                  { label: "Pass Rate", value: `${dashboard.overall_pass_rate || 100}%`, icon: BarChart3, color: (dashboard.overall_pass_rate || 100) >= 90 ? "text-green-600 bg-green-100 dark:bg-green-950" : "text-red-600 bg-red-100 dark:bg-red-950" },
-                  { label: "Tables Monitored", value: dashboard.tables_monitored || 0, icon: Database, color: "text-purple-600 bg-purple-100 dark:bg-purple-950" },
-                  { label: "Profiled Tables", value: dashboard.profiled_tables || 0, icon: Wand2, color: "text-amber-600 bg-amber-100 dark:bg-amber-950" },
+                  { label: "Total Checks", value: dashboard.total_checks || 0, icon: Settings, color: "text-[#E8453C] bg-muted/50 dark:bg-white/5" },
+                  { label: "Enabled", value: dashboard.enabled_checks || 0, icon: CheckCircle2, color: "text-foreground bg-muted/40 dark:bg-white/5" },
+                  { label: "Pass Rate", value: `${dashboard.overall_pass_rate || 100}%`, icon: BarChart3, color: (dashboard.overall_pass_rate || 100) >= 90 ? "text-foreground bg-muted/40 dark:bg-white/5" : "text-red-600 bg-red-100 dark:bg-red-950" },
+                  { label: "Tables Monitored", value: dashboard.tables_monitored || 0, icon: Database, color: "text-muted-foreground bg-muted/40 dark:bg-gray-900" },
+                  { label: "Profiled Tables", value: dashboard.profiled_tables || 0, icon: Wand2, color: "text-muted-foreground bg-muted/40 dark:bg-white/5" },
                 ].map((s, i) => (
                   <Card key={i}><CardContent className="pt-4">
                     <div className="flex items-center gap-3">
@@ -330,10 +331,10 @@ export default function DQXPage() {
               </div>
 
               {/* Spark Connection */}
-              <Card className={sparkStatus.available ? "border-green-200 dark:border-green-800" : "border-amber-200 dark:border-amber-800"}>
+              <Card className={sparkStatus.available ? "border-border dark:border-border" : "border-border dark:border-border"}>
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${sparkStatus.available ? "bg-green-100 dark:bg-green-950 text-green-600" : "bg-amber-100 dark:bg-amber-950 text-amber-600"}`}>
+                    <div className={`p-2 rounded-lg ${sparkStatus.available ? "bg-muted/40 dark:bg-white/5 text-foreground" : "bg-muted/40 dark:bg-white/5 text-muted-foreground"}`}>
                       <Zap className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
@@ -384,9 +385,9 @@ export default function DQXPage() {
                     <div className="space-y-1">
                       {dashboard.latest_runs.map((r: any, i: number) => (
                         <div key={i} className="flex items-center gap-3 text-sm p-2 rounded hover:bg-muted/30">
-                          {parseFloat(r.pass_rate) >= 95 ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                          {parseFloat(r.pass_rate) >= 95 ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-500" />}
                           <span className="font-mono text-xs flex-1">{r.table_fqn}</span>
-                          <Badge className={`text-xs ${parseFloat(r.pass_rate) >= 95 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{r.pass_rate}%</Badge>
+                          <Badge className={`text-xs ${parseFloat(r.pass_rate) >= 95 ? "bg-muted/40 text-foreground" : "bg-red-100 text-red-800"}`}>{r.pass_rate}%</Badge>
                           <span className="text-xs text-muted-foreground w-20 text-right">{Number(r.total_rows).toLocaleString()} rows</span>
                           <span className="text-xs text-muted-foreground w-16 text-right">{r.execution_time_ms}ms</span>
                           <Button variant="ghost" size="sm" onClick={() => runChecks(r.table_fqn)} disabled={running === r.table_fqn}>
@@ -416,7 +417,7 @@ export default function DQXPage() {
                     <p className="text-xs text-muted-foreground">Tables</p>
                   </CardContent></Card>
                   <Card><CardContent className="pt-3 pb-3">
-                    <p className="text-2xl font-bold text-green-600">{checks.filter(c => c.enabled === "true" || c.enabled === true).length}</p>
+                    <p className="text-2xl font-bold text-foreground">{checks.filter(c => c.enabled === "true" || c.enabled === true).length}</p>
                     <p className="text-xs text-muted-foreground">Enabled</p>
                   </CardContent></Card>
                   <Card><CardContent className="pt-3 pb-3">
@@ -424,7 +425,7 @@ export default function DQXPage() {
                     <p className="text-xs text-muted-foreground">Error Level</p>
                   </CardContent></Card>
                   <Card><CardContent className="pt-3 pb-3">
-                    <p className="text-2xl font-bold text-amber-600">{checks.filter(c => c.criticality === "warn").length}</p>
+                    <p className="text-2xl font-bold text-muted-foreground">{checks.filter(c => c.criticality === "warn").length}</p>
                     <p className="text-xs text-muted-foreground">Warning Level</p>
                   </CardContent></Card>
                 </div>
@@ -496,7 +497,7 @@ export default function DQXPage() {
 
               {/* Import YAML panel */}
               {showImport && (
-                <Card className="border-blue-200 dark:border-blue-800"><CardContent className="pt-4 space-y-3">
+                <Card className="border-border dark:border-border"><CardContent className="pt-4 space-y-3">
                   <p className="text-sm font-medium">Import DQX Checks from YAML</p>
                   <Input placeholder="Table FQN (catalog.schema.table) *" value={importTable} onChange={(e) => setImportTable(e.target.value)} />
                   <textarea className="w-full h-48 border rounded p-3 font-mono text-xs bg-muted/30" placeholder={"- criticality: error\n  check:\n    function: is_not_null\n    arguments:\n      column: id"} value={importYaml} onChange={(e) => setImportYaml(e.target.value)} />
@@ -509,7 +510,7 @@ export default function DQXPage() {
 
               {/* Create check panel */}
               {showCreate && (
-                <Card className="border-green-200 dark:border-green-800"><CardContent className="pt-4 space-y-3">
+                <Card className="border-border dark:border-border"><CardContent className="pt-4 space-y-3">
                   <p className="text-sm font-medium">Create DQX Check</p>
                   <div className="grid grid-cols-3 gap-3">
                     <div><label className="text-xs text-muted-foreground">Table FQN *</label>
@@ -564,9 +565,9 @@ export default function DQXPage() {
 
               {/* Edit check panel */}
               {editingCheck && (
-                <Card className="border-amber-200 dark:border-amber-800"><CardContent className="pt-4 space-y-3">
+                <Card className="border-border dark:border-border"><CardContent className="pt-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <Pencil className="h-4 w-4 text-amber-600" />
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
                     <p className="text-sm font-medium">Edit Check: {editingCheck.name || editingCheck.check_function}</p>
                     <Badge variant="outline" className="text-xs ml-auto">{editingCheck.check_id}</Badge>
                   </div>
@@ -620,7 +621,7 @@ export default function DQXPage() {
                     </thead>
                     <tbody>
                       {filteredChecks.map((c) => (
-                        <tr key={c.check_id} className={`border-t hover:bg-muted/30 ${selectedChecks.has(c.check_id) ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}>
+                        <tr key={c.check_id} className={`border-t hover:bg-muted/30 ${selectedChecks.has(c.check_id) ? "bg-muted/30 dark:bg-white/5" : ""}`}>
                           <td className="px-3 py-2">
                             <input type="checkbox" checked={selectedChecks.has(c.check_id)}
                               onChange={(e) => {
@@ -631,7 +632,7 @@ export default function DQXPage() {
                           </td>
                           <td className="px-3 py-2">
                             <span className="font-medium text-xs">{c.name || c.check_function}</span>
-                            <Badge className={`ml-2 text-[10px] ${c.criticality === "error" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{c.criticality}</Badge>
+                            <Badge className={`ml-2 text-[10px] ${c.criticality === "error" ? "bg-red-100 text-red-800" : "bg-muted/40 text-foreground"}`}>{c.criticality}</Badge>
                           </td>
                           <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.table_fqn?.split(".").pop()}</td>
                           <td className="px-3 py-2"><Badge variant="outline" className="text-xs">{c.check_function}</Badge></td>
@@ -641,7 +642,7 @@ export default function DQXPage() {
                           </td>
                           <td className="px-3 py-2 text-center">
                             <button onClick={() => toggleCheck(c.check_id, c.enabled === "false" || c.enabled === false)}>
-                              {c.enabled === "true" || c.enabled === true ? <ToggleRight className="h-5 w-5 text-green-500" /> : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
+                              {c.enabled === "true" || c.enabled === true ? <ToggleRight className="h-5 w-5 text-foreground" /> : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
                             </button>
                           </td>
                           <td className="px-3 py-2 text-right">
@@ -661,12 +662,12 @@ export default function DQXPage() {
           {tab === "profile" && (
             <div className="space-y-4">
               <Card><CardContent className="pt-4 space-y-4">
-                <h2 className="text-sm font-medium flex items-center gap-2" style={{ fontSize: '16px' }}><Wand2 className="h-4 w-4 text-purple-600" />Profile & Auto-Generate DQX Checks</h2>
+                <h2 className="text-sm font-medium flex items-center gap-2" style={{ fontSize: '16px' }}><Wand2 className="h-4 w-4 text-muted-foreground" />Profile & Auto-Generate DQX Checks</h2>
                 <p className="text-xs text-muted-foreground">DQX Profiler analyzes your data to discover patterns (null rates, value distributions, ranges, cardinality) and auto-generates quality checks.</p>
                 <div className="flex gap-3">
                   {(["table", "schema", "catalog"] as const).map((s) => (
                     <button key={s} onClick={() => { setProfileScope(s); setProfileSchema(""); setProfileTable(""); setProfileResult(null); }}
-                      className={`px-4 py-2 rounded border text-sm transition-colors ${profileScope === s ? "bg-purple-100 border-purple-400 text-purple-800 dark:bg-purple-950 dark:border-purple-600 dark:text-purple-300" : "border-border hover:bg-muted"}`}>
+                      className={`px-4 py-2 rounded border text-sm transition-colors ${profileScope === s ? "bg-muted/40 border-border text-foreground dark:bg-gray-900 dark:border-border dark:text-gray-300" : "border-border hover:bg-muted"}`}>
                       <Database className="h-4 w-4 inline mr-1.5" />
                       {s === "table" ? "Single Table" : s === "schema" ? "Entire Schema" : "Entire Catalog"}
                     </button>
@@ -737,7 +738,7 @@ export default function DQXPage() {
                     <div className="flex items-center gap-2 text-red-600"><XCircle className="h-5 w-5" />{profileResult.error}</div>
                   ) : profileScope === "table" ? (
                     <>
-                      <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-green-500" /><span className="font-medium">{profileResult.count || 0} checks generated for {profileResult.table_fqn}</span></div>
+                      <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-foreground" /><span className="font-medium">{profileResult.count || 0} checks generated for {profileResult.table_fqn}</span></div>
                       {profileResult.checks?.length > 0 && (
                         <div className="border rounded max-h-80 overflow-auto">
                           {profileResult.checks.map((c: any, i: number) => (
@@ -745,7 +746,7 @@ export default function DQXPage() {
                               <Badge variant="outline" className="text-xs">{c.check_function}</Badge>
                               <span className="text-xs">{c.name}</span>
                               <span className="text-xs text-muted-foreground ml-auto">{c.column}</span>
-                              <Badge className={`text-[10px] ${c.criticality === "error" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{c.criticality}</Badge>
+                              <Badge className={`text-[10px] ${c.criticality === "error" ? "bg-red-100 text-red-800" : "bg-muted/40 text-foreground"}`}>{c.criticality}</Badge>
                             </div>
                           ))}
                         </div>
@@ -753,23 +754,23 @@ export default function DQXPage() {
                     </>
                   ) : (
                     <>
-                      <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-foreground" />
                         <span className="font-medium">{profileResult.total_checks || 0} checks across {profileResult.tables_processed || profileResult.schemas_processed || 0} {profileScope === "schema" ? "table(s)" : "schema(s)"}</span>
                       </div>
                       <div className="border rounded max-h-80 overflow-auto">
                         {profileResult.tables?.map((t: any, i: number) => (
                           <div key={i} className="flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm">
-                            {t.error ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                            {t.error ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-foreground" />}
                             <span className="font-mono text-xs">{t.table_fqn}</span>
-                            {t.error ? <span className="text-xs text-red-500 ml-auto">{t.error}</span> : <Badge className="ml-auto text-xs bg-green-100 text-green-800">{t.count} checks</Badge>}
+                            {t.error ? <span className="text-xs text-red-500 ml-auto">{t.error}</span> : <Badge className="ml-auto text-xs bg-muted/40 text-foreground">{t.count} checks</Badge>}
                           </div>
                         ))}
                         {profileResult.schemas?.map((s: any, i: number) => (
                           <div key={i} className="border-b last:border-0">
-                            <div className="flex items-center gap-2 px-3 py-2 bg-muted/30"><Database className="h-4 w-4 text-purple-500" /><span className="font-medium text-sm">{s.schema}</span><Badge className="ml-auto text-xs bg-purple-100 text-purple-800">{s.total_checks} checks</Badge></div>
+                            <div className="flex items-center gap-2 px-3 py-2 bg-muted/30"><Database className="h-4 w-4 text-muted-foreground" /><span className="font-medium text-sm">{s.schema}</span><Badge className="ml-auto text-xs bg-muted/40 text-foreground">{s.total_checks} checks</Badge></div>
                             {(s.tables || []).map((t: any, j: number) => (
                               <div key={j} className="flex items-center gap-2 px-3 pl-8 py-1.5 text-xs">
-                                {t.error ? <XCircle className="h-3.5 w-3.5 text-red-500" /> : <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                                {t.error ? <XCircle className="h-3.5 w-3.5 text-red-500" /> : <CheckCircle2 className="h-3.5 w-3.5 text-foreground" />}
                                 <span className="font-mono">{t.table_fqn}</span>
                                 {t.error ? <span className="text-red-500 ml-auto">{t.error}</span> : <span className="text-muted-foreground ml-auto">{t.count} checks</span>}
                               </div>
@@ -810,9 +811,9 @@ export default function DQXPage() {
                         <tr key={i} className="border-t hover:bg-muted/30">
                           <td className="px-3 py-2 font-mono text-xs">{r.table_fqn}</td>
                           <td className="px-3 py-2 text-center">
-                            <Badge className={`text-xs ${parseFloat(r.pass_rate) >= 95 ? "bg-green-100 text-green-800" : parseFloat(r.pass_rate) >= 80 ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"}`}>{r.pass_rate}%</Badge>
+                            <Badge className={`text-xs ${parseFloat(r.pass_rate) >= 95 ? "bg-muted/40 text-foreground" : parseFloat(r.pass_rate) >= 80 ? "bg-muted/40 text-foreground" : "bg-red-100 text-red-800"}`}>{r.pass_rate}%</Badge>
                           </td>
-                          <td className="px-3 py-2 text-right text-green-600">{Number(r.valid_rows).toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{Number(r.valid_rows).toLocaleString()}</td>
                           <td className="px-3 py-2 text-right text-red-600">{Number(r.invalid_rows).toLocaleString()}</td>
                           <td className="px-3 py-2 text-right">{Number(r.total_rows).toLocaleString()}</td>
                           <td className="px-3 py-2 text-right">{r.checks_applied}</td>
@@ -846,10 +847,10 @@ export default function DQXPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {functions.filter(f => !filterCategory || f.category === filterCategory).map((f, i) => (
-                  <Card key={i} className="hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+                  <Card key={i} className="hover:border-border dark:hover:border-border transition-colors">
                     <CardContent className="pt-3 pb-3">
                       <div className="flex items-start gap-2">
-                        <Zap className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                        <Zap className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-sm font-medium">{f.name}</span>

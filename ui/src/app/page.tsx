@@ -59,7 +59,7 @@ export default function Dashboard() {
   const [favDest, setFavDest] = useState("");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Dashboard"
         description="At-a-glance insights, action items, and quick access to your most used operations."
@@ -75,7 +75,7 @@ export default function Dashboard() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Clones</span>
-              <Copy className="h-4 w-4 text-blue-600" />
+              <Copy className="h-4 w-4 text-foreground" />
             </div>
             <p className="text-3xl font-bold text-foreground">{dashboard.isLoading ? "—" : (data?.total_clones ?? 0)}</p>
             <p className="text-xs text-muted-foreground mt-1">{data?.succeeded ?? 0} succeeded, {data?.failed ?? 0} failed</p>
@@ -86,7 +86,7 @@ export default function Dashboard() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Success Rate</span>
-              <TrendingUp className="h-4 w-4 text-green-600" />
+              <TrendingUp className="h-4 w-4 text-foreground" />
             </div>
             <p className="text-3xl font-bold text-foreground">{dashboard.isLoading ? "—" : `${data?.success_rate ?? 0}%`}</p>
             <p className="text-xs text-muted-foreground mt-1">avg {formatDuration(data?.avg_duration)} per operation</p>
@@ -97,23 +97,23 @@ export default function Dashboard() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">This Week</span>
-              {wow.change_pct > 0 ? <ArrowUpRight className="h-4 w-4 text-green-600" /> : wow.change_pct < 0 ? <ArrowDownRight className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-muted-foreground" />}
+              {wow.change_pct > 0 ? <ArrowUpRight className="h-4 w-4 text-foreground" /> : wow.change_pct < 0 ? <ArrowDownRight className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-muted-foreground" />}
             </div>
             <p className="text-3xl font-bold text-foreground">{dashboard.isLoading ? "—" : wow.this_week}</p>
             <p className="text-xs mt-1">
-              {wow.change_pct > 0 ? <span className="text-green-600">+{wow.change_pct}% vs last week</span> : wow.change_pct < 0 ? <span className="text-red-500">{wow.change_pct}% vs last week</span> : <span className="text-muted-foreground">same as last week ({wow.last_week})</span>}
+              {wow.change_pct > 0 ? <span className="text-foreground font-medium">+{wow.change_pct}% vs last week</span> : wow.change_pct < 0 ? <span className="text-red-500">{wow.change_pct}% vs last week</span> : <span className="text-muted-foreground">same as last week ({wow.last_week})</span>}
             </p>
           </CardContent>
         </Card>
 
         <Link to="/metrics">
-          <Card className="bg-card border-border hover:border-blue-600/50 hover:translate-y-[-1px] transition-all cursor-pointer h-full">
+          <Card className="bg-card border-border hover:border-[#E8453C]/50 hover:translate-y-[-1px] transition-all cursor-pointer h-full">
             <CardContent className="pt-5 pb-4 flex flex-col justify-center h-full">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Full Metrics</span>
-                <BarChart3 className="h-4 w-4 text-blue-600" />
+                <BarChart3 className="h-4 w-4 text-[#E8453C]" />
               </div>
-              <p className="text-sm text-blue-600 font-medium flex items-center gap-1">
+              <p className="text-sm text-[#E8453C] font-medium flex items-center gap-1">
                 View detailed metrics <ExternalLink className="h-3 w-3" />
               </p>
               <p className="text-xs text-muted-foreground mt-1">Charts, trends, breakdowns</p>
@@ -135,19 +135,19 @@ export default function Dashboard() {
             {alerts.map((alert, i) => (
               <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${
                 alert.type === "error" ? "border-red-500/20 bg-red-500/5" :
-                alert.type === "warning" ? "border-yellow-500/20 bg-yellow-500/5" :
-                alert.type === "success" ? "border-green-500/20 bg-green-500/5" :
-                "border-blue-500/20 bg-blue-500/5"
+                alert.type === "warning" ? "border-border bg-muted/20" :
+                alert.type === "success" ? "border-border bg-muted/20" :
+                "border-border bg-muted/20"
               }`}>
                 <alert.icon className={`h-4 w-4 shrink-0 ${
                   alert.type === "error" ? "text-red-500" :
-                  alert.type === "warning" ? "text-yellow-500" :
-                  alert.type === "success" ? "text-green-600" :
-                  "text-blue-600"
+                  alert.type === "warning" ? "text-muted-foreground" :
+                  alert.type === "success" ? "text-foreground" :
+                  "text-muted-foreground"
                 }`} />
                 <span className="text-sm text-foreground flex-1">{alert.message}</span>
                 {alert.link && (
-                  <Link to={alert.link} className="text-xs text-blue-600 hover:underline shrink-0">View</Link>
+                  <Link to={alert.link} className="text-xs text-[#E8453C] hover:underline shrink-0">View</Link>
                 )}
               </div>
             ))}
@@ -171,8 +171,8 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-2">
               {health.data.catalogs.map((cat, i) => {
-                const scoreColor = cat.score >= 80 ? "text-green-600" : cat.score >= 50 ? "text-yellow-600" : "text-red-500";
-                const bgColor = cat.score >= 80 ? "bg-green-600" : cat.score >= 50 ? "bg-yellow-500" : "bg-red-500";
+                const scoreColor = cat.score >= 80 ? "text-foreground" : cat.score >= 50 ? "text-muted-foreground" : "text-red-500";
+                const bgColor = cat.score >= 80 ? "bg-foreground" : cat.score >= 50 ? "bg-muted-foreground" : "bg-red-500";
                 return (
                   <div key={i} className="flex items-center gap-4 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-colors">
                     <div className={`text-2xl font-bold w-12 text-center ${scoreColor}`}>{cat.score}</div>
@@ -223,8 +223,8 @@ export default function Dashboard() {
             <div className="flex flex-wrap gap-2">
               {favorites.map((fav, i) => (
                 <Link key={i} to={`/clone?source=${encodeURIComponent(fav.source)}&dest=${encodeURIComponent(fav.destination)}`}>
-                  <div className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-muted/30 hover:border-blue-600/50 hover:bg-muted/50 transition-all cursor-pointer">
-                    <Star className="h-3 w-3 text-yellow-500 shrink-0" />
+                  <div className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-muted/30 hover:border-[#E8453C]/50 hover:bg-muted/50 transition-all cursor-pointer">
+                    <Star className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="text-sm font-medium text-foreground">{fav.source}</span>
                     <ArrowRight className="h-3 w-3 text-muted-foreground" />
                     <span className="text-sm text-foreground">{fav.destination}</span>
@@ -242,14 +242,14 @@ export default function Dashboard() {
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { to: "/clone", icon: Copy, label: "Clone", desc: "Clone catalog", color: "text-blue-600" },
-          { to: "/diff", icon: GitCompare, label: "Diff", desc: "Compare catalogs", color: "text-purple-600" },
-          { to: "/sync", icon: RefreshCw, label: "Sync", desc: "Sync catalogs", color: "text-cyan-600" },
-          { to: "/storage-metrics", icon: HardDrive, label: "Storage", desc: "Analyze storage", color: "text-yellow-600" },
-          { to: "/explore", icon: FolderTree, label: "Explore", desc: "Browse catalog", color: "text-green-600" },
+          { to: "/clone", icon: Copy, label: "Clone", desc: "Clone catalog", color: "text-foreground" },
+          { to: "/diff", icon: GitCompare, label: "Diff", desc: "Compare catalogs", color: "text-muted-foreground" },
+          { to: "/sync", icon: RefreshCw, label: "Sync", desc: "Sync catalogs", color: "text-muted-foreground" },
+          { to: "/storage-metrics", icon: HardDrive, label: "Storage", desc: "Analyze storage", color: "text-muted-foreground" },
+          { to: "/explore", icon: FolderTree, label: "Explore", desc: "Browse catalog", color: "text-foreground" },
         ].map(({ to, icon: Icon, label, desc, color }) => (
           <Link key={to} to={to}>
-            <Card className="hover:border-blue-600/50 hover:translate-y-[-1px] transition-all duration-150 cursor-pointer bg-card border-border">
+            <Card className="hover:border-[#E8453C]/50 hover:translate-y-[-1px] transition-all duration-150 cursor-pointer bg-card border-border">
               <CardContent className="pt-4 pb-3 flex items-center gap-3">
                 <div className={`p-2 rounded-lg bg-muted/50 ${color}`}><Icon className="h-5 w-5" /></div>
                 <div className="min-w-0">
@@ -267,7 +267,7 @@ export default function Dashboard() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground">Recent Operations</CardTitle>
-            <Link to="/audit" className="text-xs text-blue-600 hover:underline">View all</Link>
+            <Link to="/audit" className="text-xs text-[#E8453C] hover:underline">View all</Link>
           </div>
         </CardHeader>
         <CardContent>
@@ -285,10 +285,10 @@ export default function Dashboard() {
                 <div key={job.job_id || idx} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <Badge variant="outline" className={`text-[10px] font-semibold min-w-[72px] justify-center ${
-                      job.status === "completed" || job.status === "success" ? "border-green-600/30 text-green-600 bg-green-500/5" :
-                      job.status === "running" ? "border-blue-600/30 text-blue-600 bg-blue-500/5" :
+                      job.status === "completed" || job.status === "success" ? "border-border text-foreground bg-muted/20" :
+                      job.status === "running" ? "border-[#E8453C]/30 text-[#E8453C] bg-[#E8453C]/5" :
                       job.status === "failed" ? "border-red-500/30 text-red-500 bg-red-500/5" :
-                      "border-yellow-500/30 text-yellow-600 bg-yellow-500/5"
+                      "border-border text-muted-foreground bg-muted/20"
                     }`}>{job.status}</Badge>
                     <span className="text-sm font-medium text-foreground truncate">{job.source_catalog}</span>
                     <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />

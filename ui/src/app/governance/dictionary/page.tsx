@@ -45,7 +45,7 @@ export default function DictionaryPage() {
   const domains = ["General", "Marketing", "Finance", "Engineering", "Operations", "Legal", "HR", "Data"];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Data Dictionary" icon={BookOpen} breadcrumbs={["Governance", "Data Dictionary"]} description="Centralized business glossary — define, govern, and link business terms to data columns." />
 
       <div className="flex items-center gap-3">
@@ -89,7 +89,7 @@ export default function DictionaryPage() {
                 {expanded === t.term_id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 <span className="font-medium">{t.name}</span>
                 {t.abbreviation && <Badge variant="outline" className="text-xs">{t.abbreviation}</Badge>}
-                <Badge className={t.status === "approved" ? "bg-green-100 text-green-800" : t.status === "deprecated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{t.status}</Badge>
+                <Badge className={t.status === "approved" ? "bg-muted/40 text-foreground" : t.status === "deprecated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{t.status}</Badge>
                 <Badge variant="outline" className="text-xs">{t.domain}</Badge>
                 <span className="text-xs text-muted-foreground ml-auto">{t.owner}</span>
               </button>

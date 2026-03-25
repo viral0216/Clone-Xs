@@ -7,9 +7,9 @@ import { Loader2, ClipboardCopy, Check, Download, ChevronDown, ChevronUp, ArrowD
 
 function logColor(line: string) {
   if (/error|ERROR|FAILED|failed/i.test(line)) return "text-red-400";
-  if (/warn|WARNING/i.test(line)) return "text-yellow-400";
-  if (/OK|success|cloned|completed|matched|created|done/i.test(line)) return "text-green-400";
-  if (/progress|running|scanning|cloning|syncing|generating/i.test(line)) return "text-blue-400";
+  if (/warn|WARNING/i.test(line)) return "text-gray-400";
+  if (/OK|success|cloned|completed|matched|created|done/i.test(line)) return "text-gray-300";
+  if (/progress|running|scanning|cloning|syncing|generating/i.test(line)) return "text-gray-400";
   return "text-gray-300";
 }
 
@@ -97,7 +97,7 @@ export default function LogPanel({
               <button type="button" onClick={() => setFilter(filter === "warnings" ? "all" : "warnings")} aria-pressed={filter === "warnings"} aria-label={`Filter ${warnCount} warnings`}>
                 <Badge
                   variant={filter === "warnings" ? "default" : "outline"}
-                  className="text-[10px] cursor-pointer text-yellow-500 border-yellow-500/30 px-1.5"
+                  className="text-[10px] cursor-pointer text-muted-foreground border-border px-1.5"
                 >
                   {warnCount} warn
                 </Badge>
@@ -108,7 +108,7 @@ export default function LogPanel({
             <Button
               variant="ghost"
               size="sm"
-              className={`h-6 px-1.5 ${autoScroll ? "text-blue-500" : "text-muted-foreground"}`}
+              className={`h-6 px-1.5 ${autoScroll ? "text-[#E8453C]" : "text-muted-foreground"}`}
               onClick={() => setAutoScroll(!autoScroll)}
               aria-label={autoScroll ? "Disable auto-scroll" : "Enable auto-scroll"}
               title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to enable"}
@@ -121,7 +121,7 @@ export default function LogPanel({
               </Button>
             )}
             <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleCopy} aria-label="Copy logs to clipboard" title="Copy logs">
-              {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-foreground" /> : <ClipboardCopy className="h-3 w-3" />}
             </Button>
             <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleDownload} aria-label="Download logs" title="Download logs">
               <Download className="h-3 w-3" />

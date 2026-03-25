@@ -42,19 +42,19 @@ const TEMPLATE_ICONS: Record<string, any> = {
 };
 
 const TEMPLATE_COLORS: Record<string, string> = {
-  "dev-copy": "text-purple-500 bg-purple-500/10",
+  "dev-copy": "text-muted-foreground bg-muted/30",
   "dr-backup": "text-red-500 bg-red-500/10",
-  "test-refresh": "text-cyan-500 bg-cyan-500/10",
-  "staging-promote": "text-green-500 bg-green-500/10",
-  "incremental-sync": "text-blue-500 bg-blue-500/10",
+  "test-refresh": "text-muted-foreground bg-muted/30",
+  "staging-promote": "text-foreground bg-muted/30",
+  "incremental-sync": "text-[#E8453C] bg-[#E8453C]/10",
   "schema-only": "text-gray-500 bg-gray-500/10",
-  "cross-workspace": "text-orange-500 bg-orange-500/10",
-  "dev-refresh": "text-yellow-500 bg-yellow-500/10",
+  "cross-workspace": "text-muted-foreground bg-muted/30",
+  "dev-refresh": "text-muted-foreground bg-muted/30",
   "dr-replica": "text-red-400 bg-red-400/10",
-  "audit-copy": "text-indigo-500 bg-indigo-500/10",
-  "pii-safe": "text-pink-500 bg-pink-500/10",
-  "minimal": "text-emerald-500 bg-emerald-500/10",
-  "full-mirror": "text-blue-600 bg-blue-600/10",
+  "audit-copy": "text-muted-foreground bg-muted/30",
+  "pii-safe": "text-muted-foreground bg-muted/30",
+  "minimal": "text-foreground bg-muted/30",
+  "full-mirror": "text-[#E8453C] bg-[#E8453C]/10",
 };
 
 const CATEGORIES = [
@@ -82,7 +82,7 @@ function ConfigBadge({ label, enabled }: { label: string; enabled: boolean }) {
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${
       enabled
-        ? "bg-green-500/10 text-green-600"
+        ? "bg-muted/40 text-foreground"
         : "bg-muted text-muted-foreground"
     }`}>
       {enabled ? <CheckCircle className="h-2.5 w-2.5" /> : <XCircle className="h-2.5 w-2.5 opacity-40" />}
@@ -124,7 +124,7 @@ export default function TemplatesPage() {
     : templates.filter((t) => getCategory(t.key || "").includes(filter));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Clone Templates"
         description={`${templates.length} pre-built clone recipes — Production Mirror, Dev Sandbox, DR Copy, Compliance Snapshot, and more. Each template pre-fills optimal settings for its use case.`}
@@ -142,7 +142,7 @@ export default function TemplatesPage() {
             onClick={() => setFilter(cat.value)}
             className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
               filter === cat.value
-                ? "bg-blue-600 text-white"
+                ? "bg-[#E8453C] text-white"
                 : "bg-muted text-muted-foreground hover:bg-muted/80"
             }`}
           >
@@ -175,14 +175,14 @@ export default function TemplatesPage() {
           {filtered.map((t) => {
             const key = t.key || t.name.toLowerCase().replace(/\s+/g, "-");
             const Icon = TEMPLATE_ICONS[key] || Copy;
-            const color = TEMPLATE_COLORS[key] || "text-blue-500 bg-blue-500/10";
+            const color = TEMPLATE_COLORS[key] || "text-[#E8453C] bg-[#E8453C]/10";
             const cfg = t.config || t.settings || {};
             const cloneType = cfg.clone_type || t.clone_type || "DEEP";
 
             return (
               <Card
                 key={key}
-                className="group bg-card border-border hover:border-blue-600/40 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200 cursor-pointer"
+                className="group bg-card border-border hover:border-[#E8453C]/40 hover:shadow-lg hover:shadow-[#E8453C]/5 transition-all duration-200 cursor-pointer"
                 onClick={() => useTemplate(t)}
               >
                 <CardContent className="pt-6 pb-5 space-y-4">
@@ -195,8 +195,8 @@ export default function TemplatesPage() {
                       variant="outline"
                       className={`text-[10px] font-bold ${
                         cloneType === "DEEP"
-                          ? "border-blue-600/30 text-blue-600 bg-blue-500/5"
-                          : "border-purple-600/30 text-purple-600 bg-purple-500/5"
+                          ? "border-[#E8453C]/30 text-[#E8453C] bg-[#E8453C]/5"
+                          : "border-[#6B7280]/30 text-[#6B7280] bg-[#6B7280]/5"
                       }`}
                     >
                       {cloneType}
@@ -205,7 +205,7 @@ export default function TemplatesPage() {
 
                   {/* Name + Description */}
                   <div>
-                    <h2 className="font-semibold text-foreground group-hover:text-blue-600 transition-colors" style={{ fontSize: '16px' }}>
+                    <h2 className="font-semibold text-foreground group-hover:text-[#E8453C] transition-colors" style={{ fontSize: '16px' }}>
                       {t.name}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
@@ -214,7 +214,7 @@ export default function TemplatesPage() {
                     {t.long_description && (
                       <>
                         <button
-                          className="text-[11px] text-blue-500 hover:text-blue-400 mt-1.5 flex items-center gap-0.5"
+                          className="text-[11px] text-[#E8453C] hover:text-[#D93025] mt-1.5 flex items-center gap-0.5"
                           onClick={(e) => {
                             e.stopPropagation();
                             setExpandedKey(expandedKey === key ? null : key);
@@ -242,7 +242,7 @@ export default function TemplatesPage() {
                     <ConfigBadge label="Rollback" enabled={!!cfg.enable_rollback} />
                     <ConfigBadge label="Checksum" enabled={!!cfg.validate_checksum} />
                     {cfg.masking_rules && (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-600">
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/40 text-muted-foreground">
                         <Lock className="h-2.5 w-2.5" />
                         PII Masking ({cfg.masking_rules.length} rules)
                       </span>
@@ -253,7 +253,7 @@ export default function TemplatesPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="w-full group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all"
+                    className="w-full group-hover:bg-[#E8453C] group-hover:text-white group-hover:border-[#E8453C] transition-all"
                     onClick={(e) => { e.stopPropagation(); useTemplate(t); }}
                   >
                     Use Template

@@ -22,6 +22,7 @@ import {
   Undo2, Camera, FileDown,
 } from "lucide-react";
 import { useCurrency } from "@/hooks/useSettings";
+import PageHeader from "@/components/PageHeader";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
@@ -134,14 +135,15 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Reports</h1>
-        <p className="text-gray-500 mt-1">Consolidated reporting — clone operation history, cost estimates, metadata snapshots, and exportable data. Query and export from Delta audit tables.</p>
-        <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Delta Lake</a>
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Reports"
+        icon={FileText}
+        description="Consolidated reporting — clone operation history, cost estimates, metadata snapshots, and exportable data. Query and export from Delta audit tables."
+        breadcrumbs={["Analysis", "Reports"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/delta/"
+        docsLabel="Delta Lake"
+      />
 
       {/* Clone History */}
       <Card>
@@ -178,7 +180,7 @@ export default function ReportsPage() {
                         <td className="py-2 px-3">
                           <Badge
                             variant={job.status === "completed" ? "default" : job.status === "failed" ? "destructive" : "secondary"}
-                            className={job.status === "completed" ? "bg-green-600" : job.status === "running" ? "bg-blue-600" : ""}
+                            className={job.status === "completed" ? "bg-foreground" : job.status === "running" ? "bg-[#E8453C]" : ""}
                           >
                             {job.status}
                           </Badge>
@@ -216,7 +218,6 @@ export default function ReportsPage() {
         <CardContent className="space-y-4">
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="text-sm font-medium">Catalog</label>
               <CatalogPicker catalog={catalog} onCatalogChange={setCatalog} showSchema={false} showTable={false} />
             </div>
             <Button onClick={estimateCost} disabled={!catalog || loading}>
@@ -232,36 +233,36 @@ export default function ReportsPage() {
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
-                      <HardDrive className="h-4 w-4 text-blue-600" />
+                      <HardDrive className="h-4 w-4 text-[#E8453C]" />
                     </div>
-                    <p className="text-2xl font-bold text-blue-700">{costResult.total_gb?.toFixed(2)} GB</p>
+                    <p className="text-2xl font-bold text-[#E8453C]">{costResult.total_gb?.toFixed(2)} GB</p>
                     <p className="text-xs text-gray-500">Total Size</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
-                      <Table2 className="h-4 w-4 text-purple-600" />
+                      <Table2 className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <p className="text-2xl font-bold text-purple-700">{costResult.table_count}</p>
+                    <p className="text-2xl font-bold text-muted-foreground">{costResult.table_count}</p>
                     <p className="text-xs text-gray-500">Tables</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
-                      <span className="text-green-600 font-bold">{currSymbol}</span>
+                      <span className="text-foreground font-bold">{currSymbol}</span>
                     </div>
-                    <p className="text-2xl font-bold text-green-700">{currSymbol}{costResult.monthly_cost_usd?.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-foreground">{currSymbol}{costResult.monthly_cost_usd?.toFixed(2)}</p>
                     <p className="text-xs text-gray-500">Monthly Cost</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
-                      <TrendingUp className="h-4 w-4 text-orange-600" />
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <p className="text-2xl font-bold text-orange-700">{currSymbol}{costResult.yearly_cost_usd?.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-muted-foreground">{currSymbol}{costResult.yearly_cost_usd?.toFixed(2)}</p>
                     <p className="text-xs text-gray-500">Yearly Cost</p>
                   </CardContent>
                 </Card>
@@ -301,7 +302,7 @@ export default function ReportsPage() {
                                 <div className="flex items-center justify-end gap-2">
                                   <div className="w-16 bg-gray-200 rounded-full h-2">
                                     <div
-                                      className="bg-blue-600 h-2 rounded-full"
+                                      className="bg-[#E8453C] h-2 rounded-full"
                                       style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
                                     />
                                   </div>
@@ -408,12 +409,12 @@ export default function ReportsPage() {
               Drop entire catalog after rollback
             </label>
             {rollbackResult && (
-              <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm">
-                <div className="flex items-center gap-2 text-green-700 font-medium mb-1">
+              <div className="rounded-lg bg-muted/20 border border-border p-3 text-sm">
+                <div className="flex items-center gap-2 text-foreground font-medium mb-1">
                   <CheckCircle className="h-4 w-4" />
                   Rollback Complete
                 </div>
-                <p className="text-green-600">
+                <p className="text-foreground">
                   Objects dropped: {rollbackResult.objects_dropped ?? rollbackResult.dropped_count ?? "N/A"}
                 </p>
               </div>
@@ -453,7 +454,6 @@ export default function ReportsPage() {
         <CardContent className="space-y-4">
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="text-sm font-medium">Catalog Name</label>
               <CatalogPicker catalog={snapshotCatalog} onCatalogChange={setSnapshotCatalog} showSchema={false} showTable={false} />
             </div>
             <div className="flex-1">
@@ -475,12 +475,12 @@ export default function ReportsPage() {
           </div>
 
           {snapshotResult && (
-            <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-blue-700 font-medium">
+            <div className="rounded-lg bg-muted/30 border border-border p-4 space-y-2">
+              <div className="flex items-center gap-2 text-[#E8453C] font-medium">
                 <CheckCircle className="h-4 w-4" />
                 Snapshot Created
               </div>
-              <div className="text-sm text-blue-600 space-y-1">
+              <div className="text-sm text-[#E8453C] space-y-1">
                 <p>
                   Output: <span className="font-mono text-xs">{snapshotResult.output_path ?? snapshotResult.output_file ?? "N/A"}</span>
                 </p>
@@ -513,7 +513,6 @@ export default function ReportsPage() {
         <CardContent className="space-y-4">
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="text-sm font-medium">Catalog Name</label>
               <CatalogPicker catalog={exportCatalog} onCatalogChange={setExportCatalog} showSchema={false} showTable={false} />
             </div>
             <div>
@@ -538,12 +537,12 @@ export default function ReportsPage() {
           </div>
 
           {exportResult && (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-green-700 font-medium">
+            <div className="rounded-lg bg-muted/20 border border-border p-4 space-y-2">
+              <div className="flex items-center gap-2 text-foreground font-medium">
                 <CheckCircle className="h-4 w-4" />
                 Export Complete
               </div>
-              <div className="text-sm text-green-600">
+              <div className="text-sm text-foreground">
                 <p>
                   Output: <span className="font-mono text-xs">{exportResult.output_path ?? exportResult.output_file ?? "N/A"}</span>
                 </p>

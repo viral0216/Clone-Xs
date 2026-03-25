@@ -87,7 +87,7 @@ export default function ConfigDiffPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold">Config Diff</h1>
         <p className="text-gray-500 mt-1">Side-by-side comparison of two clone configurations — highlights differences in settings, permissions, and options between config files or profiles.</p>
@@ -188,7 +188,7 @@ export default function ConfigDiffPage() {
           </CardHeader>
           <CardContent>
             {Array.isArray(differences) && differences.length === 0 ? (
-              <div className="flex items-center gap-2 text-green-600">
+              <div className="flex items-center gap-2 text-foreground">
                 <CheckCircle className="h-5 w-5" />
                 <p className="font-medium">Configurations are identical</p>
               </div>
@@ -212,7 +212,7 @@ export default function ConfigDiffPage() {
                           className={`border-b ${
                             changed
                               ? "bg-red-50 hover:bg-red-100"
-                              : "bg-green-50 hover:bg-green-100"
+                              : "bg-muted/20 hover:bg-muted/40"
                           }`}
                         >
                           <td className="py-2 px-3 font-mono text-xs font-medium">{diff.key}</td>
@@ -230,7 +230,7 @@ export default function ConfigDiffPage() {
                             {changed ? (
                               <Badge variant="destructive" className="text-xs">Changed</Badge>
                             ) : (
-                              <Badge className="bg-green-600 text-xs">Same</Badge>
+                              <Badge className="bg-foreground text-xs">Same</Badge>
                             )}
                           </td>
                         </tr>

@@ -98,7 +98,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     () => new Set(getFilteredSections().map((s) => s.title))
   );
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    try { return Number(localStorage.getItem("clxs-sidebar-width")) || 208; } catch { return 208; }
+    try { return Number(localStorage.getItem("clxs-sidebar-width")) || 180; } catch { return 180; }
   });
   const handleSidebarResize = useCallback((w: number) => {
     setSidebarWidth(w);
@@ -149,13 +149,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* + New button — light salmon bg, red icon like Databricks */}
-      <div className="px-3 pt-3 pb-1">
+      <div className="px-2 pt-2 pb-1">
         <Link
           to="/clone"
-          className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
           style={{ background: '#FCE8E6', color: '#D93025' }}
         >
-          <Plus className="h-5 w-5" style={{ color: '#D93025' }} />
+          <Plus className="h-4 w-4" style={{ color: '#D93025' }} />
           New
         </Link>
       </div>
@@ -166,11 +166,11 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           const isExpanded = expandedSections.has(section.title);
           const sectionId = `sidebar-section-${section.title.toLowerCase().replace(/\s/g, '-')}`;
           return (
-            <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
+            <div key={section.title} className={sIdx > 0 ? "mt-2" : "mt-1"}>
               {/* Section label */}
               <button
                 onClick={() => toggleSection(section.title)}
-                className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium transition-colors"
+                className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors"
                 style={{ color: '#5F6368' }}
                 aria-expanded={isExpanded}
                 aria-controls={sectionId}
@@ -193,10 +193,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     to={item.href}
                     onClick={onMobileClose}
                     aria-current={active ? "page" : undefined}
-                    className="flex items-center gap-3 px-4 py-2 text-sm transition-all rounded-r-full mr-2"
+                    className="flex items-center gap-2.5 mx-1 pl-2.5 pr-2 py-1.5 text-[13px] transition-all rounded-md"
                     style={active ? {
-                      background: '#E8F0FE',
-                      color: '#1A73E8',
+                      background: 'rgba(232,69,60,0.08)',
+                      color: '#E8453C',
                       fontWeight: 500,
                     } : {
                       color: '#3C4043',
@@ -205,7 +205,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <Icon
-                      className={`h-5 w-5 shrink-0 ${active ? 'text-[#1A73E8]' : 'text-[#5F6368]'}`}
+                      className={`h-4 w-4 shrink-0 ${active ? 'text-[#E8453C]' : 'text-[#5F6368]'}`}
                     />
                     <span className="truncate">{item.label}</span>
                   </Link>
@@ -235,12 +235,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const darkSidebar = (
     <div className="flex flex-col h-full">
       {/* + New button — dark mode */}
-      <div className="px-3 pt-3 pb-1">
+      <div className="px-2 pt-2 pb-1">
         <Link
           to="/clone"
-          className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium bg-sidebar-primary text-sidebar-primary-foreground hover:opacity-90 transition-colors"
         >
-          <Plus className="h-5 w-5" />
+          <Plus className="h-4 w-4" />
           New
         </Link>
       </div>
@@ -251,10 +251,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           const isExpanded = expandedSections.has(section.title);
           const sectionId = `sidebar-dark-section-${section.title.toLowerCase().replace(/\s/g, '-')}`;
           return (
-            <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
+            <div key={section.title} className={sIdx > 0 ? "mt-2" : "mt-1"}>
               <button
                 onClick={() => toggleSection(section.title)}
-                className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium text-gray-500 hover:text-gray-400 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40 hover:text-sidebar-foreground/60 transition-colors"
                 aria-expanded={isExpanded}
                 aria-controls={sectionId}
               >
@@ -272,13 +272,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     to={item.href}
                     onClick={onMobileClose}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-all rounded-r-full mr-2 ${
+                    className={`flex items-center gap-2.5 mx-1 pl-2.5 pr-2 py-1.5 text-[13px] transition-all rounded-md ${
                       active
-                        ? "bg-blue-500/15 text-blue-400 font-medium"
-                        : "text-gray-300 hover:bg-white/5"
+                        ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
                     }`}
                   >
-                    <Icon className={`h-5 w-5 shrink-0 ${active ? "text-blue-400" : "text-gray-500"}`} />
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? "text-sidebar-primary" : "text-sidebar-foreground/40"}`} />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 );
@@ -289,12 +289,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         })}
       </nav>
 
-      <div className="px-4 py-2 border-t border-white/10">
-        <span className="text-[10px] text-gray-600">cloneXs v0.5.0</span>
+      <div className="px-4 py-2 border-t border-sidebar-border">
+        <span className="text-[10px] text-sidebar-foreground/30">cloneXs v0.5.0</span>
       </div>
 
       {mobileOpen && onMobileClose && (
-        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded text-gray-500 lg:hidden" aria-label="Close navigation menu">
+        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded text-sidebar-foreground/40 lg:hidden" aria-label="Close navigation menu">
           <X className="h-4 w-4" />
         </button>
       )}
@@ -318,7 +318,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       {/* Desktop */}
       {collapsed ? (
         /* Collapsed rail — icons only */
-        <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0 w-14 border-r border-border">
+        <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0 w-11 border-r border-border">
           <div className="flex flex-col items-center h-full py-2">
             {/* Icon-only nav */}
             <nav className="flex-1 overflow-y-auto w-full flex flex-col items-center gap-0.5 pt-1" aria-label="Main navigation">
@@ -333,13 +333,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                       title={item.label}
                       aria-label={item.label}
                       aria-current={active ? "page" : undefined}
-                      className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+                      className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
                         active
-                          ? "bg-blue-500/15 text-blue-500 dark:text-blue-400"
+                          ? "bg-sidebar-accent text-sidebar-primary"
                           : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                       }`}
                     >
-                      <Icon className="h-[18px] w-[18px]" />
+                      <Icon className="h-4 w-4" />
                     </Link>
                   );
                 })
@@ -377,7 +377,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             </div>
           </aside>
           <div className="hidden lg:block">
-            <ResizeHandle width={sidebarWidth} onResize={handleSidebarResize} min={160} max={320} side="right" />
+            <ResizeHandle width={sidebarWidth} onResize={handleSidebarResize} min={140} max={280} side="right" />
           </div>
         </>
       )}

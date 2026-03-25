@@ -72,10 +72,10 @@ interface LineageResponse {
 }
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  system_table: { label: "UC System Table", color: "border-blue-600/30 text-blue-600 bg-blue-500/5" },
-  clone_xs: { label: "Clone-Xs", color: "border-green-600/30 text-green-600 bg-green-500/5" },
-  run_logs: { label: "Run Logs", color: "border-purple-600/30 text-purple-600 bg-purple-500/5" },
-  audit_trail: { label: "Audit Trail", color: "border-yellow-600/30 text-yellow-600 bg-yellow-500/5" },
+  system_table: { label: "UC System Table", color: "border-[#E8453C]/30 text-[#E8453C] bg-[#E8453C]/5" },
+  clone_xs: { label: "Clone-Xs", color: "border-border text-foreground bg-muted/20" },
+  run_logs: { label: "Run Logs", color: "border-border text-muted-foreground bg-muted/20" },
+  audit_trail: { label: "Audit Trail", color: "border-border text-muted-foreground bg-muted/20" },
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -211,10 +211,10 @@ function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: 
             <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
               <defs>
                 <marker id="arrow-up" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#E8453C" />
                 </marker>
                 <marker id="arrow-down" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#22c55e" />
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#374151" />
                 </marker>
               </defs>
 
@@ -228,7 +228,7 @@ function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: 
                     <path
                       d={`M ${e.x1} ${e.y1} C ${midX} ${e.y1}, ${midX} ${e.y2}, ${e.x2} ${e.y2}`}
                       fill="none"
-                      stroke={highlighted ? (isUp ? "#3b82f6" : "#22c55e") : "var(--border, #404040)"}
+                      stroke={highlighted ? (isUp ? "#E8453C" : "#374151") : "var(--border, #404040)"}
                       strokeWidth={highlighted ? 2.5 : 1.5}
                       strokeDasharray={e.hop > 1 ? "6 3" : "none"}
                       markerEnd={`url(#arrow-${isUp ? "up" : "down"})`}
@@ -261,8 +261,8 @@ function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: 
                   >
                     <rect
                       width="130" height="36" rx="6"
-                      fill={isTarget ? "#3b82f6" : isHovered ? "var(--bg-hover, #2A2A2A)" : "var(--card, #2C2C2C)"}
-                      stroke={isTarget ? "#3b82f6" : isHovered ? "#3b82f6" : "var(--border, #404040)"}
+                      fill={isTarget ? "#E8453C" : isHovered ? "var(--bg-hover, #2A2A2A)" : "var(--card, #2C2C2C)"}
+                      stroke={isTarget ? "#E8453C" : isHovered ? "#E8453C" : "var(--border, #404040)"}
                       strokeWidth={isTarget || isHovered ? 2 : 1}
                     />
                     <text
@@ -289,7 +289,7 @@ function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: 
         </div>
         {/* Bottom resize handle */}
         <div
-          className="h-1.5 cursor-row-resize group hover:bg-blue-600/20 active:bg-blue-600/30 transition-colors relative"
+          className="h-1.5 cursor-row-resize group hover:bg-[#E8453C]/20 active:bg-[#E8453C]/30 transition-colors relative"
           onMouseDown={(e) => {
             e.preventDefault();
             const startY = e.clientY;
@@ -311,7 +311,7 @@ function LineageGraph({ nodes, edges, targetFqn, graphHeight, onHeightChange }: 
           }}
           title="Drag to resize graph height"
         >
-          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-border group-hover:bg-blue-600 transition-colors" />
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-border group-hover:bg-[#E8453C] transition-colors" />
         </div>
       </CardContent>
     </Card>
@@ -423,8 +423,8 @@ export default function LineagePage() {
       width: "40px",
       render: (_v: string, row: LineageEntry) =>
         row.direction === "upstream"
-          ? <ArrowLeft className="h-3.5 w-3.5 text-blue-500" />
-          : <ArrowRight className="h-3.5 w-3.5 text-green-600" />,
+          ? <ArrowLeft className="h-3.5 w-3.5 text-[#E8453C]" />
+          : <ArrowRight className="h-3.5 w-3.5 text-foreground" />,
     },
     {
       key: "destination",
@@ -490,7 +490,7 @@ export default function LineagePage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Lineage"
         icon={GitBranch}
@@ -580,11 +580,11 @@ export default function LineagePage() {
       {searched && entries.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label: "Total Links", value: entries.length, icon: Layers, color: "text-blue-600" },
-            { label: "Upstream", value: upstream.length, icon: ArrowUpRight, color: "text-blue-500" },
-            { label: "Downstream", value: downstream.length, icon: ArrowDownRight, color: "text-green-600" },
-            { label: "Unique Tables", value: stats?.total_nodes ?? 0, icon: Table2, color: "text-cyan-600" },
-            { label: "Column Links", value: columnLineage.length, icon: Columns, color: "text-purple-600" },
+            { label: "Total Links", value: entries.length, icon: Layers, color: "text-[#E8453C]" },
+            { label: "Upstream", value: upstream.length, icon: ArrowUpRight, color: "text-[#E8453C]" },
+            { label: "Downstream", value: downstream.length, icon: ArrowDownRight, color: "text-foreground" },
+            { label: "Unique Tables", value: stats?.total_nodes ?? 0, icon: Table2, color: "text-muted-foreground" },
+            { label: "Column Links", value: columnLineage.length, icon: Columns, color: "text-muted-foreground" },
           ].map(({ label, value, icon: Icon, color }) => (
             <Card key={label} className="bg-card border-border">
               <CardContent className="pt-5 pb-4">
@@ -614,7 +614,7 @@ export default function LineagePage() {
               key={key}
               onClick={() => setTab(key as typeof tab)}
               className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px shrink-0 ${
-                tab === key ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"
+                tab === key ? "border-[#E8453C] text-[#E8453C]" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {Icon && <Icon className="h-3.5 w-3.5" />}
@@ -681,7 +681,7 @@ export default function LineagePage() {
                               <span className="text-xs font-semibold text-foreground ml-2">{mc.degree}</span>
                             </div>
                             <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(mc.degree / maxDeg) * 100}%` }} />
+                              <div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${(mc.degree / maxDeg) * 100}%` }} />
                             </div>
                           </div>
                         </div>
@@ -776,10 +776,10 @@ export default function LineagePage() {
                               </div>
                               <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
                                 {col.lineage_count > 0 && (
-                                  <div className="h-full bg-cyan-600 rounded-l-full" style={{ width: `${(col.lineage_count / maxCount) * 100}%` }} />
+                                  <div className="h-full bg-[#6B7280] rounded-l-full" style={{ width: `${(col.lineage_count / maxCount) * 100}%` }} />
                                 )}
                                 {col.query_count > 0 && (
-                                  <div className="h-full bg-purple-600 rounded-r-full" style={{ width: `${(col.query_count / maxCount) * 100}%` }} />
+                                  <div className="h-full bg-[#6B7280] rounded-r-full" style={{ width: `${(col.query_count / maxCount) * 100}%` }} />
                                 )}
                               </div>
                               {col.users?.length > 0 && (
@@ -799,8 +799,8 @@ export default function LineagePage() {
                         );
                       })}
                       <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-600" />Lineage</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-600" />Query</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6B7280]" />Lineage</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6B7280]" />Query</span>
                       </div>
                     </div>
                   )}
@@ -837,7 +837,7 @@ export default function LineagePage() {
                                 </div>
                               </div>
                               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${(u.query_count / maxQ) * 100}%` }} />
+                                <div className="h-full bg-[#6B7280] rounded-full" style={{ width: `${(u.query_count / maxQ) * 100}%` }} />
                               </div>
                             </div>
                           </div>

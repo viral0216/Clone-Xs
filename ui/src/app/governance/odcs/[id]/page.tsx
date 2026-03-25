@@ -82,8 +82,9 @@ export default function ODCSContractDetail() {
     if (!contractId) return;
     try {
       const headers: Record<string, string> = {};
-      const h = sessionStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
-      const tk = sessionStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
+      const sid = localStorage.getItem("clxs_session_id"); if (sid) headers["X-Clone-Session"] = sid;
+      const h = localStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
+      const tk = localStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
       const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
       const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`, { headers });
       setYamlText(await res.text());
@@ -317,7 +318,7 @@ function SchemaTab({ doc, upd, addToArray, removeFromArray, onAutoDetect }: any)
           <CardHeader className="py-3 cursor-pointer" onClick={() => setExpanded(expanded === i ? null : i)}>
             <div className="flex items-center gap-2">
               {expanded === i ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              <Database className="h-4 w-4 text-blue-500" />
+              <Database className="h-4 w-4 text-[#E8453C]" />
               <span className="font-medium text-sm">{obj.name || `Object ${i + 1}`}</span>
               <Badge variant="outline" className="text-xs">{obj.physicalType || "table"}</Badge>
               <span className="text-xs text-muted-foreground ml-auto">{(obj.properties || []).length} columns</span>
@@ -649,7 +650,7 @@ function ServersTab({ doc, upd, addToArray, removeFromArray, onPrefill }: any) {
       {servers.map((s: any, i: number) => (
         <Card key={i}><CardContent className="pt-4 space-y-3">
           <div className="flex items-center gap-2 mb-2">
-            <Server className="h-4 w-4 text-purple-500" />
+            <Server className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium text-sm">{s.server || `Server ${i + 1}`}</span>
             <Badge variant="outline" className="text-xs">{s.type}</Badge>
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => removeFromArray("servers", i)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>

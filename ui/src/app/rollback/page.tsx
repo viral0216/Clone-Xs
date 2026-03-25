@@ -61,11 +61,11 @@ const OBJ_ICONS = {
 };
 
 const OBJ_COLORS = {
-  schemas: "text-purple-500",
-  tables: "text-blue-500",
-  views: "text-cyan-500",
-  functions: "text-orange-500",
-  volumes: "text-teal-500",
+  schemas: "text-muted-foreground",
+  tables: "text-[#E8453C]",
+  views: "text-muted-foreground",
+  functions: "text-muted-foreground",
+  volumes: "text-muted-foreground",
 };
 
 function timeAgo(ts: string) {
@@ -155,7 +155,7 @@ export default function RollbackPage() {
   const totalObjects = logs.reduce((sum, l) => sum + (l.total_objects || l.tables_affected || 0), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Rollback"
         icon={Undo2}
@@ -177,7 +177,7 @@ export default function RollbackPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rollback Points</span>
-              <Undo2 className="h-4 w-4 text-blue-600" />
+              <Undo2 className="h-4 w-4 text-[#E8453C]" />
             </div>
             <p className="text-2xl font-bold text-foreground">{logs.length}</p>
             <p className="text-xs text-muted-foreground mt-1">available snapshots</p>
@@ -187,7 +187,7 @@ export default function RollbackPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Objects</span>
-              <Database className="h-4 w-4 text-purple-600" />
+              <Database className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{totalObjects}</p>
             <p className="text-xs text-muted-foreground mt-1">across all snapshots</p>
@@ -197,7 +197,7 @@ export default function RollbackPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Latest</span>
-              <Clock className="h-4 w-4 text-orange-500" />
+              <Clock className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{logs.length > 0 ? timeAgo(logs[logs.length - 1]?.timestamp) : "—"}</p>
             <p className="text-xs text-muted-foreground mt-1">most recent snapshot</p>
@@ -240,7 +240,7 @@ export default function RollbackPage() {
             const isDelta = !!entry.rollback_id;
 
             return (
-              <Card key={id} className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-blue-600/30" : ""}`}>
+              <Card key={id} className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-[#E8453C]/30" : ""}`}>
                 <CardContent className="py-3 px-4">
                   {/* Main row */}
                   <div
@@ -251,7 +251,7 @@ export default function RollbackPage() {
                       ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                       : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
 
-                    <Undo2 className="h-4 w-4 text-blue-600 shrink-0" />
+                    <Undo2 className="h-4 w-4 text-[#E8453C] shrink-0" />
 
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <span className="text-sm font-medium text-foreground truncate">{src}</span>
@@ -266,9 +266,9 @@ export default function RollbackPage() {
                     {/* Status badge for Delta entries */}
                     {entry.status && (
                       <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                        entry.status === "completed" ? "border-green-600/30 text-green-600" :
-                        entry.status === "pending" ? "border-yellow-500/30 text-yellow-600" :
-                        entry.status === "completed_with_errors" ? "border-orange-500/30 text-orange-500" :
+                        entry.status === "completed" ? "border-border text-foreground" :
+                        entry.status === "pending" ? "border-border text-muted-foreground" :
+                        entry.status === "completed_with_errors" ? "border-border text-muted-foreground" :
                         ""
                       }`}>
                         {entry.status}
@@ -291,7 +291,7 @@ export default function RollbackPage() {
                   {/* Result message */}
                   {entryResult && (
                     <div className={`mt-2 px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                      entryResult.success ? "bg-green-500/5 text-green-600 border border-green-500/20" : "bg-red-500/5 text-red-500 border border-red-500/20"
+                      entryResult.success ? "bg-muted/20 text-foreground border border-green-500/20" : "bg-red-500/5 text-red-500 border border-red-500/20"
                     }`}>
                       {entryResult.success ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                       {entryResult.message}
@@ -336,8 +336,8 @@ export default function RollbackPage() {
                               <div className="flex gap-4 mt-3">
                                 {entry.dropped_count != null && (
                                   <div className="flex items-center gap-1.5 text-sm">
-                                    <CheckCircle className="h-3.5 w-3.5 text-green-600" />
-                                    <span className="text-green-600 font-medium">{entry.dropped_count} dropped</span>
+                                    <CheckCircle className="h-3.5 w-3.5 text-foreground" />
+                                    <span className="text-foreground font-medium">{entry.dropped_count} dropped</span>
                                   </div>
                                 )}
                                 {entry.failed_count != null && entry.failed_count > 0 && (
@@ -382,7 +382,7 @@ export default function RollbackPage() {
                                           <td className="py-1.5 px-3 font-mono text-foreground">{v.fqn}</td>
                                           <td className="py-1.5 px-3 text-center">
                                             {v.existed && v.pre_clone_version != null ? (
-                                              <Badge variant="outline" className="text-[10px] border-green-600/30 text-green-600 bg-green-500/5">RESTORE</Badge>
+                                              <Badge variant="outline" className="text-[10px] border-border text-foreground bg-muted/20">RESTORE</Badge>
                                             ) : (
                                               <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-500 bg-red-500/5">DROP</Badge>
                                             )}
@@ -436,7 +436,7 @@ export default function RollbackPage() {
                           <div className="flex items-center gap-3 pt-2">
                             {confirming === path ? (
                               <div className="flex items-center gap-3 flex-wrap">
-                                <div className="flex items-center gap-2 text-yellow-600">
+                                <div className="flex items-center gap-2 text-muted-foreground">
                                   <AlertTriangle className="h-4 w-4" />
                                   <span className="text-sm font-medium">This will RESTORE tables to pre-clone versions and DROP new objects. Are you sure?</span>
                                 </div>

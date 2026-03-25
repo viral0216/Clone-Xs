@@ -28,7 +28,7 @@ export default function SLAPage() {
   const checks = status.checks || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="SLA Dashboard" icon={Clock} breadcrumbs={["Governance", "SLA & Freshness"]} description="Monitor data freshness, row counts, and schema stability against SLA thresholds." />
       <div className="flex gap-3">
         <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />Add SLA Rule</Button>
@@ -37,13 +37,13 @@ export default function SLAPage() {
 
       <div className="grid grid-cols-3 gap-4">
         <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold">{status.total_rules || rules.length}</p><p className="text-xs text-muted-foreground">Total SLAs</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold text-green-600">{status.passed || 0}</p><p className="text-xs text-muted-foreground">Passing</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className={`text-3xl font-bold ${(status.failed || 0) > 0 ? "text-red-600" : "text-green-600"}`}>{status.failed || 0}</p><p className="text-xs text-muted-foreground">Failing</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold text-foreground">{status.passed || 0}</p><p className="text-xs text-muted-foreground">Passing</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className={`text-3xl font-bold ${(status.failed || 0) > 0 ? "text-red-600" : "text-foreground"}`}>{status.failed || 0}</p><p className="text-xs text-muted-foreground">Failing</p></CardContent></Card>
       </div>
 
       {health < 100 && (
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-          <div className={`h-3 rounded-full transition-all ${health >= 90 ? "bg-green-500" : health >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${health}%` }} />
+          <div className={`h-3 rounded-full transition-all ${health >= 90 ? "bg-muted/200" : health >= 70 ? "bg-muted/200" : "bg-red-500"}`} style={{ width: `${health}%` }} />
         </div>
       )}
 
@@ -70,13 +70,13 @@ export default function SLAPage() {
             {checks.map((c: any, i: number) => {
               const pass = c.passed === true || c.passed === "true";
               return (
-                <div key={i} className={`flex items-center gap-3 py-2.5 px-4 rounded border ${pass ? "border-green-200 bg-green-50/50 dark:bg-green-950/20" : "border-red-200 bg-red-50/50 dark:bg-red-950/20"}`}>
-                  {pass ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                <div key={i} className={`flex items-center gap-3 py-2.5 px-4 rounded border ${pass ? "border-border bg-muted/20 dark:bg-white/5" : "border-red-200 bg-red-50/50 dark:bg-red-950/20"}`}>
+                  {pass ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}
                   <span className="font-mono text-sm">{c.table_fqn}</span>
                   <Badge variant="outline">{c.metric}</Badge>
                   <span className="text-xs">Current: {c.current_value}</span>
                   <span className="text-xs text-muted-foreground">Threshold: {c.threshold}</span>
-                  <Badge className={c.severity === "critical" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}>{c.severity}</Badge>
+                  <Badge className={c.severity === "critical" ? "bg-red-100 text-red-800" : "bg-muted/40 text-foreground"}>{c.severity}</Badge>
                 </div>
               );
             })}

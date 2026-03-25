@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
 import { Activity, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 export default function MonitorPage() {
   const { job, run, isRunning } = usePageJob("monitor");
@@ -16,11 +17,13 @@ export default function MonitorPage() {
   const result = job?.data as Record<string, unknown> | null;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Monitor</h1>
-        <p className="text-gray-500 mt-1">Continuous monitoring of catalog sync status — compares source and destination in real-time, tracks drift, and shows sync freshness for each table.</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Monitor"
+        icon={Activity}
+        description="Continuous monitoring of catalog sync status — compares source and destination in real-time, tracks drift, and shows sync freshness for each table."
+        breadcrumbs={["Management", "Monitor"]}
+      />
 
       <Card>
         <CardContent className="pt-6">
@@ -65,12 +68,12 @@ export default function MonitorPage() {
                 <CardContent className="pt-4 text-center">
                   <div className="flex items-center justify-center gap-2 mb-1">
                     {r.in_sync ? (
-                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <CheckCircle className="h-5 w-5 text-foreground" />
                     ) : (
-                      <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                      <AlertTriangle className="h-5 w-5 text-muted-foreground" />
                     )}
                   </div>
-                  <p className={`text-lg font-bold ${r.in_sync ? "text-green-700" : "text-yellow-700"}`}>
+                  <p className={`text-lg font-bold ${r.in_sync ? "text-foreground" : "text-muted-foreground"}`}>
                     {r.in_sync ? "In Sync" : "Out of Sync"}
                   </p>
                   <p className="text-xs text-gray-500">Status</p>
@@ -78,13 +81,13 @@ export default function MonitorPage() {
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-blue-700">{r.total_tables ?? "N/A"}</p>
+                  <p className="text-2xl font-bold text-[#E8453C]">{r.total_tables ?? "N/A"}</p>
                   <p className="text-xs text-gray-500">Total Tables</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-green-700">{r.matched_tables ?? "N/A"}</p>
+                  <p className="text-2xl font-bold text-foreground">{r.matched_tables ?? "N/A"}</p>
                   <p className="text-xs text-gray-500">Matched</p>
                 </CardContent>
               </Card>
@@ -141,7 +144,7 @@ export default function MonitorPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                     Extra in Destination ({r.extra_tables.length})
                   </CardTitle>
                 </CardHeader>
@@ -173,7 +176,7 @@ export default function MonitorPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-orange-500" />
+                    <Activity className="h-4 w-4 text-muted-foreground" />
                     Drifted Tables ({r.drifted_tables.length})
                   </CardTitle>
                 </CardHeader>

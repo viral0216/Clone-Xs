@@ -17,10 +17,10 @@ import {
 import CatalogPicker from "@/components/CatalogPicker";
 
 const STATUS_COLORS: Record<string, string> = {
-  active: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+  active: "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-300",
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
-  proposed: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  deprecated: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  proposed: "bg-muted/50 text-foreground dark:bg-white/5 dark:text-gray-300",
+  deprecated: "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-300",
   retired: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
 };
 
@@ -96,8 +96,9 @@ export default function ODCSContractsPage() {
         text = `# ODCS Contract: ${contractId}\nkind: DataContract\napiVersion: v3.0.0\ntype: tables\nstatus: active\ndataset:\n  - table: customer_360\n    physicalName: prod_catalog.gold.customer_360\n    description: Unified customer view\n    columns:\n      - column: customer_id\n        logicalType: integer\n        isPrimaryKey: true\n      - column: email\n        logicalType: string\n        classification: pii\nserviceLevelAgreements:\n  - property: freshness\n    value: "< 1 hour"\n`;
       } else {
         const headers: Record<string, string> = {};
-        const h = sessionStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
-        const tk = sessionStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
+        const sid = localStorage.getItem("clxs_session_id"); if (sid) headers["X-Clone-Session"] = sid;
+        const h = localStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
+        const tk = localStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
         const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
         const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`, { headers });
         text = await res.text();
@@ -212,7 +213,7 @@ export default function ODCSContractsPage() {
   const domains = [...new Set(contracts.map((c) => c.domain).filter(Boolean))];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="ODCS Data Contracts"
         icon={FileCode}
@@ -232,7 +233,7 @@ export default function ODCSContractsPage() {
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <FileText className="h-4 w-4 mr-2" />Upload File
         </Button>
-        <Button variant="outline" onClick={() => { setShowGenerate(!showGenerate); setGenStep(1); setGenResult(null); }} className="border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-950">
+        <Button variant="outline" onClick={() => { setShowGenerate(!showGenerate); setGenStep(1); setGenResult(null); }} className="border-border text-muted-foreground hover:bg-muted/20 dark:border-border dark:text-gray-400 dark:hover:bg-gray-900">
           <Wand2 className="h-4 w-4 mr-2" />Generate from UC
         </Button>
 
@@ -278,17 +279,17 @@ export default function ODCSContractsPage() {
 
       {/* Generate from UC wizard */}
       {showGenerate && (
-        <Card className="border-purple-200 dark:border-purple-800">
+        <Card className="border-border dark:border-border">
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center gap-2 mb-2">
-              <Wand2 className="h-5 w-5 text-purple-600" />
+              <Wand2 className="h-5 w-5 text-muted-foreground" />
               <p className="text-sm font-medium">Generate Contract from Unity Catalog</p>
               <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-                <span className={genStep >= 1 ? "text-purple-600 font-medium" : ""}>1. Scope</span>
+                <span className={genStep >= 1 ? "text-muted-foreground font-medium" : ""}>1. Scope</span>
                 <ChevronRight className="h-3 w-3" />
-                <span className={genStep >= 2 ? "text-purple-600 font-medium" : ""}>2. Options</span>
+                <span className={genStep >= 2 ? "text-muted-foreground font-medium" : ""}>2. Options</span>
                 <ChevronRight className="h-3 w-3" />
-                <span className={genStep >= 3 ? "text-purple-600 font-medium" : ""}>3. Preview</span>
+                <span className={genStep >= 3 ? "text-muted-foreground font-medium" : ""}>3. Preview</span>
               </div>
             </div>
 
@@ -298,7 +299,7 @@ export default function ODCSContractsPage() {
                 <div className="flex gap-3">
                   {(["table", "schema", "catalog"] as const).map((s) => (
                     <button key={s} onClick={() => { setGenScope(s); setGenSchema(""); setGenTable(""); }}
-                      className={`px-4 py-2 rounded border text-sm transition-colors ${genScope === s ? "bg-purple-100 border-purple-400 text-purple-800 dark:bg-purple-950 dark:border-purple-600 dark:text-purple-300" : "border-border hover:bg-muted"}`}>
+                      className={`px-4 py-2 rounded border text-sm transition-colors ${genScope === s ? "bg-muted/40 border-border text-foreground dark:bg-gray-900 dark:border-border dark:text-gray-300" : "border-border hover:bg-muted"}`}>
                       <Database className="h-4 w-4 inline mr-1.5" />
                       {s === "table" ? "Single Table" : s === "schema" ? "Entire Schema" : "Entire Catalog"}
                     </button>
@@ -348,7 +349,7 @@ export default function ODCSContractsPage() {
                   ))}
                 </div>
                 {genOpts.include_dqx_profiling && (
-                  <div className="p-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded text-xs text-blue-800 dark:text-blue-300">
+                  <div className="p-2 bg-muted/30 dark:bg-white/5 border border-border dark:border-border rounded text-xs text-foreground dark:text-gray-300">
                     DQX Profiling uses data sampling to generate quality rules. This may take longer for large tables.
                   </div>
                 )}
@@ -371,7 +372,7 @@ export default function ODCSContractsPage() {
                 {genScope === "table" && !genResult.contracts ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <CheckCircle2 className="h-5 w-5 text-foreground" />
                       <span className="font-medium">{genResult.name || "Generated Contract"}</span>
                       <Badge variant="outline">{genResult.status}</Badge>
                     </div>
@@ -389,13 +390,13 @@ export default function ODCSContractsPage() {
                 ) : genResult.contracts ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <CheckCircle2 className="h-5 w-5 text-foreground" />
                       <span className="font-medium">{genResult.count} contract(s) generated</span>
                     </div>
                     <div className="border rounded max-h-60 overflow-auto">
                       {genResult.contracts.map((c: any, i: number) => (
                         <div key={i} className="flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm">
-                          {c.error ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                          {c.error ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-foreground" />}
                           <span>{c.name || c.table_fqn || `Contract ${i + 1}`}</span>
                           {c.error && <span className="text-xs text-red-500 ml-auto">{c.error}</span>}
                           {!c.error && <span className="text-xs text-muted-foreground ml-auto">{(c.schema?.[0]?.properties || []).length} cols</span>}
@@ -449,7 +450,7 @@ export default function ODCSContractsPage() {
               {filtered.map((c) => (
                 <tr key={c.contract_id} className="border-t hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3">
-                    <Link to={`/governance/odcs/${c.contract_id}`} className="font-medium hover:text-blue-600 transition-colors">
+                    <Link to={`/governance/odcs/${c.contract_id}`} className="font-medium hover:text-[#E8453C] transition-colors">
                       {c.name || "Untitled"}
                     </Link>
                     {c.data_product && <span className="text-xs text-muted-foreground ml-2">({c.data_product})</span>}

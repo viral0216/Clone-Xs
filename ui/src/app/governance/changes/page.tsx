@@ -8,10 +8,10 @@ import PageHeader from "@/components/PageHeader";
 import { History, Clock, Plus, Pencil, Trash2, CheckCircle2, XCircle } from "lucide-react";
 
 const CHANGE_ICONS: Record<string, { icon: any; color: string }> = {
-  created: { icon: Plus, color: "text-green-600 bg-green-100 dark:bg-green-950" },
-  updated: { icon: Pencil, color: "text-blue-600 bg-blue-100 dark:bg-blue-950" },
+  created: { icon: Plus, color: "text-foreground bg-muted/40 dark:bg-white/5" },
+  updated: { icon: Pencil, color: "text-[#E8453C] bg-muted/50 dark:bg-white/5" },
   deleted: { icon: Trash2, color: "text-red-600 bg-red-100 dark:bg-red-950" },
-  approved: { icon: CheckCircle2, color: "text-green-600 bg-green-100 dark:bg-green-950" },
+  approved: { icon: CheckCircle2, color: "text-foreground bg-muted/40 dark:bg-white/5" },
   rejected: { icon: XCircle, color: "text-red-600 bg-red-100 dark:bg-red-950" },
 };
 
@@ -42,7 +42,7 @@ export default function ChangesPage() {
   const entities = ["", "glossary", "certification", "dq_rule", "sla_rule", "contract"];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Change History" icon={History} breadcrumbs={["Governance", "Change History"]} description="Track who changed what metadata — glossary terms, certifications, DQ rules, SLA rules, and data contracts." />
 
       <select value={entityFilter} onChange={e => setEntityFilter(e.target.value)} className="border rounded px-3 py-2 text-sm bg-background">
@@ -70,7 +70,7 @@ export default function ChangesPage() {
                   <Card className="flex-1">
                     <CardContent className="pt-3 pb-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={ch.change_type === "created" ? "bg-green-100 text-green-800" : ch.change_type === "deleted" ? "bg-red-100 text-red-800" : ch.change_type === "approved" ? "bg-green-100 text-green-800" : ch.change_type === "rejected" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}>{ch.change_type}</Badge>
+                        <Badge className={ch.change_type === "created" ? "bg-muted/40 text-foreground" : ch.change_type === "deleted" ? "bg-red-100 text-red-800" : ch.change_type === "approved" ? "bg-muted/40 text-foreground" : ch.change_type === "rejected" ? "bg-red-100 text-red-800" : "bg-muted/50 text-foreground"}>{ch.change_type}</Badge>
                         <Badge variant="outline" className="text-xs">{ch.entity_type}</Badge>
                         <span className="font-mono text-xs text-muted-foreground">{ch.entity_id}</span>
                         <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(ch.changed_at)}</span>

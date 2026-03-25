@@ -17,14 +17,14 @@ import {
 } from "recharts";
 
 const STATUS_COLORS = {
-  completed: "#22c55e", success: "#22c55e",
-  failed: "#ef4444", running: "#3b82f6",
-  pending: "#eab308", queued: "#8b5cf6",
-  completed_with_errors: "#f59e0b",
+  completed: "#374151", success: "#374151",
+  failed: "#E8453C", running: "#E8453C",
+  pending: "#9CA3AF", queued: "#6B7280",
+  completed_with_errors: "#9CA3AF",
 };
 
-const CLONE_TYPE_COLORS = { DEEP: "#3b82f6", SHALLOW: "#8b5cf6", UNKNOWN: "#666" };
-const OP_TYPE_COLORS = { clone: "#3b82f6", sync: "#06b6d4", rollback: "#f59e0b", generate: "#8b5cf6" };
+const CLONE_TYPE_COLORS = { DEEP: "#E8453C", SHALLOW: "#6B7280", UNKNOWN: "#666" };
+const OP_TYPE_COLORS = { clone: "#E8453C", sync: "#6B7280", rollback: "#9CA3AF", generate: "#6B7280" };
 
 function formatDuration(seconds) {
   if (!seconds || seconds === 0) return "0s";
@@ -85,7 +85,7 @@ export default function MetricsPage() {
   const wow = data?.week_over_week ?? { this_week: 0, last_week: 0, change_pct: 0 };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Metrics Dashboard"
         icon={BarChart3}
@@ -104,14 +104,14 @@ export default function MetricsPage() {
       {/* Row 1: Core Stats (8 cards) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
         {[
-          { label: "Total Clones", value: data?.total_clones ?? 0, icon: Copy, color: "text-blue-600", bg: "bg-blue-500/10" },
-          { label: "Succeeded", value: data?.succeeded ?? 0, icon: CheckCircle, color: "text-green-600", bg: "bg-green-500/10" },
+          { label: "Total Clones", value: data?.total_clones ?? 0, icon: Copy, color: "text-[#E8453C]", bg: "bg-[#E8453C]/10" },
+          { label: "Succeeded", value: data?.succeeded ?? 0, icon: CheckCircle, color: "text-foreground", bg: "bg-muted/30" },
           { label: "Failed", value: data?.failed ?? 0, icon: XCircle, color: "text-red-500", bg: "bg-red-500/10" },
-          { label: "Success Rate", value: `${data?.success_rate ?? 0}%`, icon: TrendingUp, color: "text-green-600", bg: "bg-green-500/10" },
-          { label: "Avg Duration", value: formatDuration(data?.avg_duration), icon: Clock, color: "text-orange-500", bg: "bg-orange-500/10" },
-          { label: "Min Duration", value: formatDuration(data?.min_duration), icon: Zap, color: "text-cyan-600", bg: "bg-cyan-500/10" },
+          { label: "Success Rate", value: `${data?.success_rate ?? 0}%`, icon: TrendingUp, color: "text-foreground", bg: "bg-muted/30" },
+          { label: "Avg Duration", value: formatDuration(data?.avg_duration), icon: Clock, color: "text-muted-foreground", bg: "bg-muted/30" },
+          { label: "Min Duration", value: formatDuration(data?.min_duration), icon: Zap, color: "text-muted-foreground", bg: "bg-muted/30" },
           { label: "Max Duration", value: formatDuration(data?.max_duration), icon: Clock, color: "text-red-400", bg: "bg-red-400/10" },
-          { label: "Tables Cloned", value: (data?.total_tables_cloned ?? 0).toLocaleString(), icon: Database, color: "text-purple-600", bg: "bg-purple-500/10" },
+          { label: "Tables Cloned", value: (data?.total_tables_cloned ?? 0).toLocaleString(), icon: Database, color: "text-muted-foreground", bg: "bg-muted/30" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <Card key={label} className="bg-card border-border">
             <CardContent className="pt-5 pb-4">
@@ -131,7 +131,7 @@ export default function MetricsPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data Moved</span>
-              <HardDrive className="h-4 w-4 text-yellow-600" />
+              <HardDrive className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{isLoading ? "—" : formatBytes(data?.total_data_bytes)}</p>
           </CardContent>
@@ -140,7 +140,7 @@ export default function MetricsPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Views Cloned</span>
-              <Eye className="h-4 w-4 text-purple-600" />
+              <Eye className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{isLoading ? "—" : (data?.total_views_cloned ?? 0).toLocaleString()}</p>
           </CardContent>
@@ -149,7 +149,7 @@ export default function MetricsPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg Tables/Clone</span>
-              <Layers className="h-4 w-4 text-cyan-600" />
+              <Layers className="h-4 w-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold text-foreground">{isLoading ? "—" : (data?.avg_tables_per_clone ?? 0)}</p>
           </CardContent>
@@ -158,11 +158,11 @@ export default function MetricsPage() {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">This Week</span>
-              {wow.change_pct > 0 ? <ArrowUpRight className="h-4 w-4 text-green-600" /> : wow.change_pct < 0 ? <ArrowDownRight className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-muted-foreground" />}
+              {wow.change_pct > 0 ? <ArrowUpRight className="h-4 w-4 text-foreground" /> : wow.change_pct < 0 ? <ArrowDownRight className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-muted-foreground" />}
             </div>
             <p className="text-2xl font-bold text-foreground">{isLoading ? "—" : wow.this_week}</p>
             <p className="text-[10px] mt-0.5">
-              {wow.change_pct > 0 ? <span className="text-green-600">+{wow.change_pct}% vs last week</span> : wow.change_pct < 0 ? <span className="text-red-500">{wow.change_pct}% vs last week</span> : <span className="text-muted-foreground">same as last week</span>}
+              {wow.change_pct > 0 ? <span className="text-foreground">+{wow.change_pct}% vs last week</span> : wow.change_pct < 0 ? <span className="text-red-500">{wow.change_pct}% vs last week</span> : <span className="text-muted-foreground">same as last week</span>}
             </p>
           </CardContent>
         </Card>
@@ -185,8 +185,8 @@ export default function MetricsPage() {
                 <AreaChart data={activityData}>
                   <defs>
                     <linearGradient id="mGradSuccess" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#374151" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#374151" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="mGradFailed" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
@@ -197,7 +197,7 @@ export default function MetricsPage() {
                   <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="var(--text-muted, #666)" />
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="var(--text-muted, #666)" />
                   <Tooltip contentStyle={{ background: "var(--card, #2C2C2C)", border: "1px solid var(--border, #404040)", borderRadius: 8, fontSize: 12 }} />
-                  <Area type="monotone" dataKey="success" stroke="#22c55e" fill="url(#mGradSuccess)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="success" stroke="#374151" fill="url(#mGradSuccess)" strokeWidth={2} />
                   <Area type="monotone" dataKey="failed" stroke="#ef4444" fill="url(#mGradFailed)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -285,7 +285,7 @@ export default function MetricsPage() {
                   <XAxis dataKey="hour" tick={{ fontSize: 9 }} stroke="var(--text-muted, #666)" interval={2} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10 }} stroke="var(--text-muted, #666)" />
                   <Tooltip contentStyle={{ background: "var(--card, #2C2C2C)", border: "1px solid var(--border, #404040)", borderRadius: 8, fontSize: 12 }} />
-                  <Bar dataKey="count" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="count" fill="#E8453C" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -318,7 +318,7 @@ export default function MetricsPage() {
                           <span className="text-xs font-semibold text-foreground ml-2">{cat.count}</span>
                         </div>
                         <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          <div className="h-full bg-[#E8453C] rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     </div>
@@ -354,7 +354,7 @@ export default function MetricsPage() {
                           <span className="text-xs text-muted-foreground ml-2">{u.count} ops</span>
                         </div>
                         <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-purple-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          <div className="h-full bg-[#6B7280] rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     </div>

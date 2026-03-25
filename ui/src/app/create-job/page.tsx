@@ -314,12 +314,12 @@ export default function CreateJobPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold">Create Databricks Job</h1>
         <p className="text-gray-500 mt-1">Create a persistent Databricks Job that runs Clone-Xs automatically — uploads the wheel, creates a notebook task, sets cron schedule, email notifications, retries, and tags. The job appears in your Databricks Jobs UI.</p>
         <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Databricks Jobs API</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/schedule" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Quartz cron syntax</a>
+          <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Databricks Jobs API</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/schedule" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Quartz cron syntax</a>
         </p>
       </div>
 
@@ -540,7 +540,7 @@ export default function CreateJobPage() {
             Clone Options
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           {/* Clone Type & Load Type */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -726,7 +726,7 @@ export default function CreateJobPage() {
             type="checkbox"
             checked={runAfterCreate}
             onChange={(e) => setRunAfterCreate(e.target.checked)}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+            className="rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C] h-4 w-4"
           />
           <span className="text-sm text-gray-600">Run job immediately after creation</span>
         </label>
@@ -734,10 +734,10 @@ export default function CreateJobPage() {
 
       {/* Result */}
       {result && (
-        <Card className="border-green-500/30 bg-green-500/5">
+        <Card className="border-border/30 bg-muted/200/5">
           <CardContent className="pt-6 space-y-4">
             <div className="flex items-center gap-3">
-              <CheckCircle className="h-6 w-6 text-green-500" />
+              <CheckCircle className="h-6 w-6 text-foreground" />
               <div>
                 <p className="font-semibold text-lg">
                   Job {updateJobId ? "Updated" : "Created"} Successfully

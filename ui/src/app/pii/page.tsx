@@ -23,8 +23,8 @@ import {
 function riskColor(risk: string) {
   switch (risk?.toUpperCase()) {
     case "HIGH":   return "text-red-600 bg-red-50 border-red-200";
-    case "MEDIUM": return "text-yellow-600 bg-yellow-50 border-yellow-200";
-    case "LOW":    return "text-green-600 bg-green-50 border-green-200";
+    case "MEDIUM": return "text-muted-foreground bg-muted/20 border-border";
+    case "LOW":    return "text-foreground bg-muted/20 border-border";
     default:       return "text-gray-600 bg-gray-50 border-gray-200";
   }
 }
@@ -32,9 +32,9 @@ function riskColor(risk: string) {
 function riskIcon(risk: string, size = "h-5 w-5") {
   switch (risk?.toUpperCase()) {
     case "HIGH":   return <ShieldAlert className={`${size} text-red-600`} />;
-    case "MEDIUM": return <AlertTriangle className={`${size} text-yellow-600`} />;
-    case "LOW":    return <ShieldCheck className={`${size} text-green-600`} />;
-    default:       return <CheckCircle className={`${size} text-green-600`} />;
+    case "MEDIUM": return <AlertTriangle className={`${size} text-muted-foreground`} />;
+    case "LOW":    return <ShieldCheck className={`${size} text-foreground`} />;
+    default:       return <CheckCircle className={`${size} text-foreground`} />;
   }
 }
 
@@ -44,39 +44,39 @@ function confidenceBadge(confidence: number | string) {
     if (level === "HIGH")
       return <Badge variant="destructive" className="text-[13px] font-semibold">High</Badge>;
     if (level === "MEDIUM")
-      return <Badge className="bg-yellow-500 text-white text-[13px] font-semibold">Medium</Badge>;
+      return <Badge className="bg-[#9CA3AF] text-white text-[13px] font-semibold">Medium</Badge>;
     return <Badge variant="outline" className="text-[13px] font-semibold capitalize">{confidence}</Badge>;
   }
   const val = typeof confidence === "number" ? confidence : parseFloat(confidence);
   if (val >= 0.9) return <Badge variant="destructive" className="text-[13px] font-semibold">{(val * 100).toFixed(0)}%</Badge>;
-  if (val >= 0.7) return <Badge className="bg-yellow-500 text-white text-[13px] font-semibold">{(val * 100).toFixed(0)}%</Badge>;
+  if (val >= 0.7) return <Badge className="bg-[#9CA3AF] text-white text-[13px] font-semibold">{(val * 100).toFixed(0)}%</Badge>;
   return <Badge variant="outline" className="text-[13px] font-semibold">{(val * 100).toFixed(0)}%</Badge>;
 }
 
 const PII_TYPE_COLORS: Record<string, string> = {
   SSN: "bg-red-100 text-red-700 border-red-200",
-  EMAIL: "bg-blue-100 text-blue-700 border-blue-200",
-  PHONE: "bg-purple-100 text-purple-700 border-purple-200",
+  EMAIL: "bg-muted/50 text-foreground border-border",
+  PHONE: "bg-muted/40 text-muted-foreground border-border",
   CREDIT_CARD: "bg-red-100 text-red-700 border-red-200",
   PASSPORT: "bg-red-100 text-red-700 border-red-200",
   PASSPORT_US: "bg-red-100 text-red-700 border-red-200",
-  PERSON_NAME: "bg-sky-100 text-sky-700 border-sky-200",
-  ADDRESS: "bg-amber-100 text-amber-700 border-amber-200",
-  IP_ADDRESS: "bg-orange-100 text-orange-700 border-orange-200",
-  DATE_OF_BIRTH: "bg-pink-100 text-pink-700 border-pink-200",
+  PERSON_NAME: "bg-muted/40 text-muted-foreground border-border",
+  ADDRESS: "bg-muted/40 text-muted-foreground border-border",
+  IP_ADDRESS: "bg-muted/40 text-muted-foreground border-border",
+  DATE_OF_BIRTH: "bg-muted/40 text-muted-foreground border-border",
   BANK_ACCOUNT: "bg-red-100 text-red-700 border-red-200",
-  FINANCIAL: "bg-yellow-100 text-yellow-700 border-yellow-200",
-  DEMOGRAPHIC: "bg-teal-100 text-teal-700 border-teal-200",
-  MEDICAL: "bg-rose-100 text-rose-700 border-rose-200",
+  FINANCIAL: "bg-muted/40 text-muted-foreground border-border",
+  DEMOGRAPHIC: "bg-muted/40 text-muted-foreground border-border",
+  MEDICAL: "bg-muted/40 text-muted-foreground border-border",
   CREDENTIAL: "bg-red-100 text-red-700 border-red-200",
   TAX_ID: "bg-red-100 text-red-700 border-red-200",
   NATIONAL_ID: "bg-red-100 text-red-700 border-red-200",
   NATIONAL_ID_AADHAR: "bg-red-100 text-red-700 border-red-200",
   NATIONAL_ID_NINO: "bg-red-100 text-red-700 border-red-200",
   IBAN: "bg-red-100 text-red-700 border-red-200",
-  DRIVERS_LICENSE: "bg-indigo-100 text-indigo-700 border-indigo-200",
-  MAC_ADDRESS: "bg-orange-100 text-orange-700 border-orange-200",
-  VIN: "bg-amber-100 text-amber-700 border-amber-200",
+  DRIVERS_LICENSE: "bg-muted/40 text-muted-foreground border-border",
+  MAC_ADDRESS: "bg-muted/40 text-muted-foreground border-border",
+  VIN: "bg-muted/40 text-muted-foreground border-border",
 };
 
 function piiTypeBadge(type: string) {
@@ -220,7 +220,7 @@ export default function PiiPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="PII Scanner"
         icon={Shield}
@@ -303,7 +303,7 @@ export default function PiiPage() {
         </TabsList>
 
         <TabsContent value="current">
-          <div className="space-y-6 mt-4">
+          <div className="space-y-4 mt-4">
             {/* Risk banner */}
             {summary && (
               <Card className={`border ${riskColor(summary.risk_level)}`}>
@@ -343,7 +343,7 @@ export default function PiiPage() {
 
             {/* Tag result */}
             {tagResult && (
-              <Card className="border-blue-200 bg-blue-50/50">
+              <Card className="border-border bg-muted/20">
                 <CardContent className="pt-4 pb-4">
                   <p className="text-sm">
                     <span className="font-semibold">Tag Preview:</span>{" "}
@@ -359,11 +359,11 @@ export default function PiiPage() {
                 <Card className="bg-card border-border">
                   <CardContent className="pt-6 pb-5">
                     <div className="flex items-center gap-4">
-                      <div className="p-2.5 rounded-xl bg-blue-100">
-                        <Columns className="h-5 w-5 text-blue-700" />
+                      <div className="p-2.5 rounded-xl bg-muted/50">
+                        <Columns className="h-5 w-5 text-[#E8453C]" />
                       </div>
                       <div>
-                        <p className="text-3xl font-extrabold text-blue-700">{summary.total_columns_scanned?.toLocaleString() || 0}</p>
+                        <p className="text-3xl font-extrabold text-[#E8453C]">{summary.total_columns_scanned?.toLocaleString() || 0}</p>
                         <p className="text-sm font-medium text-foreground/60 mt-0.5">Columns Scanned</p>
                       </div>
                     </div>
@@ -385,11 +385,11 @@ export default function PiiPage() {
                 <Card className="bg-card border-border">
                   <CardContent className="pt-6 pb-5">
                     <div className="flex items-center gap-4">
-                      <div className={`p-2.5 rounded-xl ${summary.risk_level === "HIGH" ? "bg-red-100" : summary.risk_level === "MEDIUM" ? "bg-yellow-100" : "bg-green-100"}`}>
+                      <div className={`p-2.5 rounded-xl ${summary.risk_level === "HIGH" ? "bg-red-100" : summary.risk_level === "MEDIUM" ? "bg-muted/40" : "bg-muted/40"}`}>
                         {riskIcon(summary.risk_level)}
                       </div>
                       <div>
-                        <p className={`text-3xl font-extrabold ${summary.risk_level === "HIGH" ? "text-red-700" : summary.risk_level === "MEDIUM" ? "text-yellow-700" : "text-green-700"}`}>
+                        <p className={`text-3xl font-extrabold ${summary.risk_level === "HIGH" ? "text-red-700" : summary.risk_level === "MEDIUM" ? "text-muted-foreground" : "text-foreground"}`}>
                           {summary.risk_level || "N/A"}
                         </p>
                         <p className="text-sm font-medium text-foreground/60 mt-0.5">Risk Level</p>
@@ -400,11 +400,11 @@ export default function PiiPage() {
                 <Card className="bg-card border-border">
                   <CardContent className="pt-6 pb-5">
                     <div className="flex items-center gap-4">
-                      <div className="p-2.5 rounded-xl bg-purple-100">
-                        <Eye className="h-5 w-5 text-purple-700" />
+                      <div className="p-2.5 rounded-xl bg-muted/40">
+                        <Eye className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="text-3xl font-extrabold text-purple-700">{piiTypes.length}</p>
+                        <p className="text-3xl font-extrabold text-muted-foreground">{piiTypes.length}</p>
                         <p className="text-sm font-medium text-foreground/60 mt-0.5">PII Categories</p>
                       </div>
                     </div>

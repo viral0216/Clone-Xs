@@ -41,7 +41,7 @@ export default function PluginsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Plugins</h1>
         <p className="text-muted-foreground mt-1">Plugin system for extending Clone-Xs — add custom pre/post-clone hooks, validation rules, notification channels, and metadata transformations.</p>
@@ -78,7 +78,7 @@ export default function PluginsPage() {
                     <Puzzle className="h-4 w-4 text-muted-foreground" />
                     {plugin.name || "Unnamed"}
                   </div>
-                  <Badge className={enabled ? "bg-green-600 text-white" : ""} variant={enabled ? "default" : "outline"}>
+                  <Badge className={enabled ? "bg-foreground text-white" : ""} variant={enabled ? "default" : "outline"}>
                     {enabled ? "Enabled" : "Disabled"}
                   </Badge>
                 </CardTitle>

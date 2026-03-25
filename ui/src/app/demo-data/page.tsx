@@ -121,11 +121,11 @@ const INDUSTRY_TABLES: Record<string, { name: string; rows: number }[]> = {
 function statusBadge(status: string) {
   switch (status?.toLowerCase()) {
     case "completed":
-      return <Badge className="bg-green-100 text-green-800 text-xs">COMPLETED</Badge>;
+      return <Badge className="bg-muted/40 text-foreground text-xs">COMPLETED</Badge>;
     case "running":
-      return <Badge className="bg-blue-100 text-blue-800 text-xs">RUNNING</Badge>;
+      return <Badge className="bg-muted/50 text-foreground text-xs">RUNNING</Badge>;
     case "queued":
-      return <Badge className="bg-yellow-100 text-yellow-800 text-xs">QUEUED</Badge>;
+      return <Badge className="bg-muted/40 text-foreground text-xs">QUEUED</Badge>;
     case "failed":
       return <Badge variant="destructive" className="text-xs">FAILED</Badge>;
     default:
@@ -363,7 +363,7 @@ export default function DemoDataPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Demo Data Generator"
         icon={Database}
@@ -381,7 +381,7 @@ export default function DemoDataPage() {
           disabled={isRunning}
           className="gap-2"
         >
-          <Zap className="h-3.5 w-3.5 text-yellow-500" />
+          <Zap className="h-3.5 w-3.5 text-muted-foreground" />
           Quick Demo
         </Button>
         <Button
@@ -391,7 +391,7 @@ export default function DemoDataPage() {
           disabled={isRunning}
           className="gap-2"
         >
-          <Zap className="h-3.5 w-3.5 text-blue-500" />
+          <Zap className="h-3.5 w-3.5 text-[#E8453C]" />
           Sales Demo
         </Button>
         <Button
@@ -556,7 +556,7 @@ export default function DemoDataPage() {
                 checked={medallion}
                 onChange={(e) => setMedallion(e.target.checked)}
                 disabled={isRunning}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Medallion Architecture (Bronze / Silver / Gold)</span>
             </label>
@@ -574,7 +574,7 @@ export default function DemoDataPage() {
                   checked={ucBestPractices}
                   onChange={(e) => setUcBestPractices(e.target.checked)}
                   disabled={isRunning}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
                 />
                 <span className="text-sm font-medium">UC Best Practices Naming</span>
               </label>
@@ -588,7 +588,7 @@ export default function DemoDataPage() {
                 href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/best-practices"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-500 hover:underline ml-6 mt-0.5 inline-block"
+                className="text-xs text-[#E8453C] hover:underline ml-6 mt-0.5 inline-block"
               >
                 Unity Catalog best practices
               </a>
@@ -603,7 +603,7 @@ export default function DemoDataPage() {
                 checked={createFunctions}
                 onChange={(e) => setCreateFunctions(e.target.checked)}
                 disabled={isRunning}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create UDFs (User-Defined Functions)</span>
             </label>
@@ -620,7 +620,7 @@ export default function DemoDataPage() {
                 checked={createVolumes}
                 onChange={(e) => setCreateVolumes(e.target.checked)}
                 disabled={isRunning}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create Volumes with Sample Files</span>
             </label>
@@ -655,14 +655,14 @@ export default function DemoDataPage() {
 
       {/* Preview & Estimated Cost Section */}
       {selectedIndustries.length > 0 && (
-        <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+        <Card className="border-border dark:border-border bg-muted/30 dark:bg-white/5">
           <CardHeader className="pb-2">
             <button
               onClick={() => setPreviewOpen((o) => !o)}
               className="flex items-center justify-between w-full text-left"
             >
               <CardTitle className="flex items-center gap-2 text-base">
-                <Info className="h-4 w-4 text-blue-600" />
+                <Info className="h-4 w-4 text-[#E8453C]" />
                 Generation Preview
               </CardTitle>
               {previewOpen ? (
@@ -677,27 +677,27 @@ export default function DemoDataPage() {
               {/* Stats Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{schemasCount}</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{schemasCount}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Schemas</p>
                 </div>
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{estimatedTables}</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{estimatedTables}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Est. Tables</p>
                 </div>
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{estimatedViews}</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{estimatedViews}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Est. Views</p>
                 </div>
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{estimatedUdfs}</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{estimatedUdfs}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Est. UDFs</p>
                 </div>
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{formatNumber(estimatedRows)}</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{formatNumber(estimatedRows)}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Est. Rows</p>
                 </div>
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-3 text-center shadow-sm">
-                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{estimatedStorageGb.toFixed(2)} GB</p>
+                  <p className="text-xl font-bold text-[#E8453C] dark:text-[#E8453C]">{estimatedStorageGb.toFixed(2)} GB</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Est. Storage</p>
                 </div>
               </div>
@@ -705,7 +705,7 @@ export default function DemoDataPage() {
               {/* Estimated Costs */}
               <div className="flex flex-wrap gap-4 pt-1">
                 <div className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg px-4 py-2.5 shadow-sm">
-                  <span className="text-green-600 font-bold text-sm">{currSymbol}</span>
+                  <span className="text-foreground font-bold text-sm">{currSymbol}</span>
                   <div>
                     <p className="text-sm font-semibold text-foreground">
                       {currSymbol}{estimatedStorageCost.toFixed(4)}
@@ -715,7 +715,7 @@ export default function DemoDataPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg px-4 py-2.5 shadow-sm">
-                  <Zap className="h-4 w-4 text-orange-500" />
+                  <Zap className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-semibold text-foreground">
                       {estimatedDbus.toFixed(1)} DBUs
@@ -796,8 +796,8 @@ export default function DemoDataPage() {
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {isRunning && <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />}
-                {isComplete && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+                {isRunning && <Loader2 className="h-5 w-5 text-[#E8453C] animate-spin" />}
+                {isComplete && <CheckCircle2 className="h-5 w-5 text-foreground" />}
                 {isFailed && <XCircle className="h-5 w-5 text-red-600" />}
                 Job Progress
               </div>
@@ -816,7 +816,7 @@ export default function DemoDataPage() {
                     Industry: <span className="capitalize">{job.progress.current_industry}</span>{" "}
                     ({job.progress.industry_index}/{job.progress.total_industries})
                   </span>
-                  <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 text-xs">
+                  <Badge className="bg-muted/40 text-foreground dark:bg-gray-800 dark:text-gray-200 text-xs">
                     {job.progress.current_phase}
                   </Badge>
                 </div>
@@ -843,7 +843,7 @@ export default function DemoDataPage() {
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className="bg-[#E8453C] h-2 rounded-full transition-all duration-300"
                       style={{ width: `${Math.min(100, (job.progress.industry_index / job.progress.total_industries) * 100)}%` }}
                     />
                   </div>
@@ -857,7 +857,7 @@ export default function DemoDataPage() {
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                       <div
-                        className="bg-green-500 h-1.5 rounded-full transition-all duration-300"
+                        className="bg-muted/200 h-1.5 rounded-full transition-all duration-300"
                         style={{ width: `${(job.progress.tables_done / job.progress.tables_total) * 100}%` }}
                       />
                     </div>
@@ -900,9 +900,9 @@ export default function DemoDataPage() {
                   {logs.map((line: string, i: number) => (
                     <div key={i} className={`whitespace-pre-wrap leading-relaxed ${
                       line.includes("ERROR") ? "text-red-400" :
-                      line.includes("WARNING") ? "text-yellow-400" :
-                      line.includes("done") || line.includes("Created") || line.includes("created") ? "text-green-400" :
-                      line.includes("Creating") || line.includes("Generating") ? "text-blue-400" : ""
+                      line.includes("WARNING") ? "text-gray-400" :
+                      line.includes("done") || line.includes("Created") || line.includes("created") ? "text-gray-300" :
+                      line.includes("Creating") || line.includes("Generating") ? "text-[#E8453C]" : ""
                     }`}>
                       {line}
                     </div>
@@ -928,7 +928,7 @@ export default function DemoDataPage() {
               <div className="flex items-center gap-3 pt-2">
                 <a
                   href={`/explore?catalog=${encodeURIComponent(catalogName.trim())}`}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-[#E8453C] hover:bg-[#D93025] text-white text-sm font-medium transition-colors"
                 >
                   <ExternalLink className="h-4 w-4" />
                   Explore Catalog
@@ -957,7 +957,7 @@ export default function DemoDataPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <CheckCircle2 className="h-5 w-5 text-foreground" />
               Generation Summary
             </CardTitle>
           </CardHeader>

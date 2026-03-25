@@ -4,9 +4,9 @@ import { useNotifications } from "@/hooks/useApi";
 import { Bell, CheckCircle, XCircle, Info } from "lucide-react";
 
 const typeIcon = {
-  success: <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />,
+  success: <CheckCircle className="h-3.5 w-3.5 text-foreground shrink-0" />,
   error: <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />,
-  info: <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />,
+  info: <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />,
 };
 
 function timeAgo(ts: string) {

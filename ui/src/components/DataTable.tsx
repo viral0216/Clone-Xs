@@ -102,8 +102,8 @@ function SortableColumnHeader({
             {col.label}
             {isSorted ? (
               sortDir === "asc"
-                ? <ChevronUp className="h-3 w-3 text-blue-600" />
-                : <ChevronDown className="h-3 w-3 text-blue-600" />
+                ? <ChevronUp className="h-3 w-3 text-[#E8453C]" />
+                : <ChevronDown className="h-3 w-3 text-[#E8453C]" />
             ) : (
               <ChevronsUpDown className="h-3 w-3 opacity-30" />
             )}
@@ -297,8 +297,8 @@ export default function DataTable({
                 {col.label}
                 {sortCol === col.key ? (
                   sortDir === "asc"
-                    ? <ChevronUp className="h-3 w-3 text-blue-600" />
-                    : <ChevronDown className="h-3 w-3 text-blue-600" />
+                    ? <ChevronUp className="h-3 w-3 text-[#E8453C]" />
+                    : <ChevronDown className="h-3 w-3 text-[#E8453C]" />
                 ) : (
                   <ChevronsUpDown className="h-3 w-3 opacity-30" />
                 )}
@@ -326,7 +326,7 @@ export default function DataTable({
                 onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                 placeholder={searchPlaceholder}
                 aria-label={searchPlaceholder}
-                className="w-full pl-9 pr-3 py-2 text-sm bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#E8453C] focus:border-[#E8453C]"
               />
             </div>
           )}
@@ -424,7 +424,7 @@ export default function DataTable({
                   onClick={() => setPage(pageNum)}
                   aria-label={`Page ${pageNum + 1}`}
                   aria-current={safePage === pageNum ? "page" : undefined}
-                  className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${safePage === pageNum ? "bg-blue-600 text-white" : "hover:bg-muted"}`}
+                  className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${safePage === pageNum ? "bg-[#E8453C] text-white" : "hover:bg-muted"}`}
                 >
                   {pageNum + 1}
                 </button>

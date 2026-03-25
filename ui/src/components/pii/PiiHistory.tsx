@@ -14,8 +14,8 @@ interface PiiHistoryProps {
 function riskBadge(risk: string) {
   const colors: Record<string, string> = {
     HIGH: "bg-red-100 text-red-700",
-    MEDIUM: "bg-yellow-100 text-yellow-700",
-    LOW: "bg-green-100 text-green-700",
+    MEDIUM: "bg-muted/40 text-muted-foreground",
+    LOW: "bg-muted/40 text-foreground",
     NONE: "bg-gray-100 text-gray-700",
   };
   return <Badge className={colors[risk] || colors.NONE}>{risk}</Badge>;
@@ -49,9 +49,9 @@ const DIFF_COLUMNS: Column[] = [
   { key: "confidence", label: "Confidence", sortable: true, width: "10%" },
   { key: "_status", label: "Status", sortable: true, width: "10%",
     render: (v) => {
-      if (v === "new") return <Badge className="bg-green-100 text-green-700">New</Badge>;
+      if (v === "new") return <Badge className="bg-muted/40 text-foreground">New</Badge>;
       if (v === "removed") return <Badge className="bg-gray-100 text-gray-700">Removed</Badge>;
-      return <Badge className="bg-yellow-100 text-yellow-700">Changed</Badge>;
+      return <Badge className="bg-muted/40 text-muted-foreground">Changed</Badge>;
     },
   },
 ];
@@ -145,7 +145,7 @@ export default function PiiHistory({ catalog }: PiiHistoryProps) {
               onRowClick={(row) => toggleSelect(row.scan_id)}
               rowClassName={(row) =>
                 selectedScans.includes(row.scan_id)
-                  ? "bg-blue-50 dark:bg-blue-950"
+                  ? "bg-muted/30 dark:bg-white/5"
                   : ""
               }
             />

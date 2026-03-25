@@ -62,12 +62,12 @@ export default function ResizeHandle({ width, onResize, min = 150, max = 600, si
 
   return (
     <div
-      className="shrink-0 w-1.5 cursor-col-resize group relative z-10 hover:bg-blue-600/20 active:bg-blue-600/30 transition-colors"
+      className="shrink-0 w-1.5 cursor-col-resize group relative z-10 hover:bg-[#E8453C]/20 active:bg-[#E8453C]/30 transition-colors"
       onMouseDown={handleMouseDown}
       title="Drag to resize"
     >
       {/* Visual indicator — thin line that highlights on hover */}
-      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:bg-blue-600 group-active:bg-blue-600 transition-colors" />
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:bg-[#E8453C] group-active:bg-[#E8453C] transition-colors" />
     </div>
   );
 }

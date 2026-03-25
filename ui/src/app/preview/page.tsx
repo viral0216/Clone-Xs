@@ -282,12 +282,12 @@ export default function PreviewPage() {
                         onClick={() => handleSort(col)}
                       >
                         <div className="flex items-center gap-1">
-                          <span className={hasTypeMismatch ? "text-amber-500" : "text-foreground"}>{col}</span>
+                          <span className={hasTypeMismatch ? "text-muted-foreground" : "text-foreground"}>{col}</span>
                           {sortCol === col && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
                           {sortCol !== col && <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-30" />}
                         </div>
                         {colType && (
-                          <span className={`text-[10px] font-normal ${hasTypeMismatch ? "text-amber-500" : "text-muted-foreground"}`}>
+                          <span className={`text-[10px] font-normal ${hasTypeMismatch ? "text-muted-foreground" : "text-muted-foreground"}`}>
                             {colType}
                           </span>
                         )}
@@ -330,7 +330,7 @@ export default function PreviewPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Data Preview"
         icon={Eye}
@@ -372,7 +372,7 @@ export default function PreviewPage() {
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-4 text-center">
-                <p className={`text-3xl font-bold ${hasCountMismatch ? "text-amber-500" : "text-foreground"}`}>
+                <p className={`text-3xl font-bold ${hasCountMismatch ? "text-muted-foreground" : "text-foreground"}`}>
                   {destCount.toLocaleString()}
                 </p>
                 <p className="text-xs text-muted-foreground">Dest Rows</p>
@@ -382,13 +382,13 @@ export default function PreviewPage() {
 
           {/* Row Count Mismatch Alert */}
           {hasCountMismatch && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-muted/20 dark:bg-white/5 border border-border dark:border-border">
+              <AlertTriangle className="h-5 w-5 text-muted-foreground shrink-0" />
               <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                <p className="text-sm font-medium text-foreground dark:text-gray-300">
                   Row count mismatch: {srcCount.toLocaleString()} source vs {destCount.toLocaleString()} destination ({countDiffPct}% difference)
                 </p>
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                <p className="text-xs text-muted-foreground dark:text-gray-400 mt-0.5">
                   {destCount > srcCount
                     ? `Destination has ${(destCount - srcCount).toLocaleString()} more rows than source`
                     : `Destination is missing ${(srcCount - destCount).toLocaleString()} rows from source`}
@@ -399,10 +399,10 @@ export default function PreviewPage() {
 
           {/* Type Mismatches */}
           {typeMismatches.length > 0 && (
-            <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-muted/20 dark:bg-white/5 border border-border dark:border-border">
+              <AlertTriangle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                <p className="text-sm font-medium text-foreground dark:text-gray-300">
                   {typeMismatches.length} column type mismatch{typeMismatches.length > 1 ? "es" : ""} detected
                 </p>
                 <div className="mt-2 space-y-1">
@@ -411,7 +411,7 @@ export default function PreviewPage() {
                       <Badge variant="outline" className="font-mono">{m.column}</Badge>
                       <span className="text-red-600 font-mono">{m.source_type}</span>
                       <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-green-600 font-mono">{m.dest_type}</span>
+                      <span className="text-foreground font-mono">{m.dest_type}</span>
                     </div>
                   ))}
                 </div>
@@ -421,17 +421,17 @@ export default function PreviewPage() {
 
           {/* Column presence mismatches */}
           {(srcOnlyCols.length > 0 || destOnlyCols.length > 0) && (
-            <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-              <Columns className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-muted/30 dark:bg-white/5 border border-border dark:border-border">
+              <Columns className="h-5 w-5 text-[#E8453C] shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Schema drift detected</p>
+                <p className="text-sm font-medium text-foreground dark:text-gray-300">Schema drift detected</p>
                 {srcOnlyCols.length > 0 && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  <p className="text-xs text-[#E8453C] dark:text-gray-400 mt-1">
                     Source only: {srcOnlyCols.map((c: string) => <Badge key={c} variant="outline" className="ml-1 font-mono text-[10px]">{c}</Badge>)}
                   </p>
                 )}
                 {destOnlyCols.length > 0 && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  <p className="text-xs text-[#E8453C] dark:text-gray-400 mt-1">
                     Dest only: {destOnlyCols.map((c) => <Badge key={c} variant="outline" className="ml-1 font-mono text-[10px]">{c}</Badge>)}
                   </p>
                 )}
@@ -441,9 +441,9 @@ export default function PreviewPage() {
 
           {/* Match badge */}
           {results.match !== undefined && diffs.length === 0 && !hasCountMismatch && typeMismatches.length === 0 && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              <p className="text-sm font-medium text-green-800 dark:text-green-300">Source and destination match — no differences found</p>
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-muted/20 dark:bg-white/5 border border-border dark:border-border">
+              <CheckCircle2 className="h-5 w-5 text-foreground" />
+              <p className="text-sm font-medium text-foreground dark:text-gray-300">Source and destination match — no differences found</p>
             </div>
           )}
         </>
@@ -455,7 +455,7 @@ export default function PreviewPage() {
           <CardHeader className="pb-2">
             <button onClick={() => setShowStats(!showStats)} className="flex items-center justify-between w-full text-left">
               <CardTitle className="text-base flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-blue-600" />
+                <BarChart3 className="h-4 w-4 text-[#E8453C]" />
                 Column Statistics ({columns.length} columns)
               </CardTitle>
               <Badge variant="outline">{showStats ? "Hide" : "Show"}</Badge>
@@ -482,9 +482,9 @@ export default function PreviewPage() {
                       <tr key={s.column} className="border-b border-border hover:bg-accent/30">
                         <td className="py-1.5 px-3 font-mono font-medium">{s.column}</td>
                         <td className="py-1.5 px-3 text-muted-foreground">{s.type}</td>
-                        <td className={`py-1.5 px-3 text-right ${s.srcNulls > 0 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>{s.srcNulls}</td>
+                        <td className={`py-1.5 px-3 text-right ${s.srcNulls > 0 ? "text-muted-foreground font-medium" : "text-muted-foreground"}`}>{s.srcNulls}</td>
                         {destRows.length > 0 && (
-                          <td className={`py-1.5 px-3 text-right ${s.dstNulls > 0 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>{s.dstNulls ?? "—"}</td>
+                          <td className={`py-1.5 px-3 text-right ${s.dstNulls > 0 ? "text-muted-foreground font-medium" : "text-muted-foreground"}`}>{s.dstNulls ?? "—"}</td>
                         )}
                         <td className="py-1.5 px-3 text-right">{s.distinct}</td>
                         <td className="py-1.5 px-3 text-right font-mono">{s.isNumeric && s.min != null ? s.min.toLocaleString() : "—"}</td>
@@ -526,13 +526,13 @@ export default function PreviewPage() {
             <div className="flex items-center gap-1 ml-auto bg-background border border-border rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode("side-by-side")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "side-by-side" ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-foreground"}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "side-by-side" ? "bg-[#E8453C] text-white" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <LayoutGrid className="h-3.5 w-3.5" /> Side-by-Side
               </button>
               <button
                 onClick={() => setViewMode("unified")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "unified" ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-foreground"}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "unified" ? "bg-[#E8453C] text-white" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <GitCompare className="h-3.5 w-3.5" /> Unified Diff
               </button>
@@ -555,7 +555,7 @@ export default function PreviewPage() {
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
-              <GitCompare className="h-5 w-5 text-blue-600" />
+              <GitCompare className="h-5 w-5 text-[#E8453C]" />
               Unified Diff
               <Badge variant="outline" className="ml-2">
                 {unifiedDiffRows.filter((r: any) => r.type === "diff").length} differences,{" "}
@@ -565,7 +565,7 @@ export default function PreviewPage() {
           </CardHeader>
           <CardContent>
             {unifiedDiffRows.length === 0 ? (
-              <div className="flex items-center gap-2 py-8 justify-center text-green-600">
+              <div className="flex items-center gap-2 py-8 justify-center text-foreground">
                 <CheckCircle2 className="h-5 w-5" />
                 <span className="text-sm font-medium">All rows match — no differences</span>
               </div>
@@ -585,8 +585,8 @@ export default function PreviewPage() {
                     {unifiedDiffRows.map((row: any, idx: number) => {
                       if (row.type === "match_summary") {
                         return (
-                          <tr key={`match-${idx}`} className="border-b border-border bg-green-50/50 dark:bg-green-950/20">
-                            <td colSpan={5} className="py-2 px-3 text-center text-xs text-green-600">
+                          <tr key={`match-${idx}`} className="border-b border-border bg-muted/20 dark:bg-white/5">
+                            <td colSpan={5} className="py-2 px-3 text-center text-xs text-foreground">
                               <CheckCircle2 className="h-3 w-3 inline mr-1" />
                               {row.count} matching row{row.count > 1 ? "s" : ""} (collapsed)
                             </td>
@@ -599,28 +599,28 @@ export default function PreviewPage() {
                             <td className="py-1.5 px-3"><Badge variant="outline" className="text-xs">{row.rowIndex}</Badge></td>
                             <td className="py-1.5 px-3 font-mono text-xs">{row.column}</td>
                             <td className="py-1.5 px-3 text-red-600 dark:text-red-400 font-mono text-xs">{String(row.sourceValue ?? "")}</td>
-                            <td className="py-1.5 px-3 text-green-600 dark:text-green-400 font-mono text-xs">{String(row.destValue ?? "")}</td>
+                            <td className="py-1.5 px-3 text-foreground dark:text-gray-400 font-mono text-xs">{String(row.destValue ?? "")}</td>
                             <td className="py-1.5 px-3 text-center"><XCircle className="h-4 w-4 text-red-500 inline" /></td>
                           </tr>
                         );
                       }
                       if (row.type === "source_only") {
                         return (
-                          <tr key={`src-${idx}`} className="border-b border-border bg-amber-50/50 dark:bg-amber-950/20">
+                          <tr key={`src-${idx}`} className="border-b border-border bg-muted/20 dark:bg-white/5">
                             <td className="py-1.5 px-3"><Badge variant="outline" className="text-xs">{row.rowIndex}</Badge></td>
                             <td className="py-1.5 px-3 text-xs text-muted-foreground" colSpan={2}>Row exists in source only</td>
                             <td className="py-1.5 px-3 text-xs text-muted-foreground">—</td>
-                            <td className="py-1.5 px-3 text-center"><AlertTriangle className="h-4 w-4 text-amber-500 inline" /></td>
+                            <td className="py-1.5 px-3 text-center"><AlertTriangle className="h-4 w-4 text-muted-foreground inline" /></td>
                           </tr>
                         );
                       }
                       if (row.type === "dest_only") {
                         return (
-                          <tr key={`dst-${idx}`} className="border-b border-border bg-blue-50/50 dark:bg-blue-950/20">
+                          <tr key={`dst-${idx}`} className="border-b border-border bg-muted/30 dark:bg-white/5">
                             <td className="py-1.5 px-3"><Badge variant="outline" className="text-xs">{row.rowIndex}</Badge></td>
                             <td className="py-1.5 px-3 text-xs text-muted-foreground">—</td>
                             <td className="py-1.5 px-3 text-xs text-muted-foreground" colSpan={2}>Row exists in destination only</td>
-                            <td className="py-1.5 px-3 text-center"><AlertTriangle className="h-4 w-4 text-blue-500 inline" /></td>
+                            <td className="py-1.5 px-3 text-center"><AlertTriangle className="h-4 w-4 text-muted-foreground inline" /></td>
                           </tr>
                         );
                       }
@@ -636,10 +636,10 @@ export default function PreviewPage() {
 
       {/* Differences Detail */}
       {diffs.length > 0 && (
-        <Card className="bg-card border-amber-300 dark:border-amber-700">
+        <Card className="bg-card border-border dark:border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <AlertTriangle className="h-5 w-5 text-muted-foreground" />
               Cell-Level Differences ({diffs.length})
             </CardTitle>
           </CardHeader>
@@ -660,7 +660,7 @@ export default function PreviewPage() {
                       <td className="py-1.5 px-3"><Badge variant="outline">{d.row_index ?? i}</Badge></td>
                       <td className="py-1.5 px-3 font-mono text-xs">{d.column}</td>
                       <td className="py-1.5 px-3 text-red-600 dark:text-red-400 font-mono text-xs">{String(d.source_value ?? "")}</td>
-                      <td className="py-1.5 px-3 text-green-600 dark:text-green-400 font-mono text-xs">{String(d.dest_value ?? "")}</td>
+                      <td className="py-1.5 px-3 text-foreground dark:text-gray-400 font-mono text-xs">{String(d.dest_value ?? "")}</td>
                     </tr>
                   ))}
                 </tbody>

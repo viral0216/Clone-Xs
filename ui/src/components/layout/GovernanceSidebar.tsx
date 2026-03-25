@@ -78,11 +78,11 @@ export default function GovernanceSidebar() {
                   aria-current={active ? "page" : undefined}
                   className={`flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
                     active
-                      ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 font-medium border-r-2 border-blue-600"
+                      ? "bg-[#E8453C]/5 dark:bg-[#E8453C]/10 text-[#E8453C] dark:text-[#E8453C] font-medium border-r-2 border-[#E8453C]"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                   }`}
                 >
-                  <Icon className={`h-4 w-4 shrink-0 ${active ? "text-blue-600" : ""}`} />
+                  <Icon className={`h-4 w-4 shrink-0 ${active ? "text-[#E8453C]" : ""}`} />
                   <span className="truncate">{item.label}</span>
                 </Link>
               );

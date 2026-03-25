@@ -94,7 +94,7 @@ export default function PiiPatternEditor({ onConfigChange }: PiiPatternEditorPro
                 className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                   disabledTypes.includes(type)
                     ? "bg-gray-100 text-gray-400 border-gray-200 line-through"
-                    : "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-muted/30 text-[#E8453C] border-border"
                 }`}
               >
                 {type.replace(/_/g, " ")}
@@ -148,7 +148,7 @@ export default function PiiPatternEditor({ onConfigChange }: PiiPatternEditorPro
               <TestTube className="h-3.5 w-3.5 mr-1" /> Test
             </Button>
             {testResult !== null && (
-              <Badge className={testResult ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+              <Badge className={testResult ? "bg-muted/40 text-foreground" : "bg-red-100 text-red-700"}>
                 {testResult ? "Match" : "No match"}
               </Badge>
             )}

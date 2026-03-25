@@ -11,11 +11,11 @@ import { toast } from "sonner";
 import { Award, Plus, CheckCircle2, XCircle, AlertTriangle, Ban } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
-  certified: { color: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400", icon: CheckCircle2 },
+  certified: { color: "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-300", icon: CheckCircle2 },
   deprecated: { color: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400", icon: Ban },
   draft: { color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300", icon: AlertTriangle },
-  pending_review: { color: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400", icon: AlertTriangle },
-  under_investigation: { color: "bg-purple-100 text-purple-800", icon: AlertTriangle },
+  pending_review: { color: "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-400", icon: AlertTriangle },
+  under_investigation: { color: "bg-muted/40 text-foreground", icon: AlertTriangle },
 };
 
 export default function CertificationsPage() {
@@ -32,11 +32,11 @@ export default function CertificationsPage() {
   const statuses = ["all", "certified", "deprecated", "draft", "pending_review"];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Certification Board" icon={Award} breadcrumbs={["Governance", "Certifications"]} description="Mark tables as certified, deprecated, or draft. Track certification expiry and review schedules." />
       <div className="flex items-center gap-3">
         <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />Certify Table</Button>
-        <div className="flex gap-1 ml-4">{statuses.map(s => <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-full text-xs font-medium ${statusFilter === s ? "bg-blue-600 text-white" : "bg-accent text-muted-foreground hover:text-foreground"}`}>{s === "all" ? "All" : s.replace("_", " ")}</button>)}</div>
+        <div className="flex gap-1 ml-4">{statuses.map(s => <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-full text-xs font-medium ${statusFilter === s ? "bg-[#E8453C] text-white" : "bg-accent text-muted-foreground hover:text-foreground"}`}>{s === "all" ? "All" : s.replace("_", " ")}</button>)}</div>
       </div>
 
       {showForm && (
@@ -63,7 +63,7 @@ export default function CertificationsPage() {
           const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.draft;
           const Icon = cfg.icon;
           return (
-            <Card key={c.cert_id} className="hover:border-blue-300 transition-colors">
+            <Card key={c.cert_id} className="hover:border-border transition-colors">
               <CardContent className="pt-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><span className="font-mono text-sm font-medium">{c.table_fqn}</span></div>

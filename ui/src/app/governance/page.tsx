@@ -78,7 +78,7 @@ export default function GovernanceOverview() {
   const slaHealth = slaStatus.health_pct ?? 100;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Governance Overview"
         icon={Shield}
@@ -92,7 +92,7 @@ export default function GovernanceOverview() {
           {initStatus === "initializing" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
           Initialize Governance Tables
         </Button>
-        {initStatus === "done" && <Badge className="bg-green-100 text-green-800">Tables initialized</Badge>}
+        {initStatus === "done" && <Badge className="bg-muted/40 text-foreground">Tables initialized</Badge>}
         {initStatus.startsWith("error") && <Badge variant="destructive">{initStatus}</Badge>}
         <Button variant="ghost" size="sm" onClick={loadAll}>Refresh</Button>
       </div>
@@ -102,8 +102,8 @@ export default function GovernanceOverview() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${dqPassRate >= 90 ? "bg-green-100 dark:bg-green-950" : dqPassRate >= 70 ? "bg-amber-100 dark:bg-amber-950" : "bg-red-100 dark:bg-red-950"}`}>
-                <ShieldCheck className={`h-5 w-5 ${dqPassRate >= 90 ? "text-green-600" : dqPassRate >= 70 ? "text-amber-600" : "text-red-600"}`} />
+              <div className={`p-2 rounded-lg ${dqPassRate >= 90 ? "bg-muted/40 dark:bg-white/5" : dqPassRate >= 70 ? "bg-muted/40 dark:bg-white/5" : "bg-red-100 dark:bg-red-950"}`}>
+                <ShieldCheck className={`h-5 w-5 ${dqPassRate >= 90 ? "text-foreground" : dqPassRate >= 70 ? "text-muted-foreground" : "text-red-600"}`} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{dqPassRate}%</p>
@@ -116,8 +116,8 @@ export default function GovernanceOverview() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${slaHealth >= 90 ? "bg-green-100 dark:bg-green-950" : "bg-amber-100 dark:bg-amber-950"}`}>
-                <Clock className={`h-5 w-5 ${slaHealth >= 90 ? "text-green-600" : "text-amber-600"}`} />
+              <div className={`p-2 rounded-lg ${slaHealth >= 90 ? "bg-muted/40 dark:bg-white/5" : "bg-muted/40 dark:bg-white/5"}`}>
+                <Clock className={`h-5 w-5 ${slaHealth >= 90 ? "text-foreground" : "text-muted-foreground"}`} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{slaHealth}%</p>
@@ -130,8 +130,8 @@ export default function GovernanceOverview() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-950">
-                <Award className="h-5 w-5 text-blue-600" />
+              <div className="p-2 rounded-lg bg-muted/50 dark:bg-white/5">
+                <Award className="h-5 w-5 text-[#E8453C]" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{certifiedCount}</p>
@@ -144,8 +144,8 @@ export default function GovernanceOverview() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-950">
-                <BookOpen className="h-5 w-5 text-purple-600" />
+              <div className="p-2 rounded-lg bg-muted/40 dark:bg-white/5">
+                <BookOpen className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{glossaryCount}</p>
@@ -159,15 +159,15 @@ export default function GovernanceOverview() {
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
-          { href: "/governance/dictionary", label: "Data Dictionary", desc: "Manage business terms", icon: BookOpen, color: "text-purple-600" },
-          { href: "/governance/dq-rules", label: "DQ Rules", desc: `${dqResults.length} rules, ${dqFailed} failing`, icon: ShieldCheck, color: "text-green-600" },
-          { href: "/governance/certifications", label: "Certifications", desc: `${pendingCount} pending review`, icon: Award, color: "text-blue-600" },
-          { href: "/governance/sla", label: "SLA Monitor", desc: `${slaStatus.total_rules || 0} SLA rules`, icon: Clock, color: "text-orange-600" },
-          { href: "/governance/odcs", label: "ODCS Contracts", desc: `${odcsContracts.length} contract(s), ${odcsContracts.filter((c: any) => c.status === "active").length} active`, icon: FileCode, color: "text-indigo-600" },
+          { href: "/governance/dictionary", label: "Data Dictionary", desc: "Manage business terms", icon: BookOpen, color: "text-muted-foreground" },
+          { href: "/governance/dq-rules", label: "DQ Rules", desc: `${dqResults.length} rules, ${dqFailed} failing`, icon: ShieldCheck, color: "text-foreground" },
+          { href: "/governance/certifications", label: "Certifications", desc: `${pendingCount} pending review`, icon: Award, color: "text-[#E8453C]" },
+          { href: "/governance/sla", label: "SLA Monitor", desc: `${slaStatus.total_rules || 0} SLA rules`, icon: Clock, color: "text-muted-foreground" },
+          { href: "/governance/odcs", label: "ODCS Contracts", desc: `${odcsContracts.length} contract(s), ${odcsContracts.filter((c: any) => c.status === "active").length} active`, icon: FileCode, color: "text-muted-foreground" },
           { href: "/governance/search", label: "Metadata Search", desc: "Search across catalogs", icon: History, color: "text-gray-600" },
         ].map((link) => (
           <Link key={link.href} to={link.href}>
-            <Card className="hover:border-blue-300 dark:hover:border-blue-700 transition-colors cursor-pointer h-full">
+            <Card className="hover:border-border dark:hover:border-border transition-colors cursor-pointer h-full">
               <CardContent className="pt-4 flex items-start gap-3">
                 <link.icon className={`h-5 w-5 mt-0.5 ${link.color}`} />
                 <div>

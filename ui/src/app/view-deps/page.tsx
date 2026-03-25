@@ -89,7 +89,7 @@ export default function ViewDepsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold text-foreground">View Dependencies</h1>
         <p className="text-muted-foreground mt-1">Map view and function dependencies within a schema — shows which views depend on which tables, and computes the correct creation order for cloning.</p>

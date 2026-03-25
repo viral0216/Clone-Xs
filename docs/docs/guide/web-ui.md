@@ -16,13 +16,88 @@ The UI runs at `http://localhost:3001` and connects to the API server at `http:/
 ## Features
 
 - **Command palette search** — search any page by name or keyword (e.g., type "terraform" to jump to Generate, or "pii" to jump to PII Scanner)
-- **Dark/light theme toggle** — persisted in local storage, applies instantly across all pages
-- **Real-time connection status indicator** — polls `/api/health` every 15 seconds and shows a green/red badge in the header
+- **10 built-in themes** — Light, Dark, Midnight, Sunset, High Contrast, Ocean, Forest, Solarized, Rose, and Slate; pick from a visual grid in Settings or the HeaderBar theme picker; all themes use CSS variables for consistent sidebar, header, and content colors
+- **Real-time connection status indicator** — compact status bar with a green/red dot; polls `/api/health` every 15 seconds
 - **Notification center** — bell icon in the header bar showing recent clone events sourced from Delta tables with time-ago formatting (e.g., "3 minutes ago"); opens a slide-out panel with event details
 - **Pinned catalog pairs** — favorite source/destination pairs on the Dashboard for quick access
-- **Collapsible sidebar sections** — five collapsible navigation groups with 33 pages total
+- **Collapsible sidebar** — five collapsible navigation groups with 33 pages total; sidebar collapses to an icon-only rail via a button at the bottom or a toggle in Settings; Databricks-style density (13px font, 16px icons, compact padding) with theme-aware colors
 - **Page state persistence** — 10 analysis/management pages (PII Scanner, Schema Drift, Preflight, Diff & Compare, Cost Estimator, Profiling, Impact Analysis, Compliance, Monitor, and Storage Metrics) preserve their results when you navigate away and return, so you never lose work mid-investigation
 - **Resizable panels** — Main sidebar, Catalog Browser, Table Detail Drawer, and Lineage Graph all support drag-to-resize with widths persisted in localStorage
+- **Session persistence** — server-side session store keeps all auth methods alive across page refreshes; credentials are stored in localStorage so no re-authentication is needed after reload
+- **Dedicated login page** — full-screen dark login with Clone-Xs branding, PAT and Azure auth tabs, an Azure multi-step wizard (Login, Tenant, Subscription, Workspace), and an "Explore Clone-Xs" bypass button for demo mode
+- **Portal switcher** — positioned in the right corner of the header with full keyboard support (arrow keys, Escape, Enter)
+- **Databricks-style compact layout** — 18px h1, 15px h2, 13px body; 48px header height; content max-width capped at 1400px and centered; cards, inputs, and buttons all tightened for density
+- **Accessibility (WCAG 2.1 AA)** — focus-visible outlines on all interactive elements, print styles (hides nav, sidebar, header), proper ARIA tab patterns with keyboard navigation on the login page, required field indicators with `aria-required`, loading states with `aria-busy` and screen reader text, 32px minimum touch targets for Databricks density, and `prefers-reduced-motion` media query support
+- **Warehouse management** — "Start" button for stopped warehouses in Settings, instant fail (no retry) for invalid or missing warehouses, and toast notifications for warehouse errors
+
+## Login Page
+
+The login page is the first screen users see when Clone-Xs starts. It uses a full-screen dark design with centered Clone-Xs branding.
+
+Two authentication methods are available as tabs:
+
+- **PAT (Personal Access Token)** — enter a Databricks host URL and token to connect immediately.
+- **Azure** — a multi-step wizard that walks through Login, Tenant selection, Subscription selection, and Workspace selection.
+
+An "Explore Clone-Xs" button at the bottom of the login form lets users bypass authentication and enter demo mode to browse the interface without a live Databricks connection.
+
+The login page implements a full ARIA tab pattern with keyboard navigation, required field indicators (`*` markers plus `aria-required`), and loading states with `aria-busy` and screen reader announcements.
+
+## Theme System
+
+Clone-Xs ships with 10 themes, selectable from the Settings page (Interface section) or the HeaderBar theme picker. Both controls stay in sync.
+
+| Theme | Style |
+|-------|-------|
+| Light | Clean white background with neutral accents |
+| Dark | Standard dark mode with muted tones |
+| Midnight | Deep blue-black for low-light environments |
+| Sunset | Warm amber and orange tones |
+| High Contrast | Maximum contrast for readability |
+| Ocean | Cool blue palette |
+| Forest | Green-tinted dark mode |
+| Solarized | Ethan Schoonover's Solarized palette |
+| Rose | Soft pink accents on a light or dark base |
+| Slate | Blue-gray neutral tones |
+
+All themes define their colors through CSS variables, so sidebars, headers, cards, and content areas automatically pick up the correct accent and background colors.
+
+## Settings Page
+
+The Settings page (`/settings`) uses a two-panel layout similar to VS Code Settings: a left sidebar with navigation links and a right content panel that scrolls to the selected section.
+
+### Sections
+
+| Section | Contents |
+|---------|----------|
+| **Connection** | Databricks host URL with a compact connection status bar (green/red dot) |
+| **Authentication** | Pill-style tabs for PAT and Azure authentication methods |
+| **Warehouses** | Radio-button warehouse selection with Start and Test buttons for each warehouse |
+| **Audit & Logs** | Audit table catalog and schema, loaded from the application YAML config |
+| **Interface** | Theme picker grid (10 themes), Sidebar Navigation toggle (collapse/expand), Export Buttons visibility, Catalog Browser visibility |
+| **Performance** | Cost Estimation Settings with configurable storage price per GB/month, currency selection (10 currencies) |
+| **Features** | Feature flags and experimental toggles |
+
+## Sidebar
+
+The sidebar supports two modes:
+
+- **Expanded** — full-width sidebar showing icons and labels for all navigation groups and pages.
+- **Collapsed (rail)** — icon-only rail that saves horizontal space while keeping navigation accessible.
+
+Toggle between modes using the collapse/expand button at the bottom of the sidebar or the "Sidebar Navigation" toggle in Settings under the Interface section.
+
+The sidebar uses Databricks-style density: 13px font size, 16px icons, and compact padding. Colors are driven by CSS variables so they adapt automatically to the active theme.
+
+## Accessibility
+
+Clone-Xs targets WCAG 2.1 AA compliance across the entire interface:
+
+- **Focus indicators** — all interactive elements show a visible focus outline when navigated via keyboard.
+- **ARIA patterns** — the login page uses a proper ARIA tab pattern; forms include `aria-required` on mandatory fields; loading states set `aria-busy` and provide screen-reader-only status text.
+- **Touch targets** — interactive elements maintain a minimum 32px touch target, matching Databricks compact density.
+- **Reduced motion** — a `prefers-reduced-motion` media query disables animations and transitions for users who request it.
+- **Print styles** — printing any page hides the sidebar, header, and navigation so only the main content appears.
 
 ## Pages
 
@@ -79,7 +154,7 @@ The UI runs at `http://localhost:3001` and connects to the API server at `http:/
 | Monitor | `/monitor` | Continuous monitoring of catalog sync status — compares source and destination in real-time, tracks drift, and shows sync freshness for each table. Uses `POST /api/monitor`. |
 | Preflight | `/preflight` | Run prerequisite checks before a clone: validates catalog access, warehouse connectivity, permissions, and schema compatibility. Uses `POST /api/preflight`. |
 | Config | `/config` | View and edit the application YAML configuration with a built-in editor. Lists available profiles and allows saving changes. Uses `GET /api/config`, `GET /api/config/profiles`, and `PUT /api/config`. |
-| Settings | `/settings` | Manage Databricks connection settings: workspace host, authentication (PAT or Azure), warehouse selection, and audit table configuration. The Audit & Log Storage section loads its catalog and schema values from the application YAML config. Includes a **Cost Estimation Settings** section with configurable storage price per GB/month, currency selection (10 currencies: USD, EUR, GBP, AUD, CAD, INR, JPY, CHF, SEK, BRL), and links to Azure Pricing Calculator and Databricks Pricing. New **UI Preferences** section with toggles for Export Buttons visibility and Catalog Browser visibility. Uses `POST /api/auth/azure-login`, `POST /api/auth/azure/connect`, and `GET /api/auth/warehouses`. |
+| Settings | `/settings` | Two-panel layout (sidebar nav + content panel) for managing Databricks connection, authentication (PAT or Azure with pill-style tabs), warehouse selection (radio buttons with Start and Test actions), audit table configuration, theme and interface preferences, cost estimation settings, and feature flags. See the [Settings Page](#settings-page) section above for full details. Uses `POST /api/auth/azure-login`, `POST /api/auth/azure/connect`, and `GET /api/auth/warehouses`. |
 | Warehouse | `/warehouse` | View, start, and stop SQL warehouses in your Databricks workspace. Shows real-time status with auto-refresh every 10 seconds. Uses `GET /api/auth/warehouses`, `POST /api/warehouse/start`, and `POST /api/warehouse/stop`. |
 | RBAC | `/rbac` | Manage role-based access control policies for clone operations. Create and view policies that restrict which users can clone specific catalogs. Uses `POST /api/rbac/policies`. |
 | Plugins | `/plugins` | Browse installed plugins and toggle them on or off. Each plugin extends Clone-Xs with additional hooks and capabilities. Uses `GET /api/plugins` and `POST /api/plugins/{id}/{enable\|disable}`. |

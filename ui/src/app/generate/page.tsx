@@ -106,7 +106,7 @@ export default function GeneratePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold">Generate</h1>
         <p className="text-gray-500 mt-1">Export clone operations as Terraform HCL, Pulumi code, or Databricks Workflow JSON — ready for CI/CD pipelines and infrastructure-as-code.</p>

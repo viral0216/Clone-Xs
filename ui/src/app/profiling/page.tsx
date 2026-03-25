@@ -21,7 +21,7 @@ export default function ProfilingPage() {
   const completeness = results?.completeness_score ?? (1 - nullRate);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Data Profiling"
         icon={ScanSearch}
@@ -77,7 +77,7 @@ export default function ProfilingPage() {
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
               <div className="flex items-center justify-center gap-1">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-foreground" />
                 <p className="text-2xl font-bold text-foreground">{(completeness * 100).toFixed(1)}%</p>
               </div>
               <p className="text-xs text-muted-foreground mt-1">Completeness Score</p>

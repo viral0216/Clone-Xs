@@ -52,7 +52,7 @@ export default function PageHeader({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            {Icon && <Icon className="h-5 w-5 text-gray-500 dark:text-gray-400 shrink-0" />}
+            {Icon && <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400 shrink-0" />}
             <h1 className="text-foreground">{title}</h1>
           </div>
 
@@ -67,7 +67,7 @@ export default function PageHeader({
               href={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700 hover:underline mt-1 transition-colors"
+              className="inline-flex items-center gap-1 text-[12px] text-[#E8453C] hover:text-[#D93025] hover:underline mt-1 transition-colors"
             >
               <ExternalLink className="h-3 w-3" />
               {docsLabel || "Documentation"}

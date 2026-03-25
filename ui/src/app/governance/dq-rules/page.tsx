@@ -31,10 +31,10 @@ export default function DQRulesPage() {
   async function runAll() { setRunning(true); try { const r = await api.post("/governance/dq/run", {}); setRunResults(Array.isArray(r) ? r : []); toast.success(`Ran ${r.length} rules`); } catch (e: any) { toast.error(e.message); } setRunning(false); }
   async function runOne(id: string) { try { const r = await api.post("/governance/dq/run", { rule_ids: [id] }); if (r[0]) { toast[r[0].passed ? "success" : "error"](`${r[0].rule_name}: ${r[0].passed ? "PASSED" : "FAILED"} (${r[0].failure_rate * 100}%)`); } } catch (e: any) { toast.error(e.message); } }
 
-  const sevColor = (s: string) => s === "critical" ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400" : s === "warning" ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400" : "bg-blue-100 text-blue-800";
+  const sevColor = (s: string) => s === "critical" ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400" : s === "warning" ? "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-400" : "bg-muted/50 text-foreground";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Data Quality Rules" icon={ShieldCheck} breadcrumbs={["Governance", "DQ Rules"]} description="Define and execute data quality expectations — not_null, unique, range, regex, freshness, and custom SQL rules." />
       <div className="flex gap-3">
         <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />Add Rule</Button>
@@ -103,11 +103,11 @@ export default function DQRulesPage() {
       </CardContent></Card>
 
       {runResults.length > 0 && (
-        <Card className="border-blue-200 dark:border-blue-800"><CardHeader className="pb-2"><CardTitle className="text-base">Run Results ({runResults.length})</CardTitle></CardHeader>
+        <Card className="border-border dark:border-border"><CardHeader className="pb-2"><CardTitle className="text-base">Run Results ({runResults.length})</CardTitle></CardHeader>
           <CardContent><div className="space-y-2">
             {runResults.map((r, i) => (
-              <div key={i} className={`flex items-center gap-3 py-2 px-3 rounded border ${r.passed ? "border-green-200 bg-green-50/50 dark:bg-green-950/20" : "border-red-200 bg-red-50/50 dark:bg-red-950/20"}`}>
-                {r.passed ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+              <div key={i} className={`flex items-center gap-3 py-2 px-3 rounded border ${r.passed ? "border-border bg-muted/20 dark:bg-white/5" : "border-red-200 bg-red-50/50 dark:bg-red-950/20"}`}>
+                {r.passed ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}
                 <span className="font-medium text-sm">{r.rule_name}</span>
                 <Badge variant="outline" className="text-xs">{r.rule_type}</Badge>
                 <span className="text-xs text-muted-foreground">Failed: {r.failed_rows}/{r.total_rows} ({(r.failure_rate * 100).toFixed(2)}%)</span>

@@ -8,10 +8,10 @@ import { Loader2, XCircle, Server, Play, Square, RefreshCw, Check, Star } from "
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
-    case "RUNNING": return <Badge className="bg-green-600 text-white">RUNNING</Badge>;
+    case "RUNNING": return <Badge className="bg-foreground text-background">RUNNING</Badge>;
     case "STOPPED": return <Badge variant="outline" className="text-muted-foreground">STOPPED</Badge>;
-    case "STARTING": return <Badge className="bg-yellow-500 text-white">STARTING</Badge>;
-    case "STOPPING": return <Badge className="bg-yellow-500 text-white">STOPPING</Badge>;
+    case "STARTING": return <Badge className="bg-[#9CA3AF] text-white">STARTING</Badge>;
+    case "STOPPING": return <Badge className="bg-[#9CA3AF] text-white">STOPPING</Badge>;
     default: return <Badge variant="outline">{status || "Unknown"}</Badge>;
   }
 }
@@ -89,13 +89,13 @@ export default function WarehousePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Warehouse Manager</h1>
           <p className="text-muted-foreground mt-1">View and manage SQL warehouses in your workspace — status, cluster size, auto-stop settings, and select the active warehouse for operations.</p>
           <p className="text-xs text-muted-foreground mt-1">
-            <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">SQL warehouses</a>
+            <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">SQL warehouses</a>
           </p>
         </div>
         <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
@@ -129,14 +129,14 @@ export default function WarehousePage() {
           const isActive = id === activeWarehouseId;
           const justSet = setActiveSuccess === id;
           return (
-            <Card key={id} className={`bg-card ${isActive ? "border-green-500 ring-1 ring-green-500/30" : "border-border"}`}>
+            <Card key={id} className={`bg-card ${isActive ? "border-[#E8453C] ring-1 ring-[#E8453C]/30" : "border-border"}`}>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Server className="h-4 w-4 text-muted-foreground" />
                     {wh.name || "Unnamed"}
                     {isActive && (
-                      <Badge className="bg-green-600 text-white text-[10px] px-1.5 py-0">
+                      <Badge className="bg-[#E8453C] text-white text-[10px] px-1.5 py-0">
                         <Star className="h-2.5 w-2.5 mr-0.5 fill-current" />ACTIVE
                       </Badge>
                     )}
@@ -174,11 +174,11 @@ export default function WarehousePage() {
                   )}
                   {!isActive ? (
                     <Button size="sm" variant="outline" onClick={() => setAsActive(id)} disabled={isActing}>
-                      {justSet ? <Check className="h-3 w-3 mr-1 text-green-500" /> : isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Star className="h-3 w-3 mr-1" />}
+                      {justSet ? <Check className="h-3 w-3 mr-1 text-[#E8453C]" /> : isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Star className="h-3 w-3 mr-1" />}
                       {justSet ? "Saved!" : "Set as Active"}
                     </Button>
                   ) : (
-                    <span className="text-xs text-green-500 flex items-center gap-1 pt-1">
+                    <span className="text-xs text-[#E8453C] flex items-center gap-1 pt-1">
                       <Check className="h-3 w-3" /> Used for all operations
                     </span>
                   )}

@@ -13,9 +13,9 @@ interface PiiRemediationProps {
 
 const STATUS_COLORS: Record<string, string> = {
   detected: "bg-red-100 text-red-700",
-  reviewed: "bg-blue-100 text-blue-700",
-  masked: "bg-green-100 text-green-700",
-  accepted: "bg-purple-100 text-purple-700",
+  reviewed: "bg-muted/50 text-[#E8453C]",
+  masked: "bg-muted/40 text-foreground",
+  accepted: "bg-muted/40 text-muted-foreground",
   false_positive: "bg-gray-100 text-gray-700",
 };
 

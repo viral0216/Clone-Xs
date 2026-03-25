@@ -24,7 +24,7 @@ export default function DQDashboardPage() {
   const critical = results.filter(r => (r.passed === false || r.passed === "false") && r.severity === "critical").length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="DQ Dashboard" icon={BarChart3} breadcrumbs={["Governance", "DQ Dashboard"]} description="Data quality health at a glance — pass rates, failing rules, and severity breakdown." />
       <div className="flex gap-3">
         <Button onClick={runAll} disabled={running}>{running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}Run All Rules</Button>
@@ -33,9 +33,9 @@ export default function DQDashboardPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold">{results.length}</p><p className="text-xs text-muted-foreground">Total Checks</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold text-green-600">{passed}</p><p className="text-xs text-muted-foreground">Passing</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold text-foreground">{passed}</p><p className="text-xs text-muted-foreground">Passing</p></CardContent></Card>
         <Card><CardContent className="pt-4 text-center"><p className="text-3xl font-bold text-red-600">{failed}</p><p className="text-xs text-muted-foreground">Failing</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className={`text-3xl font-bold ${passRate >= 90 ? "text-green-600" : passRate >= 70 ? "text-amber-600" : "text-red-600"}`}>{passRate}%</p><p className="text-xs text-muted-foreground">Pass Rate</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className={`text-3xl font-bold ${passRate >= 90 ? "text-foreground" : passRate >= 70 ? "text-muted-foreground" : "text-red-600"}`}>{passRate}%</p><p className="text-xs text-muted-foreground">Pass Rate</p></CardContent></Card>
       </div>
 
       {critical > 0 && (
@@ -58,10 +58,10 @@ export default function DQDashboardPage() {
                 const pass = r.passed === true || r.passed === "true";
                 return (
                   <tr key={i} className={`border-b border-border ${!pass ? "bg-red-50/50 dark:bg-red-950/10" : ""}`}>
-                    <td className="py-2 px-3">{pass ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}</td>
+                    <td className="py-2 px-3">{pass ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}</td>
                     <td className="py-2 px-3 font-medium">{r.rule_name}</td>
                     <td className="py-2 px-3 font-mono text-xs">{r.table_fqn}</td>
-                    <td className="py-2 px-3"><Badge className={r.severity === "critical" ? "bg-red-100 text-red-800" : r.severity === "warning" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}>{r.severity}</Badge></td>
+                    <td className="py-2 px-3"><Badge className={r.severity === "critical" ? "bg-red-100 text-red-800" : r.severity === "warning" ? "bg-muted/40 text-foreground" : "bg-muted/50 text-foreground"}>{r.severity}</Badge></td>
                     <td className="py-2 px-3 text-right">{Number(r.total_rows || 0).toLocaleString()}</td>
                     <td className="py-2 px-3 text-right font-medium text-red-600">{Number(r.failed_rows || 0).toLocaleString()}</td>
                     <td className="py-2 px-3 text-right">{((Number(r.failure_rate) || 0) * 100).toFixed(2)}%</td>

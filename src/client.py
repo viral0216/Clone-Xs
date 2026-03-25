@@ -141,6 +141,12 @@ def execute_sql(
     Includes retry logic with exponential backoff for transient failures.
     In dry_run mode, logs the SQL without executing write operations.
     """
+    # Guard: fail fast if no warehouse is configured
+    if not warehouse_id or not warehouse_id.strip():
+        raise ValueError(
+            "No SQL warehouse selected. Go to Settings → SQL Warehouses and select a running warehouse."
+        )
+
     # Capture hook — fires for every statement, even dry-run writes
     if _sql_capture is not None:
         _sql_capture(sql)
@@ -166,6 +172,16 @@ def execute_sql(
             # SQL failures (syntax error, permission denied) — don't retry
             raise
         except Exception as e:
+            err_msg = str(e).lower()
+            # Permanent errors — don't retry (warehouse not found, auth failures, etc.)
+            if any(phrase in err_msg for phrase in [
+                "was not found", "not found", "does not exist",
+                "permission denied", "unauthorized", "forbidden",
+                "invalid warehouse", "no warehouse",
+                "not a valid endpoint", "invalid endpoint",
+            ]):
+                logger.error(f"SQL execution failed (non-retryable): {e}")
+                raise
             last_exception = e
             if attempt < max_retries:
                 delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))

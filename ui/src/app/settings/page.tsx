@@ -26,6 +26,7 @@ import {
   Palette,
   Check,
   PanelLeftClose,
+  Play,
 } from "lucide-react";
 
 type AuthTab = "token" | "oauth" | "azure" | "sp";
@@ -103,7 +104,8 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
   const connectWorkspace = async (host: string) => {
     setLoading(true);
     try {
-      await api.post("/auth/azure/connect", { host });
+      const result = await api.post<{ authenticated: boolean; session_id?: string }>("/auth/azure/connect", { host });
+      if (result.session_id) localStorage.setItem("clxs_session_id", result.session_id);
       toast.success("Connected to workspace");
       onConnected();
     } catch (e) {
@@ -125,9 +127,9 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
               <span
                 className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                   i < current
-                    ? "bg-green-500/15 text-green-600 dark:text-green-400"
+                    ? "bg-muted/200/15 text-foreground dark:text-gray-300"
                     : i === current
-                    ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                    ? "bg-muted/300/15 text-[#E8453C] dark:text-[#E8453C]"
                     : "bg-muted text-muted-foreground"
                 }`}
               >
@@ -163,7 +165,7 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
                   <p className="font-medium text-sm">{t.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">{t.tenant_id}</p>
                 </div>
-                {t.is_active && <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 text-xs border-0">Active</Badge>}
+                {t.is_active && <Badge className="bg-muted/200/15 text-foreground dark:text-gray-300 text-xs border-0">Active</Badge>}
               </div>
             ))}
           </div>
@@ -185,7 +187,7 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
                   <p className="font-medium text-sm">{s.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">{s.subscription_id}</p>
                 </div>
-                <Badge variant="outline" className={`text-xs ${s.state === "Enabled" ? "text-green-600" : "text-muted-foreground"}`}>
+                <Badge variant="outline" className={`text-xs ${s.state === "Enabled" ? "text-foreground" : "text-muted-foreground"}`}>
                   {s.state}
                 </Badge>
               </div>
@@ -215,7 +217,7 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
                     <p className="text-xs text-muted-foreground/60">{ws.location} &middot; {ws.sku} &middot; {ws.resource_group}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={`text-xs ${ws.state === "Succeeded" ? "text-green-600" : "text-muted-foreground"}`}>
+                    <Badge variant="outline" className={`text-xs ${ws.state === "Succeeded" ? "text-foreground" : "text-muted-foreground"}`}>
                       {ws.state}
                     </Badge>
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); connectWorkspace(ws.host); }} disabled={loading}>
@@ -262,6 +264,7 @@ export default function SettingsPage() {
   // Warehouse state
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [testingWarehouse, setTestingWarehouse] = useState<string>("");
+  const [startingWarehouse, setStartingWarehouse] = useState<string>("");
 
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -272,9 +275,10 @@ export default function SettingsPage() {
     setLoggingOut(true);
     try {
       await api.post("/auth/logout");
-      sessionStorage.removeItem("dbx_host");
-      sessionStorage.removeItem("dbx_token");
+      localStorage.removeItem("dbx_host");
+      localStorage.removeItem("dbx_token");
       localStorage.removeItem("dbx_warehouse_id");
+      localStorage.removeItem("clxs_session_id");
       setHost("");
       setToken("");
       setSelectedWarehouse("");
@@ -300,8 +304,8 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    setHost(sessionStorage.getItem("dbx_host") || "");
-    setToken(sessionStorage.getItem("dbx_token") || "");
+    setHost(localStorage.getItem("dbx_host") || "");
+    setToken(localStorage.getItem("dbx_token") || "");
     const wid = localStorage.getItem("dbx_warehouse_id") || "";
     setSelectedWarehouse(wid);
   }, []);
@@ -340,11 +344,12 @@ export default function SettingsPage() {
 
   const saveCredentials = async () => {
     if (!host || !token) { toast.error("Host and token are required"); return; }
-    sessionStorage.setItem("dbx_host", host);
-    sessionStorage.setItem("dbx_token", token);
+    localStorage.setItem("dbx_host", host);
+    localStorage.setItem("dbx_token", token);
     try {
-      const result = await api.post<{ authenticated: boolean; user?: string }>("/auth/login", { host, token });
+      const result = await api.post<{ authenticated: boolean; user?: string; session_id?: string }>("/auth/login", { host, token });
       if (result.authenticated) {
+        if (result.session_id) localStorage.setItem("clxs_session_id", result.session_id);
         toast.success(`Connected as ${result.user}`);
         auth.refetch();
         warehouses.refetch();
@@ -358,8 +363,9 @@ export default function SettingsPage() {
     if (!oauthHost) { toast.error("Workspace host is required"); return; }
     setOauthLoading(true);
     try {
-      const result = await api.post<{ authenticated: boolean; user?: string }>("/auth/oauth-login", { host: oauthHost });
+      const result = await api.post<{ authenticated: boolean; user?: string; session_id?: string }>("/auth/oauth-login", { host: oauthHost });
       if (result.authenticated) {
+        if (result.session_id) localStorage.setItem("clxs_session_id", result.session_id);
         toast.success(`Connected as ${result.user} via OAuth`);
         auth.refetch();
         warehouses.refetch();
@@ -376,11 +382,12 @@ export default function SettingsPage() {
     if (spAuthType === "azure" && !spTenantId) { toast.error("Tenant ID is required for Azure AD authentication"); return; }
     setSpLoading(true);
     try {
-      const result = await api.post<{ authenticated: boolean; user?: string }>("/auth/service-principal", {
+      const result = await api.post<{ authenticated: boolean; user?: string; session_id?: string }>("/auth/service-principal", {
         host: spHost, client_id: spClientId, client_secret: spClientSecret,
         tenant_id: spTenantId || null, auth_type: spAuthType,
       });
       if (result.authenticated) {
+        if (result.session_id) localStorage.setItem("clxs_session_id", result.session_id);
         toast.success(`Connected as ${result.user} via service principal`);
         auth.refetch();
         warehouses.refetch();
@@ -408,6 +415,22 @@ export default function SettingsPage() {
     setSelectedWarehouse(warehouseId);
     localStorage.setItem("dbx_warehouse_id", warehouseId);
     toast.success("Warehouse selected");
+  };
+
+  const handleStartWarehouse = async (warehouseId: string) => {
+    setStartingWarehouse(warehouseId);
+    try {
+      await api.post("/warehouse/start", { warehouse_id: warehouseId });
+      toast.success("Warehouse starting — may take a minute to become RUNNING");
+      // Poll for state change
+      setTimeout(() => warehouses.refetch(), 5000);
+      setTimeout(() => warehouses.refetch(), 15000);
+      setTimeout(() => warehouses.refetch(), 30000);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to start warehouse");
+    } finally {
+      setStartingWarehouse("");
+    }
   };
 
   const authTabs: { key: AuthTab; label: string; icon: React.ReactNode }[] = [
@@ -455,11 +478,11 @@ export default function SettingsPage() {
             {/* Compact status bar */}
             <div className={`flex items-center gap-4 flex-wrap p-3 rounded-lg mt-3 ${
               auth.data?.authenticated
-                ? "bg-green-500/5 border border-green-500/20"
+                ? "bg-muted/200/5 border border-border/20"
                 : "bg-red-500/5 border border-red-500/20"
             }`}>
               <div className="flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${auth.data?.authenticated ? "bg-green-500" : "bg-red-400"}`} />
+                <span className={`h-2 w-2 rounded-full ${auth.data?.authenticated ? "bg-muted/200" : "bg-red-400"}`} />
                 <span className="text-sm font-medium">
                   {auth.data?.authenticated ? "Connected" : "Not connected"}
                 </span>
@@ -491,11 +514,11 @@ export default function SettingsPage() {
 
             {/* Databricks App Banner */}
             {isDatabricksApp && (
-              <div className="flex items-center gap-3 mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                <Shield className="h-4 w-4 text-blue-500 shrink-0" />
+              <div className="flex items-center gap-3 mt-3 p-3 rounded-lg bg-muted/300/5 border border-[#E8453C]/20">
+                <Shield className="h-4 w-4 text-[#E8453C] shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Running as Databricks App</p>
-                  <p className="text-xs text-blue-600/70 dark:text-blue-400/70">Authenticated automatically via workspace service principal.</p>
+                  <p className="text-sm font-medium text-[#E8453C] dark:text-[#E8453C]">Running as Databricks App</p>
+                  <p className="text-xs text-[#E8453C]/70 dark:text-[#E8453C]/70">Authenticated automatically via workspace service principal.</p>
                 </div>
               </div>
             )}
@@ -510,7 +533,7 @@ export default function SettingsPage() {
                 /* Azure users: session managed server-side, no credential fields needed */
                 <div className="mt-3 p-4 bg-muted/30 border border-border rounded-lg max-w-lg">
                   <div className="flex items-center gap-2 text-sm text-foreground font-medium">
-                    <Globe className="h-4 w-4 text-blue-500" />
+                    <Globe className="h-4 w-4 text-[#E8453C]" />
                     Connected via Azure
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
@@ -633,30 +656,42 @@ export default function SettingsPage() {
                         onClick={() => handleSelectWarehouse(wh.id)}
                         className={`p-3 rounded-lg border cursor-pointer transition-all ${
                           selected
-                            ? "border-green-500/40 bg-green-500/5"
+                            ? "border-[#E8453C]/40 bg-[#E8453C]/5"
                             : "border-transparent bg-muted/30 hover:bg-muted/50"
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <span className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                            selected ? "border-green-500" : "border-muted-foreground/30"
+                            selected ? "border-[#E8453C]" : "border-muted-foreground/30"
                           }`}>
-                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-green-500" />}
+                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#E8453C]" />}
                           </span>
                           <span className="font-medium text-sm truncate">{wh.name}</span>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{wh.size}</Badge>
                             <Badge
                               variant={wh.state === "RUNNING" ? "default" : "secondary"}
-                              className={`text-[10px] ${wh.state === "RUNNING" ? "bg-green-600" : ""}`}
+                              className={`text-[10px] ${wh.state === "RUNNING" ? "bg-foreground" : ""}`}
                             >
                               {wh.state}
                             </Badge>
                           </div>
+                          {wh.state !== "RUNNING" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs ml-auto shrink-0 text-green-600 hover:text-green-700"
+                              onClick={(e) => { e.stopPropagation(); handleStartWarehouse(wh.id); }}
+                              disabled={startingWarehouse === wh.id}
+                            >
+                              {startingWarehouse === wh.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                              <span className="ml-1">Start</span>
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2 text-xs ml-auto shrink-0"
+                            className={`h-7 px-2 text-xs shrink-0 ${wh.state !== "RUNNING" ? "" : "ml-auto"}`}
                             onClick={(e) => { e.stopPropagation(); handleTestWarehouse(wh.id); }}
                             disabled={testingWarehouse === wh.id}
                           >
@@ -1085,7 +1120,7 @@ function UIPreferences() {
                 onClick={() => applyTheme(t.id)}
                 className={`relative group rounded-lg border p-1.5 transition-all text-left ${
                   active
-                    ? "border-blue-500 ring-1 ring-blue-500/30"
+                    ? "border-[#E8453C] ring-1 ring-[#E8453C]/30"
                     : "border-border hover:border-muted-foreground/40"
                 }`}
               >
@@ -1098,7 +1133,7 @@ function UIPreferences() {
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
                 </div>
                 {active && (
-                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-muted/300 flex items-center justify-center">
                     <Check className="h-2.5 w-2.5 text-white" />
                   </span>
                 )}
@@ -1118,7 +1153,7 @@ function UIPreferences() {
                 <p className="text-[11px] text-muted-foreground">{desc}</p>
               </div>
             </div>
-            <input type="checkbox" checked={checked} onChange={toggle} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4" />
+            <input type="checkbox" checked={checked} onChange={toggle} className="rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C] h-4 w-4" />
           </label>
         ))}
       </div>
@@ -1225,7 +1260,7 @@ function FeatureToggles() {
                       checked={isEnabled}
                       onChange={() => togglePage(item.href)}
                       disabled={isCore}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                      className="rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C] h-3.5 w-3.5"
                     />
                     <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                     <span>{item.label}</span>

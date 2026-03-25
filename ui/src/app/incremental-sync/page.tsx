@@ -29,7 +29,7 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
       )}
       <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
         <div
-          className="h-full bg-blue-600 rounded-full transition-all duration-500"
+          className="h-full bg-[#E8453C] rounded-full transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -51,9 +51,9 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
 
   function logColor(line: string) {
     if (/error|ERROR|FAILED|failed/i.test(line)) return "text-red-400";
-    if (/warn|WARNING/i.test(line)) return "text-yellow-400";
-    if (/OK|success|cloned|completed|matched/i.test(line)) return "text-green-400";
-    if (/progress|running|scanning|cloning/i.test(line)) return "text-blue-400";
+    if (/warn|WARNING/i.test(line)) return "text-gray-400";
+    if (/OK|success|cloned|completed|matched/i.test(line)) return "text-gray-300";
+    if (/progress|running|scanning|cloning/i.test(line)) return "text-[#E8453C]";
     return "text-gray-300";
   }
 
@@ -111,16 +111,16 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
   }, [jobId]);
 
   const statusColor: Record<string, string> = {
-    queued: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    running: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    completed: "bg-green-500/20 text-green-400 border-green-500/30",
+    queued: "bg-muted/200/20 text-gray-400 border-border/30",
+    running: "bg-muted/300/20 text-[#E8453C] border-[#E8453C]/30",
+    completed: "bg-muted/200/20 text-gray-300 border-border/30",
     failed: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
   const statusIcon: Record<string, React.ReactNode> = {
-    queued: <Clock className="h-4 w-4 text-yellow-500" />,
-    running: <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
-    completed: <CheckCircle className="h-4 w-4 text-green-500" />,
+    queued: <Clock className="h-4 w-4 text-muted-foreground" />,
+    running: <Loader2 className="h-4 w-4 text-[#E8453C] animate-spin" />,
+    completed: <CheckCircle className="h-4 w-4 text-foreground" />,
     failed: <XCircle className="h-4 w-4 text-red-500" />,
   };
 
@@ -143,7 +143,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
 
   return (
     <Card className={`bg-card border-border transition-all ${
-      job.status === "running" ? "ring-1 ring-blue-500/40" : ""
+      job.status === "running" ? "ring-1 ring-[#E8453C]/40" : ""
     }`}>
       {/* Header — always visible */}
       <div
@@ -196,7 +196,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
                     <Loader2 className="h-3 w-3 animate-spin" /> Sync in progress...
                   </div>
                   <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: "60%" }} />
+                    <div className="h-full bg-[#E8453C] rounded-full animate-pulse" style={{ width: "60%" }} />
                   </div>
                 </div>
               )}
@@ -213,7 +213,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
           {job.status === "completed" && (
             <div className="grid grid-cols-3 gap-2">
               <div className="text-center p-2 rounded bg-muted/50">
-                <p className="text-lg font-bold text-green-500">{synced}</p>
+                <p className="text-lg font-bold text-foreground">{synced}</p>
                 <p className="text-xs text-muted-foreground">Synced</p>
               </div>
               <div className="text-center p-2 rounded bg-muted/50">
@@ -501,7 +501,7 @@ export default function IncrementalSyncPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Incremental Sync"
         icon={GitCompareArrows}
@@ -518,7 +518,7 @@ export default function IncrementalSyncPage() {
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schemas Checked</span>
-                <Database className="h-4 w-4 text-blue-600" />
+                <Database className="h-4 w-4 text-[#E8453C]" />
               </div>
               <p className="text-2xl font-bold text-foreground">{schemaResults.filter(r => !r.loading).length}</p>
             </CardContent>
@@ -527,7 +527,7 @@ export default function IncrementalSyncPage() {
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tables Changed</span>
-                <AlertTriangle className="h-4 w-4 text-orange-500" />
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               </div>
               <p className="text-2xl font-bold text-foreground">{totalChanges}</p>
             </CardContent>
@@ -536,9 +536,9 @@ export default function IncrementalSyncPage() {
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Up to Date</span>
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <CheckCircle className="h-4 w-4 text-foreground" />
               </div>
-              <p className="text-2xl font-bold text-green-600">{schemaResults.filter(r => !r.loading && r.tables_needing_sync === 0).length}</p>
+              <p className="text-2xl font-bold text-foreground">{schemaResults.filter(r => !r.loading && r.tables_needing_sync === 0).length}</p>
               <p className="text-xs text-muted-foreground mt-0.5">schemas in sync</p>
             </CardContent>
           </Card>
@@ -546,7 +546,7 @@ export default function IncrementalSyncPage() {
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Operations</span>
-                <Zap className="h-4 w-4 text-purple-600" />
+                <Zap className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="flex flex-wrap gap-1 mt-1">
                 {Object.entries(opBreakdown).length === 0 ? (
@@ -733,11 +733,11 @@ export default function IncrementalSyncPage() {
                     <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-muted/30">
                       <div className="flex items-center gap-2 min-w-0">
                         {h.status === "success" || h.status === "completed" ? (
-                          <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                          <CheckCircle className="h-3.5 w-3.5 text-foreground shrink-0" />
                         ) : h.status === "failed" ? (
                           <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
                         ) : (
-                          <Clock className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         )}
                         <span className="text-xs text-foreground truncate">
                           {h.tables_cloned || 0} tables synced{h.tables_failed > 0 ? `, ${h.tables_failed} failed` : ""}
@@ -764,10 +764,10 @@ export default function IncrementalSyncPage() {
             <CardContent>
               {schedResult?.job_url ? (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-green-600">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
                     <CheckCircle className="h-4 w-4" /> Job created successfully
                   </div>
-                  <a href={schedResult.job_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
+                  <a href={schedResult.job_url} target="_blank" rel="noopener noreferrer" className="text-sm text-[#E8453C] hover:underline flex items-center gap-1">
                     Open in Databricks <ExternalLink className="h-3 w-3" />
                   </a>
                   <p className="text-xs text-muted-foreground">Job: {schedResult.job_name}</p>
@@ -855,7 +855,7 @@ export default function IncrementalSyncPage() {
                     ) : sr.error ? (
                       <Badge variant="destructive">Error</Badge>
                     ) : sr.tables_needing_sync === 0 ? (
-                      <Badge variant="secondary" className="text-green-500">
+                      <Badge variant="secondary" className="text-foreground">
                         <CheckCircle className="h-3 w-3 mr-1" /> Up to date
                       </Badge>
                     ) : (
@@ -930,7 +930,7 @@ export default function IncrementalSyncPage() {
                                   </div>
                                 ) : "—"}
                                 <button
-                                  className="ml-1 text-blue-500 hover:text-blue-400"
+                                  className="ml-1 text-[#E8453C] hover:text-[#E8453C]"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const key = tableKey(sr.schema, t.table_name);
@@ -965,9 +965,9 @@ export default function IncrementalSyncPage() {
                                       <div className="flex flex-wrap gap-1 mt-0.5">
                                         {(t.operations || []).map((op, i) => (
                                           <Badge key={i} variant="outline" className={`text-[10px] ${
-                                            op === "WRITE" ? "border-green-500/30 text-green-600" :
+                                            op === "WRITE" ? "border-border/30 text-foreground" :
                                             op === "DELETE" ? "border-red-500/30 text-red-500" :
-                                            op === "UPDATE" || op === "MERGE" ? "border-yellow-500/30 text-yellow-600" :
+                                            op === "UPDATE" || op === "MERGE" ? "border-border/30 text-muted-foreground" :
                                             ""
                                           }`}>{op}</Badge>
                                         ))}

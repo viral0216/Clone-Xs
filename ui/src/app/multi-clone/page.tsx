@@ -77,7 +77,7 @@ export default function MultiClonePage() {
   const canStart = sourceCatalog && destinations.length > 0 && destinations.every((d) => d.host && d.catalog);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Multi-Clone</h1>
         <p className="text-muted-foreground mt-1">Clone a catalog to multiple Databricks workspaces in parallel — useful for multi-region deployments, disaster recovery, and dev/staging/prod provisioning.</p>

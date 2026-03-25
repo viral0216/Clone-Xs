@@ -38,19 +38,19 @@ function formatBytes(bytes: number): string {
 }
 function sizeBadgeColor(bytes: number): string {
   if (bytes >= 10_000_000_000) return "border-red-500/30 text-red-600 bg-red-500/5";
-  if (bytes >= 1_000_000_000) return "border-yellow-500/30 text-yellow-600 bg-yellow-500/5";
-  if (bytes >= 100_000_000) return "border-blue-500/30 text-blue-600 bg-blue-500/5";
-  return "border-green-500/30 text-green-600 bg-green-500/5";
+  if (bytes >= 1_000_000_000) return "border-border/30 text-muted-foreground bg-muted/200/5";
+  if (bytes >= 100_000_000) return "border-[#E8453C]/30 text-[#E8453C] bg-muted/300/5";
+  return "border-border/30 text-foreground bg-muted/200/5";
 }
 function typeBadge(type: string) {
   const t = (type || "").toUpperCase();
-  if (t === "VIEW") return <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600">VIEW</Badge>;
-  if (t === "EXTERNAL") return <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-600">EXTERNAL</Badge>;
-  return <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-600">MANAGED</Badge>;
+  if (t === "VIEW") return <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">VIEW</Badge>;
+  if (t === "EXTERNAL") return <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">EXTERNAL</Badge>;
+  return <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">MANAGED</Badge>;
 }
 
-const SCHEMA_COLORS = ["#3b82f6", "#8b5cf6", "#06b6d4", "#f59e0b", "#ef4444", "#22c55e", "#ec4899", "#14b8a6", "#f97316", "#6366f1"];
-const TYPE_COLORS = { MANAGED: "#3b82f6", EXTERNAL: "#f59e0b", VIEW: "#8b5cf6", UNKNOWN: "#666" };
+const SCHEMA_COLORS = ["#E8453C", "#6B7280", "#6B7280", "#9CA3AF", "#ef4444", "#374151", "#6B7280", "#6B7280", "#9CA3AF", "#6B7280"];
+const TYPE_COLORS = { MANAGED: "#E8453C", EXTERNAL: "#9CA3AF", VIEW: "#6B7280", UNKNOWN: "#666" };
 
 // ─── Table Detail Drawer ───
 function TableDetailDrawer({ catalog, schema, table, onClose }: { catalog: string; schema: string; table: string; onClose: () => void }) {
@@ -267,7 +267,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
   // Indent helper
   const Row = ({ depth, icon: Icon, iconColor, label, active, bold, onClick, expandable, expanded, onToggle, count, suffix }: any) => (
     <div
-      className={`flex items-center h-7 cursor-pointer transition-colors group ${active ? "bg-blue-600/10" : "hover:bg-muted/40"}`}
+      className={`flex items-center h-7 cursor-pointer transition-colors group ${active ? "bg-[#E8453C]/10" : "hover:bg-muted/40"}`}
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
       onClick={onClick}
     >
@@ -279,7 +279,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
         <span className="w-4 shrink-0" />
       )}
       <Icon className={`h-3.5 w-3.5 mx-1.5 shrink-0 ${iconColor || "text-muted-foreground"}`} />
-      <span className={`text-[13px] truncate flex-1 ${active ? "text-blue-600" : "text-foreground"} ${bold ? "font-medium" : ""}`}>{label}</span>
+      <span className={`text-[13px] truncate flex-1 ${active ? "text-[#E8453C]" : "text-foreground"} ${bold ? "font-medium" : ""}`}>{label}</span>
       {count != null && <span className="text-[10px] text-muted-foreground mr-2 shrink-0">{count}</span>}
       {suffix}
     </div>
@@ -293,7 +293,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Filter..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-600"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#E8453C]"
           />
         </div>
       </div>
@@ -311,7 +311,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
             const schemas = schemaCache[cat] || [];
             return (
               <div key={cat}>
-                <Row depth={0} icon={Database} iconColor={isActive ? "text-blue-600" : "text-amber-600"} label={cat}
+                <Row depth={0} icon={Database} iconColor={isActive ? "text-[#E8453C]" : "text-muted-foreground"} label={cat}
                   active={isActive} bold expandable expanded={isExpanded}
                   onToggle={() => toggleCatalog(cat)} onClick={() => onSelectCatalog(cat)}
                   count={schemas.length > 0 ? schemas.length : undefined} />
@@ -328,7 +328,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
                       const schemaTables = tableCache[schemaKey] || [];
                       return (
                         <div key={schema}>
-                          <Row depth={1} icon={FolderTree} iconColor="text-blue-500" label={schema}
+                          <Row depth={1} icon={FolderTree} iconColor="text-[#E8453C]" label={schema}
                             expandable expanded={isSchemaExpanded}
                             onToggle={() => toggleSchema(cat, schema)} onClick={() => toggleSchema(cat, schema)}
                             count={schemaTables.length > 0 ? schemaTables.length : undefined} />
@@ -556,8 +556,8 @@ export default function ExplorePage() {
     {
       key: "table", label: "Table", sortable: true,
       render: (v: string, row: any) => (
-        <button className="flex items-center gap-2 hover:text-blue-600 transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
-          <span className="text-sm font-medium text-foreground hover:text-blue-600">{v || row.table_name || "—"}</span>
+        <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
+          <span className="text-sm font-medium text-foreground hover:text-[#E8453C]">{v || row.table_name || "—"}</span>
           {typeBadge(row.table_type || row.type)}
         </button>
       ),
@@ -621,7 +621,7 @@ export default function ExplorePage() {
         )}
 
         {/* Right: Main content */}
-        <div className="flex-1 min-w-0 space-y-6">
+        <div className="flex-1 min-w-0 space-y-4">
           {/* Catalog picker + actions */}
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
@@ -666,12 +666,12 @@ export default function ExplorePage() {
             return (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
                 {[
-                  { label: "Schemas", value: data.num_schemas, icon: Database, color: "text-blue-600", bg: "bg-blue-500/10" },
-                  { label: "Tables", value: data.num_tables, icon: Table2, color: "text-purple-600", bg: "bg-purple-500/10" },
-                  { label: "Total Size", value: data.total_size_display, icon: HardDrive, color: "text-orange-600", bg: "bg-orange-500/10" },
-                  { label: "Total Rows", value: formatNumber(data.total_rows), icon: Rows3, color: "text-green-600", bg: "bg-green-500/10" },
-                  { label: "Views", value: typeDistribution.find(d => d.name === "VIEW")?.value || 0, icon: Eye, color: "text-cyan-600", bg: "bg-cyan-500/10" },
-                  { label: "External", value: typeDistribution.find(d => d.name === "EXTERNAL")?.value || 0, icon: Box, color: "text-yellow-600", bg: "bg-yellow-500/10" },
+                  { label: "Schemas", value: data.num_schemas, icon: Database, color: "text-[#E8453C]", bg: "bg-muted/300/10" },
+                  { label: "Tables", value: data.num_tables, icon: Table2, color: "text-muted-foreground", bg: "bg-muted/200/10" },
+                  { label: "Total Size", value: data.total_size_display, icon: HardDrive, color: "text-muted-foreground", bg: "bg-muted/200/10" },
+                  { label: "Total Rows", value: formatNumber(data.total_rows), icon: Rows3, color: "text-foreground", bg: "bg-muted/200/10" },
+                  { label: "Views", value: typeDistribution.find(d => d.name === "VIEW")?.value || 0, icon: Eye, color: "text-muted-foreground", bg: "bg-muted/30" },
+                  { label: "External", value: typeDistribution.find(d => d.name === "EXTERNAL")?.value || 0, icon: Box, color: "text-muted-foreground", bg: "bg-muted/200/10" },
                   { label: "Monthly Cost", value: `${currSymbol}${monthlyCost < 1 ? monthlyCost.toFixed(2) : monthlyCost.toFixed(0)}`, sub: `at ${currSymbol}${storagePrice}/GB`, icon: TrendingUp, color: "text-red-500", bg: "bg-red-500/10" },
                   { label: "Yearly Cost", value: `${currSymbol}${yearlyCost < 10 ? yearlyCost.toFixed(2) : yearlyCost.toFixed(0)}`, sub: "estimated", icon: TrendingUp, color: "text-red-600", bg: "bg-red-500/10" },
                 ].map(({ label, value, sub, icon: Icon, color, bg }) => (
@@ -706,7 +706,7 @@ export default function ExplorePage() {
               ...(topColumns.length || columnUsage.data?.top_users?.length ? [{ key: "usage", label: "Column Usage", icon: Columns }] : []),
             ].map(({ key, label, icon: TabIcon }) => (
               <button key={key} onClick={() => setActiveTab(key as typeof activeTab)}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px shrink-0 flex items-center gap-1.5 ${activeTab === key ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px shrink-0 flex items-center gap-1.5 ${activeTab === key ? "border-[#E8453C] text-[#E8453C]" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 {TabIcon && <TabIcon className="h-3.5 w-3.5" />}
                 {label}
               </button>
@@ -794,7 +794,7 @@ export default function ExplorePage() {
                                   </div>
                                 </div>
                                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(t.query_count / maxQ) * 100}%` }} />
+                                  <div className="h-full bg-foreground rounded-full" style={{ width: `${(t.query_count / maxQ) * 100}%` }} />
                                 </div>
                               </div>
                             </div>
@@ -821,7 +821,7 @@ export default function ExplorePage() {
                     {allSchemas.length > 1 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         <button onClick={() => setSchemaFilter(new Set())}
-                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${schemaFilter.size === 0 ? "bg-blue-600 text-white border-blue-600" : "border-border text-muted-foreground hover:border-blue-600/50"}`}>
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${schemaFilter.size === 0 ? "bg-[#E8453C] text-white border-[#E8453C]" : "border-border text-muted-foreground hover:border-[#E8453C]/50"}`}>
                           All
                         </button>
                         {allSchemas.map((s: string) => (
@@ -830,7 +830,7 @@ export default function ExplorePage() {
                             if (next.has(s)) next.delete(s); else next.add(s);
                             setSchemaFilter(next);
                           }}
-                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${schemaFilter.has(s) ? "bg-blue-600 text-white border-blue-600" : "border-border text-muted-foreground hover:border-blue-600/50"}`}>
+                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${schemaFilter.has(s) ? "bg-[#E8453C] text-white border-[#E8453C]" : "border-border text-muted-foreground hover:border-[#E8453C]/50"}`}>
                             {s}
                           </button>
                         ))}
@@ -848,9 +848,9 @@ export default function ExplorePage() {
                             <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
                               onClick={() => setExpandedSchema(isExpanded ? null : s.schema)}>
                               {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                              <Database className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                              <Database className="h-3.5 w-3.5 text-[#E8453C] shrink-0" />
                               <span className="text-sm font-medium text-foreground">{s.schema}</span>
-                              <div className="flex-1 mx-3"><div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} /></div></div>
+                              <div className="flex-1 mx-3"><div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${pct}%` }} /></div></div>
                               <span className="text-xs text-muted-foreground shrink-0">{s.num_tables} tbl</span>
                               <Badge variant="outline" className={`text-[10px] font-mono shrink-0 ${sizeBadgeColor(s.total_size_bytes)}`}>{s.total_size_display}</Badge>
                               <span className="text-xs text-muted-foreground font-mono shrink-0 w-16 text-right">{formatNumber(s.total_rows)}</span>
@@ -862,7 +862,7 @@ export default function ExplorePage() {
                                     className="flex items-center gap-3 px-3 py-1.5 rounded hover:bg-muted/30 text-xs cursor-pointer group"
                                     onClick={() => setSelectedTable({ catalog, schema: s.schema, table: t.table || t.table_name })}>
                                     <Table2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                    <span className="font-medium text-foreground group-hover:text-blue-600 truncate">{t.table || t.table_name}</span>
+                                    <span className="font-medium text-foreground group-hover:text-[#E8453C] truncate">{t.table || t.table_name}</span>
                                     {typeBadge(t.table_type || t.type)}
                                     <span className="text-muted-foreground ml-auto shrink-0">{t.row_count ? formatNumber(t.row_count) + " rows" : ""}</span>
                                     {t.size_bytes > 0 && <span className="text-muted-foreground font-mono shrink-0">{formatBytes(t.size_bytes)}</span>}
@@ -901,10 +901,10 @@ export default function ExplorePage() {
                                 <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between mb-0.5">
-                                    <span className="text-xs font-mono text-foreground truncate hover:text-blue-600">{t.table || t.table_name}</span>
+                                    <span className="text-xs font-mono text-foreground truncate hover:text-[#E8453C]">{t.table || t.table_name}</span>
                                     <span className="text-xs font-semibold text-foreground ml-2 shrink-0">{formatBytes(t.size_bytes)}</span>
                                   </div>
-                                  <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-orange-500 rounded-full" style={{ width: `${(t.size_bytes / maxSize) * 100}%` }} /></div>
+                                  <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-muted/200 rounded-full" style={{ width: `${(t.size_bytes / maxSize) * 100}%` }} /></div>
                                 </div>
                               </div>
                             );
@@ -939,7 +939,7 @@ export default function ExplorePage() {
                                     <span className="text-xs font-mono font-semibold text-foreground truncate">{col.column}</span>
                                     <span className="text-xs font-semibold text-foreground ml-2 shrink-0">{total}</span>
                                   </div>
-                                  <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-cyan-600 rounded-full" style={{ width: `${(total / maxC) * 100}%` }} /></div>
+                                  <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#6B7280] rounded-full" style={{ width: `${(total / maxC) * 100}%` }} /></div>
                                   <span className="text-[9px] text-muted-foreground">{col.table?.split(".").slice(1).join(".")}</span>
                                 </div>
                               </div>
@@ -979,7 +979,7 @@ export default function ExplorePage() {
                 {search.isError && <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg text-red-500 text-sm">{search.error?.message}</div>}
                 {search.data && Array.isArray(search.data) && search.data.length > 0 && (
                   <>
-                    <Badge className="bg-blue-600 text-white text-xs">{search.data.length} matches</Badge>
+                    <Badge className="bg-[#E8453C] text-white text-xs">{search.data.length} matches</Badge>
                     <DataTable data={search.data} columns={[
                       { key: "schema", label: "Schema", sortable: true, render: (v: string, r: any) => <span className="text-xs">{v || r.table_schema || "—"}</span> },
                       { key: "table", label: "Table", sortable: true, render: (v: string, r: any) => <span className="text-sm font-medium">{v || r.table_name || "—"}</span> },
@@ -1001,7 +1001,7 @@ export default function ExplorePage() {
               <Card className="bg-card border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Columns className="h-4 w-4 text-cyan-600" />Most Used Columns
+                    <Columns className="h-4 w-4 text-muted-foreground" />Most Used Columns
                     {columnUsage.data.period_days && <Badge variant="outline" className="text-[10px] font-normal">last {columnUsage.data.period_days}d</Badge>}
                   </CardTitle>
                 </CardHeader>
@@ -1026,8 +1026,8 @@ export default function ExplorePage() {
                                 </div>
                               </div>
                               <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
-                                {col.lineage_count > 0 && <div className="h-full bg-cyan-600 rounded-l-full" style={{ width: `${(col.lineage_count / maxC) * 100}%` }} />}
-                                {col.query_count > 0 && <div className="h-full bg-purple-600 rounded-r-full" style={{ width: `${(col.query_count / maxC) * 100}%` }} />}
+                                {col.lineage_count > 0 && <div className="h-full bg-[#6B7280] rounded-l-full" style={{ width: `${(col.lineage_count / maxC) * 100}%` }} />}
+                                {col.query_count > 0 && <div className="h-full bg-[#6B7280] rounded-r-full" style={{ width: `${(col.query_count / maxC) * 100}%` }} />}
                               </div>
                               {col.users?.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1">
@@ -1041,8 +1041,8 @@ export default function ExplorePage() {
                         );
                       })}
                       <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-600" />Lineage</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-600" />Query</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6B7280]" />Lineage</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6B7280]" />Query</span>
                       </div>
                     </div>
                   )}
@@ -1051,7 +1051,7 @@ export default function ExplorePage() {
               <Card className="bg-card border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Users className="h-4 w-4 text-purple-600" />Active Users
+                    <Users className="h-4 w-4 text-muted-foreground" />Active Users
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -1067,7 +1067,7 @@ export default function ExplorePage() {
                                 <span className="text-xs text-foreground truncate">{u.user?.split("@")[0]}</span>
                                 <span className="text-xs font-semibold text-foreground ml-2">{u.query_count} queries</span>
                               </div>
-                              <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-purple-600 rounded-full" style={{ width: `${(u.query_count / maxQ) * 100}%` }} /></div>
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#6B7280] rounded-full" style={{ width: `${(u.query_count / maxQ) * 100}%` }} /></div>
                             </div>
                           </div>
                         );
@@ -1092,9 +1092,9 @@ export default function ExplorePage() {
               <DataTable data={viewTables} columns={[
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                 { key: "table", label: "View Name", sortable: true, render: (v: string, row: any) => (
-                  <button className="flex items-center gap-2 hover:text-blue-600 transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
-                    <Eye className="h-3.5 w-3.5 text-purple-500 shrink-0" />
-                    <span className="text-sm font-medium text-foreground hover:text-blue-600">{v || row.table_name || "—"}</span>
+                  <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
+                    <Eye className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-medium text-foreground hover:text-[#E8453C]">{v || row.table_name || "—"}</span>
                   </button>
                 )},
                 { key: "num_columns", label: "Columns", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
@@ -1127,7 +1127,7 @@ export default function ExplorePage() {
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
                 { key: "name", label: "Function", sortable: true, render: (v: string, row: any) => (
                   <div className="flex items-center gap-2">
-                    <FunctionSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    <FunctionSquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="text-sm font-mono font-medium text-foreground">{v || row.function_name || "—"}</span>
                   </div>
                 )},
@@ -1159,12 +1159,12 @@ export default function ExplorePage() {
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
                 { key: "name", label: "Volume", sortable: true, render: (v: string) => (
                   <div className="flex items-center gap-2">
-                    <Package className="h-3.5 w-3.5 text-teal-500 shrink-0" />
+                    <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="text-sm font-medium text-foreground">{v || "—"}</span>
                   </div>
                 )},
                 { key: "type", label: "Type", sortable: true, render: (v: string) => (
-                  <Badge variant="outline" className={`text-[10px] ${v === "EXTERNAL" ? "border-yellow-500/30 text-yellow-600" : "border-blue-500/30 text-blue-600"}`}>
+                  <Badge variant="outline" className={`text-[10px] ${v === "EXTERNAL" ? "border-border/30 text-muted-foreground" : "border-[#E8453C]/30 text-[#E8453C]"}`}>
                     {v || "MANAGED"}
                   </Badge>
                 )},
@@ -1229,7 +1229,7 @@ export default function ExplorePage() {
                   <DataTable data={piiData.columns || piiData.pii_columns} columns={[
                     { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                     { key: "table", label: "Table", sortable: true, render: (v: string, row: any) => (
-                      <button className="text-sm font-medium text-foreground hover:text-blue-600 transition-colors" onClick={() => setSelectedTable({ catalog, schema: row.schema, table: v })}>
+                      <button className="text-sm font-medium text-foreground hover:text-[#E8453C] transition-colors" onClick={() => setSelectedTable({ catalog, schema: row.schema, table: v })}>
                         {v || "—"}
                       </button>
                     )},
@@ -1238,7 +1238,7 @@ export default function ExplorePage() {
                       <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-600 bg-red-500/5">{v || "UNKNOWN"}</Badge>
                     )},
                     { key: "confidence", label: "Confidence", sortable: true, align: "right" as const, render: (v: number) => (
-                      <span className={`text-xs font-semibold ${(v || 0) >= 0.8 ? "text-red-600" : (v || 0) >= 0.5 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                      <span className={`text-xs font-semibold ${(v || 0) >= 0.8 ? "text-red-600" : (v || 0) >= 0.5 ? "text-muted-foreground" : "text-muted-foreground"}`}>
                         {v ? `${Math.round(v * 100)}%` : "—"}
                       </span>
                     )},
@@ -1250,7 +1250,7 @@ export default function ExplorePage() {
               {!piiLoading && piiScanned && (piiData?.columns || piiData?.pii_columns || []).length === 0 && (
                 <Card className="bg-card border-border">
                   <CardContent className="py-12 text-center">
-                    <ShieldAlert className="h-10 w-10 mx-auto mb-3 text-green-500 opacity-60" />
+                    <ShieldAlert className="h-10 w-10 mx-auto mb-3 text-foreground opacity-60" />
                     <p className="text-sm font-medium text-foreground">No PII columns detected</p>
                     <p className="text-xs text-muted-foreground mt-1">No columns matching common PII patterns were found in this catalog</p>
                   </CardContent>
@@ -1282,16 +1282,16 @@ export default function ExplorePage() {
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <Badge className="bg-indigo-600 text-white text-xs">
+                  <Badge className="bg-[#6B7280] text-white text-xs">
                     <Layers className="h-3 w-3 mr-1" />{featureStoreTables.length} feature tables
                   </Badge>
                 </div>
                 <DataTable data={featureStoreTables} columns={[
                   { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
                   { key: "table", label: "Feature Table", sortable: true, render: (v: string, row: any) => (
-                    <button className="flex items-center gap-2 hover:text-blue-600 transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
-                      <Layers className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                      <span className="text-sm font-medium text-foreground hover:text-blue-600">{v || row.table_name || "—"}</span>
+                    <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
+                      <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-medium text-foreground hover:text-[#E8453C]">{v || row.table_name || "—"}</span>
                     </button>
                   )},
                   { key: "row_count", label: "Rows", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs font-mono">{v ? formatNumber(v) : "—"}</span> },
@@ -1356,12 +1356,12 @@ export default function ExplorePage() {
                 {/* Summary counts */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                   {[
-                    { label: "External Locations", count: ucObjects.external_locations?.length || 0, icon: Globe, color: "text-blue-600", bg: "bg-blue-500/10" },
-                    { label: "Storage Credentials", count: ucObjects.storage_credentials?.length || 0, icon: Key, color: "text-amber-600", bg: "bg-amber-500/10" },
-                    { label: "Connections", count: ucObjects.connections?.length || 0, icon: GitCompare, color: "text-cyan-600", bg: "bg-cyan-500/10" },
-                    { label: "Registered Models", count: ucObjects.registered_models?.length || 0, icon: Brain, color: "text-purple-600", bg: "bg-purple-500/10" },
-                    { label: "Shares", count: ucObjects.shares?.length || 0, icon: Share2, color: "text-green-600", bg: "bg-green-500/10" },
-                    { label: "Recipients", count: ucObjects.recipients?.length || 0, icon: Users, color: "text-orange-600", bg: "bg-orange-500/10" },
+                    { label: "External Locations", count: ucObjects.external_locations?.length || 0, icon: Globe, color: "text-[#E8453C]", bg: "bg-muted/300/10" },
+                    { label: "Storage Credentials", count: ucObjects.storage_credentials?.length || 0, icon: Key, color: "text-muted-foreground", bg: "bg-muted/200/10" },
+                    { label: "Connections", count: ucObjects.connections?.length || 0, icon: GitCompare, color: "text-muted-foreground", bg: "bg-muted/30" },
+                    { label: "Registered Models", count: ucObjects.registered_models?.length || 0, icon: Brain, color: "text-muted-foreground", bg: "bg-muted/200/10" },
+                    { label: "Shares", count: ucObjects.shares?.length || 0, icon: Share2, color: "text-foreground", bg: "bg-muted/200/10" },
+                    { label: "Recipients", count: ucObjects.recipients?.length || 0, icon: Users, color: "text-muted-foreground", bg: "bg-muted/200/10" },
                   ].map(({ label, count, icon: Icon, color, bg }) => (
                     <Card key={label} className="bg-card border-border">
                       <CardContent className="pt-4 pb-3">
@@ -1379,12 +1379,12 @@ export default function ExplorePage() {
                 {(ucObjects.external_locations?.length > 0) && (
                   <DataTable data={ucObjects.external_locations} columns={[
                     { key: "name", label: "Name", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-blue-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-[#E8453C] shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "url", label: "URL", sortable: true, render: (v: string) => <span className="text-xs font-mono text-muted-foreground truncate max-w-[300px] block">{v || "—"}</span> },
                     { key: "credential_name", label: "Credential", sortable: true, render: (v: string) => v ? <Badge variant="outline" className="text-[10px]">{v}</Badge> : <span className="text-xs text-muted-foreground">—</span> },
                     { key: "owner", label: "Owner", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
-                    { key: "read_only", label: "Read Only", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-600">Read Only</Badge> : null },
+                    { key: "read_only", label: "Read Only", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">Read Only</Badge> : null },
                   ]} searchable searchPlaceholder="Filter external locations..." pageSize={15}
                     emptyMessage="No external locations" />
                 )}
@@ -1393,11 +1393,11 @@ export default function ExplorePage() {
                 {(ucObjects.storage_credentials?.length > 0) && (
                   <DataTable data={ucObjects.storage_credentials} columns={[
                     { key: "name", label: "Name", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><Key className="h-3.5 w-3.5 text-amber-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "owner", label: "Owner", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
-                    { key: "read_only", label: "Read Only", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-600">Yes</Badge> : <span className="text-xs text-muted-foreground">No</span> },
-                    { key: "used_for_managed_storage", label: "Managed Storage", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-600">Yes</Badge> : <span className="text-xs text-muted-foreground">No</span> },
+                    { key: "read_only", label: "Read Only", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">Yes</Badge> : <span className="text-xs text-muted-foreground">No</span> },
+                    { key: "used_for_managed_storage", label: "Managed Storage", sortable: true, render: (v: boolean) => v ? <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">Yes</Badge> : <span className="text-xs text-muted-foreground">No</span> },
                     { key: "comment", label: "Comment", sortable: false, render: (v: string) => <span className="text-xs text-muted-foreground truncate max-w-[200px] block">{v || "—"}</span> },
                   ]} searchable searchPlaceholder="Filter credentials..." pageSize={15}
                     emptyMessage="No storage credentials" />
@@ -1407,7 +1407,7 @@ export default function ExplorePage() {
                 {(ucObjects.connections?.length > 0) && (
                   <DataTable data={ucObjects.connections} columns={[
                     { key: "name", label: "Name", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><GitCompare className="h-3.5 w-3.5 text-cyan-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><GitCompare className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "connection_type", label: "Type", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
                     { key: "owner", label: "Owner", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
@@ -1420,7 +1420,7 @@ export default function ExplorePage() {
                 {(ucObjects.registered_models?.length > 0) && (
                   <DataTable data={ucObjects.registered_models} columns={[
                     { key: "name", label: "Model", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><Brain className="h-3.5 w-3.5 text-purple-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><Brain className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "catalog_name", label: "Catalog", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                     { key: "schema_name", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
@@ -1434,7 +1434,7 @@ export default function ExplorePage() {
                 {(ucObjects.shares?.length > 0) && (
                   <DataTable data={ucObjects.shares} columns={[
                     { key: "name", label: "Share", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><Share2 className="h-3.5 w-3.5 text-green-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><Share2 className="h-3.5 w-3.5 text-foreground shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "owner", label: "Owner", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                     { key: "comment", label: "Comment", sortable: false, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
@@ -1446,7 +1446,7 @@ export default function ExplorePage() {
                 {(ucObjects.recipients?.length > 0) && (
                   <DataTable data={ucObjects.recipients} columns={[
                     { key: "name", label: "Recipient", sortable: true, render: (v: string) => (
-                      <div className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-orange-500 shrink-0" /><span className="text-sm font-medium">{v}</span></div>
+                      <div className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="text-sm font-medium">{v}</span></div>
                     )},
                     { key: "authentication_type", label: "Auth Type", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
                     { key: "owner", label: "Owner", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },

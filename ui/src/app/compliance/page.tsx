@@ -21,11 +21,11 @@ import {
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
     case "COMPLIANT":
-      return <Badge className="bg-green-600 text-white">{status}</Badge>;
+      return <Badge className="bg-foreground text-white">{status}</Badge>;
     case "NON_COMPLIANT": case "NON-COMPLIANT":
       return <Badge variant="destructive">NON COMPLIANT</Badge>;
     case "WARNING":
-      return <Badge className="bg-yellow-500 text-white">{status}</Badge>;
+      return <Badge className="bg-muted/200 text-white">{status}</Badge>;
     case "ERROR":
       return <Badge variant="destructive">ERROR</Badge>;
     default:
@@ -34,17 +34,17 @@ function statusBadge(status: string) {
 }
 
 function scoreColor(score: number) {
-  if (score >= 80) return "text-green-600 bg-green-50 border-green-200";
-  if (score >= 50) return "text-yellow-600 bg-yellow-50 border-yellow-200";
+  if (score >= 80) return "text-foreground bg-muted/20 border-border";
+  if (score >= 50) return "text-muted-foreground bg-muted/20 border-border";
   return "text-red-600 bg-red-50 border-red-200";
 }
 
 function statusIcon(status: string, size = "h-7 w-7") {
   switch (status?.toUpperCase()) {
     case "COMPLIANT":
-      return <CheckCircle className={`${size} text-green-600`} />;
+      return <CheckCircle className={`${size} text-foreground`} />;
     case "WARNING":
-      return <AlertTriangle className={`${size} text-yellow-600`} />;
+      return <AlertTriangle className={`${size} text-muted-foreground`} />;
     case "NON_COMPLIANT": case "NON-COMPLIANT": case "ERROR":
       return <XCircle className={`${size} text-red-600`} />;
     default:
@@ -62,8 +62,8 @@ function sectionBorder(status: string) {
 }
 
 function scoreBadge(score: number) {
-  if (score >= 80) return <Badge className="bg-green-100 text-green-700 font-bold">{score}%</Badge>;
-  if (score >= 50) return <Badge className="bg-yellow-100 text-yellow-700 font-bold">{score}%</Badge>;
+  if (score >= 80) return <Badge className="bg-muted/40 text-foreground font-bold">{score}%</Badge>;
+  if (score >= 50) return <Badge className="bg-muted/40 text-muted-foreground font-bold">{score}%</Badge>;
   return <Badge className="bg-red-100 text-red-700 font-bold">{score}%</Badge>;
 }
 
@@ -123,7 +123,7 @@ export default function CompliancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Compliance"
         icon={ShieldCheck}
@@ -222,11 +222,11 @@ export default function CompliancePage() {
           <Card className="bg-card border-border">
             <CardContent className="pt-6 pb-5">
               <div className="flex items-center gap-4">
-                <div className="p-2.5 rounded-xl bg-blue-100">
-                  <ClipboardCheck className="h-5 w-5 text-blue-700" />
+                <div className="p-2.5 rounded-xl bg-muted/50">
+                  <ClipboardCheck className="h-5 w-5 text-[#E8453C]" />
                 </div>
                 <div>
-                  <p className="text-3xl font-extrabold text-blue-700">{summary.total_checks}</p>
+                  <p className="text-3xl font-extrabold text-[#E8453C]">{summary.total_checks}</p>
                   <p className="text-sm font-medium text-foreground/60 mt-0.5">Total Checks</p>
                 </div>
               </div>
@@ -235,11 +235,11 @@ export default function CompliancePage() {
           <Card className="bg-card border-border">
             <CardContent className="pt-6 pb-5">
               <div className="flex items-center gap-4">
-                <div className="p-2.5 rounded-xl bg-green-100">
-                  <CheckCircle className="h-5 w-5 text-green-700" />
+                <div className="p-2.5 rounded-xl bg-muted/40">
+                  <CheckCircle className="h-5 w-5 text-foreground" />
                 </div>
                 <div>
-                  <p className="text-3xl font-extrabold text-green-700">{summary.passed}</p>
+                  <p className="text-3xl font-extrabold text-foreground">{summary.passed}</p>
                   <p className="text-sm font-medium text-foreground/60 mt-0.5">Passed</p>
                 </div>
               </div>
@@ -248,11 +248,11 @@ export default function CompliancePage() {
           <Card className="bg-card border-border">
             <CardContent className="pt-6 pb-5">
               <div className="flex items-center gap-4">
-                <div className="p-2.5 rounded-xl bg-yellow-100">
-                  <AlertTriangle className="h-5 w-5 text-yellow-700" />
+                <div className="p-2.5 rounded-xl bg-muted/40">
+                  <AlertTriangle className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-3xl font-extrabold text-yellow-700">{summary.warnings}</p>
+                  <p className="text-3xl font-extrabold text-muted-foreground">{summary.warnings}</p>
                   <p className="text-sm font-medium text-foreground/60 mt-0.5">Warnings</p>
                 </div>
               </div>

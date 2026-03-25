@@ -13,23 +13,42 @@ from src.auth import clear_cache, ensure_authenticated, get_client, is_databrick
 router = APIRouter()
 
 # ── Server-side session store ──────────────────────────────────────────
-# Maps session_id → authenticated WorkspaceClient so Azure/OAuth/SP logins
-# persist across requests without the frontend needing raw tokens.
-_sessions: dict[str, WorkspaceClient] = {}
+# Maps session_id → (WorkspaceClient, cached_user_info) so Azure/OAuth/SP
+# logins persist across requests without the frontend needing raw tokens.
+# The cached user info avoids a slow current_user.me() call on every status check.
+
+from dataclasses import dataclass
 
 
-def create_session(client: WorkspaceClient) -> str:
-    """Store an authenticated client and return a session ID."""
+@dataclass
+class SessionEntry:
+    client: WorkspaceClient
+    user: str
+    host: str
+    auth_method: str
+
+
+_sessions: dict[str, SessionEntry] = {}
+
+
+def create_session(client: WorkspaceClient, user: str = "", host: str = "", auth_method: str = "") -> str:
+    """Store an authenticated client with user info and return a session ID."""
     session_id = secrets.token_hex(16)
-    _sessions[session_id] = client
+    _sessions[session_id] = SessionEntry(client=client, user=user, host=host, auth_method=auth_method)
     return session_id
+
+
+def get_session(session_id: Optional[str]) -> Optional[SessionEntry]:
+    """Look up a cached session by ID."""
+    if session_id:
+        return _sessions.get(session_id)
+    return None
 
 
 def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
     """Look up a cached client by session ID."""
-    if session_id:
-        return _sessions.get(session_id)
-    return None
+    entry = get_session(session_id)
+    return entry.client if entry else None
 
 
 def delete_session(session_id: Optional[str]):
@@ -46,11 +65,13 @@ async def auto_login():
     try:
         info = ensure_authenticated()
         client = get_client()
-        session_id = create_session(client)
+        user = info.get("user", "")
+        host = info.get("host", "")
+        session_id = create_session(client, user=user, host=host, auth_method="databricks-app")
         return AuthStatus(
             authenticated=True,
-            user=info.get("user"),
-            host=info.get("host"),
+            user=user,
+            host=host,
             auth_method="databricks-app",
             session_id=session_id,
         )
@@ -65,12 +86,15 @@ async def login(req: LoginRequest):
         clear_cache()
         client = get_client(req.host, req.token)
         info = ensure_authenticated(req.host, req.token)
-        session_id = create_session(client)
+        user = info.get("user", "")
+        host = info.get("host", "")
+        method = info.get("auth_method", "pat")
+        session_id = create_session(client, user=user, host=host, auth_method=method)
         return AuthStatus(
             authenticated=True,
-            user=info.get("user"),
-            host=info.get("host"),
-            auth_method=info.get("auth_method"),
+            user=user,
+            host=host,
+            auth_method=method,
             session_id=session_id,
         )
     except Exception as e:
@@ -82,19 +106,30 @@ async def auth_status(
     client=Depends(get_db_client),
     x_clone_session: Optional[str] = Header(None),
 ):
-    """Check current authentication status using the resolved client or session."""
+    """Check current authentication status.
+
+    Fast path: if a valid session exists, return cached user info instantly
+    (no network call to Databricks). This is what makes page loads fast
+    after Azure/OAuth login.
+    """
+    # Fast path — return cached session info without hitting Databricks API
+    session = get_session(x_clone_session)
+    if session:
+        return AuthStatus(
+            authenticated=True,
+            user=session.user,
+            host=session.host,
+            auth_method=session.auth_method,
+        )
+
+    # Slow path — no session, resolve from client (PAT headers, env vars, CLI profile)
     try:
-        # Try session-based client first (for Azure/OAuth where no frontend tokens exist)
-        session_client = get_session_client(x_clone_session)
-        if session_client:
-            client = session_client
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         host = str(client.config.host or "")
 
         # Determine auth method from the client config
         auth_type = getattr(client.config, "auth_type", None) or ""
-        # Map to user-friendly label
         import os
         profile = os.environ.get("DATABRICKS_CONFIG_PROFILE", "")
         client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
@@ -133,8 +168,10 @@ async def oauth_login(req: OAuthLoginRequest):
         _username = ensure_logged_in(host=req.host, force=True)
         info = ensure_authenticated()
         client = get_client(req.host)
-        session_id = create_session(client)
-        return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="oauth-u2m", session_id=session_id)
+        user = info.get("user", "")
+        host = info.get("host", "")
+        session_id = create_session(client, user=user, host=host, auth_method="oauth-u2m")
+        return AuthStatus(authenticated=True, user=user, host=host, auth_method="oauth-u2m", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -160,7 +197,7 @@ async def service_principal_login(req: ServicePrincipalRequest):
             )
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        session_id = create_session(client)
+        session_id = create_session(client, user=user, host=req.host, auth_method="service-principal")
         return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -169,12 +206,24 @@ async def service_principal_login(req: ServicePrincipalRequest):
 @router.post("/azure-login")
 async def azure_login():
     """Trigger Azure CLI browser login (az login)."""
+    import shutil
     import subprocess
+
+    # Check if Azure CLI is installed before attempting login
+    if not shutil.which("az"):
+        raise HTTPException(
+            status_code=400,
+            detail="Azure CLI (az) is not installed. Install it from https://aka.ms/install-azure-cli then retry.",
+        )
+
     try:
         subprocess.run(["az", "login", "--only-show-errors"], check=True, capture_output=True, timeout=120)
         return {"status": "ok", "message": "Azure login successful"}
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=408, detail="Login timed out")
+    except subprocess.CalledProcessError as e:
+        detail = e.stderr.decode().strip() if e.stderr else "az login failed"
+        raise HTTPException(status_code=401, detail=f"Azure login failed: {detail}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Azure login failed: {e}")
 
@@ -213,7 +262,7 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
         client = WorkspaceClient(config=config)
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        session_id = create_session(client)
+        session_id = create_session(client, user=user, host=req.host, auth_method="azure-cli")
         return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))

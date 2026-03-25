@@ -33,7 +33,7 @@ export default function MetadataSearchPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Metadata Search" icon={Search} breadcrumbs={["Governance", "Search"]} description="Search across all catalogs — find tables, columns, business terms, and tags by keyword." />
 
       <div className="flex gap-3">
@@ -50,7 +50,7 @@ export default function MetadataSearchPage() {
         <>
           <div className="flex gap-1 border-b border-border">
             {tabs.map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === t.key ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === t.key ? "border-[#E8453C] text-[#E8453C]" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 {t.label} {t.count != null && <span className="ml-1 text-xs">({t.count})</span>}
               </button>
             ))}
@@ -61,7 +61,7 @@ export default function MetadataSearchPage() {
               <CardContent><div className="space-y-2">
                 {results.tables.map((t: any, i: number) => (
                   <div key={i} className="flex items-center gap-3 py-2 px-3 rounded border border-border hover:bg-accent/30">
-                    <Table2 className="h-4 w-4 text-blue-500" />
+                    <Table2 className="h-4 w-4 text-[#E8453C]" />
                     <span className="font-mono text-sm font-medium">{t.fqn}</span>
                     <Badge variant="outline" className="text-xs">{t.type}</Badge>
                     {t.comment && <span className="text-xs text-muted-foreground truncate max-w-xs">{t.comment}</span>}
@@ -76,7 +76,7 @@ export default function MetadataSearchPage() {
               <CardContent><div className="space-y-2">
                 {results.columns.map((c: any, i: number) => (
                   <div key={i} className="flex items-center gap-3 py-2 px-3 rounded border border-border hover:bg-accent/30">
-                    <Columns className="h-4 w-4 text-green-500" />
+                    <Columns className="h-4 w-4 text-foreground" />
                     <span className="font-mono text-sm">{c.fqn}</span>
                     <Badge variant="outline" className="text-xs font-mono">{c.type}</Badge>
                     {c.comment && <span className="text-xs text-muted-foreground truncate max-w-xs">{c.comment}</span>}
@@ -91,10 +91,10 @@ export default function MetadataSearchPage() {
               <CardContent><div className="space-y-2">
                 {results.terms.map((t: any, i: number) => (
                   <div key={i} className="flex items-center gap-3 py-2 px-3 rounded border border-border hover:bg-accent/30">
-                    <BookOpen className="h-4 w-4 text-purple-500" />
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium">{t.name}</span>
                     {t.abbreviation && <Badge variant="outline" className="text-xs">{t.abbreviation}</Badge>}
-                    <Badge className={t.status === "approved" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>{t.status}</Badge>
+                    <Badge className={t.status === "approved" ? "bg-muted/40 text-foreground" : "bg-gray-100 text-gray-800"}>{t.status}</Badge>
                     <span className="text-xs text-muted-foreground truncate max-w-sm">{t.definition}</span>
                   </div>
                 ))}

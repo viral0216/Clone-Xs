@@ -32,7 +32,7 @@ export default function ContractsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Data Contracts" icon={FileText} breadcrumbs={["Governance", "Data Contracts"]} description="Define expected schema, quality, and freshness between producer and consumer teams." />
       <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />New Contract</Button>
 
@@ -64,10 +64,10 @@ export default function ContractsPage() {
             <CardContent className="pt-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-blue-500" />
+                  <FileText className="h-5 w-5 text-[#E8453C]" />
                   <span className="font-medium">{c.name}</span>
                   <Badge variant="outline" className="font-mono text-xs">{c.table_fqn}</Badge>
-                  <Badge className={c.status === "active" ? "bg-green-100 text-green-800" : c.status === "violated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{c.status}</Badge>
+                  <Badge className={c.status === "active" ? "bg-muted/40 text-foreground" : c.status === "violated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{c.status}</Badge>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => validate(c.contract_id)} disabled={validating === c.contract_id}>
                   {validating === c.contract_id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}Validate
@@ -81,9 +81,9 @@ export default function ContractsPage() {
               </div>
 
               {validationResult?.contract_id === c.contract_id && (
-                <div className={`rounded-lg p-3 ${validationResult.compliant ? "bg-green-50 dark:bg-green-950/20 border border-green-200" : "bg-red-50 dark:bg-red-950/20 border border-red-200"}`}>
+                <div className={`rounded-lg p-3 ${validationResult.compliant ? "bg-muted/20 dark:bg-white/5 border border-border" : "bg-red-50 dark:bg-red-950/20 border border-red-200"}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    {validationResult.compliant ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                    {validationResult.compliant ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}
                     <span className="text-sm font-medium">{validationResult.compliant ? "Compliant" : "Violations Detected"}</span>
                   </div>
                   {validationResult.violations?.length > 0 && (

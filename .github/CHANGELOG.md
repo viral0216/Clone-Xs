@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-03-25
+
+### Added
+- **Login Page** — dedicated full-screen login page with PAT and Azure CLI auth tabs, shown before main app. Azure wizard: Login → Tenant → Subscription → Workspace selection
+- **Server-Side Sessions** — all login methods (PAT, OAuth, Azure CLI, Service Principal) create server-side sessions with cached WorkspaceClient. Session ID stored in localStorage, sent as X-Clone-Session header. No re-authentication needed after page refresh or browser restart
+- **Settings Page Redesign** — two-panel layout with left sidebar nav + scrollable right content. Sections: Connection, Authentication, Warehouses, Audit, Interface, Performance, Features
+- **Theme Picker** — visual 10-theme grid in Settings (Light, Dark, Midnight, Sunset, High Contrast, Ocean, Forest, Solarized, Rose, Slate) with bi-directional sync to HeaderBar
+- **Sidebar Collapse** — collapsible sidebar with icon-only rail. Toggle at bottom of sidebar + Settings toggle
+- **Warehouse Start Button** — start stopped warehouses directly from Settings with auto-polling for state change
+- **Portal Switcher** — moved to right corner with full keyboard navigation (arrow keys, Escape)
+- **WCAG 2.1 AA Accessibility** — focus-visible outlines, print styles, ARIA tab pattern on login, required field indicators, loading state announcements, reduced-motion support
+- **Databricks-Style Density** — compact typography (18px h1, 13px body), 48px header, tighter card/input/button spacing, 1400px max content width
+
+### Changed
+- **Credential storage** — moved from sessionStorage to localStorage (persists across browser restart)
+- **Dark sidebar colors** — hardcoded colors replaced with CSS variables (sidebar-primary, sidebar-accent) for proper theme support
+- **Typography scale** — h1: 24→18px, h2: 20→15px, body: 14→13px, matching Databricks density
+- **Input height** — h-8 → h-7, text-base → text-[13px]
+- **Card padding** — py-4/px-4 → py-3/px-3, rounded-xl → rounded-lg
+- **Button styling** — text-sm → text-[13px], rounded-lg → rounded-md
+- **Sidebar** — default width 208→180px, nav items use 16px icons (was 20px), 13px font, rounded-md highlight (was rounded-r-full pill)
+- **Page headers** — Clone, Reports, Monitor pages migrated to shared PageHeader component with breadcrumbs
+- **Muted text contrast** — bumped from oklch(0.40) to oklch(0.45) for WCAG AA 4.5:1 ratio
+
+### Fixed
+- **Azure CLI browser open** — prevented Databricks SDK from opening browser when az CLI not installed. Added shutil.which("az") guard and replaced bare WorkspaceClient() fallback with clear error
+- **SQL warehouse retry spam** — "warehouse not found" and "not a valid endpoint" now fail immediately instead of retrying 3x with backoff. Empty warehouse ID caught before any API call
+- **Global error toasts** — actionable errors (missing warehouse, expired session, auth failure) now show toast notifications automatically from api-client, debounced to avoid spam
+- **Environment tab removed** — removed from Settings UI
+
+### Removed
+- **Environment section** from Settings UI (was showing env vars)
+
 ## [0.6.0] - 2026-03-17
 
 ### Added

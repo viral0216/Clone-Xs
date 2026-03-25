@@ -19,7 +19,11 @@ class SlackNotifyPlugin(ClonePlugin):
 
     def _get_webhook_url(self, config):
         """Get Slack webhook URL from config or environment."""
-        return config.get("slack_webhook_url") or os.environ.get("CLONE_XS_SLACK_WEBHOOK_URL")
+        return (
+            config.get("slack", {}).get("webhook_url")
+            or config.get("slack_webhook_url")
+            or os.environ.get("CLONE_XS_SLACK_WEBHOOK_URL")
+        )
 
     def _send_slack_message(self, webhook_url, message):
         """Send a message to Slack via incoming webhook."""
@@ -30,7 +34,8 @@ class SlackNotifyPlugin(ClonePlugin):
             headers={"Content-Type": "application/json"},
         )
         try:
-            urllib.request.urlopen(req, timeout=10)
+            with urllib.request.urlopen(req, timeout=10):
+                pass  # response closed by context manager
             logger.debug("[SlackNotifyPlugin] Message sent to Slack")
         except Exception as e:
             logger.warning(f"[SlackNotifyPlugin] Failed to send Slack message: {e}")

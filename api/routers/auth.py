@@ -3,6 +3,8 @@
 import logging
 import secrets
 import threading
+import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 from databricks.sdk import WorkspaceClient
@@ -17,11 +19,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Server-side session store ──────────────────────────────────────────
-# Maps session_id → (WorkspaceClient, cached_user_info) so Azure/OAuth/SP
-# logins persist across requests without the frontend needing raw tokens.
-# The cached user info avoids a slow current_user.me() call on every status check.
+# Maps session_id → SessionEntry so Azure/OAuth/SP logins persist across
+# requests without the frontend needing raw tokens.
+# Thread-safe via _sessions_lock; entries expire after SESSION_TTL_SECONDS.
 
-from dataclasses import dataclass
+SESSION_TTL_SECONDS = 8 * 60 * 60  # 8 hours
+MAX_SESSIONS = 100
 
 
 @dataclass
@@ -30,23 +33,44 @@ class SessionEntry:
     user: str
     host: str
     auth_method: str
+    created_at: float = field(default_factory=time.monotonic)
 
 
 _sessions: dict[str, SessionEntry] = {}
+_sessions_lock = threading.Lock()
+
+
+def _evict_expired() -> None:
+    """Remove expired sessions. Must be called with _sessions_lock held."""
+    now = time.monotonic()
+    expired = [sid for sid, entry in _sessions.items() if now - entry.created_at > SESSION_TTL_SECONDS]
+    for sid in expired:
+        del _sessions[sid]
 
 
 def create_session(client: WorkspaceClient, user: str = "", host: str = "", auth_method: str = "") -> str:
     """Store an authenticated client with user info and return a session ID."""
     session_id = secrets.token_hex(16)
-    _sessions[session_id] = SessionEntry(client=client, user=user, host=host, auth_method=auth_method)
+    with _sessions_lock:
+        _evict_expired()
+        # Cap session count to prevent unbounded growth
+        if len(_sessions) >= MAX_SESSIONS:
+            oldest = min(_sessions, key=lambda s: _sessions[s].created_at)
+            del _sessions[oldest]
+        _sessions[session_id] = SessionEntry(client=client, user=user, host=host, auth_method=auth_method)
     return session_id
 
 
 def get_session(session_id: Optional[str]) -> Optional[SessionEntry]:
-    """Look up a cached session by ID."""
-    if session_id:
-        return _sessions.get(session_id)
-    return None
+    """Look up a cached session by ID. Returns None if expired."""
+    if not session_id:
+        return None
+    with _sessions_lock:
+        entry = _sessions.get(session_id)
+        if entry and (time.monotonic() - entry.created_at > SESSION_TTL_SECONDS):
+            del _sessions[session_id]
+            return None
+        return entry
 
 
 def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
@@ -57,8 +81,9 @@ def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
 
 def delete_session(session_id: Optional[str]):
     """Remove a session from the store."""
-    if session_id and session_id in _sessions:
-        del _sessions[session_id]
+    if session_id:
+        with _sessions_lock:
+            _sessions.pop(session_id, None)
 
 
 def _auto_start_warehouse(client: WorkspaceClient):
@@ -161,10 +186,14 @@ async def login(req: LoginRequest):
 
 @router.get("/status")
 async def auth_status(
-    client=Depends(get_db_client),
+    x_databricks_host: Optional[str] = Header(None),
+    x_databricks_token: Optional[str] = Header(None),
     x_clone_session: Optional[str] = Header(None),
 ):
     """Check current authentication status.
+
+    Does NOT depend on get_db_client so unauthenticated callers get a stable
+    authenticated=false response instead of a 401 error.
 
     Fast path: if a valid session exists, return cached user info instantly
     (no network call to Databricks). This is what makes page loads fast
@@ -180,15 +209,25 @@ async def auth_status(
             auth_method=session.auth_method,
         )
 
-    # Slow path — no session, resolve from client (PAT headers, env vars, CLI profile)
+    # Slow path — try to resolve a client from headers/env without raising 401
     try:
+        import os
+
+        # Databricks App runtime
+        if is_databricks_app():
+            client = get_client()
+        elif x_databricks_host and x_databricks_token:
+            client = get_client(x_databricks_host, x_databricks_token)
+        else:
+            # No credentials at all — report unauthenticated
+            return AuthStatus(authenticated=False)
+
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         host = str(client.config.host or "")
 
         # Determine auth method from the client config
         auth_type = getattr(client.config, "auth_type", None) or ""
-        import os
         profile = os.environ.get("DATABRICKS_CONFIG_PROFILE", "")
         client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
         azure_auth = os.environ.get("DATABRICKS_AUTH_TYPE", "")

@@ -8,8 +8,7 @@ from api.models.governance import (
     GlossaryTermCreate, GlossaryLinkRequest, MetadataSearchRequest,
     DQRuleCreate, DQRunRequest,
     CertificationCreate, CertificationApproval,
-    SLARuleCreate, ChangeTrackRequest,
-    DQXCheckCreate, DQXRunRequest, DQXProfileRequest,
+    SLARuleCreate, DQXCheckCreate, DQXRunRequest, DQXProfileRequest,
 )
 from api.models.odcs import (
     ODCSContractCreate, ODCSContractUpdate, ODCSImportRequest,

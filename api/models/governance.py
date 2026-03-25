@@ -1,7 +1,6 @@
 """Pydantic models for the Governance portal."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
 
 
 # --- Data Dictionary ---

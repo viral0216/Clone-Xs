@@ -11,7 +11,7 @@ Clone-Xs includes a full web interface with 33+ pages for managing Unity Catalog
 make web-start
 ```
 
-The UI runs at `http://localhost:3001` and connects to the API server at `http://localhost:8080`.
+The UI runs at `http://localhost:3001` and connects to the API server (by default) at `http://localhost:8000`.
 
 ## Features
 

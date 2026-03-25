@@ -100,10 +100,10 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
             if col_name.lower() not in existing:
                 try:
                     execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as e:
+                    logger.warning("Failed to add audit column '%s' to %s: %s", col_name, fqn, e)
+    except Exception as e:
+        logger.warning("Failed to check/add audit columns on %s: %s", fqn, e)
 
     logger.info(f"Audit table ready: {fqn}")
     return fqn
@@ -136,14 +136,15 @@ def log_operation_start(
     elif config.get("load_type", "").upper() == "INCREMENTAL":
         clone_mode = "incremental"
 
-    # Determine trigger source
-    trigger = config.get("_trigger", "manual")
+    # Determine trigger source (escape for safe SQL interpolation)
+    trigger = config.get("_trigger", "manual").replace("'", "''")
+    clone_mode = clone_mode.replace("'", "''")
 
     sql = f"""
     INSERT INTO {fqn}
     (operation_id, operation_type, source_catalog, destination_catalog,
      clone_type, started_at, status, user_name, host,
-     clone_mode, trigger, config_json)
+     clone_mode, `trigger`, config_json)
     VALUES
     ('{operation_id}', '{operation_type}', '{source}', '{dest}',
      '{clone_type}', '{now}', 'running', '{user}', '{host}',

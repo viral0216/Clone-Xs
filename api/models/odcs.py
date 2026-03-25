@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
-from typing import Any, Literal, Optional, Union
+from typing import Any, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator

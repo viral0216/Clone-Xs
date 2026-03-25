@@ -1,7 +1,6 @@
 """Job manager — runs clone operations in background threads with log capture."""
 
 import asyncio
-import io
 import logging
 import re
 import sys
@@ -140,6 +139,7 @@ class JobManager:
         src_logger = logging.getLogger("src")
         src_logger.addHandler(log_handler)
         # Ensure INFO level is captured (default root may be WARNING)
+        previous_log_level = src_logger.level
         if src_logger.level > logging.INFO or src_logger.level == logging.NOTSET:
             src_logger.setLevel(logging.INFO)
 
@@ -353,8 +353,9 @@ class JobManager:
             job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR: {e}")
             self._broadcast_sync(loop, job_id, {"type": "error", "error": str(e)})
         finally:
-            # Restore stderr and remove log handler
+            # Restore stderr, log level, and remove log handler
             sys.stderr = original_stderr
+            src_logger.setLevel(previous_log_level)
             src_logger.removeHandler(log_handler)
             self._executor_semaphore.release()
 

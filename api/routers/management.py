@@ -10,7 +10,6 @@ from api.models.management import (
     PreflightRequest,
     RbacPolicyRequest,
     RollbackRequest,
-    ScheduleRequest,
     SyncRequest,
 )
 from api.queue.job_manager import JobManager
@@ -89,7 +88,7 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
 async def get_pii_patterns():
     """Return the effective PII detection patterns (built-in + config)."""
     from src.pii_detection import (
-        COLUMN_NAME_PATTERNS, VALUE_PATTERNS, SUGGESTED_MASKING, build_effective_patterns,
+        COLUMN_NAME_PATTERNS, build_effective_patterns,
     )
     config = await get_app_config()
     pii_config = config.get("pii_detection")
@@ -229,7 +228,7 @@ async def list_catalogs(client=Depends(get_db_client)):
     try:
         catalogs = [c.name for c in client.catalogs.list() if c.name]
         return catalogs
-    except Exception as e:
+    except Exception:
         return []
 
 

@@ -1,6 +1,6 @@
 """Monitor endpoints + WebSocket."""
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config
 

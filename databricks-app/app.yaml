@@ -3,7 +3,7 @@
 #
 # The frontend must be pre-built before deployment:
 #   cd ui && npm ci && npm run build
-# The deploy script (scripts/deploy-databricks-app.sh) handles this automatically.
+# The deploy script (databricks-app/deploy.sh) handles this automatically.
 
 command:
   - /bin/bash

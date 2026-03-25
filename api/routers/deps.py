@@ -1,6 +1,8 @@
 """Dependency analysis endpoints — view/function dependency graphs and creation order."""
 
-from fastapi import APIRouter, Depends
+import re
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config
 from src.client import execute_sql
@@ -8,9 +10,19 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_catalog(catalog: str) -> str:
+    """Validate catalog name is a safe SQL identifier."""
+    if not _IDENTIFIER_RE.match(catalog):
+        raise HTTPException(status_code=400, detail=f"Invalid catalog name: {catalog}")
+    return catalog
+
 
 @router.get("/functions/{catalog}")
 async def list_functions(catalog: str, client=Depends(get_db_client)):
+    catalog = _validate_catalog(catalog)
     """List all user-defined functions across all schemas in a catalog."""
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
@@ -33,13 +45,14 @@ async def list_functions(catalog: str, client=Depends(get_db_client)):
             }
             for r in rows
         ]
-    except Exception as e:
+    except Exception:
         return []
 
 
 @router.get("/views/{catalog}")
 async def list_views(catalog: str, client=Depends(get_db_client)):
     """List all views across all schemas in a catalog."""
+    catalog = _validate_catalog(catalog)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     try:
@@ -59,7 +72,7 @@ async def list_views(catalog: str, client=Depends(get_db_client)):
             }
             for r in rows
         ]
-    except Exception as e:
+    except Exception:
         return []
 
 

@@ -22,41 +22,41 @@ Create a Python file that extends the `ClonePlugin` base class:
 
 ```python
 # plugins/my_plugin.py
-from clone_xs.plugin import ClonePlugin
+from src.plugin_system import ClonePlugin
 
 class MyPlugin(ClonePlugin):
     name = "my-plugin"
     description = "Does something useful before and after cloning"
 
-    def pre_clone(self, context):
+    def on_clone_start(self, config, client, warehouse_id):
         """Called before clone_catalog starts."""
-        print(f"About to clone {context['source']} -> {context['dest']}")
+        print(f"About to clone {config.get('source_catalog')} -> {config.get('destination_catalog')}")
 
-    def post_clone(self, context, result):
+    def on_clone_complete(self, config, summary, client, warehouse_id):
         """Called after clone_catalog completes successfully."""
-        print(f"Clone finished: {result['tables_cloned']} tables cloned")
+        tables = summary.get("tables", {})
+        print(f"Clone finished: {tables.get('success', 0)} tables cloned")
 
-    def on_error(self, context, error):
+    def on_clone_error(self, config, error, client, warehouse_id):
         """Called when an operation fails."""
         print(f"Clone failed: {error}")
 ```
 
 ## Available hooks
 
-Plugins can implement any combination of these 8 hooks:
+Plugins can implement any combination of these 7 hooks:
 
 | Hook | When it runs | Arguments |
 |------|-------------|-----------|
-| `pre_clone` | Before `clone_catalog` starts | `context` |
-| `post_clone` | After `clone_catalog` completes | `context`, `result` |
-| `pre_sync` | Before `sync_catalog` starts | `context` |
-| `post_sync` | After `sync_catalog` completes | `context`, `result` |
-| `on_error` | When any operation fails | `context`, `error` |
-| `on_validate` | After validation runs | `context`, `validation_result` |
-| `on_rollback` | After a rollback operation | `context`, `rollback_result` |
-| `on_complete` | After any operation finishes (success or failure) | `context`, `status` |
+| `on_clone_start` | Before `clone_catalog` starts | `config`, `client`, `warehouse_id` |
+| `on_clone_complete` | After `clone_catalog` completes | `config`, `summary`, `client`, `warehouse_id` |
+| `on_clone_error` | When a clone operation fails | `config`, `error`, `client`, `warehouse_id` |
+| `on_schema_start` | Before processing a schema | `schema_name`, `config`, `client`, `warehouse_id` |
+| `on_schema_complete` | After processing a schema | `schema_name`, `results`, `client`, `warehouse_id` |
+| `on_table_start` | Before cloning a table | `table_fqn`, `config`, `client`, `warehouse_id` |
+| `on_table_complete` | After cloning a table | `table_fqn`, `status`, `client`, `warehouse_id` |
 
-The `context` dict contains operation details: `source`, `dest`, `clone_type`, `config`, `user`, and `timestamp`.
+The `config` dict contains operation details including `source_catalog`, `destination_catalog`, `clone_type`, etc.
 
 ## Built-in plugins
 

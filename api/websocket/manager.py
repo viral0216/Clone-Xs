@@ -1,6 +1,5 @@
 """WebSocket connection manager for broadcasting progress updates."""
 
-import json
 import logging
 
 from fastapi import WebSocket

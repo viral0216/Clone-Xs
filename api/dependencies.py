@@ -53,8 +53,10 @@ async def get_db_client(creds: tuple = Depends(get_credentials)):
             client = get_session_client(session_id)
             if client:
                 return client
-            # Session expired or server restarted — don't fall through to slow methods
-            raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+            # Session expired — fall through to PAT/env if available, otherwise fail
+            from src.auth import is_databricks_app
+            if (not host or not token) and not is_databricks_app():
+                raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
 
         # 2. Databricks App runtime
         from src.auth import is_databricks_app

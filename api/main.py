@@ -287,7 +287,7 @@ from api.dependencies import warehouse_header_middleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=warehouse_header_middleware)
 
 # Custom API docs with Postman-style dark theme
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 import os as _os2
 _docs_html_path = _os2.path.join(_os2.path.dirname(__file__), "static", "docs.html")
 

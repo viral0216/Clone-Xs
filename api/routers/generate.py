@@ -1,8 +1,7 @@
 """IaC and workflow generation endpoints."""
 
-import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
 from api.models.demo import DemoDataRequest
@@ -150,7 +149,7 @@ async def list_clone_xs_jobs(client=Depends(get_db_client)):
                     "tags": tags,
                 })
         return results
-    except Exception as e:
+    except Exception:
         return []
 
 

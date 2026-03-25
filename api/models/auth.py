@@ -35,5 +35,3 @@ class ServicePrincipalRequest(BaseModel):
     auth_type: str = "databricks"  # "databricks" or "azure"
 
 
-class ProfileRequest(BaseModel):
-    profile_name: str

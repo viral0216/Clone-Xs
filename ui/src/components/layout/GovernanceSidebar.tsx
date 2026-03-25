@@ -63,7 +63,7 @@ export default function GovernanceSidebar() {
       <div className="px-4 py-3 border-b border-border">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Governance Portal</p>
       </div>
-      <nav className="py-2">
+      <nav className="py-2" aria-label="Governance navigation">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-1">
             <p className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{section.title}</p>
@@ -75,6 +75,7 @@ export default function GovernanceSidebar() {
                 <Link
                   key={item.href}
                   to={item.href}
+                  aria-current={active ? "page" : undefined}
                   className={`flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
                     active
                       ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 font-medium border-r-2 border-blue-600"

@@ -18,7 +18,6 @@ import {
   Key,
   Globe,
   User,
-  Terminal,
   Download,
   FolderTree,
   DollarSign,
@@ -26,18 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 
-type AuthTab = "profile" | "token" | "oauth" | "azure" | "sp" | "env";
-
-interface Profile {
-  name: string;
-  host?: string;
-  auth_type?: string;
-  has_token?: boolean;
-}
-
-interface EnvVarMap {
-  [key: string]: string | null;
-}
+type AuthTab = "token" | "oauth" | "azure" | "sp";
 
 function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
   const [step, setStep] = useState<"login" | "tenant" | "subscription" | "workspace">("login");
@@ -248,16 +236,6 @@ export default function SettingsPage() {
   const [spAuthType, setSpAuthType] = useState<"databricks" | "azure">("databricks");
   const [spLoading, setSpLoading] = useState(false);
 
-  // Profile state
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [profilesLoading, setProfilesLoading] = useState(false);
-  const [selectedProfile, setSelectedProfile] = useState<string>("");
-  const [profileConnecting, setProfileConnecting] = useState(false);
-
-  // Env vars state
-  const [envVars, setEnvVars] = useState<EnvVarMap>({});
-  const [envLoading, setEnvLoading] = useState(false);
-
   // Warehouse state
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [testingWarehouse, setTestingWarehouse] = useState<string>("");
@@ -314,44 +292,6 @@ export default function SettingsPage() {
     }
   }, [warehouses.data]);
 
-  // Fetch profiles when profile tab is selected
-  useEffect(() => {
-    if (activeTab === "profile") {
-      fetchProfiles();
-    }
-  }, [activeTab]);
-
-  // Fetch env vars when env tab is selected
-  useEffect(() => {
-    if (activeTab === "env") {
-      fetchEnvVars();
-    }
-  }, [activeTab]);
-
-  const fetchProfiles = async () => {
-    setProfilesLoading(true);
-    try {
-      const data = await api.get<Profile[]>("/auth/profiles");
-      setProfiles(data);
-    } catch {
-      toast.error("Failed to load profiles");
-      setProfiles([]);
-    } finally {
-      setProfilesLoading(false);
-    }
-  };
-
-  const fetchEnvVars = async () => {
-    setEnvLoading(true);
-    try {
-      const data = await api.get<EnvVarMap>("/auth/env-vars");
-      setEnvVars(data);
-    } catch {
-      toast.error("Failed to load environment variables");
-    } finally {
-      setEnvLoading(false);
-    }
-  };
 
   const saveCredentials = async () => {
     if (!host || !token) {
@@ -389,26 +329,6 @@ export default function SettingsPage() {
       toast.error(e.message || "OAuth login failed");
     } finally {
       setOauthLoading(false);
-    }
-  };
-
-  const handleUseProfile = async () => {
-    if (!selectedProfile) {
-      toast.error("Select a profile first");
-      return;
-    }
-    setProfileConnecting(true);
-    try {
-      const result = await api.post<{ authenticated: boolean; user?: string }>("/auth/use-profile", { profile_name: selectedProfile });
-      if (result.authenticated) {
-        toast.success(`Connected as ${result.user} via profile "${selectedProfile}"`);
-        auth.refetch();
-        warehouses.refetch();
-      }
-    } catch (e: any) {
-      toast.error(e.message || "Failed to use profile");
-    } finally {
-      setProfileConnecting(false);
     }
   };
 
@@ -461,12 +381,10 @@ export default function SettingsPage() {
   };
 
   const tabs: { key: AuthTab; label: string; icon: React.ReactNode }[] = [
-    { key: "profile", label: "CLI Profile", icon: <Terminal className="h-4 w-4" /> },
     { key: "token", label: "Access Token", icon: <Key className="h-4 w-4" /> },
     { key: "oauth", label: "OAuth Login", icon: <Globe className="h-4 w-4" /> },
     { key: "azure", label: "Azure Login", icon: <Database className="h-4 w-4" /> },
     { key: "sp", label: "Service Principal", icon: <Shield className="h-4 w-4" /> },
-    { key: "env", label: "Environment", icon: <Settings2 className="h-4 w-4" /> },
   ];
 
   return (
@@ -559,60 +477,6 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-6">
-          {/* Tab: CLI Profile */}
-          {activeTab === "profile" && (
-            <div className="space-y-4">
-              {profilesLoading ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading profiles...
-                </div>
-              ) : profiles.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No profiles found in ~/.databrickscfg. Run{" "}
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs">databricks configure</code>{" "}
-                  to create one.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {profiles.map((p) => (
-                    <label
-                      key={p.name}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedProfile === p.name
-                          ? "border-blue-500 bg-blue-500/10"
-                          : "border-border hover:border-border/80 bg-muted"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="profile"
-                        value={p.name}
-                        checked={selectedProfile === p.name}
-                        onChange={() => setSelectedProfile(p.name)}
-                        className="text-blue-600"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{p.name}</span>
-                          {p.auth_type && <Badge variant="outline" className="text-xs">{p.auth_type}</Badge>}
-                          {p.has_token && <Badge className="bg-green-500/15 text-green-500 text-xs">has token</Badge>}
-                        </div>
-                        {p.host && (
-                          <span className="text-xs text-muted-foreground font-mono truncate block">{p.host}</span>
-                        )}
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-              <Button onClick={handleUseProfile} disabled={!selectedProfile || profileConnecting}>
-                {profileConnecting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                Use This Profile
-              </Button>
-            </div>
-          )}
-
           {/* Tab: Access Token */}
           {activeTab === "token" && (
             <div className="space-y-4">
@@ -740,51 +604,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Tab: Environment */}
-          {activeTab === "env" && (
-            <div className="space-y-4">
-              {envLoading ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading environment variables...
-                </div>
-              ) : (
-                <>
-                  <div className="border border-border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Variable</th>
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Value</th>
-                          <th className="text-center px-4 py-2 font-medium text-muted-foreground">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {Object.entries(envVars).map(([key, val]) => (
-                          <tr key={key} className="hover:bg-muted/50">
-                            <td className="px-4 py-2 font-mono text-xs">{key}</td>
-                            <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                              {val || <span className="text-muted-foreground/40">--</span>}
-                            </td>
-                            <td className="px-4 py-2 text-center">
-                              {val ? (
-                                <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
-                              ) : (
-                                <XCircle className="h-4 w-4 text-muted-foreground/40 inline-block" />
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-muted-foreground/70">
-                    Set environment variables before starting the server. Sensitive values are masked for display.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>}
 
@@ -1340,7 +1159,7 @@ function FeatureToggles() {
         <div className="space-y-6">
           {allNavSections.map((section: any) => (
             <div key={section.title}>
-              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{section.title}</h4>
+              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2" style={{ fontSize: '14px' }}>{section.title}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {section.items.map((item: any) => {
                   const isCore = item.href === "/" || item.href === "/settings";

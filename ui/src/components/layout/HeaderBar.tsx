@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Sun, Moon, Settings2, Wifi, WifiOff, Menu, Search,
+  Sun, Moon, Sparkles, Sunset, Contrast, Waves, TreePine, Eclipse, Flower2, Mountain,
+  Settings2, Wifi, WifiOff, Menu, Search, Palette, Check,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
@@ -47,13 +48,30 @@ interface HeaderBarProps {
   onMenuToggle?: () => void;
 }
 
+type Theme = "light" | "dark" | "midnight" | "sunset" | "high-contrast" | "ocean" | "forest" | "solarized" | "rose" | "slate";
+
+const THEMES: { id: Theme; label: string; icon: React.ComponentType<{ className?: string }>; classes: string[] }[] = [
+  { id: "light", label: "Light", icon: Sun, classes: [] },
+  { id: "dark", label: "Dark", icon: Moon, classes: ["dark"] },
+  { id: "midnight", label: "Midnight", icon: Sparkles, classes: ["dark", "midnight"] },
+  { id: "sunset", label: "Sunset", icon: Sunset, classes: ["dark", "sunset"] },
+  { id: "high-contrast", label: "High Contrast", icon: Contrast, classes: ["dark", "high-contrast"] },
+  { id: "ocean", label: "Ocean", icon: Waves, classes: ["dark", "ocean"] },
+  { id: "forest", label: "Forest", icon: TreePine, classes: ["dark", "forest"] },
+  { id: "solarized", label: "Solarized", icon: Eclipse, classes: ["dark", "solarized"] },
+  { id: "rose", label: "Rose", icon: Flower2, classes: ["dark", "rose"] },
+  { id: "slate", label: "Slate", icon: Mountain, classes: ["dark", "slate"] },
+];
+
+const ALL_THEME_CLASSES = ["dark", "midnight", "sunset", "high-contrast", "ocean", "forest", "solarized", "rose", "slate"];
+
 export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem("theme");
-    if (saved) return saved === "dark";
-    return false;
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem("theme") as Theme | null;
+    if (saved && THEMES.some(t => t.id === saved)) return saved;
+    return "light";
   });
   const [connected, setConnected] = useState(false);
   const [connInfo, setConnInfo] = useState<{user?: string; host?: string; auth_method?: string}>({});
@@ -63,15 +81,25 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const themePickerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (dark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [dark]);
+    const root = document.documentElement.classList;
+    root.remove(...ALL_THEME_CLASSES);
+    const cfg = THEMES.find(t => t.id === theme);
+    if (cfg) cfg.classes.forEach(c => root.add(c));
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  // Close theme picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (themePickerRef.current && !themePickerRef.current.contains(e.target as Node)) setThemePickerOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => {
     const check = () => {
@@ -139,7 +167,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
       {/* Left */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (
-          <button onClick={onMenuToggle} className={`lg:hidden ${iconBtn}`}>
+          <button onClick={onMenuToggle} className={`lg:hidden ${iconBtn}`} aria-label="Toggle navigation menu">
             <Menu className="h-5 w-5" />
           </button>
         )}
@@ -155,7 +183,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
       {/* Center — Search with results dropdown */}
       <div className="hidden md:flex items-center flex-1 max-w-md mx-8 relative">
         <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
@@ -164,6 +192,12 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
             onFocus={() => query && setShowResults(true)}
             onKeyDown={handleKeyDown}
             placeholder="Search pages, commands..."
+            role="combobox"
+            aria-expanded={showResults && results.length > 0}
+            aria-autocomplete="list"
+            aria-controls="header-search-results"
+            aria-activedescendant={showResults && results[selectedIdx] ? `search-result-${selectedIdx}` : undefined}
+            aria-label="Search pages"
             className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
@@ -172,12 +206,18 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
         {showResults && results.length > 0 && (
           <div
             ref={resultsRef}
+            id="header-search-results"
+            role="listbox"
+            aria-label="Search results"
             className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-white/10 rounded-lg shadow-lg overflow-hidden z-50"
           >
             {results.map((page, i) => (
               <Link
                 key={page.href}
                 to={page.href}
+                id={`search-result-${i}`}
+                role="option"
+                aria-selected={i === selectedIdx}
                 onClick={() => { setShowResults(false); setQuery(""); }}
                 className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                   i === selectedIdx
@@ -202,12 +242,16 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
       {/* Right */}
       <div className="flex items-center gap-0.5">
         <div className="relative group">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-default ${
-            connected
-              ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
-              : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
-          }`}>
-            {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+          <div
+            role="status"
+            aria-label={connected ? "Connected to Databricks" : "Disconnected from Databricks"}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-default ${
+              connected
+                ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+            }`}
+          >
+            {connected ? <Wifi className="h-3 w-3" aria-hidden="true" /> : <WifiOff className="h-3 w-3" aria-hidden="true" />}
             <span className="hidden sm:inline">{connected ? "Connected" : "Offline"}</span>
           </div>
           {connected && connInfo.user && (
@@ -231,10 +275,40 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
         </div>
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1.5 hidden sm:block" />
         <NotificationPanel />
-        <button onClick={() => setDark(p => !p)} className={iconBtn} title={dark ? "Light mode" : "Dark mode"}>
-          {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-        <Link to="/settings" className={iconBtn} title="Settings"><Settings2 className="h-4 w-4" /></Link>
+        <div className="relative" ref={themePickerRef}>
+          <button
+            onClick={() => setThemePickerOpen(p => !p)}
+            className={iconBtn}
+            title="Change theme"
+            aria-label="Change theme"
+            aria-expanded={themePickerOpen}
+            aria-haspopup="listbox"
+          >
+            <Palette className="h-4 w-4" />
+          </button>
+          {themePickerOpen && (
+            <div className="absolute right-0 top-full mt-2 w-48 bg-card border border-border rounded-lg shadow-lg z-50 py-1 overflow-hidden" role="listbox" aria-label="Select theme">
+              {THEMES.map(t => {
+                const Icon = t.icon;
+                const active = theme === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => { setTheme(t.id); setThemePickerOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left ${active ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1">{t.label}</span>
+                    {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <Link to="/settings" className={iconBtn} title="Settings" aria-label="Settings"><Settings2 className="h-4 w-4" /></Link>
       </div>
     </header>
   );

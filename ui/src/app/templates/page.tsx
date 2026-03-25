@@ -205,9 +205,9 @@ export default function TemplatesPage() {
 
                   {/* Name + Description */}
                   <div>
-                    <h3 className="font-semibold text-foreground group-hover:text-blue-600 transition-colors">
+                    <h2 className="font-semibold text-foreground group-hover:text-blue-600 transition-colors" style={{ fontSize: '16px' }}>
                       {t.name}
-                    </h3>
+                    </h2>
                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                       {t.description}
                     </p>

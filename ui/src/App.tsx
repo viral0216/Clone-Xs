@@ -1,5 +1,5 @@
-import { useState, lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { useState, useEffect, lazy, Suspense } from "react";
+import { Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
@@ -56,11 +56,30 @@ const GovODCSDetail = lazy(() => import("@/app/governance/odcs/[id]/page"));
 const GovODCSValidate = lazy(() => import("@/app/governance/odcs/validate/[id]/page"));
 const GovDQX = lazy(() => import("@/app/governance/dqx/page"));
 
+function RouteAnnouncer() {
+  const location = useLocation();
+  const [announcement, setAnnouncement] = useState("");
+  useEffect(() => {
+    const name = location.pathname === "/"
+      ? "Dashboard"
+      : location.pathname.slice(1).split(/[-/]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    setAnnouncement(`Navigated to ${name}`);
+  }, [location.pathname]);
+  return <div aria-live="assertive" aria-atomic="true" className="sr-only">{announcement}</div>;
+}
+
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-lg focus:text-sm focus:font-medium"
+      >
+        Skip to main content
+      </a>
+      <RouteAnnouncer />
       <Toaster richColors position="top-right" />
       <div className="flex flex-col h-screen">
         {/* Top Header Bar */}
@@ -77,7 +96,7 @@ export default function App() {
           </Routes>
 
           {/* Center Content */}
-          <main className="flex-1 bg-background overflow-auto p-3 sm:p-4 md:p-6">
+          <main id="main-content" className="flex-1 bg-background overflow-auto p-3 sm:p-4 md:p-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />

@@ -1180,9 +1180,9 @@ export default function ExplorePage() {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <h2 className="text-sm font-semibold text-foreground flex items-center gap-2" style={{ fontSize: '16px' }}>
                         <ShieldAlert className="h-4 w-4 text-red-500" />PII Column Detection
-                      </h3>
+                      </h2>
                       <p className="text-xs text-muted-foreground mt-1">
                         Scan tables for columns that may contain personally identifiable information (SSN, email, phone, etc.)
                       </p>

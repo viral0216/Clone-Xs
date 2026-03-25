@@ -661,7 +661,7 @@ export default function DQXPage() {
           {tab === "profile" && (
             <div className="space-y-4">
               <Card><CardContent className="pt-4 space-y-4">
-                <h3 className="text-sm font-medium flex items-center gap-2"><Wand2 className="h-4 w-4 text-purple-600" />Profile & Auto-Generate DQX Checks</h3>
+                <h2 className="text-sm font-medium flex items-center gap-2" style={{ fontSize: '16px' }}><Wand2 className="h-4 w-4 text-purple-600" />Profile & Auto-Generate DQX Checks</h2>
                 <p className="text-xs text-muted-foreground">DQX Profiler analyzes your data to discover patterns (null rates, value distributions, ranges, cardinality) and auto-generates quality checks.</p>
                 <div className="flex gap-3">
                   {(["table", "schema", "catalog"] as const).map((s) => (

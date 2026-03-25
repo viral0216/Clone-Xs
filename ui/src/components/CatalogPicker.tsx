@@ -81,13 +81,13 @@ export default function CatalogPicker({
     <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
       {/* Catalog */}
       <div className="flex-1">
-        <label className="text-sm font-medium mb-1 block">Catalog</label>
+        <label htmlFor="catalog-picker-catalog" className="text-sm font-medium mb-1 block">Catalog</label>
         {loadingCatalogs ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading catalogs...
           </div>
         ) : catalogs.length > 0 ? (
-          <select className={selectClass} value={catalog} onChange={(e) => {
+          <select id="catalog-picker-catalog" className={selectClass} value={catalog} onChange={(e) => {
             onCatalogChange(e.target.value);
             onSchemaChange?.("");
             onTableChange?.("");
@@ -97,6 +97,7 @@ export default function CatalogPicker({
           </select>
         ) : (
           <input
+            id="catalog-picker-catalog"
             className={selectClass}
             value={catalog}
             onChange={(e) => onCatalogChange(e.target.value)}
@@ -108,13 +109,13 @@ export default function CatalogPicker({
       {/* Schema */}
       {showSchema && (
         <div className="flex-1">
-          <label className="text-sm font-medium mb-1 block">{schemaLabel}</label>
+          <label htmlFor="catalog-picker-schema" className="text-sm font-medium mb-1 block">{schemaLabel}</label>
           {loadingSchemas ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
             </div>
           ) : schemas.length > 0 ? (
-            <select className={selectClass} value={schema} onChange={(e) => {
+            <select id="catalog-picker-schema" className={selectClass} value={schema} onChange={(e) => {
               onSchemaChange?.(e.target.value);
               onTableChange?.("");
             }}>
@@ -123,38 +124,44 @@ export default function CatalogPicker({
             </select>
           ) : (
             <input
+              id="catalog-picker-schema"
               className={selectClass}
               value={schema}
               onChange={(e) => onSchemaChange?.(e.target.value)}
               placeholder={catalog ? "No schemas found" : "Select catalog first"}
               disabled={!catalog}
+              aria-describedby={!catalog ? "schema-hint" : undefined}
             />
           )}
+          {!catalog && <span id="schema-hint" className="sr-only">Select a catalog first to browse schemas</span>}
         </div>
       )}
 
       {/* Table */}
       {showTable && (
         <div className="flex-1">
-          <label className="text-sm font-medium mb-1 block">{tableLabel}</label>
+          <label htmlFor="catalog-picker-table" className="text-sm font-medium mb-1 block">{tableLabel}</label>
           {loadingTables ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
             </div>
           ) : tables.length > 0 ? (
-            <select className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
+            <select id="catalog-picker-table" className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
               <option value="">All tables</option>
               {tables.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           ) : (
             <input
+              id="catalog-picker-table"
               className={selectClass}
               value={table}
               onChange={(e) => onTableChange?.(e.target.value)}
               placeholder={schema ? "No tables found" : "Select schema first"}
               disabled={!schema}
+              aria-describedby={!schema ? "table-hint" : undefined}
             />
           )}
+          {!schema && <span id="table-hint" className="sr-only">Select a schema first to browse tables</span>}
         </div>
       )}
     </div>

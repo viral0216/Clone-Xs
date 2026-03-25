@@ -40,18 +40,21 @@ export default function NotificationPanel() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
+        aria-label={count > 0 ? `${count} notifications` : "Notifications"}
+        aria-expanded={open}
+        aria-haspopup="true"
         className="relative p-1.5 rounded-md hover:bg-muted transition-colors"
       >
-        <Bell className="h-4 w-4 text-muted-foreground" />
+        <Bell className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
+          <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full" aria-hidden="true">
             {count > 99 ? "99+" : count}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden" role="region" aria-label="Notifications" aria-live="polite">
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
             <p className="text-xs text-muted-foreground">{count} recent events</p>

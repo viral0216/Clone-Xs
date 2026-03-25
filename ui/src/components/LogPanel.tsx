@@ -84,22 +84,24 @@ export default function LogPanel({
           </span>
           <div className="flex items-center gap-1.5">
             {errorCount > 0 && (
-              <Badge
-                variant={filter === "errors" ? "default" : "outline"}
-                className="text-[10px] cursor-pointer text-red-500 border-red-500/30 px-1.5"
-                onClick={() => setFilter(filter === "errors" ? "all" : "errors")}
-              >
-                {errorCount} errors
-              </Badge>
+              <button type="button" onClick={() => setFilter(filter === "errors" ? "all" : "errors")} aria-pressed={filter === "errors"} aria-label={`Filter ${errorCount} errors`}>
+                <Badge
+                  variant={filter === "errors" ? "default" : "outline"}
+                  className="text-[10px] cursor-pointer text-red-500 border-red-500/30 px-1.5"
+                >
+                  {errorCount} errors
+                </Badge>
+              </button>
             )}
             {warnCount > 0 && (
-              <Badge
-                variant={filter === "warnings" ? "default" : "outline"}
-                className="text-[10px] cursor-pointer text-yellow-500 border-yellow-500/30 px-1.5"
-                onClick={() => setFilter(filter === "warnings" ? "all" : "warnings")}
-              >
-                {warnCount} warn
-              </Badge>
+              <button type="button" onClick={() => setFilter(filter === "warnings" ? "all" : "warnings")} aria-pressed={filter === "warnings"} aria-label={`Filter ${warnCount} warnings`}>
+                <Badge
+                  variant={filter === "warnings" ? "default" : "outline"}
+                  className="text-[10px] cursor-pointer text-yellow-500 border-yellow-500/30 px-1.5"
+                >
+                  {warnCount} warn
+                </Badge>
+              </button>
             )}
             <Badge variant="outline" className="text-[10px] px-1.5">{logs.length} lines</Badge>
             {/* Auto-scroll toggle */}
@@ -108,19 +110,20 @@ export default function LogPanel({
               size="sm"
               className={`h-6 px-1.5 ${autoScroll ? "text-blue-500" : "text-muted-foreground"}`}
               onClick={() => setAutoScroll(!autoScroll)}
+              aria-label={autoScroll ? "Disable auto-scroll" : "Enable auto-scroll"}
               title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to enable"}
             >
               <ArrowDownToLine className="h-3 w-3" />
             </Button>
             {collapsible && (
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setExpanded(!expanded)}>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "Collapse logs" : "Expand logs"} aria-expanded={expanded}>
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleCopy} title="Copy logs">
+            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleCopy} aria-label="Copy logs to clipboard" title="Copy logs">
               {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
             </Button>
-            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleDownload} title="Download logs">
+            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={handleDownload} aria-label="Download logs" title="Download logs">
               <Download className="h-3 w-3" />
             </Button>
           </div>
@@ -129,6 +132,9 @@ export default function LogPanel({
       <CardContent>
         <div
           ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-label="Operation log output"
           className={`bg-[#0d1117] text-gray-300 p-3 rounded-lg font-mono text-xs overflow-y-auto ${heightClass}`}
           onWheel={() => {
             // User scrolled manually — disable auto-scroll

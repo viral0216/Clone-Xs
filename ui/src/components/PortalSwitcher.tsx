@@ -28,21 +28,26 @@ export default function PortalSwitcher() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Portal: ${current.label}`}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-accent/50 transition-colors"
       >
-        <current.icon className="h-4 w-4 text-red-500" />
+        <current.icon className="h-4 w-4 text-red-500" aria-hidden="true" />
         <span className="text-sm font-semibold text-foreground">{current.label}</span>
-        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 py-1">
+        <div className="absolute top-full left-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 py-1" role="listbox" aria-label="Select portal">
           {PORTALS.map((portal) => {
             const Icon = portal.icon;
             const isActive = portal.id === current.id;
             return (
               <button
                 key={portal.id}
+                role="option"
+                aria-selected={isActive}
                 onClick={() => { navigate(portal.path); setOpen(false); }}
                 className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors ${isActive ? "bg-accent/30" : ""}`}
               >

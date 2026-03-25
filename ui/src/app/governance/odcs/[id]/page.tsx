@@ -256,7 +256,7 @@ function FundamentalsTab({ doc, upd }: any) {
   return (
     <div className="space-y-4">
       <Card><CardContent className="pt-4 space-y-3">
-        <h3 className="text-sm font-medium">Identity</h3>
+        <h2 className="text-sm font-medium" style={{ fontSize: '16px' }}>Identity</h2>
         <div className="grid grid-cols-3 gap-3">
           <div><label className="text-xs text-muted-foreground">Name *</label>
             <Input value={doc.name || ""} onChange={(e) => upd("name", e.target.value)} placeholder="Contract name" /></div>
@@ -280,7 +280,7 @@ function FundamentalsTab({ doc, upd }: any) {
       </CardContent></Card>
 
       <Card><CardContent className="pt-4 space-y-3">
-        <h3 className="text-sm font-medium">Description</h3>
+        <h2 className="text-sm font-medium" style={{ fontSize: '16px' }}>Description</h2>
         <div><label className="text-xs text-muted-foreground">Purpose</label>
           <textarea className="w-full border rounded p-2 text-sm bg-background min-h-[60px]"
             value={doc.description?.purpose || ""} onChange={(e) => upd("description.purpose", e.target.value)} placeholder="What is this data used for?" /></div>
@@ -344,7 +344,7 @@ function SchemaTab({ doc, upd, addToArray, removeFromArray, onAutoDetect }: any)
               {/* Properties (columns) */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-medium">Properties (Columns)</h4>
+                  <h3 className="text-xs font-medium" style={{ fontSize: '14px' }}>Properties (Columns)</h3>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addToArray(`schema.${i}.properties`, { name: "", physicalName: "", logicalType: "string", physicalType: "", required: false, unique: false, primaryKey: false, description: "", classification: "", criticalDataElement: false })}>
                     <Plus className="h-3 w-3 mr-1" />Column
                   </Button>
@@ -537,7 +537,7 @@ function TeamTab({ doc, upd, addToArray, removeFromArray }: any) {
       </CardContent></Card>
 
       <div className="flex items-center gap-2">
-        <h4 className="text-sm font-medium">Members</h4>
+        <h3 className="text-sm font-medium" style={{ fontSize: '14px' }}>Members</h3>
         <Button size="sm" variant="outline" onClick={() => {
           const members = [...(team.members || []), { username: "", role: "", dateIn: "", dateOut: "" }];
           upd("team.members", members);
@@ -692,7 +692,7 @@ function PricingTab({ doc, upd }: any) {
   const price = doc.price || {};
   return (
     <Card><CardContent className="pt-4 space-y-3">
-      <h3 className="text-sm font-medium">Pricing</h3>
+      <h2 className="text-sm font-medium" style={{ fontSize: '16px' }}>Pricing</h2>
       <div className="grid grid-cols-3 gap-3">
         <div><label className="text-xs text-muted-foreground">Amount</label>
           <Input type="number" step="0.01" value={price.priceAmount ?? ""} onChange={(e) => upd("price.priceAmount", parseFloat(e.target.value) || 0)} /></div>

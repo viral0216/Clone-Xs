@@ -42,6 +42,7 @@ interface DataTableProps {
   compact?: boolean;
   draggableColumns?: boolean;  // Opt-in column reordering via drag
   tableId?: string;            // localStorage key — required when draggableColumns is true
+  caption?: string;            // WCAG: accessible table description (sr-only)
 }
 
 type SortDir = "asc" | "desc" | null;
@@ -70,37 +71,46 @@ function SortableColumnHeader({
     width: col.width || undefined,
   };
 
+  const ariaSortValue = isSorted ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+
   return (
     <th
       ref={setNodeRef}
       style={style}
+      scope="col"
+      aria-sort={col.sortable ? ariaSortValue : undefined}
       className={`${py} ${px} font-medium text-muted-foreground text-${col.align || "left"} ${col.headerClassName || ""} ${col.sortable ? "select-none hover:text-foreground transition-colors" : ""}`}
     >
       <span className="inline-flex items-center gap-1">
         {draggable && (
           <span
             className="inline-flex cursor-grab active:cursor-grabbing touch-none"
+            aria-label="Reorder column"
             {...attributes}
             {...listeners}
           >
             <GripVertical className="h-3 w-3 text-muted-foreground/40 hover:text-muted-foreground transition-colors" />
           </span>
         )}
-        <span
-          className={`inline-flex items-center gap-1 ${col.sortable ? "cursor-pointer" : ""}`}
-          onClick={col.sortable ? () => onSort(col.key) : undefined}
-        >
-          {col.label}
-          {col.sortable && (
-            isSorted ? (
+        {col.sortable ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 font-inherit text-inherit"
+            onClick={() => onSort(col.key)}
+            aria-label={`Sort by ${col.label}`}
+          >
+            {col.label}
+            {isSorted ? (
               sortDir === "asc"
                 ? <ChevronUp className="h-3 w-3 text-blue-600" />
                 : <ChevronDown className="h-3 w-3 text-blue-600" />
             ) : (
               <ChevronsUpDown className="h-3 w-3 opacity-30" />
-            )
-          )}
-        </span>
+            )}
+          </button>
+        ) : (
+          <span>{col.label}</span>
+        )}
       </span>
     </th>
   );
@@ -141,6 +151,7 @@ export default function DataTable({
   compact = false,
   draggableColumns = false,
   tableId,
+  caption,
 }: DataTableProps) {
   const storageKey = draggableColumns && tableId ? `clxs-col-order-${tableId}` : null;
 
@@ -271,22 +282,30 @@ export default function DataTable({
         ) : (
           <th
             key={col.key}
-            className={`${py} ${px} font-medium text-muted-foreground text-${col.align || "left"} ${col.headerClassName || ""} ${col.sortable ? "cursor-pointer select-none hover:text-foreground transition-colors" : ""}`}
+            scope="col"
+            aria-sort={col.sortable ? (sortCol === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none") : undefined}
+            className={`${py} ${px} font-medium text-muted-foreground text-${col.align || "left"} ${col.headerClassName || ""} ${col.sortable ? "select-none hover:text-foreground transition-colors" : ""}`}
             style={col.width ? { width: col.width } : undefined}
-            onClick={col.sortable ? () => handleSort(col.key) : undefined}
           >
-            <span className="inline-flex items-center gap-1">
-              {col.label}
-              {col.sortable && (
-                sortCol === col.key ? (
+            {col.sortable ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 font-inherit text-inherit"
+                onClick={() => handleSort(col.key)}
+                aria-label={`Sort by ${col.label}`}
+              >
+                {col.label}
+                {sortCol === col.key ? (
                   sortDir === "asc"
                     ? <ChevronUp className="h-3 w-3 text-blue-600" />
                     : <ChevronDown className="h-3 w-3 text-blue-600" />
                 ) : (
                   <ChevronsUpDown className="h-3 w-3 opacity-30" />
-                )
-              )}
-            </span>
+                )}
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1">{col.label}</span>
+            )}
           </th>
         )
       )}
@@ -299,13 +318,14 @@ export default function DataTable({
       {(searchable || actions || isReordered) && (
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
           {searchable && (
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <div className="relative flex-1 min-w-[200px] max-w-sm" role="search" aria-label="Search table">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                 placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
                 className="w-full pl-9 pr-3 py-2 text-sm bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
               />
             </div>
@@ -330,6 +350,7 @@ export default function DataTable({
       <div className="border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className={`w-full ${textSize}`}>
+            {caption && <caption className="sr-only">{caption}</caption>}
             <thead className={`bg-muted/50 ${stickyHeader ? "sticky top-0 z-10" : ""}`}>
               {draggableColumns ? (
                 <DndContext
@@ -386,6 +407,7 @@ export default function DataTable({
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={safePage === 0}
+              aria-label="Previous page"
               className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -400,6 +422,8 @@ export default function DataTable({
                 <button
                   key={pageNum}
                   onClick={() => setPage(pageNum)}
+                  aria-label={`Page ${pageNum + 1}`}
+                  aria-current={safePage === pageNum ? "page" : undefined}
                   className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${safePage === pageNum ? "bg-blue-600 text-white" : "hover:bg-muted"}`}
                 >
                   {pageNum + 1}
@@ -409,6 +433,7 @@ export default function DataTable({
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={safePage >= totalPages - 1}
+              aria-label="Next page"
               className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="h-4 w-4" />

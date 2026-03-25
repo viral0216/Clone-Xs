@@ -139,9 +139,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
+      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin" aria-label="Main navigation">
         {getFilteredSections().map((section, sIdx) => {
           const isExpanded = expandedSections.has(section.title);
+          const sectionId = `sidebar-section-${section.title.toLowerCase().replace(/\s/g, '-')}`;
           return (
             <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
               {/* Section label */}
@@ -149,6 +150,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                 onClick={() => toggleSection(section.title)}
                 className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium transition-colors"
                 style={{ color: '#5F6368' }}
+                aria-expanded={isExpanded}
+                aria-controls={sectionId}
               >
                 <span>{section.title}</span>
                 {isExpanded
@@ -158,6 +161,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               </button>
 
               {/* Items */}
+              <div id={sectionId}>
               {isExpanded && section.items.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -166,6 +170,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     key={item.href}
                     to={item.href}
                     onClick={onMobileClose}
+                    aria-current={active ? "page" : undefined}
                     className="flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2"
                     style={active ? {
                       background: '#E8F0FE',
@@ -184,6 +189,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                   </Link>
                 );
               })}
+              </div>
             </div>
           );
         })}
@@ -196,7 +202,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
       {/* Mobile close */}
       {mobileOpen && onMobileClose && (
-        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded lg:hidden" style={{ color: '#5F6368' }}>
+        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded lg:hidden" aria-label="Close navigation menu" style={{ color: '#5F6368' }}>
           <X className="h-4 w-4" />
         </button>
       )}
@@ -218,19 +224,23 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin">
+      <nav className="flex-1 overflow-y-auto pt-1 scrollbar-thin" aria-label="Main navigation">
         {getFilteredSections().map((section, sIdx) => {
           const isExpanded = expandedSections.has(section.title);
+          const sectionId = `sidebar-dark-section-${section.title.toLowerCase().replace(/\s/g, '-')}`;
           return (
             <div key={section.title} className={sIdx > 0 ? "mt-3" : "mt-1"}>
               <button
                 onClick={() => toggleSection(section.title)}
                 className="w-full flex items-center justify-between px-4 py-1 text-[12px] font-medium text-gray-500 hover:text-gray-400 transition-colors"
+                aria-expanded={isExpanded}
+                aria-controls={sectionId}
               >
                 <span>{section.title}</span>
                 {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               </button>
 
+              <div id={sectionId}>
               {isExpanded && section.items.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -239,6 +249,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     key={item.href}
                     to={item.href}
                     onClick={onMobileClose}
+                    aria-current={active ? "page" : undefined}
                     className={`flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2 ${
                       active
                         ? "bg-blue-500/15 text-blue-400 font-medium"
@@ -250,6 +261,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                   </Link>
                 );
               })}
+              </div>
             </div>
           );
         })}
@@ -260,7 +272,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </div>
 
       {mobileOpen && onMobileClose && (
-        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded text-gray-500 lg:hidden">
+        <button onClick={onMobileClose} className="absolute top-3 right-3 p-1 rounded text-gray-500 lg:hidden" aria-label="Close navigation menu">
           <X className="h-4 w-4" />
         </button>
       )}
@@ -270,7 +282,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   return (
     <>
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onMobileClose} />
+        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onMobileClose} aria-hidden="true" />
       )}
 
       {/* Mobile */}

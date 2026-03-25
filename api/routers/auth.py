@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client
-from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ProfileRequest, ServicePrincipalRequest, WarehouseInfo
+from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ServicePrincipalRequest, WarehouseInfo
 from src.auth import clear_cache, ensure_authenticated, get_client, is_databricks_app
 
 router = APIRouter()
@@ -93,28 +93,6 @@ async def oauth_login(req: OAuthLoginRequest):
         _username = ensure_logged_in(host=req.host, force=True)
         info = ensure_authenticated()
         return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="oauth-u2m")
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
-
-
-@router.get("/profiles")
-async def get_profiles():
-    """List available Databricks CLI profiles from ~/.databrickscfg."""
-    from src.auth import list_profiles
-    try:
-        return list_profiles()
-    except Exception:
-        return []
-
-
-@router.post("/use-profile")
-async def use_profile(req: ProfileRequest):
-    """Switch to a specific CLI profile."""
-    try:
-        clear_cache()
-        get_client(profile=req.profile_name)
-        info = ensure_authenticated(profile=req.profile_name)
-        return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method=f"cli-profile:{req.profile_name}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 

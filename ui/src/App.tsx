@@ -1,6 +1,9 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
+import { Loader2 } from "lucide-react";
+import { api } from "@/lib/api-client";
+import LoginPage from "@/app/login/page";
 import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
 import Dashboard from "@/app/page";
@@ -70,6 +73,56 @@ function RouteAnnouncer() {
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // null = checking, false = not authenticated, true = authenticated
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  // Listen for logout events from Settings page
+  useEffect(() => {
+    const handleLogout = () => setAuthenticated(false);
+    window.addEventListener("clxs-logout", handleLogout);
+    return () => window.removeEventListener("clxs-logout", handleLogout);
+  }, []);
+
+  useEffect(() => {
+    // Check if already authenticated (server session or Databricks App runtime)
+    api.get<{ authenticated: boolean; runtime?: string }>("/auth/status")
+      .then((data) => {
+        if (data.authenticated) {
+          setAuthenticated(true);
+        } else {
+          // Also try Databricks App auto-login
+          return api.get<{ runtime?: string }>("/health").then((health) => {
+            if (health.runtime === "databricks-app") {
+              return api.get("/auth/auto-login").then(() => {
+                setAuthenticated(true);
+              });
+            }
+            setAuthenticated(false);
+          });
+        }
+      })
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  // Loading state while checking auth
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center" role="status" aria-busy="true" aria-label="Checking authentication">
+        <Loader2 className="h-8 w-8 text-[#dc2626] animate-spin" aria-hidden="true" />
+        <span className="sr-only">Checking authentication...</span>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!authenticated) {
+    return (
+      <>
+        <Toaster richColors position="top-right" />
+        <LoginPage onLogin={() => setAuthenticated(true)} />
+      </>
+    );
+  }
 
   return (
     <>

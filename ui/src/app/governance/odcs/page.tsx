@@ -91,12 +91,17 @@ export default function ODCSContractsPage() {
 
   async function exportYaml(contractId: string) {
     try {
-      const headers: Record<string, string> = {};
-      const h = sessionStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
-      const tk = sessionStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
-      const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
-      const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`, { headers });
-      const text = await res.text();
+      let text: string;
+      if (sessionStorage.getItem("demo_mode") === "true") {
+        text = `# ODCS Contract: ${contractId}\nkind: DataContract\napiVersion: v3.0.0\ntype: tables\nstatus: active\ndataset:\n  - table: customer_360\n    physicalName: prod_catalog.gold.customer_360\n    description: Unified customer view\n    columns:\n      - column: customer_id\n        logicalType: integer\n        isPrimaryKey: true\n      - column: email\n        logicalType: string\n        classification: pii\nserviceLevelAgreements:\n  - property: freshness\n    value: "< 1 hour"\n`;
+      } else {
+        const headers: Record<string, string> = {};
+        const h = sessionStorage.getItem("dbx_host"); if (h) headers["X-Databricks-Host"] = h;
+        const tk = sessionStorage.getItem("dbx_token"); if (tk) headers["X-Databricks-Token"] = tk;
+        const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
+        const res = await fetch(`/api/governance/odcs/contracts/${contractId}/export`, { headers });
+        text = await res.text();
+      }
       const blob = new Blob([text], { type: "text/yaml" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

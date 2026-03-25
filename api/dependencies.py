@@ -30,18 +30,36 @@ async def warehouse_header_middleware(request: Request, call_next):
 async def get_credentials(
     x_databricks_host: str | None = Header(None),
     x_databricks_token: str | None = Header(None),
-) -> tuple[str | None, str | None]:
-    """Extract Databricks credentials from request headers."""
-    return x_databricks_host, x_databricks_token
+    x_clone_session: str | None = Header(None),
+) -> tuple[str | None, str | None, str | None]:
+    """Extract Databricks credentials and session ID from request headers."""
+    return x_databricks_host, x_databricks_token, x_clone_session
 
 
 async def get_db_client(creds: tuple = Depends(get_credentials)):
-    """Get an authenticated Databricks WorkspaceClient."""
-    host, token = creds
+    """Get an authenticated Databricks WorkspaceClient.
+
+    Resolution order:
+    1. Server-side session (X-Clone-Session header) — for Azure/OAuth/SP logins
+    2. Direct credentials (X-Databricks-Host/Token headers) — for PAT logins
+    3. Databricks App runtime — auto-injected service principal
+    4. Fallback to get_client() — CLI profile, env vars, etc.
+    """
+    host, token, session_id = creds
     try:
+        # 1. Try session-based client first (Azure/OAuth/SP)
+        if session_id:
+            from api.routers.auth import get_session_client
+            client = get_session_client(session_id)
+            if client:
+                return client
+
+        # 2. Databricks App runtime
         from src.auth import is_databricks_app
         if is_databricks_app():
             return get_client()
+
+        # 3. Direct credentials from headers
         return get_client(host, token)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")

@@ -1,12 +1,41 @@
 """Authentication endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+import secrets
+from typing import Optional
+
+from databricks.sdk import WorkspaceClient
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from api.dependencies import get_db_client
 from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ServicePrincipalRequest, WarehouseInfo
 from src.auth import clear_cache, ensure_authenticated, get_client, is_databricks_app
 
 router = APIRouter()
+
+# ── Server-side session store ──────────────────────────────────────────
+# Maps session_id → authenticated WorkspaceClient so Azure/OAuth/SP logins
+# persist across requests without the frontend needing raw tokens.
+_sessions: dict[str, WorkspaceClient] = {}
+
+
+def create_session(client: WorkspaceClient) -> str:
+    """Store an authenticated client and return a session ID."""
+    session_id = secrets.token_hex(16)
+    _sessions[session_id] = client
+    return session_id
+
+
+def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
+    """Look up a cached client by session ID."""
+    if session_id:
+        return _sessions.get(session_id)
+    return None
+
+
+def delete_session(session_id: Optional[str]):
+    """Remove a session from the store."""
+    if session_id and session_id in _sessions:
+        del _sessions[session_id]
 
 
 @router.get("/auto-login")
@@ -16,11 +45,14 @@ async def auto_login():
         raise HTTPException(status_code=404, detail="Not running as Databricks App")
     try:
         info = ensure_authenticated()
+        client = get_client()
+        session_id = create_session(client)
         return AuthStatus(
             authenticated=True,
             user=info.get("user"),
             host=info.get("host"),
             auth_method="databricks-app",
+            session_id=session_id,
         )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -31,23 +63,31 @@ async def login(req: LoginRequest):
     """Authenticate to a Databricks workspace."""
     try:
         clear_cache()
-        get_client(req.host, req.token)
+        client = get_client(req.host, req.token)
         info = ensure_authenticated(req.host, req.token)
+        session_id = create_session(client)
         return AuthStatus(
             authenticated=True,
             user=info.get("user"),
             host=info.get("host"),
             auth_method=info.get("auth_method"),
+            session_id=session_id,
         )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
 
 @router.get("/status")
-async def auth_status(client=Depends(get_db_client)):
-    """Check current authentication status using the resolved client."""
+async def auth_status(
+    client=Depends(get_db_client),
+    x_clone_session: Optional[str] = Header(None),
+):
+    """Check current authentication status using the resolved client or session."""
     try:
-        # Use the actual client resolved from request headers or server auth
+        # Try session-based client first (for Azure/OAuth where no frontend tokens exist)
+        session_client = get_session_client(x_clone_session)
+        if session_client:
+            client = session_client
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         host = str(client.config.host or "")
@@ -92,7 +132,9 @@ async def oauth_login(req: OAuthLoginRequest):
     try:
         _username = ensure_logged_in(host=req.host, force=True)
         info = ensure_authenticated()
-        return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="oauth-u2m")
+        client = get_client(req.host)
+        session_id = create_session(client)
+        return AuthStatus(authenticated=True, user=info.get("user"), host=info.get("host"), auth_method="oauth-u2m", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -118,7 +160,8 @@ async def service_principal_login(req: ServicePrincipalRequest):
             )
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal")
+        session_id = create_session(client)
+        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -170,7 +213,8 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
         client = WorkspaceClient(config=config)
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli")
+        session_id = create_session(client)
+        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -232,9 +276,10 @@ async def list_volumes(client=Depends(get_db_client)):
 
 
 @router.post("/logout")
-async def logout():
+async def logout(x_clone_session: Optional[str] = Header(None)):
     """Clear authentication cache and session."""
     from src.auth import clear_session
     clear_cache()
     clear_session()
+    delete_session(x_clone_session)
     return {"status": "ok", "message": "Logged out successfully"}

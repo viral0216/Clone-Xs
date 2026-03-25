@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Sun, Moon, Sparkles, Sunset, Contrast, Waves, TreePine, Eclipse, Flower2, Mountain,
-  Settings2, Wifi, WifiOff, Menu, Search, Palette, Check,
+  Settings2, Wifi, WifiOff, Menu, Search, Palette, Check, LogOut,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
@@ -90,6 +90,19 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
     const cfg = THEMES.find(t => t.id === theme);
     if (cfg) cfg.classes.forEach(c => root.add(c));
     localStorage.setItem("theme", theme);
+    window.dispatchEvent(new Event("clxs-theme-changed"));
+  }, [theme]);
+
+  // Sync theme when changed from Settings page
+  useEffect(() => {
+    const handler = () => {
+      const saved = localStorage.getItem("theme") as Theme | null;
+      if (saved && THEMES.some(t => t.id === saved) && saved !== theme) {
+        setTheme(saved);
+      }
+    };
+    window.addEventListener("clxs-theme-changed", handler);
+    return () => window.removeEventListener("clxs-theme-changed", handler);
   }, [theme]);
 
   // Close theme picker on outside click
@@ -160,7 +173,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
     ? "Dashboard"
     : pathname.slice(1).split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 
-  const iconBtn = "p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-white/10 transition-all";
+  const iconBtn = "p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-white/10 transition-all";
 
   return (
     <header className="h-20 header-bg flex items-center justify-between px-4 shrink-0">
@@ -175,7 +188,6 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           <img src="/logo.svg" alt="Clone→Xs" className="h-10 dark:hidden" />
           <img src="/logo-dark.svg" alt="Clone→Xs" className="h-10 hidden dark:block" />
         </Link>
-        <PortalSwitcher />
         <span className="text-gray-300 dark:text-gray-600">/</span>
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{pageName}</span>
       </div>
@@ -241,6 +253,8 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
 
       {/* Right */}
       <div className="flex items-center gap-0.5">
+        <PortalSwitcher />
+        <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1.5 hidden sm:block" />
         <div className="relative group">
           <div
             role="status"
@@ -309,6 +323,18 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           )}
         </div>
         <Link to="/settings" className={iconBtn} title="Settings" aria-label="Settings"><Settings2 className="h-4 w-4" /></Link>
+        <button
+          onClick={() => {
+            api.post("/auth/logout").catch(() => {});
+            sessionStorage.clear();
+            window.dispatchEvent(new Event("clxs-logout"));
+          }}
+          className={iconBtn}
+          title="Logout"
+          aria-label="Logout"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </header>
   );

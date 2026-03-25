@@ -7,7 +7,7 @@ import {
   GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
   Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
   ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
-  X, Plus, Database,
+  X, Plus, Database, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -105,6 +105,28 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     try { localStorage.setItem("clxs-sidebar-width", String(w)); } catch {}
   }, []);
 
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("clxs-sidebar-collapsed") === "true"; } catch { return false; }
+  });
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem("clxs-sidebar-collapsed", String(next));
+      window.dispatchEvent(new Event("clxs-sidebar-changed"));
+      return next;
+    });
+  };
+
+  // Sync collapsed state from Settings or other sources
+  useEffect(() => {
+    const handler = () => {
+      const val = localStorage.getItem("clxs-sidebar-collapsed") === "true";
+      setCollapsed(val);
+    };
+    window.addEventListener("clxs-sidebar-changed", handler);
+    return () => window.removeEventListener("clxs-sidebar-changed", handler);
+  }, []);
+
   // Re-render when feature toggles change from Settings page
   useEffect(() => {
     const handler = () => forceUpdate(n => n + 1);
@@ -171,7 +193,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     to={item.href}
                     onClick={onMobileClose}
                     aria-current={active ? "page" : undefined}
-                    className="flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2"
+                    className="flex items-center gap-3 px-4 py-2 text-sm transition-all rounded-r-full mr-2"
                     style={active ? {
                       background: '#E8F0FE',
                       color: '#1A73E8',
@@ -250,7 +272,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     to={item.href}
                     onClick={onMobileClose}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-3 px-4 py-[7px] text-sm transition-all rounded-r-full mr-2 ${
+                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-all rounded-r-full mr-2 ${
                       active
                         ? "bg-blue-500/15 text-blue-400 font-medium"
                         : "text-gray-300 hover:bg-white/5"
@@ -294,13 +316,71 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </aside>
 
       {/* Desktop */}
-      <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0" style={{ width: sidebarWidth }}>
-        <div className="hidden dark:block h-full">{darkSidebar}</div>
-        <div className="dark:hidden h-full">{sidebarContent}</div>
-      </aside>
-      <div className="hidden lg:block">
-        <ResizeHandle width={sidebarWidth} onResize={handleSidebarResize} min={160} max={320} side="right" />
-      </div>
+      {collapsed ? (
+        /* Collapsed rail — icons only */
+        <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0 w-14 border-r border-border">
+          <div className="flex flex-col items-center h-full py-2">
+            {/* Icon-only nav */}
+            <nav className="flex-1 overflow-y-auto w-full flex flex-col items-center gap-0.5 pt-1" aria-label="Main navigation">
+              {getFilteredSections().flatMap((section) =>
+                section.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      title={item.label}
+                      aria-label={item.label}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+                        active
+                          ? "bg-blue-500/15 text-blue-500 dark:text-blue-400"
+                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="h-[18px] w-[18px]" />
+                    </Link>
+                  );
+                })
+              )}
+            </nav>
+
+            {/* Expand button — bottom */}
+            <button
+              onClick={toggleCollapsed}
+              className="p-2 mt-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          </div>
+        </aside>
+      ) : (
+        /* Expanded sidebar */
+        <>
+          <aside className="sidebar-bg flex-col hidden lg:flex relative shrink-0" style={{ width: sidebarWidth }}>
+            <div className="hidden dark:block flex-1 min-h-0">{darkSidebar}</div>
+            <div className="dark:hidden flex-1 min-h-0">{sidebarContent}</div>
+            {/* Collapse button — bottom */}
+            <div className="px-3 py-2 border-t border-border dark:border-white/10 shrink-0">
+              <button
+                onClick={toggleCollapsed}
+                className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+              >
+                <PanelLeftClose className="h-3.5 w-3.5" />
+                <span>Collapse</span>
+              </button>
+            </div>
+          </aside>
+          <div className="hidden lg:block">
+            <ResizeHandle width={sidebarWidth} onResize={handleSidebarResize} min={160} max={320} side="right" />
+          </div>
+        </>
+      )}
     </>
   );
 }

@@ -2,6 +2,8 @@
  * Typed API client for the Clone-Xs FastAPI backend.
  */
 
+import { getMockResponse } from "./mock-data";
+
 // Use Vite proxy (/api -> localhost:8000/api) — no CORS issues, no timeout
 const API_BASE = "/api";
 
@@ -10,6 +12,13 @@ interface FetchOptions extends RequestInit {
 }
 
 async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+  // Demo mode: return mock data without hitting backend
+  if (sessionStorage.getItem("demo_mode") === "true") {
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    const mock = getMockResponse(path, body);
+    if (mock !== undefined) return mock as T;
+  }
+
   const { params, ...fetchOpts } = options;
   let url = `${API_BASE}${path}`;
 
@@ -18,13 +27,15 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     url += `?${searchParams.toString()}`;
   }
 
-  // Get credentials from sessionStorage, warehouse from localStorage (persists across sessions)
-  const host = sessionStorage.getItem("dbx_host") || "";
-  const token = sessionStorage.getItem("dbx_token") || "";
+  // All credentials in localStorage (persists across browser restarts)
+  const host = localStorage.getItem("dbx_host") || "";
+  const token = localStorage.getItem("dbx_token") || "";
   const warehouse = localStorage.getItem("dbx_warehouse_id") || "";
+  const sessionId = localStorage.getItem("clxs_session_id") || "";
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(sessionId && { "X-Clone-Session": sessionId }),
     ...(host && { "X-Databricks-Host": host }),
     ...(token && { "X-Databricks-Token": token }),
     ...(warehouse && { "X-Databricks-Warehouse": warehouse }),

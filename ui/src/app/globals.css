@@ -59,7 +59,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.40 0 0);
+  --muted-foreground: oklch(0.45 0 0);
   --primary-text: #B91C1C;
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
@@ -946,6 +946,27 @@ html, body, #root {
   .md\:grid-cols-4, .md\:grid-cols-5 {
     grid-template-columns: 1fr !important;
   }
+}
+
+/* ─── WCAG AA: Focus Visible ─── */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* ─── Print Styles ─── */
+@media print {
+  nav, header, aside, .no-print, [role="status"], button { display: none !important; }
+  main { padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: 100% !important; }
+  body { background: white !important; color: black !important; }
+  * { box-shadow: none !important; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
 }
 
 /* ─── WCAG AAA: Reduced Motion ─── */

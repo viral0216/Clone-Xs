@@ -13,6 +13,7 @@ class AuthStatus(BaseModel):
     user: str | None = None
     host: str | None = None
     auth_method: str | None = None
+    session_id: str | None = None
 
 
 class WarehouseInfo(BaseModel):

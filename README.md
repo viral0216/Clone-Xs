@@ -3,7 +3,7 @@
 **Enterprise-grade Unity Catalog Toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API.**
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.5.1-green.svg)
+![Version](https://img.shields.io/badge/version-0.6.1-green.svg)
 ![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Databricks%20App%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
@@ -11,14 +11,14 @@
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 58 CLI commands, and a full REST API — all backed by 89 Python modules.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 60 CLI commands, and a full REST API — all backed by 91 Python modules.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
 ### Key Features
 
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
-- **33-Page Web UI** — Modern React frontend with dark mode, collapsible sidebar, and dynamic catalog dropdowns
+- **33-Page Web UI** — Modern React frontend with 10 built-in themes, collapsible sidebar, dedicated login page, and WCAG 2.1 AA accessibility
 - **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
 - **60 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, optimize, vacuum, and more
 - **Storage Metrics + OPTIMIZE/VACUUM** — Analyze storage breakdown per table, then run OPTIMIZE and VACUUM on selected tables directly from the UI with multi-select
@@ -119,9 +119,10 @@ clxs clone --source my_catalog --dest my_catalog_clone
 Open the Web UI and go to **Settings** to complete the following:
 
 ### 1. Connect to Databricks
-- Enter your **Databricks workspace URL** (e.g. `https://adb-123.14.azuredatabricks.net`)
-- Enter your **Personal Access Token** (PAT)
-- Click **Save & Connect**
+- On first launch, the **Login Page** appears with two authentication tabs:
+  - **PAT** — Enter your Databricks workspace URL and personal access token
+  - **Azure** — Multi-step wizard: Login → Tenant → Subscription → Workspace
+- After login, a server-side session is created — no re-authentication needed after page refresh
 
 ### 2. Select SQL Warehouse
 - In **Settings**, select your **SQL Warehouse** from the dropdown
@@ -245,7 +246,7 @@ audit_trail:
 
 | Metric | Value |
 |--------|-------|
-| CLI commands | 60 |
+| CLI commands | 60+ |
 | Python modules | 91 |
 | Web UI pages | 33 |
 | REST API endpoints | 69+ |
@@ -367,10 +368,11 @@ clxs vacuum --source my_catalog --dry-run              # Preview without executi
 
 ## Security
 
-- Credentials are stored in **browser session only** — never sent to any server except your Databricks workspace
-- All API requests carry credentials via headers, not stored server-side
+- **Server-side sessions** — login creates a server-side session with a cached WorkspaceClient; only a session ID is stored in the browser's localStorage
+- Raw tokens are never stored in the browser for OAuth/Azure flows — the authenticated client lives server-side
 - Config files with tokens are sanitized before writing to audit logs
 - RBAC policies control who can clone which catalogs
+- Logout clears both the server-side session and browser-stored keys
 
 See [SECURITY.md](.github/SECURITY.md) for details on reporting vulnerabilities.
 

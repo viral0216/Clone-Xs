@@ -172,7 +172,7 @@ make deploy-dbx-app
 ## Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving light/dark theme across all 33 pages
+- Improving theme coverage across all 33 pages (10 built-in themes)
 - Writing tests (frontend and backend)
 - Documentation improvements
 - Accessibility enhancements

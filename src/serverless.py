@@ -157,9 +157,18 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
     )
 
     cell_3 = "\n".join([
-        "import json, logging",
+        "import json, logging, os",
         "logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')",
         "logger = logging.getLogger('clxs')",
+        "",
+        "# Set auth env vars from notebook context before importing the library.",
+        "# The library initializes a Databricks API client on import, so these",
+        "# must be available before any src.* imports.",
+        "os.environ['DATABRICKS_HOST'] = spark.conf.get('spark.databricks.workspaceUrl', '').strip()",
+        "if not os.environ['DATABRICKS_HOST'].startswith('https'):",
+        "    os.environ['DATABRICKS_HOST'] = 'https://' + os.environ['DATABRICKS_HOST']",
+        "os.environ['DATABRICKS_TOKEN'] = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()",
+        "logger.info('Auth: workspace=%s token=%s...', os.environ['DATABRICKS_HOST'], os.environ['DATABRICKS_TOKEN'][:8])",
         "",
         "dbutils.widgets.text('config', '{}')",
         "config = json.loads(dbutils.widgets.get('config'))",

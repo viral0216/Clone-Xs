@@ -44,7 +44,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.8.2 — Demo Data Generator Testing & Hardening
+## v0.5.3 — Demo Data Generator Testing & Hardening
 
 ### Bug Fixes
 - **Parameter validation** — `generate_demo_catalog()` now validates all inputs: `catalog_name` (non-empty, valid identifier), `scale_factor` (between 0 and 10), `batch_size` (1000 to 50M), `max_workers` (1 to 16), date format (YYYY-MM-DD), start before end, valid industry names
@@ -78,7 +78,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.8.1 — Demo Data Generator Fixes & Parallel Generation
+## v0.5.2 — Demo Data Generator Fixes & Parallel Generation
 
 ### Bug Fixes
 - **DELTA_METADATA_CHANGED** — Column comments now run sequentially instead of parallel to avoid concurrent metadata conflicts
@@ -95,7 +95,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.8.0 — Demo Data Generator
+## v0.5.1 — Demo Data Generator
 
 ### Demo Data Generator
 - New `demo-data` CLI command and Web UI page for generating realistic demo catalogs
@@ -124,7 +124,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.7.0 — Plugin System, Schedule Backend, RBAC Enforcement
+## v0.5.0 — Plugin System, Schedule Backend, RBAC Enforcement
 
 ### Preflight UC Permission Checks (ENHANCED)
 - Enhanced all permission checks to recognize implicit and inherited Unity Catalog privileges
@@ -206,7 +206,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.6.1 — CLI Improvements
+## v0.4.1 — CLI Improvements
 
 ### `--catalog` Alias
 - Added `--catalog` as an alias for `--source` on 16 single-catalog commands: `stats`, `storage-metrics`, `optimize`, `vacuum`, `profile`, `export`, `search`, `snapshot`, `estimate`, `cost-estimate`, `dep-graph`, `usage-analysis`, `sample`, `view-deps`, `pii-scan`, `state`
@@ -226,7 +226,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.6.0 — PII Detection Overhaul
+## v0.4.0 — PII Detection Overhaul
 
 ### PII Detection Engine
 - Multi-phase detection: column name regex + data value sampling + Unity Catalog tag reading
@@ -284,7 +284,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.5.3
+## v0.3.3
 
 ### True Delta Rollback with RESTORE TABLE
 - Rollback now uses `RESTORE TABLE ... TO VERSION AS OF` instead of destructive DROP
@@ -316,7 +316,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.5.2
+## v0.3.2
 
 ### Dashboard Enhancements
 - Extended dashboard from 4 to 10 stat cards: added Avg Duration, Tables Cloned, Data Moved, Views Cloned, Volumes Cloned, Week-over-Week trend
@@ -385,7 +385,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.5.1
+## v0.3.1
 
 ### Lineage Enhancements
 - Interactive SVG lineage graph with pan/zoom, node highlighting, and curved bezier edges
@@ -454,7 +454,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.5.0
+## v0.3.0
 
 ### Dashboard Overhaul
 - Added 10 stat cards: Total Clones, Success Rate, Completed, Failed, Avg Duration, Tables Cloned, Data Moved, Views Cloned, Volumes Cloned, Week-over-Week trend
@@ -473,7 +473,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.4.0
+## v0.2.0
 
 ### Advanced Cloning
 - Data filtering with `--where` and `--table-filter` for cloning subsets
@@ -491,7 +491,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.3.0
+## v0.1.1
 
 ### Operations
 - Incremental Sync — sync only changed tables using Delta version history
@@ -513,7 +513,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.2.0
+## v0.1.0
 
 ### Deployment
 - Databricks App — deploy as a native Databricks App with service principal auth
@@ -531,7 +531,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.1.0
+## v0.0.2
 
 ### Core Features
 - Deep and shallow Delta Lake cloning
@@ -543,7 +543,7 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## v1.0.0
+## v0.0.1
 
 ### Initial Release
 - CLI tool for Unity Catalog catalog cloning

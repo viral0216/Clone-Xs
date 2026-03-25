@@ -18,7 +18,8 @@ When you run any `clxs` command, the auth module checks credentials in this orde
 | 3 | Azure AD service principal | `DATABRICKS_HOST` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET` + `AZURE_TENANT_ID` |
 | 4 | Environment variables (PAT) | `DATABRICKS_HOST` + `DATABRICKS_TOKEN` |
 | 5 | Databricks CLI profile | `~/.databrickscfg` (DEFAULT or named profile) |
-| 6 | Notebook native | Auto-detected inside Databricks Runtime |
+| 6 | Saved interactive session | `~/.clone-xs/session.json` from `clxs auth --login` |
+| 7 | Notebook native | Auto-detected inside Databricks Runtime (`DATABRICKS_RUNTIME_VERSION` set) |
 
 :::tip
 You only need **one** method configured. The CLI will use the first one that works.
@@ -215,7 +216,7 @@ Because the session lives on the server, you can open multiple browser tabs and 
 
 The **Settings** page in the web UI still exposes all four authentication methods (PAT, OAuth, Azure CLI, Service Principal) for switching connections or workspaces without logging out first. Any change on the Settings page updates the active server-side session.
 
-- **Logout** clears the server-side session and returns you to the login page.
+- **Logout** (`POST /api/auth/logout`) clears the server-side session and returns you to the login page. The `X-Clone-Session` header is used to identify which session to destroy.
 - The session is shared across all API calls automatically — individual components do not need to manage credentials.
 
 ### Credential storage in the browser

@@ -680,6 +680,11 @@ def _create_client(
             # pat auth may fail if profile uses different auth — fall through
             pass
 
+    # Method 6: Databricks Runtime notebook (auto-detected credentials)
+    if os.getenv("DATABRICKS_RUNTIME_VERSION"):
+        logger.debug("Auth: Databricks Runtime detected — using notebook-native credentials")
+        return WorkspaceClient()
+
     # Final fallback — raise instead of calling WorkspaceClient() which may open browser
     raise RuntimeError(
         "No authentication configured. Log in via the Clone-Xs UI (Settings → Authentication) "

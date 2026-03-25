@@ -34,10 +34,10 @@ def test_clone_volume_failure(mock_sql):
     assert result is False
 
 
-@patch("src.clone_volumes.execute_sql")
+@patch("src.clone_volumes.list_volumes_sdk")
 @patch("src.clone_volumes.clone_volume")
-def test_clone_volumes_in_schema(mock_clone, mock_sql):
-    mock_sql.return_value = [
+def test_clone_volumes_in_schema(mock_clone, mock_list):
+    mock_list.return_value = [
         {"volume_name": "v1", "volume_type": "MANAGED", "storage_location": "", "comment": ""},
         {"volume_name": "v2", "volume_type": "EXTERNAL", "storage_location": "s3://bucket", "comment": "data"},
     ]
@@ -48,10 +48,10 @@ def test_clone_volumes_in_schema(mock_clone, mock_sql):
     assert result["failed"] == 0
 
 
-@patch("src.clone_volumes.execute_sql")
+@patch("src.clone_volumes.list_volumes_sdk")
 @patch("src.clone_volumes.clone_volume")
-def test_clone_volumes_incremental(mock_clone, mock_sql):
-    mock_sql.side_effect = [
+def test_clone_volumes_incremental(mock_clone, mock_list):
+    mock_list.side_effect = [
         # get_volumes
         [
             {"volume_name": "v1", "volume_type": "MANAGED", "storage_location": "", "comment": ""},

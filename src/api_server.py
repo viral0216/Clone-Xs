@@ -1,4 +1,4 @@
-"""REST API server for clone-catalog operations."""
+"""REST API server for clxs operations."""
 
 import json
 import logging

@@ -143,7 +143,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: "Clone-Xs",
+    title: "Clone → Xs",
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0d1117",
     webPreferences: {

@@ -10,7 +10,7 @@ title: Configuration
 Clone Catalog uses a YAML config file (default: `config/clone_config.yaml`). Generate a starter config with:
 
 ```bash
-clone-catalog init
+clxs init
 ```
 
 ## Full reference
@@ -179,7 +179,7 @@ profiles:
 
 ```bash
 # Use the staging profile
-clone-catalog clone --profile staging
+clxs clone --profile staging
 ```
 
 ## CLI overrides
@@ -188,7 +188,7 @@ CLI flags override config file values. For example:
 
 ```bash
 # Config says DEEP but CLI overrides to SHALLOW
-clone-catalog clone --clone-type SHALLOW
+clxs clone --clone-type SHALLOW
 ```
 
 ## Environment variables
@@ -205,11 +205,12 @@ Environment variables override config file values for auth settings:
 | `AZURE_CLIENT_SECRET` | Azure AD service principal secret |
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `DATABRICKS_CONFIG_PROFILE` | Default CLI profile name |
+| `CLXS_CACHE_TTL` | Metadata cache TTL in seconds (default: `300`) |
 
 ## Config diff
 
 Compare two config files to see differences:
 
 ```bash
-clone-catalog config-diff config/dev.yaml config/staging.yaml
+clxs config-diff config/dev.yaml config/staging.yaml
 ```

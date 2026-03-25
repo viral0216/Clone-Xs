@@ -6,7 +6,7 @@ from datetime import datetime
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -38,15 +38,16 @@ def profile_table(
         profile["error"] = str(e)
         return profile
 
-    # Get column metadata
-    col_sql = f"""
-        SELECT column_name, data_type
-        FROM {catalog}.information_schema.columns
-        WHERE table_schema = '{schema}' AND table_name = '{table_name}'
-        ORDER BY ordinal_position
-    """
+    # Get column metadata via SDK
     try:
-        columns = execute_sql(client, warehouse_id, col_sql)
+        table_info = get_table_info_sdk(client, f"{catalog}.{schema}.{table_name}")
+        if table_info and table_info.get("columns"):
+            columns = [
+                {"column_name": c["column_name"], "data_type": c["data_type"]}
+                for c in table_info["columns"]
+            ]
+        else:
+            columns = []
     except Exception as e:
         profile["error"] = f"Could not get columns: {e}"
         return profile
@@ -151,26 +152,15 @@ def profile_catalog(
     if include_schemas:
         schemas = [s for s in include_schemas if s not in exclude_schemas]
     else:
-        exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-        sql = f"""
-            SELECT schema_name
-            FROM {catalog}.information_schema.schemata
-            WHERE schema_name NOT IN ({exclude_clause})
-        """
-        rows = execute_sql(client, warehouse_id, sql)
-        schemas = [r["schema_name"] for r in rows]
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
 
     # Count total tables first for progress bar
     all_tables = []
     for schema in schemas:
-        table_sql = f"""
-            SELECT table_name
-            FROM {catalog}.information_schema.tables
-            WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-        """
-        tables = execute_sql(client, warehouse_id, table_sql)
-        for row in tables:
-            all_tables.append((schema, row["table_name"]))
+        tables = list_tables_sdk(client, catalog, schema)
+        for t in tables:
+            if t["table_type"] in ("MANAGED", "EXTERNAL"):
+                all_tables.append((schema, t["table_name"]))
 
     all_profiles = []
     progress = ProgressTracker(len(all_tables), "Profiling")

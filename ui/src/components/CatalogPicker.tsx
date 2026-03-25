@@ -1,7 +1,7 @@
 // @ts-nocheck
-import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 
 interface CatalogPickerProps {
   catalog: string;
@@ -28,135 +28,150 @@ export default function CatalogPicker({
   schemaLabel = "Schema",
   tableLabel = "Table",
 }: CatalogPickerProps) {
-  const [catalogs, setCatalogs] = useState<string[]>([]);
-  const [schemas, setSchemas] = useState<string[]>([]);
-  const [tables, setTables] = useState<string[]>([]);
-  const [loadingCatalogs, setLoadingCatalogs] = useState(false);
-  const [loadingSchemas, setLoadingSchemas] = useState(false);
-  const [loadingTables, setLoadingTables] = useState(false);
+  const qc = useQueryClient();
 
-  // Load catalogs on mount
-  useEffect(() => {
-    setLoadingCatalogs(true);
-    api.get<string[]>("/catalogs")
-      .then((data) => setCatalogs(data || []))
-      .catch(() => setCatalogs([]))
-      .finally(() => setLoadingCatalogs(false));
-  }, []);
+  // Cached queries — persist to localStorage via React Query persister
+  const catalogsQuery = useQuery<string[]>({
+    queryKey: ["catalogs"],
+    queryFn: () => api.get("/catalogs"),
+    staleTime: 1000 * 60 * 10, // 10 min — catalogs rarely change
+    gcTime: 1000 * 60 * 60 * 24, // 24h in cache
+  });
 
-  // Load schemas when catalog changes
-  useEffect(() => {
-    if (!catalog || !showSchema) {
-      setSchemas([]);
-      setTables([]);
-      return;
-    }
-    setLoadingSchemas(true);
-    setSchemas([]);
-    setTables([]);
-    api.get<string[]>(`/catalogs/${catalog}/schemas`)
-      .then((data) => setSchemas(data || []))
-      .catch(() => setSchemas([]))
-      .finally(() => setLoadingSchemas(false));
-  }, [catalog, showSchema]);
+  const schemasQuery = useQuery<string[]>({
+    queryKey: ["schemas", catalog],
+    queryFn: () => api.get(`/catalogs/${catalog}/schemas`),
+    enabled: !!catalog && showSchema,
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 60 * 24,
+  });
 
-  // Load tables when schema changes
-  useEffect(() => {
-    if (!catalog || !schema || !showTable) {
-      setTables([]);
-      return;
-    }
-    setLoadingTables(true);
-    setTables([]);
-    api.get<string[]>(`/catalogs/${catalog}/${schema}/tables`)
-      .then((data) => setTables(data || []))
-      .catch(() => setTables([]))
-      .finally(() => setLoadingTables(false));
-  }, [catalog, schema, showTable]);
+  const tablesQuery = useQuery<string[]>({
+    queryKey: ["tables", catalog, schema],
+    queryFn: () => api.get(`/catalogs/${catalog}/${schema}/tables`),
+    enabled: !!catalog && !!schema && showTable,
+    staleTime: 1000 * 60 * 5, // 5 min — tables change more often
+    gcTime: 1000 * 60 * 60 * 24,
+  });
+
+  const catalogs = catalogsQuery.data || [];
+  const schemas = schemasQuery.data || [];
+  const tables = tablesQuery.data || [];
+
+  const isRefreshing = catalogsQuery.isFetching || schemasQuery.isFetching || tablesQuery.isFetching;
+
+  function handleRefresh() {
+    qc.invalidateQueries({ queryKey: ["catalogs"] });
+    if (catalog) qc.invalidateQueries({ queryKey: ["schemas", catalog] });
+    if (catalog && schema) qc.invalidateQueries({ queryKey: ["tables", catalog, schema] });
+  }
 
   const selectClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E8453C]/30 focus:border-[#E8453C]";
 
   return (
-    <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
-      {/* Catalog */}
-      <div className="flex-1">
-        <label className="text-sm font-medium mb-1 block">Catalog</label>
-        {loadingCatalogs ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
-          </div>
-        ) : catalogs.length > 0 ? (
-          <select className={selectClass} value={catalog} onChange={(e) => {
-            onCatalogChange(e.target.value);
-            onSchemaChange?.("");
-            onTableChange?.("");
-          }}>
-            <option value="">Select catalog...</option>
-            {catalogs.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        ) : (
-          <input
-            className={selectClass}
-            value={catalog}
-            onChange={(e) => onCatalogChange(e.target.value)}
-            placeholder="Enter catalog name"
-          />
-        )}
-      </div>
-
-      {/* Schema */}
-      {showSchema && (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
+        {/* Catalog */}
         <div className="flex-1">
-          <label className="text-sm font-medium mb-1 block">{schemaLabel}</label>
-          {loadingSchemas ? (
+          <label htmlFor="catalog-picker-catalog" className="text-sm font-medium mb-1 block">Catalog</label>
+          {catalogsQuery.isLoading && !catalogsQuery.data ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading catalogs...
             </div>
-          ) : schemas.length > 0 ? (
-            <select className={selectClass} value={schema} onChange={(e) => {
-              onSchemaChange?.(e.target.value);
+          ) : catalogs.length > 0 ? (
+            <select id="catalog-picker-catalog" className={selectClass} value={catalog} onChange={(e) => {
+              onCatalogChange(e.target.value);
+              onSchemaChange?.("");
               onTableChange?.("");
             }}>
-              <option value="">All schemas</option>
-              {schemas.map((s) => <option key={s} value={s}>{s}</option>)}
+              <option value="">Select catalog...</option>
+              {catalogs.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           ) : (
             <input
+              id="catalog-picker-catalog"
               className={selectClass}
-              value={schema}
-              onChange={(e) => onSchemaChange?.(e.target.value)}
-              placeholder={catalog ? "No schemas found" : "Select catalog first"}
-              disabled={!catalog}
+              value={catalog}
+              onChange={(e) => onCatalogChange(e.target.value)}
+              placeholder="Enter catalog name"
             />
           )}
         </div>
-      )}
 
-      {/* Table */}
-      {showTable && (
-        <div className="flex-1">
-          <label className="text-sm font-medium mb-1 block">{tableLabel}</label>
-          {loadingTables ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : tables.length > 0 ? (
-            <select className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
-              <option value="">All tables</option>
-              {tables.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          ) : (
-            <input
-              className={selectClass}
-              value={table}
-              onChange={(e) => onTableChange?.(e.target.value)}
-              placeholder={schema ? "No tables found" : "Select schema first"}
-              disabled={!schema}
-            />
-          )}
+        {/* Schema */}
+        {showSchema && (
+          <div className="flex-1">
+            <label htmlFor="catalog-picker-schema" className="text-sm font-medium mb-1 block">{schemaLabel}</label>
+            {schemasQuery.isLoading && !schemasQuery.data ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
+              </div>
+            ) : schemas.length > 0 ? (
+              <select id="catalog-picker-schema" className={selectClass} value={schema} onChange={(e) => {
+                onSchemaChange?.(e.target.value);
+                onTableChange?.("");
+              }}>
+                <option value="">All schemas</option>
+                {schemas.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input
+                id="catalog-picker-schema"
+                className={selectClass}
+                value={schema}
+                onChange={(e) => onSchemaChange?.(e.target.value)}
+                placeholder={catalog ? "No schemas found" : "Select catalog first"}
+                disabled={!catalog}
+                aria-describedby={!catalog ? "schema-hint" : undefined}
+              />
+            )}
+            {!catalog && <span id="schema-hint" className="sr-only">Select a catalog first to browse schemas</span>}
+          </div>
+        )}
+
+        {/* Table */}
+        {showTable && (
+          <div className="flex-1">
+            <label htmlFor="catalog-picker-table" className="text-sm font-medium mb-1 block">{tableLabel}</label>
+            {tablesQuery.isLoading && !tablesQuery.data ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
+              </div>
+            ) : tables.length > 0 ? (
+              <select id="catalog-picker-table" className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
+                <option value="">All tables</option>
+                {tables.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            ) : (
+              <input
+                id="catalog-picker-table"
+                className={selectClass}
+                value={table}
+                onChange={(e) => onTableChange?.(e.target.value)}
+                placeholder={schema ? "No tables found" : "Select schema first"}
+                disabled={!schema}
+                aria-describedby={!schema ? "table-hint" : undefined}
+              />
+            )}
+            {!schema && <span id="table-hint" className="sr-only">Select a schema first to browse tables</span>}
+          </div>
+        )}
+
+        {/* Refresh button */}
+        <div className="shrink-0 sm:pb-0.5">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+            title="Refresh catalog data"
+            aria-label="Refresh catalog data"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

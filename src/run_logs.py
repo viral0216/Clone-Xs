@@ -75,6 +75,9 @@ def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None)
         config_json STRING,
         user_name STRING,
         host STRING,
+        tables_cloned INT,
+        tables_failed INT,
+        total_size_bytes BIGINT,
         recorded_at TIMESTAMP
     )
     USING DELTA
@@ -85,6 +88,24 @@ def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None)
     )
     """
     execute_sql(client, warehouse_id, create_sql)
+
+    # Add new columns only if they don't already exist
+    new_columns = [
+        ("tables_cloned", "INT"),
+        ("tables_failed", "INT"),
+        ("total_size_bytes", "BIGINT"),
+    ]
+    try:
+        existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
+        for col_name, col_type in new_columns:
+            if col_name.lower() not in existing:
+                try:
+                    execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     logger.info(f"Run logs table ready: {fqn}")
     return fqn
 
@@ -154,12 +175,24 @@ def save_run_log(
         except Exception:
             config_json = "{}"
 
+    # Extract object counts from result
+    result = job.get("result") or {}
+    tables_info = result.get("tables", {})
+    if isinstance(tables_info, dict):
+        tables_cloned = tables_info.get("cloned", 0) or tables_info.get("success", 0)
+        tables_failed = tables_info.get("failed", 0)
+    else:
+        tables_cloned = result.get("synced", 0) or result.get("tables_cloned", 0)
+        tables_failed = result.get("failed", 0) or result.get("tables_failed", 0)
+    total_size_bytes = result.get("total_size_bytes", 0) or 0
+
     sql = f"""
     INSERT INTO {fqn}
     (job_id, job_type, source_catalog, destination_catalog, clone_type,
      status, started_at, completed_at, duration_seconds,
      log_lines, result_json, error_message, config_json,
-     user_name, host, recorded_at)
+     user_name, host, tables_cloned, tables_failed, total_size_bytes,
+     recorded_at)
     VALUES
     ('{job_id}', '{job_type}', '{source}', '{dest}', '{clone_type}',
      '{status}',
@@ -170,7 +203,8 @@ def save_run_log(
      '{result_json}',
      '{error_msg}',
      '{config_json}',
-     '{user}', '{host}', '{now}')
+     '{user}', '{host}', {tables_cloned}, {tables_failed}, {total_size_bytes},
+     '{now}')
     """
     try:
         execute_sql(client, warehouse_id, sql)

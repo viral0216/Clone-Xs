@@ -16,7 +16,7 @@ You want a high-level overview of your catalog — how many tables, total storag
 Your cloud cost report shows Databricks storage costs jumped 40% this month. You need to quickly identify which schemas and tables are consuming the most storage.
 
 ```bash
-clone-catalog stats --source production
+clxs stats --source production
 ```
 
 **Output:**
@@ -64,10 +64,10 @@ A GDPR data subject access request comes in. You need to find every table and co
 
 ```bash
 # Find all tables with "customer" in the name
-clone-catalog search --source production --pattern "customer"
+clxs search --source production --pattern "customer"
 
 # Find all tables AND columns with "email" or "phone"
-clone-catalog search --source production --pattern "email|phone" --columns
+clxs search --source production --pattern "email|phone" --columns
 ```
 
 **Output:**
@@ -106,18 +106,18 @@ Your DR (disaster recovery) catalog must mirror production. A monitoring job run
 
 ```bash
 # One-time check (e.g., in a CI pipeline)
-clone-catalog monitor --source production --dest dr_catalog --once
+clxs monitor --source production --dest dr_catalog --once
 
 # Continuous monitoring every 30 minutes
-clone-catalog monitor --source production --dest dr_catalog --interval 30
+clxs monitor --source production --dest dr_catalog --interval 30
 
 # Include row count checks (more thorough, slower)
-clone-catalog monitor \
+clxs monitor \
   --source production --dest dr_catalog \
   --interval 60 --check-counts
 
 # Run 10 checks then stop
-clone-catalog monitor --source production --dest dr_catalog --max-checks 10
+clxs monitor --source production --dest dr_catalog --max-checks 10
 ```
 
 Pair with notifications — configure Slack/webhook in the config. When drift is detected, your team gets alerted.
@@ -136,10 +136,10 @@ The compliance team needs a spreadsheet of all tables and columns in `production
 
 ```bash
 # Export to CSV (produces two files: tables + columns)
-clone-catalog export --source production --format csv
+clxs export --source production --format csv
 
 # Export to JSON
-clone-catalog export --source production --format json --output catalog_inventory.json
+clxs export --source production --format json --output catalog_inventory.json
 ```
 
 **Produces:**
@@ -180,16 +180,69 @@ Before a major migration, you take a snapshot of the current catalog structure. 
 
 ```bash
 # Take a snapshot
-clone-catalog snapshot --source production
+clxs snapshot --source production
 
 # Custom output path
-clone-catalog snapshot --source production --output snapshots/pre_migration.json
+clxs snapshot --source production --output snapshots/pre_migration.json
 
 # Later, take another snapshot and compare
-clone-catalog snapshot --source production --output snapshots/post_migration.json
+clxs snapshot --source production --output snapshots/post_migration.json
 ```
 
 The snapshot JSON includes full column definitions, view SQL, function definitions, and volume metadata.
+
+---
+
+## Web Dashboard
+
+The dashboard at `http://localhost:3001` provides a real-time overview of all clone operations, powered by Delta table queries.
+
+### Dashboard metrics
+
+| Section | Metrics |
+|---------|---------|
+| **Stat cards (10)** | Total Clones, Success Rate, Completed, Failed, Avg Duration, Tables Cloned, Data Moved, Views Cloned, Volumes Cloned, Week-over-Week trend |
+| **Explorer stat cards (8)** | Schemas, Tables, Views, Functions, Volumes, Total Size, Monthly Cost, Yearly Cost |
+| **Charts (5)** | Clone Activity (7-day area chart), Status Breakdown (donut), Clone Type Split (DEEP/SHALLOW donut), Operation Type Split (clone/sync/rollback donut), Peak Usage Hours (bar chart) |
+| **Insights (2)** | Top Source Catalogs (ranked bar), Active Users (ranked bar) |
+| **Catalog Health** | Per-catalog health score (0-100) based on failure rates, table failures, and operation recency |
+| **Pinned Pairs** | Favorite source→destination pairs stored in localStorage for quick clone access |
+
+### Notification center
+
+A bell icon in the header bar shows recent clone events from Delta tables:
+
+- Clone completions (green)
+- Clone failures with error preview (red)
+- Other events (blue)
+- Time-ago formatting (e.g., "3m ago", "2h ago")
+
+Notifications are fetched from `GET /api/notifications` which queries the `run_logs` and `clone_operations` Delta tables.
+
+### Audit trail page
+
+The Audit Trail page (`/audit`) provides:
+
+- **Summary stats** — Total Operations, Succeeded, Failed, Avg Duration
+- **Filters** — Free-text search, status dropdown, operation type, catalog filter, date range, "Clear all"
+- **Expandable entries** — Click any row to see: User, Host, Started, Completed, Tables Cloned/Failed, Data Size, Clone Mode, Trigger
+- **Log Detail Panel** — Full execution logs with color-coded output (green=success, red=error, yellow=warning)
+- **Download Full Log** — Export complete job log as JSON
+
+### Explorer page
+
+The Explorer page provides a detailed view of any catalog's contents with 8 stat cards: Schemas, Tables, Views, Functions, Volumes, Total Size, **Monthly Cost**, and **Yearly Cost** estimates.
+
+- **Storage price** is configurable from the Settings page (default: `$0.023/GB/month`)
+- **Currency selection** is available with 10 supported currencies
+- **Column usage** falls back to `information_schema` when system tables (`system.access.column_lineage`) are unavailable
+
+### Page state persistence
+
+10 analysis pages preserve their results when you navigate away and come back:
+PII Scanner, Schema Drift, Preflight, Diff & Compare, Cost Estimator, Profiling, Impact Analysis, Compliance, Monitor, Storage Metrics.
+
+This is powered by a React Context (`JobContext`) that stores job results in memory across the app lifecycle.
 
 ---
 
@@ -201,9 +254,10 @@ Every operation automatically persists to three Unity Catalog Delta tables — *
 
 | Table | Purpose | What's stored |
 |-------|---------|---------------|
-| `{catalog}.logs.run_logs` | Execution trace | Job ID, log lines, result JSON, config, duration, user |
-| `{catalog}.logs.clone_operations` | Audit trail | Who ran what, when, status, tables cloned/failed |
-| `{catalog}.metrics.clone_metrics` | Performance | Throughput, success rates, durations |
+| `{catalog}.logs.run_logs` | Execution trace | Job ID, log lines, result JSON, config, duration, user, tables_cloned, tables_failed, total_size_bytes |
+| `{catalog}.logs.clone_operations` | Audit trail | Who ran what, when, status, tables cloned/failed/skipped, clone_mode, trigger, destination_existed |
+| `{catalog}.metrics.clone_metrics` | Performance | Throughput, success rates, durations, user_name, status, job_type |
+| `{catalog}.{schema}.rollback_logs` | Rollback operation history | rollback_id, source_catalog, dest_catalog, status, table_count, restored_count, dropped_count, table_versions_json, restore_mode, user_name |
 
 ### Operations that log
 
@@ -215,7 +269,7 @@ clone, sync, incremental-sync, validate, diff, compare, rollback, PII scan, pref
 ```yaml
 # config/clone_config.yaml
 save_run_logs: true          # Enable run_logs (default: true)
-metrics_enabled: true        # Enable clone_metrics (default: false)
+metrics_enabled: true        # Enable clone_metrics (default: true)
 audit_trail:
   catalog: clone_audit       # Delta catalog for audit tables
   schema: logs               # Schema name
@@ -226,13 +280,13 @@ audit_trail:
 
 ```bash
 # Query audit trail
-clone-catalog audit --limit 20
+clxs audit --limit 20
 
 # Filter by source catalog
-clone-catalog audit --source production
+clxs audit --source production
 
 # Filter by status
-clone-catalog audit --status failed
+clxs audit --status failed
 ```
 
 ### API path vs CLI path

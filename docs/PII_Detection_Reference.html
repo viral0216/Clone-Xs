@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PII Detection &amp; Protection — Clone-Xs Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0f1724;
+  --bg-secondary: #1a2332;
+  --bg-tertiary: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-primary: #DC143C;
+  --accent-link: #3b82f6;
+  --border-default: #1e293b;
+  --header-height: 60px;
+  --sidebar-width: 280px;
+  --toc-width: 200px;
+  --content-max: 800px;
+  --admonition-tip: #22c55e;
+  --admonition-caution: #eab308;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-height) + 24px); }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+/* ─── Header ─── */
+.header {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: var(--header-height);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
+  display: flex; align-items: center; padding: 0 24px;
+}
+.header-logo {
+  font-size: 1.3rem; font-weight: 800; color: var(--text-primary);
+  text-decoration: none; display: flex; align-items: center; gap: 10px;
+}
+.header-logo .logo-mark {
+  width: 32px; height: 32px; background: var(--accent-primary);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; font-weight: 800; color: #fff;
+}
+.header-nav { display: flex; gap: 28px; margin-left: auto; align-items: center; }
+.header-nav a {
+  color: var(--text-secondary); text-decoration: none; font-size: 0.85rem;
+  font-weight: 500; transition: color 0.2s;
+}
+.header-nav a:hover { color: var(--text-primary); }
+.hamburger {
+  display: none; background: none; border: none; cursor: pointer;
+  padding: 6px; margin-right: 12px;
+}
+.hamburger span {
+  display: block; width: 22px; height: 2px; background: var(--text-primary);
+  margin: 5px 0; transition: 0.3s;
+}
+.hamburger.active span:nth-child(1) { transform: rotate(45deg) translate(5px,5px); }
+.hamburger.active span:nth-child(2) { opacity: 0; }
+.hamburger.active span:nth-child(3) { transform: rotate(-45deg) translate(5px,-5px); }
+/* ─── Layout ─── */
+.layout {
+  display: flex; margin-top: var(--header-height); min-height: calc(100vh - var(--header-height));
+}
+/* ─── Sidebar ─── */
+.sidebar {
+  position: fixed; top: var(--header-height); left: 0; bottom: 0;
+  width: var(--sidebar-width); background: var(--bg-secondary);
+  border-right: 1px solid var(--border-default);
+  overflow-y: auto; padding: 20px 0; z-index: 50;
+  transition: transform 0.3s;
+}
+.sidebar-search {
+  padding: 0 16px 16px; position: sticky; top: 0;
+  background: var(--bg-secondary); z-index: 1;
+}
+.sidebar-search input {
+  width: 100%; padding: 8px 12px; border-radius: 6px;
+  border: 1px solid var(--border-default); background: var(--bg-tertiary);
+  color: var(--text-primary); font-family: inherit; font-size: 0.8rem;
+  outline: none; transition: border-color 0.2s;
+}
+.sidebar-search input::placeholder { color: var(--text-muted); }
+.sidebar-search input:focus { border-color: var(--accent-primary); }
+.sidebar-section { margin-bottom: 4px; }
+.sidebar-section-title {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px; font-size: 0.78rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted);
+  cursor: pointer; user-select: none; transition: color 0.2s;
+}
+.sidebar-section-title:hover { color: var(--text-secondary); }
+.sidebar-section-title .chevron {
+  font-size: 0.65rem; transition: transform 0.25s; display: inline-block;
+}
+.sidebar-section-title.collapsed .chevron { transform: rotate(-90deg); }
+.sidebar-links { list-style: none; overflow: hidden; transition: max-height 0.3s ease; }
+.sidebar-links.collapsed { max-height: 0 !important; }
+.sidebar-links li a {
+  display: block; padding: 6px 20px 6px 28px; font-size: 0.82rem;
+  color: var(--text-secondary); text-decoration: none; font-weight: 400;
+  border-left: 3px solid transparent; transition: all 0.2s;
+}
+.sidebar-links li a:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+.sidebar-links li a.active {
+  color: var(--accent-primary); border-left-color: var(--accent-primary);
+  background: rgba(220,20,60,0.06); font-weight: 600;
+}
+.sidebar-links li.hidden { display: none; }
+/* ─── Main content ─── */
+.main-content {
+  margin-left: var(--sidebar-width); margin-right: var(--toc-width);
+  flex: 1; padding: 32px 48px 80px;
+  max-width: calc(var(--content-max) + 96px);
+}
+/* ─── Right TOC ─── */
+.toc {
+  position: fixed; top: var(--header-height); right: 0; bottom: 0;
+  width: var(--toc-width); padding: 24px 16px; overflow-y: auto;
+  border-left: 1px solid var(--border-default); background: var(--bg-primary);
+}
+.toc-title {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 12px;
+}
+.toc a {
+  display: block; padding: 4px 0 4px 12px; font-size: 0.78rem;
+  color: var(--text-muted); text-decoration: none;
+  border-left: 2px solid transparent; transition: all 0.2s; line-height: 1.5;
+}
+.toc a:hover { color: var(--text-secondary); }
+.toc a.active { color: var(--accent-primary); border-left-color: var(--accent-primary); }
+.toc a.toc-h3 { padding-left: 24px; font-size: 0.74rem; }
+/* ─── Breadcrumb ─── */
+.breadcrumb {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;
+}
+.breadcrumb a { color: var(--accent-link); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .sep { color: var(--text-muted); }
+/* ─── Hero ─── */
+.hero { margin-bottom: 48px; padding-bottom: 40px; border-bottom: 1px solid var(--border-default); }
+.hero h1 {
+  font-size: 2.8rem; font-weight: 800; color: var(--text-primary);
+  line-height: 1.2; margin-bottom: 12px;
+}
+.hero .subtitle {
+  font-size: 1.1rem; color: var(--text-secondary); max-width: 650px;
+  line-height: 1.6; margin-bottom: 32px;
+}
+.feature-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+.feature-card {
+  background: var(--bg-secondary); border: 1px solid var(--border-default);
+  border-radius: 10px; padding: 20px; transition: border-color 0.2s, transform 0.2s;
+}
+.feature-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
+.feature-card .card-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; margin-bottom: 12px;
+}
+.feature-card:nth-child(1) .card-icon { background: rgba(220,20,60,0.15); color: #DC143C; }
+.feature-card:nth-child(2) .card-icon { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.feature-card:nth-child(3) .card-icon { background: rgba(168,85,247,0.15); color: #a855f7; }
+.feature-card:nth-child(4) .card-icon { background: rgba(34,197,94,0.15); color: #22c55e; }
+.feature-card h3 { font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.feature-card p { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+/* ─── Content typography ─── */
+.content-section { margin-bottom: 48px; }
+.content-section h2 {
+  font-size: 1.6rem; font-weight: 700; color: var(--text-primary);
+  margin-bottom: 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
+}
+.content-section h3 {
+  font-size: 1.25rem; font-weight: 600; color: var(--text-primary); margin: 28px 0 12px;
+}
+.content-section h4 {
+  font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin: 20px 0 8px;
+}
+.content-section p { margin-bottom: 14px; }
+.content-section a { color: var(--accent-link); text-decoration: none; }
+.content-section a:hover { text-decoration: underline; }
+.content-section ul, .content-section ol {
+  padding-left: 24px; margin-bottom: 14px;
+}
+.content-section li { margin-bottom: 6px; }
+.content-section strong { color: var(--text-primary); font-weight: 600; }
+.content-section code:not(pre code) {
+  background: var(--bg-tertiary); padding: 2px 7px; border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; color: #f472b6;
+}
+.content-section hr { border: none; border-top: 1px solid var(--border-default); margin: 32px 0; }
+/* ─── Tables ─── */
+.table-wrapper { overflow-x: auto; margin-bottom: 20px; border-radius: 8px; border: 1px solid var(--border-default); }
+table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem;
+}
+thead th {
+  background: var(--bg-secondary); color: var(--text-muted);
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; padding: 12px 16px; text-align: left;
+  border-bottom: 1px solid var(--border-default);
+}
+tbody td {
+  padding: 10px 16px; border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+tbody tr:nth-child(even) { background: var(--bg-tertiary); }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+tbody td code {
+  background: var(--bg-tertiary); padding: 1px 5px; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #f472b6;
+}
+/* ─── Code blocks ─── */
+.code-block {
+  position: relative; margin-bottom: 20px; border-radius: 8px;
+  border: 1px solid var(--border-default); overflow: hidden;
+}
+.code-block .code-header {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-secondary); padding: 8px 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+.code-block .code-lang {
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+}
+.code-block .copy-btn {
+  background: none; border: 1px solid var(--border-default); border-radius: 4px;
+  color: var(--text-muted); font-size: 0.7rem; padding: 3px 10px;
+  cursor: pointer; font-family: inherit; transition: all 0.2s;
+}
+.code-block .copy-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.code-block pre {
+  background: var(--bg-tertiary); padding: 16px; margin: 0;
+  overflow-x: auto; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem; line-height: 1.65; color: var(--text-secondary);
+}
+/* Syntax highlighting */
+.code-block pre .kw { color: #c084fc; } /* keyword - purple */
+.code-block pre .str { color: #4ade80; } /* string - green */
+.code-block pre .cmt { color: #64748b; } /* comment - gray */
+.code-block pre .fn { color: #60a5fa; } /* function - blue */
+.code-block pre .num { color: #f59e0b; } /* number */
+.code-block pre .flag { color: #67e8f9; } /* flags / options */
+.code-block pre .key { color: #c084fc; } /* yaml key */
+.code-block pre .val { color: #4ade80; } /* yaml value */
+.code-block pre .prop { color: #60a5fa; } /* json property */
+.code-block pre .url { color: #f472b6; } /* url */
+.code-block pre .op { color: #f8fafc; } /* operator */
+/* ─── Architecture diagram ─── */
+.architecture-diagram {
+  background: var(--bg-tertiary); border: 1px solid var(--border-default);
+  border-radius: 8px; padding: 20px; margin-bottom: 20px;
+  overflow-x: auto; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; line-height: 1.5; color: var(--text-secondary);
+  white-space: pre;
+}
+/* ─── Admonitions ─── */
+.admonition {
+  border-radius: 8px; padding: 16px 20px; margin-bottom: 20px;
+  border-left: 4px solid; background: var(--bg-secondary);
+}
+.admonition.tip { border-left-color: var(--admonition-tip); }
+.admonition.caution { border-left-color: var(--admonition-caution); }
+.admonition-title {
+  font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+}
+.admonition.tip .admonition-title { color: var(--admonition-tip); }
+.admonition.caution .admonition-title { color: var(--admonition-caution); }
+.admonition p { margin: 0; font-size: 0.88rem; }
+/* ─── Back to top ─── */
+.back-to-top {
+  position: fixed; bottom: 32px; right: 32px; z-index: 90;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--accent-primary); color: #fff; border: none;
+  cursor: pointer; font-size: 1.1rem; display: none;
+  align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4); transition: opacity 0.3s, transform 0.3s;
+}
+.back-to-top.visible { display: flex; }
+.back-to-top:hover { transform: translateY(-2px); }
+/* ─── Footer ─── */
+.footer {
+  margin-left: var(--sidebar-width); margin-right: var(--toc-width);
+  padding: 32px 48px; border-top: 1px solid var(--border-default);
+  text-align: center; font-size: 0.78rem; color: var(--text-muted);
+}
+.footer span { color: var(--accent-primary); font-weight: 600; }
+/* ─── Responsive ─── */
+@media (max-width: 1024px) {
+  .toc { display: none; }
+  .main-content { margin-right: 0; }
+  .footer { margin-right: 0; }
+}
+@media (max-width: 768px) {
+  .hamburger { display: block; }
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-left: 0; padding: 24px 20px 60px; }
+  .footer { margin-left: 0; padding: 24px 20px; }
+  .header-nav { gap: 16px; }
+  .hero h1 { font-size: 2rem; }
+  .feature-cards { grid-template-columns: 1fr 1fr; }
+  .back-to-top { bottom: 20px; right: 20px; }
+}
+@media (max-width: 480px) {
+  .feature-cards { grid-template-columns: 1fr; }
+}
+/* Sidebar overlay */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,0.5);
+}
+.sidebar-overlay.visible { display: block; }
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <button class="hamburger" id="hamburgerBtn" aria-label="Toggle sidebar">
+    <span></span><span></span><span></span>
+  </button>
+  <a href="#" class="header-logo">
+    <div class="logo-mark">Xs</div>
+    Clone-Xs
+  </a>
+  <nav class="header-nav">
+    <a href="#">Docs</a>
+    <a href="#">API</a>
+    <a href="#">Guide</a>
+    <a href="#">GitHub</a>
+  </nav>
+</header>
+
+<!-- Sidebar overlay for mobile -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-search">
+    <input type="text" id="sidebarSearch" placeholder="Filter sections...">
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="overview">Overview <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-overview">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#architecture-diagram">Architecture Diagram</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="quickstart">Quick Start <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-quickstart">
+      <li><a href="#quick-start">Quick Start</a></li>
+      <li><a href="#cli-quickstart">CLI</a></li>
+      <li><a href="#web-ui-quickstart">Web UI</a></li>
+      <li><a href="#api-quickstart">API</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="detection">Detection Methods <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-detection">
+      <li><a href="#detection-methods">Detection Methods</a></li>
+      <li><a href="#column-name-detection">Column Name Detection</a></li>
+      <li><a href="#data-value-sampling">Data Value Sampling</a></li>
+      <li><a href="#structural-validators">Structural Validators</a></li>
+      <li><a href="#uc-tag-detection">UC Tag Detection</a></li>
+      <li><a href="#nlp-detection">NLP Detection (Presidio)</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="scoring">Scoring &amp; Risk <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-scoring">
+      <li><a href="#confidence-scoring">Confidence Scoring</a></li>
+      <li><a href="#cross-column-correlation">Cross-Column Correlation</a></li>
+      <li><a href="#risk-levels">Risk Levels</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="config">Configuration <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-config">
+      <li><a href="#custom-patterns">Custom Patterns</a></li>
+      <li><a href="#masking-recommendations">Masking Recommendations</a></li>
+      <li><a href="#configuration-reference">Configuration Reference</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="integration">Integration <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-integration">
+      <li><a href="#unity-catalog-tagging">Unity Catalog Tagging</a></li>
+      <li><a href="#scan-history">Scan History &amp; Tracking</a></li>
+      <li><a href="#integration-with-cloning">Integration with Cloning</a></li>
+    </ul>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title" data-section="reference">Reference <span class="chevron">&#9662;</span></div>
+    <ul class="sidebar-links" id="nav-reference">
+      <li><a href="#api-reference">API Reference</a></li>
+      <li><a href="#cli-reference">CLI Reference</a></li>
+    </ul>
+  </div>
+</aside>
+
+<!-- Right TOC -->
+<nav class="toc" id="toc">
+  <div class="toc-title">On this page</div>
+  <a href="#overview">Overview</a>
+  <a href="#quick-start">Quick Start</a>
+  <a href="#detection-methods">Detection Methods</a>
+  <a href="#column-name-detection" class="toc-h3">Column Name Detection</a>
+  <a href="#data-value-sampling" class="toc-h3">Data Value Sampling</a>
+  <a href="#structural-validators" class="toc-h3">Structural Validators</a>
+  <a href="#uc-tag-detection" class="toc-h3">UC Tag Detection</a>
+  <a href="#nlp-detection" class="toc-h3">NLP Detection</a>
+  <a href="#confidence-scoring">Confidence Scoring</a>
+  <a href="#cross-column-correlation">Cross-Column Correlation</a>
+  <a href="#risk-levels">Risk Levels</a>
+  <a href="#custom-patterns">Custom Patterns</a>
+  <a href="#masking-recommendations">Masking Recommendations</a>
+  <a href="#unity-catalog-tagging">Unity Catalog Tagging</a>
+  <a href="#scan-history">Scan History &amp; Tracking</a>
+  <a href="#api-reference">API Reference</a>
+  <a href="#cli-reference">CLI Reference</a>
+  <a href="#configuration-reference">Configuration Reference</a>
+  <a href="#integration-with-cloning">Integration with Cloning</a>
+</nav>
+
+<!-- Main content -->
+<div class="layout">
+<main class="main-content" id="mainContent">
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+  <a href="#">Docs</a><span class="sep">/</span>
+  <a href="#">Guide</a><span class="sep">/</span>
+  <span>PII Detection &amp; Protection</span>
+</div>
+
+<!-- Hero -->
+<section class="hero">
+  <h1>PII Detection &amp; Protection</h1>
+  <p class="subtitle">Clone Catalog provides a comprehensive PII detection engine that scans your Unity Catalog for personally identifiable information, applies structural validation, correlates cross-column risk, and integrates with Unity Catalog tags for automated data governance.</p>
+  <div class="feature-cards">
+    <div class="feature-card">
+      <div class="card-icon">&#128269;</div>
+      <h3>Detection</h3>
+      <p>19 built-in regex patterns scan column names and sampled data values for PII across your entire catalog.</p>
+    </div>
+    <div class="feature-card">
+      <div class="card-icon">&#10003;</div>
+      <h3>Validation</h3>
+      <p>Structural validators like Luhn checksum and IBAN mod-97 reduce false positives with real math checks.</p>
+    </div>
+    <div class="feature-card">
+      <div class="card-icon">&#128279;</div>
+      <h3>Correlation</h3>
+      <p>Cross-column correlation identifies identity clusters and high-risk table combinations automatically.</p>
+    </div>
+    <div class="feature-card">
+      <div class="card-icon">&#9881;</div>
+      <h3>Integration</h3>
+      <p>Auto-tag Unity Catalog columns, persist scan history in Delta tables, and track remediation workflows.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Overview -->
+<section class="content-section" id="overview">
+  <h2>Overview</h2>
+  <p>The PII scanner operates in multiple detection phases to maximize coverage and minimize false positives:</p>
+
+  <div id="architecture-diagram" class="architecture-diagram">                      &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+                      &#9474;   PII Scan Request    &#9474;
+                      &#9474;  (CLI / API / TUI)    &#9474;
+                      &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                                 &#9474;
+        &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9532;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+        &#9660;                        &#9660;                        &#9660;
+&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+&#9474;  Column Name     &#9474;  &#9474;  UC Tag          &#9474;  &#9474;  Data Sampling   &#9474;
+&#9474;  Detection       &#9474;  &#9474;  Detection       &#9474;  &#9474;  + Validators    &#9474;
+&#9474;  (fast, regex)   &#9474;  &#9474;  (optional)      &#9474;  &#9474;  (optional)      &#9474;
+&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;  &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;  &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+       &#9474;                      &#9474;                      &#9474;
+       &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9532;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                              &#9660;
+                &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+                &#9474;  Dedup + Confidence Score &#9474;
+                &#9474;  Cross-column Correlation &#9474;
+                &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                              &#9660;
+                &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+                &#9474;  Risk Assessment          &#9474;
+                &#9474;  Masking Recommendations   &#9474;
+                &#9474;  History + Tagging         &#9474;
+                &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</div>
+</section>
+
+<!-- Quick Start -->
+<section class="content-section" id="quick-start">
+  <h2>Quick Start</h2>
+
+  <h3 id="cli-quickstart">CLI</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># Basic scan (column name detection only)</span>
+clxs pii-scan <span class="flag">--source</span> production
+
+<span class="cmt"># Full scan with data sampling and UC tag reading</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--sample-data</span> <span class="flag">--read-uc-tags</span>
+
+<span class="cmt"># Scan and save results to Delta tables for tracking</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--sample-data</span> <span class="flag">--save-history</span>
+
+<span class="cmt"># Scan and auto-tag detected PII columns in Unity Catalog</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--apply-tags</span> <span class="flag">--tag-prefix</span> pii</pre>
+  </div>
+
+  <h3 id="web-ui-quickstart">Web UI</h3>
+  <ol>
+    <li>Navigate to <strong>Analysis &gt; PII Scanner</strong></li>
+    <li>Select a catalog from the dropdown</li>
+    <li>Optionally enable <strong>UC Tags</strong> and <strong>Save History</strong> checkboxes</li>
+    <li>Click <strong>Scan for PII</strong></li>
+  </ol>
+
+  <h3 id="api-quickstart">API</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>curl <span class="flag">-X</span> POST <span class="url">http://localhost:8000/api/pii-scan</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "source_catalog": "production",
+    "sample_data": true,
+    "read_uc_tags": true,
+    "save_history": true
+  }'</span></pre>
+  </div>
+</section>
+
+<!-- Detection Methods -->
+<section class="content-section" id="detection-methods">
+  <h2>Detection Methods</h2>
+
+  <h3 id="column-name-detection">1. Column Name Detection (fast)</h3>
+  <p>Scans all column names in <code>information_schema.columns</code> against 19 built-in regex patterns. This is the default, always-on detection method.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>PII Type</th><th>Column Name Patterns</th><th>Risk Level</th></tr></thead>
+      <tbody>
+        <tr><td><code>SSN</code></td><td>ssn, social_security, social_sec</td><td>High</td></tr>
+        <tr><td><code>EMAIL</code></td><td>email, e_mail, email_addr</td><td>&mdash;</td></tr>
+        <tr><td><code>PHONE</code></td><td>phone, mobile, cell, fax, tel</td><td>&mdash;</td></tr>
+        <tr><td><code>CREDIT_CARD</code></td><td>credit_card, card_num, cc_num, pan</td><td>High</td></tr>
+        <tr><td><code>PASSPORT</code></td><td>passport</td><td>High</td></tr>
+        <tr><td><code>DRIVERS_LICENSE</code></td><td>driver_lic, dl_num</td><td>&mdash;</td></tr>
+        <tr><td><code>DATE_OF_BIRTH</code></td><td>date_of_birth, dob, birth_date, birthday</td><td>&mdash;</td></tr>
+        <tr><td><code>PERSON_NAME</code></td><td>first_name, last_name, full_name, middle_name, given_name, surname</td><td>&mdash;</td></tr>
+        <tr><td><code>ADDRESS</code></td><td>address, street, city, zip_code, postal, addr</td><td>&mdash;</td></tr>
+        <tr><td><code>IP_ADDRESS</code></td><td>ip_addr, ipv4, ipv6, ip_address</td><td>&mdash;</td></tr>
+        <tr><td><code>BANK_ACCOUNT</code></td><td>bank_account, acct_num, routing_num, iban, swift</td><td>High</td></tr>
+        <tr><td><code>FINANCIAL</code></td><td>salary, wage, income, compensation, pay_rate</td><td>&mdash;</td></tr>
+        <tr><td><code>DEMOGRAPHIC</code></td><td>gender, sex, race, ethnicity, religion</td><td>&mdash;</td></tr>
+        <tr><td><code>MEDICAL</code></td><td>diagnosis, medical, health, patient, prescription</td><td>&mdash;</td></tr>
+        <tr><td><code>CREDENTIAL</code></td><td>password, passwd, pwd, secret, api_key, token</td><td>High</td></tr>
+        <tr><td><code>TAX_ID</code></td><td>tax_id, tin, ein, vat</td><td>High</td></tr>
+        <tr><td><code>NATIONAL_ID</code></td><td>national_id, national_insurance, nino, aadhar, aadhaar</td><td>High</td></tr>
+        <tr><td><code>MAC_ADDRESS</code></td><td>mac_addr, mac_address</td><td>&mdash;</td></tr>
+        <tr><td><code>VIN</code></td><td>vin, vehicle_id</td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>All column name matches receive a confidence score of <strong>0.85</strong>.</p>
+
+  <h3 id="data-value-sampling">2. Data Value Sampling (optional)</h3>
+  <p>When <code>--sample-data</code> is enabled, the scanner samples up to 100 actual values from STRING columns and matches them against value-level regex patterns. This catches PII in generically named columns.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>PII Type</th><th>Regex Pattern</th><th>Validator</th></tr></thead>
+      <tbody>
+        <tr><td><code>SSN</code></td><td><code>^\d{3}-\d{2}-\d{4}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>EMAIL</code></td><td><code>^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>PHONE</code></td><td><code>^[\+]?[\d\s\-\(\)]{7,15}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>CREDIT_CARD</code></td><td><code>^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$</code></td><td><strong>Luhn checksum</strong></td></tr>
+        <tr><td><code>IP_ADDRESS</code></td><td><code>^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$</code></td><td><strong>Octet range (0-255)</strong></td></tr>
+        <tr><td><code>IBAN</code></td><td><code>^[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}$</code></td><td><strong>Mod-97 check</strong></td></tr>
+        <tr><td><code>PASSPORT_US</code></td><td><code>^[A-Z]\d{8}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>NATIONAL_ID_AADHAR</code></td><td><code>^\d{4}\s?\d{4}\s?\d{4}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>NATIONAL_ID_NINO</code></td><td><code>^[A-Z]{2}\d{6}[A-D]$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>MAC_ADDRESS</code></td><td><code>^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>DATE_OF_BIRTH</code></td><td><code>^\d{4}-\d{2}-\d{2}$</code></td><td>&mdash;</td></tr>
+        <tr><td><code>ZIP_CODE</code></td><td><code>^\d{5}(-\d{4})?$</code></td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>Match threshold:</strong> A column is flagged as PII if &gt;30% of sampled values match the pattern (configurable via <code>match_threshold</code>).</p>
+
+  <h3 id="structural-validators">3. Structural Validators</h3>
+  <p>Post-regex validators reduce false positives by applying structural checks after a regex match:</p>
+  <ul>
+    <li><strong>Luhn algorithm</strong> &mdash; Validates credit card numbers by computing the Luhn checksum. A 16-digit number that passes regex but fails Luhn is not flagged.</li>
+    <li><strong>IBAN mod-97</strong> &mdash; Validates International Bank Account Numbers by rearranging and applying modulo-97 arithmetic.</li>
+    <li><strong>IP address octets</strong> &mdash; Verifies each octet is 0-255 with no leading zeros (e.g., <code>192.168.1.1</code> passes, <code>999.1.1.1</code> and <code>01.02.03.04</code> do not).</li>
+  </ul>
+  <p>When a validator is present and passes, the confidence score receives a <strong>+0.15 bonus</strong>.</p>
+
+  <h3 id="uc-tag-detection">4. Unity Catalog Tag Detection (optional)</h3>
+  <p>When <code>--read-uc-tags</code> is enabled, the scanner queries <code>information_schema.column_tags</code> for known PII-related tag names:</p>
+  <ul>
+    <li><code>pii_type</code>, <code>pii</code>, <code>sensitive</code>, <code>classification</code>, <code>data_classification</code></li>
+  </ul>
+  <p>Tag values are mapped to PII types (e.g., tag value <code>email</code> &rarr; PII type <code>EMAIL</code>). UC tag detections receive a confidence score of <strong>0.95</strong> (highest), since tags are considered authoritative.</p>
+
+  <h3 id="nlp-detection">5. NLP Detection with Presidio (optional)</h3>
+  <p>For advanced text analysis, install the optional NLP dependencies:</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>pip install <span class="str">'clone-xs[nlp]'</span></pre>
+  </div>
+
+  <p>This enables <a href="https://microsoft.github.io/presidio/">Microsoft Presidio</a>-based detection, which uses NLP models to detect entities like names, addresses, and organizations in free-text columns.</p>
+</section>
+
+<!-- Confidence Scoring -->
+<section class="content-section" id="confidence-scoring">
+  <h2>Confidence Scoring</h2>
+  <p>Every detection receives a numeric confidence score (0.0&ndash;1.0):</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Detection Method</th><th>Base Score</th><th>Validator Bonus</th><th>Max Score</th></tr></thead>
+      <tbody>
+        <tr><td>Column name match</td><td>0.85</td><td>&mdash;</td><td>0.85</td></tr>
+        <tr><td>Data sampling</td><td>match_rate (0.3&ndash;1.0)</td><td>+0.15 if validator passes</td><td>1.0</td></tr>
+        <tr><td>UC tag</td><td>0.95</td><td>&mdash;</td><td>0.95</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>Labels:</strong></p>
+  <ul>
+    <li><strong>High</strong> &mdash; score &ge; 0.70</li>
+    <li><strong>Medium</strong> &mdash; score 0.40&ndash;0.69</li>
+    <li><strong>Low</strong> &mdash; score &lt; 0.40</li>
+  </ul>
+</section>
+
+<!-- Cross-column Correlation -->
+<section class="content-section" id="cross-column-correlation">
+  <h2>Cross-Column Correlation</h2>
+  <p>After individual column detection, the scanner groups detections by table and applies correlation rules. When multiple PII types co-exist in the same table, confidence scores are boosted:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Rule</th><th>Required PII Types</th><th>Flag</th><th>Boost</th></tr></thead>
+      <tbody>
+        <tr><td>Identity cluster</td><td>PERSON_NAME + DATE_OF_BIRTH + ADDRESS</td><td><code>identity_cluster</code></td><td>+0.10</td></tr>
+        <tr><td>Identity partial</td><td>PERSON_NAME + DATE_OF_BIRTH</td><td><code>identity_partial</code></td><td>+0.05</td></tr>
+        <tr><td>Compensation risk</td><td>PERSON_NAME + FINANCIAL</td><td><code>compensation_risk</code></td><td>+0.05</td></tr>
+        <tr><td>Credential pair</td><td>CREDENTIAL + EMAIL</td><td><code>credential_pair</code></td><td>+0.10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>For example, a table with <code>first_name</code>, <code>dob</code>, and <code>address</code> columns has all three boosted by +0.10 and flagged as an <code>identity_cluster</code> &mdash; indicating a higher re-identification risk.</p>
+</section>
+
+<!-- Risk Levels -->
+<section class="content-section" id="risk-levels">
+  <h2>Risk Levels</h2>
+  <p>The overall catalog risk is determined by PII type severity and count:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Risk Level</th><th>Condition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HIGH</strong></td><td>Any high-risk type detected (SSN, CREDIT_CARD, BANK_ACCOUNT, CREDENTIAL, PASSPORT, TAX_ID, NATIONAL_ID, IBAN) <strong>OR</strong> &ge; 10 PII columns</td></tr>
+        <tr><td><strong>MEDIUM</strong></td><td>3&ndash;9 PII columns detected</td></tr>
+        <tr><td><strong>LOW</strong></td><td>1&ndash;2 PII columns detected</td></tr>
+        <tr><td><strong>NONE</strong></td><td>No PII detected</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Custom Patterns -->
+<section class="content-section" id="custom-patterns">
+  <h2>Custom Patterns</h2>
+  <p>Define custom PII detection patterns in <code>config/clone_config.yaml</code>:</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="key">pii_detection</span>:
+  <span class="cmt"># Disable built-in patterns you don't need</span>
+  <span class="key">disabled_patterns</span>:
+    - <span class="val">DEMOGRAPHIC</span>
+    - <span class="val">ZIP_CODE</span>
+
+  <span class="cmt"># Add custom column name patterns</span>
+  <span class="key">custom_column_patterns</span>:
+    - <span class="key">pattern</span>: <span class="str">"(?i)(customer_ref|cust_id)"</span>
+      <span class="key">pii_type</span>: <span class="str">"CUSTOMER_ID"</span>
+      <span class="key">masking</span>: <span class="str">"hash"</span>
+    - <span class="key">pattern</span>: <span class="str">"(?i)(vehicle_vin|vin_number)"</span>
+      <span class="key">pii_type</span>: <span class="str">"VIN"</span>
+      <span class="key">masking</span>: <span class="str">"partial"</span>
+
+  <span class="cmt"># Add custom value patterns for data sampling</span>
+  <span class="key">custom_value_patterns</span>:
+    - <span class="key">pii_type</span>: <span class="str">"CUSTOMER_ID"</span>
+      <span class="key">regex</span>: <span class="str">"^CUST-\\d{8}$"</span>
+      <span class="key">masking</span>: <span class="str">"hash"</span>
+
+  <span class="cmt"># Override masking strategy for built-in types</span>
+  <span class="key">masking_overrides</span>:
+    <span class="key">EMAIL</span>: <span class="str">"redact"</span>   <span class="cmt"># override default "email_mask"</span>
+
+  <span class="cmt"># Sampling tuning</span>
+  <span class="key">sample_size</span>: <span class="num">200</span>          <span class="cmt"># rows to sample per column (default: 100)</span>
+  <span class="key">match_threshold</span>: <span class="num">0.25</span>     <span class="cmt"># lower threshold for flagging (default: 0.30)</span></pre>
+  </div>
+
+  <p>Custom patterns can also be configured via the Web UI's <strong>Custom Patterns</strong> panel, which allows:</p>
+  <ul>
+    <li>Toggling built-in patterns on/off</li>
+    <li>Adding new regex patterns with a type name and masking strategy</li>
+    <li>Testing patterns against sample values before scanning</li>
+  </ul>
+</section>
+
+<!-- Masking Recommendations -->
+<section class="content-section" id="masking-recommendations">
+  <h2>Masking Recommendations</h2>
+  <p>Each PII type maps to a recommended masking strategy:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Strategy</th><th>SQL Expression</th><th>Used For</th></tr></thead>
+      <tbody>
+        <tr><td><code>hash</code></td><td><code>SHA2(column, 256)</code></td><td>SSN, credit cards, bank accounts, credentials, tax IDs, IBAN</td></tr>
+        <tr><td><code>redact</code></td><td><code>'***REDACTED***'</code></td><td>Person names, addresses, medical data</td></tr>
+        <tr><td><code>null</code></td><td><code>NULL</code></td><td>Date of birth, financial, demographic</td></tr>
+        <tr><td><code>email_mask</code></td><td><code>CONCAT(SUBSTRING(email,1,1),'***@',SUBSTRING_INDEX(email,'@',-1))</code></td><td>Email addresses</td></tr>
+        <tr><td><code>partial</code></td><td><code>CONCAT(first_char, REPEAT('*', len-2), last_char)</code></td><td>Phone numbers, ZIP codes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>To apply masking during clone, add <code>masking_rules</code> to your config:</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="key">masking_rules</span>:
+  - <span class="key">column</span>: <span class="str">"email|email_address"</span>
+    <span class="key">strategy</span>: <span class="str">"email_mask"</span>
+    <span class="key">match_type</span>: <span class="str">"regex"</span>
+  - <span class="key">column</span>: <span class="str">"ssn"</span>
+    <span class="key">strategy</span>: <span class="str">"hash"</span>
+    <span class="key">match_type</span>: <span class="str">"exact"</span>
+  - <span class="key">column</span>: <span class="str">"phone|mobile"</span>
+    <span class="key">strategy</span>: <span class="str">"partial"</span>
+    <span class="key">match_type</span>: <span class="str">"regex"</span></pre>
+  </div>
+</section>
+
+<!-- Unity Catalog Tagging -->
+<section class="content-section" id="unity-catalog-tagging">
+  <h2>Unity Catalog Tagging</h2>
+  <p>After scanning, you can apply PII tags to detected columns in Unity Catalog. This enables downstream tools and policies to act on PII metadata.</p>
+
+  <h3>CLI</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># Scan and apply tags in one command</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--apply-tags</span> <span class="flag">--tag-prefix</span> pii
+
+<span class="cmt"># Custom tag prefix</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--apply-tags</span> <span class="flag">--tag-prefix</span> data_gov</pre>
+  </div>
+
+  <p>This runs:</p>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">sql</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="kw">ALTER TABLE</span> <span class="str">`catalog`</span>.<span class="str">`schema`</span>.<span class="str">`table`</span>
+<span class="kw">ALTER COLUMN</span> <span class="str">`column`</span>
+<span class="kw">SET TAGS</span> (<span class="str">'pii_type'</span> <span class="op">=</span> <span class="str">'EMAIL'</span>, <span class="str">'pii_confidence'</span> <span class="op">=</span> <span class="str">'0.85'</span>)</pre>
+  </div>
+
+  <h3>API</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># Dry run first (default)</span>
+curl <span class="flag">-X</span> POST <span class="url">http://localhost:8000/api/pii-tag</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "source_catalog": "production",
+    "scan_id": "abc-123",
+    "min_confidence": 0.7,
+    "dry_run": true
+  }'</span>
+
+<span class="cmt"># Apply for real</span>
+curl <span class="flag">-X</span> POST <span class="url">http://localhost:8000/api/pii-tag</span> \
+  <span class="flag">-d</span> <span class="str">'{ "source_catalog": "production", "dry_run": false }'</span></pre>
+  </div>
+
+  <h3>Web UI</h3>
+  <p>After a scan completes, click the <strong>Apply UC Tags (Dry Run)</strong> button in the risk banner. The preview shows how many columns would be tagged. Change <code>dry_run</code> to <code>false</code> to apply.</p>
+
+  <div class="admonition caution">
+    <div class="admonition-title">&#9888; Caution</div>
+    <p>Only columns with confidence &ge; 0.7 (high) are tagged by default. Adjust <code>min_confidence</code> to include medium-confidence detections.</p>
+  </div>
+</section>
+
+<!-- Scan History & Tracking -->
+<section class="content-section" id="scan-history">
+  <h2>Scan History &amp; Tracking</h2>
+  <p>Enable scan history to persist results in Delta tables for audit trails and trend analysis.</p>
+
+  <h3>Storage</h3>
+  <p>Scan results are stored in three Delta tables in the <code>clone_audit.pii</code> schema:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Table</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>pii_scans</code></td><td>Scan metadata: scan_id, catalog, timestamp, risk level, duration</td></tr>
+        <tr><td><code>pii_detections</code></td><td>Per-column detection results: PII type, confidence, method, correlation flags</td></tr>
+        <tr><td><code>pii_remediation</code></td><td>Remediation tracking: status (detected/reviewed/masked/accepted/false_positive)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Enabling History</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># CLI</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--save-history</span>
+
+<span class="cmt"># API</span>
+curl <span class="flag">-X</span> POST <span class="url">http://localhost:8000/api/pii-scan</span> \
+  <span class="flag">-d</span> <span class="str">'{ "source_catalog": "production", "save_history": true }'</span></pre>
+  </div>
+
+  <p>In the Web UI, check the <strong>Save History</strong> checkbox before scanning.</p>
+
+  <h3>Viewing History</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># API — list past scans</span>
+curl <span class="url">"http://localhost:8000/api/pii-scans?catalog=production&amp;limit=20"</span>
+
+<span class="cmt"># API — get specific scan details</span>
+curl <span class="url">"http://localhost:8000/api/pii-scans/abc-123"</span></pre>
+  </div>
+
+  <p>In the Web UI, switch to the <strong>Scan History</strong> tab to see past scans. Click a row to expand and view full detections.</p>
+
+  <h3>Comparing Scans</h3>
+  <p>Select two scans in the <strong>Scan History</strong> tab and click <strong>Compare Selected</strong> to see:</p>
+  <ul>
+    <li><strong>New</strong> PII columns (not in the earlier scan)</li>
+    <li><strong>Removed</strong> PII columns (no longer detected)</li>
+    <li><strong>Changed</strong> detections (different type or confidence)</li>
+  </ul>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># API — diff two scans</span>
+curl <span class="url">"http://localhost:8000/api/pii-scans/diff?scan_a=abc-123&amp;scan_b=def-456"</span></pre>
+  </div>
+
+  <h3>Remediation Tracking</h3>
+  <p>Track the status of each detected PII column through a remediation workflow:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>detected</code></td><td>PII detected but not yet reviewed</td></tr>
+        <tr><td><code>reviewed</code></td><td>A human has reviewed the detection</td></tr>
+        <tr><td><code>masked</code></td><td>Masking has been applied to this column</td></tr>
+        <tr><td><code>accepted</code></td><td>PII is acceptable (e.g., internal-only data)</td></tr>
+        <tr><td><code>false_positive</code></td><td>Detection was incorrect</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Update statuses via the <strong>Remediation</strong> tab in the Web UI, or via API:</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>curl <span class="flag">-X</span> POST <span class="url">http://localhost:8000/api/pii-remediation</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "catalog": "production",
+    "schema_name": "sales",
+    "table_name": "customers",
+    "column_name": "email",
+    "pii_type": "EMAIL",
+    "status": "masked",
+    "notes": "Masked with email_mask strategy in dev clone"
+  }'</span></pre>
+  </div>
+</section>
+
+<!-- API Reference -->
+<section class="content-section" id="api-reference">
+  <h2>API Reference</h2>
+
+  <h3>Endpoints</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>POST</code></td><td><code>/pii-scan</code></td><td>Run a PII scan on a catalog</td></tr>
+        <tr><td><code>GET</code></td><td><code>/pii-patterns</code></td><td>Get effective detection patterns (built-in + custom)</td></tr>
+        <tr><td><code>GET</code></td><td><code>/pii-scans?catalog=X</code></td><td>List scan history for a catalog</td></tr>
+        <tr><td><code>GET</code></td><td><code>/pii-scans/{scan_id}</code></td><td>Get full details for a specific scan</td></tr>
+        <tr><td><code>GET</code></td><td><code>/pii-scans/diff?scan_a=X&amp;scan_b=Y</code></td><td>Compare two scans</td></tr>
+        <tr><td><code>POST</code></td><td><code>/pii-tag</code></td><td>Apply PII tags to UC columns</td></tr>
+        <tr><td><code>POST</code></td><td><code>/pii-remediation</code></td><td>Update remediation status</td></tr>
+        <tr><td><code>GET</code></td><td><code>/pii-remediation?catalog=X</code></td><td>Get remediation statuses</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>POST /pii-scan &mdash; Request Body</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>{
+  <span class="prop">"source_catalog"</span>: <span class="str">"production"</span>,
+  <span class="prop">"warehouse_id"</span>: <span class="kw">null</span>,
+  <span class="prop">"exclude_schemas"</span>: [<span class="str">"information_schema"</span>, <span class="str">"default"</span>],
+  <span class="prop">"sample_data"</span>: <span class="kw">false</span>,
+  <span class="prop">"max_workers"</span>: <span class="num">4</span>,
+  <span class="prop">"pii_config"</span>: <span class="kw">null</span>,
+  <span class="prop">"read_uc_tags"</span>: <span class="kw">false</span>,
+  <span class="prop">"save_history"</span>: <span class="kw">false</span>
+}</pre>
+  </div>
+
+  <h3>POST /pii-scan &mdash; Response</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>{
+  <span class="prop">"scan_id"</span>: <span class="str">"550e8400-e29b-41d4-a716-446655440000"</span>,
+  <span class="prop">"summary"</span>: {
+    <span class="prop">"catalog"</span>: <span class="str">"production"</span>,
+    <span class="prop">"total_columns_scanned"</span>: <span class="num">1247</span>,
+    <span class="prop">"pii_columns_found"</span>: <span class="num">15</span>,
+    <span class="prop">"risk_level"</span>: <span class="str">"HIGH"</span>,
+    <span class="prop">"by_pii_type"</span>: {
+      <span class="prop">"EMAIL"</span>: <span class="num">3</span>,
+      <span class="prop">"PERSON_NAME"</span>: <span class="num">4</span>,
+      <span class="prop">"SSN"</span>: <span class="num">2</span>,
+      <span class="prop">"PHONE"</span>: <span class="num">3</span>,
+      <span class="prop">"CREDIT_CARD"</span>: <span class="num">1</span>,
+      <span class="prop">"ADDRESS"</span>: <span class="num">2</span>
+    }
+  },
+  <span class="prop">"columns"</span>: [
+    {
+      <span class="prop">"schema"</span>: <span class="str">"sales"</span>,
+      <span class="prop">"table"</span>: <span class="str">"customers"</span>,
+      <span class="prop">"column"</span>: <span class="str">"email"</span>,
+      <span class="prop">"data_type"</span>: <span class="str">"STRING"</span>,
+      <span class="prop">"pii_type"</span>: <span class="str">"EMAIL"</span>,
+      <span class="prop">"detection_method"</span>: <span class="str">"column_name"</span>,
+      <span class="prop">"confidence"</span>: <span class="str">"high"</span>,
+      <span class="prop">"confidence_score"</span>: <span class="num">0.85</span>,
+      <span class="prop">"suggested_masking"</span>: <span class="str">"email_mask"</span>,
+      <span class="prop">"correlation_flags"</span>: [<span class="str">"credential_pair"</span>]
+    }
+  ],
+  <span class="prop">"suggested_masking_config"</span>: {
+    <span class="prop">"sales.customers.email"</span>: {
+      <span class="prop">"pii_type"</span>: <span class="str">"EMAIL"</span>,
+      <span class="prop">"masking"</span>: <span class="str">"email_mask"</span>,
+      <span class="prop">"confidence"</span>: <span class="str">"high"</span>,
+      <span class="prop">"confidence_score"</span>: <span class="num">0.85</span>
+    }
+  }
+}</pre>
+  </div>
+
+  <h3>POST /pii-tag &mdash; Request Body</h3>
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>{
+  <span class="prop">"source_catalog"</span>: <span class="str">"production"</span>,
+  <span class="prop">"scan_id"</span>: <span class="str">"550e8400-..."</span>,
+  <span class="prop">"tag_prefix"</span>: <span class="str">"pii"</span>,
+  <span class="prop">"min_confidence"</span>: <span class="num">0.7</span>,
+  <span class="prop">"dry_run"</span>: <span class="kw">true</span>
+}</pre>
+  </div>
+</section>
+
+<!-- CLI Reference -->
+<section class="content-section" id="cli-reference">
+  <h2>CLI Reference</h2>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>clxs pii-scan [OPTIONS]</pre>
+  </div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Flag</th><th>Description</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--source</code></td><td>Source catalog name</td><td>from config</td></tr>
+        <tr><td><code>--sample-data</code></td><td>Enable data value sampling</td><td>off</td></tr>
+        <tr><td><code>--read-uc-tags</code></td><td>Read UC column tags for detection</td><td>off</td></tr>
+        <tr><td><code>--save-history</code></td><td>Save results to Delta tables</td><td>off</td></tr>
+        <tr><td><code>--apply-tags</code></td><td>Apply PII tags to UC columns after scan</td><td>off</td></tr>
+        <tr><td><code>--tag-prefix</code></td><td>Prefix for UC tags</td><td><code>pii</code></td></tr>
+        <tr><td><code>--no-exit-code</code></td><td>Don't exit with code 1 if PII found</td><td>off</td></tr>
+        <tr><td><code>--config</code></td><td>Path to config file</td><td><code>config/clone_config.yaml</code></td></tr>
+        <tr><td><code>--profile</code></td><td>Config profile to use</td><td>&mdash;</td></tr>
+        <tr><td><code>-w</code>, <code>--warehouse-id</code></td><td>SQL warehouse ID</td><td>from config</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Configuration Reference -->
+<section class="content-section" id="configuration-reference">
+  <h2>Configuration Reference</h2>
+  <p>Full <code>pii_detection</code> block in <code>config/clone_config.yaml</code>:</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="key">pii_detection</span>:
+  <span class="cmt"># Disable specific built-in PII type detections</span>
+  <span class="key">disabled_patterns</span>:
+    - <span class="val">DEMOGRAPHIC</span>
+    - <span class="val">ZIP_CODE</span>
+
+  <span class="cmt"># Custom column name regex patterns</span>
+  <span class="key">custom_column_patterns</span>:
+    - <span class="key">pattern</span>: <span class="str">"(?i)(customer_ref|cust_id)"</span>
+      <span class="key">pii_type</span>: <span class="str">"CUSTOMER_ID"</span>
+      <span class="key">masking</span>: <span class="str">"hash"</span>
+
+  <span class="cmt"># Custom value patterns for data sampling</span>
+  <span class="key">custom_value_patterns</span>:
+    - <span class="key">pii_type</span>: <span class="str">"CUSTOMER_ID"</span>
+      <span class="key">regex</span>: <span class="str">"^CUST-\\d{8}$"</span>
+      <span class="key">masking</span>: <span class="str">"hash"</span>
+
+  <span class="cmt"># Override default masking for built-in types</span>
+  <span class="key">masking_overrides</span>:
+    <span class="key">EMAIL</span>: <span class="str">"redact"</span>
+
+  <span class="cmt"># Sampling configuration</span>
+  <span class="key">sample_size</span>: <span class="num">100</span>            <span class="cmt"># rows per column (default: 100)</span>
+  <span class="key">match_threshold</span>: <span class="num">0.3</span>        <span class="cmt"># min match rate to flag (default: 0.3)</span></pre>
+  </div>
+</section>
+
+<!-- Integration with Cloning -->
+<section class="content-section" id="integration-with-cloning">
+  <h2>Integration with Cloning</h2>
+  <p>PII detection ties into the clone workflow at two points:</p>
+  <ol>
+    <li><strong>Pre-clone scanning</strong> &mdash; Run <code>pii-scan</code> before cloning to identify sensitive columns, then define <code>masking_rules</code> in your config to protect them during clone.</li>
+    <li><strong>Post-clone masking</strong> &mdash; When <code>masking_rules</code> are defined, Clone Catalog automatically applies masking after each table is cloned. The masking runs as <code>UPDATE</code> statements on the destination catalog.</li>
+  </ol>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><span class="cmt"># Recommended workflow</span>
+clxs pii-scan <span class="flag">--source</span> production <span class="flag">--save-history</span>
+<span class="cmt"># Review results, then clone with masking</span>
+clxs clone <span class="flag">--source</span> production <span class="flag">--dest</span> dev <span class="flag">--config</span> config/clone_config.yaml</pre>
+  </div>
+
+  <div class="admonition tip">
+    <div class="admonition-title">&#128161; Tip</div>
+    <p>Use the PII scan's <code>suggested_masking_config</code> output to generate your <code>masking_rules</code> YAML. The scan logs include ready-to-copy config snippets.</p>
+  </div>
+
+  <div class="admonition caution">
+    <div class="admonition-title">&#9888; Caution</div>
+    <p>PII detection uses heuristic column-name matching and regex patterns. Always review scan results and define explicit masking rules for complete coverage. Columns with generic names like <code>field1</code> or <code>data</code> may contain PII that column-name detection cannot catch &mdash; use <code>--sample-data</code> for these cases.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <span>Clone-Xs Documentation</span> &mdash; &copy; 2026 Clone-Xs. All rights reserved.
+</footer>
+
+<!-- Back to top -->
+<button class="back-to-top" id="backToTop" aria-label="Back to top">&#8593;</button>
+
+<script>
+(function() {
+  // ─── Sidebar toggle (mobile) ───
+  const hamburger = document.getElementById('hamburgerBtn');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+
+  hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('active');
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('visible');
+  });
+  overlay.addEventListener('click', () => {
+    hamburger.classList.remove('active');
+    sidebar.classList.remove('open');
+    overlay.classList.remove('visible');
+  });
+
+  // Close sidebar on nav click (mobile)
+  sidebar.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) {
+        hamburger.classList.remove('active');
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+      }
+    });
+  });
+
+  // ─── Collapsible sidebar sections ───
+  document.querySelectorAll('.sidebar-section-title').forEach(title => {
+    title.addEventListener('click', () => {
+      title.classList.toggle('collapsed');
+      const links = title.nextElementSibling;
+      links.classList.toggle('collapsed');
+    });
+  });
+
+  // ─── Sidebar search filter ───
+  const searchInput = document.getElementById('sidebarSearch');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    document.querySelectorAll('.sidebar-links li').forEach(li => {
+      const text = li.textContent.toLowerCase();
+      li.classList.toggle('hidden', q && !text.includes(q));
+    });
+    // Show sections that have visible items
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const links = sec.querySelector('.sidebar-links');
+      const title = sec.querySelector('.sidebar-section-title');
+      if (q) {
+        const hasVisible = [...links.querySelectorAll('li')].some(li => !li.classList.contains('hidden'));
+        sec.style.display = hasVisible ? '' : 'none';
+        if (hasVisible) { links.classList.remove('collapsed'); title.classList.remove('collapsed'); }
+      } else {
+        sec.style.display = '';
+      }
+    });
+  });
+
+  // ─── IntersectionObserver for TOC + sidebar active tracking ───
+  const tocLinks = document.querySelectorAll('.toc a');
+  const sidebarLinks = document.querySelectorAll('.sidebar-links a');
+  const sections = [];
+
+  // Collect all section targets
+  document.querySelectorAll('[id]').forEach(el => {
+    if (el.tagName.match(/^(H[23]|SECTION|DIV)$/) || el.classList.contains('content-section')) {
+      sections.push(el);
+    }
+  });
+
+  const observerOptions = { rootMargin: '-80px 0px -60% 0px', threshold: 0 };
+
+  function setActive(id) {
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
+    sidebarLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
+  }
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        setActive(entry.target.id);
+      }
+    });
+  }, observerOptions);
+
+  sections.forEach(s => observer.observe(s));
+
+  // ─── Back to top ───
+  const backToTop = document.getElementById('backToTop');
+  window.addEventListener('scroll', () => {
+    backToTop.classList.toggle('visible', window.scrollY > 500);
+  });
+  backToTop.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // ─── Copy code button ───
+  window.copyCode = function(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre');
+    const text = pre.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    });
+  };
+})();
+</script>
+</body>
+</html>

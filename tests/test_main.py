@@ -1,6 +1,5 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import argparse
-import pytest
 
 from src.main import add_common_args, _resolve_warehouse_id
 

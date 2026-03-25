@@ -2,9 +2,7 @@
 
 import json
 import threading
-import time
 import urllib.request
-from unittest.mock import MagicMock, patch
 
 from src.api_server import CloneAPIHandler, _server_state
 
@@ -14,7 +12,6 @@ class TestAPIRouting:
         """Test health check returns correct response."""
         # We test the handler logic directly
         from http.server import HTTPServer
-        import io
 
         _server_state["config"] = {}
         _server_state["client"] = None

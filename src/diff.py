@@ -3,7 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import (
+    list_schemas_sdk,
+    list_tables_sdk,
+    list_views_sdk,
+    list_functions_sdk,
+    list_volumes_sdk,
+)
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -24,35 +30,43 @@ def get_all_objects(
         "volumes": set(),
     }
 
-    exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
-
     def _fetch_schemas():
-        sql = f"SELECT schema_name FROM {catalog}.information_schema.schemata WHERE schema_name NOT IN ({exclude_clause})"
-        return [row["schema_name"] for row in execute_sql(client, warehouse_id, sql)]
+        return list_schemas_sdk(client, catalog, exclude=exclude_schemas)
 
     def _fetch_tables():
-        sql = f"SELECT table_schema, table_name FROM {catalog}.information_schema.tables WHERE table_schema NOT IN ({exclude_clause}) AND table_type IN ('MANAGED', 'EXTERNAL')"
-        return [f"{r['table_schema']}.{r['table_name']}" for r in execute_sql(client, warehouse_id, sql)]
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
+        items = []
+        for s in schemas:
+            for t in list_tables_sdk(client, catalog, s):
+                if t["table_type"] in ("MANAGED", "EXTERNAL"):
+                    items.append(f"{s}.{t['table_name']}")
+        return items
 
     def _fetch_views():
-        sql = f"SELECT table_schema, table_name FROM {catalog}.information_schema.views WHERE table_schema NOT IN ({exclude_clause})"
-        return [f"{r['table_schema']}.{r['table_name']}" for r in execute_sql(client, warehouse_id, sql)]
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
+        items = []
+        for s in schemas:
+            for v in list_views_sdk(client, catalog, s):
+                items.append(f"{s}.{v['table_name']}")
+        return items
 
     def _fetch_functions():
-        try:
-            sql = f"SELECT routine_schema, routine_name AS function_name FROM {catalog}.information_schema.routines WHERE routine_schema NOT IN ({exclude_clause}) AND routine_type = 'FUNCTION'"
-            return [f"{r['routine_schema']}.{r['function_name']}" for r in execute_sql(client, warehouse_id, sql)]
-        except Exception:
-            return []
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
+        items = []
+        for s in schemas:
+            for f in list_functions_sdk(client, catalog, s):
+                items.append(f"{s}.{f['function_name']}")
+        return items
 
     def _fetch_volumes():
-        try:
-            sql = f"SELECT volume_schema, volume_name FROM {catalog}.information_schema.volumes WHERE volume_schema NOT IN ({exclude_clause})"
-            return [f"{r['volume_schema']}.{r['volume_name']}" for r in execute_sql(client, warehouse_id, sql)]
-        except Exception:
-            return []
+        schemas = list_schemas_sdk(client, catalog, exclude=exclude_schemas)
+        items = []
+        for s in schemas:
+            for v in list_volumes_sdk(client, catalog, s):
+                items.append(f"{s}.{v['volume_name']}")
+        return items
 
-    # Run all 5 queries in parallel
+    # Run all 5 fetches in parallel
     with ThreadPoolExecutor(max_workers=5) as executor:
         f_schemas = executor.submit(_fetch_schemas)
         f_tables = executor.submit(_fetch_tables)
@@ -75,8 +89,19 @@ def compare_catalogs(
     source_catalog: str,
     dest_catalog: str,
     exclude_schemas: list[str],
+    **kwargs,
 ) -> dict:
     """Compare source and destination catalogs. Returns diff report."""
+    # RBAC enforcement
+    if kwargs.get("rbac_enabled"):
+        from src.rbac import enforce_rbac
+        rbac_config = {
+            "source_catalog": source_catalog,
+            "destination_catalog": dest_catalog,
+            "rbac_policy_path": kwargs.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
+        }
+        enforce_rbac(client, rbac_config, operation="diff")
+
     logger.info(f"Comparing catalogs: {source_catalog} vs {dest_catalog}")
 
     # Fetch source and dest metadata in parallel with progress

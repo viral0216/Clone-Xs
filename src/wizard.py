@@ -141,7 +141,7 @@ def run_wizard(output_path: str = "config/clone_config.yaml") -> str:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     print(f"\nConfig written to: {output_path}")
-    print(f"Run clone with: clone-catalog clone -c {output_path}")
+    print(f"Run clone with: clxs clone -c {output_path}")
 
     return output_path
 
@@ -208,7 +208,7 @@ def _prompt_hooks(phase: str) -> list[dict]:
         sql = _prompt(f"    {phase} SQL", default="")
         if not sql:
             break
-        desc = _prompt(f"    Description", default=f"{phase} hook {len(hooks) + 1}")
+        desc = _prompt("    Description", default=f"{phase} hook {len(hooks) + 1}")
         on_error = _prompt_choice("    On error", choices=["warn", "fail", "ignore"], default="warn")
         hooks.append({"sql": sql, "description": desc, "on_error": on_error})
     return hooks

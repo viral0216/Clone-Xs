@@ -19,16 +19,16 @@ Your organization has multiple teams sharing a Databricks workspace. The data en
 
 ```bash
 # Check if the current user can perform a clone
-clone-catalog rbac check
+clxs rbac check
 
 # Show all policies that apply to the current user
-clone-catalog rbac show
+clxs rbac show
 
 # Show policies for a specific user
-clone-catalog rbac show --user "data-engineering@company.com"
+clxs rbac show --user "data-engineering@company.com"
 
 # Validate RBAC policy file syntax
-clone-catalog policy-check --policy-file rbac_policy.yaml
+clxs policy-check --policy-file rbac_policy.yaml
 ```
 
 **Output (rbac check):**
@@ -110,21 +110,82 @@ rbac:
       reason: "Contractors cannot access PII catalogs."
 ```
 
-### Integration with clone pipeline
+### Enforced operations
 
-RBAC checks run automatically before every clone operation. If the current principal is not permitted, the clone is blocked:
+RBAC checks run automatically before every `clone`, `sync`, `diff`, and `incremental-sync` operation. If the current principal is not permitted, the operation is blocked:
 
 ```bash
-# RBAC is enforced automatically
-clone-catalog clone --source production --dest production_backup
-
-# Output:
+# RBAC is enforced automatically on clone
+clxs clone --source production --dest production_backup
 # [RBAC] Denied: Cloning into the production catalog is prohibited.
 # Clone aborted.
+
+# RBAC is also enforced on sync, diff, and incremental-sync
+clxs sync --source production --dest staging
+# [RBAC] Denied: sync operation not allowed for user@company.com
+```
+
+### Operation-level permissions
+
+The `allowed_operations` field controls which operations a principal can perform. Use `"*"` to allow all operations:
+
+```yaml
+rbac:
+  policies:
+    - name: "Analysts - Read Only"
+      principals:
+        - "analysts@company.com"
+      sources:
+        - "production"
+      destinations: []
+      allowed_operations:
+        - "diff"       # Can compare catalogs
+        - "stats"      # Can view statistics
+        - "search"     # Can search metadata
+        # Cannot clone, sync, or incremental-sync
+
+    - name: "Platform Team - Full Access"
+      principals:
+        - "platform-team@company.com"
+      sources: ["*"]
+      destinations: ["*"]
+      allowed_operations:
+        - "*"          # All operations permitted
+```
+
+### API endpoints
+
+Manage RBAC policies programmatically via the REST API:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/rbac/policies` | List all RBAC policies |
+| `POST` | `/rbac/policies` | Create a new RBAC policy |
+| `DELETE` | `/rbac/policies` | Delete an RBAC policy by name |
+
+```bash
+# List all policies
+curl http://localhost:8080/rbac/policies
+
+# Create a policy
+curl -X POST http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Dev Team Access",
+    "principals": ["dev@company.com"],
+    "sources": ["staging"],
+    "destinations": ["dev_*"],
+    "allowed_operations": ["clone", "sync", "diff"]
+  }'
+
+# Delete a policy
+curl -X DELETE http://localhost:8080/rbac/policies \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Dev Team Access"}'
 ```
 
 :::caution
-RBAC enforcement should only be bypassed in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized clones.
+RBAC enforcement should only be bypassed in development environments. In CI/CD pipelines, always leave RBAC enabled to prevent unauthorized operations.
 :::
 
 ---
@@ -141,22 +202,22 @@ Your team wants to clone the `finance` catalog — which contains sensitive reve
 
 ```bash
 # Submit a clone for approval
-clone-catalog clone \
+clxs clone \
   --source finance --dest finance_qa \
   --require-approval
 
 # List pending approvals
-clone-catalog approval list
+clxs approval list
 
 # Approve a pending request (by ID)
-clone-catalog approval approve ap-2026031401
+clxs approval approve ap-2026031401
 
 # Deny a request with a reason
-clone-catalog approval deny ap-2026031401 \
+clxs approval deny ap-2026031401 \
   --reason "Use the existing QA catalog instead"
 
 # Check status of a specific request
-clone-catalog approval status ap-2026031401
+clxs approval status ap-2026031401
 ```
 
 **Output (approval list):**
@@ -191,16 +252,16 @@ approval:
 
 ### How it works
 
-1. User runs `clone-catalog clone --require-approval`
+1. User runs `clxs clone --require-approval`
 2. The tool creates an approval request and sends a notification (Slack/webhook/CLI)
 3. The clone process enters a waiting state — it polls for approval status
-4. An approver runs `clone-catalog approval approve <id>` (or clicks the Slack button)
+4. An approver runs `clxs approval approve <id>` (or clicks the Slack button)
 5. The clone resumes automatically
 
 If the timeout expires or the request is denied, the clone is aborted.
 
 :::note
-Approval state is stored locally in `.clone-catalog/approvals/`. In team environments, consider using the API server mode (`clone-catalog serve`) for shared approval state.
+Approval state is stored locally in `.clxs/approvals/`. In team environments, consider using the API server mode (`clxs serve`) for shared approval state.
 :::
 
 ---
@@ -217,17 +278,17 @@ Your compliance team needs a quarterly report covering: which catalogs were clon
 
 ```bash
 # Generate a compliance report for the last 30 days
-clone-catalog compliance-report
+clxs compliance-report
 
 # Custom date range
-clone-catalog compliance-report \
+clxs compliance-report \
   --from 2026-01-01 --to 2026-03-14
 
 # Output as HTML (shareable with non-technical stakeholders)
-clone-catalog compliance-report --format html --output-dir reports/
+clxs compliance-report --format html --output-dir reports/
 
 # Output as JSON (for integration with GRC tools)
-clone-catalog compliance-report --format json --output-dir reports/
+clxs compliance-report --format json --output-dir reports/
 ```
 
 **Output (console):**
@@ -300,83 +361,66 @@ Schedule compliance report generation in your CI/CD pipeline or cron job to ensu
 
 ---
 
+## Pre-flight permission checks
+
+> Validate Unity Catalog permissions before cloning, with implicit and inherited grant detection.
+
+Pre-flight checks (`clxs preflight`) now detect implicit UC privileges that previous versions would miss:
+
+| Check | Detects |
+|-------|---------|
+| `dest_manage_permission` | Catalog ownership, catalog-level MANAGE, schema-level MANAGE |
+| `dest_create_table` | Ownership, MANAGE (implies CREATE TABLE), schema-level CREATE TABLE |
+| `source_use_catalog` | Ownership (shows "(owner)"), USE CATALOG grant |
+| `create_catalog_permission` | Metastore-level CREATE CATALOG grant |
+
+When a check fails, the CLI and Web UI display the exact `GRANT` command needed to fix it:
+
+```sql
+GRANT USE CATALOG ON CATALOG my_catalog TO `user@company.com`;
+GRANT CREATE TABLE ON SCHEMA my_catalog.bronze TO `user@company.com`;
+```
+
+In the Web UI, these commands are clickable code blocks (click to copy) with links to the [Unity Catalog privileges documentation](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/index.html).
+
+:::tip
+Run `clxs preflight` before every clone in CI/CD pipelines. Failed permission checks now give actionable GRANT commands instead of generic error messages.
+:::
+
+---
+
 ## PII and data masking
 
 > Detect and mask personally identifiable information during cloning to protect sensitive data in non-production environments.
 
-### Real-world scenario
+Clone Catalog includes a comprehensive PII detection engine with structural validators, cross-column correlation, Unity Catalog tag integration, scan history tracking, and remediation workflows.
 
-Your `production` catalog contains customer PII — emails, phone numbers, social security numbers. When cloning to `dev` for development work, PII must be masked so developers never see real customer data. Clone Catalog can scan for PII columns and apply masking rules automatically.
+For the full PII detection documentation, see the dedicated **[PII Detection & Protection](./pii-detection)** guide.
 
-### PII scanning
-
-```bash
-# Scan a catalog for PII columns
-clone-catalog pii-scan --source production
-
-# Scan specific schemas
-clone-catalog pii-scan --source production
-```
-
-**Output:**
-
-```
-============================================================
-PII SCAN RESULTS: production
-============================================================
-  Tables scanned:    247
-  PII columns found: 15
-
-  sales.customers:
-    email           STRING    [PII: email_address]
-    phone           STRING    [PII: phone_number]
-    address         STRING    [PII: physical_address]
-
-  hr.employees:
-    ssn             STRING    [PII: ssn]
-    personal_email  STRING    [PII: email_address]
-    date_of_birth   DATE      [PII: date_of_birth]
-    salary          DECIMAL   [PII: financial]
-
-  marketing.contacts:
-    email_address   STRING    [PII: email_address]
-    mobile          STRING    [PII: phone_number]
-============================================================
-```
-
-### Masking during clone
-
-Combine PII scanning with masking rules to automatically protect sensitive data. Define masking rules in your config YAML and reference the config file when cloning:
+### Quick example
 
 ```bash
-# Clone using a config file with masking rules defined
-clone-catalog clone \
-  --source production --dest dev \
+# Scan with all detection methods enabled
+clxs pii-scan --source production \
+  --sample-data --read-uc-tags --save-history
+
+# Clone with masking rules to protect PII
+clxs clone --source production --dest dev \
   --config config/clone_config.yaml
 ```
 
 ```yaml
-# config/masking_rules.yaml
+# config/clone_config.yaml
 masking_rules:
-  - column: "email|email_address|personal_email|work_email"
+  - column: "email|email_address"
     strategy: "email_mask"
     match_type: "regex"
-
   - column: "ssn|social_security"
-    strategy: "redact"
-    match_type: "regex"
-
-  - column: "phone|mobile|phone_number"
-    strategy: "redact"
-    match_type: "regex"
-
-  - column: "salary|compensation"
     strategy: "hash"
     match_type: "regex"
-
-  - column: "date_of_birth"
-    strategy: "null"
-    match_type: "exact"
+  - column: "phone|mobile"
+    strategy: "partial"
+    match_type: "regex"
 ```
 
 ### Tie-in with compliance
@@ -387,6 +431,6 @@ When PII masking is applied during a clone, the compliance report automatically 
 - Which masking strategy was used
 - Whether any PII columns were left unmasked (flagged as a compliance risk)
 
-:::caution
-PII detection uses heuristic column-name matching. Always review the PII scan results and define explicit masking rules for complete coverage. Column-name detection may miss PII stored in generically named columns like `field1` or `data`.
+:::tip
+Use `clxs pii-scan --apply-tags` to automatically tag PII columns in Unity Catalog, enabling downstream data governance policies.
 :::

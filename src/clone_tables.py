@@ -5,11 +5,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql
+from src.client import execute_sql, list_tables_sdk
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.permissions import copy_table_permissions, update_ownership
-from src.rollback import record_object
+from src.rollback import record_object, get_table_version, record_table_version
 from src.security import copy_table_security
 
 logger = logging.getLogger(__name__)
@@ -24,13 +24,8 @@ def get_tables(
     Args:
         order_by_size: "asc" (smallest first), "desc" (largest first), or None.
     """
-    sql = f"""
-        SELECT table_name, table_type
-        FROM {catalog}.information_schema.tables
-        WHERE table_schema = '{schema}'
-        AND table_type IN ('MANAGED', 'EXTERNAL')
-    """
-    tables = execute_sql(client, warehouse_id, sql)
+    all_tables = list_tables_sdk(client, catalog, schema)
+    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
 
     if order_by_size and tables:
         # Get sizes for ordering
@@ -62,12 +57,7 @@ def get_existing_tables(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> set[str]:
     """Get set of existing table names in destination schema."""
-    sql = f"""
-        SELECT table_name
-        FROM {catalog}.information_schema.tables
-        WHERE table_schema = '{schema}'
-    """
-    rows = execute_sql(client, warehouse_id, sql)
+    rows = list_tables_sdk(client, catalog, schema)
     return {row["table_name"] for row in rows}
 
 
@@ -93,6 +83,7 @@ def clone_table(
     as_of_version: int | None = None,
     where_clause: str | None = None,
     force_reclone: bool = False,
+    schema_only: bool = False,
 ) -> bool:
     """Clone a single table from source to destination catalog.
 
@@ -113,6 +104,17 @@ def clone_table(
             logger.info(f"{'[DRY RUN] ' if dry_run else ''}Dropped table for re-clone: {dest}")
         except Exception as e:
             logger.warning(f"Failed to drop table {dest} for re-clone: {e}")
+
+    # Schema-only mode: create empty table with same structure (no data)
+    if schema_only:
+        sql = f"CREATE TABLE IF NOT EXISTS {dest} LIKE {source}"
+        try:
+            execute_sql(client, warehouse_id, sql, dry_run=dry_run)
+            logger.info(f"{'[DRY RUN] ' if dry_run else ''}Created empty table: {source} -> {dest} (schema-only)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create empty table {dest}: {e}")
+            return False
 
     # If where_clause is provided and clone_type is DEEP, use CTAS
     if where_clause and clone_type == "DEEP":
@@ -181,13 +183,24 @@ def _clone_single_table(
     as_of_version: int | None = None,
     where_clause: str | None = None,
     force_reclone: bool = False,
+    schema_only: bool = False,
 ) -> tuple[str, bool]:
     """Clone a single table with all post-clone operations. Returns (table_name, success)."""
+    # Record destination table's pre-clone Delta version for RESTORE rollback
+    if rollback_log and not dry_run:
+        dest_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
+        try:
+            pre_version = get_table_version(client, warehouse_id, dest_fqn)
+            record_table_version(rollback_log, dest_fqn, pre_version, existed=pre_version is not None)
+        except Exception:
+            pass  # Don't block clone if version recording fails
+
     success = clone_table(
         client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
         clone_type, dry_run=dry_run,
         as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
         where_clause=where_clause, force_reclone=force_reclone,
+        schema_only=schema_only,
     )
 
     if not success:
@@ -266,6 +279,7 @@ def clone_tables_in_schema(
     as_of_version: int | None = None,
     where_clauses: dict | None = None,
     force_reclone: bool = False,
+    schema_only: bool = False,
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -338,7 +352,7 @@ def clone_tables_in_schema(
                     copy_permissions, copy_ownership, copy_tags, copy_properties,
                     copy_security, copy_constraints, copy_comments, rollback_log,
                     as_of_timestamp, as_of_version,
-                    _resolve_where_clause(tname), force_reclone,
+                    _resolve_where_clause(tname), force_reclone, schema_only,
                 ): tname
                 for tname in tables_to_clone
             }
@@ -356,7 +370,7 @@ def clone_tables_in_schema(
                 copy_permissions, copy_ownership, copy_tags, copy_properties,
                 copy_security, copy_constraints, copy_comments, rollback_log,
                 as_of_timestamp, as_of_version,
-                _resolve_where_clause(tname), force_reclone,
+                _resolve_where_clause(tname), force_reclone, schema_only,
             )
             if success:
                 results["success"] += 1

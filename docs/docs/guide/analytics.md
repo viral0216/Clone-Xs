@@ -19,16 +19,16 @@ Your `production` catalog has 500 tables, but your clone takes 3 hours and costs
 
 ```bash
 # Analyze table usage patterns
-clone-catalog usage-analysis --source production
+clxs usage-analysis --source production
 
 # Analyze with a custom lookback period
-clone-catalog usage-analysis --source production --days 90
+clxs usage-analysis --source production --days 90
 
 # Get skip recommendations
-clone-catalog usage-analysis --source production --recommend
+clxs usage-analysis --source production --recommend
 
 # Clone with automatic unused table skipping
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --skip-unused
 ```
@@ -99,6 +99,93 @@ System tables may have a lag of up to 24 hours. Usage analysis reflects historic
 
 ---
 
+## Dashboard
+
+> The Analytics Dashboard provides a real-time overview of all clone activity, powered by Delta tables.
+
+### Data source
+
+The dashboard queries three Delta tables directly instead of relying on an in-memory job store:
+
+| Delta Table | Purpose | Key Columns |
+|---|---|---|
+| `run_logs` | One row per clone run | `tables_cloned`, `tables_failed`, `total_size_bytes` |
+| `clone_operations` | One row per table-level operation | `tables_skipped`, `clone_mode`, `trigger`, `destination_existed` |
+| `clone_metrics` | Aggregated performance metrics | `user_name`, `status`, `job_type` |
+
+Because the data lives in Delta, dashboards survive app restarts and can be queried from Databricks SQL or any BI tool connected to the catalog.
+
+### Stat cards
+
+The dashboard displays **10 stat cards** at the top of the page:
+
+| Card | Source Table |
+|---|---|
+| Total Runs | `run_logs` |
+| Tables Cloned | `run_logs.tables_cloned` |
+| Tables Failed | `run_logs.tables_failed` |
+| Total Size | `run_logs.total_size_bytes` |
+| Success Rate | `clone_operations` |
+| Tables Skipped | `clone_operations.tables_skipped` |
+| Avg Duration | `clone_metrics` |
+| Active Users | `clone_metrics.user_name` |
+| Catalog Health Score | Composite score derived from success rate, failure trends, and skipped-table ratio |
+| Last Run Status | `run_logs` (most recent row) |
+
+### Charts
+
+Five charts visualize trends and breakdowns:
+
+1. **Clone Runs Over Time** -- daily run count from `run_logs`
+2. **Success vs Failure** -- stacked bar from `clone_operations.status`
+3. **Clone Mode Distribution** -- pie chart from `clone_operations.clone_mode`
+4. **Duration Trend** -- line chart from `clone_metrics`
+5. **Size by Catalog** -- bar chart from `run_logs.total_size_bytes`
+
+### Insight tables
+
+Two insight tables sit below the charts:
+
+- **Recent Clone Operations** -- the last 50 rows from `clone_operations`, showing source, destination, clone mode, trigger, and whether the destination already existed.
+- **Top Failing Tables** -- tables with the highest failure count, aggregated from `clone_operations`.
+
+### Catalog Health Score
+
+The **Catalog Health Score** card computes a 0-100 score for each catalog pair based on:
+
+- Clone success rate (weight 50%)
+- Trend direction over the last 7 days (weight 30%)
+- Ratio of skipped tables to total tables (weight 20%)
+
+A score below 70 is flagged amber; below 50 is flagged red.
+
+### Notification Center
+
+The Notification Center surfaces important events without requiring users to poll the dashboard:
+
+- Clone failures and partial failures
+- TTL expiration warnings (catalogs expiring within 24 hours)
+- Health Score drops below threshold
+- Long-running clones that exceed the P95 duration
+
+Notifications appear as a bell icon badge in the app header and are stored in the `clone_metrics` table for audit.
+
+### Pinned Catalog Pairs
+
+Users can **pin** frequently monitored source-destination catalog pairs to the top of the dashboard. Pinned pairs persist across sessions and show a condensed summary card with last run status, health score, and next scheduled run.
+
+:::tip
+The **Demo Data Generator** (`/demo-data`) can pre-populate the dashboard with 20 fake clone operations via audit log enrichment, so new installations see meaningful data on the Dashboard immediately.
+:::
+
+### Integration notes
+
+- **Explorer cost cards** read the storage price from Settings (persisted in localStorage), so changing the price on the Settings page is immediately reflected in Explorer stat cards.
+- **Column usage analytics** falls back to `information_schema.columns` when `system.access.column_lineage` is unavailable, ensuring column data is always displayed even without system table access.
+- **Cost Estimator** passes the `price_per_gb` value from Settings to the API (`POST /api/estimate`), allowing cost projections to use the user-configured storage price.
+
+---
+
 ## Metrics collection
 
 > Track clone performance over time and export metrics to your observability platform.
@@ -111,16 +198,16 @@ Your team runs nightly clones across 5 catalogs. You want to track clone duratio
 
 ```bash
 # View current metrics
-clone-catalog metrics
+clxs metrics
 
 # View metrics filtered by source catalog
-clone-catalog metrics --source monitoring.clone_metrics
+clxs metrics --source monitoring.clone_metrics
 
 # View metrics in JSON format
-clone-catalog metrics --format json
+clxs metrics --format json
 
 # Enable Prometheus metrics endpoint (when running in serve mode)
-clone-catalog serve --port 9090
+clxs serve --port 9090
 ```
 
 **Output:**
@@ -215,21 +302,21 @@ A data engineer notices that the staging environment has stale data. They want t
 
 ```bash
 # List recent clone operations
-clone-catalog history list
+clxs history list
 
 # Show details of a specific operation
-clone-catalog history show clone-20260314-020000
+clxs history show clone-20260314-020000
 
 # Diff two operations (what changed between runs)
-clone-catalog history diff \
+clxs history diff \
   clone-20260313-020000 \
   clone-20260314-020000
 
 # Filter by catalog
-clone-catalog history list --source production
+clxs history list --source production
 
 # Limit results
-clone-catalog history list --limit 5
+clxs history list --limit 5
 ```
 
 **Output (history list):**
@@ -271,7 +358,7 @@ CLONE DIFF: clone-20260313-020000 → clone-20260314-020000
 
 ### History storage
 
-Clone history is stored locally in `.clone-catalog/history/` as JSON files. Each operation creates a timestamped record with full details including:
+Clone history is stored locally in `.clxs/history/` as JSON files. Each operation creates a timestamped record with full details including:
 
 - Source and destination catalogs
 - All options and flags used
@@ -297,17 +384,17 @@ After cloning, a data analyst reports that the numbers in a dashboard "look wron
 
 ```bash
 # Preview a specific table
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --table sales.orders
 
 # Preview all tables (summary mode)
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --all
 
 # Limit rows for preview
-clone-catalog preview \
+clxs preview \
   --source production --dest staging \
   --table sales.orders --limit 20
 ```
@@ -363,7 +450,7 @@ DATA PREVIEW SUMMARY: production vs staging
 When mismatches are found, use the `diff` command to compare catalogs in detail:
 
 ```bash
-clone-catalog diff \
+clxs diff \
   --source production --dest staging
 ```
 

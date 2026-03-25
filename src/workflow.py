@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 
 import yaml
 
@@ -27,7 +26,7 @@ def generate_workflow(
 
     # Build the CLI command
     cmd_parts = [
-        "clone-catalog", "clone",
+        "clxs", "clone",
         "--source", source,
         "--dest", dest,
         "--clone-type", config["clone_type"],
@@ -60,7 +59,7 @@ def generate_workflow(
                 "description": f"Clone {source} to {dest}",
                 "python_wheel_task": {
                     "package_name": "clone_xs",
-                    "entry_point": "clone-catalog",
+                    "entry_point": "clxs",
                     "parameters": cmd_parts[1:],  # Skip the binary name
                 },
                 "libraries": [
@@ -126,7 +125,7 @@ def generate_workflow_yaml(
                             "task_key": "clone_catalog",
                             "python_wheel_task": {
                                 "package_name": "clone_xs",
-                                "entry_point": "clone-catalog",
+                                "entry_point": "clxs",
                                 "parameters": [
                                     "clone",
                                     "--source", source,
@@ -153,6 +152,6 @@ def generate_workflow_yaml(
         yaml.dump(bundle, f, default_flow_style=False, sort_keys=False)
 
     logger.info(f"Databricks Asset Bundle YAML saved: {output_path}")
-    logger.info(f"Deploy with: databricks bundle deploy")
+    logger.info("Deploy with: databricks bundle deploy")
 
     return output_path

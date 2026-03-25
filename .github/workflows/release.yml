@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Build Python wheel ──────────────────────────────────────────────
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel
+        run: python3 -m build --wheel --outdir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+
+  # ── Build React frontend ────────────────────────────────────────────
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui && npm ci
+
+      - name: Build frontend
+        run: cd ui && npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend
+          path: ui/dist/
+
+  # ── Build macOS Desktop App ─────────────────────────────────────────
+  build-desktop-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python package
+        run: pip install -e .
+
+      - name: Build frontend
+        run: cd ui && npm ci && npm run build
+
+      - name: Install Electron dependencies
+        run: cd desktop && npm ci
+
+      - name: Build macOS app
+        run: ./scripts/build-desktop.sh --mac --skip-frontend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac
+          path: desktop/dist/*.zip
+
+  # ── Build Windows Desktop App ───────────────────────────────────────
+  build-desktop-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python package
+        run: pip install -e .
+
+      - name: Build frontend
+        run: cd ui && npm ci && npm run build
+
+      - name: Install Electron dependencies
+        run: cd desktop && npm ci
+
+      - name: Build Windows app
+        shell: bash
+        run: ./scripts/build-desktop.sh --win --skip-frontend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-win
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.zip
+
+  # ── Build Docker image ──────────────────────────────────────────────
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t clone-xs:${{ github.ref_name }} .
+
+      - name: Save Docker image
+        run: |
+          docker save clone-xs:${{ github.ref_name }} | gzip > clone-xs-${{ github.ref_name }}-docker.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker
+          path: clone-xs-*-docker.tar.gz
+
+  # ── Create GitHub Release ───────────────────────────────────────────
+  release:
+    needs: [build-wheel, build-frontend, build-desktop-mac, build-desktop-win, build-docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/wheel/*.whl
+            artifacts/desktop-mac/*.zip
+            artifacts/desktop-win/*.exe
+            artifacts/desktop-win/*.zip
+            artifacts/docker/*.tar.gz
+          body: |
+            ## Clone-Xs ${{ github.ref_name }}
+
+            ### Installation
+
+            **pip:**
+            ```bash
+            pip install clone-xs
+            ```
+
+            **From wheel:**
+            ```bash
+            pip install clone_xs-*.whl
+            ```
+
+            **Docker:**
+            ```bash
+            docker load < clone-xs-${{ github.ref_name }}-docker.tar.gz
+            docker run -p 8080:8080 clone-xs:${{ github.ref_name }}
+            ```
+
+            **Desktop:** Download the `.zip` (macOS) or `.exe` (Windows) below.
+
+            ---
+            See [CHANGELOG](.github/CHANGELOG.md) for details.

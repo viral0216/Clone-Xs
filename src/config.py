@@ -89,6 +89,9 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
         "table": "clone_operations",
     })
 
+    # PII detection settings
+    config.setdefault("pii_detection", None)
+
     # Masking, lineage, hooks, tag filtering
     config.setdefault("masking_rules", None)
     config.setdefault("lineage", None)

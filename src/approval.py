@@ -110,8 +110,8 @@ def _send_approval_notification(config: dict, request: ApprovalRequest) -> None:
                     f"Clone approval request {request.request_id}\n"
                     f"  {request.source_catalog} -> {request.dest_catalog} ({request.clone_type})\n"
                     f"  Requested by: {request.requested_by}\n"
-                    f"  Approve: `clone-catalog approval approve {request.request_id}`\n"
-                    f"  Deny: `clone-catalog approval deny {request.request_id}`"
+                    f"  Approve: `clxs approval approve {request.request_id}`\n"
+                    f"  Deny: `clxs approval deny {request.request_id}`"
                 ),
             }
             data = json.dumps(payload).encode("utf-8")

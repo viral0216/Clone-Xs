@@ -1,6 +1,6 @@
 source_catalog: supplier_portal
 destination_catalog: supplier_portal_clone
-sql_warehouse_id: 1a86a25830e584b7
+sql_warehouse_id: ''
 clone_type: DEEP
 load_type: FULL
 catalog_location: ''
@@ -46,7 +46,7 @@ audit:
   catalog: edp_dev
   schema: logging
   table: logging_01
-metrics_enabled: false
+metrics_enabled: true
 metrics_destination: delta
 metrics_table: edp_dev.metrics.clone_metrics
 ttl_enabled: false

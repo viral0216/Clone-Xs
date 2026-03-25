@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import PageHeader from "@/components/PageHeader";
 import { Loader2, XCircle, Puzzle, ToggleLeft, ToggleRight } from "lucide-react";
 
 export default function PluginsPage() {
@@ -41,11 +42,13 @@ export default function PluginsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Plugins</h1>
-        <p className="text-muted-foreground mt-1">Extend Clone-Xs with plugins</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Plugins"
+        icon={Puzzle}
+        description="Plugin system for extending Clone-Xs — add custom pre/post-clone hooks, validation rules, notification channels, and metadata transformations."
+        breadcrumbs={["Management", "Plugins"]}
+      />
 
       {loading && (
         <Card className="bg-card border-border">
@@ -78,7 +81,7 @@ export default function PluginsPage() {
                     <Puzzle className="h-4 w-4 text-muted-foreground" />
                     {plugin.name || "Unnamed"}
                   </div>
-                  <Badge className={enabled ? "bg-green-600 text-white" : ""} variant={enabled ? "default" : "outline"}>
+                  <Badge className={enabled ? "bg-foreground text-white" : ""} variant={enabled ? "default" : "outline"}>
                     {enabled ? "Enabled" : "Disabled"}
                   </Badge>
                 </CardTitle>

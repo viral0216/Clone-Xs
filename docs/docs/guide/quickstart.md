@@ -23,13 +23,13 @@ pip install clone-xs
 Verify the installation:
 
 ```bash
-clone-catalog --help
+clxs --help
 ```
 
 ## Step 2: Initialise config
 
 ```bash
-clone-catalog init
+clxs init
 ```
 
 This creates a `config/clone_config.yaml` with sensible defaults. Edit it to set your warehouse ID and catalog names:
@@ -47,10 +47,18 @@ max_workers: 4
 Go to your Databricks workspace → **SQL Warehouses** → click your warehouse → the ID is in the URL or shown in the details panel (e.g. `1a86a25830e584b7`).
 :::
 
+## Step 2b: Select your warehouse (Web UI)
+
+If you are using the Web UI, go to **Settings** and select your SQL warehouse from the dropdown. This persists to the backend config and is used as the default for all operations. You can also set the active warehouse from the **Warehouse** page by clicking **Set as Active** on any running warehouse.
+
+:::tip
+The Settings page loads all configuration from the API backend — it is the single source of truth. Changes made in Settings are immediately available to the Clone page and all other operations.
+:::
+
 ## Step 3: Run pre-flight checks
 
 ```bash
-clone-catalog preflight \
+clxs preflight \
   --source production \
   --dest production_clone \
   --warehouse-id 1a86a25830e584b7
@@ -61,7 +69,7 @@ This validates connectivity, permissions, source/destination access, and warehou
 ## Step 4: Clone
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production \
   --dest production_clone \
   --warehouse-id 1a86a25830e584b7
@@ -76,7 +84,7 @@ You'll see a progress bar with real-time status:
 ## Step 5: Validate (optional)
 
 ```bash
-clone-catalog validate \
+clxs validate \
   --source production \
   --dest production_clone \
   --warehouse-id 1a86a25830e584b7

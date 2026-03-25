@@ -1,12 +1,18 @@
 """Scheduled cloning with drift detection."""
 
+import json
 import logging
+import os
 import re
 import signal
 import threading
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+SCHEDULES_FILE = os.path.expanduser("~/.clone-xs/schedules.json")
 
 
 def parse_interval(interval_str: str) -> int:
@@ -184,3 +190,137 @@ def schedule_loop(
         shutdown_event.wait(timeout=interval_seconds)
 
     logger.info("Scheduler stopped")
+
+
+# ---------------------------------------------------------------------------
+# Schedule CRUD — persistent storage in ~/.clone-xs/schedules.json
+# ---------------------------------------------------------------------------
+
+def _load_schedules() -> list[dict]:
+    """Load schedules from JSON file."""
+    if not os.path.exists(SCHEDULES_FILE):
+        return []
+    try:
+        with open(SCHEDULES_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def _save_schedules(schedules: list[dict]) -> None:
+    """Save schedules to JSON file."""
+    Path(os.path.dirname(SCHEDULES_FILE)).mkdir(parents=True, exist_ok=True)
+    with open(SCHEDULES_FILE, "w") as f:
+        json.dump(schedules, f, indent=2, default=str)
+
+
+def _compute_next_run(cron_expr: str) -> str:
+    """Compute approximate next run time from cron expression."""
+    try:
+        seconds = parse_cron(cron_expr)
+        return (datetime.now() + timedelta(seconds=seconds)).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ""
+
+
+def list_schedules() -> list[dict]:
+    """List all schedules with computed next_run times."""
+    schedules = _load_schedules()
+    for s in schedules:
+        if s.get("status") == "active" and s.get("cron"):
+            s["next_run"] = _compute_next_run(s["cron"])
+    return schedules
+
+
+def create_schedule(
+    name: str,
+    source_catalog: str,
+    destination_catalog: str,
+    cron: str,
+    clone_type: str = "DEEP",
+    template: str | None = None,
+    config: dict | None = None,
+    client=None,
+) -> dict:
+    """Create a new schedule entry and optionally a Databricks Job.
+
+    If a client is provided, creates a persistent Databricks Job with the cron schedule.
+    """
+    schedule_id = str(uuid.uuid4())[:8]
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    schedule = {
+        "id": schedule_id,
+        "name": name,
+        "source_catalog": source_catalog,
+        "destination_catalog": destination_catalog,
+        "cron": cron,
+        "clone_type": clone_type,
+        "template": template,
+        "status": "active",
+        "created_at": now,
+        "last_run": None,
+        "next_run": _compute_next_run(cron),
+        "job_id": None,
+        "job_url": None,
+    }
+
+    # Create Databricks Job if client available
+    if client and config:
+        try:
+            from src.create_job import create_persistent_job
+            job_config = dict(config)
+            job_config["source_catalog"] = source_catalog
+            job_config["destination_catalog"] = destination_catalog
+            job_config["clone_type"] = clone_type
+            job_result = create_persistent_job(client, job_config, cron=cron, job_name=name)
+            schedule["job_id"] = job_result.get("job_id")
+            schedule["job_url"] = job_result.get("job_url")
+        except Exception as e:
+            logger.warning(f"Failed to create Databricks job for schedule: {e}")
+
+    schedules = _load_schedules()
+    schedules.append(schedule)
+    _save_schedules(schedules)
+
+    logger.info(f"Schedule '{name}' created (id={schedule_id})")
+    return schedule
+
+
+def pause_schedule(schedule_id: str) -> dict | None:
+    """Pause a schedule by ID."""
+    schedules = _load_schedules()
+    for s in schedules:
+        if s["id"] == schedule_id:
+            s["status"] = "paused"
+            s["next_run"] = None
+            _save_schedules(schedules)
+            logger.info(f"Schedule '{s['name']}' paused")
+            return s
+    return None
+
+
+def resume_schedule(schedule_id: str) -> dict | None:
+    """Resume a paused schedule by ID."""
+    schedules = _load_schedules()
+    for s in schedules:
+        if s["id"] == schedule_id:
+            s["status"] = "active"
+            if s.get("cron"):
+                s["next_run"] = _compute_next_run(s["cron"])
+            _save_schedules(schedules)
+            logger.info(f"Schedule '{s['name']}' resumed")
+            return s
+    return None
+
+
+def delete_schedule(schedule_id: str) -> bool:
+    """Delete a schedule by ID."""
+    schedules = _load_schedules()
+    original_len = len(schedules)
+    schedules = [s for s in schedules if s["id"] != schedule_id]
+    if len(schedules) < original_len:
+        _save_schedules(schedules)
+        logger.info(f"Schedule {schedule_id} deleted")
+        return True
+    return False

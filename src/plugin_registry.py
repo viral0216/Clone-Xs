@@ -1,4 +1,4 @@
-"""Plugin registry — discover, install, and manage clone-catalog plugins."""
+"""Plugin registry — discover, install, and manage clxs plugins."""
 
 import json
 import logging
@@ -178,6 +178,76 @@ class PluginRegistry:
                 return {**p, "status": "available"}
 
         return {"name": plugin_name, "status": "not found"}
+
+
+STATE_FILE = os.path.expanduser("~/.clone-xs/plugin_state.json")
+
+
+def _load_plugin_state() -> dict:
+    """Load plugin enabled/disabled state from disk."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return {}
+
+
+def _save_plugin_state(state: dict) -> None:
+    """Persist plugin state to disk."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def list_plugins() -> list[dict]:
+    """List all plugins (built-in + installed) with enabled status."""
+    state = _load_plugin_state()
+    plugins = []
+
+    # Built-in plugins
+    for entry in BUILTIN_REGISTRY:
+        pid = entry["name"]
+        plugins.append({
+            "id": pid,
+            "name": entry["name"],
+            "description": entry.get("description", ""),
+            "version": entry.get("version", "1.0.0"),
+            "type": "built-in",
+            "enabled": state.get(pid, {}).get("enabled", False),
+        })
+
+    # Installed plugins
+    registry = PluginRegistry()
+    for entry in registry.list_installed():
+        pid = entry["name"]
+        plugins.append({
+            "id": pid,
+            "name": entry["name"],
+            "description": entry.get("description", ""),
+            "version": entry.get("version", "unknown"),
+            "type": "installed",
+            "enabled": state.get(pid, {}).get("enabled", False),
+        })
+
+    return plugins
+
+
+def toggle_plugin(plugin_id: str, enabled: bool = True) -> dict:
+    """Toggle a plugin's enabled state. Persist to ~/.clone-xs/plugin_state.json."""
+    state = _load_plugin_state()
+    state[plugin_id] = {"enabled": enabled}
+    _save_plugin_state(state)
+
+    # Find plugin info to return
+    all_plugins = list_plugins()
+    for p in all_plugins:
+        if p["id"] == plugin_id:
+            p["enabled"] = enabled
+            return p
+
+    return {"id": plugin_id, "enabled": enabled, "error": "plugin not found in registry"}
 
 
 def format_plugin_list(plugins: list[dict], title: str = "Plugins") -> str:

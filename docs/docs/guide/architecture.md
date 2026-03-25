@@ -43,6 +43,7 @@ title: Architecture
                     ┌──────────┴──────────┐
                     │  Client (client.py) │
                     │  Auth  (auth.py)    │
+                    │  Metadata Cache     │
                     │  RateLimiter        │
                     │  SQL Execution      │
                     └──────────┬──────────┘
@@ -60,7 +61,8 @@ title: Architecture
 |--------|---------|
 | `main.py` | CLI entry point, argument parsing, subcommand routing |
 | `auth.py` | Authentication — PAT, service principal, OAuth, browser login |
-| `client.py` | WorkspaceClient factory, SQL execution, rate limiting, retries |
+| `client.py` | WorkspaceClient factory, SQL execution, rate limiting, retries, metadata caching |
+| `metadata_cache.py` | Thread-safe TTL cache for SDK metadata (schemas, tables, views, etc.) |
 | `config.py` | YAML config loading, profile support, CLI override merging |
 | `clone_catalog.py` | Orchestrates full catalog clone (schemas → tables → views → functions → volumes) |
 | `clone_tables.py` | Table cloning (deep/shallow, time travel, incremental) |
@@ -111,6 +113,32 @@ All SQL is executed via the [Databricks SQL Statement Execution API](https://doc
 - Automatic retries with exponential backoff (3 attempts)
 - Full SQL logging for debugging and audit
 
-## Client caching
+## Caching
+
+Clone-Xs uses two layers of in-memory caching to reduce redundant Databricks API calls:
+
+### Auth cache
 
 The `auth.py` module caches the `WorkspaceClient` instance with a 1-hour verification TTL. This avoids re-authenticating on every API call while ensuring stale credentials are detected.
+
+### Metadata cache
+
+The `metadata_cache.py` module provides a thread-safe, TTL-based cache for SDK metadata calls. All SDK wrapper functions in `client.py` are cached automatically:
+
+| Cached function | Key | What it stores |
+|----------------|-----|----------------|
+| `list_schemas_sdk` | catalog + exclude list | Schema names |
+| `list_tables_sdk` | catalog + schema | Table names, types, formats |
+| `list_views_sdk` | catalog + schema | View names, definitions |
+| `list_functions_sdk` | catalog + schema | Function names |
+| `list_volumes_sdk` | catalog + schema | Volume names, types |
+| `get_table_info_sdk` | full table name | Columns, owner, properties |
+| `get_catalog_info_sdk` | catalog name | Owner, storage root |
+
+**NOT cached:** SQL queries (`execute_sql`), row counts, checksums, and mutating operations (`delete_table_sdk`).
+
+**TTL:** 300 seconds (5 minutes) by default. Override with the `CLXS_CACHE_TTL` environment variable.
+
+**Auto-invalidation:** The cache is automatically cleared for affected catalogs after clone, sync, and incremental sync jobs complete. It is also cleared when authentication credentials change.
+
+**Manual control:** Use the `/api/cache/stats`, `/api/cache/clear`, and `/api/cache/invalidate` API endpoints to monitor and manage the cache.

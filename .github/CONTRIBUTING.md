@@ -38,16 +38,19 @@ This starts:
 
 ```
 clone-xs/
-  src/           88 Python modules (shared by CLI + API)
-  api/           FastAPI backend (routers, models, job queue)
-  ui/            React frontend (31 pages, shadcn/ui components)
-  config/        YAML configuration with profile support
-  infra/         Terraform / IaC files
-  notebooks/     Databricks notebook examples
-  scripts/       Start scripts, build, deploy
-  tests/         Python unit tests
-  docs/          Docusaurus documentation site
-  .github/       Contributing guidelines, security policy, changelog
+  src/              91 Python modules (shared by CLI + API)
+  api/              FastAPI backend (routers, models, job queue)
+  ui/               React frontend (33 pages, shadcn/ui components)
+  databricks-app/   Databricks App deployment (app.yaml, deploy script)
+  desktop/          Electron desktop app (macOS + Windows)
+  marketplace/      Marketplace listing assets and provider application
+  config/           YAML configuration with profile support
+  infra/            Terraform / IaC files
+  notebooks/        Databricks notebook examples
+  scripts/          Build and start scripts
+  tests/            Python unit tests
+  docs/             Docusaurus documentation site
+  .github/          Contributing guidelines, security policy, changelog
 ```
 
 ## How to Contribute
@@ -100,6 +103,15 @@ clone-xs/
 - Add routes in `api/routers/`
 - Core logic belongs in `src/` modules (shared by CLI + API)
 - Keep endpoints focused -- one concern per route
+- **SDK-first for metadata** -- use Databricks SDK API calls (`client.schemas.list()`, `client.tables.list()`, etc.) for listing catalogs, schemas, tables, views, functions, and volumes. Only use `execute_sql()` for data queries (SELECT, COUNT), DDL (CREATE, ALTER, DROP), and operations that have no SDK equivalent. SDK helpers are in `src/client.py`:
+  - `list_schemas_sdk(client, catalog, exclude)` -- list schema names
+  - `list_tables_sdk(client, catalog, schema)` -- list tables with type
+  - `list_views_sdk(client, catalog, schema)` -- list views with definitions
+  - `list_functions_sdk(client, catalog, schema)` -- list functions
+  - `list_volumes_sdk(client, catalog, schema)` -- list volumes
+  - `get_table_info_sdk(client, full_name)` -- get table metadata + columns
+  - `get_catalog_info_sdk(client, catalog)` -- get catalog metadata
+  - `delete_table_sdk(client, full_name)` -- delete a table
 
 ### Commit Messages
 
@@ -149,12 +161,18 @@ make docker
 
 # Build and deploy to Databricks Volume
 make deploy
+
+# Build desktop app (macOS)
+make build-desktop-mac
+
+# Deploy as Databricks App
+make deploy-dbx-app
 ```
 
 ## Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving dark mode across all 31 pages
+- Improving theme coverage across all 33 pages (10 built-in themes)
 - Writing tests (frontend and backend)
 - Documentation improvements
 - Accessibility enhancements

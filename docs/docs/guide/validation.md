@@ -17,7 +17,7 @@ Your clone job runs at 2 AM via a scheduled workflow. Instead of failing 30 minu
 
 ```bash
 # Run all checks
-clone-catalog preflight
+clxs preflight
 ```
 
 **Output:**
@@ -44,7 +44,7 @@ If the destination catalog doesn't exist yet, the preflight will show a warning 
 
 ```bash
 # Skip the write permission check (e.g., for read-only analysis commands)
-clone-catalog preflight --no-write-check
+clxs preflight --no-write-check
 ```
 
 ### Automate it
@@ -52,7 +52,7 @@ clone-catalog preflight --no-write-check
 Add pre-flight as a step before clone in your pipeline:
 
 ```bash
-clone-catalog preflight && clone-catalog clone
+clxs preflight && clxs clone
 ```
 
 ---
@@ -69,10 +69,10 @@ You cloned `production` to `staging` for QA testing. Before the QA team starts, 
 
 ```bash
 # Row count validation
-clone-catalog validate --source production --dest staging
+clxs validate --source production --dest staging
 
 # With checksum (slower but catches data corruption)
-clone-catalog validate --source production --dest staging --checksum
+clxs validate --source production --dest staging --checksum
 ```
 
 **Output:**
@@ -95,7 +95,7 @@ VALIDATION SUMMARY: production vs staging
 
 ```bash
 # Clone + auto-validate in one command
-clone-catalog clone --validate --checksum
+clxs clone --validate --checksum
 ```
 
 ---
@@ -112,10 +112,10 @@ Your finance team asks: "How much will it cost to maintain a deep clone of the p
 
 ```bash
 # Default pricing ($0.023/GB/month — AWS S3 standard)
-clone-catalog estimate --source production
+clxs estimate --source production
 
 # Custom pricing
-clone-catalog estimate --source production --price-per-gb 0.03
+clxs estimate --source production --price-per-gb 0.03
 ```
 
 **Output:**

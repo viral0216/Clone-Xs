@@ -1,9 +1,7 @@
 """Distributed clone — submit clone as a Spark job for large catalogs (10,000+ tables)."""
 
-import json
 import logging
 
-from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +218,7 @@ def submit_distributed_clone(
     if not notebook_path:
         notebook_path = f"/Workspace/Shared/distributed_clone_{source}_to_{dest}"
 
-    logger.info(f"Submitting distributed clone job...")
+    logger.info("Submitting distributed clone job...")
     logger.info(f"  Notebook: {notebook_path}")
     logger.info(f"  Cluster: {cluster_id or 'new job cluster'}")
 

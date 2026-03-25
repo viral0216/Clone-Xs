@@ -1,5 +1,4 @@
-from unittest.mock import MagicMock, patch, call
-import pytest
+from unittest.mock import MagicMock, patch
 
 from src.clone_catalog import (
     get_schemas,
@@ -12,25 +11,21 @@ from src.clone_catalog import (
 
 # ── get_schemas ──────────────────────────────────────────────────────
 
-@patch("src.clone_catalog.execute_sql")
-def test_get_schemas_returns_names(mock_sql):
-    mock_sql.return_value = [
-        {"schema_name": "sales"},
-        {"schema_name": "marketing"},
-    ]
-    result = get_schemas(MagicMock(), "wh", "prod", ["information_schema", "default"])
+@patch("src.clone_catalog.list_schemas_sdk")
+def test_get_schemas_returns_names(mock_sdk):
+    mock_sdk.return_value = ["sales", "marketing"]
+    result = get_schemas(MagicMock(), "wh", "prod", [])
     assert result == ["sales", "marketing"]
 
 
-@patch("src.clone_catalog.execute_sql")
-def test_get_schemas_excludes_system_schemas(mock_sql):
-    mock_sql.return_value = [
-        {"schema_name": "sales"},
-    ]
-    result = get_schemas(MagicMock(), "wh", "prod", ["information_schema", "default"])
-    sql = mock_sql.call_args[0][2]
-    assert "information_schema" in sql
-    assert "default" in sql
+@patch("src.clone_catalog.list_schemas_sdk")
+def test_get_schemas_excludes_system_schemas(mock_sdk):
+    mock_sdk.return_value = ["sales"]
+    get_schemas(MagicMock(), "wh", "prod", [])
+    # list_schemas_sdk is called with exclude list containing system schemas
+    exclude_arg = mock_sdk.call_args[1]["exclude"]
+    assert "information_schema" in exclude_arg
+    assert "default" in exclude_arg
 
 
 def test_get_schemas_with_include_list():

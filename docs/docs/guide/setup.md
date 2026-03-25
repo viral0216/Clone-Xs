@@ -31,8 +31,8 @@ pip install clone-xs
   <TabItem value="conda" label="conda">
 
 ```bash
-conda create -n clone-catalog python=3.13
-conda activate clone-catalog
+conda create -n clxs python=3.13
+conda activate clxs
 pip install clone-xs
 ```
 
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ### Verify
 
 ```bash
-clone-catalog --help
+clxs --help
 ```
 
 ## Dependencies
@@ -76,13 +76,13 @@ Generate shell completions for tab-completion of commands and flags:
 
 ```bash
 # Bash
-clone-catalog completion bash > ~/.local/share/bash-completion/completions/clone-catalog
+clxs completion bash > ~/.local/share/bash-completion/completions/clxs
 
 # Zsh
-clone-catalog completion zsh > ~/.zfunc/_clone-catalog
+clxs completion zsh > ~/.zfunc/_clxs
 
 # Fish
-clone-catalog completion fish > ~/.config/fish/completions/clone-catalog.fish
+clxs completion fish > ~/.config/fish/completions/clxs.fish
 ```
 
 ## Project initialisation
@@ -90,7 +90,7 @@ clone-catalog completion fish > ~/.config/fish/completions/clone-catalog.fish
 Create a default config file to get started:
 
 ```bash
-clone-catalog init
+clxs init
 ```
 
 This generates `config/clone_config.yaml` with documented defaults:

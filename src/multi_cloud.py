@@ -147,8 +147,8 @@ def clone_across_clouds(
         config["clone_type"] = "DEEP"
 
     # Get clients for both workspaces
-    source_client = get_client_for_workspace(source_workspace)
-    dest_client = get_client_for_workspace(dest_workspace)
+    get_client_for_workspace(source_workspace)
+    get_client_for_workspace(dest_workspace)
 
     # Use the multi-workspace clone mechanism
     from src.multi_workspace_clone import clone_to_multiple_workspaces

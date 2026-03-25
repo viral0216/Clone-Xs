@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql, get_max_parallel_queries
+from src.client import execute_sql, get_max_parallel_queries, list_views_sdk
 from src.permissions import copy_table_permissions, update_ownership
 from src.rollback import record_object
 
@@ -14,24 +14,14 @@ logger = logging.getLogger(__name__)
 
 def get_views(client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str) -> list[dict]:
     """List all views in a schema with their definitions."""
-    sql = f"""
-        SELECT table_name, view_definition
-        FROM {catalog}.information_schema.views
-        WHERE table_schema = '{schema}'
-    """
-    return execute_sql(client, warehouse_id, sql)
+    return list_views_sdk(client, catalog, schema)
 
 
 def get_existing_views(
     client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
 ) -> set[str]:
     """Get set of existing view names in destination schema."""
-    sql = f"""
-        SELECT table_name
-        FROM {catalog}.information_schema.views
-        WHERE table_schema = '{schema}'
-    """
-    rows = execute_sql(client, warehouse_id, sql)
+    rows = list_views_sdk(client, catalog, schema)
     return {row["table_name"] for row in rows}
 
 

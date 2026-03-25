@@ -29,7 +29,7 @@ from databricks.sdk.service.jobs import (
 logger = logging.getLogger(__name__)
 
 _uploaded_volume: str | None = None
-_WORKSPACE_DIR = "/Workspace/Shared/.clone-catalog"
+_WORKSPACE_DIR = "/Workspace/Shared/.clxs"
 
 
 def _find_wheel() -> str:
@@ -129,7 +129,7 @@ def _upload_to_volume(
     return dest_path
 
 
-_NOTEBOOK_PATH = "/Shared/.clone-catalog/run_clone"
+_NOTEBOOK_PATH = "/Shared/.clxs/run_clone"
 
 
 def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> str:
@@ -157,9 +157,18 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
     )
 
     cell_3 = "\n".join([
-        "import json, logging",
+        "import json, logging, os",
         "logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')",
-        "logger = logging.getLogger('clone-catalog')",
+        "logger = logging.getLogger('clxs')",
+        "",
+        "# Set auth env vars from notebook context before importing the library.",
+        "# The library initializes a Databricks API client on import, so these",
+        "# must be available before any src.* imports.",
+        "os.environ['DATABRICKS_HOST'] = spark.conf.get('spark.databricks.workspaceUrl', '').strip()",
+        "if not os.environ['DATABRICKS_HOST'].startswith('https'):",
+        "    os.environ['DATABRICKS_HOST'] = 'https://' + os.environ['DATABRICKS_HOST']",
+        "os.environ['DATABRICKS_TOKEN'] = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()",
+        "logger.info('Auth: workspace=%s token=%s...', os.environ['DATABRICKS_HOST'], os.environ['DATABRICKS_TOKEN'][:8])",
         "",
         "dbutils.widgets.text('config', '{}')",
         "config = json.loads(dbutils.widgets.get('config'))",
@@ -205,9 +214,58 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
         "    include_tables_regex=config.get('include_tables_regex', ''),",
         "    exclude_tables_regex=config.get('exclude_tables_regex', ''),",
         "    show_progress=config.get('show_progress', True),",
+        "    schema_only=config.get('schema_only', False),",
+        "    audit_trail=config.get('audit_trail', {'catalog': config.get('audit_catalog', 'clone_audit'), 'schema': config.get('audit_schema', 'logs'), 'table': 'clone_operations'}),",
+        "    save_run_logs=config.get('save_run_logs', True),",
         ")",
         "",
         "logger.info('Clone complete.')",
+        "",
+        "# Write audit trail to Delta tables",
+        "import datetime, uuid",
+        "audit_cat = config.get('audit_catalog', 'clone_audit')",
+        "audit_sch = config.get('audit_schema', 'logs')",
+        "try:",
+        "    now_str = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')",
+        "    src = config.get('source_catalog', '')",
+        "    dst = config.get('dest_catalog', config.get('destination_catalog', ''))",
+        "    ct = config.get('clone_type', 'DEEP')",
+        "    dur = float(result.get('duration_seconds', 0)) if isinstance(result, dict) else 0.0",
+        "    t_ok = int(result.get('tables', {}).get('success', 0)) if isinstance(result, dict) else 0",
+        "    t_fail = int(result.get('tables', {}).get('failed', 0)) if isinstance(result, dict) else 0",
+        "    v_ok = int(result.get('views', {}).get('success', 0)) if isinstance(result, dict) else 0",
+        "    f_ok = int(result.get('functions', {}).get('success', 0)) if isinstance(result, dict) else 0",
+        "    vol_ok = int(result.get('volumes', {}).get('success', 0)) if isinstance(result, dict) else 0",
+        "    t_skip = int(result.get('tables', {}).get('skipped', 0)) if isinstance(result, dict) else 0",
+        "    st = 'completed' if t_fail == 0 else 'partial'",
+        "    oid = str(uuid.uuid4())[:8]",
+        "    summ_str = json.dumps(result, default=str)",
+        "    cfg_str = json.dumps({k: v for k, v in config.items() if 'token' not in k.lower()}, default=str)",
+        "    ops_fqn = f'{audit_cat}.{audit_sch}.clone_operations'",
+        "    from pyspark.sql import Row",
+        "    from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, BooleanType, MapType",
+        "    row_data = Row(",
+        "        operation_id=oid, operation_type='clone', source_catalog=src, destination_catalog=dst,",
+        "        clone_type=ct, started_at=now_str, completed_at=now_str, duration_seconds=dur,",
+        "        status=st, user_name='databricks-job', host='serverless',",
+        "        tables_cloned=t_ok, tables_failed=t_fail, views_cloned=v_ok,",
+        "        functions_cloned=f_ok, volumes_cloned=vol_ok, total_size_bytes=0,",
+        "        tables_skipped=t_skip, clone_mode='full', trigger='databricks-job',",
+        "        destination_existed=True, config_json=cfg_str, summary_json=summ_str,",
+        "        error_message='', tags=None)",
+        "    df = spark.createDataFrame([row_data])",
+        "    # Read target schema and cast to match",
+        "    target_schema = spark.table(ops_fqn).schema",
+        "    for field in target_schema:",
+        "        if field.name in df.columns:",
+        "            df = df.withColumn(field.name, df[field.name].cast(field.dataType))",
+        "    df.select([f.name for f in target_schema if f.name in df.columns]).write.mode('append').saveAsTable(ops_fqn)",
+        "    logger.info(f'Audit trail written to {ops_fqn}')",
+        "except Exception as e:",
+        "    logger.error(f'AUDIT WRITE FAILED: {e}')",
+        "    import traceback",
+        "    traceback.print_exc()",
+        "",
         "dbutils.notebook.exit(json.dumps(result, default=str))",
     ])
 
@@ -291,7 +349,7 @@ def submit_clone_job(
     job_config = build_job_config(config)
 
     config_json = json.dumps(job_config)
-    run_name = f"clone-catalog-{source}-to-{dest}"
+    run_name = f"clxs-{source}-to-{dest}"
 
     logger.info("Submitting serverless clone job: %s -> %s", source, dest)
     logger.info("Wheel: %s", vol_wheel)
@@ -371,11 +429,49 @@ def build_job_config(config: dict) -> dict:
         "validate_checksum": config.get("validate_checksum", False),
         "enable_rollback": config.get("enable_rollback", False),
         "force_reclone": config.get("force_reclone", False),
+        "schema_only": config.get("schema_only", False),
         "order_by_size": config.get("order_by_size", ""),
         "as_of_timestamp": config.get("as_of_timestamp", ""),
         "as_of_version": config.get("as_of_version", ""),
         "show_progress": config.get("show_progress", True),
+        "audit_catalog": _get_audit_catalog(config),
+        "audit_schema": _get_audit_schema(config),
+        "audit_trail": {
+            "catalog": _get_audit_catalog(config),
+            "schema": _get_audit_schema(config),
+            "table": "clone_operations",
+        },
+        "save_run_logs": config.get("save_run_logs", True),
     }
+
+
+def _get_audit_catalog(config: dict) -> str:
+    """Resolve audit catalog from config, trying multiple config shapes."""
+    # Try audit_trail.catalog (from clone_config.yaml)
+    at = config.get("audit_trail")
+    if isinstance(at, dict) and at.get("catalog"):
+        return at["catalog"]
+    # Try audit.catalog
+    a = config.get("audit")
+    if isinstance(a, dict) and a.get("catalog"):
+        return a["catalog"]
+    # Try direct key
+    if config.get("audit_catalog"):
+        return config["audit_catalog"]
+    return "clone_audit"
+
+
+def _get_audit_schema(config: dict) -> str:
+    """Resolve audit schema from config, trying multiple config shapes."""
+    at = config.get("audit_trail")
+    if isinstance(at, dict) and at.get("schema"):
+        return at["schema"]
+    a = config.get("audit")
+    if isinstance(a, dict) and a.get("schema"):
+        return a["schema"]
+    if config.get("audit_schema"):
+        return config["audit_schema"]
+    return "logs"
 
 
 def _extract_result(client: WorkspaceClient, result, run_id: int) -> dict | None:

@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { useDiff, useValidate } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import {
   GitCompare, CheckCircle, XCircle, Loader2, AlertCircle,
   Plus, Minus, Equal, ArrowRight,
 } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 function DiffSection({ title, data }: { title: string; data: any }) {
   if (!data) return null;
@@ -62,8 +64,8 @@ function DiffSection({ title, data }: { title: string; data: any }) {
         {onlyDest.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Plus className="h-4 w-4 text-green-500" />
-              <span className="text-sm font-medium text-green-700">
+              <Plus className="h-4 w-4 text-foreground" />
+              <span className="text-sm font-medium text-foreground">
                 Only in Destination ({onlyDest.length})
               </span>
             </div>
@@ -71,7 +73,7 @@ function DiffSection({ title, data }: { title: string; data: any }) {
               {onlyDest.map((item: string) => (
                 <span
                   key={item}
-                  className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200"
+                  className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-muted/20 text-foreground border border-border"
                 >
                   {item}
                 </span>
@@ -104,7 +106,7 @@ function DiffSection({ title, data }: { title: string; data: any }) {
 
         {/* All match */}
         {onlySource.length === 0 && onlyDest.length === 0 && inBoth.length > 0 && (
-          <div className="flex items-center gap-2 text-green-600">
+          <div className="flex items-center gap-2 text-foreground">
             <CheckCircle className="h-4 w-4" />
             <span className="text-sm">All {title.toLowerCase()} match</span>
           </div>
@@ -115,14 +117,13 @@ function DiffSection({ title, data }: { title: string; data: any }) {
 }
 
 export default function DiffPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
+  const { job: diffJob, run: runDiff, isRunning: isDiffRunning } = usePageJob("diff");
+  const { job: valJob, run: runValidate, isRunning: isValRunning } = usePageJob("validate");
+  const [source, setSource] = useState(diffJob?.params?.source || valJob?.params?.source || "");
+  const [dest, setDest] = useState(diffJob?.params?.dest || valJob?.params?.dest || "");
 
-  const diff = useDiff();
-  const validate = useValidate();
-
-  const diffData = diff.data as any;
-  const valData = validate.data as any;
+  const diffData = diffJob?.data as any;
+  const valData = valJob?.data as any;
 
   // Summary counts
   const summaryItems = diffData
@@ -137,11 +138,15 @@ export default function DiffPage() {
   const totalDiffs = summaryItems.reduce((s, i) => s + i.onlySource + i.onlyDest, 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Diff & Compare</h1>
-        <p className="text-gray-500 mt-1">Compare catalogs and validate clones</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Diff & Compare"
+        icon={GitCompare}
+        breadcrumbs={["Discovery", "Diff & Compare"]}
+        description="Object-level diff between two catalogs — identifies missing, extra, and modified schemas, tables, views, and columns. Validates that clones match their source."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/information-schema"
+        docsLabel="INFORMATION_SCHEMA"
+      />
 
       {/* Input */}
       <Card>
@@ -163,19 +168,19 @@ export default function DiffPage() {
               showTable={false}
             />
             <Button
-              onClick={() => diff.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || diff.isPending}
+              onClick={() => runDiff({ source, dest }, () => api.post("/diff", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isDiffRunning}
             >
-              {diff.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
-              {diff.isPending ? "Comparing..." : "Diff"}
+              {isDiffRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
+              {isDiffRunning ? "Comparing..." : "Diff"}
             </Button>
             <Button
               variant="outline"
-              onClick={() => validate.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || validate.isPending}
+              onClick={() => runValidate({ source, dest }, () => api.post("/validate", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isValRunning}
             >
-              {validate.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-              {validate.isPending ? "Validating..." : "Validate"}
+              {isValRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+              {isValRunning ? "Validating..." : "Validate"}
             </Button>
           </div>
         </CardContent>
@@ -183,14 +188,14 @@ export default function DiffPage() {
 
       {/* Diff Summary */}
       {diffData && (
-        <Card className={totalDiffs === 0 ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}>
+        <Card className={totalDiffs === 0 ? "border-border bg-muted/20" : "border-border bg-muted/20"}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {totalDiffs === 0 ? (
-                  <CheckCircle className="h-6 w-6 text-green-600" />
+                  <CheckCircle className="h-6 w-6 text-foreground" />
                 ) : (
-                  <GitCompare className="h-6 w-6 text-orange-600" />
+                  <GitCompare className="h-6 w-6 text-muted-foreground" />
                 )}
                 <div>
                   <p className="font-semibold text-lg">
@@ -210,10 +215,10 @@ export default function DiffPage() {
                         <Badge variant="destructive" className="text-xs px-1.5">{item.onlySource}</Badge>
                       )}
                       {item.onlyDest > 0 && (
-                        <Badge className="bg-green-600 text-xs px-1.5">{item.onlyDest}</Badge>
+                        <Badge className="bg-foreground text-xs px-1.5">{item.onlyDest}</Badge>
                       )}
                       {item.onlySource === 0 && item.onlyDest === 0 && (
-                        <Badge variant="outline" className="text-xs px-1.5 text-green-600">✓</Badge>
+                        <Badge variant="outline" className="text-xs px-1.5 text-foreground">✓</Badge>
                       )}
                     </div>
                   </div>
@@ -239,16 +244,16 @@ export default function DiffPage() {
 
       {/* Validate Results */}
       {valData && (
-        <Card className={valData.mismatched === 0 && valData.errors === 0 ? "border-green-200" : "border-orange-200"}>
+        <Card className={valData.mismatched === 0 && valData.errors === 0 ? "border-border" : "border-border"}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2">
               {valData.mismatched === 0 && valData.errors === 0 ? (
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-foreground" />
               ) : (
-                <XCircle className="h-5 w-5 text-orange-600" />
+                <XCircle className="h-5 w-5 text-muted-foreground" />
               )}
               Validation Results
-              <Badge className="ml-auto bg-green-100 text-green-800">
+              <Badge className="ml-auto bg-muted/40 text-foreground">
                 {valData.matched}/{valData.total_tables} matched
               </Badge>
             </CardTitle>
@@ -256,20 +261,20 @@ export default function DiffPage() {
           <CardContent className="space-y-4">
             {/* Summary cards */}
             <div className="grid grid-cols-4 gap-3">
-              <div className="text-center p-3 bg-green-50 rounded">
-                <p className="text-xl font-bold text-green-700">{valData.matched}</p>
+              <div className="text-center p-3 bg-muted/20 rounded">
+                <p className="text-xl font-bold text-foreground">{valData.matched}</p>
                 <p className="text-xs text-gray-500">Matched</p>
               </div>
               <div className="text-center p-3 bg-red-50 rounded">
                 <p className="text-xl font-bold text-red-700">{valData.mismatched}</p>
                 <p className="text-xs text-gray-500">Mismatched</p>
               </div>
-              <div className="text-center p-3 bg-yellow-50 rounded">
-                <p className="text-xl font-bold text-yellow-700">{valData.errors}</p>
+              <div className="text-center p-3 bg-muted/20 rounded">
+                <p className="text-xl font-bold text-muted-foreground">{valData.errors}</p>
                 <p className="text-xs text-gray-500">Errors</p>
               </div>
-              <div className="text-center p-3 bg-blue-50 rounded">
-                <p className="text-xl font-bold text-blue-700">{valData.total_tables}</p>
+              <div className="text-center p-3 bg-muted/30 rounded">
+                <p className="text-xl font-bold text-[#E8453C]">{valData.total_tables}</p>
                 <p className="text-xs text-gray-500">Total</p>
               </div>
             </div>
@@ -326,12 +331,12 @@ export default function DiffPage() {
                     </thead>
                     <tbody>
                       {valData.details.map((row: any, i: number) => (
-                        <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-yellow-50" : "bg-red-50"}`}>
+                        <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-muted/20" : "bg-red-50"}`}>
                           <td className="py-1.5 px-3">
                             {row.match ? (
-                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <CheckCircle className="h-4 w-4 text-foreground" />
                             ) : row.error ? (
-                              <AlertCircle className="h-4 w-4 text-yellow-500" />
+                              <AlertCircle className="h-4 w-4 text-muted-foreground" />
                             ) : (
                               <XCircle className="h-4 w-4 text-red-500" />
                             )}
@@ -352,19 +357,19 @@ export default function DiffPage() {
       )}
 
       {/* Errors */}
-      {diff.isError && (
+      {diffJob?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(diff.error as Error).message}
+            {diffJob.error}
           </CardContent>
         </Card>
       )}
-      {validate.isError && (
+      {valJob?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(validate.error as Error).message}
+            {valJob.error}
           </CardContent>
         </Card>
       )}

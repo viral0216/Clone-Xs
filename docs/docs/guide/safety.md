@@ -19,17 +19,17 @@ You clone a production catalog to staging every night at 2 AM. Occasionally, net
 
 ```bash
 # Auto-rollback with default 5% threshold
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --auto-rollback
 
 # Custom threshold: rollback if more than 2% of tables have mismatches
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --auto-rollback --rollback-threshold 2
 
 # Auto-rollback with checksum validation (stricter)
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --auto-rollback --checksum
 ```
@@ -50,11 +50,26 @@ checksum_validation: false   # Set to true for hash-based validation
 
 ### How it works
 
-1. Clone completes normally — all schemas, tables, views, and functions are created
-2. Post-clone validation runs automatically (row counts + optional checksums)
-3. If the percentage of mismatched tables exceeds the threshold, automatic rollback is triggered
-4. All cloned objects are dropped in reverse order (tables → schemas → catalog if empty)
-5. Notification sent (Slack/Teams if configured)
+1. **Before each table clone**, the destination table's current Delta version is recorded (if the table already exists)
+2. Clone completes normally — all schemas, tables, views, and functions are created
+3. Post-clone validation runs automatically (row counts + optional checksums)
+4. If the percentage of mismatched tables exceeds the threshold, automatic rollback is triggered
+5. **Tables that existed before the clone** are restored using `RESTORE TABLE ... TO VERSION AS OF {pre_clone_version}` — this is non-destructive and preserves Delta history
+6. **Tables that were newly created** by the clone are dropped
+7. Views, functions, volumes, and empty schemas are dropped (RESTORE not supported for these types)
+8. Notification sent (Slack/Teams if configured)
+
+### Rollback modes
+
+Clone-Xs supports three rollback strategies, selected automatically based on available data:
+
+| Mode | When used | SQL executed | Data loss |
+|---|---|---|---|
+| **Version-based** | Pre-clone version was recorded | `RESTORE TABLE {fqn} TO VERSION AS OF {N}` | None — table reverts to exact pre-clone state |
+| **Timestamp-based** | No version recorded, but clone start time exists | `RESTORE TABLE {fqn} TO TIMESTAMP AS OF '{ts}'` | None — table reverts to state before clone started |
+| **Legacy DROP** | Old rollback logs without version info | `DROP TABLE IF EXISTS {fqn}` | Table is deleted entirely |
+
+Version-based is the default for all new clone operations. The pre-clone version is captured using `DESCRIBE HISTORY` before each `CREATE TABLE ... CLONE` statement.
 
 | Option | Default | Description |
 |---|---|---|
@@ -80,17 +95,17 @@ You are deep-cloning a catalog with 3,000 tables. Two hours in, the SQL warehous
 
 ```bash
 # Enable checkpointing (saves every 50 objects by default)
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --checkpoint
 
 # Resume from the last checkpoint after a failure
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --resume-from-checkpoint
 
 # Resume from a specific checkpoint file
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --resume-from-checkpoint checkpoints/staging_20260314_020035.json
 ```
@@ -131,13 +146,13 @@ A teammate updates the `clone_config.yaml` to add a new schema filter but accide
 
 ```bash
 # Lint your config file
-clone-catalog lint
+clxs lint
 
 # Lint a specific config file
-clone-catalog lint --config config/clone_config.yaml
+clxs lint --config config/clone_config.yaml
 
 # Strict mode: treat warnings as errors (useful in CI)
-clone-catalog lint --strict
+clxs lint --strict
 ```
 
 **Output:**
@@ -177,10 +192,10 @@ Lint failed. Fix errors before cloning.
 
 ### Auto-lint before clone
 
-By default, `clone-catalog clone` runs a quick lint check before starting. If errors are found, the clone is aborted.
+By default, `clxs clone` runs a quick lint check before starting. If errors are found, the clone is aborted.
 
 :::note
-Auto-lint only checks for `ERROR`-level issues. Run `clone-catalog lint` manually to see warnings and suggestions.
+Auto-lint only checks for `ERROR`-level issues. Run `clxs lint` manually to see warnings and suggestions.
 :::
 
 ---
@@ -197,14 +212,14 @@ Your `production` catalog has views that reference tables in `analytics`. Before
 
 ```bash
 # Analyze impact of cloning a catalog
-clone-catalog impact --source production --dest staging
+clxs impact --source production --dest staging
 
 # Check impact with a custom high-impact threshold
-clone-catalog impact --source production --dest staging \
+clxs impact --source production --dest staging \
   --threshold 20
 
 # Include the impact check as part of the clone command
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --impact-check
 ```
@@ -253,7 +268,7 @@ IMPACT ANALYSIS: production → staging
 When you pass `--impact-check` to the clone command, impact analysis runs before the clone starts. If the risk level is `HIGH` or `CRITICAL`, the clone pauses and asks for confirmation:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --source production --dest staging \
   --impact-check
 

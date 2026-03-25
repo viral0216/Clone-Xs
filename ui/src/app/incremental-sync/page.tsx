@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,12 @@ import { api } from "@/lib/api-client";
 import { useVolumes } from "@/hooks/useApi";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import {
   RefreshCw, Loader2, CheckCircle, XCircle, ArrowRight,
   AlertTriangle, Database, Table2, Clock, ChevronDown, ChevronRight,
-  Download, ClipboardCopy, Check,
+  Download, ClipboardCopy, Check, GitCompareArrows, History,
+  CalendarClock, ExternalLink, Zap,
 } from "lucide-react";
 
 
@@ -27,7 +29,7 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
       )}
       <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
         <div
-          className="h-full bg-blue-600 rounded-full transition-all duration-500"
+          className="h-full bg-[#E8453C] rounded-full transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -49,9 +51,9 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
 
   function logColor(line: string) {
     if (/error|ERROR|FAILED|failed/i.test(line)) return "text-red-400";
-    if (/warn|WARNING/i.test(line)) return "text-yellow-400";
-    if (/OK|success|cloned|completed|matched/i.test(line)) return "text-green-400";
-    if (/progress|running|scanning|cloning/i.test(line)) return "text-blue-400";
+    if (/warn|WARNING/i.test(line)) return "text-gray-400";
+    if (/OK|success|cloned|completed|matched/i.test(line)) return "text-gray-300";
+    if (/progress|running|scanning|cloning/i.test(line)) return "text-[#E8453C]";
     return "text-gray-300";
   }
 
@@ -109,16 +111,16 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
   }, [jobId]);
 
   const statusColor: Record<string, string> = {
-    queued: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    running: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    completed: "bg-green-500/20 text-green-400 border-green-500/30",
+    queued: "bg-muted/200/20 text-gray-400 border-border/30",
+    running: "bg-muted/300/20 text-[#E8453C] border-[#E8453C]/30",
+    completed: "bg-muted/200/20 text-gray-300 border-border/30",
     failed: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
   const statusIcon: Record<string, React.ReactNode> = {
-    queued: <Clock className="h-4 w-4 text-yellow-500" />,
-    running: <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
-    completed: <CheckCircle className="h-4 w-4 text-green-500" />,
+    queued: <Clock className="h-4 w-4 text-muted-foreground" />,
+    running: <Loader2 className="h-4 w-4 text-[#E8453C] animate-spin" />,
+    completed: <CheckCircle className="h-4 w-4 text-foreground" />,
     failed: <XCircle className="h-4 w-4 text-red-500" />,
   };
 
@@ -141,7 +143,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
 
   return (
     <Card className={`bg-card border-border transition-all ${
-      job.status === "running" ? "ring-1 ring-blue-500/40" : ""
+      job.status === "running" ? "ring-1 ring-[#E8453C]/40" : ""
     }`}>
       {/* Header — always visible */}
       <div
@@ -194,7 +196,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
                     <Loader2 className="h-3 w-3 animate-spin" /> Sync in progress...
                   </div>
                   <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: "60%" }} />
+                    <div className="h-full bg-[#E8453C] rounded-full animate-pulse" style={{ width: "60%" }} />
                   </div>
                 </div>
               )}
@@ -211,7 +213,7 @@ function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
           {job.status === "completed" && (
             <div className="grid grid-cols-3 gap-2">
               <div className="text-center p-2 rounded bg-muted/50">
-                <p className="text-lg font-bold text-green-500">{synced}</p>
+                <p className="text-lg font-bold text-foreground">{synced}</p>
                 <p className="text-xs text-muted-foreground">Synced</p>
               </div>
               <div className="text-center p-2 rounded bg-muted/50">
@@ -272,13 +274,41 @@ export default function IncrementalSyncPage() {
   const [error, setError] = useState("");
   const [schemaResults, setSchemaResults] = useState<SchemaCheck[]>([]);
   const [syncResult, setSyncResult] = useState<any>(null);
-  const [serverless, setServerless] = useState(false);
-  const [volume, setVolume] = useState("");
+  const [serverless, setServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-incr-serverless") === "true"; } catch { return false; }
+  });
+  const [volume, setVolume] = useState(() => {
+    try { return localStorage.getItem("clxs-incr-volume") || ""; } catch { return ""; }
+  });
   const volumes = useVolumes();
   // Track selected tables as "schema.table_name" keys
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  // Sync history
+  const [syncHistory, setSyncHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // Schedule form
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [schedCron, setSchedCron] = useState("0 0 6 * * ?");
+  const [schedEmail, setSchedEmail] = useState("");
+  const [schedResult, setSchedResult] = useState<any>(null);
+  const [scheduling, setScheduling] = useState(false);
+  // Expanded table rows for diff preview
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
 
   function tableKey(schema: string, table: string) { return `${schema}.${table}`; }
+
+  // Load sync history when both catalogs are set
+  useEffect(() => {
+    if (sourceCatalog && destCatalog) {
+      setHistoryLoading(true);
+      api.get(`/audit/sync-history?source=${sourceCatalog}&dest=${destCatalog}&limit=5`)
+        .then((res) => setSyncHistory(Array.isArray(res) ? res : []))
+        .catch(() => setSyncHistory([]))
+        .finally(() => setHistoryLoading(false));
+    } else {
+      setSyncHistory([]);
+    }
+  }, [sourceCatalog, destCatalog]);
 
   // Fetch schemas for source catalog to iterate
   async function checkChanges() {
@@ -295,6 +325,7 @@ export default function IncrementalSyncPage() {
           source_catalog: sourceCatalog,
           destination_catalog: destCatalog,
           schema_name: sourceSchema,
+          serverless,
         });
         const result = { ...data, schema: sourceSchema };
         setSchemaResults([result]);
@@ -319,6 +350,7 @@ export default function IncrementalSyncPage() {
               source_catalog: sourceCatalog,
               destination_catalog: destCatalog,
               schema_name: s,
+              serverless,
             });
             const result: SchemaCheck = { ...data, schema: s, loading: false };
 
@@ -421,6 +453,42 @@ export default function IncrementalSyncPage() {
     setSelectedTables(new Set());
   }
 
+  // Schedule recurring sync
+  async function createSchedule() {
+    setScheduling(true);
+    setSchedResult(null);
+    try {
+      const res = await api.post("/create-job", {
+        source_catalog: sourceCatalog,
+        destination_catalog: destCatalog,
+        load_type: "INCREMENTAL",
+        clone_type: "DEEP",
+        schedule: schedCron,
+        job_name: `incremental-sync-${sourceCatalog}-to-${destCatalog}`,
+        notification_emails: schedEmail ? schedEmail.split(",").map(e => e.trim()).filter(Boolean) : [],
+        include_schemas: sourceSchema ? [sourceSchema] : [],
+        tags: { created_by: "clone-xs", type: "incremental-sync" },
+      });
+      setSchedResult(res);
+    } catch (e: any) {
+      setSchedResult({ error: e.message });
+    }
+    setScheduling(false);
+  }
+
+  // Operation type stats
+  const opBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    schemaResults.forEach(sr => {
+      (sr.tables || []).forEach(t => {
+        (t.operations || []).forEach(op => {
+          counts[op] = (counts[op] || 0) + 1;
+        });
+      });
+    });
+    return counts;
+  }, [schemaResults]);
+
   const totalChanges = schemaResults.reduce((sum, r) => sum + r.tables_needing_sync, 0);
   const selectedCount = selectedTables.size;
 
@@ -439,13 +507,64 @@ export default function IncrementalSyncPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Incremental Sync</h1>
-        <p className="text-muted-foreground mt-1">
-          Sync only changed tables using Delta table version history
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Incremental Sync"
+        icon={GitCompareArrows}
+        breadcrumbs={["Operations", "Incremental Sync"]}
+        description="Sync only tables that have changed since the last operation using Delta table version history. Dramatically faster than full sync for large catalogs."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/delta/history"
+        docsLabel="Delta table history"
+      />
+
+      {/* Summary Stats — shown after check */}
+      {schemaResults.length > 0 && !schemaResults.every(r => r.loading) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="bg-card border-border">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schemas Checked</span>
+                <Database className="h-4 w-4 text-[#E8453C]" />
+              </div>
+              <p className="text-2xl font-bold text-foreground">{schemaResults.filter(r => !r.loading).length}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tables Changed</span>
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <p className="text-2xl font-bold text-foreground">{totalChanges}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Up to Date</span>
+                <CheckCircle className="h-4 w-4 text-foreground" />
+              </div>
+              <p className="text-2xl font-bold text-foreground">{schemaResults.filter(r => !r.loading && r.tables_needing_sync === 0).length}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">schemas in sync</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Operations</span>
+                <Zap className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {Object.entries(opBreakdown).length === 0 ? (
+                  <span className="text-sm text-muted-foreground">—</span>
+                ) : Object.entries(opBreakdown).map(([op, count]) => (
+                  <Badge key={op} variant="outline" className="text-[10px]">{op}: {count}</Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Source & Destination Selection */}
       <Card className="bg-card border-border">
@@ -481,18 +600,25 @@ export default function IncrementalSyncPage() {
 
           {/* Serverless toggle */}
           <div className="flex gap-4 items-start">
-            <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
+            <label className="flex items-center gap-2 text-[13px] cursor-pointer pt-1">
               <input
                 type="checkbox"
                 checked={serverless}
-                onChange={(e) => setServerless(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
+                onChange={(e) => { setServerless(e.target.checked); try { localStorage.setItem("clxs-incr-serverless", String(e.target.checked)); } catch {} }}
+                className="h-3.5 w-3.5 rounded border-border"
               />
               Use Serverless Compute
+              {serverless && (
+                <Badge variant="outline" className="text-xs ml-1">
+                  {volume ? "Databricks Job" : "Spark Connect"}
+                </Badge>
+              )}
             </label>
             {serverless && (
               <div className="flex-1 max-w-md">
-                <label className="text-xs text-muted-foreground mb-1 block">UC Volume (required for serverless)</label>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  UC Volume (optional — select for remote job mode)
+                </label>
                 {volumes.isLoading ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading volumes...
@@ -501,15 +627,15 @@ export default function IncrementalSyncPage() {
                   <Input
                     placeholder="/Volumes/catalog/schema/volume"
                     value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
+                    onChange={(e) => { setVolume(e.target.value); try { localStorage.setItem("clxs-incr-volume", e.target.value); } catch {} }}
                   />
                 ) : (
                   <select
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                     value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
+                    onChange={(e) => { setVolume(e.target.value); try { localStorage.setItem("clxs-incr-volume", e.target.value); } catch {} }}
                   >
-                    <option value="">Select a volume...</option>
+                    <option value="">No volume — use Spark Connect</option>
                     {(volumes.data || []).map((v: any) => (
                       <option key={v.path} value={v.path}>
                         {v.path} ({v.type})
@@ -517,6 +643,11 @@ export default function IncrementalSyncPage() {
                     ))}
                   </select>
                 )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {volume
+                    ? "Submits a Databricks job — runs remotely on serverless compute"
+                    : "Runs SQL via Spark Connect — no warehouse or job needed"}
+                </p>
               </div>
             )}
           </div>
@@ -588,15 +719,121 @@ export default function IncrementalSyncPage() {
                 <Button variant="ghost" size="sm" onClick={deselectAll}>Clear</Button>
                 <Button
                   onClick={runSync}
-                  disabled={selectedCount === 0 || syncing || (serverless && !volume)}
+                  disabled={selectedCount === 0 || syncing}
                 >
                   {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  {serverless ? "Serverless " : ""}Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
+                  {serverless ? (volume ? "Submit Job: " : "Spark Connect: ") : ""}Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Sync History + Schedule */}
+      {sourceCatalog && destCatalog && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Sync History */}
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <History className="h-4 w-4" /> Sync History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {historyLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...</div>
+              ) : syncHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No previous syncs found for this pair</p>
+              ) : (
+                <div className="space-y-2">
+                  {syncHistory.map((h, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-muted/30">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {h.status === "success" || h.status === "completed" ? (
+                          <CheckCircle className="h-3.5 w-3.5 text-foreground shrink-0" />
+                        ) : h.status === "failed" ? (
+                          <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                        ) : (
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="text-xs text-foreground truncate">
+                          {h.tables_cloned || 0} tables synced{h.tables_failed > 0 ? `, ${h.tables_failed} failed` : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                        {h.duration_seconds && <span>{Math.round(h.duration_seconds)}s</span>}
+                        <span>{h.started_at ? new Date(h.started_at).toLocaleDateString() : ""}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Schedule Recurring Sync */}
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <CalendarClock className="h-4 w-4" /> Schedule Recurring Sync
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {schedResult?.job_url ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <CheckCircle className="h-4 w-4" /> Job created successfully
+                  </div>
+                  <a href={schedResult.job_url} target="_blank" rel="noopener noreferrer" className="text-sm text-[#E8453C] hover:underline flex items-center gap-1">
+                    Open in Databricks <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <p className="text-xs text-muted-foreground">Job: {schedResult.job_name}</p>
+                </div>
+              ) : schedResult?.error ? (
+                <div className="text-sm text-red-500 flex items-center gap-2">
+                  <XCircle className="h-4 w-4" /> {schedResult.error}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Schedule (Quartz Cron)</label>
+                    <div className="flex gap-2">
+                      <select
+                        className="flex-1 h-9 px-3 rounded-md border border-border bg-background text-sm text-foreground"
+                        value={schedCron}
+                        onChange={(e) => setSchedCron(e.target.value)}
+                      >
+                        <option value="0 0 */6 * * ?">Every 6 hours</option>
+                        <option value="0 0 6 * * ?">Daily at 6:00 AM</option>
+                        <option value="0 0 0 * * ?">Daily at midnight</option>
+                        <option value="0 0 6 ? * MON-FRI">Weekdays at 6:00 AM</option>
+                        <option value="0 0 2 ? * SUN">Weekly Sunday 2:00 AM</option>
+                        <option value="0 0 */1 * * ?">Every hour</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Notification Email (optional)</label>
+                    <Input
+                      placeholder="team@company.com"
+                      value={schedEmail}
+                      onChange={(e) => setSchedEmail(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                  <Button onClick={createSchedule} disabled={scheduling || !sourceCatalog || !destCatalog} size="sm" className="w-full">
+                    {scheduling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5 mr-1.5" />}
+                    {scheduling ? "Creating..." : "Create Scheduled Job"}
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground">
+                    Creates a persistent Databricks Job with incremental load type. Appears in your workspace Jobs list.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Per-Schema Results */}
@@ -606,7 +843,7 @@ export default function IncrementalSyncPage() {
             <Card
               key={sr.schema}
               className={`bg-card border-border transition-all ${
-                schemaSelectedCount(sr.schema, sr.tables || []) > 0 ? "ring-1 ring-[#FF3621]/40" : ""
+                schemaSelectedCount(sr.schema, sr.tables || []) > 0 ? "ring-1 ring-[#1A73E8]/40" : ""
               }`}
             >
               <CardHeader className="pb-2">
@@ -636,7 +873,7 @@ export default function IncrementalSyncPage() {
                     ) : sr.error ? (
                       <Badge variant="destructive">Error</Badge>
                     ) : sr.tables_needing_sync === 0 ? (
-                      <Badge variant="secondary" className="text-green-500">
+                      <Badge variant="secondary" className="text-foreground">
                         <CheckCircle className="h-3 w-3 mr-1" /> Up to date
                       </Badge>
                     ) : (
@@ -665,10 +902,10 @@ export default function IncrementalSyncPage() {
                       </thead>
                       <tbody>
                         {sr.tables.map((t) => (
+                          <React.Fragment key={t.table_name}>
                           <tr
-                            key={t.table_name}
                             className={`border-b border-border/50 hover:bg-muted/50 cursor-pointer ${
-                              selectedTables.has(tableKey(sr.schema, t.table_name)) ? "bg-[#FF3621]/5" : ""
+                              selectedTables.has(tableKey(sr.schema, t.table_name)) ? "bg-[#1A73E8]/5" : ""
                             }`}
                             onClick={() => toggleTable(sr.schema, t.table_name)}
                           >
@@ -699,18 +936,76 @@ export default function IncrementalSyncPage() {
                               {t.changes_since_sync != null ? t.changes_since_sync : "—"}
                             </td>
                             <td className="py-2 px-3">
-                              {t.operations?.length ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {t.operations.slice(0, 3).map((op, i) => (
-                                    <Badge key={i} variant="outline" className="text-xs">{op}</Badge>
-                                  ))}
-                                  {t.operations.length > 3 && (
-                                    <Badge variant="outline" className="text-xs">+{t.operations.length - 3}</Badge>
-                                  )}
-                                </div>
-                              ) : "—"}
+                              <div className="flex items-center gap-1">
+                                {t.operations?.length ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {t.operations.slice(0, 3).map((op, i) => (
+                                      <Badge key={i} variant="outline" className="text-xs">{op}</Badge>
+                                    ))}
+                                    {t.operations.length > 3 && (
+                                      <Badge variant="outline" className="text-xs">+{t.operations.length - 3}</Badge>
+                                    )}
+                                  </div>
+                                ) : "—"}
+                                <button
+                                  className="ml-1 text-[#E8453C] hover:text-[#E8453C]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const key = tableKey(sr.schema, t.table_name);
+                                    setExpandedTable(expandedTable === key ? null : key);
+                                  }}
+                                  title="Preview changes"
+                                >
+                                  {expandedTable === tableKey(sr.schema, t.table_name) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                </button>
+                              </div>
                             </td>
                           </tr>
+                          {/* Diff Preview Row */}
+                          {expandedTable === tableKey(sr.schema, t.table_name) && (
+                            <tr className="bg-muted/20">
+                              <td colSpan={7} className="px-3 py-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground">Change Preview</p>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <div className="px-3 py-2 bg-background rounded border border-border">
+                                      <p className="text-[10px] text-muted-foreground">Version Range</p>
+                                      <p className="text-sm font-mono text-foreground">
+                                        {t.last_synced_version != null ? `v${t.last_synced_version}` : "new"} → v{t.current_version ?? "?"}
+                                      </p>
+                                    </div>
+                                    <div className="px-3 py-2 bg-background rounded border border-border">
+                                      <p className="text-[10px] text-muted-foreground">Transactions</p>
+                                      <p className="text-sm font-bold text-foreground">{t.changes_since_sync ?? "—"}</p>
+                                    </div>
+                                    <div className="px-3 py-2 bg-background rounded border border-border">
+                                      <p className="text-[10px] text-muted-foreground">Operation Types</p>
+                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                        {(t.operations || []).map((op, i) => (
+                                          <Badge key={i} variant="outline" className={`text-[10px] ${
+                                            op === "WRITE" ? "border-border/30 text-foreground" :
+                                            op === "DELETE" ? "border-red-500/30 text-red-500" :
+                                            op === "UPDATE" || op === "MERGE" ? "border-border/30 text-muted-foreground" :
+                                            ""
+                                          }`}>{op}</Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div className="px-3 py-2 bg-background rounded border border-border">
+                                      <p className="text-[10px] text-muted-foreground">Sync Action</p>
+                                      <p className="text-sm text-foreground">
+                                        {t.reason === "never_synced" ? "Full clone (new table)" : "Re-clone with latest data"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground italic">
+                                    Row-level diff (inserts/updates/deletes) requires Delta Change Data Feed to be enabled on the source table.
+                                  </p>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                         ))}
                       </tbody>
                     </table>

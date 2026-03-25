@@ -19,11 +19,11 @@ def test_zsh_completion_contains_commands():
     script = generate_zsh_completion()
     assert "clone" in script
     assert "preflight" in script
-    assert "_clone-catalog" in script
+    assert "_clxs" in script
 
 
 def test_fish_completion_contains_commands():
     script = generate_fish_completion()
     assert "clone" in script
     assert "preflight" in script
-    assert "complete -c clone-catalog" in script
+    assert "complete -c clxs" in script

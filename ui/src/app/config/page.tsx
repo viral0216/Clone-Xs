@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import PageHeader from "@/components/PageHeader";
 import { Wrench, Save, Download, RefreshCw } from "lucide-react";
 
 export default function ConfigPage() {
@@ -41,23 +42,27 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Configuration</h1>
-          <p className="text-gray-500 mt-1">Manage clone configuration</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadConfig} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-            Reload
-          </Button>
-          <Button onClick={saveConfig}>
-            <Save className="h-4 w-4 mr-2" />
-            {saved ? "Saved!" : "Save"}
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Configuration"
+        icon={Wrench}
+        description="View and edit clone configuration — source/destination catalogs, warehouse selection, exclude schemas, copy options, parallelism, and audit settings."
+        breadcrumbs={["Management", "Config"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/compute/configure"
+        docsLabel="Cluster configuration"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadConfig} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+              Reload
+            </Button>
+            <Button onClick={saveConfig}>
+              <Save className="h-4 w-4 mr-2" />
+              {saved ? "Saved!" : "Save"}
+            </Button>
+          </div>
+        }
+      />
 
       {/* Profiles */}
       {profiles.length > 0 && (

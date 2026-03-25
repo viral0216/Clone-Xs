@@ -1,12 +1,11 @@
-import os
 import sys
 
 
 def generate_bash_completion() -> str:
-    """Generate bash completion script for clone-catalog CLI."""
-    return '''# Bash completion for clone-catalog
-# Add to ~/.bashrc: eval "$(clone-catalog --completion bash)"
-# Or save to: /etc/bash_completion.d/clone-catalog
+    """Generate bash completion script for clxs CLI."""
+    return '''# Bash completion for clxs
+# Add to ~/.bashrc: eval "$(clxs --completion bash)"
+# Or save to: /etc/bash_completion.d/clxs
 
 _clone_catalog_completion() {
     local cur prev commands opts
@@ -109,18 +108,18 @@ _clone_catalog_completion() {
     return 0
 }
 
-complete -F _clone_catalog_completion clone-catalog
+complete -F _clone_catalog_completion clxs
 '''
 
 
 def generate_zsh_completion() -> str:
-    """Generate zsh completion script for clone-catalog CLI."""
-    return '''#compdef clone-catalog
-# Zsh completion for clone-catalog
-# Add to ~/.zshrc: eval "$(clone-catalog --completion zsh)"
+    """Generate zsh completion script for clxs CLI."""
+    return '''#compdef clxs
+# Zsh completion for clxs
+# Add to ~/.zshrc: eval "$(clxs --completion zsh)"
 # Or save to a file in your $fpath
 
-_clone-catalog() {
+_clxs() {
     local -a commands
     commands=(
         'clone:Clone a catalog from source to destination'
@@ -154,12 +153,12 @@ _clone-catalog() {
     esac
 }
 
-_clone-catalog "$@"
+_clxs "$@"
 '''
 
 
 def generate_fish_completion() -> str:
-    """Generate fish completion script for clone-catalog CLI."""
+    """Generate fish completion script for clxs CLI."""
     commands = {
         "clone": "Clone a catalog from source to destination",
         "diff": "Compare source and destination catalogs",
@@ -181,10 +180,10 @@ def generate_fish_completion() -> str:
         "export": "Export catalog metadata",
     }
 
-    lines = ["# Fish completion for clone-catalog"]
+    lines = ["# Fish completion for clxs"]
     for cmd, desc in commands.items():
         lines.append(
-            f"complete -c clone-catalog -n '__fish_use_subcommand' "
+            f"complete -c clxs -n '__fish_use_subcommand' "
             f"-a '{cmd}' -d '{desc}'"
         )
 

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useStartClone, useVolumes } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
@@ -27,7 +28,7 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
       )}
       <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-500 ease-out bg-blue-600"
+          className="h-full rounded-full transition-all duration-500 ease-out bg-[#E8453C]"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -133,8 +134,43 @@ function generateReport(job: any): string {
   return lines.join("\n");
 }
 
+type LogFilter = "all" | "errors" | "warnings" | "info";
+
+function groupLogs(logs: string[]): { line: string; count: number }[] {
+  const grouped: { line: string; count: number }[] = [];
+  for (const line of logs) {
+    // Normalize: strip object names to group similar permission/tag errors
+    const normalized = line
+      .replace(/for \S+:/, "for <object>:")
+      .replace(/on \S+:/, "on <object>:");
+    const prev = grouped[grouped.length - 1];
+    if (prev) {
+      const prevNorm = prev.line
+        .replace(/for \S+:/, "for <object>:")
+        .replace(/on \S+:/, "on <object>:");
+      if (prevNorm === normalized) {
+        prev.count++;
+        prev.line = line; // keep the latest actual line
+        continue;
+      }
+    }
+    grouped.push({ line, count: 1 });
+  }
+  return grouped;
+}
+
+function getLogClass(line: string): string {
+  if (line.includes("ERROR")) return "text-red-400";
+  if (line.includes("WARNING")) return "text-gray-400";
+  if (line.includes("OK") || line.includes("completed") || line.includes("success")) return "text-gray-300";
+  if (line.includes("Scanning") || line.includes("Cloning") || line.includes("Validating") || line.includes("Schemas")) return "text-[#E8453C]";
+  return "";
+}
+
 function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; isRunning: boolean }) {
   const [copied, setCopied] = useState(false);
+  const [filter, setFilter] = useState<LogFilter>("all");
+  const [expanded, setExpanded] = useState(false);
 
   const logText = logs.join("\n");
 
@@ -148,6 +184,17 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
     downloadFile(logText, `clone-logs-${jobId}.log`, "text/plain");
   };
 
+  const filteredLogs = logs.filter((line) => {
+    if (filter === "all") return true;
+    if (filter === "errors") return line.includes("ERROR");
+    if (filter === "warnings") return line.includes("WARNING") || line.includes("ERROR");
+    return !line.includes("WARNING") && !line.includes("ERROR");
+  });
+
+  const errorCount = logs.filter((l) => l.includes("ERROR")).length;
+  const warnCount = logs.filter((l) => l.includes("WARNING")).length;
+  const grouped = groupLogs(filteredLogs);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -157,9 +204,30 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
             Logs
           </span>
           <div className="flex items-center gap-2">
+            {errorCount > 0 && (
+              <Badge
+                variant={filter === "errors" ? "default" : "outline"}
+                className="text-xs cursor-pointer text-red-500 border-red-500/30"
+                onClick={() => setFilter(filter === "errors" ? "all" : "errors")}
+              >
+                {errorCount} errors
+              </Badge>
+            )}
+            {warnCount > 0 && (
+              <Badge
+                variant={filter === "warnings" ? "default" : "outline"}
+                className="text-xs cursor-pointer text-muted-foreground border-border/30"
+                onClick={() => setFilter(filter === "warnings" ? "all" : "warnings")}
+              >
+                {warnCount} warnings
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs">{logs.length} lines</Badge>
+            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setExpanded(!expanded)}>
+              <span className="text-xs">{expanded ? "Collapse" : "Expand"}</span>
+            </Button>
             <Button variant="ghost" size="sm" className="h-7 px-2" onClick={handleCopy}>
-              {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-foreground" /> : <ClipboardCopy className="h-3 w-3" />}
               <span className="ml-1 text-xs">{copied ? "Copied" : "Copy"}</span>
             </Button>
             <Button variant="ghost" size="sm" className="h-7 px-2" onClick={handleDownload}>
@@ -171,21 +239,17 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
       </CardHeader>
       <CardContent>
         <div
-          className="bg-gray-900 text-gray-300 p-3 rounded-lg font-mono text-xs max-h-64 overflow-y-auto"
+          className={`bg-gray-900 text-gray-300 p-3 rounded-lg font-mono text-xs overflow-y-auto ${expanded ? "max-h-[600px]" : "max-h-72"}`}
           ref={(el) => { if (el && isRunning) el.scrollTop = el.scrollHeight; }}
         >
-          {logs.map((line: string, i: number) => (
-            <div
-              key={i}
-              className={
-                line.includes("ERROR") ? "text-red-400" :
-                line.includes("WARNING") ? "text-yellow-400" :
-                line.includes("OK") || line.includes("completed") || line.includes("success") ? "text-green-400" :
-                line.includes("Scanning") || line.includes("Cloning") || line.includes("Validating") || line.includes("Schemas") ? "text-blue-400" :
-                ""
-              }
-            >
-              {line}
+          {grouped.map((entry, i: number) => (
+            <div key={i} className={`${getLogClass(entry.line)} leading-5`}>
+              {entry.line}
+              {entry.count > 1 && (
+                <span className="ml-2 text-gray-500 text-[10px]">
+                  (repeated {entry.count}x)
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -228,17 +292,17 @@ function JobProgress({ jobId }: { jobId: string }) {
   }
 
   const statusColor = {
-    queued: "bg-yellow-100 text-yellow-800",
-    running: "bg-blue-100 text-blue-800",
-    completed: "bg-green-100 text-green-800",
+    queued: "bg-muted/40 text-foreground",
+    running: "bg-muted/50 text-foreground",
+    completed: "bg-muted/40 text-foreground",
     failed: "bg-red-100 text-red-800",
     cancelled: "bg-gray-100 text-gray-800",
   }[job.status] || "bg-gray-100 text-gray-800";
 
   const statusIcon = {
-    queued: <Clock className="h-5 w-5 text-yellow-600" />,
-    running: <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />,
-    completed: <CheckCircle className="h-5 w-5 text-green-600" />,
+    queued: <Clock className="h-5 w-5 text-muted-foreground" />,
+    running: <Loader2 className="h-5 w-5 text-[#E8453C] animate-spin" />,
+    completed: <CheckCircle className="h-5 w-5 text-foreground" />,
     failed: <XCircle className="h-5 w-5 text-red-600" />,
     cancelled: <AlertCircle className="h-5 w-5 text-gray-600" />,
   }[job.status];
@@ -260,7 +324,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                   href={job.run_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 ml-2 text-blue-500 hover:text-blue-400 hover:underline"
+                  className="inline-flex items-center gap-1 ml-2 text-[#E8453C] hover:text-[#E8453C] hover:underline"
                 >
                   <ExternalLink className="h-3 w-3" />
                   View in Databricks
@@ -324,7 +388,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                 Clone in progress...
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: "60%" }} />
+                <div className="h-full bg-[#E8453C] rounded-full animate-pulse" style={{ width: "60%" }} />
               </div>
             </div>
           )}
@@ -353,7 +417,7 @@ function JobProgress({ jobId }: { jobId: string }) {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-blue-700">{job.result.schemas_processed || 0}</p>
+                <p className="text-2xl font-bold text-[#E8453C]">{job.result.schemas_processed || 0}</p>
                 <p className="text-xs text-gray-500">Schemas Processed</p>
               </CardContent>
             </Card>
@@ -364,7 +428,7 @@ function JobProgress({ jobId }: { jobId: string }) {
               return (
                 <Card key={key}>
                   <CardContent className="pt-4 text-center">
-                    <p className="text-2xl font-bold text-green-700">{d.success || 0}</p>
+                    <p className="text-2xl font-bold text-foreground">{d.success || 0}</p>
                     <p className="text-xs text-gray-500">{key.charAt(0).toUpperCase() + key.slice(1)}</p>
                     {(d.failed > 0 || d.skipped > 0) && (
                       <div className="flex justify-center gap-1 mt-1">
@@ -388,9 +452,9 @@ function JobProgress({ jobId }: { jobId: string }) {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <CheckCircle className="h-5 w-5 text-foreground" />
                   Post-Clone Validation
-                  <Badge className="ml-auto bg-green-100 text-green-800">
+                  <Badge className="ml-auto bg-muted/40 text-foreground">
                     {job.result.validation.matched}/{job.result.validation.total_tables} matched
                   </Badge>
                 </CardTitle>
@@ -398,20 +462,20 @@ function JobProgress({ jobId }: { jobId: string }) {
               <CardContent>
                 {/* Validation summary */}
                 <div className="grid grid-cols-4 gap-3 mb-4">
-                  <div className="text-center p-2 bg-green-50 rounded">
-                    <p className="text-lg font-bold text-green-700">{job.result.validation.matched}</p>
+                  <div className="text-center p-2 bg-muted/20 rounded">
+                    <p className="text-lg font-bold text-foreground">{job.result.validation.matched}</p>
                     <p className="text-xs text-gray-500">Matched</p>
                   </div>
                   <div className="text-center p-2 bg-red-50 rounded">
                     <p className="text-lg font-bold text-red-700">{job.result.validation.mismatched}</p>
                     <p className="text-xs text-gray-500">Mismatched</p>
                   </div>
-                  <div className="text-center p-2 bg-yellow-50 rounded">
-                    <p className="text-lg font-bold text-yellow-700">{job.result.validation.errors}</p>
+                  <div className="text-center p-2 bg-muted/20 rounded">
+                    <p className="text-lg font-bold text-muted-foreground">{job.result.validation.errors}</p>
                     <p className="text-xs text-gray-500">Errors</p>
                   </div>
-                  <div className="text-center p-2 bg-blue-50 rounded">
-                    <p className="text-lg font-bold text-blue-700">{job.result.validation.total_tables}</p>
+                  <div className="text-center p-2 bg-muted/30 rounded">
+                    <p className="text-lg font-bold text-[#E8453C]">{job.result.validation.total_tables}</p>
                     <p className="text-xs text-gray-500">Total Tables</p>
                   </div>
                 </div>
@@ -431,12 +495,12 @@ function JobProgress({ jobId }: { jobId: string }) {
                       </thead>
                       <tbody>
                         {job.result.validation.details.map((row: any, i: number) => (
-                          <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-yellow-50" : "bg-red-50"}`}>
+                          <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-muted/20" : "bg-red-50"}`}>
                             <td className="py-2 px-3">
                               {row.match ? (
-                                <CheckCircle className="h-4 w-4 text-green-500" />
+                                <CheckCircle className="h-4 w-4 text-foreground" />
                               ) : row.error ? (
-                                <AlertCircle className="h-4 w-4 text-yellow-500" />
+                                <AlertCircle className="h-4 w-4 text-muted-foreground" />
                               ) : (
                                 <XCircle className="h-4 w-4 text-red-500" />
                               )}
@@ -457,9 +521,9 @@ function JobProgress({ jobId }: { jobId: string }) {
 
           {/* Errors */}
           {job.result.errors && job.result.errors.length > 0 && (
-            <Card className="border-yellow-200">
+            <Card className="border-border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2 text-yellow-800">
+                <CardTitle className="text-lg flex items-center gap-2 text-foreground">
                   <AlertCircle className="h-5 w-5" />
                   Warnings ({job.result.errors.length})
                 </CardTitle>
@@ -467,7 +531,7 @@ function JobProgress({ jobId }: { jobId: string }) {
               <CardContent>
                 <div className="max-h-40 overflow-y-auto text-sm space-y-1">
                   {job.result.errors.map((err: string, i: number) => (
-                    <div key={i} className="text-yellow-700 font-mono text-xs">{err}</div>
+                    <div key={i} className="text-muted-foreground font-mono text-xs">{err}</div>
                   ))}
                 </div>
               </CardContent>
@@ -512,7 +576,7 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   }, []);
 
   const selectClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]";
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div>
@@ -569,7 +633,9 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
 export default function ClonePage() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [config, setConfig] = useState({
+
+  // Default config
+  const defaults = {
     source_catalog: "",
     destination_catalog: "",
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
@@ -592,6 +658,7 @@ export default function ClonePage() {
     validate_after_clone: false,
     validate_checksum: false,
     force_reclone: false,
+    schema_only: false,
     generate_report: false,
     show_progress: true,
     auto_rollback: false,
@@ -619,7 +686,102 @@ export default function ClonePage() {
     throttle: "" as "" | "low" | "medium" | "high" | "max",
     ttl: "",
     template: "",
+  };
+
+  // Apply URL query params from template selection on mount
+  const [config, setConfig] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.size === 0) return defaults;
+
+    const merged = { ...defaults };
+    // Boolean config keys
+    const boolKeys = [
+      "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
+      "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
+      "validate_after_clone", "validate_checksum", "dry_run", "force_reclone", "schema_only",
+      "generate_report", "show_progress", "auto_rollback", "checkpoint",
+      "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
+    ];
+    // Number config keys
+    const numKeys = ["max_workers", "parallel_tables", "max_parallel_queries", "max_rps", "rollback_threshold"];
+
+    for (const [key, val] of params.entries()) {
+      if (key in merged) {
+        if (boolKeys.includes(key)) {
+          (merged as any)[key] = val === "true" || val === "True";
+        } else if (numKeys.includes(key)) {
+          (merged as any)[key] = parseInt(val, 10) || (merged as any)[key];
+        } else {
+          (merged as any)[key] = val;
+        }
+      }
+    }
+    return merged;
   });
+
+  // Load saved config from backend on mount (overrides hardcoded defaults)
+  useEffect(() => {
+    api.get<any>("/config").then((saved) => {
+      if (!saved) return;
+      setConfig((prev: any) => ({
+        ...prev,
+        source_catalog: prev.source_catalog || saved.source_catalog || "",
+        destination_catalog: prev.destination_catalog || saved.destination_catalog || "",
+        clone_type: saved.clone_type || prev.clone_type,
+        load_type: saved.load_type || prev.load_type,
+        max_workers: saved.max_workers ?? prev.max_workers,
+        parallel_tables: saved.parallel_tables ?? prev.parallel_tables,
+        max_parallel_queries: saved.max_parallel_queries ?? prev.max_parallel_queries,
+        max_rps: saved.max_rps ?? prev.max_rps,
+        copy_permissions: saved.copy_permissions ?? prev.copy_permissions,
+        copy_ownership: saved.copy_ownership ?? prev.copy_ownership,
+        copy_tags: saved.copy_tags ?? prev.copy_tags,
+        copy_properties: saved.copy_properties ?? prev.copy_properties,
+        copy_constraints: saved.copy_constraints ?? prev.copy_constraints,
+        copy_comments: saved.copy_comments ?? prev.copy_comments,
+        exclude_schemas: saved.exclude_schemas?.length ? saved.exclude_schemas : prev.exclude_schemas,
+        include_schemas: saved.include_schemas?.length ? saved.include_schemas : prev.include_schemas,
+        include_tables_regex: saved.include_tables_regex || prev.include_tables_regex,
+        exclude_tables_regex: saved.exclude_tables_regex || prev.exclude_tables_regex,
+        location: saved.catalog_location || prev.location,
+        ttl: saved.ttl || prev.ttl,
+      }));
+    }).catch(() => {});
+  }, []);
+
+  // Auto-populate storage location from source catalog's storage root
+  const [sourceStorageRoot, setSourceStorageRoot] = useState("");
+  useEffect(() => {
+    if (!config.source_catalog) { setSourceStorageRoot(""); return; }
+    api.get(`/catalogs/${config.source_catalog}/info`)
+      .then((info: any) => setSourceStorageRoot(info.storage_root || ""))
+      .catch(() => setSourceStorageRoot(""));
+  }, [config.source_catalog]);
+
+  useEffect(() => {
+    if (sourceStorageRoot && config.destination_catalog && config.source_catalog) {
+      const m = sourceStorageRoot.match(/^(abfss?:\/\/)([^@]+)@([^/]+)(\/.*)?$/);
+      if (m) {
+        const protocol = m[1];
+        const container = m[2];
+        const account = m[3];
+        const pathPart = (m[4] || "").replace(/\/+$/, "");
+        let newPath = pathPart;
+        if (pathPart) {
+          const escaped = config.source_catalog.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          newPath = pathPart.replace(new RegExp(escaped, "g"), config.destination_catalog);
+          if (newPath === pathPart) {
+            const segs = pathPart.split("/");
+            segs[segs.length - 1] = config.destination_catalog;
+            newPath = segs.join("/");
+          }
+        } else {
+          newPath = "/" + config.destination_catalog;
+        }
+        setConfig((prev) => ({ ...prev, location: `${protocol}${container}@${account}${newPath}` }));
+      }
+    }
+  }, [sourceStorageRoot, config.destination_catalog, config.source_catalog]);
 
   const startClone = useStartClone();
   const volumes = useVolumes();
@@ -650,11 +812,15 @@ export default function ClonePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Clone Catalog</h1>
-        <p className="text-gray-500 mt-1">Clone a Unity Catalog catalog with full control</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Clone Catalog"
+        icon={Copy}
+        description="Deep or shallow clone of a Unity Catalog catalog — copies tables, views, permissions, tags, properties, and constraints across schemas. Supports serverless compute, incremental clone, time-travel, and post-clone validation."
+        breadcrumbs={["Operations", "Clone Catalog"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-create-table-clone"
+        docsLabel="CREATE TABLE CLONE"
+      />
 
       {/* Step indicators */}
       <div className="flex gap-2">
@@ -662,7 +828,7 @@ export default function ClonePage() {
           <Badge
             key={s}
             variant={step === s ? "default" : "outline"}
-            className={`cursor-pointer ${step === s ? "bg-blue-600" : ""}`}
+            className={`cursor-pointer ${step === s ? "bg-[#E8453C]" : ""}`}
             onClick={() => s !== "execute" && setStep(s)}
           >
             {i + 1}. {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -712,7 +878,7 @@ export default function ClonePage() {
           <CardHeader>
             <CardTitle>Clone Options</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Clone Type</label>
@@ -777,7 +943,7 @@ export default function ClonePage() {
                       </div>
                     ) : (
                       <select
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF3621]/30 focus:border-[#FF3621]"
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                         value={config.volume}
                         onChange={(e) => setConfig({ ...config, volume: e.target.value })}
                       >
@@ -877,6 +1043,7 @@ export default function ClonePage() {
                   ["validate_after_clone", "Validate After Clone"],
                   ["validate_checksum", "Checksum Validation"],
                   ["force_reclone", "Force Re-clone"],
+                  ["schema_only", "Schema Only (empty tables)"],
                   ["generate_report", "Generate Report"],
                   ["show_progress", "Show Progress"],
                   ["checkpoint", "Enable Checkpoint"],
@@ -987,8 +1154,8 @@ export default function ClonePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm space-y-1">
-              <p>clone-catalog clone \</p>
+            <div className="bg-gray-900 text-gray-300 p-4 rounded-lg font-mono text-sm space-y-1">
+              <p>clxs clone \</p>
               <p>  --source {config.source_catalog} --dest {config.destination_catalog} \</p>
               <p>  --clone-type {config.clone_type} --load-type {config.load_type} \</p>
               <p>  --max-workers {config.max_workers} --parallel-tables {config.parallel_tables} \</p>
@@ -1010,7 +1177,7 @@ export default function ClonePage() {
                 {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
                 Dry Run
               </Button>
-              <Button onClick={() => handleClone(false)} className="bg-blue-600 hover:bg-blue-700" disabled={startClone.isPending}>
+              <Button onClick={() => handleClone(false)} className="bg-[#E8453C] hover:bg-[#D93025]" disabled={startClone.isPending}>
                 {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
                 Execute Clone
               </Button>
@@ -1037,25 +1204,26 @@ export default function ClonePage() {
               {config.max_rps > 0 && <Badge variant="outline" className="text-xs">RPS:{config.max_rps}</Badge>}
               {config.order_by_size && <Badge variant="outline" className="text-xs">Size:{config.order_by_size}</Badge>}
               {config.throttle && <Badge variant="outline" className="text-xs">Throttle:{config.throttle}</Badge>}
-              {config.copy_permissions && <Badge className="bg-green-100 text-green-800 text-xs">Permissions</Badge>}
-              {config.copy_tags && <Badge className="bg-green-100 text-green-800 text-xs">Tags</Badge>}
-              {config.copy_security && <Badge className="bg-green-100 text-green-800 text-xs">Security</Badge>}
-              {config.copy_constraints && <Badge className="bg-green-100 text-green-800 text-xs">Constraints</Badge>}
-              {config.copy_properties && <Badge className="bg-green-100 text-green-800 text-xs">Properties</Badge>}
-              {config.copy_comments && <Badge className="bg-green-100 text-green-800 text-xs">Comments</Badge>}
-              {config.enable_rollback && <Badge className="bg-blue-100 text-blue-800 text-xs">Rollback</Badge>}
-              {config.auto_rollback && <Badge className="bg-blue-100 text-blue-800 text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
-              {config.validate_after_clone && <Badge className="bg-blue-100 text-blue-800 text-xs">Validate</Badge>}
-              {config.validate_checksum && <Badge className="bg-blue-100 text-blue-800 text-xs">Checksum</Badge>}
-              {config.generate_report && <Badge className="bg-blue-100 text-blue-800 text-xs">Report</Badge>}
-              {config.checkpoint && <Badge className="bg-blue-100 text-blue-800 text-xs">Checkpoint</Badge>}
-              {config.force_reclone && <Badge className="bg-orange-100 text-orange-800 text-xs">Force Re-clone</Badge>}
-              {config.skip_unused && <Badge className="bg-orange-100 text-orange-800 text-xs">Skip Unused</Badge>}
-              {config.impact_check && <Badge className="bg-purple-100 text-purple-800 text-xs">Impact Check</Badge>}
-              {config.require_approval && <Badge className="bg-purple-100 text-purple-800 text-xs">Approval Required</Badge>}
-              {config.dry_run && <Badge className="bg-yellow-100 text-yellow-800 text-xs">Dry Run</Badge>}
+              {config.copy_permissions && <Badge className="bg-muted/40 text-foreground text-xs">Permissions</Badge>}
+              {config.copy_tags && <Badge className="bg-muted/40 text-foreground text-xs">Tags</Badge>}
+              {config.copy_security && <Badge className="bg-muted/40 text-foreground text-xs">Security</Badge>}
+              {config.copy_constraints && <Badge className="bg-muted/40 text-foreground text-xs">Constraints</Badge>}
+              {config.copy_properties && <Badge className="bg-muted/40 text-foreground text-xs">Properties</Badge>}
+              {config.copy_comments && <Badge className="bg-muted/40 text-foreground text-xs">Comments</Badge>}
+              {config.enable_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Rollback</Badge>}
+              {config.auto_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
+              {config.validate_after_clone && <Badge className="bg-muted/50 text-foreground text-xs">Validate</Badge>}
+              {config.validate_checksum && <Badge className="bg-muted/50 text-foreground text-xs">Checksum</Badge>}
+              {config.generate_report && <Badge className="bg-muted/50 text-foreground text-xs">Report</Badge>}
+              {config.checkpoint && <Badge className="bg-muted/50 text-foreground text-xs">Checkpoint</Badge>}
+              {config.force_reclone && <Badge className="bg-muted/40 text-foreground text-xs">Force Re-clone</Badge>}
+              {config.schema_only && <Badge className="bg-muted/40 text-foreground text-xs">Schema Only</Badge>}
+              {config.skip_unused && <Badge className="bg-muted/40 text-foreground text-xs">Skip Unused</Badge>}
+              {config.impact_check && <Badge className="bg-muted/40 text-foreground text-xs">Impact Check</Badge>}
+              {config.require_approval && <Badge className="bg-muted/40 text-foreground text-xs">Approval Required</Badge>}
+              {config.dry_run && <Badge className="bg-muted/40 text-foreground text-xs">Dry Run</Badge>}
               {config.verbose && <Badge className="bg-gray-100 text-gray-800 text-xs">Verbose</Badge>}
-              {config.serverless && <Badge className="bg-indigo-100 text-indigo-800 text-xs">Serverless</Badge>}
+              {config.serverless && <Badge className="bg-muted/40 text-foreground text-xs">Serverless</Badge>}
               {!config.copy_permissions && <Badge className="bg-red-100 text-red-800 text-xs">No Permissions</Badge>}
               {!config.copy_ownership && <Badge className="bg-red-100 text-red-800 text-xs">No Ownership</Badge>}
               {config.include_schemas.length > 0 && <Badge variant="outline" className="text-xs">Schemas: {config.include_schemas.join(",")}</Badge>}
@@ -1101,6 +1269,12 @@ export default function ClonePage() {
               >
                 Back to Preview
               </Button>
+              <a
+                href={`/preview?source=${encodeURIComponent(sourceCatalog)}&dest=${encodeURIComponent(destCatalog)}`}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border text-[#E8453C] hover:bg-muted/30 dark:hover:bg-white/5 text-sm font-medium"
+              >
+                Compare Data →
+              </a>
             </div>
           </CardContent>
         </Card>

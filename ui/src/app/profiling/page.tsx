@@ -4,41 +4,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
-import { Loader2, XCircle, BarChart3, CheckCircle } from "lucide-react";
+import { Loader2, XCircle, BarChart3, CheckCircle, ScanSearch } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
 
 export default function ProfilingPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const { job, run, isRunning } = usePageJob("profiling");
+  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
+  const [schema, setSchema] = useState(job?.params?.schema || "");
 
-  async function runProfile() {
-    setLoading(true);
-    setError("");
-    setResults(null);
-    try {
-      const data = await api.post("/profile", { source_catalog: catalog, schema: schema || undefined });
-      setResults(data);
-    } catch (e: any) {
-      setError(e.message || "Profiling failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  const results = job?.data as any;
   const columns = results?.columns || results?.results || [];
   const totalCols = results?.total_columns ?? columns.length;
   const nullRate = results?.null_rate ?? 0;
   const completeness = results?.completeness_score ?? (1 - nullRate);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Data Profiling</h1>
-        <p className="text-muted-foreground mt-1">Analyze data quality and column statistics</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Data Profiling"
+        icon={ScanSearch}
+        breadcrumbs={["Analysis", "Profiling"]}
+        description="Per-column data quality profiling — null rates, distinct counts, min/max values, and string length distributions. Helps assess data completeness before and after cloning."
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-aux-analyze-table"
+        docsLabel="ANALYZE TABLE"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">
@@ -52,15 +43,15 @@ export default function ProfilingPage() {
               onTableChange={() => {}}
               showTable={false}
             />
-            <Button onClick={runProfile} disabled={!catalog || loading}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
-              {loading ? "Profiling..." : "Run Profile"}
+            <Button onClick={() => run({ catalog, schema }, () => api.post("/profile", { source_catalog: catalog, schema: schema || undefined }))} disabled={!catalog || isRunning}>
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
+              {isRunning ? "Profiling..." : "Run Profile"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {loading && (
+      {isRunning && (
         <Card className="bg-card border-border">
           <CardContent className="pt-6 text-center py-12">
             <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
@@ -86,7 +77,7 @@ export default function ProfilingPage() {
           <Card className="bg-card border-border">
             <CardContent className="pt-6 text-center">
               <div className="flex items-center justify-center gap-1">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-foreground" />
                 <p className="text-2xl font-bold text-foreground">{(completeness * 100).toFixed(1)}%</p>
               </div>
               <p className="text-xs text-muted-foreground mt-1">Completeness Score</p>
@@ -135,10 +126,10 @@ export default function ProfilingPage() {
         </Card>
       )}
 
-      {error && (
+      {job?.status === "error" && (
         <Card className="border-red-200 bg-card">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />{error}
+            <XCircle className="h-5 w-5" />{job.error}
           </CardContent>
         </Card>
       )}

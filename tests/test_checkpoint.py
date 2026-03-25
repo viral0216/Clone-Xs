@@ -2,7 +2,6 @@
 
 import json
 import os
-import tempfile
 
 from src.checkpoint import CheckpointManager
 

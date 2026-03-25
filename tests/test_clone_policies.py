@@ -1,6 +1,6 @@
 """Tests for the clone policies (guardrails) module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.clone_policies import PolicyViolation, evaluate_policies, load_policies
 

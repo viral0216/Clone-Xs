@@ -1,9 +1,7 @@
 """Slack bot mode — trigger and monitor clone operations from Slack."""
 
-import json
 import logging
 import os
-import re
 import sys
 import threading
 
@@ -43,9 +41,9 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
 
     app = App(token=bot_token)
 
-    @app.command("/clone-catalog")
+    @app.command("/clxs")
     def handle_clone_command(ack, say, command):
-        """Handle /clone-catalog slash command."""
+        """Handle /clxs slash command."""
         ack()
         text = command.get("text", "").strip()
         user = command.get("user_name", "unknown")
@@ -77,7 +75,7 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
         elif subcommand == "pii":
             _handle_pii_scan(say, user, parts[1:], config)
         else:
-            say(f"Unknown subcommand: `{subcommand}`. Try `/clone-catalog help`.")
+            say(f"Unknown subcommand: `{subcommand}`. Try `/clxs help`.")
 
     @app.event("app_mention")
     def handle_mention(event, say):
@@ -86,11 +84,11 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
         user = event.get("user", "unknown")
 
         if "clone" in text.lower():
-            say(f"<@{user}> Use `/clone-catalog clone source dest` to start a clone operation.")
+            say(f"<@{user}> Use `/clxs clone source dest` to start a clone operation.")
         elif "help" in text.lower():
             say(_help_message())
         else:
-            say(f"<@{user}> I'm the catalog clone bot! Try `/clone-catalog help` for commands.")
+            say(f"<@{user}> I'm the catalog clone bot! Try `/clxs help` for commands.")
 
     logger.info("Starting Slack bot in Socket Mode...")
     handler = SocketModeHandler(app, app_token)
@@ -101,16 +99,16 @@ def _help_message() -> str:
     """Return the help message for the Slack bot."""
     return (
         "*Catalog Clone Bot Commands:*\n"
-        "• `/clone-catalog clone <source> <dest>` — Start a clone operation\n"
-        "• `/clone-catalog clone <source> <dest> --template dev-copy` — Clone using a template\n"
-        "• `/clone-catalog clone <source> <dest> --dry-run` — Preview without executing\n"
-        "• `/clone-catalog diff <source> <dest>` — Compare two catalogs\n"
-        "• `/clone-catalog preflight` — Run pre-flight checks\n"
-        "• `/clone-catalog cost <source>` — Estimate clone cost\n"
-        "• `/clone-catalog pii <catalog>` — Scan for PII columns\n"
-        "• `/clone-catalog templates` — List available templates\n"
-        "• `/clone-catalog status` — Show current configuration\n"
-        "• `/clone-catalog help` — Show this message\n"
+        "• `/clxs clone <source> <dest>` — Start a clone operation\n"
+        "• `/clxs clone <source> <dest> --template dev-copy` — Clone using a template\n"
+        "• `/clxs clone <source> <dest> --dry-run` — Preview without executing\n"
+        "• `/clxs diff <source> <dest>` — Compare two catalogs\n"
+        "• `/clxs preflight` — Run pre-flight checks\n"
+        "• `/clxs cost <source>` — Estimate clone cost\n"
+        "• `/clxs pii <catalog>` — Scan for PII columns\n"
+        "• `/clxs templates` — List available templates\n"
+        "• `/clxs status` — Show current configuration\n"
+        "• `/clxs help` — Show this message\n"
     )
 
 
@@ -129,7 +127,7 @@ def _status_message(config: dict) -> str:
 def _handle_clone(say, user, args, config):
     """Handle clone subcommand from Slack."""
     if len(args) < 2:
-        say("Usage: `/clone-catalog clone <source_catalog> <dest_catalog> [--template name] [--dry-run]`")
+        say("Usage: `/clxs clone <source_catalog> <dest_catalog> [--template name] [--dry-run]`")
         return
 
     source, dest = args[0], args[1]
@@ -194,7 +192,7 @@ def _handle_clone(say, user, args, config):
 def _handle_diff(say, user, args, config):
     """Handle diff subcommand from Slack."""
     if len(args) < 2:
-        say("Usage: `/clone-catalog diff <source_catalog> <dest_catalog>`")
+        say("Usage: `/clxs diff <source_catalog> <dest_catalog>`")
         return
 
     source, dest = args[0], args[1]

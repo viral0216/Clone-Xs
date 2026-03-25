@@ -4,14 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
-import { Loader2, XCircle, Server, Play, Square, RefreshCw } from "lucide-react";
+import PageHeader from "@/components/PageHeader";
+import { Loader2, XCircle, Server, Play, Square, RefreshCw, Check, Star } from "lucide-react";
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
-    case "RUNNING": return <Badge className="bg-green-600 text-white">RUNNING</Badge>;
+    case "RUNNING": return <Badge className="bg-foreground text-background">RUNNING</Badge>;
     case "STOPPED": return <Badge variant="outline" className="text-muted-foreground">STOPPED</Badge>;
-    case "STARTING": return <Badge className="bg-yellow-500 text-white">STARTING</Badge>;
-    case "STOPPING": return <Badge className="bg-yellow-500 text-white">STOPPING</Badge>;
+    case "STARTING": return <Badge className="bg-[#9CA3AF] text-white">STARTING</Badge>;
+    case "STOPPING": return <Badge className="bg-[#9CA3AF] text-white">STOPPING</Badge>;
     default: return <Badge variant="outline">{status || "Unknown"}</Badge>;
   }
 }
@@ -21,6 +22,15 @@ export default function WarehousePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activeWarehouseId, setActiveWarehouseId] = useState<string>("");
+  const [setActiveSuccess, setSetActiveSuccess] = useState<string>("");
+
+  async function loadConfig() {
+    try {
+      const config = await api.get<any>("/config");
+      setActiveWarehouseId(config?.sql_warehouse_id || "");
+    } catch {}
+  }
 
   async function loadWarehouses() {
     try {
@@ -34,8 +44,23 @@ export default function WarehousePage() {
     }
   }
 
+  async function setAsActive(id: string) {
+    setActionLoading(id);
+    try {
+      await api.patch("/config/warehouse", { warehouse_id: id });
+      setActiveWarehouseId(id);
+      setSetActiveSuccess(id);
+      setTimeout(() => setSetActiveSuccess(""), 2000);
+    } catch (e: any) {
+      setError(e.message || "Failed to set active warehouse");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   useEffect(() => {
     loadWarehouses();
+    loadConfig();
     const interval = setInterval(loadWarehouses, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -65,16 +90,20 @@ export default function WarehousePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Warehouse Manager</h1>
-          <p className="text-muted-foreground mt-1">Manage SQL warehouses</p>
-        </div>
-        <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />Refresh
-        </Button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Warehouse Manager"
+        icon={Server}
+        description="View and manage SQL warehouses in your workspace — status, cluster size, auto-stop settings, and select the active warehouse for operations."
+        breadcrumbs={["Management", "Warehouses"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse"
+        docsLabel="SQL warehouses"
+        actions={
+          <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />Refresh
+          </Button>
+        }
+      />
 
       {loading && warehouses.length === 0 && (
         <Card className="bg-card border-border">
@@ -99,13 +128,20 @@ export default function WarehousePage() {
           const id = wh.id || wh.warehouse_id;
           const status = (wh.state || wh.status || "").toUpperCase();
           const isActing = actionLoading === id;
+          const isActive = id === activeWarehouseId;
+          const justSet = setActiveSuccess === id;
           return (
-            <Card key={id} className="bg-card border-border">
+            <Card key={id} className={`bg-card ${isActive ? "border-[#E8453C] ring-1 ring-[#E8453C]/30" : "border-border"}`}>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Server className="h-4 w-4 text-muted-foreground" />
                     {wh.name || "Unnamed"}
+                    {isActive && (
+                      <Badge className="bg-[#E8453C] text-white text-[10px] px-1.5 py-0">
+                        <Star className="h-2.5 w-2.5 mr-0.5 fill-current" />ACTIVE
+                      </Badge>
+                    )}
                   </div>
                   {statusBadge(status)}
                 </CardTitle>
@@ -119,6 +155,12 @@ export default function WarehousePage() {
                   <span className="text-muted-foreground">ID</span>
                   <span className="font-mono text-xs text-muted-foreground">{id}</span>
                 </div>
+                {wh.auto_stop_mins != null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Auto-stop</span>
+                    <span className="text-foreground">{wh.auto_stop_mins} min</span>
+                  </div>
+                )}
                 <div className="flex gap-2 pt-2">
                   {(status === "STOPPED" || status === "STOPPING") && (
                     <Button size="sm" onClick={() => startWarehouse(id)} disabled={isActing}>
@@ -131,6 +173,16 @@ export default function WarehousePage() {
                       {isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Square className="h-3 w-3 mr-1" />}
                       Stop
                     </Button>
+                  )}
+                  {!isActive ? (
+                    <Button size="sm" variant="outline" onClick={() => setAsActive(id)} disabled={isActing}>
+                      {justSet ? <Check className="h-3 w-3 mr-1 text-[#E8453C]" /> : isActing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Star className="h-3 w-3 mr-1" />}
+                      {justSet ? "Saved!" : "Set as Active"}
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-[#E8453C] flex items-center gap-1 pt-1">
+                      <Check className="h-3 w-3" /> Used for all operations
+                    </span>
                   )}
                 </div>
               </CardContent>

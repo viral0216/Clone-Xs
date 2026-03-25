@@ -1,8 +1,27 @@
 [project]
 name = "clone-xs"
-version = "0.4.0"
-description = "Unity Catalog clone utility for Databricks"
+version = "0.5.0"
+description = "Enterprise-grade Unity Catalog cloning toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API."
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+authors = [
+    {name = "Viral Patel"},
+]
+keywords = ["databricks", "unity-catalog", "clone", "data-engineering", "catalog-management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "databricks-sdk>=0.20.0",
     "pyyaml>=6.0",
@@ -14,9 +33,25 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.4.0",
 ]
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "python-multipart>=0.0.6",
+]
+nlp = [
+    "presidio-analyzer>=2.2.0",
+    "presidio-anonymizer>=2.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/viral0216/clone-xs"
+Repository = "https://github.com/viral0216/clone-xs"
+Documentation = "https://github.com/viral0216/clone-xs#readme"
+Issues = "https://github.com/viral0216/clone-xs/issues"
+Changelog = "https://github.com/viral0216/clone-xs/blob/main/.github/CHANGELOG.md"
 
 [project.scripts]
-clone-catalog = "src.main:main"
+clxs = "src.main:main"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
@@ -27,6 +62,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"api/main.py" = ["E402"]  # imports after app = FastAPI() for router registration
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

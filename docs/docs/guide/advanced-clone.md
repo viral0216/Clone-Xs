@@ -19,12 +19,12 @@ Your `production.sales.transactions` table has 5 years of data — 2 billion row
 
 ```bash
 # Apply a global filter to all tables
-clone-catalog clone \
+clxs clone \
   --source production --dest dev \
   --where "created_at >= '2026-01-01'"
 
 # Per-table filters
-clone-catalog clone \
+clxs clone \
   --source production --dest dev \
   --table-filter "sales.transactions:created_at >= '2026-01-01'" \
   --table-filter "sales.orders:region = 'US'" \
@@ -94,6 +94,36 @@ Filtered clones use CTAS, which creates a new table rather than a true Delta clo
 
 > Set expiration dates on cloned catalogs so temporary environments are automatically cleaned up.
 
+### How Clone-Xs TTL differs from native Databricks
+
+Databricks does not provide a native TTL mechanism at the catalog or schema level. The only built-in retention controls operate at the **table level** through Delta table properties:
+
+```sql
+-- Native Databricks: table-level only
+ALTER TABLE my_table SET TBLPROPERTIES (
+  'delta.deletedFileRetentionDuration' = '30 days',   -- controls VACUUM
+  'delta.logRetentionDuration' = '30 days'             -- controls time travel
+);
+```
+
+These properties control how long deleted data files and transaction log entries are retained for individual tables. They do not expire or drop the table itself — they only affect storage cleanup during `VACUUM` operations.
+
+**Clone-Xs fills this gap** by implementing **catalog-level TTL** on top of Unity Catalog tags. Instead of managing retention on hundreds of individual tables, Clone-Xs sets a single expiration on the entire destination catalog and drops it (along with all its schemas, tables, views, and volumes) when the TTL expires.
+
+| Aspect | Native Databricks | Clone-Xs TTL |
+|---|---|---|
+| **Level** | Table only | Catalog |
+| **What it controls** | File retention for `VACUUM` and time travel | Catalog lifecycle (creation to deletion) |
+| **What happens on expiry** | Old data files become eligible for `VACUUM` cleanup | Entire catalog is dropped |
+| **Scope** | Individual table property | All objects in the catalog |
+| **Setup** | `ALTER TABLE ... SET TBLPROPERTIES` per table | Single `--ttl` flag at clone time |
+| **Automation** | Requires scheduled `VACUUM` per table | Built-in cleanup scheduler (`clxs ttl cleanup`) |
+| **Use case** | Storage optimization | Ephemeral environment lifecycle management |
+
+:::info
+Clone-Xs TTL and native Delta retention serve different purposes. Native retention keeps your tables healthy by cleaning up old files. Clone-Xs TTL manages the lifecycle of entire cloned environments. You may use both — Clone-Xs TTL to expire a PR catalog after 7 days, and native Delta retention to control file cleanup within long-lived catalogs.
+:::
+
 ### Real-world scenario
 
 Your CI pipeline creates a fresh cloned catalog for every pull request. Without TTL policies, these catalogs accumulate and waste storage. With a 7-day TTL, abandoned PR environments are automatically cleaned up, keeping costs under control.
@@ -102,24 +132,24 @@ Your CI pipeline creates a fresh cloned catalog for every pull request. Without 
 
 ```bash
 # Clone with a 7-day TTL
-clone-catalog clone \
+clxs clone \
   --source production --dest pr_1234 \
   --ttl 7d
 
 # Set TTL on an existing catalog
-clone-catalog ttl set --dest pr_1234 --days 14
+clxs ttl set --dest pr_1234 --days 14
 
 # Check TTL status for all catalogs
-clone-catalog ttl check
+clxs ttl check
 
 # Clean up expired catalogs
-clone-catalog ttl cleanup
+clxs ttl cleanup
 
 # Extend TTL (e.g., PR review is taking longer)
-clone-catalog ttl extend --dest pr_1234 --days 7
+clxs ttl extend --dest pr_1234 --days 7
 
 # Remove TTL (make permanent)
-clone-catalog ttl remove --dest pr_1234
+clxs ttl remove --dest pr_1234
 ```
 
 **Output (ttl check):**
@@ -134,7 +164,7 @@ TTL STATUS
   pr_1198          7d          2026-03-12 11:00:00  EXPIRED
   dev_sandbox      30d         2026-04-13 02:00:00  ACTIVE (30 days left)
 ============================================================
-  1 catalog expired. Run 'clone-catalog ttl cleanup' to remove.
+  1 catalog expired. Run 'clxs ttl cleanup' to remove.
 ```
 
 ### TTL duration formats
@@ -160,17 +190,56 @@ ttl:
 
 ### How it works
 
-TTL metadata is stored as a Unity Catalog tag on the destination catalog:
+Clone-Xs implements catalog-level TTL using **Unity Catalog tags** — since Databricks has no native catalog expiration feature. The lifecycle works in three stages:
+
+**1. Tag assignment** — When you clone with `--ttl`, Clone-Xs calculates the expiration timestamp and stores it as a UC tag on the destination catalog:
 
 ```sql
 ALTER CATALOG pr_1234 SET TAGS ('clone_catalog_ttl' = '2026-03-21T09:15:00Z');
 ```
 
-The `ttl cleanup` command (or the automatic cleanup schedule) queries all catalogs for expired TTL tags and drops them.
+**2. Status monitoring** — The `clxs ttl check` command reads the `clone_catalog_ttl` tag from all catalogs and compares against the current time to report status (`ACTIVE`, `EXPIRING`, or `EXPIRED`).
+
+**3. Cleanup** — The `clxs ttl cleanup` command (or the automatic cleanup schedule) queries all catalogs for expired TTL tags and drops the entire catalog, including all schemas, tables, views, and volumes within it:
+
+```sql
+-- What cleanup executes for each expired catalog
+DROP CATALOG IF EXISTS pr_1234 CASCADE;
+```
+
+Because this uses standard Unity Catalog tags, the TTL metadata is visible in Catalog Explorer and queryable via the Unity Catalog API — no external database or state file is required.
 
 :::tip
 In CI/CD pipelines, always set a TTL when creating PR-specific catalogs. Combine with `--drop-catalog` on the rollback command for immediate cleanup when the PR is merged or closed.
 :::
+
+---
+
+## Clone templates
+
+> Pre-built configurations that set all clone options in one click.
+
+### Template long descriptions
+
+Each of the 13 built-in templates now includes a detailed `long_description` field that explains:
+
+- The intended use case (e.g., "Create a lightweight dev environment with only the last 30 days of data")
+- Which settings are enabled and which are disabled (e.g., "Enables shallow clone, disables validation and TTL")
+- Why those defaults were chosen (e.g., "Shallow clone is used to minimize storage costs for short-lived environments")
+
+The long description is displayed in the UI when a user expands a template card, giving full context before they commit to a configuration.
+
+### How templates populate the clone page
+
+When a user selects a template, all configuration values are passed to the clone page as **URL parameters**. This means:
+
+- Every field on the clone form (source, destination, clone mode, TTL, filters, etc.) is pre-filled from the template
+- Users can review and override any value before starting the clone
+- The URL is shareable -- teammates can open the same pre-configured clone page
+
+### Storage Location auto-population
+
+The clone page automatically populates the **Storage Location** field from the source catalog's metadata. When a source catalog is selected (either manually or via a template), the app reads the catalog's default storage location and fills it in as the suggested destination storage path. Users can override this value if needed.
 
 ---
 
@@ -186,19 +255,19 @@ After every clone, your team needs to run `OPTIMIZE` on all large tables and `AN
 
 ```bash
 # List installed plugins
-clone-catalog plugin list
+clxs plugin list
 
 # Install a built-in plugin
-clone-catalog plugin install optimize
+clxs plugin install optimize
 
 # Install from a directory
-clone-catalog plugin install /path/to/my-plugin
+clxs plugin install /path/to/my-plugin
 
 # Remove a plugin
-clone-catalog plugin remove optimize
+clxs plugin remove optimize
 
 # View plugin details
-clone-catalog plugin info optimize
+clxs plugin info optimize
 ```
 
 **Output (plugin list):**
@@ -282,7 +351,7 @@ class MyCustomPlugin(PluginBase):
 
 ### Auto-loading
 
-Plugins in the `~/.clone-catalog/plugins/` directory are loaded automatically. You can also specify a custom plugin directory:
+Plugins in the `~/.clxs/plugins/` directory are loaded automatically. You can also specify a custom plugin directory:
 
 ```yaml
 plugins:
@@ -312,33 +381,33 @@ You are setting up a new clone pipeline for a 500-table catalog. Before running 
 
 ```bash
 # Generate an execution plan (console output)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging
 
 # Save plan as JSON (for CI/CD pipelines)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format json --output plan.json
 
 # Save plan as HTML (shareable report)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format html --output plan.html
 
 # Save plan as SQL (DBA review, manual execution)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --format sql --output plan_statements.sql
 
 # Capture SQL separately (in addition to console output)
-clone-catalog plan \
+clxs plan \
   --source production --dest staging \
   --capture-sql plan_statements.sql
 ```
 
 ### Example: Real execution plan output
 
-Running `clone-catalog plan --source production --dest staging` produces:
+Running `clxs plan --source production --dest staging` produces:
 
 ```
 ======================================================================
@@ -424,7 +493,7 @@ Each statement is categorised with `[CLONE]`, `[CREATE_SCHEMA]`, `[CREATE_VIEW]`
 | Capture SQL | `--capture-sql plan.sql` | Save write statements alongside any format |
 
 :::tip
-**CI/CD usage:** Run `clone-catalog plan --source prod --dest staging --format json --output plan.json` in your pipeline as a validation step. Parse the JSON to check statement counts, verify no unexpected drops, and auto-approve or flag for review.
+**CI/CD usage:** Run `clxs plan --source prod --dest staging --format json --output plan.json` in your pipeline as a validation step. Parse the JSON to check statement counts, verify no unexpected drops, and auto-approve or flag for review.
 :::
 
 :::tip

@@ -5,7 +5,6 @@ from datetime import datetime
 
 from src.throttle import (
     PRESET_PROFILES,
-    ThrottleProfile,
     ThrottleSchedule,
     TableRateLimiter,
     apply_throttle_profile,

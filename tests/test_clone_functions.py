@@ -59,12 +59,11 @@ def test_clone_function_invalid_ddl(mock_details):
     assert result is False
 
 
-@patch("src.clone_functions.execute_sql")
+@patch("src.clone_functions.list_functions_sdk")
 @patch("src.clone_functions.clone_function")
-def test_clone_functions_in_schema(mock_clone, mock_sql):
-    mock_sql.side_effect = [
-        # get_functions
-        [{"function_name": "fn1"}, {"function_name": "fn2"}],
+def test_clone_functions_in_schema(mock_clone, mock_list):
+    mock_list.return_value = [
+        {"function_name": "fn1"}, {"function_name": "fn2"},
     ]
     mock_clone.side_effect = [True, False]
 
@@ -75,10 +74,10 @@ def test_clone_functions_in_schema(mock_clone, mock_sql):
     assert result["failed"] == 1
 
 
-@patch("src.clone_functions.execute_sql")
+@patch("src.clone_functions.list_functions_sdk")
 @patch("src.clone_functions.clone_function")
-def test_clone_functions_incremental(mock_clone, mock_sql):
-    mock_sql.side_effect = [
+def test_clone_functions_incremental(mock_clone, mock_list):
+    mock_list.side_effect = [
         # get_functions
         [{"function_name": "fn1"}, {"function_name": "fn2"}],
         # get_existing_functions

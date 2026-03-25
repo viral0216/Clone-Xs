@@ -1,7 +1,6 @@
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import os
 import json
-import pytest
 
 from src.auth import (
     _cache_key,
@@ -145,7 +144,7 @@ def test_add_auth_args():
 def test_get_client_with_host_and_token(mock_ws):
     mock_ws.return_value = MagicMock()
     clear_cache()
-    client = get_client("https://host", "token123")
+    get_client("https://host", "token123")
     mock_ws.assert_called_with(host="https://host", token="token123")
 
 
@@ -156,5 +155,5 @@ def test_get_client_with_host_and_token(mock_ws):
 def test_get_client_with_profile(mock_ws):
     mock_ws.return_value = MagicMock()
     clear_cache()
-    client = get_client(profile="staging")
+    get_client(profile="staging")
     mock_ws.assert_called_with(profile="staging")

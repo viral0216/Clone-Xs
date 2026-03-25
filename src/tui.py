@@ -11,9 +11,8 @@ def run_tui(config_path: str = "config/clone_config.yaml"):
     try:
         from rich.console import Console
         from rich.panel import Panel
-        from rich.prompt import Confirm, IntPrompt, Prompt
+        from rich.prompt import Prompt  # noqa: F401 — Confirm/IntPrompt imported in sub-functions
         from rich.table import Table
-        from rich.tree import Tree
     except ImportError:
         logger.error("Rich is required for the TUI. Install with: pip install rich")
         sys.exit(1)
@@ -232,6 +231,7 @@ def _tui_pii_scan(console, client, source, warehouse_id, config):
     from rich.prompt import Confirm
 
     sample_data = Confirm.ask("Sample actual data values? (slower but more accurate)", default=False)
+    read_uc_tags = Confirm.ask("Read Unity Catalog tags to enhance detection?", default=False)
 
     with console.status("[bold green]Scanning for PII..."):
         from src.pii_detection import scan_catalog_for_pii
@@ -239,9 +239,25 @@ def _tui_pii_scan(console, client, source, warehouse_id, config):
             client, warehouse_id, source,
             config.get("exclude_schemas", []),
             sample_data=sample_data,
+            pii_config=config.get("pii_detection"),
+            read_uc_tags=read_uc_tags,
         )
 
-    console.print(f"Found [bold]{result['total_pii_columns']}[/bold] potential PII columns")
+    console.print(f"Found [bold]{result['summary']['pii_columns_found']}[/bold] potential PII columns")
+
+    if result["summary"]["pii_columns_found"] > 0:
+        apply_tags = Confirm.ask("Apply PII tags to Unity Catalog?", default=False)
+        if apply_tags:
+            from src.pii_tagging import apply_pii_tags
+            with console.status("[bold green]Applying PII tags..."):
+                tag_result = apply_pii_tags(
+                    client, warehouse_id, source,
+                    result.get("columns", []),
+                )
+            console.print(
+                f"Tagged [bold]{tag_result['tagged']}[/bold] columns, "
+                f"skipped {tag_result['skipped']}, errors {tag_result['errors']}"
+            )
 
 
 def _tui_schema_evolution(console, client, source, dest, warehouse_id, config):

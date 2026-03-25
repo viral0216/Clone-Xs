@@ -170,7 +170,7 @@ def clone_schema(
         >>> result = clone_schema("prod", "sales", "dev", "abc123")
         >>> print(f"Tables: {result['tables']['success']} success")
     """
-    from src.clone_catalog import process_schema, create_catalog_if_not_exists, create_schema_if_not_exists
+    from src.clone_catalog import process_schema, create_catalog_if_not_exists
 
     client = _get_client(host, token)
     config = _build_config(

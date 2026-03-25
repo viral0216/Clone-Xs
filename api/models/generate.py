@@ -34,6 +34,7 @@ class CreateJobRequest(BaseModel):
     timeout: int = 7200
     tags: dict[str, str] = {}
     update_job_id: int | None = None
+    location: str = ""
     # Clone configuration
     clone_type: Literal["DEEP", "SHALLOW"] = "DEEP"
     load_type: Literal["FULL", "INCREMENTAL"] = "FULL"
@@ -54,6 +55,7 @@ class CreateJobRequest(BaseModel):
     validate_after_clone: bool = False
     validate_checksum: bool = False
     force_reclone: bool = False
+    schema_only: bool = False
     show_progress: bool = True
     # Filtering
     exclude_schemas: list[str] = ["information_schema", "default"]

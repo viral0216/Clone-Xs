@@ -1,11 +1,8 @@
 """Web dashboard for the catalog clone utility using Streamlit."""
 
-import json
 import logging
 import os
 import sys
-import threading
-from io import StringIO
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +10,7 @@ logger = logging.getLogger(__name__)
 def launch_dashboard(config_path: str = "config/clone_config.yaml", port: int = 8501):
     """Launch the Streamlit web dashboard."""
     try:
-        import streamlit
+        import streamlit  # noqa: F401
     except ImportError:
         logger.error(
             "Streamlit is required for the web dashboard. "

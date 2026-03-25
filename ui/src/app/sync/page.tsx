@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import {
   RefreshCw, Loader2, XCircle, ArrowRight, Plus, Minus, CheckCircle,
   AlertTriangle, Pencil, Clock, Download, ClipboardCopy, Check,
@@ -14,8 +15,8 @@ import {
 
 function actionColor(action: string) {
   switch (action?.toUpperCase()) {
-    case "ADD": return "text-green-700 bg-green-50 border-green-200";
-    case "UPDATE": return "text-yellow-700 bg-yellow-50 border-yellow-200";
+    case "ADD": return "text-foreground bg-muted/20 border-border";
+    case "UPDATE": return "text-muted-foreground bg-muted/20 border-border";
     case "REMOVE": return "text-red-700 bg-red-50 border-red-200";
     default: return "text-gray-700 bg-gray-50 border-gray-200";
   }
@@ -23,8 +24,8 @@ function actionColor(action: string) {
 
 function actionIcon(action: string) {
   switch (action?.toUpperCase()) {
-    case "ADD": return <Plus className="h-4 w-4 text-green-500" />;
-    case "UPDATE": return <Pencil className="h-4 w-4 text-yellow-500" />;
+    case "ADD": return <Plus className="h-4 w-4 text-foreground" />;
+    case "UPDATE": return <Pencil className="h-4 w-4 text-muted-foreground" />;
     case "REMOVE": return <Minus className="h-4 w-4 text-red-500" />;
     default: return null;
   }
@@ -59,16 +60,16 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
   }
 
   const statusColor = {
-    queued: "bg-yellow-100 text-yellow-800",
-    running: "bg-blue-100 text-blue-800",
-    completed: "bg-green-100 text-green-800",
+    queued: "bg-muted/40 text-muted-foreground",
+    running: "bg-[#E8453C]/10 text-[#E8453C]",
+    completed: "bg-muted/40 text-foreground",
     failed: "bg-red-100 text-red-800",
   }[job.status] || "bg-gray-100 text-gray-800";
 
   const statusIcon = {
-    queued: <Clock className="h-5 w-5 text-yellow-600" />,
-    running: <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />,
-    completed: <CheckCircle className="h-5 w-5 text-green-600" />,
+    queued: <Clock className="h-5 w-5 text-muted-foreground" />,
+    running: <Loader2 className="h-5 w-5 text-[#E8453C] animate-spin" />,
+    completed: <CheckCircle className="h-5 w-5 text-foreground" />,
     failed: <XCircle className="h-5 w-5 text-red-600" />,
   }[job.status];
 
@@ -102,7 +103,7 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
             <Loader2 className="h-4 w-4 animate-spin" /> Sync in progress...
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-            <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: "60%" }} />
+            <div className="h-full bg-[#E8453C] rounded-full animate-pulse" style={{ width: "60%" }} />
           </div>
         </div>
       )}
@@ -123,13 +124,13 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
           <div className="grid grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-green-700">{addCount}</p>
+                <p className="text-2xl font-bold text-foreground">{addCount}</p>
                 <p className="text-xs text-gray-500">Tables to Add</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-yellow-700">{updateCount}</p>
+                <p className="text-2xl font-bold text-muted-foreground">{updateCount}</p>
                 <p className="text-xs text-gray-500">Tables to Update</p>
               </CardContent>
             </Card>
@@ -165,9 +166,9 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
                     <tbody>
                       {tables.map((row: any, i: number) => (
                         <tr key={i} className={`border-b ${
-                          row.action?.toUpperCase() === "ADD" ? "bg-green-50/50" :
+                          row.action?.toUpperCase() === "ADD" ? "bg-muted/20" :
                           row.action?.toUpperCase() === "REMOVE" ? "bg-red-50/50" :
-                          row.action?.toUpperCase() === "UPDATE" ? "bg-yellow-50/50" : ""
+                          row.action?.toUpperCase() === "UPDATE" ? "bg-muted/20" : ""
                         }`}>
                           <td className="py-2 px-3">{actionIcon(row.action)}</td>
                           <td className="py-2 px-3 text-gray-600">{row.schema}</td>
@@ -179,7 +180,7 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
                           </td>
                           <td className="py-2 px-3">
                             {row.status?.toUpperCase() === "DONE" || row.status?.toUpperCase() === "SUCCESS" ? (
-                              <span className="flex items-center gap-1 text-green-600">
+                              <span className="flex items-center gap-1 text-foreground">
                                 <CheckCircle className="h-3.5 w-3.5" /> {row.status}
                               </span>
                             ) : (
@@ -238,7 +239,7 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
                   await navigator.clipboard.writeText(job.logs.join("\n"));
                   setCopied(true); setTimeout(() => setCopied(false), 2000);
                 }}>
-                  {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
+                  {copied ? <Check className="h-3 w-3 text-foreground" /> : <ClipboardCopy className="h-3 w-3" />}
                   <span className="ml-1 text-xs">{copied ? "Copied" : "Copy"}</span>
                 </Button>
               </div>
@@ -250,9 +251,9 @@ function SyncJobProgress({ jobId }: { jobId: string }) {
               {job.logs.map((line: string, i: number) => (
                 <div key={i} className={
                   line.includes("ERROR") ? "text-red-400" :
-                  line.includes("WARNING") ? "text-yellow-400" :
-                  line.includes("completed") || line.includes("success") ? "text-green-400" :
-                  line.includes("Syncing") || line.includes("Scanning") ? "text-blue-400" : ""
+                  line.includes("WARNING") ? "text-gray-400" :
+                  line.includes("completed") || line.includes("success") ? "text-gray-300" :
+                  line.includes("Syncing") || line.includes("Scanning") ? "text-gray-400" : ""
                 }>{line}</div>
               ))}
             </div>
@@ -294,11 +295,15 @@ export default function SyncPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Sync</h1>
-        <p className="text-gray-500 mt-1">Synchronize schemas and tables between catalogs</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Sync"
+        icon={RefreshCw}
+        description="Two-way synchronization between catalogs — detects missing, extra, or modified tables and applies changes. Preserves permissions, tags, and properties during sync."
+        breadcrumbs={["Operations", "Sync"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/create-tables"
+        docsLabel="Unity Catalog tables"
+      />
 
       {/* Input */}
       <Card>
@@ -337,10 +342,10 @@ export default function SyncPage() {
 
       {/* Confirmation */}
       {showConfirm && (
-        <Card className="border-yellow-300 bg-yellow-50">
+        <Card className="border-border bg-muted/20">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
-              <AlertTriangle className="h-6 w-6 text-yellow-600" />
+              <AlertTriangle className="h-6 w-6 text-muted-foreground" />
               <div className="flex-1">
                 <p className="font-semibold">Are you sure you want to sync?</p>
                 <p className="text-sm text-gray-600">

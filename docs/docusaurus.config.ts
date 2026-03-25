@@ -3,8 +3,8 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Clone-Xs',
-  tagline: 'Unity Catalog clone utility for Databricks',
+  title: 'Clone → Xs',
+  tagline: 'Unity Catalog Toolkit for Databricks',
   favicon: 'img/favicon.ico',
 
   future: {
@@ -46,7 +46,12 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Clone-Xs',
+      title: '',
+      logo: {
+        alt: 'Clone → Xs',
+        src: 'img/logo.svg',
+        srcDark: 'img/logo-dark.svg',
+      },
       items: [
         {
           type: 'docSidebar',

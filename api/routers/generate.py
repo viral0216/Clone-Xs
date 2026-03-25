@@ -1,10 +1,10 @@
 """IaC and workflow generation endpoints."""
 
-import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
+from api.models.demo import DemoDataRequest
 from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
@@ -90,6 +90,7 @@ async def create_databricks_job(
     config["validate_after_clone"] = req.validate_after_clone
     config["validate_checksum"] = req.validate_checksum
     config["force_reclone"] = req.force_reclone
+    config["schema_only"] = req.schema_only
     config["show_progress"] = req.show_progress
     # Filtering
     config["exclude_schemas"] = req.exclude_schemas
@@ -100,6 +101,8 @@ async def create_databricks_job(
     # Time travel
     config["as_of_timestamp"] = req.as_of_timestamp
     config["as_of_version"] = req.as_of_version
+    # Storage location
+    config["catalog_location"] = req.location
 
     result = create_persistent_job(
         client,
@@ -115,4 +118,78 @@ async def create_databricks_job(
         update_job_id=req.update_job_id,
     )
 
+    return result
+
+
+@router.post("/run-job/{job_id}")
+async def run_job_now(job_id: int, client=Depends(get_db_client)):
+    """Trigger an immediate run of an existing Databricks Job."""
+    try:
+        run = client.jobs.run_now(job_id)
+        return {"run_id": run.run_id, "message": f"Job {job_id} triggered successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to run job: {e}")
+
+
+@router.get("/clone-jobs")
+async def list_clone_xs_jobs(client=Depends(get_db_client)):
+    """List Databricks Jobs created by Clone-Xs (tagged with created_by=clone-xs)."""
+    try:
+        jobs = client.jobs.list()
+        results = []
+        for job in jobs:
+            tags = {}
+            if job.settings and hasattr(job.settings, "tags") and job.settings.tags:
+                tags = job.settings.tags
+            if tags.get("created_by") == "clone-xs":
+                name = job.settings.name if job.settings else ""
+                results.append({
+                    "job_id": job.job_id,
+                    "job_name": name,
+                    "tags": tags,
+                })
+        return results
+    except Exception:
+        return []
+
+
+@router.post("/demo-data")
+async def generate_demo_data(
+    req: DemoDataRequest,
+    client=Depends(get_db_client),
+    jm: JobManager = Depends(get_job_manager),
+):
+    """Generate a demo catalog with synthetic data across multiple industries."""
+    config = dict(await get_app_config())
+    config["catalog_name"] = req.catalog_name
+    config["industries"] = req.industries
+    config["owner"] = req.owner
+    config["scale_factor"] = req.scale_factor
+    config["batch_size"] = req.batch_size
+    config["max_workers"] = req.max_workers
+    config["storage_location"] = req.storage_location
+    config["drop_existing"] = req.drop_existing
+    config["medallion"] = req.medallion
+    config["uc_best_practices"] = req.uc_best_practices
+    config["create_functions"] = req.create_functions
+    config["create_volumes"] = req.create_volumes
+    config["start_date"] = req.start_date
+    config["end_date"] = req.end_date
+    config["dest_catalog"] = req.dest_catalog
+    if req.warehouse_id:
+        config["sql_warehouse_id"] = req.warehouse_id
+    job_id = await jm.submit_job("demo-data", config, client)
+    return {"job_id": job_id, "status": "queued", "message": "Demo data generation submitted"}
+
+
+@router.delete("/demo-data/{catalog_name}")
+async def cleanup_demo_data(catalog_name: str, client=Depends(get_db_client)):
+    """Remove a demo catalog and all its contents."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    if not wid:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No SQL warehouse configured")
+    from src.demo_generator import cleanup_demo_catalog
+    result = cleanup_demo_catalog(client, wid, catalog_name)
     return result

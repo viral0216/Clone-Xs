@@ -458,7 +458,7 @@
 
 <p>The same wizard flow is available as a single CLI command:</p>
 
-<pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+<pre><code><span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
   <span class="flag">--clone-type</span> <span class="str">DEEP</span> <span class="flag">\</span>
   <span class="flag">--copy-permissions</span> <span class="flag">--copy-ownership</span> <span class="flag">--copy-tags</span> <span class="flag">\</span>
@@ -470,7 +470,7 @@
 
 <p>For organizations that do not want to provision or pay for a dedicated SQL warehouse for cloning, Clone-Xs supports serverless execution. In this mode, Clone-Xs packages itself as a wheel, uploads it to a Unity Catalog Volume, and submits a Databricks job that runs on serverless compute. Inside the job, it wires <code>spark.sql()</code> as the SQL executor, so every clone operation runs directly on the serverless Spark cluster &mdash; no SQL warehouse needed.</p>
 
-<pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+<pre><code><span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
   <span class="flag">--serverless</span> <span class="flag">--volume</span> <span class="str">/Volumes/catalog/schema/vol</span></code></pre>
 
@@ -583,7 +583,7 @@
 
 <p>Sometimes you do not want to clone immediately. You want to see what <em>would</em> happen first. The <code>plan</code> command runs a full dry-run of the clone, captures every SQL statement that would be executed, classifies them by type, and writes them to a file for review.</p>
 
-<pre><code><span class="cmd">clone-catalog plan</span> <span class="flag">\</span>
+<pre><code><span class="cmd">clxs plan</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
   <span class="flag">--capture-sql</span> <span class="str">plan_statements.sql</span></code></pre>
 
@@ -616,7 +616,7 @@
 <div class="scenario-card">
   <h4>Nightly Staging Refresh</h4>
   <p>Your analytics team needs a fresh copy of production in the staging catalog every night. The clone should validate itself after completion, and if validation fails, it should roll back to the previous state automatically. Schedule this as a cron job or a Databricks Workflow:</p>
-  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <pre><code><span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">staging</span> <span class="flag">\</span>
   <span class="flag">--clone-type</span> <span class="str">DEEP</span> <span class="flag">\</span>
   <span class="flag">--validate</span> <span class="flag">--enable-rollback</span> <span class="flag">\</span>
@@ -628,20 +628,20 @@
 <div class="scenario-card">
   <h4>PR-Specific Catalogs for CI/CD</h4>
   <p>Every pull request should get its own isolated catalog clone for integration testing. The catalog should be created quickly (shallow clone), tagged with the PR number, and automatically cleaned up after a time-to-live expires:</p>
-  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <pre><code><span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">ci_pr_1234</span> <span class="flag">\</span>
   <span class="flag">--clone-type</span> <span class="str">SHALLOW</span> <span class="flag">\</span>
   <span class="flag">--ttl</span> <span class="str">24h</span>
 
 <span class="comment"># After tests pass, or after TTL expires:</span>
-<span class="cmd">clone-catalog ttl-cleanup</span></code></pre>
+<span class="cmd">clxs ttl-cleanup</span></code></pre>
   <p>Shallow clones are nearly instant because they reference the source data files without copying them. The TTL manager runs as a background task and drops expired catalogs automatically. Your CI pipeline creates the catalog, runs tests, and the cleanup happens on its own.</p>
 </div>
 
 <div class="scenario-card">
   <h4>Cross-Workspace Disaster Recovery</h4>
   <p>Your DR workspace is in a different region. Clone-Xs supports cross-workspace cloning by accepting destination workspace credentials separately from the source:</p>
-  <pre><code><span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+  <pre><code><span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">production_dr</span> <span class="flag">\</span>
   <span class="flag">--dest-host</span> <span class="str">https://dr-workspace.cloud.databricks.com</span> <span class="flag">\</span>
   <span class="flag">--dest-token</span> <span class="str">$DR_TOKEN</span> <span class="flag">\</span>
@@ -653,10 +653,10 @@
   <h4>PII-Safe Development Copies</h4>
   <p>Before cloning production data to a development catalog, you need to verify that no PII (personally identifiable information) will leak into an environment with relaxed access controls. Clone-Xs includes a PII scanner that checks column names, comments, and sample data for common PII patterns:</p>
   <pre><code><span class="comment"># Scan first, then clone only if clean</span>
-<span class="cmd">clone-catalog pii-scan</span> <span class="flag">--catalog</span> <span class="str">production</span>
+<span class="cmd">clxs pii-scan</span> <span class="flag">--catalog</span> <span class="str">production</span>
 
 <span class="comment"># Or combine scan + clone with auto-masking</span>
-<span class="cmd">clone-catalog clone</span> <span class="flag">\</span>
+<span class="cmd">clxs clone</span> <span class="flag">\</span>
   <span class="flag">--source</span> <span class="str">production</span> <span class="flag">--dest</span> <span class="str">dev_safe</span> <span class="flag">\</span>
   <span class="flag">--pii-scan</span> <span class="flag">--mask-pii</span></code></pre>
   <p>The PII scanner uses pattern matching on column names (looking for patterns like "ssn", "email", "phone", "date_of_birth") and can optionally sample data to detect PII in values. When combined with the masking module, PII columns are automatically masked in the destination &mdash; the original data never leaves the production catalog.</p>
@@ -675,7 +675,7 @@
 <span class="cmd">cd</span> <span class="str">clone-xs</span>
 <span class="cmd">pip install</span> <span class="flag">-e</span> <span class="str">.</span></code></pre>
 
-<p>This installs Clone-Xs in editable mode, so you can modify the source and see changes immediately. The CLI command <code>clone-catalog</code> is available globally after installation.</p>
+<p>This installs Clone-Xs in editable mode, so you can modify the source and see changes immediately. The CLI command <code>clxs</code> is available globally after installation.</p>
 
 <h3>Docker (Recommended for Production)</h3>
 
@@ -686,9 +686,9 @@
 <h3>CLI Only</h3>
 
 <pre><code><span class="cmd">pip install</span> <span class="str">clone-xs</span>
-<span class="cmd">clone-catalog</span> <span class="flag">--help</span></code></pre>
+<span class="cmd">clxs</span> <span class="flag">--help</span></code></pre>
 
-<p>If you only need the CLI and do not need the web UI or API server, a simple pip install gives you all 56 commands. Configure your Databricks credentials via environment variables (<code>DATABRICKS_HOST</code>, <code>DATABRICKS_TOKEN</code>), a CLI profile (<code>--profile</code>), or interactive browser-based OAuth (<code>clone-catalog login</code>).</p>
+<p>If you only need the CLI and do not need the web UI or API server, a simple pip install gives you all 56 commands. Configure your Databricks credentials via environment variables (<code>DATABRICKS_HOST</code>, <code>DATABRICKS_TOKEN</code>), a CLI profile (<code>--profile</code>), or interactive browser-based OAuth (<code>clxs login</code>).</p>
 
 <h3>Databricks Notebook</h3>
 
@@ -729,7 +729,7 @@
   <p><strong>GitHub:</strong> <a href="https://github.com/viral0216/clone-xs" style="color: #DC143C;">github.com/viral0216/clone-xs</a><br>
   <strong>License:</strong> MIT<br>
   <strong>Install:</strong> <code>pip install clone-xs</code><br>
-  <strong>First clone:</strong> <code>clone-catalog clone --source prod --dest staging</code></p>
+  <strong>First clone:</strong> <code>clxs clone --source prod --dest staging</code></p>
 </div>
 
 <!-- FOOTER -->

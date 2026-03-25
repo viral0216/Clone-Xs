@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from databricks.sdk.service.catalog import SecurableType
 
@@ -14,8 +14,9 @@ from src.permissions import (
 
 # ── SQL-based grant copying ──────────────────────────────────────────
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_catalog_permissions_via_sql(mock_sql):
+def test_copy_catalog_permissions_via_sql(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         # SHOW GRANTS result
         [
@@ -34,8 +35,9 @@ def test_copy_catalog_permissions_via_sql(mock_sql):
     assert "dst_cat" in grant1
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_schema_permissions_via_sql(mock_sql):
+def test_copy_schema_permissions_via_sql(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "team", "ActionType": "USE_SCHEMA"}],
         [],
@@ -49,8 +51,9 @@ def test_copy_schema_permissions_via_sql(mock_sql):
     assert "dst" in grant_sql
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_table_permissions_via_sql(mock_sql):
+def test_copy_table_permissions_via_sql(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "user@test.com", "ActionType": "SELECT"}],
         [],
@@ -63,15 +66,17 @@ def test_copy_table_permissions_via_sql(mock_sql):
     assert "dst" in grant_sql
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_permissions_no_grants(mock_sql):
+def test_copy_permissions_no_grants(mock_sql, mock_sdk):
     mock_sql.return_value = []
     copy_catalog_permissions(MagicMock(), "src", "dst", warehouse_id="wh")
     assert mock_sql.call_count == 1  # Only SHOW GRANTS, no GRANT calls
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_permissions_skips_internal(mock_sql):
+def test_copy_permissions_skips_internal(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "system", "ActionType": "INHERITED_FROM"}],
     ]
@@ -79,15 +84,17 @@ def test_copy_permissions_skips_internal(mock_sql):
     assert mock_sql.call_count == 1  # Only SHOW GRANTS, skips INHERITED_FROM
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_permissions_handles_error(mock_sql):
+def test_copy_permissions_handles_error(mock_sql, mock_sdk):
     mock_sql.side_effect = Exception("connection failed")
     # Should not raise
     copy_catalog_permissions(MagicMock(), "src", "dst", warehouse_id="wh")
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_volume_permissions(mock_sql):
+def test_copy_volume_permissions(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "team", "ActionType": "READ_VOLUME"}],
         [],
@@ -97,8 +104,9 @@ def test_copy_volume_permissions(mock_sql):
     assert "SHOW GRANTS ON VOLUME" in show_sql
 
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
-def test_copy_function_permissions(mock_sql):
+def test_copy_function_permissions(mock_sql, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "team", "ActionType": "EXECUTE"}],
         [],
@@ -110,9 +118,10 @@ def test_copy_function_permissions(mock_sql):
 
 # ── SQL-based with spark executor (no warehouse_id) ──────────────────
 
+@patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions._has_sql_executor", return_value=True)
 @patch("src.permissions.execute_sql")
-def test_copy_permissions_with_spark_executor(mock_sql, mock_has_exec):
+def test_copy_permissions_with_spark_executor(mock_sql, mock_has_exec, mock_sdk):
     mock_sql.side_effect = [
         [{"Principal": "team", "ActionType": "SELECT"}],
         [],

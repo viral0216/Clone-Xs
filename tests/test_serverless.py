@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import json
 import pytest
 
@@ -123,7 +123,7 @@ def test_extract_result_handles_error():
 @patch("src.serverless.select_volume")
 def test_submit_clone_job_calls_submit(mock_select, mock_upload):
     mock_select.return_value = "/Volumes/cat/s/v"
-    mock_upload.return_value = ("/Volumes/cat/s/v/wheel.whl", "/Shared/.clone-catalog/run_clone")
+    mock_upload.return_value = ("/Volumes/cat/s/v/wheel.whl", "/Shared/.clxs/run_clone")
 
     client = MagicMock()
     run_waiter = MagicMock()

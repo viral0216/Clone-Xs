@@ -1,6 +1,5 @@
 """Databricks Asset Bundle (DAB) integration for scheduling clone jobs."""
 
-import json
 import logging
 import os
 
@@ -80,60 +79,6 @@ def generate_dab_bundle(
         yaml.dump(bundle_config, f, default_flow_style=False, sort_keys=False)
 
     # --- resources/clone_job.yml ---
-    tasks = [
-        {
-            "task_key": "preflight_checks",
-            "description": "Run pre-flight checks before cloning",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
-                "parameters": [
-                    "preflight",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-        {
-            "task_key": "clone_catalog",
-            "depends_on": [{"task_key": "preflight_checks"}],
-            "description": f"Clone {source} -> {dest}",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
-                "parameters": [
-                    "clone",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                    "--enable-rollback",
-                    "--validate",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-        {
-            "task_key": "validate_clone",
-            "depends_on": [{"task_key": "clone_catalog"}],
-            "description": "Validate the clone with row counts",
-            "python_wheel_task": {
-                "package_name": "clone_xs",
-                "entry_point": "clone-catalog",
-                "parameters": [
-                    "validate",
-                    "--config", "/Workspace/${bundle.name}/config/clone_config.yaml",
-                    "--source", source,
-                    "--dest", dest,
-                    "--warehouse-id", "${var.WAREHOUSE_ID}",
-                ],
-            },
-            "libraries": [{"pypi": {"package": "clone-xs"}}],
-        },
-    ]
 
     # Use notebook task as alternative (no wheel needed)
     notebook_tasks = [
@@ -253,13 +198,13 @@ print(f"Clone completed successfully: {summary}")
         f.write(run_script)
 
     logger.info(f"DAB bundle generated at: {output_dir}/")
-    logger.info(f"  databricks.yml — bundle configuration")
-    logger.info(f"  resources/clone_job.yml — job definition with 3 tasks")
-    logger.info(f"  src/run_clone.py — notebook entry point")
-    logger.info(f"")
-    logger.info(f"Deploy with:")
+    logger.info("  databricks.yml — bundle configuration")
+    logger.info("  resources/clone_job.yml — job definition with 3 tasks")
+    logger.info("  src/run_clone.py — notebook entry point")
+    logger.info("")
+    logger.info("Deploy with:")
     logger.info(f"  cd {output_dir}")
-    logger.info(f"  databricks bundle deploy --target dev")
+    logger.info("  databricks bundle deploy --target dev")
     logger.info(f"  databricks bundle run {job_name} --target dev")
 
     return output_dir

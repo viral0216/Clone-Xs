@@ -29,6 +29,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def is_databricks_app() -> bool:
+    """Detect if running as a Databricks App (service principal auth is injected)."""
+    return os.getenv("CLONE_XS_RUNTIME") == "databricks-app"
+
 logger = logging.getLogger(__name__)
 
 # ── Module-level client cache ─────────────────────────────────────────
@@ -38,7 +43,7 @@ _cached_client_key: str = ""  # tracks which credentials produced the cached cli
 _client_verified: bool = False
 _client_verify_time: float = 0
 _VERIFY_TTL = 3600  # re-verify every hour
-_SESSION_FILE = os.path.expanduser("~/.clone-catalog-session.json")
+_SESSION_FILE = os.path.expanduser("~/.clxs-session.json")
 
 
 def _cache_key(host: str = "", token: str = "", profile: str = "") -> str:
@@ -91,7 +96,22 @@ def clear_cache() -> None:
     _cached_client_key = ""
     _client_verified = False
     _client_verify_time = 0
-    logger.debug("Auth cache cleared")
+    try:
+        from src.client import clear_metadata_cache
+        clear_metadata_cache()
+    except ImportError:
+        pass
+    logger.debug("Auth and metadata cache cleared")
+
+
+def clear_session() -> None:
+    """Remove the saved session file."""
+    try:
+        if os.path.exists(_SESSION_FILE):
+            os.remove(_SESSION_FILE)
+            logger.debug("Session file removed: %s", _SESSION_FILE)
+    except Exception as e:
+        logger.debug("Failed to remove session file: %s", e)
 
 
 # ── CLI helpers ────────────────────────────────────────────────────────
@@ -180,7 +200,7 @@ def ensure_logged_in(host: str | None = None, force: bool = False) -> str:
     if not workspace_host:
         raise RuntimeError(
             "Workspace host required for browser login. Provide --host or set DATABRICKS_HOST.\n"
-            "Example: clone-catalog auth --login --host https://adb-xxx.azuredatabricks.net"
+            "Example: clxs auth --login --host https://adb-xxx.azuredatabricks.net"
         )
 
     print(f"Opening Databricks login in browser for {workspace_host}...")
@@ -523,7 +543,7 @@ def interactive_login() -> dict:
 
     except Exception as e:
         print(f"  Error connecting to workspace: {e}")
-        print("  Try: clone-catalog auth --login --host " + host)
+        print("  Try: clxs auth --login --host " + host)
         raise SystemExit(1)
 
 
@@ -587,6 +607,11 @@ def _create_client(
 ) -> WorkspaceClient:
     """Create a new WorkspaceClient using the best available auth method."""
 
+    # Method 0: Databricks App (auto-injected service principal)
+    if is_databricks_app():
+        logger.debug("Auth: Databricks App runtime — using injected credentials")
+        return WorkspaceClient()
+
     # Method 1: Explicit host + token
     if host and token:
         logger.debug("Auth: using explicit host + token")
@@ -632,18 +657,39 @@ def _create_client(
     session = _load_session()
     if session.get("host") and not env_host:
         session_host = session["host"]
-        logger.debug("Auth: using saved session for %s", session_host)
-        return WorkspaceClient(host=session_host)
+        session_token = session.get("token")
+        if session_token:
+            logger.debug("Auth: using saved session for %s (with token)", session_host)
+            return WorkspaceClient(host=session_host, token=session_token)
+        # Host-only session — try azure-cli auth non-interactively
+        import shutil
+        if shutil.which("az"):
+            logger.debug("Auth: using saved session for %s (azure-cli)", session_host)
+            from databricks.sdk.config import Config
+            return WorkspaceClient(config=Config(host=session_host, auth_type="azure-cli"))
+        logger.debug("Auth: saved session for %s but no token or az CLI", session_host)
 
     # Check for default profile in ~/.databrickscfg
     config_path = os.path.expanduser("~/.databrickscfg")
     if os.path.exists(config_path) and not env_host:
         logger.debug("Auth: using default Databricks CLI profile")
+        try:
+            # Use pat auth type to prevent SDK from opening browser
+            return WorkspaceClient(auth_type="pat")
+        except Exception:
+            # pat auth may fail if profile uses different auth — fall through
+            pass
+
+    # Method 6: Databricks Runtime notebook (auto-detected credentials)
+    if os.getenv("DATABRICKS_RUNTIME_VERSION"):
+        logger.debug("Auth: Databricks Runtime detected — using notebook-native credentials")
         return WorkspaceClient()
 
-    # Method 6: Notebook native auth (no args — Databricks Runtime auto-detects)
-    logger.debug("Auth: using notebook native auth (default WorkspaceClient)")
-    return WorkspaceClient()
+    # Final fallback — raise instead of calling WorkspaceClient() which may open browser
+    raise RuntimeError(
+        "No authentication configured. Log in via the Clone-Xs UI (Settings → Authentication) "
+        "or set DATABRICKS_HOST + DATABRICKS_TOKEN environment variables."
+    )
 
 
 def ensure_authenticated(
@@ -701,6 +747,8 @@ def _detect_auth_method(
     profile: str | None = None,
 ) -> str:
     """Detect which auth method is being used (for display purposes)."""
+    if is_databricks_app():
+        return "databricks-app"
     if host and token:
         return "explicit-token"
     if os.getenv("DATABRICKS_CLIENT_ID") and os.getenv("DATABRICKS_CLIENT_SECRET"):

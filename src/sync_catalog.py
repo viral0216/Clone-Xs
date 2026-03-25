@@ -26,7 +26,26 @@ def sync_catalogs(
 
     This ensures the destination catalog matches the source exactly.
     """
+    # RBAC enforcement
+    if kwargs.get("rbac_enabled"):
+        from src.rbac import enforce_rbac
+        rbac_config = {
+            "source_catalog": source_catalog,
+            "destination_catalog": dest_catalog,
+            "rbac_policy_path": kwargs.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
+        }
+        enforce_rbac(client, rbac_config, operation="sync")
+
     logger.info(f"Syncing catalogs: {source_catalog} -> {dest_catalog}")
+
+    # --- Plugin system (opt-in) ---
+    pm = None
+    if kwargs.get("plugins"):
+        from src.plugin_system import PluginManager
+        pm = PluginManager()
+        pm.load_plugins_from_config(kwargs)
+        sync_config = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+        pm.run_on_clone_start(sync_config, client, warehouse_id)
 
     diff = compare_catalogs(client, warehouse_id, source_catalog, dest_catalog, exclude_schemas)
 
@@ -153,6 +172,17 @@ def sync_catalogs(
     if results["errors"]:
         logger.warning(f"  Errors: {len(results['errors'])}")
     logger.info("=" * 60)
+
+    # Plugin: on_clone_complete / on_clone_error
+    if pm:
+        try:
+            sync_config = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+            if results.get("errors"):
+                pm.run_on_clone_error(sync_config, RuntimeError("; ".join(results["errors"])), client, warehouse_id)
+            else:
+                pm.run_on_clone_complete(sync_config, results, client, warehouse_id)
+        except Exception as e:
+            logger.warning(f"Plugin post-sync hook failed: {e}")
 
     # Save run log + audit trail to Delta (skip if called from API JobManager)
     if not dry_run and not kwargs.get("_api_managed_logs"):

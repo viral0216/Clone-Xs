@@ -159,7 +159,7 @@ def send_teams_notification(webhook_url: str, summary: dict, config: dict) -> bo
     """Send clone summary to Microsoft Teams via incoming webhook."""
     info = _build_summary_text(summary, config)
 
-    status_color = "00FF00" if info["total_failed"] == 0 else "FF0000"
+    "00FF00" if info["total_failed"] == 0 else "FF0000"
 
     # Teams Adaptive Card format
     card = {

@@ -5,6 +5,11 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def diff_config_dicts(config_a: dict, config_b: dict) -> dict:
+    """Compare two config dicts and return differences."""
+    return _diff_dicts(config_a, config_b)
+
+
 def diff_configs(path_a: str, path_b: str) -> dict:
     """Compare two YAML config files and return differences.
 
@@ -51,7 +56,7 @@ def print_config_diff(path_a: str, path_b: str) -> dict:
     diff = diff_configs(path_a, path_b)
 
     logger.info("=" * 60)
-    logger.info(f"CONFIG DIFF")
+    logger.info("CONFIG DIFF")
     logger.info(f"  A: {path_a}")
     logger.info(f"  B: {path_b}")
     logger.info("=" * 60)

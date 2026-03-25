@@ -28,13 +28,13 @@ jobs:
       - run: pip install clone-xs
       - name: Pre-flight checks
         run: |
-          clone-catalog preflight \
+          clxs preflight \
             --source production \
             --dest staging \
             --warehouse-id ${{ vars.WAREHOUSE_ID }}
       - name: Clone catalog
         run: |
-          clone-catalog clone \
+          clxs clone \
             --source production \
             --dest staging \
             --warehouse-id ${{ vars.WAREHOUSE_ID }} \
@@ -69,7 +69,7 @@ steps:
     displayName: Install Clone Catalog
 
   - script: |
-      clone-catalog preflight \
+      clxs preflight \
         --source production \
         --dest staging \
         --warehouse-id $(WAREHOUSE_ID)
@@ -80,7 +80,7 @@ steps:
       DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
 
   - script: |
-      clone-catalog clone \
+      clxs clone \
         --source production \
         --dest staging \
         --warehouse-id $(WAREHOUSE_ID) \
@@ -99,7 +99,7 @@ steps:
 stages:
   - clone
 
-clone-catalog:
+clxs:
   image: python:3.13
   stage: clone
   only:
@@ -109,8 +109,8 @@ clone-catalog:
     DATABRICKS_TOKEN: $DATABRICKS_TOKEN
   script:
     - pip install clone-xs
-    - clone-catalog preflight --source production --dest staging --warehouse-id $WAREHOUSE_ID
-    - clone-catalog clone --source production --dest staging --warehouse-id $WAREHOUSE_ID --validate
+    - clxs preflight --source production --dest staging --warehouse-id $WAREHOUSE_ID
+    - clxs clone --source production --dest staging --warehouse-id $WAREHOUSE_ID --validate
 ```
 
 ## Databricks Workflows
@@ -118,7 +118,7 @@ clone-catalog:
 Generate a Databricks Workflow definition for scheduled cloning:
 
 ```bash
-clone-catalog generate-workflow \
+clxs generate-workflow \
   --schedule "0 0 2 * * ?" \
   --job-name "nightly-staging-clone" \
   --cluster-id "0310-abc123-def456" \
@@ -134,7 +134,7 @@ databricks jobs create --json @workflow.json
 ### Generate Asset Bundle YAML
 
 ```bash
-clone-catalog generate-workflow --format yaml --output bundle/clone_job.yaml
+clxs generate-workflow --format yaml --output bundle/clone_job.yaml
 ```
 
 Include the YAML in your Databricks Asset Bundle for GitOps-managed job deployment.
@@ -170,9 +170,9 @@ profiles:
 
 ```bash
 # In different pipelines
-clone-catalog clone --profile dev
-clone-catalog clone --profile staging
-clone-catalog clone --profile dr
+clxs clone --profile dev
+clxs clone --profile staging
+clxs clone --profile dr
 ```
 
 ---
@@ -202,10 +202,10 @@ Export your catalog structure as Infrastructure-as-Code:
 
 ```bash
 # Terraform
-clone-catalog export-iac --source production --format terraform --output catalog.tf
+clxs export-iac --source production --format terraform --output catalog.tf
 
 # Pulumi
-clone-catalog export-iac --source production --format pulumi --output catalog_pulumi.py
+clxs export-iac --source production --format pulumi --output catalog_pulumi.py
 ```
 
 ---
@@ -215,7 +215,7 @@ clone-catalog export-iac --source production --format pulumi --output catalog_pu
 Compare config changes before merging:
 
 ```bash
-clone-catalog config-diff config/staging_old.yaml config/staging_new.yaml
+clxs config-diff config/staging_old.yaml config/staging_new.yaml
 ```
 
 **Output:**

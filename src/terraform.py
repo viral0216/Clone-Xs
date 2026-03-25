@@ -28,7 +28,7 @@ def generate_terraform(
     catalog_resource_name = _tf_name(catalog)
     resources[f"databricks_catalog.{catalog_resource_name}"] = {
         "name": catalog,
-        "comment": f"Managed by Terraform - cloned catalog",
+        "comment": "Managed by Terraform - cloned catalog",
     }
 
     # Get schemas
@@ -131,7 +131,7 @@ def generate_pulumi(
         f'# Catalog: {catalog}',
         f'catalog = databricks.Catalog("{_tf_name(catalog)}",',
         f'    name="{catalog}",',
-        f'    comment="Managed by Pulumi",',
+        '    comment="Managed by Pulumi",',
         ")",
         "",
     ]
@@ -150,7 +150,7 @@ def generate_pulumi(
 
         lines.extend([
             f'{var_name} = databricks.Schema("{_tf_name(catalog)}_{schema_name}",',
-            f'    catalog_name=catalog.name,',
+            '    catalog_name=catalog.name,',
             f'    name="{schema_name}",',
             ")",
             "",

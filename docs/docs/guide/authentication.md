@@ -9,7 +9,7 @@ Clone Catalog supports multiple authentication methods with automatic fallback. 
 
 ## How the CLI authenticates
 
-When you run any `clone-catalog` command, the auth module checks credentials in this order:
+When you run any `clxs` command, the auth module checks credentials in this order:
 
 | Priority | Method | Required variables |
 |----------|--------|--------------------|
@@ -18,7 +18,8 @@ When you run any `clone-catalog` command, the auth module checks credentials in 
 | 3 | Azure AD service principal | `DATABRICKS_HOST` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET` + `AZURE_TENANT_ID` |
 | 4 | Environment variables (PAT) | `DATABRICKS_HOST` + `DATABRICKS_TOKEN` |
 | 5 | Databricks CLI profile | `~/.databrickscfg` (DEFAULT or named profile) |
-| 6 | Notebook native | Auto-detected inside Databricks Runtime |
+| 6 | Saved interactive session | `~/.clone-xs/session.json` from `clxs auth --login` |
+| 7 | Notebook native | Auto-detected inside Databricks Runtime (`DATABRICKS_RUNTIME_VERSION` set) |
 
 :::tip
 You only need **one** method configured. The CLI will use the first one that works.
@@ -66,7 +67,7 @@ token = dapi...
 Use a named profile with the `--auth-profile` flag:
 
 ```bash
-clone-catalog clone --auth-profile staging --source production --dest staging_clone
+clxs clone --auth-profile staging --source production --dest staging_clone
 ```
 
 ### CLI flags
@@ -74,7 +75,7 @@ clone-catalog clone --auth-profile staging --source production --dest staging_cl
 Override credentials per-command:
 
 ```bash
-clone-catalog clone \
+clxs clone \
   --host https://adb-1234567890.14.azuredatabricks.net \
   --token dapi... \
   --source production \
@@ -88,7 +89,7 @@ For interactive use, Clone Catalog supports browser-based OAuth — similar to `
 ### Quick login
 
 ```bash
-clone-catalog auth --login --host https://adb-1234567890.14.azuredatabricks.net
+clxs auth --login --host https://adb-1234567890.14.azuredatabricks.net
 ```
 
 This opens your browser for OAuth authentication. Once complete, the session is stored in `~/.databrickscfg`.
@@ -98,7 +99,7 @@ This opens your browser for OAuth authentication. Once complete, the session is 
 For the full interactive experience (tenant selection, subscription picker, workspace discovery):
 
 ```bash
-clone-catalog auth --login
+clxs auth --login
 ```
 
 This walks you through:
@@ -160,13 +161,13 @@ This walks you through:
 List all configured profiles:
 
 ```bash
-clone-catalog auth --list-profiles
+clxs auth --list-profiles
 ```
 
 Switch between profiles:
 
 ```bash
-clone-catalog clone --auth-profile staging ...
+clxs clone --auth-profile staging ...
 ```
 
 ### Verify authentication
@@ -174,14 +175,64 @@ clone-catalog clone --auth-profile staging ...
 Check your current auth status:
 
 ```bash
-clone-catalog auth
+clxs auth
 ```
 
 Force verification before running a command:
 
 ```bash
-clone-catalog clone --verify-auth --source production --dest staging
+clxs clone --verify-auth --source production --dest staging
 ```
+
+## Web UI Authentication
+
+When running Clone-Xs as a web application, authentication is handled through a dedicated login page and server-side sessions. The web UI supports the same credential methods as the CLI but wraps them in a browser-friendly flow.
+
+### Login page
+
+Clone-Xs shows a login page before granting access to the main application. The login page offers two tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Access Token (PAT)** | Enter your Databricks host URL and personal access token directly. |
+| **Azure Login** | A multi-step wizard that walks through: **Login** (browser OAuth) → **Tenant** selection → **Subscription** selection → **Workspace** selection. |
+
+After successful authentication via either tab, the app transitions to the dashboard.
+
+### Server-side session persistence
+
+All login methods — PAT, OAuth, Azure CLI, and Service Principal — create a server-side session when used through the web UI.
+
+- A unique **session ID** is generated on login and stored in the browser's `localStorage`.
+- Every API call includes the `X-Clone-Session` HTTP header so the server can look up the session.
+- The session persists until the user logs out or the server restarts — there is no need to re-authenticate after closing and reopening the browser.
+- For Azure/OAuth flows the authenticated `WorkspaceClient` is cached server-side; raw tokens are never stored in the browser.
+
+:::tip
+Because the session lives on the server, you can open multiple browser tabs and they will all share the same authenticated context.
+:::
+
+### Settings page
+
+The **Settings** page in the web UI still exposes all four authentication methods (PAT, OAuth, Azure CLI, Service Principal) for switching connections or workspaces without logging out first. Any change on the Settings page updates the active server-side session.
+
+- **Logout** (`POST /api/auth/logout`) clears the server-side session and returns you to the login page. The `X-Clone-Session` header is used to identify which session to destroy.
+- The session is shared across all API calls automatically — individual components do not need to manage credentials.
+
+### Credential storage in the browser
+
+The web UI stores connection metadata in `localStorage` (not `sessionStorage`), so values survive a browser restart:
+
+| Key | Purpose |
+|-----|---------|
+| `dbx_host` | Databricks workspace URL |
+| `dbx_token` | Personal access token (PAT auth only) |
+| `dbx_warehouse_id` | SQL warehouse ID for query execution |
+| `clxs_session_id` | Server-side session identifier |
+
+:::caution
+`localStorage` is accessible to any JavaScript running on the same origin. In shared or public environments, always log out when you are finished to clear both the local keys and the server-side session.
+:::
 
 ## What's needed
 
@@ -215,7 +266,7 @@ env:
 steps:
   - run: |
       pip install clone-xs
-      clone-catalog clone --source production --dest staging
+      clxs clone --source production --dest staging
 ```
 
 ```yaml
@@ -228,7 +279,7 @@ variables:
 steps:
   - script: |
       pip install clone-xs
-      clone-catalog clone --source production --dest staging
+      clxs clone --source production --dest staging
 ```
 
 See [CI/CD](cicd) for more pipeline examples.

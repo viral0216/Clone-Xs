@@ -5,34 +5,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
-import { useSchemaDrift } from "@/hooks/useApi";
+import { api } from "@/lib/api-client";
+import { usePageJob } from "@/contexts/JobContext";
+import PageHeader from "@/components/PageHeader";
 import {
   GitBranch, Loader2, XCircle, ArrowRight, Plus, Minus, RefreshCw,
 } from "lucide-react";
 
 function changeColor(changeType: string) {
   switch (changeType?.toUpperCase()) {
-    case "ADDED": return "text-green-700 bg-green-50 border-green-200";
+    case "ADDED": return "text-foreground bg-muted/20 border-border";
     case "REMOVED": return "text-red-700 bg-red-50 border-red-200";
-    case "MODIFIED": return "text-yellow-700 bg-yellow-50 border-yellow-200";
+    case "MODIFIED": return "text-muted-foreground bg-muted/20 border-border";
     default: return "text-gray-700 bg-gray-50 border-gray-200";
   }
 }
 
 function changeIcon(changeType: string) {
   switch (changeType?.toUpperCase()) {
-    case "ADDED": return <Plus className="h-4 w-4 text-green-500" />;
+    case "ADDED": return <Plus className="h-4 w-4 text-foreground" />;
     case "REMOVED": return <Minus className="h-4 w-4 text-red-500" />;
-    case "MODIFIED": return <RefreshCw className="h-4 w-4 text-yellow-500" />;
+    case "MODIFIED": return <RefreshCw className="h-4 w-4 text-muted-foreground" />;
     default: return null;
   }
 }
 
 export default function SchemaDriftPage() {
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
-  const schemaDrift = useSchemaDrift();
-  const data = schemaDrift.data as any;
+  const { job, run, isRunning } = usePageJob("schema-drift");
+  const [source, setSource] = useState(job?.params?.source || "");
+  const [dest, setDest] = useState(job?.params?.dest || "");
+  const data = job?.data as any;
 
   const summary = data?.summary;
   const drifts = data?.drifts || data?.results || [];
@@ -51,11 +53,15 @@ export default function SchemaDriftPage() {
   const totalCount = summary?.total_drift_count ?? drifts.length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Schema Drift</h1>
-        <p className="text-gray-500 mt-1">Detect column-level schema differences between catalogs</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Schema Drift"
+        icon={GitBranch}
+        description="Detect schema drift between source and destination — added, removed, or modified columns, data type changes, and nullability differences across all tables."
+        breadcrumbs={["Analysis", "Schema Drift"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema"
+        docsLabel="Schema evolution"
+      />
 
       {/* Input */}
       <Card>
@@ -77,11 +83,11 @@ export default function SchemaDriftPage() {
               showTable={false}
             />
             <Button
-              onClick={() => schemaDrift.mutate({ source_catalog: source, destination_catalog: dest })}
-              disabled={!source || !dest || schemaDrift.isPending}
+              onClick={() => run({ source, dest }, () => api.post("/schema-drift", { source_catalog: source, destination_catalog: dest }))}
+              disabled={!source || !dest || isRunning}
             >
-              {schemaDrift.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitBranch className="h-4 w-4 mr-2" />}
-              {schemaDrift.isPending ? "Detecting..." : "Detect Drift"}
+              {isRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitBranch className="h-4 w-4 mr-2" />}
+              {isRunning ? "Detecting..." : "Detect Drift"}
             </Button>
           </div>
         </CardContent>
@@ -92,7 +98,7 @@ export default function SchemaDriftPage() {
         <div className="grid grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-green-700">{addedCount}</p>
+              <p className="text-2xl font-bold text-foreground">{addedCount}</p>
               <p className="text-xs text-gray-500 mt-1">Added Columns</p>
             </CardContent>
           </Card>
@@ -104,13 +110,13 @@ export default function SchemaDriftPage() {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-yellow-700">{modifiedCount}</p>
+              <p className="text-2xl font-bold text-muted-foreground">{modifiedCount}</p>
               <p className="text-xs text-gray-500 mt-1">Modified Columns</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-2xl font-bold text-blue-700">{totalCount}</p>
+              <p className="text-2xl font-bold text-[#E8453C]">{totalCount}</p>
               <p className="text-xs text-gray-500 mt-1">Total Drift</p>
             </CardContent>
           </Card>
@@ -143,7 +149,7 @@ export default function SchemaDriftPage() {
                     </thead>
                     <tbody>
                       {rows.map((row: any, i: number) => (
-                        <tr key={i} className={`border-b ${row.change_type?.toUpperCase() === "ADDED" ? "bg-green-50/50" : row.change_type?.toUpperCase() === "REMOVED" ? "bg-red-50/50" : "bg-yellow-50/50"}`}>
+                        <tr key={i} className={`border-b ${row.change_type?.toUpperCase() === "ADDED" ? "bg-muted/20/50" : row.change_type?.toUpperCase() === "REMOVED" ? "bg-red-50/50" : "bg-muted/20/50"}`}>
                           <td className="py-2 px-3">{changeIcon(row.change_type)}</td>
                           <td className="py-2 px-3 font-medium">{row.column || row.column_name}</td>
                           <td className="py-2 px-3">
@@ -165,11 +171,11 @@ export default function SchemaDriftPage() {
       )}
 
       {/* Error */}
-      {schemaDrift.isError && (
+      {job?.status === "error" && (
         <Card className="border-red-200">
           <CardContent className="pt-6 flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            {(schemaDrift.error as Error).message}
+            {job.error}
           </CardContent>
         </Card>
       )}

@@ -17,6 +17,7 @@ class RbacRule:
     allowed_sources: list[str] = field(default_factory=lambda: [".*"])
     allowed_destinations: list[str] = field(default_factory=lambda: [".*"])
     allowed_schemas: list[str] = field(default_factory=lambda: [".*"])
+    allowed_operations: list[str] = field(default_factory=lambda: ["*"])
     deny: bool = False
 
 
@@ -47,6 +48,7 @@ def load_rbac_policy(policy_path: str) -> list[RbacRule]:
             allowed_sources=rule_data.get("allowed_sources", [".*"]),
             allowed_destinations=rule_data.get("allowed_destinations", [".*"]),
             allowed_schemas=rule_data.get("allowed_schemas", [".*"]),
+            allowed_operations=rule_data.get("allowed_operations", ["*"]),
             deny=rule_data.get("deny", False),
         ))
 
@@ -90,6 +92,7 @@ def check_permission(
     source_catalog: str,
     dest_catalog: str,
     schemas: list[str] | None = None,
+    operation: str = "*",
 ) -> dict:
     """Evaluate policy rules against the requested operation.
 
@@ -129,6 +132,11 @@ def check_permission(
         source_match = _matches_any(source_catalog, rule.allowed_sources)
         dest_match = _matches_any(dest_catalog, rule.allowed_destinations)
 
+        # Check operation permission
+        if operation != "*" and rule.allowed_operations != ["*"]:
+            if operation not in rule.allowed_operations:
+                continue
+
         if source_match and dest_match:
             # Check schema restrictions if applicable
             if schemas and rule.allowed_schemas != [".*"]:
@@ -152,7 +160,7 @@ def check_permission(
     }
 
 
-def enforce_rbac(client, config: dict) -> None:
+def enforce_rbac(client, config: dict, operation: str = "*") -> None:
     """Load policy, get user, check permission. Raises PermissionError if denied."""
     policy_path = config.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml")
     policy = load_rbac_policy(policy_path)
@@ -165,7 +173,7 @@ def enforce_rbac(client, config: dict) -> None:
     source = config.get("source_catalog", "")
     dest = config.get("destination_catalog", "")
 
-    result = check_permission(policy, user, source, dest)
+    result = check_permission(policy, user, source, dest, operation=operation)
 
     if not result["allowed"]:
         raise PermissionError(f"RBAC denied: {result['reason']}")
@@ -191,6 +199,71 @@ def print_policy(policy: list[RbacRule]) -> None:
         if rule.allowed_schemas != [".*"]:
             print(f"    Schemas:       {', '.join(rule.allowed_schemas)}")
     print("=" * 60)
+
+
+def list_policies(policy_path: str = "~/.clone-xs/rbac_policy.yaml") -> list[dict]:
+    """Load policies and return as list of dicts for API."""
+    rules = load_rbac_policy(policy_path)
+    result = []
+    for i, rule in enumerate(rules):
+        result.append({
+            "index": i,
+            "principals": rule.principals,
+            "allowed_sources": rule.allowed_sources,
+            "allowed_destinations": rule.allowed_destinations,
+            "allowed_schemas": rule.allowed_schemas,
+            "allowed_operations": rule.allowed_operations,
+            "deny": rule.deny,
+        })
+    return result
+
+
+def create_policy(rule_dict: dict, policy_path: str = "~/.clone-xs/rbac_policy.yaml") -> list[dict]:
+    """Append a new rule to the YAML policy file. Return updated list."""
+    path = os.path.expanduser(policy_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    data = {"rules": []}
+    if os.path.exists(path):
+        with open(path) as f:
+            data = yaml.safe_load(f) or {"rules": []}
+
+    new_rule = {
+        "principals": rule_dict.get("principals", []),
+        "allowed_sources": rule_dict.get("allowed_sources", [".*"]),
+        "allowed_destinations": rule_dict.get("allowed_destinations", [".*"]),
+        "allowed_operations": rule_dict.get("allowed_operations", ["*"]),
+        "deny": rule_dict.get("deny", False),
+    }
+    data.setdefault("rules", []).append(new_rule)
+
+    with open(path, "w") as f:
+        yaml.safe_dump(data, f, default_flow_style=False)
+
+    logger.info(f"Added RBAC rule to {path}")
+    return list_policies(policy_path)
+
+
+def delete_policy(index: int, policy_path: str = "~/.clone-xs/rbac_policy.yaml") -> list[dict]:
+    """Remove rule at index. Return updated list."""
+    path = os.path.expanduser(policy_path)
+    if not os.path.exists(path):
+        return []
+
+    with open(path) as f:
+        data = yaml.safe_load(f) or {"rules": []}
+
+    rules = data.get("rules", [])
+    if 0 <= index < len(rules):
+        rules.pop(index)
+        data["rules"] = rules
+        with open(path, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
+        logger.info(f"Removed RBAC rule {index} from {path}")
+    else:
+        logger.warning(f"Rule index {index} out of range (0-{len(rules) - 1})")
+
+    return list_policies(policy_path)
 
 
 def print_user_permissions(policy: list[RbacRule], user: str) -> None:

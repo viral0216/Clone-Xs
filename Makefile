@@ -1,4 +1,4 @@
-.PHONY: build install test clean upload deploy help
+.PHONY: build install test clean upload deploy publish publish-test help
 
 VOLUME_PATH ?= /Volumes/shared/packages/wheels
 DIST_DIR    := dist
@@ -50,7 +50,7 @@ build: clean test ## Build wheel package (runs tests first)
 
 install: build ## Build and install locally
 	pip install --force-reinstall --no-deps $$(ls $(DIST_DIR)/*.whl | head -1)
-	@echo "Installed. Verify: clone-catalog --help"
+	@echo "Installed. Verify: clxs --help"
 
 install-dev: ## Install in editable mode for development
 	pip install -e ".[dev]"
@@ -69,6 +69,13 @@ deploy: build ## Build + install locally + upload to Databricks Volume
 	@echo ""
 	@echo "Deployed to both local and Databricks Volume."
 
+# PyPI publishing
+publish-test: build ## Publish to TestPyPI (dry run)
+	python3 -m twine upload --repository testpypi $(DIST_DIR)/*
+
+publish: build ## Publish to PyPI
+	python3 -m twine upload $(DIST_DIR)/*
+
 # Production build
 .PHONY: build-ui prod docker docker-up
 
@@ -83,6 +90,12 @@ docker: ## Build Docker image
 
 docker-up: ## Start with docker-compose
 	docker-compose up --build
+
+# Databricks App
+.PHONY: deploy-dbx-app
+
+deploy-dbx-app: ## Deploy as a Databricks App (builds frontend automatically)
+	./databricks-app/deploy.sh
 
 # Desktop app
 .PHONY: desktop-dev desktop-install build-desktop-mac build-desktop-win

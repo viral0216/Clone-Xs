@@ -585,7 +585,7 @@ print(f"  Schema drift:  {check.get('has_drift', False)}")
 print(f"  Missing in dest: {len(check.get('missing_in_dest', []))}")
 
 # For continuous monitoring, use the CLI:
-#   clone-catalog monitor --source prod --dest dev --interval 30
+#   clxs monitor --source prod --dest dev --interval 30
 
 # COMMAND ----------
 
@@ -849,24 +849,24 @@ def run_clone_pipeline(client, config):
 # MAGIC
 # MAGIC | Command | Description |
 # MAGIC |---------|-------------|
-# MAGIC | `clone-catalog clone` | Clone a catalog |
-# MAGIC | `clone-catalog clone --dry-run` | Preview without executing |
-# MAGIC | `clone-catalog clone --as-of-timestamp "2026-03-01"` | Time travel clone |
-# MAGIC | `clone-catalog preflight` | Run pre-flight checks |
-# MAGIC | `clone-catalog diff --source prod --dest dev` | Compare catalogs |
-# MAGIC | `clone-catalog compare --source prod --dest dev` | Deep column comparison |
-# MAGIC | `clone-catalog schema-drift --source prod --dest dev` | Detect schema drift |
-# MAGIC | `clone-catalog validate --source prod --dest dev` | Validate row counts |
-# MAGIC | `clone-catalog sync --source prod --dest dev` | Two-way sync |
-# MAGIC | `clone-catalog estimate --source prod` | Estimate clone cost |
-# MAGIC | `clone-catalog search --pattern "order" --source prod` | Search catalog |
-# MAGIC | `clone-catalog stats --source prod` | Catalog statistics |
-# MAGIC | `clone-catalog profile --source prod` | Data profiling |
-# MAGIC | `clone-catalog monitor --source prod --dest dev` | Continuous monitoring |
-# MAGIC | `clone-catalog snapshot --source prod` | Export metadata snapshot |
-# MAGIC | `clone-catalog export --source prod --format csv` | Export to CSV/JSON |
-# MAGIC | `clone-catalog export-iac --source prod` | Generate Terraform |
-# MAGIC | `clone-catalog generate-workflow` | Generate Databricks Job |
-# MAGIC | `clone-catalog rollback --list` | List rollback logs |
-# MAGIC | `clone-catalog config-diff file1.yaml file2.yaml` | Compare configs |
-# MAGIC | `clone-catalog init` | Interactive config wizard |
+# MAGIC | `clxs clone` | Clone a catalog |
+# MAGIC | `clxs clone --dry-run` | Preview without executing |
+# MAGIC | `clxs clone --as-of-timestamp "2026-03-01"` | Time travel clone |
+# MAGIC | `clxs preflight` | Run pre-flight checks |
+# MAGIC | `clxs diff --source prod --dest dev` | Compare catalogs |
+# MAGIC | `clxs compare --source prod --dest dev` | Deep column comparison |
+# MAGIC | `clxs schema-drift --source prod --dest dev` | Detect schema drift |
+# MAGIC | `clxs validate --source prod --dest dev` | Validate row counts |
+# MAGIC | `clxs sync --source prod --dest dev` | Two-way sync |
+# MAGIC | `clxs estimate --source prod` | Estimate clone cost |
+# MAGIC | `clxs search --pattern "order" --source prod` | Search catalog |
+# MAGIC | `clxs stats --source prod` | Catalog statistics |
+# MAGIC | `clxs profile --source prod` | Data profiling |
+# MAGIC | `clxs monitor --source prod --dest dev` | Continuous monitoring |
+# MAGIC | `clxs snapshot --source prod` | Export metadata snapshot |
+# MAGIC | `clxs export --source prod --format csv` | Export to CSV/JSON |
+# MAGIC | `clxs export-iac --source prod` | Generate Terraform |
+# MAGIC | `clxs generate-workflow` | Generate Databricks Job |
+# MAGIC | `clxs rollback --list` | List rollback logs |
+# MAGIC | `clxs config-diff file1.yaml file2.yaml` | Compare configs |
+# MAGIC | `clxs init` | Interactive config wizard |

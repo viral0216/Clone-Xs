@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import PageHeader from "@/components/PageHeader";
 import { CalendarClock, Plus, RefreshCw, Pause, Play } from "lucide-react";
 
 interface Schedule {
@@ -62,21 +63,25 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Schedule</h1>
-          <p className="text-muted-foreground mt-1">Schedule recurring clone operations</p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"}>
-            <Plus className="h-4 w-4 mr-1" /> Create Schedule
-          </Button>
-          <Button onClick={load} disabled={loading} variant="outline">
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Schedule"
+        icon={CalendarClock}
+        description="Schedule clone operations on a cron-based schedule — daily, hourly, or custom intervals. Runs are tracked in the audit trail."
+        breadcrumbs={["Operations", "Schedule"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs"
+        docsLabel="Databricks Jobs"
+        actions={
+          <div className="flex gap-2">
+            <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"}>
+              <Plus className="h-4 w-4 mr-1" /> Create Schedule
+            </Button>
+            <Button onClick={load} disabled={loading} variant="outline">
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        }
+      />
 
       {error && (
         <Card className="border-destructive">

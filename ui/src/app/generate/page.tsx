@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import {
   Wand2, Loader2, Copy, Download, FileCode, Boxes, CheckCircle, XCircle, Clock,
 } from "lucide-react";
@@ -106,11 +107,15 @@ export default function GeneratePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Generate</h1>
-        <p className="text-gray-500 mt-1">Generate workflows, Terraform, and Pulumi configurations</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Generate"
+        icon={Wand2}
+        description="Export clone operations as Terraform HCL, Pulumi code, or Databricks Workflow JSON — ready for CI/CD pipelines and infrastructure-as-code."
+        breadcrumbs={["Operations", "Generate"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/"
+        docsLabel="Databricks Terraform provider"
+      />
 
       {/* Workflow Generation */}
       <Card>

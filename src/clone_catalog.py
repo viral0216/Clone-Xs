@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
-from src.client import execute_sql, set_rate_limit
+from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, set_rate_limit
 from src.clone_functions import clone_functions_in_schema
 from src.clone_tables import clone_tables_in_schema
 from src.clone_tags import copy_catalog_tags, copy_schema_tags
@@ -53,21 +53,14 @@ def get_schemas(
     if include:
         return [s for s in include if s not in exclude_set]
 
-    sql = f"""
-        SELECT schema_name
-        FROM {catalog}.information_schema.schemata
-        WHERE schema_name NOT IN ({','.join(f"'{s}'" for s in exclude_set)})
-    """
-    try:
-        rows = execute_sql(client, warehouse_id, sql)
-    except RuntimeError as e:
-        if "TABLE_OR_VIEW_NOT_FOUND" in str(e):
-            raise RuntimeError(
-                f"Catalog '{catalog}' not found. Verify the catalog exists and you have access.\n"
-                f"List available catalogs: clone-catalog run-sql --sql \"SHOW CATALOGS\""
-            ) from e
-        raise
-    return [row["schema_name"] for row in rows]
+    schemas = list_schemas_sdk(client, catalog, exclude=list(exclude_set))
+    if not schemas:
+        # Fallback: the SDK call may return [] if the catalog doesn't exist
+        raise RuntimeError(
+            f"Catalog '{catalog}' not found or has no schemas. Verify the catalog exists and you have access.\n"
+            f"List available catalogs: clxs run-sql --sql \"SHOW CATALOGS\""
+        )
+    return schemas
 
 
 def _filter_schemas_by_tags(
@@ -247,6 +240,7 @@ def process_schema(
             resumed_tables=resumed_tables, order_by_size=order_by_size,
             as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
             force_reclone=force_reclone, where_clauses=where_clause,
+            schema_only=config.get("schema_only", False),
         )
 
         # Apply data masking after table cloning
@@ -254,11 +248,8 @@ def process_schema(
         if masking_rules and not dry_run:
             from src.masking import apply_masking_rules
             # Get all tables that were just cloned
-            table_sql = f"""
-                SELECT table_name FROM {dest}.information_schema.tables
-                WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-            """
-            tables = execute_sql(client, warehouse_id, table_sql)
+            tables = list_tables_sdk(client, dest, schema)
+            tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             for row in tables:
                 apply_masking_rules(
                     client, warehouse_id, dest, schema, row["table_name"],
@@ -269,11 +260,8 @@ def process_schema(
         lineage_config = config.get("lineage")
         if lineage_config and not dry_run:
             from src.lineage import record_lineage_to_uc
-            table_sql = f"""
-                SELECT table_name FROM {dest}.information_schema.tables
-                WHERE table_schema = '{schema}' AND table_type IN ('MANAGED', 'EXTERNAL')
-            """
-            tables = execute_sql(client, warehouse_id, table_sql)
+            tables = list_tables_sdk(client, dest, schema)
+            tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             for row in tables:
                 record_lineage_to_uc(
                     client, warehouse_id,
@@ -423,6 +411,14 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
 
     # --- End pre-clone checks ---
 
+    # --- Plugin system (opt-in) ---
+    pm = None
+    if config.get("plugins"):
+        from src.plugin_system import PluginManager
+        pm = PluginManager()
+        pm.load_plugins_from_config(config)
+        config = pm.run_on_clone_start(config, client, warehouse_id)
+
     mode = "[DRY RUN] " if dry_run else ""
     logger.info(f"{mode}Starting catalog clone: {source} -> {dest}")
     logger.info(f"Clone type: {config['clone_type']}, Load type: {config['load_type']}")
@@ -500,9 +496,13 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         for future in as_completed(futures):
             schema_name = futures[future]
             try:
+                if pm:
+                    pm.run_on_table_start(schema_name, config, client, warehouse_id)
                 result = future.result()
                 all_results.append(result)
                 progress.schema_done(result)
+                if pm:
+                    pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
                 if dashboard:
                     dashboard.schema_completed(schema_name, result)
             except Exception as e:
@@ -510,6 +510,8 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 error_result = {"schema": schema_name, "error": str(e)}
                 all_results.append(error_result)
                 progress.schema_done(error_result)
+                if pm:
+                    pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
                 if dashboard:
                     dashboard.schema_completed(schema_name, error_result)
 
@@ -646,6 +648,16 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
             smtp_password=email_config.get("smtp_password"),
             use_tls=email_config.get("use_tls", True),
         )
+
+    # Plugin: on_clone_complete / on_clone_error
+    if pm:
+        try:
+            if summary.get("errors"):
+                pm.run_on_clone_error(config, RuntimeError("; ".join(summary["errors"])), client, warehouse_id)
+            else:
+                pm.run_on_clone_complete(config, summary, client, warehouse_id)
+        except Exception as e:
+            logger.warning(f"Plugin post-clone hook failed: {e}")
 
     if rollback_log:
         logger.info(f"Rollback log saved: {rollback_log}")

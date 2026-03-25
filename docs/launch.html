@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clone → Xs | Enterprise Unity Catalog Toolkit for Databricks</title>
+<meta name="description" content="Clone, compare, sync, and manage Databricks Unity Catalogs from CLI, Web UI, or REST API. Enterprise-grade metadata management, PII detection, and governance.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-card: #1a2235;
+  --bg-card-hover: #1f2a42;
+  --accent: #3b82f6;
+  --accent-light: #60a5fa;
+  --accent-glow: rgba(59, 130, 246, 0.25);
+  --green: #10b981;
+  --green-glow: rgba(16, 185, 129, 0.2);
+  --purple: #8b5cf6;
+  --purple-glow: rgba(139, 92, 246, 0.2);
+  --orange: #f59e0b;
+  --orange-glow: rgba(245, 158, 11, 0.2);
+  --red: #ef4444;
+  --red-glow: rgba(239, 68, 68, 0.2);
+  --cyan: #06b6d4;
+  --cyan-glow: rgba(6, 182, 212, 0.2);
+  --pink: #ec4899;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --radius: 16px;
+  --radius-sm: 10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ── Animated Background ── */
+.bg-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+.bg-glow {
+  position: fixed; z-index: 0; pointer-events: none;
+  width: 800px; height: 800px; border-radius: 50%;
+  filter: blur(120px); opacity: 0.15;
+}
+.bg-glow-1 { top: -200px; left: -200px; background: var(--accent); }
+.bg-glow-2 { bottom: -300px; right: -200px; background: var(--purple); }
+.bg-glow-3 { top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--green); opacity: 0.06; }
+
+/* ── Navigation ── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10, 14, 26, 0.85);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  transition: all 0.3s;
+}
+nav.scrolled { background: rgba(10, 14, 26, 0.95); box-shadow: 0 4px 30px rgba(0,0,0,0.3); }
+.nav-inner {
+  max-width: 1280px; margin: 0 auto; padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between; height: 64px;
+}
+.nav-logo {
+  font-size: 20px; font-weight: 800; color: var(--text-primary);
+  text-decoration: none; display: flex; align-items: center; gap: 10px;
+}
+.nav-logo span { color: var(--accent); }
+.nav-logo .arrow { color: #E8453C; font-size: 16px; }
+.nav-logo svg { flex-shrink: 0; }
+.nav-links { display: flex; gap: 32px; list-style: none; }
+.nav-links a {
+  color: var(--text-secondary); text-decoration: none; font-size: 14px;
+  font-weight: 500; transition: color 0.2s; position: relative;
+}
+.nav-links a:hover { color: var(--text-primary); }
+.nav-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--accent); color: white; padding: 8px 20px;
+  border-radius: 8px; font-size: 14px; font-weight: 600;
+  text-decoration: none; transition: all 0.2s;
+}
+.nav-cta:hover { background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 4px 20px var(--accent-glow); }
+
+/* ── Hero ── */
+.hero {
+  position: relative; z-index: 1;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 120px 32px 80px;
+  text-align: center;
+}
+.hero-inner { max-width: 900px; }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
+  padding: 6px 16px; border-radius: 100px; font-size: 13px;
+  color: var(--accent-light); font-weight: 500; margin-bottom: 32px;
+  animation: fadeInUp 0.6s ease;
+}
+.hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.hero h1 {
+  font-size: clamp(42px, 6vw, 72px); font-weight: 900;
+  line-height: 1.05; letter-spacing: -0.03em; margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease 0.1s both;
+}
+.hero h1 .gradient {
+  background: linear-gradient(135deg, var(--accent), var(--purple), var(--pink));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero p {
+  font-size: clamp(16px, 2vw, 20px); color: var(--text-secondary);
+  max-width: 640px; margin: 0 auto 40px; line-height: 1.7;
+  animation: fadeInUp 0.6s ease 0.2s both;
+}
+.hero-actions {
+  display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+  animation: fadeInUp 0.6s ease 0.3s both;
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+  color: white; padding: 14px 32px; border-radius: 12px;
+  font-size: 16px; font-weight: 600; text-decoration: none;
+  transition: all 0.3s; border: none; cursor: pointer;
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg-card); color: var(--text-primary);
+  padding: 14px 32px; border-radius: 12px; font-size: 16px; font-weight: 600;
+  text-decoration: none; transition: all 0.3s; border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-hover); transform: translateY(-2px); }
+
+/* ── Terminal Preview ── */
+.hero-terminal {
+  margin-top: 60px; max-width: 700px; margin-left: auto; margin-right: auto;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+  animation: fadeInUp 0.6s ease 0.4s both;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.terminal-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border);
+}
+.terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+.terminal-dot.r { background: #ef4444; }
+.terminal-dot.y { background: #f59e0b; }
+.terminal-dot.g { background: #10b981; }
+.terminal-title { flex: 1; text-align: center; color: var(--text-muted); font-size: 12px; }
+.terminal-body {
+  padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  line-height: 1.8; color: var(--text-secondary);
+}
+.terminal-body .prompt { color: var(--green); }
+.terminal-body .cmd { color: var(--text-primary); font-weight: 500; }
+.terminal-body .flag { color: var(--purple); }
+.terminal-body .val { color: var(--orange); }
+.terminal-body .comment { color: var(--text-muted); }
+.terminal-body .success { color: var(--green); }
+.terminal-body .info { color: var(--accent-light); }
+
+/* ── Stats Bar ── */
+.stats-bar {
+  position: relative; z-index: 1;
+  background: var(--bg-secondary); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 48px 32px;
+}
+.stats-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 32px;
+  text-align: center;
+}
+.stat-item .stat-num {
+  font-size: 40px; font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.stat-item .stat-label { font-size: 14px; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+
+/* ── Section Shared ── */
+section { position: relative; z-index: 1; padding: 100px 32px; }
+.section-header { text-align: center; max-width: 700px; margin: 0 auto 64px; }
+.section-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-bottom: 16px;
+}
+.section-header h2 {
+  font-size: clamp(28px, 4vw, 42px); font-weight: 800;
+  letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 16px;
+}
+.section-header p { font-size: 17px; color: var(--text-secondary); line-height: 1.7; }
+
+/* ── Feature Grid ── */
+.features-grid {
+  max-width: 1200px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px;
+}
+.feature-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px;
+  transition: all 0.3s; position: relative; overflow: hidden;
+}
+.feature-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.feature-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  opacity: 0; transition: opacity 0.3s;
+}
+.feature-card:hover::before { opacity: 1; }
+.feature-icon {
+  width: 48px; height: 48px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; margin-bottom: 20px;
+}
+.feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+.feature-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+.feature-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.feature-tag {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 100px;
+  background: rgba(59,130,246,0.1); color: var(--accent-light); border: 1px solid rgba(59,130,246,0.15);
+}
+
+/* Color variants */
+.icon-blue { background: rgba(59,130,246,0.12); color: var(--accent-light); }
+.icon-green { background: var(--green-glow); color: var(--green); }
+.icon-purple { background: var(--purple-glow); color: var(--purple); }
+.icon-orange { background: var(--orange-glow); color: var(--orange); }
+.icon-red { background: var(--red-glow); color: var(--red); }
+.icon-cyan { background: var(--cyan-glow); color: var(--cyan); }
+
+/* ── Deploy Modes ── */
+.deploy-grid {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;
+}
+.deploy-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 24px;
+  text-align: center; transition: all 0.3s;
+}
+.deploy-card:hover { border-color: var(--border-hover); transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+.deploy-icon { font-size: 32px; margin-bottom: 12px; }
+.deploy-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.deploy-card p { font-size: 13px; color: var(--text-muted); }
+
+/* ── Architecture Flow ── */
+.arch-section { background: var(--bg-secondary); }
+.arch-flow {
+  max-width: 900px; margin: 0 auto;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 40px;
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  line-height: 2; color: var(--text-secondary);
+  overflow-x: auto;
+}
+.arch-flow .layer {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.arch-box {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  border: 1px solid;
+}
+.arch-box.cli { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: var(--green); }
+.arch-box.web { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2); color: var(--accent-light); }
+.arch-box.api { background: rgba(139,92,246,0.1); border-color: rgba(139,92,246,0.2); color: var(--purple); }
+.arch-box.core { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.2); color: var(--orange); }
+.arch-box.db { background: rgba(6,182,212,0.1); border-color: rgba(6,182,212,0.2); color: var(--cyan); }
+.arch-arrow { color: var(--text-muted); font-size: 18px; }
+
+/* ── PII Section ── */
+.pii-section { }
+.pii-grid {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+}
+.pii-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px;
+}
+.pii-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.pii-list { list-style: none; }
+.pii-list li {
+  padding: 8px 0; font-size: 14px; color: var(--text-secondary);
+  display: flex; align-items: flex-start; gap: 10px; border-bottom: 1px solid var(--border);
+}
+.pii-list li:last-child { border-bottom: none; }
+.pii-check { color: var(--green); font-weight: 700; flex-shrink: 0; }
+
+/* ── Comparison Table ── */
+.compare-section { background: var(--bg-secondary); }
+.compare-table-wrap { max-width: 1000px; margin: 0 auto; overflow-x: auto; }
+.compare-table {
+  width: 100%; border-collapse: collapse; font-size: 14px;
+}
+.compare-table th {
+  padding: 14px 20px; text-align: left; font-weight: 700; font-size: 13px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted); border-bottom: 2px solid var(--border);
+  background: rgba(0,0,0,0.2);
+}
+.compare-table th:first-child { border-radius: 12px 0 0 0; }
+.compare-table th:last-child { border-radius: 0 12px 0 0; }
+.compare-table td {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.compare-table td:first-child { color: var(--text-primary); font-weight: 600; }
+.compare-table tr:hover td { background: rgba(59,130,246,0.03); }
+.compare-table .yes { color: var(--green); font-weight: 600; }
+.compare-table .no { color: var(--text-muted); }
+.compare-table .partial { color: var(--orange); font-weight: 500; }
+
+/* ── Testimonial / Quote ── */
+.quote-section {
+  text-align: center; padding: 80px 32px;
+}
+.quote-block {
+  max-width: 700px; margin: 0 auto; position: relative;
+}
+.quote-block blockquote {
+  font-size: 24px; font-weight: 400; font-style: italic;
+  color: var(--text-primary); line-height: 1.6; margin-bottom: 24px;
+}
+.quote-block cite {
+  font-style: normal; font-size: 15px; color: var(--text-muted); font-weight: 500;
+}
+
+/* ── CTA Section ── */
+.cta-section {
+  text-align: center; padding: 100px 32px;
+  background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+}
+.cta-inner { max-width: 600px; margin: 0 auto; }
+.cta-inner h2 { font-size: 36px; font-weight: 800; margin-bottom: 16px; }
+.cta-inner p { font-size: 17px; color: var(--text-secondary); margin-bottom: 40px; }
+.cta-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.cta-install {
+  margin-top: 32px; display: inline-flex; align-items: center; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 24px;
+  font-family: 'JetBrains Mono', monospace; font-size: 14px;
+  color: var(--text-secondary);
+}
+.cta-install .prompt { color: var(--green); }
+.cta-install .cmd { color: var(--text-primary); }
+.copy-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  transition: all 0.2s;
+}
+.copy-btn:hover { color: var(--text-primary); border-color: var(--border-hover); }
+
+/* ── Footer ── */
+footer {
+  position: relative; z-index: 1;
+  border-top: 1px solid var(--border);
+  padding: 48px 32px;
+}
+.footer-inner {
+  max-width: 1200px; margin: 0 auto;
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px;
+}
+.footer-brand { display: flex; align-items: center; gap: 10px; }
+.footer-brand .logo { font-size: 18px; font-weight: 800; }
+.footer-brand .logo span { color: var(--accent); }
+.footer-brand p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.footer-links { display: flex; gap: 24px; }
+.footer-links a { color: var(--text-muted); text-decoration: none; font-size: 13px; transition: color 0.2s; }
+.footer-links a:hover { color: var(--text-primary); }
+.footer-copy { font-size: 12px; color: var(--text-muted); width: 100%; text-align: center; margin-top: 24px; }
+
+/* ── Animations ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reveal {
+  opacity: 0; transform: translateY(30px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ── Mobile ── */
+.mobile-menu-btn { display: none; background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; }
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .mobile-menu-btn { display: block; }
+  .features-grid { grid-template-columns: 1fr; }
+  .deploy-grid { grid-template-columns: repeat(2, 1fr); }
+  .pii-grid { grid-template-columns: 1fr; }
+  .hero { padding: 100px 20px 60px; }
+  section { padding: 60px 20px; }
+  .stats-inner { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .deploy-grid { grid-template-columns: 1fr; }
+  .hero-actions { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+<div class="bg-glow bg-glow-3"></div>
+
+<!-- ── Navigation ── -->
+<nav id="navbar">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="logo-dark.svg" alt="Clone-Xs" style="height:40px; width:auto;">
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#deploy">Deploy</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#pii">PII Detection</a></li>
+      <li><a href="#compare">Compare</a></li>
+    </ul>
+    <a href="#get-started" class="nav-cta">Get Started →</a>
+    <button class="mobile-menu-btn" onclick="document.querySelector('.nav-links').classList.toggle('show')">☰</button>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-logo" style="margin-bottom:32px; animation: fadeInUp 0.5s ease both;">
+      <img src="logo-dark.svg" alt="Clone-Xs" style="height:80px; width:auto; filter: drop-shadow(0 8px 24px rgba(232,69,60,0.35));">
+    </div>
+    <div class="hero-badge"><span class="dot"></span> v1.6.0 — PII Detection Overhaul</div>
+    <h1>The Complete<br><span class="gradient">Unity Catalog Toolkit</span><br>for Databricks</h1>
+    <p>Clone, compare, sync, and govern your catalogs with enterprise-grade metadata management. From CLI to Web UI to REST API — one tool, every workflow.</p>
+    <div class="hero-actions">
+      <a href="#get-started" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Get Started
+      </a>
+      <a href="#features" class="btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        Explore Features
+      </a>
+    </div>
+    <div class="hero-terminal">
+      <div class="terminal-bar">
+        <span class="terminal-dot r"></span>
+        <span class="terminal-dot y"></span>
+        <span class="terminal-dot g"></span>
+        <span class="terminal-title">Terminal — zsh</span>
+      </div>
+      <div class="terminal-body">
+        <div><span class="comment"># Clone a full catalog with metadata</span></div>
+        <div><span class="comment"># Clone a full catalog with metadata</span></div>
+        <div><span class="prompt">$ </span><span class="cmd">clxs clone</span> <span class="flag">--source</span> <span class="val">prod_catalog</span> <span class="flag">--target</span> <span class="val">dev_sandbox</span></div>
+        <div><span class="info">  ▸ Copying 142 tables across 8 schemas...</span></div>
+        <div><span class="info">  ▸ Preserving permissions, tags, constraints...</span></div>
+        <div><span class="success">  ✓ Clone complete — 142/142 tables, 0 errors (2m 34s)</span></div>
+        <div style="height:8px"></div>
+        <div><span class="comment"># Scan for PII with confidence scoring</span></div>
+        <div><span class="prompt">$ </span><span class="cmd">clxs pii-scan</span> <span class="flag">--catalog</span> <span class="val">prod_catalog</span> <span class="flag">--sample</span></div>
+        <div><span class="success">  ✓ Found 23 PII columns (4 HIGH, 11 MEDIUM, 8 LOW)</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Stats Bar ── -->
+<div class="stats-bar reveal">
+  <div class="stats-inner">
+    <div class="stat-item"><div class="stat-num">60+</div><div class="stat-label">CLI Commands</div></div>
+    <div class="stat-item"><div class="stat-num">33</div><div class="stat-label">Web UI Pages</div></div>
+    <div class="stat-item"><div class="stat-num">75+</div><div class="stat-label">API Endpoints</div></div>
+    <div class="stat-item"><div class="stat-num">856+</div><div class="stat-label">Tests</div></div>
+    <div class="stat-item"><div class="stat-num">8</div><div class="stat-label">Deploy Modes</div></div>
+    <div class="stat-item"><div class="stat-num">12</div><div class="stat-label">Clone Templates</div></div>
+    <div class="stat-item"><div class="stat-num">MIT</div><div class="stat-label">Licensed</div></div>
+  </div>
+</div>
+
+<!-- ── Features ── -->
+<section id="features">
+  <div class="section-header reveal">
+    <div class="section-label" style="color: var(--accent);">⚡ Capabilities</div>
+    <h2>Everything You Need to Manage Unity Catalogs</h2>
+    <p>From one-click cloning to advanced PII detection — built for data teams who demand precision and speed.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-blue">📋</div>
+      <h3>Deep & Shallow Clone</h3>
+      <p>Full data copy or metadata-only references. Supports time-travel cloning, incremental loads, schema-only mode, and cross-workspace operations.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Time Travel</span>
+        <span class="feature-tag">Incremental</span>
+        <span class="feature-tag">Cross-Workspace</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-green">🔒</div>
+      <h3>Full Metadata Preservation</h3>
+      <p>Permissions, ownership, tags, properties, constraints, row filters, column masks, and comments — everything transfers intact.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Permissions</span>
+        <span class="feature-tag">Security Policies</span>
+        <span class="feature-tag">Tags</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-purple">🔍</div>
+      <h3>PII Detection Engine</h3>
+      <p>Multi-phase scanning with regex, data sampling, structural validators (Luhn, IBAN), cross-column correlation, and optional Presidio NLP.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">ML/NLP</span>
+        <span class="feature-tag">Confidence Scoring</span>
+        <span class="feature-tag">Auto-Tag</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-orange">⚖️</div>
+      <h3>Diff & Compare</h3>
+      <p>Side-by-side catalog comparison at object and column level. Config diff, data preview, and impact analysis with downstream blast radius.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Column-Level</span>
+        <span class="feature-tag">Impact Analysis</span>
+        <span class="feature-tag">Config Diff</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-cyan">🔄</div>
+      <h3>Sync & Incremental Sync</h3>
+      <p>Two-way catalog sync with delta-only incremental mode. Uses Delta version history to sync only what changed — fast and efficient.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Delta Versions</span>
+        <span class="feature-tag">Two-Way</span>
+        <span class="feature-tag">Drift Detection</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-red">⏪</div>
+      <h3>Safe Rollback</h3>
+      <p>Non-destructive rollback using Delta RESTORE to pre-clone versions. Every operation is tracked — undo with confidence.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Delta RESTORE</span>
+        <span class="feature-tag">Version Tracking</span>
+        <span class="feature-tag">Audit Trail</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-green">📊</div>
+      <h3>Storage & Cost Analytics</h3>
+      <p>Per-table storage breakdown, OPTIMIZE & VACUUM from UI, cost estimation before cloning, and usage analysis to identify unused tables.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">OPTIMIZE</span>
+        <span class="feature-tag">VACUUM</span>
+        <span class="feature-tag">Cost Estimator</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-purple">🌐</div>
+      <h3>Interactive Lineage</h3>
+      <p>SVG lineage graph with pan/zoom, multi-hop tracing up to 5 hops, column-level lineage from system tables, and notebook/job attribution.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Column-Level</span>
+        <span class="feature-tag">Multi-Hop</span>
+        <span class="feature-tag">SVG Graph</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-blue">🏗️</div>
+      <h3>IaC Generation</h3>
+      <p>Export to Terraform, Pulumi, Databricks Workflows YAML, and Asset Bundles. Generate production-ready infrastructure from your catalog.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Terraform</span>
+        <span class="feature-tag">Pulumi</span>
+        <span class="feature-tag">DAB</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-cyan">🗂️</div>
+      <h3>Catalog Explorer</h3>
+      <p>Databricks-style tree browser with cascading catalog → schema → table navigation. 8 tabs for views, functions, volumes, UC objects, and more.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Tree Browser</span>
+        <span class="feature-tag">Table Detail</span>
+        <span class="feature-tag">Quick Actions</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-orange">📈</div>
+      <h3>Data Profiling</h3>
+      <p>Per-column quality metrics — null rates, distinct counts, min/max values, string length distributions, and type breakdowns for any table.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Null %</span>
+        <span class="feature-tag">Distinct Counts</span>
+        <span class="feature-tag">Distributions</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-red">🔀</div>
+      <h3>Schema Drift Detection</h3>
+      <p>Automatically detect added, removed, and modified columns between source and destination catalogs. Catch breaking changes before they ship.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Column Diff</span>
+        <span class="feature-tag">Type Changes</span>
+        <span class="feature-tag">Alerts</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-purple">🚀</div>
+      <h3>Multi-Clone</h3>
+      <p>Clone one source catalog to multiple destinations across workspaces in parallel. Perfect for provisioning dev, staging, and DR in one operation.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Parallel</span>
+        <span class="feature-tag">Multi-Workspace</span>
+        <span class="feature-tag">Batch</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-green">⏰</div>
+      <h3>Scheduling & Jobs</h3>
+      <p>Create persistent Databricks Jobs with cron scheduling, timezone support, retry policies, and email notifications — no manual JSON needed.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Cron</span>
+        <span class="feature-tag">Databricks Jobs</span>
+        <span class="feature-tag">Notifications</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-blue">📦</div>
+      <h3>12 Clone Templates</h3>
+      <p>Pre-built recipes for Production Mirror, Dev Sandbox, DR Copy, Compliance Snapshot, and 8 more — with optimized settings for each scenario.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Production</span>
+        <span class="feature-tag">Dev/Staging</span>
+        <span class="feature-tag">DR</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-orange">🛡️</div>
+      <h3>Compliance & Governance</h3>
+      <p>Generate permission audits, tag coverage, PII exposure, ownership mapping, and access control reports. RBAC policies with approval workflows.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">RBAC</span>
+        <span class="feature-tag">Audit Reports</span>
+        <span class="feature-tag">Ownership</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-cyan">🔔</div>
+      <h3>Notifications & Webhooks</h3>
+      <p>Real-time alerts via Slack, Microsoft Teams, email, and custom webhooks. In-app notification center with bell icon for operation status updates.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Slack</span>
+        <span class="feature-tag">Teams</span>
+        <span class="feature-tag">Email</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-green">✅</div>
+      <h3>Preflight Checks</h3>
+      <p>Validate connectivity, permissions, warehouse availability, destination writability, and schema compatibility before executing any clone.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Permissions</span>
+        <span class="feature-tag">Connectivity</span>
+        <span class="feature-tag">Compatibility</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-purple">👁️</div>
+      <h3>Data Preview & Compare</h3>
+      <p>Sample rows from any table and compare data side-by-side across source and destination catalogs. Spot discrepancies instantly.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Row Sampling</span>
+        <span class="feature-tag">Cross-Catalog</span>
+        <span class="feature-tag">Visual Diff</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-red">🧩</div>
+      <h3>Plugin System</h3>
+      <p>Extensible architecture with custom pre/post-clone hooks, validation rules, notification channels, and metadata transformations. Toggle from UI.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Hooks</span>
+        <span class="feature-tag">Extensible</span>
+        <span class="feature-tag">Marketplace</span>
+      </div>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-blue">📊</div>
+      <h3>Dashboard & Metrics</h3>
+      <p>At-a-glance health scores, 5 charts, success rates, throughput, duration trends, peak hours, top catalogs, and a real-time notification center.</p>
+      <div class="feature-tags">
+        <span class="feature-tag">Health Score</span>
+        <span class="feature-tag">Charts</span>
+        <span class="feature-tag">Trends</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Deploy Modes ── -->
+<section id="deploy" class="arch-section">
+  <div class="section-header reveal">
+    <div class="section-label" style="color: var(--green);">🚀 Deployment</div>
+    <h2>8 Ways to Run Clone → Xs</h2>
+    <p>Choose how you work. Every mode shares the same powerful core engine.</p>
+  </div>
+  <div class="deploy-grid">
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">⌨️</div>
+      <h4>CLI</h4>
+      <p>60+ commands, scriptable, CI/CD ready</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">🖥️</div>
+      <h4>Web UI</h4>
+      <p>33-page React dashboard</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">🖱️</div>
+      <h4>Desktop App</h4>
+      <p>Native macOS & Windows (Electron)</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">🔷</div>
+      <h4>Databricks App</h4>
+      <p>Embedded in workspace, SSO auth</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">🔗</div>
+      <h4>REST API</h4>
+      <p>69+ endpoints for integrations</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">📓</div>
+      <h4>Notebook</h4>
+      <p>Wheel package, import directly</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">⚡</div>
+      <h4>Serverless Job</h4>
+      <p>$0 warehouse cost, auto-scaling</p>
+    </div>
+    <div class="deploy-card reveal">
+      <div class="deploy-icon">⏰</div>
+      <h4>Databricks Job</h4>
+      <p>Persistent scheduled operations</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Architecture ── -->
+<section id="architecture">
+  <div class="section-header reveal">
+    <div class="section-label" style="color: var(--purple);">🏛️ Architecture</div>
+    <h2>Built on Databricks SDK & Delta Lake</h2>
+    <p>SDK-first metadata access with SQL warehouse fallback. Zero external dependencies.</p>
+  </div>
+  <div class="arch-flow reveal">
+    <div class="layer">
+      <span class="arch-box cli">⌨️ CLI (Click)</span>
+      <span class="arch-box web">🖥️ Web UI (React 19)</span>
+      <span class="arch-box web">🖱️ Desktop (Electron)</span>
+      <span class="arch-box web">🔷 Databricks App</span>
+    </div>
+    <div style="text-align:center; color: var(--text-muted); font-size: 20px;">↓</div>
+    <div class="layer">
+      <span class="arch-box api">🔗 REST API — FastAPI + Uvicorn (69+ endpoints)</span>
+    </div>
+    <div style="text-align:center; color: var(--text-muted); font-size: 20px;">↓</div>
+    <div class="layer">
+      <span class="arch-box core">Clone Engine</span>
+      <span class="arch-box core">PII Scanner</span>
+      <span class="arch-box core">Diff Engine</span>
+      <span class="arch-box core">Sync Engine</span>
+    </div>
+    <div style="text-align:center; color: var(--text-muted); font-size: 20px;">↓</div>
+    <div class="layer">
+      <span class="arch-box db">Databricks SDK</span>
+      <span class="arch-box db">Unity Catalog</span>
+      <span class="arch-box db">Delta Lake</span>
+      <span class="arch-box db">System Tables</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── PII Detection ── -->
+<section id="pii" class="arch-section">
+  <div class="section-header reveal">
+    <div class="section-label" style="color: var(--red);">🛡️ New in v1.6.0</div>
+    <h2>Enterprise PII Detection & Protection</h2>
+    <p>Multi-phase scanning with structural validation, cross-column correlation, and Unity Catalog auto-tagging.</p>
+  </div>
+  <div class="pii-grid">
+    <div class="pii-card reveal">
+      <h3>🔍 Detection Phases</h3>
+      <ul class="pii-list">
+        <li><span class="pii-check">✓</span> Column name regex matching (19 PII types)</li>
+        <li><span class="pii-check">✓</span> Data value sampling with 12 regex patterns</li>
+        <li><span class="pii-check">✓</span> Structural validators (Luhn, IBAN mod-97, IP octets)</li>
+        <li><span class="pii-check">✓</span> Unity Catalog tag detection</li>
+        <li><span class="pii-check">✓</span> Optional Presidio NLP entity detection</li>
+        <li><span class="pii-check">✓</span> Cross-column correlation analysis</li>
+      </ul>
+    </div>
+    <div class="pii-card reveal">
+      <h3>📊 Governance & Remediation</h3>
+      <ul class="pii-list">
+        <li><span class="pii-check">✓</span> Weighted confidence scoring (0.0 – 1.0)</li>
+        <li><span class="pii-check">✓</span> 5-level risk classification</li>
+        <li><span class="pii-check">✓</span> Remediation workflow tracking</li>
+        <li><span class="pii-check">✓</span> Unity Catalog auto-tagging</li>
+        <li><span class="pii-check">✓</span> Scan history with Delta tables</li>
+        <li><span class="pii-check">✓</span> Custom patterns via YAML config</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── Comparison Table ── -->
+<section id="compare" class="compare-section">
+  <div class="section-header reveal">
+    <div class="section-label" style="color: var(--orange);">📊 Comparison</div>
+    <h2>Why Clone → Xs?</h2>
+    <p>See how we compare to manual scripting and alternatives.</p>
+  </div>
+  <div class="compare-table-wrap reveal">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Manual SQL</th>
+          <th>Basic Scripts</th>
+          <th style="color: var(--accent);">Clone → Xs</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Deep & Shallow Clone</td><td class="partial">Partial</td><td class="partial">Partial</td><td class="yes">✓ Full</td></tr>
+        <tr><td>Metadata Preservation</td><td class="no">✗ Manual</td><td class="partial">Some</td><td class="yes">✓ Complete</td></tr>
+        <tr><td>PII Detection</td><td class="no">✗ None</td><td class="no">✗ None</td><td class="yes">✓ Multi-Phase</td></tr>
+        <tr><td>Cross-Workspace Clone</td><td class="no">✗ No</td><td class="partial">Complex</td><td class="yes">✓ Built-in</td></tr>
+        <tr><td>Delta Rollback</td><td class="partial">Manual</td><td class="no">✗ No</td><td class="yes">✓ Automatic</td></tr>
+        <tr><td>Validation & Checksums</td><td class="no">✗ No</td><td class="partial">Basic</td><td class="yes">✓ Row + Hash</td></tr>
+        <tr><td>Interactive Lineage</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ SVG Graph</td></tr>
+        <tr><td>Web UI Dashboard</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ 33 Pages</td></tr>
+        <tr><td>REST API</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ 69+ Endpoints</td></tr>
+        <tr><td>IaC Export</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ TF / Pulumi</td></tr>
+        <tr><td>Scheduling</td><td class="partial">Cron</td><td class="partial">Manual</td><td class="yes">✓ Native Jobs</td></tr>
+        <tr><td>Cost Estimation</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ Pre-Clone</td></tr>
+        <tr><td>Schema Drift Detection</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ Automatic</td></tr>
+        <tr><td>Data Profiling</td><td class="partial">Manual SQL</td><td class="no">✗ No</td><td class="yes">✓ Per-Column</td></tr>
+        <tr><td>Multi-Clone</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ Parallel</td></tr>
+        <tr><td>Compliance Reports</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ 5 Report Types</td></tr>
+        <tr><td>Notifications</td><td class="no">✗ No</td><td class="partial">Basic</td><td class="yes">✓ Slack/Teams/Email</td></tr>
+        <tr><td>Plugin System</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ Extensible</td></tr>
+        <tr><td>Preflight Validation</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ 6 Checks</td></tr>
+        <tr><td>Clone Templates</td><td class="no">✗ No</td><td class="no">✗ No</td><td class="yes">✓ 12 Built-in</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section id="get-started" class="cta-section">
+  <div class="cta-inner reveal">
+    <h2>Ready to Take Control of Your Catalogs?</h2>
+    <p>Install Clone → Xs in seconds and start cloning with full metadata preservation, PII protection, and enterprise governance.</p>
+    <div class="cta-actions">
+      <a href="https://github.com/viral0216/clone-xs" class="btn-primary" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="docs/" class="btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Read the Docs
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="logo-dark.svg" alt="Clone-Xs" style="height:36px; width:auto;">
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/viral0216/clone-xs" target="_blank">GitHub</a>
+      <a href="docs/">Documentation</a>
+      <a href="docs/reference/api">API Reference</a>
+      <a href="docs/reference/changelog">Changelog</a>
+    </div>
+    <div class="footer-copy">MIT License — Built for Data Teams</div>
+  </div>
+</footer>
+
+<script>
+// Navbar scroll effect
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll', () => {
+  navbar.classList.toggle('scrolled', window.scrollY > 50);
+});
+
+// Reveal on scroll
+const revealElements = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry, i) => {
+    if (entry.isIntersecting) {
+      setTimeout(() => entry.target.classList.add('visible'), i * 80);
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+revealElements.forEach(el => observer.observe(el));
+
+// Smooth scroll for nav links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// Counter animation for stats
+function animateCounters() {
+  document.querySelectorAll('.stat-num').forEach(el => {
+    const text = el.textContent;
+    const match = text.match(/^(\d+)/);
+    if (!match) return;
+    const target = parseInt(match[1]);
+    const suffix = text.replace(match[1], '');
+    let current = 0;
+    const step = Math.ceil(target / 40);
+    const timer = setInterval(() => {
+      current += step;
+      if (current >= target) { current = target; clearInterval(timer); }
+      el.textContent = current + suffix;
+    }, 30);
+  });
+}
+const statsObserver = new IntersectionObserver((entries) => {
+  if (entries[0].isIntersecting) { animateCounters(); statsObserver.disconnect(); }
+}, { threshold: 0.5 });
+const statsBar = document.querySelector('.stats-bar');
+if (statsBar) statsObserver.observe(statsBar);
+</script>
+</body>
+</html>

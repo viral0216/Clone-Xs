@@ -1,5 +1,7 @@
 """Incremental sync endpoints — sync only changed tables using Delta history."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
@@ -20,15 +22,34 @@ class IncrementalSyncRequest(BaseModel):
     volume: str | None = None
 
 
+def _check_via_spark_connect(client, source_catalog, destination_catalog, schema_name):
+    """Run incremental check via Spark Connect (blocking — call from thread)."""
+    from src.client import spark_connect_executor
+    from src.incremental_sync import get_tables_needing_sync
+    with spark_connect_executor():
+        return get_tables_needing_sync(
+            client, "SPARK_CONNECT", source_catalog, destination_catalog, schema_name,
+        )
+
+
 @router.post("/incremental/check")
 async def check_changes(req: IncrementalSyncRequest, client=Depends(get_db_client)):
     """Find tables that have changed since last sync."""
     from src.incremental_sync import get_tables_needing_sync
-    config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
-    tables = get_tables_needing_sync(
-        client, wid, req.source_catalog, req.destination_catalog, req.schema_name,
-    )
+
+    if req.serverless and not req.volume:
+        # Spark Connect: run via databricks-connect serverless in a thread
+        tables = await asyncio.to_thread(
+            _check_via_spark_connect, client,
+            req.source_catalog, req.destination_catalog, req.schema_name,
+        )
+    else:
+        config = await get_app_config()
+        wid = req.warehouse_id or config["sql_warehouse_id"]
+        tables = get_tables_needing_sync(
+            client, wid, req.source_catalog, req.destination_catalog, req.schema_name,
+        )
+
     return {"schema": req.schema_name, "tables_needing_sync": len(tables), "tables": tables}
 
 

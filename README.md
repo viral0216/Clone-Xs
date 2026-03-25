@@ -17,23 +17,41 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 
 ### Key Features
 
-- **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental and time-travel support
-- **33-Page Web UI** — Modern React frontend with 10 built-in themes, collapsible sidebar, dedicated login page, and WCAG 2.1 AA accessibility
+- **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental sync, time-travel support, and schema-only clone (empty tables)
+- **33-Page Web UI** — Modern React frontend with dedicated login page, 10 built-in themes, collapsible sidebar, command palette search, and WCAG 2.1 AA accessibility
 - **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
-- **60 CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, optimize, vacuum, and more
+- **Databricks App** — Deploy directly into your workspace with automatic service principal auth — no PAT tokens
+- **60+ CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, optimize, vacuum, pii-scan, demo-data, and more
+- **PII Detection Engine** — Multi-phase scanning (regex + structural validators + UC tags), weighted confidence scoring, cross-column correlation, scan history to Delta, remediation workflow, and auto-tagging back to Unity Catalog
+- **Interactive Lineage** — Multi-hop lineage graph with column-level tracing, notebook/job attribution, and insights panel
 - **Storage Metrics + OPTIMIZE/VACUUM** — Analyze storage breakdown per table, then run OPTIMIZE and VACUUM on selected tables directly from the UI with multi-select
 - **Predictive Optimization Detection** — Warns when Databricks Predictive Optimization is enabled, so you can skip manual maintenance
 - **Create Databricks Job** — Create persistent scheduled jobs directly from the UI or CLI — no manual JSON or `databricks` CLI needed
 - **Serverless Compute** — Run clones without a SQL warehouse (uploads wheel, submits notebook job)
-- **Full Metadata Copy** — Permissions, ownership, tags, properties, security, constraints, comments
-- **Post-Clone Validation** — Row count and checksum validation with auto-rollback on failure
-- **Run Logs to Delta** — Every operation automatically persists logs to Unity Catalog Delta tables
-- **Dynamic Catalog Browser** — 17 pages use cascading dropdowns that auto-populate catalogs, schemas, and tables
-- **Responsive Design** — Mobile-friendly with slide-out sidebar and adaptive layouts
+- **Full Metadata Copy** — Permissions, ownership, tags, properties, CHECK constraints, column masks, row filters, comments
+- **Post-Clone Validation** — Row count and checksum validation with auto-rollback via Delta `RESTORE TABLE`
+- **Run Logs to Delta** — Every operation automatically persists logs to three Unity Catalog Delta tables
+- **Dynamic Catalog Browser** — Databricks-style tree sidebar with lazy loading, search filter, table detail drawer, and resizable panels
+- **Demo Data Generator** — Generate realistic demo catalogs with 10 industries, medallion architecture, FK constraints, PII columns, grants, and volumes
 - **12 Clone Templates** — Pre-built configs for Production Mirror, Dev Sandbox, DR Copy, and more
 - **Multi-Clone** — Clone to multiple workspaces simultaneously
 - **IaC Generation** — Export as Terraform, Pulumi, or Databricks Workflows
 - **Contextual Help** — Every page includes a detailed description and links to official Azure Databricks documentation
+
+### Feature Summary
+
+| Category | Capabilities |
+|----------|-------------|
+| **Cloning** | Deep/shallow clone, schema-only clone, incremental sync, multi-clone, serverless execution, 12 templates |
+| **Metadata** | Permissions, ownership, tags, properties, CHECK constraints, column masks, row filters, comments |
+| **Safety** | Pre-flight checks, post-clone validation (row count + checksum), rollback via Delta RESTORE, execution plan with SQL capture |
+| **PII** | Multi-phase detection, structural validators (Luhn, IBAN, IP), confidence scoring, UC tag integration, scan history, remediation |
+| **Storage** | Per-table storage metrics, OPTIMIZE/VACUUM from UI, Predictive Optimization detection |
+| **Discovery** | Lineage graph, catalog explorer, diff & compare, schema drift, impact analysis, data profiling, cost estimation |
+| **Governance** | RBAC policies, compliance reports, audit trail to Delta (run_logs, clone_operations, clone_metrics) |
+| **Scheduling** | Databricks Jobs with cron, email alerts, retries, tags, TTL policies for auto-expiring catalogs |
+| **Web UI** | 33 pages, login page (PAT + Azure wizard), server-side sessions, 10 themes, WCAG 2.1 AA, page state persistence |
+| **Run Modes** | CLI, Web UI, REST API, Desktop App, Databricks App, Notebook (wheel), Serverless Job |
 
 ---
 
@@ -83,9 +101,9 @@ make web-start
 ```
 
 This starts:
-- **Frontend** on http://localhost:3000
-- **Backend** on http://localhost:8000
-- **API Docs** on http://localhost:8000/docs
+- **Frontend** on http://localhost:3001
+- **Backend** on http://localhost:8080
+- **API Docs** on http://localhost:8080/docs
 
 ### Docker
 
@@ -141,7 +159,7 @@ Every page includes a detailed description and links to official [Azure Databric
 | Category | Pages |
 |----------|-------|
 | **Overview** (3) | Dashboard, Audit Trail, Metrics |
-| **Operations** (8) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Create Job, Multi-Clone |
+| **Operations** (9) | Clone, Sync, Incremental Sync, Generate, Rollback, Templates, Create Job, Multi-Clone, Demo Data |
 | **Discovery** (7) | Explorer, Diff & Compare, Config Diff, Lineage, Dependencies, Impact Analysis, Data Preview |
 | **Analysis** (7) | Reports, PII Scanner, Schema Drift, Profiling, Cost Estimator, Storage Metrics, Compliance |
 | **Management** (7) | Monitor, Preflight, Config, Settings, Warehouse, RBAC, Plugins |
@@ -182,6 +200,11 @@ clxs create-job --source X --dest Y \
   --schedule "0 0 6 * * ?" --notification-email t@co.com  # Scheduled job with alerts
 clxs create-job --source X --dest Y --run-now  # Create and run immediately
 clxs clone --source X --dest Y --schema-only   # Empty tables + all artifacts (no data)
+clxs pii-scan --source X --read-uc-tags        # PII scan with UC tag detection
+clxs pii-scan --source X --apply-tags           # Auto-tag PII columns in Unity Catalog
+clxs lineage --source X --table T               # Trace table lineage (multi-hop)
+clxs demo-data --catalog demo_source            # Generate demo catalog (10 industries)
+clxs demo-data --cleanup --catalog demo_source  # Clean up generated demo catalog
 clxs slack-bot                            # Start Slack bot
 ```
 
@@ -251,6 +274,8 @@ audit_trail:
 | Web UI pages | 33 |
 | REST API endpoints | 69+ |
 | Clone templates | 12 |
+| Built-in themes | 10 |
+| PII detection patterns | 20+ |
 | Pages with catalog dropdowns | 19 |
 | Desktop platforms | macOS, Windows |
 
@@ -269,6 +294,82 @@ Run clones on Databricks serverless compute — no SQL warehouse needed:
 # CLI
 clxs clone --source X --dest Y --serverless --volume /Volumes/cat/schema/vol
 ```
+
+---
+
+## Catalog Explorer
+
+Browse your entire Unity Catalog hierarchy from a single page — schemas, tables, views, columns, sizes, usage patterns, and metadata.
+
+- **Catalog Browser** — Databricks-style tree sidebar showing all catalogs → schemas → tables with lazy loading, search filter, and resizable panel
+- **8 stat cards** — Schemas, Tables, Total Size, Total Rows, Views, External tables, Monthly Cost, Yearly Cost (configurable currency and $/GB price)
+- **Schema Size Distribution** — Donut chart showing storage breakdown by schema
+- **Table Type Distribution** — Donut chart (Managed vs External)
+- **Top Used Tables** — Most queried tables from `system.query.history` with user counts
+- **Most Used Columns** — Column-level usage analytics from `system.access.column_lineage`
+- **7 tabs** — Overview, Tables, Views, Functions, Volumes, UC Objects, PII Detection, Feature Store
+- **Table Detail Drawer** — Click any table to see columns, properties, owner, storage location, and dates
+- **Quick actions** — Preview, Clone, Profile buttons per table. Compare shortcut to Diff page. Export CSV
+
+### UC Objects
+
+The Explorer's UC Objects tab lists all workspace-level Unity Catalog objects in one place: External Locations, Storage Credentials, Connections, Registered Models (ML), Metastore info, Shares, and Recipients.
+
+---
+
+## Cost Estimation
+
+Estimate the storage and DBU cost of cloning a catalog before you run the operation.
+
+Navigate to **Analysis > Cost Estimator**, select a source catalog, and click **Estimate**. The page shows:
+
+- **Total Size** in GB/TB and **Tables Scanned** count
+- **Monthly Cost** and **Yearly Cost** projections (configurable currency and storage price in Settings)
+- **Deep vs Shallow comparison** — side-by-side cost cards showing the savings from shallow clones
+- **Top 10 Largest Tables** — Bar chart with size percentage breakdown
+
+Cost estimates are also shown inline on the Explorer page (Monthly/Yearly Cost cards) and during clone plan preview.
+
+```bash
+clxs estimate --source my_catalog
+```
+
+---
+
+## Data Analysis
+
+Clone-Xs includes several analysis tools for understanding your catalogs before and after cloning:
+
+| Tool | What it does |
+|------|-------------|
+| **Data Profiling** | Column statistics — null %, distinct counts, min/max values, data type distributions |
+| **Schema Drift** | Detect schema differences between source and destination — added/removed/modified columns, type changes, nullability |
+| **Impact Analysis** | Assess downstream blast radius of changes — affected views, functions, and risk level (low/medium/high) |
+| **Diff & Compare** | Side-by-side catalog comparison — missing, extra, and different tables with row count validation |
+| **Dependencies** | View and function dependency graph with recommended creation order |
+| **Data Preview** | Sample rows from source and destination side-by-side |
+| **Compliance** | Governance reports covering permissions, access patterns, and policy adherence |
+
+```bash
+clxs profile --source my_catalog              # Data quality profiling
+clxs schema-drift --source X --dest Y         # Detect schema changes
+clxs diff --source X --dest Y                 # Object-level diff
+clxs view-deps --schema S                     # Dependency graph
+```
+
+---
+
+## Lineage
+
+Interactive lineage visualization powered by `system.access.table_lineage`, `system.access.column_lineage`, and Clone-Xs audit logs.
+
+- **Multi-hop tracing** — Up to 5 hops deep with configurable depth slider
+- **Upstream/downstream tabs** — Trace data flow in either direction
+- **Column-level lineage** — See which columns flow between tables
+- **Notebook/job attribution** — Identify which notebooks and jobs created the lineage
+- **Time range filtering** — Filter lineage to a specific date range
+- **Insights panel** — Most connected tables, root sources, terminal sinks, top columns by usage, active users
+- **Export** — JSON and CSV export
 
 ---
 
@@ -366,6 +467,33 @@ clxs vacuum --source my_catalog --dry-run              # Preview without executi
 
 ---
 
+## Demo Data Generator
+
+Generate realistic demo catalogs for testing Clone-Xs or showcasing Unity Catalog features — no production data needed.
+
+```bash
+# Generate a full demo catalog (10 industries, medallion architecture)
+clxs demo-data --catalog demo_source --scale-factor 0.1
+
+# Quick preset (fewer tables, faster)
+clxs demo-data --catalog demo_source --preset quick
+
+# Generate and auto-clone to a destination
+clxs demo-data --catalog demo_source --dest-catalog demo_dest
+
+# Clean up
+clxs demo-data --cleanup --catalog demo_source
+```
+
+Each industry (healthcare, financial, retail, telecom, manufacturing, energy, education, real estate, logistics, insurance) generates tables, views, and UDFs with:
+- **Medallion architecture** — Bronze, Silver, Gold schemas
+- **Referential integrity** — Primary keys, foreign keys (39 FK relationships)
+- **PII columns** — For testing PII detection (email, phone, SSN)
+- **Grants & permissions** — Auto-grants to `data_analysts` and `data_engineers`
+- **Delta features** — Version history, CHECK constraints, column masks, row filters, SCD2 columns
+
+---
+
 ## Security
 
 - **Server-side sessions** — login creates a server-side session with a cached WorkspaceClient; only a session ID is stored in the browser's localStorage
@@ -387,13 +515,13 @@ This project follows the [Contributor Covenant Code of Conduct](.github/CODE_OF_
 ### Areas Where Help Is Welcome
 
 - Adding new clone safety checks and validations
-- Improving dark mode across all 33 pages
+- Improving theme coverage across all 33 pages (10 built-in themes)
 - Writing tests (frontend and backend)
 - Documentation improvements
-- Accessibility enhancements
 - Performance optimizations for large catalogs
 - Multi-cloud authentication (AWS, GCP)
 - New clone templates for common patterns
+- New PII detection patterns and validators
 
 ### Contributors
 
@@ -407,7 +535,7 @@ Thanks to everyone who contributes to Clone-Xs!
 
 ## Documentation
 
-For detailed documentation — full feature walkthrough, 50+ how-to guides, configuration reference, and architecture — see **[HOWTO.md](.github/HOWTO.md)**.
+For detailed documentation — full feature walkthrough, 58+ how-to guides, configuration reference, and architecture — see **[HOWTO.md](.github/HOWTO.md)**.
 
 To run the docs site locally:
 
@@ -433,6 +561,12 @@ make docs-start
 | `make prod` | Build frontend + run production server |
 | `make docker` | Build Docker image |
 | `make deploy` | Build, install, and upload to Databricks Volume |
+
+---
+
+## Early Development Notice
+
+> Clone-Xs is in active early development. While the core clone, sync, and audit features are stable, this is still a young project and you should expect bugs. **Please test in non-production environments first** — use a dev workspace, a sandbox catalog, or the [Databricks Community Edition](https://community.cloud.databricks.com/) (free). If you hit an issue, please [open a GitHub issue](https://github.com/viral0216/Clone-Xs/issues) — every bug report helps make the tool better for everyone.
 
 ---
 

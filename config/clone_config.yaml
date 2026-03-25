@@ -1,6 +1,6 @@
 source_catalog: supplier_portal
 destination_catalog: supplier_portal_clone
-sql_warehouse_id: ""
+sql_warehouse_id: ''
 clone_type: DEEP
 load_type: FULL
 catalog_location: ''

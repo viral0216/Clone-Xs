@@ -185,8 +185,8 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           </button>
         )}
         <Link to="/">
-          <img src="/logo.svg" alt="Clone→Xs" className="h-7 dark:hidden" />
-          <img src="/logo-dark.svg" alt="Clone→Xs" className="h-7 hidden dark:block" />
+          <img src="/logo.svg" alt="Clone→Xs" className="h-9 dark:hidden" />
+          <img src="/logo-dark.svg" alt="Clone→Xs" className="h-9 hidden dark:block" />
         </Link>
         <span className="text-gray-300 dark:text-gray-600">/</span>
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{pageName}</span>
@@ -210,7 +210,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
             aria-controls="header-search-results"
             aria-activedescendant={showResults && results[selectedIdx] ? `search-result-${selectedIdx}` : undefined}
             aria-label="Search pages"
-            className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#E8453C]/20 focus:border-[#E8453C]"
+            className="w-full pl-9 pr-3 py-1.5 text-sm text-center bg-gray-50 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#E8453C]/20 focus:border-[#E8453C]"
           />
         </div>
 

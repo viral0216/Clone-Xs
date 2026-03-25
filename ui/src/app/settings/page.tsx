@@ -6,6 +6,7 @@ import { useAuthStatus, useWarehouses } from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { allNavSections } from "@/components/layout/Sidebar";
+import PageHeader from "@/components/PageHeader";
 import {
   Settings2,
   Database,
@@ -444,8 +445,12 @@ export default function SettingsPage() {
     <div className="flex flex-col h-full">
       {/* ─── Page header ─── */}
       <div className="shrink-0 pb-4 border-b border-border mb-0">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Workspace connection, authentication, and preferences</p>
+        <PageHeader
+          title="Settings"
+          icon={Settings2}
+          description="Workspace connection, authentication, and preferences"
+          breadcrumbs={["Management", "Settings"]}
+        />
       </div>
 
       {/* ─── Two-panel layout ─── */}
@@ -832,19 +837,19 @@ function AuditSettings() {
       const sch = at.schema || "logs";
       setAuditCatalog(cat);
       setAuditSchema(sch);
-      sessionStorage.setItem("audit_catalog", cat);
-      sessionStorage.setItem("audit_schema", sch);
+      localStorage.setItem("audit_catalog", cat);
+      localStorage.setItem("audit_schema", sch);
     }).catch(() => {
-      const cat = sessionStorage.getItem("audit_catalog") || "clone_audit";
-      const sch = sessionStorage.getItem("audit_schema") || "logs";
+      const cat = localStorage.getItem("audit_catalog") || "clone_audit";
+      const sch = localStorage.getItem("audit_schema") || "logs";
       setAuditCatalog(cat);
       setAuditSchema(sch);
     });
   }, []);
 
   const handleSave = async () => {
-    sessionStorage.setItem("audit_catalog", auditCatalog);
-    sessionStorage.setItem("audit_schema", auditSchema);
+    localStorage.setItem("audit_catalog", auditCatalog);
+    localStorage.setItem("audit_schema", auditSchema);
     setSaving(true);
     try {
       await api.post("/config/audit", { catalog: auditCatalog, schema: auditSchema });

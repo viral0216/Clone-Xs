@@ -32,7 +32,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     url += `?${searchParams.toString()}`;
   }
 
-  // All credentials in localStorage (persists across browser restarts)
+  // Credentials in localStorage
   const host = localStorage.getItem("dbx_host") || "";
   const token = localStorage.getItem("dbx_token") || "";
   const warehouse = localStorage.getItem("dbx_warehouse_id") || "";

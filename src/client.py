@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import threading
 import time
@@ -87,6 +88,37 @@ def set_sql_executor(executor) -> None:
     global _sql_executor
     _sql_executor = executor
     logger.info("Custom SQL executor configured (spark.sql mode)")
+
+
+# Lock for thread-safe executor swapping in spark_connect_executor()
+_executor_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def spark_connect_executor():
+    """Context manager that routes execute_sql() through Spark Connect.
+
+    Uses databricks-connect serverless to run SQL remotely — no SQL warehouse
+    or Databricks job needed. Thread-safe: holds _executor_lock for the
+    duration so concurrent Spark Connect jobs are serialized.
+    """
+    from src.spark_session import get_spark
+
+    spark = get_spark()
+
+    def _exec(sql):
+        return [row.asDict() for row in spark.sql(sql).collect()]
+
+    with _executor_lock:
+        global _sql_executor
+        prev = _sql_executor
+        _sql_executor = _exec
+        logger.info("Spark Connect executor active (serverless)")
+        try:
+            yield
+        finally:
+            _sql_executor = prev
+            logger.info("Spark Connect executor removed, restored previous")
 
 
 def set_sql_capture(capture_fn) -> None:

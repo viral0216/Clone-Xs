@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import PageHeader from "@/components/PageHeader";
 import {
   GitCompareArrows, Loader2, Upload, CheckCircle, XCircle,
 } from "lucide-react";
@@ -88,10 +89,12 @@ export default function ConfigDiffPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold">Config Diff</h1>
-        <p className="text-gray-500 mt-1">Side-by-side comparison of two clone configurations — highlights differences in settings, permissions, and options between config files or profiles.</p>
-      </div>
+      <PageHeader
+        title="Config Diff"
+        icon={GitCompareArrows}
+        description="Side-by-side comparison of two clone configurations — highlights differences in settings, permissions, and options between config files or profiles."
+        breadcrumbs={["Discovery", "Config Diff"]}
+      />
 
       {/* Profile Loader */}
       <Card>

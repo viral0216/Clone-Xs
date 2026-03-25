@@ -274,8 +274,12 @@ export default function IncrementalSyncPage() {
   const [error, setError] = useState("");
   const [schemaResults, setSchemaResults] = useState<SchemaCheck[]>([]);
   const [syncResult, setSyncResult] = useState<any>(null);
-  const [serverless, setServerless] = useState(false);
-  const [volume, setVolume] = useState("");
+  const [serverless, setServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-incr-serverless") === "true"; } catch { return false; }
+  });
+  const [volume, setVolume] = useState(() => {
+    try { return localStorage.getItem("clxs-incr-volume") || ""; } catch { return ""; }
+  });
   const volumes = useVolumes();
   // Track selected tables as "schema.table_name" keys
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
@@ -321,6 +325,7 @@ export default function IncrementalSyncPage() {
           source_catalog: sourceCatalog,
           destination_catalog: destCatalog,
           schema_name: sourceSchema,
+          serverless,
         });
         const result = { ...data, schema: sourceSchema };
         setSchemaResults([result]);
@@ -345,6 +350,7 @@ export default function IncrementalSyncPage() {
               source_catalog: sourceCatalog,
               destination_catalog: destCatalog,
               schema_name: s,
+              serverless,
             });
             const result: SchemaCheck = { ...data, schema: s, loading: false };
 
@@ -594,18 +600,25 @@ export default function IncrementalSyncPage() {
 
           {/* Serverless toggle */}
           <div className="flex gap-4 items-start">
-            <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
+            <label className="flex items-center gap-2 text-[13px] cursor-pointer pt-1">
               <input
                 type="checkbox"
                 checked={serverless}
-                onChange={(e) => setServerless(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
+                onChange={(e) => { setServerless(e.target.checked); try { localStorage.setItem("clxs-incr-serverless", String(e.target.checked)); } catch {} }}
+                className="h-3.5 w-3.5 rounded border-border"
               />
               Use Serverless Compute
+              {serverless && (
+                <Badge variant="outline" className="text-xs ml-1">
+                  {volume ? "Databricks Job" : "Spark Connect"}
+                </Badge>
+              )}
             </label>
             {serverless && (
               <div className="flex-1 max-w-md">
-                <label className="text-xs text-muted-foreground mb-1 block">UC Volume (required for serverless)</label>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  UC Volume (optional — select for remote job mode)
+                </label>
                 {volumes.isLoading ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading volumes...
@@ -614,15 +627,15 @@ export default function IncrementalSyncPage() {
                   <Input
                     placeholder="/Volumes/catalog/schema/volume"
                     value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
+                    onChange={(e) => { setVolume(e.target.value); try { localStorage.setItem("clxs-incr-volume", e.target.value); } catch {} }}
                   />
                 ) : (
                   <select
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
                     value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
+                    onChange={(e) => { setVolume(e.target.value); try { localStorage.setItem("clxs-incr-volume", e.target.value); } catch {} }}
                   >
-                    <option value="">Select a volume...</option>
+                    <option value="">No volume — use Spark Connect</option>
                     {(volumes.data || []).map((v: any) => (
                       <option key={v.path} value={v.path}>
                         {v.path} ({v.type})
@@ -630,6 +643,11 @@ export default function IncrementalSyncPage() {
                     ))}
                   </select>
                 )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {volume
+                    ? "Submits a Databricks job — runs remotely on serverless compute"
+                    : "Runs SQL via Spark Connect — no warehouse or job needed"}
+                </p>
               </div>
             )}
           </div>
@@ -701,10 +719,10 @@ export default function IncrementalSyncPage() {
                 <Button variant="ghost" size="sm" onClick={deselectAll}>Clear</Button>
                 <Button
                   onClick={runSync}
-                  disabled={selectedCount === 0 || syncing || (serverless && !volume)}
+                  disabled={selectedCount === 0 || syncing}
                 >
                   {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  {serverless ? "Serverless " : ""}Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
+                  {serverless ? (volume ? "Submit Job: " : "Spark Connect: ") : ""}Sync {selectedCount} Table{selectedCount !== 1 ? "s" : ""}
                 </Button>
               </div>
             </div>

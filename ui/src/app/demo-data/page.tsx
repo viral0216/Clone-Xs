@@ -436,7 +436,7 @@ export default function DemoDataPage() {
               {INDUSTRIES.map((industry) => (
                 <label
                   key={industry}
-                  className="flex items-center gap-2 cursor-pointer select-none"
+                  className="flex items-center gap-2 text-sm cursor-pointer select-none"
                 >
                   <input
                     type="checkbox"
@@ -533,7 +533,7 @@ export default function DemoDataPage() {
 
           {/* Drop Existing */}
           <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={dropExisting}
@@ -550,7 +550,7 @@ export default function DemoDataPage() {
 
           {/* Medallion Architecture */}
           <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={medallion}
@@ -568,7 +568,7 @@ export default function DemoDataPage() {
           {/* UC Best Practices */}
           {medallion && (
             <div className="ml-6">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={ucBestPractices}
@@ -597,7 +597,7 @@ export default function DemoDataPage() {
 
           {/* Create Functions */}
           <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={createFunctions}
@@ -614,7 +614,7 @@ export default function DemoDataPage() {
 
           {/* Create Volumes */}
           <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={createVolumes}

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import PageHeader from "@/components/PageHeader";
 import { Loader2, XCircle, Server, Play, Square, RefreshCw, Check, Star } from "lucide-react";
 
 function statusBadge(status: string) {
@@ -90,18 +91,19 @@ export default function WarehousePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Warehouse Manager</h1>
-          <p className="text-muted-foreground mt-1">View and manage SQL warehouses in your workspace — status, cluster size, auto-stop settings, and select the active warehouse for operations.</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">SQL warehouses</a>
-          </p>
-        </div>
-        <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Warehouse Manager"
+        icon={Server}
+        description="View and manage SQL warehouses in your workspace — status, cluster size, auto-stop settings, and select the active warehouse for operations."
+        breadcrumbs={["Management", "Warehouses"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse"
+        docsLabel="SQL warehouses"
+        actions={
+          <Button variant="outline" onClick={loadWarehouses} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />Refresh
+          </Button>
+        }
+      />
 
       {loading && warehouses.length === 0 && (
         <Card className="bg-card border-border">

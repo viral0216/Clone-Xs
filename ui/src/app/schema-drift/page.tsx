@@ -7,6 +7,7 @@ import CatalogPicker from "@/components/CatalogPicker";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
+import PageHeader from "@/components/PageHeader";
 import {
   GitBranch, Loader2, XCircle, ArrowRight, Plus, Minus, RefreshCw,
 } from "lucide-react";
@@ -53,13 +54,14 @@ export default function SchemaDriftPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold">Schema Drift</h1>
-        <p className="text-gray-500 mt-1">Detect schema drift between source and destination — added, removed, or modified columns, data type changes, and nullability differences across all tables.</p>
-        <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Schema evolution</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Schema Drift"
+        icon={GitBranch}
+        description="Detect schema drift between source and destination — added, removed, or modified columns, data type changes, and nullability differences across all tables."
+        breadcrumbs={["Analysis", "Schema Drift"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema"
+        docsLabel="Schema evolution"
+      />
 
       {/* Input */}
       <Card>

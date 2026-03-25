@@ -149,7 +149,7 @@ export default function App() {
           </Routes>
 
           {/* Center Content */}
-          <main id="main-content" className="flex-1 bg-background overflow-auto p-2 sm:p-3 md:p-4 text-[13px]">
+          <main id="main-content" className="flex-1 bg-background overflow-auto p-4 sm:p-6 md:p-8 text-[13px]">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />

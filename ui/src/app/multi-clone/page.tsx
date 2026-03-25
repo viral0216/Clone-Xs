@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import { Copy, Plus, Trash2, Play } from "lucide-react";
 
 interface Destination {
@@ -78,13 +79,14 @@ export default function MultiClonePage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Multi-Clone</h1>
-        <p className="text-muted-foreground mt-1">Clone a catalog to multiple Databricks workspaces in parallel — useful for multi-region deployments, disaster recovery, and dev/staging/prod provisioning.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/create-metastore" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Unity Catalog metastore</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Multi-Clone"
+        icon={Copy}
+        description="Clone a catalog to multiple Databricks workspaces in parallel — useful for multi-region deployments, disaster recovery, and dev/staging/prod provisioning."
+        breadcrumbs={["Operations", "Multi-Clone"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/create-metastore"
+        docsLabel="Unity Catalog metastore"
+      />
 
       {error && (
         <Card className="border-destructive">

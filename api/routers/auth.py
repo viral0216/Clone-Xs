@@ -1,6 +1,8 @@
 """Authentication endpoints."""
 
+import logging
 import secrets
+import threading
 from typing import Optional
 
 from databricks.sdk import WorkspaceClient
@@ -9,6 +11,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from api.dependencies import get_db_client
 from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ServicePrincipalRequest, WarehouseInfo
 from src.auth import clear_cache, ensure_authenticated, get_client, is_databricks_app
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -57,6 +61,58 @@ def delete_session(session_id: Optional[str]):
         del _sessions[session_id]
 
 
+def _auto_start_warehouse(client: WorkspaceClient):
+    """Start the first available SQL warehouse in the background.
+
+    Finds the configured warehouse (from config) or the first stopped one
+    and issues a start command. Runs in a daemon thread so login is not blocked.
+    """
+    def _start():
+        try:
+            from src.auth import list_warehouses
+            warehouses = list_warehouses(client)
+            if not warehouses:
+                logger.debug("No warehouses found — skipping auto-start")
+                return
+
+            # Prefer the warehouse configured in settings (clone_config.yaml)
+            try:
+                from src.config import load_config
+                cfg = load_config()
+                configured_wid = cfg.get("sql_warehouse_id", "")
+            except Exception:
+                configured_wid = ""
+
+            target = None
+            if configured_wid:
+                target = next((w for w in warehouses if w["id"] == configured_wid), None)
+
+            if target:
+                logger.info("Using configured default warehouse: %s (%s)", target.get("name", ""), target["id"])
+
+            # Fall back to the first stopped warehouse if no default is configured
+            if not target:
+                target = next((w for w in warehouses if w["state"] == "STOPPED"), None)
+
+            if not target:
+                logger.debug("No stopped warehouses to start")
+                return
+
+            wid = target["id"]
+            state = target["state"]
+            if state in ("RUNNING", "STARTING"):
+                logger.debug("Warehouse %s already %s", wid, state)
+                return
+
+            logger.info("Auto-starting warehouse %s (%s)", target.get("name", wid), wid)
+            client.warehouses.start(wid)
+        except Exception as e:
+            logger.debug("Auto-start warehouse failed (non-fatal): %s", e)
+
+    thread = threading.Thread(target=_start, daemon=True, name="warehouse-autostart")
+    thread.start()
+
+
 @router.get("/auto-login")
 async def auto_login():
     """Auto-login when running as a Databricks App (service principal injected)."""
@@ -68,6 +124,7 @@ async def auto_login():
         user = info.get("user", "")
         host = info.get("host", "")
         session_id = create_session(client, user=user, host=host, auth_method="databricks-app")
+        _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True,
             user=user,
@@ -90,6 +147,7 @@ async def login(req: LoginRequest):
         host = info.get("host", "")
         method = info.get("auth_method", "pat")
         session_id = create_session(client, user=user, host=host, auth_method=method)
+        _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True,
             user=user,
@@ -171,6 +229,7 @@ async def oauth_login(req: OAuthLoginRequest):
         user = info.get("user", "")
         host = info.get("host", "")
         session_id = create_session(client, user=user, host=host, auth_method="oauth-u2m")
+        _auto_start_warehouse(client)
         return AuthStatus(authenticated=True, user=user, host=host, auth_method="oauth-u2m", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -198,6 +257,7 @@ async def service_principal_login(req: ServicePrincipalRequest):
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         session_id = create_session(client, user=user, host=req.host, auth_method="service-principal")
+        _auto_start_warehouse(client)
         return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -263,6 +323,7 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         session_id = create_session(client, user=user, host=req.host, auth_method="azure-cli")
+        _auto_start_warehouse(client)
         return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli", session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))

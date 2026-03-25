@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import {
   AlertTriangle, Loader2, XCircle, Network, Eye, FunctionSquare, Database,
 } from "lucide-react";
@@ -32,13 +33,14 @@ export default function ImpactPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Impact Analysis</h1>
-        <p className="text-muted-foreground mt-1">Assess the blast radius of schema changes — shows which views, functions, and downstream consumers would be affected before you modify a table.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Unity Catalog lineage</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Impact Analysis"
+        icon={AlertTriangle}
+        description="Assess the blast radius of schema changes — shows which views, functions, and downstream consumers would be affected before you modify a table."
+        breadcrumbs={["Discovery", "Impact Analysis"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage"
+        docsLabel="Unity Catalog lineage"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

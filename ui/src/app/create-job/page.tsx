@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useVolumes } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import {
   Briefcase, Loader2, CheckCircle, XCircle, ExternalLink, Copy, CalendarClock, Bell, RotateCcw, Clock, Tag, Settings2, Filter, Gauge,
 } from "lucide-react";
@@ -315,13 +316,14 @@ export default function CreateJobPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold">Create Databricks Job</h1>
-        <p className="text-gray-500 mt-1">Create a persistent Databricks Job that runs Clone-Xs automatically — uploads the wheel, creates a notebook task, sets cron schedule, email notifications, retries, and tags. The job appears in your Databricks Jobs UI.</p>
-        <p className="text-xs text-gray-400 mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Databricks Jobs API</a> · <a href="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/schedule" target="_blank" rel="noopener noreferrer" className="text-[#E8453C] hover:underline">Quartz cron syntax</a>
-        </p>
-      </div>
+      <PageHeader
+        title="Create Databricks Job"
+        icon={Briefcase}
+        description="Create a persistent Databricks Job that runs Clone-Xs automatically — uploads the wheel, creates a notebook task, sets cron schedule, email notifications, retries, and tags. The job appears in your Databricks Jobs UI."
+        breadcrumbs={["Operations", "Create Job"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs"
+        docsLabel="Databricks Jobs API"
+      />
 
       {/* Configuration */}
       <Card>
@@ -721,7 +723,7 @@ export default function CreateJobPage() {
           )}
           {loading ? "Creating Job..." : updateJobId ? "Update Job" : "Create Databricks Job"}
         </Button>
-        <label className="flex items-center gap-2 ml-4 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm ml-4 cursor-pointer">
           <input
             type="checkbox"
             checked={runAfterCreate}

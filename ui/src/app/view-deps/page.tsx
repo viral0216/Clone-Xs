@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
+import PageHeader from "@/components/PageHeader";
 import { GitFork, Loader2, XCircle, ArrowRight, List } from "lucide-react";
 
 interface DepsResult {
@@ -90,13 +91,14 @@ export default function ViewDepsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">View Dependencies</h1>
-        <p className="text-muted-foreground mt-1">Map view and function dependencies within a schema — shows which views depend on which tables, and computes the correct creation order for cloning.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          <a href="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-ddl-create-view" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Views</a>
-        </p>
-      </div>
+      <PageHeader
+        title="View Dependencies"
+        icon={GitFork}
+        description="Map view and function dependencies within a schema — shows which views depend on which tables, and computes the correct creation order for cloning."
+        breadcrumbs={["Discovery", "Dependencies"]}
+        docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-ddl-create-view"
+        docsLabel="Views"
+      />
 
       <Card className="bg-card border-border">
         <CardContent className="pt-6">

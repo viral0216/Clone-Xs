@@ -213,6 +213,34 @@ class JobManager:
                         "enable_rollback": False,
                     }
                     result = submit_clone_job(client, clone_config, volume_path=config["volume"])
+                elif config.get("serverless"):
+                    # Spark Connect: run locally via databricks-connect serverless
+                    from src.client import spark_connect_executor
+                    from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+                    schema = config["schema_name"]
+                    with spark_connect_executor():
+                        tables = get_tables_needing_sync(
+                            client, "SPARK_CONNECT",
+                            config["source_catalog"], config["destination_catalog"], schema,
+                        )
+                        synced, failed = 0, 0
+                        for t in tables:
+                            ok = sync_changed_table(
+                                client, "SPARK_CONNECT",
+                                config["source_catalog"], config["destination_catalog"],
+                                schema, t["table_name"],
+                                clone_type=config.get("clone_type", "DEEP"),
+                                dry_run=config.get("dry_run", False),
+                            )
+                            if ok:
+                                synced += 1
+                            else:
+                                failed += 1
+                    result = {
+                        "schema": schema, "tables_checked": len(tables),
+                        "synced": synced, "failed": failed,
+                        "mode": "spark_connect",
+                    }
                 else:
                     from src.incremental_sync import get_tables_needing_sync, sync_changed_table
                     schema = config["schema_name"]

@@ -3,15 +3,20 @@
 import time
 from unittest.mock import MagicMock
 
-from api.routers.auth import (
-    create_session,
-    delete_session,
-    get_session,
-    get_session_client,
-    _sessions,
-    _sessions_lock,
-    SESSION_TTL_SECONDS,
-)
+import pytest
+
+try:
+    from api.routers.auth import (
+        create_session,
+        delete_session,
+        get_session,
+        get_session_client,
+        _sessions,
+        _sessions_lock,
+        SESSION_TTL_SECONDS,
+    )
+except ImportError:
+    pytest.skip("fastapi not installed (install with: pip install -e '.[web]')", allow_module_level=True)
 
 
 def _clear_sessions():

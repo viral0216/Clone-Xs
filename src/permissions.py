@@ -127,7 +127,7 @@ def _copy_grants_via_sql(
 
     # Fallback to SQL
     warehouse_id = _resolve_warehouse_id(warehouse_id)
-    if not warehouse_id:
+    if not warehouse_id and not _has_sql_executor():
         logger.debug(f"Skipping permissions for {label}: no warehouse ID available")
         return
     try:

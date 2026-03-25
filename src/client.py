@@ -141,12 +141,6 @@ def execute_sql(
     Includes retry logic with exponential backoff for transient failures.
     In dry_run mode, logs the SQL without executing write operations.
     """
-    # Guard: fail fast if no warehouse is configured
-    if not warehouse_id or not warehouse_id.strip():
-        raise ValueError(
-            "No SQL warehouse selected. Go to Settings → SQL Warehouses and select a running warehouse."
-        )
-
     # Capture hook — fires for every statement, even dry-run writes
     if _sql_capture is not None:
         _sql_capture(sql)
@@ -159,9 +153,15 @@ def execute_sql(
             logger.info(f"[DRY RUN] Would execute: {sql}")
             return []
 
-    # Route through pluggable executor (spark.sql in serverless jobs)
+    # Route through pluggable executor (spark.sql in serverless jobs — no warehouse needed)
     if _sql_executor is not None:
         return _sql_executor(sql)
+
+    # Guard: fail fast if no warehouse is configured (only when using warehouse-based execution)
+    if not warehouse_id or not warehouse_id.strip():
+        raise ValueError(
+            "No SQL warehouse selected. Go to Settings → SQL Warehouses and select a running warehouse."
+        )
 
     last_exception = None
     for attempt in range(1, max_retries + 1):

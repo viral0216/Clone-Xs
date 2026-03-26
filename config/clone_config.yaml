@@ -95,6 +95,25 @@ profiles:
     approval_required: true
     impact_check_before_clone: true
     metrics_enabled: true
+system_insights:
+  enabled: true
+  billing_days: 30
+  job_name_filter: ''
+incremental_sync_mode: auto
+ml_assets:
+  clone_models: true
+  clone_feature_tables: true
+  clone_vector_indexes: true
+advanced_tables:
+  clone_materialized_views: true
+  clone_streaming_tables: true
+  clone_online_tables: true
+lakehouse_monitor:
+  clone_monitors: true
+federation:
+  enabled: true
+delta_sharing:
+  enabled: true
 audit_trail:
   catalog: edp_dev
   schema: logs

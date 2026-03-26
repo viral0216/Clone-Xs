@@ -7,7 +7,8 @@ import {
   GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
   Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
   ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
-  X, Plus, Database, PanelLeftClose, PanelLeftOpen,
+  X, Plus, Database, PanelLeftClose, PanelLeftOpen, Cpu, Brain, Layers,
+  Radio, Share2, Globe,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -35,6 +36,7 @@ export const allNavSections: NavSection[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/audit", label: "Audit Trail", icon: History },
       { href: "/metrics", label: "Metrics", icon: BarChart3 },
+      { href: "/system-insights", label: "System Insights", icon: Cpu },
     ],
   },
   {
@@ -49,6 +51,7 @@ export const allNavSections: NavSection[] = [
       { href: "/create-job", label: "Create Job", icon: Briefcase },
       { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
       { href: "/demo-data", label: "Demo Data", icon: Database },
+      { href: "/ml-assets", label: "ML Assets", icon: Brain },
     ],
   },
   {
@@ -85,6 +88,15 @@ export const allNavSections: NavSection[] = [
       { href: "/warehouse", label: "Warehouse", icon: Server },
       { href: "/rbac", label: "RBAC", icon: Lock },
       { href: "/plugins", label: "Plugins", icon: Puzzle },
+    ],
+  },
+  {
+    title: "Advanced",
+    items: [
+      { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
+      { href: "/lakehouse-monitor", label: "Lakehouse Monitor", icon: Radio },
+      { href: "/federation", label: "Federation", icon: Globe },
+      { href: "/delta-sharing", label: "Delta Sharing", icon: Share2 },
     ],
   },
 ];

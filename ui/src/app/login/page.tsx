@@ -142,7 +142,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const labelClass = "block text-[11px] uppercase tracking-[0.1em] text-gray-400 dark:text-[#777] mb-2 font-medium";
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "'Inter', 'Roboto', system-ui, sans-serif" }}>
+    <main className="min-h-screen flex" style={{ fontFamily: "'Inter', 'Roboto', system-ui, sans-serif" }}>
 
       {/* ─── Left panel — red hero ─── */}
       <div className="hidden lg:flex lg:w-[520px] xl:w-[560px] relative overflow-hidden bg-[#E8453C] flex-col">
@@ -237,7 +237,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
           {/* Desktop heading */}
           <div className="hidden lg:block mb-7">
-            <h2 className="text-[24px] text-gray-900 dark:text-white font-semibold tracking-tight">Sign in</h2>
+            <h1 className="text-[24px] text-gray-900 dark:text-white font-semibold tracking-tight">Sign in</h1>
             <p className="text-[14px] text-gray-400 dark:text-[#666] mt-1">Connect to your Databricks workspace</p>
           </div>
 
@@ -476,6 +476,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

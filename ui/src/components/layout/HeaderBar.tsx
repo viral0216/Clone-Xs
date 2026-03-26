@@ -6,7 +6,9 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
 import PortalSwitcher from "@/components/PortalSwitcher";
+import CloneBuilder from "@/components/CloneBuilder";
 import { api } from "@/lib/api-client";
+import { useAiStatus } from "@/hooks/useAi";
 
 const ALL_PAGES = [
   { href: "/", label: "Dashboard", keywords: "home overview" },
@@ -83,6 +85,8 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
 
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const themePickerRef = useRef<HTMLDivElement>(null);
+  const [showCloneBuilder, setShowCloneBuilder] = useState(false);
+  const aiStatus = useAiStatus();
 
   useEffect(() => {
     const root = document.documentElement.classList;
@@ -253,6 +257,17 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
 
       {/* Right */}
       <div className="flex items-center gap-0.5">
+        {aiStatus.data?.available && (
+          <button
+            onClick={() => setShowCloneBuilder(true)}
+            className={iconBtn}
+            title="AI Clone Builder"
+            aria-label="Open AI Clone Builder"
+          >
+            <Sparkles className="h-4 w-4" />
+          </button>
+        )}
+        {showCloneBuilder && <CloneBuilder onClose={() => setShowCloneBuilder(false)} />}
         <PortalSwitcher />
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1.5 hidden sm:block" />
         <div className="relative group">

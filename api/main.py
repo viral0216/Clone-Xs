@@ -312,6 +312,30 @@ app.include_router(deps.router, prefix="/api", tags=["dependencies"])
 from api.routers import governance
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 
+from api.routers import system_insights
+app.include_router(system_insights.router, prefix="/api/system-insights", tags=["system-insights"])
+
+from api.routers import ml_assets
+app.include_router(ml_assets.router, prefix="/api/ml-assets", tags=["ml-assets"])
+
+from api.routers import advanced_tables
+app.include_router(advanced_tables.router, prefix="/api/advanced-tables", tags=["advanced-tables"])
+
+from api.routers import ai
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+
+from api.routers import notifications
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+
+from api.routers import lakehouse_monitor
+app.include_router(lakehouse_monitor.router, prefix="/api/lakehouse-monitor", tags=["lakehouse-monitor"])
+
+from api.routers import federation
+app.include_router(federation.router, prefix="/api/federation", tags=["federation"])
+
+from api.routers import delta_sharing
+app.include_router(delta_sharing.router, prefix="/api/delta-sharing", tags=["delta-sharing"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

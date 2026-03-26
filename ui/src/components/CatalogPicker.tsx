@@ -4,30 +4,40 @@ import { api } from "@/lib/api-client";
 import { Loader2, RefreshCw } from "lucide-react";
 
 interface CatalogPickerProps {
-  catalog: string;
+  catalog?: string;
   schema?: string;
   table?: string;
-  onCatalogChange: (catalog: string) => void;
+  onCatalogChange?: (catalog: string) => void;
   onSchemaChange?: (schema: string) => void;
   onTableChange?: (table: string) => void;
   showSchema?: boolean;
   showTable?: boolean;
   schemaLabel?: string;
   tableLabel?: string;
+  placeholder?: string;
+  /** Alias for `catalog` — used by some pages. */
+  value?: string;
+  /** Alias for `onCatalogChange` — used by some pages. */
+  onChange?: (catalog: string) => void;
 }
 
 export default function CatalogPicker({
-  catalog,
+  catalog: catalogProp,
   schema = "",
   table = "",
-  onCatalogChange,
+  onCatalogChange: onCatalogChangeProp,
   onSchemaChange,
   onTableChange,
   showSchema = true,
   showTable = true,
   schemaLabel = "Schema",
   tableLabel = "Table",
+  value,
+  onChange,
 }: CatalogPickerProps) {
+  // Support both prop conventions: catalog/onCatalogChange and value/onChange
+  const catalog = catalogProp ?? value ?? "";
+  const onCatalogChange = onCatalogChangeProp ?? onChange ?? (() => {});
   const qc = useQueryClient();
 
   // Cached queries — persist to localStorage via React Query persister

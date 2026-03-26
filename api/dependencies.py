@@ -86,6 +86,16 @@ async def get_app_config(config_path: str = "config/clone_config.yaml", profile:
         raise HTTPException(status_code=400, detail=f"Config error: {e}")
 
 
+async def get_rest_client(client=Depends(get_db_client)):
+    """Get a DatabricksRestClient for direct REST API access.
+
+    Uses the authenticated WorkspaceClient to create a REST client
+    that can be used as a fallback when SDK methods fail.
+    """
+    from src.rest_api_client import get_rest_client as _get_rest
+    return _get_rest(client)
+
+
 async def get_job_manager(request: Request):
     """Get the shared JobManager from app state."""
     return request.app.state.job_manager

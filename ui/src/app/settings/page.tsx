@@ -128,9 +128,9 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
               <span
                 className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                   i < current
-                    ? "bg-muted/200/15 text-foreground dark:text-gray-300"
+                    ? "bg-primary/10 text-foreground dark:text-gray-300"
                     : i === current
-                    ? "bg-muted/300/15 text-[#E8453C] dark:text-[#E8453C]"
+                    ? "bg-primary/10 text-primary"
                     : "bg-muted text-muted-foreground"
                 }`}
               >
@@ -166,7 +166,7 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
                   <p className="font-medium text-sm">{t.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">{t.tenant_id}</p>
                 </div>
-                {t.is_active && <Badge className="bg-muted/200/15 text-foreground dark:text-gray-300 text-xs border-0">Active</Badge>}
+                {t.is_active && <Badge className="bg-primary/10 text-foreground dark:text-gray-300 text-xs border-0">Active</Badge>}
               </div>
             ))}
           </div>
@@ -483,11 +483,11 @@ export default function SettingsPage() {
             {/* Compact status bar */}
             <div className={`flex items-center gap-4 flex-wrap p-3 rounded-lg mt-3 ${
               auth.data?.authenticated
-                ? "bg-muted/200/5 border border-border/20"
+                ? "bg-primary/5 border border-primary/20"
                 : "bg-red-500/5 border border-red-500/20"
             }`}>
               <div className="flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${auth.data?.authenticated ? "bg-muted/200" : "bg-red-400"}`} />
+                <span className={`h-2 w-2 rounded-full ${auth.data?.authenticated ? "bg-primary" : "bg-red-400"}`} />
                 <span className="text-sm font-medium">
                   {auth.data?.authenticated ? "Connected" : "Not connected"}
                 </span>
@@ -519,11 +519,11 @@ export default function SettingsPage() {
 
             {/* Databricks App Banner */}
             {isDatabricksApp && (
-              <div className="flex items-center gap-3 mt-3 p-3 rounded-lg bg-muted/300/5 border border-[#E8453C]/20">
-                <Shield className="h-4 w-4 text-[#E8453C] shrink-0" />
+              <div className="flex items-center gap-3 mt-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <Shield className="h-4 w-4 text-primary shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-[#E8453C] dark:text-[#E8453C]">Running as Databricks App</p>
-                  <p className="text-xs text-[#E8453C]/70 dark:text-[#E8453C]/70">Authenticated automatically via workspace service principal.</p>
+                  <p className="text-sm font-medium text-primary">Running as Databricks App</p>
+                  <p className="text-xs text-primary/70">Authenticated automatically via workspace service principal.</p>
                 </div>
               </div>
             )}
@@ -538,7 +538,7 @@ export default function SettingsPage() {
                 /* Azure users: session managed server-side, no credential fields needed */
                 <div className="mt-3 p-4 bg-muted/30 border border-border rounded-lg max-w-lg">
                   <div className="flex items-center gap-2 text-sm text-foreground font-medium">
-                    <Globe className="h-4 w-4 text-[#E8453C]" />
+                    <Globe className="h-4 w-4 text-primary" />
                     Connected via Azure
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
@@ -661,22 +661,22 @@ export default function SettingsPage() {
                         onClick={() => handleSelectWarehouse(wh.id)}
                         className={`p-3 rounded-lg border cursor-pointer transition-all ${
                           selected
-                            ? "border-[#E8453C]/40 bg-[#E8453C]/5"
+                            ? "border-primary/40 bg-primary/5"
                             : "border-transparent bg-muted/30 hover:bg-muted/50"
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <span className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                            selected ? "border-[#E8453C]" : "border-muted-foreground/30"
+                            selected ? "border-primary" : "border-muted-foreground/30"
                           }`}>
-                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#E8453C]" />}
+                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
                           </span>
                           <span className="font-medium text-sm truncate">{wh.name}</span>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{wh.size}</Badge>
                             <Badge
                               variant={wh.state === "RUNNING" ? "default" : "secondary"}
-                              className={`text-[10px] ${wh.state === "RUNNING" ? "bg-foreground" : ""}`}
+                              className="text-[10px]"
                             >
                               {wh.state}
                             </Badge>
@@ -1125,7 +1125,7 @@ function UIPreferences() {
                 onClick={() => applyTheme(t.id)}
                 className={`relative group rounded-lg border p-1.5 transition-all text-left ${
                   active
-                    ? "border-[#E8453C] ring-1 ring-[#E8453C]/30"
+                    ? "border-primary ring-1 ring-primary/30"
                     : "border-border hover:border-muted-foreground/40"
                 }`}
               >
@@ -1138,7 +1138,7 @@ function UIPreferences() {
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
                 </div>
                 {active && (
-                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-muted/300 flex items-center justify-center">
+                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-primary flex items-center justify-center">
                     <Check className="h-2.5 w-2.5 text-white" />
                   </span>
                 )}
@@ -1158,7 +1158,7 @@ function UIPreferences() {
                 <p className="text-[11px] text-muted-foreground">{desc}</p>
               </div>
             </div>
-            <input type="checkbox" checked={checked} onChange={toggle} className="rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C] h-4 w-4" />
+            <input type="checkbox" checked={checked} onChange={toggle} className="rounded border-gray-300 h-4 w-4" style={{ accentColor: "var(--primary)" }} />
           </label>
         ))}
       </div>
@@ -1265,7 +1265,7 @@ function FeatureToggles() {
                       checked={isEnabled}
                       onChange={() => togglePage(item.href)}
                       disabled={isCore}
-                      className="rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C] h-3.5 w-3.5"
+                      className="rounded border-gray-300 h-3.5 w-3.5" style={{ accentColor: "var(--primary)" }}
                     />
                     <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                     <span>{item.label}</span>

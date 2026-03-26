@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { useAuthStatus, useDashboardStats, useCatalogHealth } from "@/hooks/useApi";
 import { useFavorites } from "@/hooks/useFavorites";
+import AiInsightCard from "@/components/AiInsightCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,22 @@ export default function Dashboard() {
         docsUrl="https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/"
         docsLabel="Unity Catalog docs"
       />
+
+      {/* AI Insights */}
+      {data && (
+        <AiInsightCard
+          contextType="dashboard"
+          data={{
+            total_clones: data?.total_clones,
+            success_rate: data?.success_rate,
+            total_data_gb: data?.total_data_gb,
+            recent_jobs: recentJobs.slice(0, 5),
+            week_over_week: wow,
+            health: health.data,
+          }}
+          title="AI Dashboard Summary"
+        />
+      )}
 
       {/* At a Glance (3 key metrics + link to full metrics) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

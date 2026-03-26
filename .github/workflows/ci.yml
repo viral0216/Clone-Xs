@@ -62,6 +62,23 @@ jobs:
       - name: Verify wheel
         run: ls -lh dist/*.whl
 
+  test-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui && npm ci
+
+      - name: Run unit tests
+        run: cd ui && npm test
+
   build-ui:
     runs-on: ubuntu-latest
     steps:

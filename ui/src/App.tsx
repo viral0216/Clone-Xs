@@ -3,6 +3,8 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { KeyboardShortcutHelp } from "@/components/KeyboardShortcutHelp";
 import LoginPage from "@/app/login/page";
 import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
@@ -43,6 +45,14 @@ import DemoDataPage from "@/app/demo-data/page";
 import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
 import GovernanceOverview from "@/app/governance/page";
 
+// Lazy-load new UC enhancement pages
+const SystemInsightsPage = lazy(() => import("@/app/system-insights/page"));
+const MLAssetsPage = lazy(() => import("@/app/ml-assets/page"));
+const AdvancedTablesPage = lazy(() => import("@/app/advanced-tables/page"));
+const LakehouseMonitorPage = lazy(() => import("@/app/lakehouse-monitor/page"));
+const FederationPage = lazy(() => import("@/app/federation/page"));
+const DeltaSharingPage = lazy(() => import("@/app/delta-sharing/page"));
+
 // Lazy-load governance pages
 const GovDictionary = lazy(() => import("@/app/governance/dictionary/page"));
 const GovSearch = lazy(() => import("@/app/governance/search/page"));
@@ -73,6 +83,8 @@ function RouteAnnouncer() {
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  useKeyboardShortcuts(() => setShortcutHelpOpen(true));
   // null = checking, false = not authenticated, true = authenticated
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
 
@@ -134,6 +146,7 @@ export default function App() {
       </a>
       <RouteAnnouncer />
       <Toaster richColors position="top-right" />
+      <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
       <div className="flex flex-col h-screen">
         {/* Top Header Bar */}
         <HeaderBar onMenuToggle={() => setMobileMenuOpen((prev) => !prev)} />
@@ -185,6 +198,14 @@ export default function App() {
               <Route path="/view-deps" element={<ViewDepsPage />} />
               <Route path="/create-job" element={<CreateJobPage />} />
               <Route path="/storage-metrics" element={<StorageMetricsPage />} />
+
+              {/* UC Enhancement Routes */}
+              <Route path="/system-insights" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><SystemInsightsPage /></Suspense>} />
+              <Route path="/ml-assets" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><MLAssetsPage /></Suspense>} />
+              <Route path="/advanced-tables" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><AdvancedTablesPage /></Suspense>} />
+              <Route path="/lakehouse-monitor" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><LakehouseMonitorPage /></Suspense>} />
+              <Route path="/federation" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><FederationPage /></Suspense>} />
+              <Route path="/delta-sharing" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><DeltaSharingPage /></Suspense>} />
 
               {/* Governance Portal Routes */}
               <Route path="/governance" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><GovernanceOverview /></Suspense>} />

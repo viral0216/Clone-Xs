@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Copy, Shield, ChevronDown } from "lucide-react";
+import { Copy, Shield, ChevronDown, BarChart3 } from "lucide-react";
 
 const PORTALS = [
   { id: "clone-xs", label: "Clone \u2192 Xs", description: "Catalog cloning & management", icon: Copy, path: "/" },
-  { id: "governance", label: "Governance", description: "Metadata management & data quality", icon: Shield, path: "/governance" },
+  { id: "governance", label: "Governance", description: "Metadata management & contracts", icon: Shield, path: "/governance" },
+  { id: "data-quality", label: "Data Quality", description: "Quality rules, profiling & reconciliation", icon: BarChart3, path: "/data-quality" },
 ];
 
 export default function PortalSwitcher() {
@@ -16,7 +17,8 @@ export default function PortalSwitcher() {
   const location = useLocation();
 
   const isGovernance = location.pathname.startsWith("/governance");
-  const current = isGovernance ? PORTALS[1] : PORTALS[0];
+  const isDataQuality = location.pathname.startsWith("/data-quality");
+  const current = isDataQuality ? PORTALS[2] : isGovernance ? PORTALS[1] : PORTALS[0];
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {

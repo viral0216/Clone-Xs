@@ -43,6 +43,7 @@ import CreateJobPage from "@/app/create-job/page";
 import StorageMetricsPage from "@/app/storage-metrics/page";
 import DemoDataPage from "@/app/demo-data/page";
 import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
+import DataQualitySidebar from "@/components/layout/DataQualitySidebar";
 import GovernanceOverview from "@/app/governance/page";
 
 // Lazy-load new UC enhancement pages
@@ -68,6 +69,12 @@ const GovODCS = lazy(() => import("@/app/governance/odcs/page"));
 const GovODCSDetail = lazy(() => import("@/app/governance/odcs/[id]/page"));
 const GovODCSValidate = lazy(() => import("@/app/governance/odcs/validate/[id]/page"));
 const GovDQX = lazy(() => import("@/app/governance/dqx/page"));
+const GovReconciliationRow = lazy(() => import("@/app/governance/reconciliation/row-level/page"));
+const GovReconciliationColumn = lazy(() => import("@/app/governance/reconciliation/column-level/page"));
+const GovReconciliationDeep = lazy(() => import("@/app/governance/reconciliation/deep/page"));
+
+// Data Quality portal pages
+const DQOverview = lazy(() => import("@/app/data-quality/page"));
 
 function PageFallback() {
   return (
@@ -165,9 +172,10 @@ export default function App() {
 
         {/* Main Layout: Sidebar + Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Conditional Sidebar: Governance vs Clone-Xs */}
+          {/* Conditional Sidebar: Governance / Data Quality / Clone-Xs */}
           <Routes>
             <Route path="/governance/*" element={<GovernanceSidebar />} />
+            <Route path="/data-quality/*" element={<DataQualitySidebar />} />
             <Route path="*" element={
               <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
             } />
@@ -236,6 +244,25 @@ export default function App() {
               <Route path="/governance/odcs/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSDetail /></Suspense>} />
               <Route path="/governance/odcs/validate/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSValidate /></Suspense>} />
               <Route path="/governance/changes" element={<Suspense fallback={<PageFallback />}><GovChanges /></Suspense>} />
+              <Route path="/governance/reconciliation/row-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationRow /></Suspense>} />
+              <Route path="/governance/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
+              <Route path="/governance/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
+
+              {/* Data Quality Portal Routes */}
+              <Route path="/data-quality" element={<Suspense fallback={<PageFallback />}><DQOverview /></Suspense>} />
+              <Route path="/data-quality/dqx" element={<Suspense fallback={<PageFallback />}><GovDQX /></Suspense>} />
+              <Route path="/data-quality/rules" element={<Suspense fallback={<PageFallback />}><GovDQRules /></Suspense>} />
+              <Route path="/data-quality/dashboard" element={<Suspense fallback={<PageFallback />}><GovDQDashboard /></Suspense>} />
+              <Route path="/data-quality/results" element={<Suspense fallback={<PageFallback />}><GovDQResults /></Suspense>} />
+              <Route path="/data-quality/reconciliation/row-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationRow /></Suspense>} />
+              <Route path="/data-quality/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
+              <Route path="/data-quality/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
+              <Route path="/data-quality/profiling" element={<ProfilingPage />} />
+              <Route path="/data-quality/schema-drift" element={<SchemaDriftPage />} />
+              <Route path="/data-quality/diff" element={<DiffPage />} />
+              <Route path="/data-quality/preflight" element={<PreflightPage />} />
+              <Route path="/data-quality/compliance" element={<CompliancePage />} />
+              <Route path="/data-quality/pii" element={<PiiPage />} />
             </Routes>
           </main>
         </div>

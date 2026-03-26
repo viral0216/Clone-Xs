@@ -336,6 +336,9 @@ app.include_router(federation.router, prefix="/api/federation", tags=["federatio
 from api.routers import delta_sharing
 app.include_router(delta_sharing.router, prefix="/api/delta-sharing", tags=["delta-sharing"])
 
+from api.routers import reconciliation
+app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["reconciliation"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

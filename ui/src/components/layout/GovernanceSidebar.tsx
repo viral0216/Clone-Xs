@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, Search, ShieldCheck, BarChart3, ClipboardCheck,
-  Award, CheckSquare, Clock, FileText, History, FileCode, Zap,
+  LayoutDashboard, BookOpen, Search,
+  Award, CheckSquare, Clock, FileText, History, FileCode,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -16,15 +16,6 @@ const NAV_SECTIONS = [
     items: [
       { href: "/governance/dictionary", label: "Business Glossary", icon: BookOpen },
       { href: "/governance/search", label: "Global Search", icon: Search },
-    ],
-  },
-  {
-    title: "Data Quality",
-    items: [
-      { href: "/governance/dqx", label: "DQX Engine", icon: Zap },
-      { href: "/governance/dq-rules", label: "Rules Engine", icon: ShieldCheck },
-      { href: "/governance/dq-dashboard", label: "DQ Dashboard", icon: BarChart3 },
-      { href: "/governance/dq-results", label: "Results", icon: ClipboardCheck },
     ],
   },
   {

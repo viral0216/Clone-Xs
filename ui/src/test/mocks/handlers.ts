@@ -382,6 +382,42 @@ export const handlers = [
   http.get("/api/views/:catalog", () => {
     return HttpResponse.json([]);
   }),
+
+  // ── Reconciliation ───────────────────────────────────────────────
+  http.get("/api/reconciliation/spark-status", () => {
+    return HttpResponse.json({ available: false, cluster_id: "", serverless: false, session_active: false });
+  }),
+
+  http.post("/api/reconciliation/spark-configure", () => {
+    return HttpResponse.json({ available: true, cluster_id: "", serverless: true, session_active: true });
+  }),
+
+  http.post("/api/reconciliation/validate", () => {
+    return HttpResponse.json({ total_tables: 0, matched: 0, mismatched: 0, errors: 0, details: [] });
+  }),
+
+  http.post("/api/reconciliation/compare", () => {
+    return HttpResponse.json({ total_tables: 0, tables_ok: 0, tables_with_issues: 0, details: [] });
+  }),
+
+  http.post("/api/reconciliation/profile", () => {
+    return HttpResponse.json({ catalog: "", total_tables: 0, profiles: [] });
+  }),
+
+  http.post("/api/reconciliation/preview", () => {
+    return HttpResponse.json({
+      source_table: "", dest_table: "", source_columns: [], dest_columns: [],
+      column_match: [], source_count: 0, dest_count: 0, key_columns: [],
+      source_sample: [], dest_sample: [],
+    });
+  }),
+
+  http.post("/api/reconciliation/deep-validate", () => {
+    return HttpResponse.json({
+      total_tables: 0, source_rows: 0, dest_rows: 0, matched_rows: 0,
+      missing_in_dest: 0, extra_in_dest: 0, modified_rows: 0, errors: 0, details: [],
+    });
+  }),
 ];
 
 /**

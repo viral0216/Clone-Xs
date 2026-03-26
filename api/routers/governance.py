@@ -1,7 +1,11 @@
 """Governance API endpoints — Data Dictionary, DQ Rules, Certifications, SLA, ODCS Contracts."""
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+import json
+import queue
+import threading
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response, StreamingResponse
 
 from api.dependencies import get_db_client, get_app_config, get_credentials
 from api.models.governance import (
@@ -565,6 +569,57 @@ async def dqx_profile_catalog_endpoint(req: dict, client=Depends(get_db_client),
         return {"error": str(e)}
 
 
+@router.post("/dqx/profile-stream")
+async def dqx_profile_stream_endpoint(req: dict, request: Request, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
+    """SSE endpoint that streams live profiling progress as tables are processed."""
+    _ensure_spark(creds[0], creds[1], client)
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    scope = req.get("scope", "schema")
+    catalog = req.get("catalog", "")
+    schema_name = req.get("schema_name", "")
+    opts = {k: v for k, v in req.items() if k not in ("catalog", "schema_name", "scope", "exclude_schemas")}
+
+    log_queue: queue.Queue = queue.Queue()
+
+    def on_progress(event):
+        log_queue.put(event)
+
+    def run_profiling():
+        try:
+            if scope == "catalog":
+                from src.dqx_engine import generate_checks_for_catalog
+                result = generate_checks_for_catalog(client, wid, config, catalog,
+                    req.get("exclude_schemas", ["information_schema"]), options=opts, on_progress=on_progress)
+            else:
+                from src.dqx_engine import generate_checks_for_schema
+                result = generate_checks_for_schema(client, wid, config, catalog, schema_name, options=opts, on_progress=on_progress)
+            log_queue.put({"type": "complete", "result": result})
+        except Exception as e:
+            log_queue.put({"type": "error", "error": str(e)})
+
+    worker = threading.Thread(target=run_profiling, daemon=True)
+    worker.start()
+
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = log_queue.get(timeout=0.5)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("complete", "error"):
+                    break
+            except queue.Empty:
+                # Send keepalive to prevent timeout
+                yield ": keepalive\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                                      "Connection": "keep-alive", "Content-Type": "text/event-stream"})
+
+
 @router.post("/dqx/checks")
 async def dqx_create_check_endpoint(req: DQXCheckCreate, client=Depends(get_db_client)):
     """Create a DQX check manually."""
@@ -683,6 +738,20 @@ async def dqx_import_checks_endpoint(req: dict, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import import_checks_yaml
     return import_checks_yaml(client, wid, config, req.get("table_fqn", ""), req.get("yaml_content", ""))
+
+
+@router.post("/dqx/checks/save-to-delta")
+async def dqx_save_checks_to_delta_endpoint(req: dict, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
+    """Save DQX checks to a user-specified Delta table."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import save_checks_to_delta
+    return save_checks_to_delta(
+        client, wid, config,
+        target_table=req.get("target_table", ""),
+        table_fqn=req.get("table_fqn", ""),
+        user=creds[0] if creds else "",
+    )
 
 
 @router.get("/dqx/profiles")

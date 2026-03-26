@@ -54,6 +54,12 @@ export default function DQXPage() {
   const [editingCheck, setEditingCheck] = useState<any>(null);
   const [runningAll, setRunningAll] = useState(false);
 
+  // Save to Delta state
+  const [showSaveDelta, setShowSaveDelta] = useState(false);
+  const [saveDeltaTarget, setSaveDeltaTarget] = useState("");
+  const [saveDeltaFilter, setSaveDeltaFilter] = useState("");
+  const [savingDelta, setSavingDelta] = useState(false);
+
   // Spark status
   const [sparkStatus, setSparkStatus] = useState<any>({});
   const [sparkConfiguring, setSparkConfiguring] = useState(false);
@@ -151,23 +157,88 @@ export default function DQXPage() {
     try {
       let res: any;
       let target = "";
+
       if (profileScope === "table") {
+        // Single table — use normal POST (no streaming needed)
         if (!profileCatalog || !profileSchema || !profileTable) { toast.error("Select a table"); setProfiling(false); return; }
         target = `${profileCatalog}.${profileSchema}.${profileTable}`;
         res = await api.post("/governance/dqx/profile", { table_fqn: target, auto_generate_checks: true, ...profileOpts });
-      } else if (profileScope === "schema") {
-        if (!profileCatalog || !profileSchema) { toast.error("Select catalog and schema"); setProfiling(false); return; }
-        target = `${profileCatalog}.${profileSchema}`;
-        res = await api.post("/governance/dqx/profile-schema", { catalog: profileCatalog, schema_name: profileSchema, ...profileOpts });
+        setProfileResult(res);
+        setLogs(prev => [...prev, ...buildLogs(res, profileScope, target)]);
       } else {
-        if (!profileCatalog) { toast.error("Select a catalog"); setProfiling(false); return; }
-        target = profileCatalog;
-        res = await api.post("/governance/dqx/profile-catalog", { catalog: profileCatalog, ...profileOpts });
+        // Schema/Catalog — use SSE stream for live logs
+        if (profileScope === "schema") {
+          if (!profileCatalog || !profileSchema) { toast.error("Select catalog and schema"); setProfiling(false); return; }
+          target = `${profileCatalog}.${profileSchema}`;
+        } else {
+          if (!profileCatalog) { toast.error("Select a catalog"); setProfiling(false); return; }
+          target = profileCatalog;
+        }
+
+        const body = profileScope === "schema"
+          ? { scope: "schema", catalog: profileCatalog, schema_name: profileSchema, ...profileOpts }
+          : { scope: "catalog", catalog: profileCatalog, ...profileOpts };
+
+        // Build headers for auth
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const sid = localStorage.getItem("clxs_session_id"); if (sid) headers["X-Clone-Session"] = sid;
+        const host = localStorage.getItem("dbx_host"); if (host) headers["X-Databricks-Host"] = host;
+        const token = localStorage.getItem("dbx_token"); if (token) headers["X-Databricks-Token"] = token;
+        const wh = localStorage.getItem("dbx_warehouse_id"); if (wh) headers["X-Databricks-Warehouse"] = wh;
+
+        const response = await fetch("/api/governance/dqx/profile-stream", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse SSE lines
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const event = JSON.parse(line.slice(6));
+                const now = new Date().toLocaleTimeString();
+
+                if (event.type === "schema_start") {
+                  setLogs(prev => [...prev, `[${now}] Profiling schema ${event.schema} (${event.table_count} tables)...`]);
+                } else if (event.type === "catalog_start") {
+                  setLogs(prev => [...prev, `[${now}] Profiling catalog ${event.catalog} (${event.schema_count} schemas)...`]);
+                } else if (event.type === "table_start") {
+                  setLogs(prev => [...prev, `[${now}] Profiling ${event.table_fqn}...`]);
+                } else if (event.type === "table_done") {
+                  setLogs(prev => [...prev, `[${now}] ✅ ${event.table_fqn}: ${event.count} checks generated`]);
+                } else if (event.type === "table_error") {
+                  setLogs(prev => [...prev, `[${now}] ❌ ${event.table_fqn}: ${event.error}`]);
+                } else if (event.type === "complete") {
+                  res = event.result;
+                  setProfileResult(res);
+                  setLogs(prev => [...prev, `[${now}] Done — ${res.total_checks || 0} total checks generated.`]);
+                } else if (event.type === "error") {
+                  setLogs(prev => [...prev, `[${now}] ERROR: ${event.error}`]);
+                  res = { error: event.error };
+                  setProfileResult(res);
+                }
+              } catch { /* skip malformed lines */ }
+            }
+          }
+        }
       }
-      setProfileResult(res);
-      setLogs(prev => [...prev, ...buildLogs(res, profileScope, target)]);
-      if (res.error) toast.error(res.error);
-      else toast.success(`${res.total_checks || res.count || 0} checks generated`);
+
+      if (res?.error) toast.error(res.error);
+      else toast.success(`${res?.total_checks || res?.count || 0} checks generated`);
       loadAll();
     } catch (e: any) {
       setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${e.message}`]);
@@ -277,6 +348,20 @@ export default function DQXPage() {
       if (res.error) toast.error(res.error);
       else { toast.success(`${res.imported} checks imported`); setShowImport(false); setImportYaml(""); loadAll(); }
     } catch (e: any) { toast.error(e.message); }
+  }
+
+  async function saveToDelta() {
+    if (!saveDeltaTarget.trim()) { toast.error("Target table name required (e.g., catalog.schema.table)"); return; }
+    setSavingDelta(true);
+    try {
+      const res = await api.post("/governance/dqx/checks/save-to-delta", {
+        target_table: saveDeltaTarget.trim(),
+        table_fqn: saveDeltaFilter || "",
+      });
+      if (res.error) toast.error(res.error);
+      else { toast.success(`${res.count} checks saved to ${res.target_table}`); setShowSaveDelta(false); }
+    } catch (e: any) { toast.error(e.message); }
+    setSavingDelta(false);
   }
 
   const filteredChecks = checks.filter(c => {
@@ -436,6 +521,7 @@ export default function DQXPage() {
                 <Button size="sm" onClick={() => setShowCreate(!showCreate)}><Plus className="h-4 w-4 mr-1" />New Check</Button>
                 <Button size="sm" variant="outline" onClick={() => setShowImport(!showImport)}><Upload className="h-4 w-4 mr-1" />Import YAML</Button>
                 <Button size="sm" variant="outline" onClick={exportChecks}><Download className="h-4 w-4 mr-1" />Export YAML</Button>
+                <Button size="sm" variant="outline" onClick={() => { setSaveDeltaFilter(filterTable); setShowSaveDelta(true); }}><Database className="h-4 w-4 mr-1" />Save to Delta Table</Button>
 
                 {/* Bulk delete */}
                 {selectedChecks.size > 0 && (
@@ -504,6 +590,30 @@ export default function DQXPage() {
                   <div className="flex gap-2">
                     <Button size="sm" onClick={doImport}><Upload className="h-4 w-4 mr-1" />Import</Button>
                     <Button size="sm" variant="ghost" onClick={() => setShowImport(false)}>Cancel</Button>
+                  </div>
+                </CardContent></Card>
+              )}
+
+              {/* Save to Delta panel */}
+              {showSaveDelta && (
+                <Card className="border-border dark:border-border"><CardContent className="pt-4 space-y-3">
+                  <p className="text-sm font-medium">Save Checks to Delta Table</p>
+                  <p className="text-xs text-muted-foreground">Export all DQX checks to a Delta table for auditing, sharing, or downstream consumption.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-xs text-muted-foreground">Target Table (catalog.schema.table) *</label>
+                      <Input placeholder="e.g. my_catalog.governance.dqx_rules" value={saveDeltaTarget} onChange={(e) => setSaveDeltaTarget(e.target.value)} /></div>
+                    <div><label className="text-xs text-muted-foreground">Filter by Source Table (optional)</label>
+                      <select value={saveDeltaFilter} onChange={(e) => setSaveDeltaFilter(e.target.value)} className="w-full border rounded px-3 py-2 text-sm bg-background">
+                        <option value="">All Tables ({checks.length} checks)</option>
+                        {uniqueTables.map(t => <option key={t} value={t}>{t} ({checks.filter(c => c.table_fqn === t).length} checks)</option>)}
+                      </select></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={saveToDelta} disabled={savingDelta || !saveDeltaTarget.trim()}>
+                      {savingDelta ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Database className="h-4 w-4 mr-1" />}
+                      {savingDelta ? "Saving..." : `Save ${saveDeltaFilter ? checks.filter(c => c.table_fqn === saveDeltaFilter).length : checks.length} Checks`}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowSaveDelta(false)}>Cancel</Button>
                   </div>
                 </CardContent></Card>
               )}
@@ -779,6 +889,17 @@ export default function DQXPage() {
                         ))}
                       </div>
                     </>
+                  )}
+                  {/* Save to Delta button after profile results */}
+                  {!profileResult.error && (profileResult.count > 0 || profileResult.total_checks > 0) && (
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      <Button size="sm" variant="outline" onClick={() => { setSaveDeltaFilter(""); setShowSaveDelta(true); setTab("checks"); }}>
+                        <Database className="h-4 w-4 mr-1" />Save to Delta Table
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setTab("checks")}>
+                        <Settings className="h-4 w-4 mr-1" />View All Checks
+                      </Button>
+                    </div>
                   )}
                 </CardContent></Card>
               )}

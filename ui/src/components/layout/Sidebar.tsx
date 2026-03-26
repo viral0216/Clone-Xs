@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import ResizeHandle from "@/components/ResizeHandle";
 import {
-  LayoutDashboard, Briefcase, Copy, FolderTree, GitCompare, Activity,
-  Settings2, FileText, Wrench, Shield, GitBranch, ClipboardCheck, RefreshCw,
+  LayoutDashboard, Briefcase, Copy, FolderTree, Activity,
+  Settings2, FileText, Wrench, GitBranch, RefreshCw,
   GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
-  Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
-  ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
+  Undo2, LayoutTemplate, CopyPlus, GitFork, Zap, Eye,
+  Calculator, Server, Lock, Puzzle, HardDrive,
   X, Plus, Database, PanelLeftClose, PanelLeftOpen, Cpu, Brain, Layers,
   Radio, Share2, Globe,
 } from "lucide-react";
@@ -58,7 +58,6 @@ export const allNavSections: NavSection[] = [
     title: "Discovery",
     items: [
       { href: "/explore", label: "Explorer", icon: FolderTree },
-      { href: "/diff", label: "Diff & Compare", icon: GitCompare },
       { href: "/config-diff", label: "Config Diff", icon: GitCompareArrows },
       { href: "/lineage", label: "Lineage", icon: GitFork },
       { href: "/view-deps", label: "Dependencies", icon: GitBranch },
@@ -70,19 +69,14 @@ export const allNavSections: NavSection[] = [
     title: "Analysis",
     items: [
       { href: "/reports", label: "Reports", icon: FileText },
-      { href: "/pii", label: "PII Scanner", icon: Shield },
-      { href: "/schema-drift", label: "Schema Drift", icon: GitBranch },
-      { href: "/profiling", label: "Profiling", icon: ScanSearch },
       { href: "/cost", label: "Cost Estimator", icon: Calculator },
       { href: "/storage-metrics", label: "Storage Metrics", icon: HardDrive },
-      { href: "/compliance", label: "Compliance", icon: ShieldCheck },
     ],
   },
   {
     title: "Management",
     items: [
       { href: "/monitor", label: "Monitor", icon: Activity },
-      { href: "/preflight", label: "Preflight", icon: ClipboardCheck },
       { href: "/config", label: "Config", icon: Wrench },
       { href: "/settings", label: "Settings", icon: Settings2 },
       { href: "/warehouse", label: "Warehouse", icon: Server },

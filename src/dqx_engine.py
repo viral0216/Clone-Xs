@@ -342,8 +342,12 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
 # Execute DQX checks
 # ---------------------------------------------------------------------------
 
-def generate_checks_for_schema(client, warehouse_id, config, catalog: str, schema_name: str, user: str = "", options: dict | None = None) -> dict:
-    """Profile all tables in a schema and generate DQX checks (parallel)."""
+def generate_checks_for_schema(client, warehouse_id, config, catalog: str, schema_name: str, user: str = "", options: dict | None = None, on_progress=None) -> dict:
+    """Profile all tables in a schema and generate DQX checks (parallel).
+
+    Args:
+        on_progress: Optional callback(event_dict) called for each table start/complete.
+    """
     from src.client import list_tables_sdk
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -354,16 +358,25 @@ def generate_checks_for_schema(client, warehouse_id, config, catalog: str, schem
         if tbl_name:
             fqns.append(f"{catalog}.{schema_name}.{tbl_name}")
 
+    if on_progress:
+        on_progress({"type": "schema_start", "schema": schema_name, "table_count": len(fqns)})
+
     max_parallel = (options or {}).get("max_parallelism", 4)
     results = []
     total_checks = 0
 
     def _profile_one(fqn):
+        if on_progress:
+            on_progress({"type": "table_start", "table_fqn": fqn})
         try:
             result = generate_checks_from_profiles(client, warehouse_id, config, fqn, user, options=options)
             result["table_fqn"] = fqn
+            if on_progress:
+                on_progress({"type": "table_done", "table_fqn": fqn, "count": result.get("count", 0)})
             return result
         except Exception as e:
+            if on_progress:
+                on_progress({"type": "table_error", "table_fqn": fqn, "error": str(e)})
             return {"table_fqn": fqn, "error": str(e), "count": 0}
 
     with ThreadPoolExecutor(max_workers=max_parallel) as executor:
@@ -378,7 +391,7 @@ def generate_checks_for_schema(client, warehouse_id, config, catalog: str, schem
     return {"catalog": catalog, "schema": schema_name, "tables": results, "total_checks": total_checks, "tables_processed": len(results)}
 
 
-def generate_checks_for_catalog(client, warehouse_id, config, catalog: str, exclude_schemas: list[str] | None = None, user: str = "", options: dict | None = None) -> dict:
+def generate_checks_for_catalog(client, warehouse_id, config, catalog: str, exclude_schemas: list[str] | None = None, user: str = "", options: dict | None = None, on_progress=None) -> dict:
     """Profile all tables in a catalog and generate DQX checks."""
     from src.client import list_schemas_sdk
 
@@ -387,8 +400,11 @@ def generate_checks_for_catalog(client, warehouse_id, config, catalog: str, excl
     results = []
     total_checks = 0
 
+    if on_progress:
+        on_progress({"type": "catalog_start", "catalog": catalog, "schema_count": len(schemas)})
+
     for schema_name in schemas:
-        schema_result = generate_checks_for_schema(client, warehouse_id, config, catalog, schema_name, user, options=options)
+        schema_result = generate_checks_for_schema(client, warehouse_id, config, catalog, schema_name, user, options=options, on_progress=on_progress)
         results.append(schema_result)
         total_checks += schema_result.get("total_checks", 0)
 
@@ -833,6 +849,66 @@ def import_checks_yaml(client, warehouse_id, config, table_fqn: str, yaml_conten
             logger.debug(f"Could not import check: {e}")
 
     return {"table_fqn": table_fqn, "imported": imported, "total": len(checks_data)}
+
+
+# ---------------------------------------------------------------------------
+# Save checks to a user-specified Delta table
+# ---------------------------------------------------------------------------
+
+def save_checks_to_delta(client, warehouse_id, config, target_table: str, table_fqn: str = "", user: str = "") -> dict:
+    """Save DQX checks to a user-specified Delta table for sharing/auditing.
+
+    Creates the table if it doesn't exist and inserts all matching checks.
+    """
+    checks = list_checks(client, warehouse_id, config, table_fqn)
+    if not checks:
+        return {"error": "No checks found to save", "count": 0}
+
+    # Create target table if not exists
+    try:
+        execute_sql(client, warehouse_id, f"""
+            CREATE TABLE IF NOT EXISTS {target_table} (
+                check_id STRING,
+                name STRING,
+                table_fqn STRING,
+                criticality STRING,
+                check_function STRING,
+                arguments STRING,
+                column_name STRING,
+                filter_expr STRING,
+                enabled BOOLEAN,
+                created_by STRING,
+                saved_at TIMESTAMP,
+                saved_by STRING
+            )
+            USING DELTA
+            COMMENT 'DQX quality rules exported by Clone-Xs'
+            TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+        """)
+    except Exception as e:
+        return {"error": f"Could not create table {target_table}: {e}", "count": 0}
+
+    # Batch insert checks
+    now = _now_iso()
+    values_list = []
+    for c in checks:
+        args_json = _json_dumps(c.get("arguments", {})) if isinstance(c.get("arguments"), dict) else str(c.get("arguments", "{}"))
+        col = c.get("column", c.get("arguments", {}).get("column", "")) if isinstance(c.get("arguments"), dict) else c.get("column", "")
+        values_list.append(
+            f"('{_esc(c.get('check_id', ''))}', '{_esc(c.get('name', ''))}', "
+            f"'{_esc(c.get('table_fqn', ''))}', '{_esc(c.get('criticality', 'error'))}', "
+            f"'{_esc(c.get('check_function', ''))}', '{_esc(args_json)}', "
+            f"'{_esc(col)}', '{_esc(c.get('filter_expr', ''))}', "
+            f"{str(c.get('enabled', True)).lower()}, '{_esc(c.get('created_by', ''))}', "
+            f"'{now}', '{_esc(user)}')"
+        )
+
+    try:
+        batch_sql = f"INSERT INTO {target_table} VALUES {', '.join(values_list)}"
+        execute_sql(client, warehouse_id, batch_sql)
+        return {"target_table": target_table, "count": len(checks), "message": f"Saved {len(checks)} checks to {target_table}"}
+    except Exception as e:
+        return {"error": f"Failed to insert checks: {e}", "count": 0}
 
 
 # ---------------------------------------------------------------------------

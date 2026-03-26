@@ -249,6 +249,10 @@ _tag_metadata = [
         "name": "dependencies",
         "description": "Dependency analysis — map view and function dependencies, compute creation order for cloning.",
     },
+    {
+        "name": "data-quality",
+        "description": "Data quality observability — freshness monitoring, anomaly detection, volume tracking, expectation suites, incidents, and health scores.",
+    },
 ]
 
 app = FastAPI(
@@ -338,6 +342,9 @@ app.include_router(delta_sharing.router, prefix="/api/delta-sharing", tags=["del
 
 from api.routers import reconciliation
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["reconciliation"])
+
+from api.routers import data_quality
+app.include_router(data_quality.router, prefix="/api/data-quality", tags=["data-quality"])
 
 # Serve frontend static files in production
 import os

@@ -72,9 +72,15 @@ const GovDQX = lazy(() => import("@/app/governance/dqx/page"));
 const GovReconciliationRow = lazy(() => import("@/app/governance/reconciliation/row-level/page"));
 const GovReconciliationColumn = lazy(() => import("@/app/governance/reconciliation/column-level/page"));
 const GovReconciliationDeep = lazy(() => import("@/app/governance/reconciliation/deep/page"));
+const GovReconciliationHistory = lazy(() => import("@/app/governance/reconciliation/history/page"));
 
 // Data Quality portal pages
 const DQOverview = lazy(() => import("@/app/data-quality/page"));
+const DQFreshness = lazy(() => import("@/app/data-quality/freshness/page"));
+const DQVolume = lazy(() => import("@/app/data-quality/volume/page"));
+const DQAnomalies = lazy(() => import("@/app/data-quality/anomalies/page"));
+const DQIncidents = lazy(() => import("@/app/data-quality/incidents/page"));
+const DQExpectations = lazy(() => import("@/app/data-quality/expectations/page"));
 
 function PageFallback() {
   return (
@@ -247,6 +253,7 @@ export default function App() {
               <Route path="/governance/reconciliation/row-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationRow /></Suspense>} />
               <Route path="/governance/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
               <Route path="/governance/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
+              <Route path="/governance/reconciliation/history" element={<Suspense fallback={<PageFallback />}><GovReconciliationHistory /></Suspense>} />
 
               {/* Data Quality Portal Routes */}
               <Route path="/data-quality" element={<Suspense fallback={<PageFallback />}><DQOverview /></Suspense>} />
@@ -257,12 +264,18 @@ export default function App() {
               <Route path="/data-quality/reconciliation/row-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationRow /></Suspense>} />
               <Route path="/data-quality/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
               <Route path="/data-quality/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
+              <Route path="/data-quality/reconciliation/history" element={<Suspense fallback={<PageFallback />}><GovReconciliationHistory /></Suspense>} />
               <Route path="/data-quality/profiling" element={<ProfilingPage />} />
               <Route path="/data-quality/schema-drift" element={<SchemaDriftPage />} />
               <Route path="/data-quality/diff" element={<DiffPage />} />
               <Route path="/data-quality/preflight" element={<PreflightPage />} />
               <Route path="/data-quality/compliance" element={<CompliancePage />} />
               <Route path="/data-quality/pii" element={<PiiPage />} />
+              <Route path="/data-quality/freshness" element={<Suspense fallback={<PageFallback />}><DQFreshness /></Suspense>} />
+              <Route path="/data-quality/volume" element={<Suspense fallback={<PageFallback />}><DQVolume /></Suspense>} />
+              <Route path="/data-quality/anomalies" element={<Suspense fallback={<PageFallback />}><DQAnomalies /></Suspense>} />
+              <Route path="/data-quality/incidents" element={<Suspense fallback={<PageFallback />}><DQIncidents /></Suspense>} />
+              <Route path="/data-quality/expectations" element={<Suspense fallback={<PageFallback />}><DQExpectations /></Suspense>} />
             </Routes>
           </main>
         </div>

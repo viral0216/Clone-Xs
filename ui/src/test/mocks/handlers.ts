@@ -418,6 +418,75 @@ export const handlers = [
       missing_in_dest: 0, extra_in_dest: 0, modified_rows: 0, errors: 0, details: [],
     });
   }),
+
+  http.get("/api/reconciliation/history", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.post("/api/reconciliation/compare-runs", () => {
+    return HttpResponse.json({ run_a: {}, run_b: {}, delta: {} });
+  }),
+
+  http.get("/api/reconciliation/alerts/rules", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.post("/api/reconciliation/alerts/rules", () => {
+    return HttpResponse.json({ rule_id: "test", name: "test" });
+  }),
+
+  http.get("/api/reconciliation/alerts/history", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.post("/api/reconciliation/remediate", () => {
+    return HttpResponse.json({ statements: [], source: "", dest: "" });
+  }),
+
+  http.get("/api/reconciliation/schedules", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.post("/api/reconciliation/schedules", () => {
+    return HttpResponse.json({ id: "test", name: "test", status: "active" });
+  }),
+
+  http.post("/api/reconciliation/statistical-comparison", () => {
+    return HttpResponse.json({ columns: [] });
+  }),
+
+  // ── Data Quality Observability ────────────────────────────────
+  http.get("/api/data-quality/freshness/:catalog", () => {
+    return HttpResponse.json({ tables: [], summary: { total: 0, fresh: 0, stale: 0 } });
+  }),
+
+  http.get("/api/data-quality/volume/:catalog", () => {
+    return HttpResponse.json({ tables: [], summary: { total: 0, total_rows: 0 } });
+  }),
+
+  http.post("/api/data-quality/volume/snapshot", () => {
+    return HttpResponse.json({ status: "ok" });
+  }),
+
+  http.get("/api/data-quality/anomalies", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.get("/api/data-quality/incidents", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.get("/api/data-quality/suites", () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.post("/api/data-quality/suites", () => {
+    return HttpResponse.json({ id: "test", name: "test" });
+  }),
+
+  http.get("/api/data-quality/health-score/:catalog", () => {
+    return HttpResponse.json({ score: 0, freshness: 0, completeness: 0, accuracy: 0 });
+  }),
 ];
 
 /**

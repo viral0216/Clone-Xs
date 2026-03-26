@@ -12,9 +12,14 @@ import PageHeader from "@/components/PageHeader";
 import {
   Rows3, Loader2, CheckCircle, XCircle, AlertTriangle,
   ArrowLeftRight, Zap, Eye, ChevronDown, ChevronUp,
-  Minus, Plus, Pencil, Search,
+  Minus, Plus, Pencil, Search, Download, FileJson, FileText,
+  TrendingUp, Columns3, Wrench, Bell, Trash2, Copy, ShieldAlert,
 } from "lucide-react";
 import SqlWorkbench from "@/components/sql/SqlWorkbench";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Legend, LineChart, Line, CartesianGrid,
+} from "recharts";
 
 function SummaryCard({ label, value, color, icon: Icon }: { label: string; value: string | number; color?: string; icon?: any }) {
   const colorClass = color === "green" ? "text-green-500" : color === "red" ? "text-red-500" : color === "amber" ? "text-amber-500" : color === "blue" ? "text-blue-500" : "text-foreground";
@@ -29,6 +34,59 @@ function SummaryCard({ label, value, color, icon: Icon }: { label: string; value
       </CardContent>
     </Card>
   );
+}
+
+const CHART_COLORS = {
+  matched: "#22c55e",
+  missing: "#ef4444",
+  extra: "#3b82f6",
+  modified: "#f59e0b",
+};
+
+function exportCsv(results: any) {
+  const rows: string[] = [];
+  const details = results.details || [];
+  for (const d of details) {
+    const fqn = `${d.schema}.${d.table}`;
+    // Missing rows
+    for (const row of d.missing_sample || []) {
+      const cols = Object.keys(row);
+      if (rows.length === 0) rows.push(["type", "table", ...cols].join(","));
+      rows.push(["missing", fqn, ...cols.map((c) => `"${String(row[c] ?? "").replace(/"/g, '""')}"`)] .join(","));
+    }
+    // Extra rows
+    for (const row of d.extra_sample || []) {
+      const cols = Object.keys(row);
+      if (rows.length === 0) rows.push(["type", "table", ...cols].join(","));
+      rows.push(["extra", fqn, ...cols.map((c) => `"${String(row[c] ?? "").replace(/"/g, '""')}"`)] .join(","));
+    }
+    // Modified rows
+    for (const m of d.modified_sample || []) {
+      for (const diff of m.diffs || []) {
+        if (rows.length === 0) rows.push("type,table,key,column,source_value,dest_value");
+        const keyStr = Object.entries(m.key || {}).map(([k, v]) => `${k}=${v}`).join(";");
+        rows.push(["modified", fqn, `"${keyStr}"`, diff.column, `"${String(diff.source ?? "NULL")}"`, `"${String(diff.dest ?? "NULL")}"`].join(","));
+      }
+    }
+  }
+  if (rows.length === 0) { toast.info("No sample data to export"); return; }
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `deep-reconciliation-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJson(results: any) {
+  const blob = new Blob([JSON.stringify(results, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `deep-reconciliation-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function DeepReconciliationPage() {
@@ -55,12 +113,33 @@ export default function DeepReconciliationPage() {
   const [ignoredCols, setIgnoredCols] = useState<Set<string>>(new Set());
   const [keyColumns, setKeyColumns] = useState<string[]>([]);
 
+  // ── Comparison options ────────────────────────────────────────
+  const [ignoreNulls, setIgnoreNulls] = useState(false);
+  const [ignoreCase, setIgnoreCase] = useState(false);
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
+  const [decimalPrecision, setDecimalPrecision] = useState(0);
+
   // ── Deep reconciliation results ────────────────────────────────
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [sampleDiffs, setSampleDiffs] = useState(10);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
+
+  // ── History / Trend ──────────────────────────────────────────
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // ── Remediation ─────────────────────────────────────────────
+  const [remediationSql, setRemediationSql] = useState<Record<string, string[]>>({});
+  const [remediationLoading, setRemediationLoading] = useState<Record<string, boolean>>({});
+
+  // ── Alert Rules ─────────────────────────────────────────────
+  const [alertRules, setAlertRules] = useState<any[]>([]);
+  const [alertRulesLoading, setAlertRulesLoading] = useState(false);
+  const [firedAlerts, setFiredAlerts] = useState<any[]>([]);
+  const [alertRulesExpanded, setAlertRulesExpanded] = useState(false);
+  const [newRule, setNewRule] = useState({ name: "", metric: "match_rate", operator: "<", threshold: 0, severity: "warning" });
 
   // ── Init ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -129,6 +208,10 @@ export default function DeepReconciliationPage() {
         include_columns: [...selectedCols],
         ignore_columns: [...ignoredCols],
         sample_diffs: sampleDiffs,
+        ignore_nulls: ignoreNulls,
+        ignore_case: ignoreCase,
+        ignore_whitespace: ignoreWhitespace,
+        decimal_precision: decimalPrecision,
       });
       const details = data.details || [];
       const newLogs: string[] = [];
@@ -139,8 +222,17 @@ export default function DeepReconciliationPage() {
       }
       newLogs.push(`[${t()}] Completed in ${data.duration_seconds ?? 0}s`);
       if (data.run_id) newLogs.push(`[${t()}] Stored in Delta → run_id: ${data.run_id}`);
+      // Check for fired alerts from the response
+      if (data.fired_alerts && data.fired_alerts.length > 0) {
+        setFiredAlerts(data.fired_alerts);
+        for (const alert of data.fired_alerts) {
+          newLogs.push(`[${t()}] ALERT [${(alert.severity || "warning").toUpperCase()}]: ${alert.rule_name || alert.name} — ${alert.message || `${alert.metric} ${alert.operator} ${alert.threshold}`}`);
+        }
+      }
       setLogs((prev) => [...prev, ...newLogs]);
       setResults(data);
+      // Fetch history after a successful run
+      fetchHistory();
     } catch (e: any) {
       setLogs((prev) => [...prev, `[${t()}] ERROR: ${e.message}`]);
       toast.error(e.message);
@@ -148,6 +240,76 @@ export default function DeepReconciliationPage() {
       setLoading(false);
     }
   }
+
+  async function fetchHistory() {
+    setHistoryLoading(true);
+    try {
+      const data = await api.get("/reconciliation/history?limit=10");
+      setHistory(Array.isArray(data) ? data : data.runs || []);
+    } catch {
+      // History endpoint may not exist yet — silently ignore
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  // ── Alert rule CRUD ──────────────────────────────────────────
+  async function fetchAlertRules() {
+    setAlertRulesLoading(true);
+    try {
+      const data = await api.get("/reconciliation/alerts/rules");
+      setAlertRules(Array.isArray(data) ? data : data.rules || []);
+    } catch {
+      // endpoint may not exist yet
+    } finally {
+      setAlertRulesLoading(false);
+    }
+  }
+
+  async function createAlertRule() {
+    if (!newRule.name.trim()) { toast.error("Rule name is required"); return; }
+    try {
+      await api.post("/reconciliation/alerts/rules", newRule);
+      toast.success("Alert rule created");
+      setNewRule({ name: "", metric: "match_rate", operator: "<", threshold: 0, severity: "warning" });
+      fetchAlertRules();
+    } catch (e: any) {
+      toast.error("Failed to create rule: " + (e.message || "Unknown error"));
+    }
+  }
+
+  async function deleteAlertRule(ruleId: string) {
+    try {
+      await api.delete(`/reconciliation/alerts/rules/${ruleId}`);
+      toast.success("Rule deleted");
+      fetchAlertRules();
+    } catch (e: any) {
+      toast.error("Failed to delete rule: " + (e.message || "Unknown error"));
+    }
+  }
+
+  // ── Remediation ─────────────────────────────────────────────
+  async function generateFixSql(d: any) {
+    const fqn = `${d.schema}.${d.table}`;
+    setRemediationLoading((prev) => ({ ...prev, [fqn]: true }));
+    try {
+      const data = await api.post("/reconciliation/remediate", {
+        source_catalog: source,
+        destination_catalog: dest,
+        schema_name: d.schema,
+        table_name: d.table,
+        key_columns: keyColumns,
+      });
+      setRemediationSql((prev) => ({ ...prev, [fqn]: data.sql_statements || data.statements || [data.sql || "-- No SQL returned"] }));
+    } catch (e: any) {
+      toast.error("Remediation failed: " + (e.message || "Unknown error"));
+    } finally {
+      setRemediationLoading((prev) => ({ ...prev, [fqn]: false }));
+    }
+  }
+
+  // Load alert rules on mount
+  useEffect(() => { fetchAlertRules(); }, []);
 
   const toggleCol = (col: string) => {
     setSelectedCols((prev) => {
@@ -299,6 +461,40 @@ export default function DeepReconciliationPage() {
               </div>
             )}
 
+            {/* Comparison Options */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Options</p>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-1.5 text-xs">
+                  <input type="checkbox" checked={ignoreNulls} onChange={(e) => setIgnoreNulls(e.target.checked)} />
+                  Ignore NULLs
+                  <span className="text-[10px] text-muted-foreground">(treat NULL == NULL as match)</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-xs">
+                  <input type="checkbox" checked={ignoreCase} onChange={(e) => setIgnoreCase(e.target.checked)} />
+                  Ignore Case
+                  <span className="text-[10px] text-muted-foreground">(case-insensitive string comparison)</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-xs">
+                  <input type="checkbox" checked={ignoreWhitespace} onChange={(e) => setIgnoreWhitespace(e.target.checked)} />
+                  Ignore Whitespace
+                  <span className="text-[10px] text-muted-foreground">(trim before comparing)</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs whitespace-nowrap">Decimal Precision:</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={18}
+                    className="w-16 h-7 text-xs"
+                    value={decimalPrecision}
+                    onChange={(e) => setDecimalPrecision(Number(e.target.value))}
+                  />
+                  <span className="text-[10px] text-muted-foreground">(0 = exact)</span>
+                </div>
+              </div>
+            </div>
+
             {/* Run button */}
             <div className="flex items-center gap-3 pt-2">
               <div className="w-28">
@@ -334,11 +530,11 @@ export default function DeepReconciliationPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="bg-black/80 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed">
+            <div className="bg-muted/50 dark:bg-muted/30 border border-border rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed">
               {logs.map((line, i) => (
-                <div key={i} className={line.includes("ERROR") ? "text-red-400" : line.includes("Completed") || line.includes("Stored") ? "text-blue-400" : "text-gray-300"}>{line}</div>
+                <div key={i} className={line.includes("ERROR") ? "text-red-500" : line.includes("Completed") || line.includes("Stored") ? "text-blue-500" : "text-foreground/70"}>{line}</div>
               ))}
-              {loading && <div className="text-gray-500 animate-pulse mt-1">Running...</div>}
+              {loading && <div className="text-muted-foreground animate-pulse mt-1">Running...</div>}
             </div>
           </CardContent>
         </Card>
@@ -355,6 +551,87 @@ export default function DeepReconciliationPage() {
             <SummaryCard label="Extra in Dest" value={(results.extra_in_dest ?? 0).toLocaleString()} color="blue" icon={Plus} />
             <SummaryCard label="Modified" value={(results.modified_rows ?? 0).toLocaleString()} color="amber" icon={Pencil} />
           </div>
+
+          {/* Export Toolbar */}
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => exportCsv(results)}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => exportJson(results)}>
+              <FileJson className="h-3.5 w-3.5 mr-1.5" /> Export JSON
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => window.print()}>
+              <FileText className="h-3.5 w-3.5 mr-1.5" /> Export PDF
+            </Button>
+          </div>
+
+          {/* Distribution Charts */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={`grid gap-6 ${(results.details || []).length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-md mx-auto"}`}>
+                {/* Pie Chart */}
+                <div>
+                  <p className="text-xs text-muted-foreground text-center mb-2">Overall Breakdown</p>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Matched", value: results.matched_rows ?? 0 },
+                          { name: "Missing", value: results.missing_in_dest ?? 0 },
+                          { name: "Extra", value: results.extra_in_dest ?? 0 },
+                          { name: "Modified", value: results.modified_rows ?? 0 },
+                        ].filter((d) => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={90}
+                        paddingAngle={2}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
+                      >
+                        <Cell fill={CHART_COLORS.matched} />
+                        <Cell fill={CHART_COLORS.missing} />
+                        <Cell fill={CHART_COLORS.extra} />
+                        <Cell fill={CHART_COLORS.modified} />
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Bar Chart — only shown when there are multiple tables */}
+                {(results.details || []).length > 1 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground text-center mb-2">Per-Table Breakdown</p>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart
+                        data={(results.details || []).map((d: any) => ({
+                          table: `${d.schema}.${d.table}`,
+                          Matched: d.matched_rows ?? 0,
+                          Missing: d.missing_in_dest ?? 0,
+                          Extra: d.extra_in_dest ?? 0,
+                          Modified: d.modified_rows ?? 0,
+                        }))}
+                      >
+                        <XAxis dataKey="table" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="Matched" stackId="a" fill={CHART_COLORS.matched} />
+                        <Bar dataKey="Missing" stackId="a" fill={CHART_COLORS.missing} />
+                        <Bar dataKey="Extra" stackId="a" fill={CHART_COLORS.extra} />
+                        <Bar dataKey="Modified" stackId="a" fill={CHART_COLORS.modified} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Per-table details */}
           {(results.details || []).map((d: any) => {
@@ -382,6 +659,11 @@ export default function DeepReconciliationPage() {
                         <TabsTrigger value="missing">Missing in Dest ({d.missing_in_dest})</TabsTrigger>
                         <TabsTrigger value="extra">Extra in Dest ({d.extra_in_dest})</TabsTrigger>
                         <TabsTrigger value="modified">Modified ({d.modified_rows})</TabsTrigger>
+                        {d.column_impact && Object.keys(d.column_impact).length > 0 && (
+                          <TabsTrigger value="column_impact">
+                            <Columns3 className="h-3 w-3 mr-1" /> Column Impact
+                          </TabsTrigger>
+                        )}
                       </TabsList>
 
                       {/* Missing rows */}
@@ -434,7 +716,78 @@ export default function DeepReconciliationPage() {
                           </div>
                         ) : <p className="text-sm text-muted-foreground py-4">No modified rows found (or no key columns defined).</p>}
                       </TabsContent>
+
+                      {/* Column Impact heatmap */}
+                      {d.column_impact && Object.keys(d.column_impact).length > 0 && (
+                        <TabsContent value="column_impact">
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-muted-foreground mb-2">Number of rows where each column differed between source and destination.</p>
+                            {(() => {
+                              const entries = Object.entries(d.column_impact as Record<string, number>).sort(([, a], [, b]) => (b as number) - (a as number));
+                              const maxCount = Math.max(...entries.map(([, v]) => v as number), 1);
+                              return entries.map(([col, count]) => {
+                                const ratio = (count as number) / maxCount;
+                                // Interpolate from light red to dark red
+                                const r = 239;
+                                const g = Math.round(68 + (1 - ratio) * 130);
+                                const b = Math.round(68 + (1 - ratio) * 130);
+                                const bgColor = `rgb(${r}, ${g}, ${b})`;
+                                return (
+                                  <div key={col} className="flex items-center gap-2 text-xs">
+                                    <span className="font-mono w-36 truncate text-right text-muted-foreground shrink-0">{col}</span>
+                                    <div className="flex-1 h-5 bg-muted/30 rounded overflow-hidden relative">
+                                      <div
+                                        className="h-full rounded transition-all"
+                                        style={{
+                                          width: `${Math.max(ratio * 100, 2)}%`,
+                                          backgroundColor: bgColor,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="font-mono w-12 text-right font-medium shrink-0">{(count as number).toLocaleString()}</span>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </TabsContent>
+                      )}
                     </Tabs>
+
+                    {/* Remediation: Generate Fix SQL */}
+                    <div className="mt-4 border-t pt-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={remediationLoading[fqn]}
+                        onClick={() => generateFixSql(d)}
+                      >
+                        {remediationLoading[fqn] ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <Wrench className="h-3.5 w-3.5 mr-1.5" />}
+                        Generate Fix SQL
+                      </Button>
+                      {remediationSql[fqn] && remediationSql[fqn].length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs text-muted-foreground font-semibold uppercase">Remediation SQL</p>
+                          {remediationSql[fqn].map((sql, idx) => (
+                            <div key={idx} className="relative group">
+                              <pre className="bg-muted/50 border rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{sql}</pre>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="absolute top-1.5 right-1.5 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(sql);
+                                  toast.success("SQL copied to clipboard");
+                                }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                          <p className="text-[10px] text-muted-foreground">Copy the SQL above and paste it into the SQL Workbench below to execute.</p>
+                        </div>
+                      )}
+                    </div>
                   </CardContent>
                 )}
               </Card>
@@ -442,6 +795,145 @@ export default function DeepReconciliationPage() {
           })}
         </>
       )}
+
+      {/* ── History / Trend ──────────────────────────────────────── */}
+      {results && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" /> History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {historyLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading history...
+              </div>
+            )}
+            {!historyLoading && history.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4">No history data available yet. Run reconciliations to build trend data.</p>
+            )}
+            {!historyLoading && history.length > 0 && (
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart
+                  data={history.map((h: any) => ({
+                    executed_at: h.executed_at ? new Date(h.executed_at).toLocaleDateString() : "",
+                    match_rate_pct: h.match_rate_pct ?? 0,
+                  }))}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
+                  <XAxis dataKey="executed_at" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} unit="%" />
+                  <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                  <Line
+                    type="monotone"
+                    dataKey="match_rate_pct"
+                    stroke={CHART_COLORS.matched}
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    name="Match Rate"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Alert Rules ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-2 cursor-pointer" onClick={() => { setAlertRulesExpanded(!alertRulesExpanded); if (!alertRulesExpanded) fetchAlertRules(); }}>
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Alert Rules</span>
+            {alertRulesExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </CardTitle>
+        </CardHeader>
+        {alertRulesExpanded && (
+          <CardContent className="space-y-4">
+            {/* Fired alerts from last run */}
+            {firedAlerts.length > 0 && (
+              <div className="border border-amber-500/30 bg-amber-500/5 rounded-lg p-3 space-y-1.5">
+                <p className="text-xs font-semibold flex items-center gap-1.5 text-amber-500"><ShieldAlert className="h-3.5 w-3.5" /> Fired Alerts (last run)</p>
+                {firedAlerts.map((alert, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline" className={`text-[9px] ${alert.severity === "critical" ? "text-red-500 border-red-500/40" : alert.severity === "warning" ? "text-amber-500 border-amber-500/40" : "text-blue-500 border-blue-500/40"}`}>
+                      {(alert.severity || "info").toUpperCase()}
+                    </Badge>
+                    <span className="font-medium">{alert.rule_name || alert.name}</span>
+                    <span className="text-muted-foreground">{alert.message || `${alert.metric} ${alert.operator} ${alert.threshold}`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Existing rules */}
+            {alertRulesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading rules...</div>
+            ) : alertRules.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No alert rules configured yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Existing Rules</p>
+                {alertRules.map((rule) => (
+                  <div key={rule.id || rule.name} className="flex items-center gap-2 bg-muted/30 rounded-lg px-3 py-2 text-xs">
+                    <Badge variant="outline" className={`text-[9px] shrink-0 ${rule.severity === "critical" ? "text-red-500 border-red-500/40" : rule.severity === "warning" ? "text-amber-500 border-amber-500/40" : "text-blue-500 border-blue-500/40"}`}>
+                      {(rule.severity || "info").toUpperCase()}
+                    </Badge>
+                    <span className="font-medium">{rule.name}</span>
+                    <span className="text-muted-foreground font-mono">{rule.metric} {rule.operator} {rule.threshold}</span>
+                    <Button size="sm" variant="ghost" className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-red-500" onClick={() => deleteAlertRule(rule.id || rule.name)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Create new rule form */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase">Create New Rule</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Name</label>
+                  <Input className="h-7 text-xs w-40" placeholder="Rule name" value={newRule.name} onChange={(e) => setNewRule({ ...newRule, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Metric</label>
+                  <select className="h-7 text-xs rounded border bg-background px-2" value={newRule.metric} onChange={(e) => setNewRule({ ...newRule, metric: e.target.value })}>
+                    <option value="match_rate">Match Rate (%)</option>
+                    <option value="missing">Missing Rows</option>
+                    <option value="extra">Extra Rows</option>
+                    <option value="modified">Modified Rows</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Operator</label>
+                  <select className="h-7 text-xs rounded border bg-background px-2" value={newRule.operator} onChange={(e) => setNewRule({ ...newRule, operator: e.target.value })}>
+                    <option value="<">&lt;</option>
+                    <option value=">">&gt;</option>
+                    <option value="==">==</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Threshold</label>
+                  <Input type="number" className="h-7 text-xs w-20" value={newRule.threshold} onChange={(e) => setNewRule({ ...newRule, threshold: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Severity</label>
+                  <select className="h-7 text-xs rounded border bg-background px-2" value={newRule.severity} onChange={(e) => setNewRule({ ...newRule, severity: e.target.value })}>
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                <Button size="sm" className="h-7 text-xs" onClick={createAlertRule}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Rule
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       {/* ── SQL Workbench (floating bottom panel) ──────────────── */}
       <SqlWorkbench />

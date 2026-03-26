@@ -306,16 +306,16 @@ export default function RowLevelReconciliationPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="bg-black/80 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed">
+            <div className="bg-muted/50 dark:bg-muted/30 border border-border rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed">
               {logs.map((line, i) => (
                 <div key={i} className={
                   line.includes("ERROR") || line.includes("FAIL")
-                    ? "text-red-400"
+                    ? "text-red-500"
                     : line.includes("PASS")
-                    ? "text-green-400"
-                    : line.includes("Completed")
-                    ? "text-blue-400 font-medium"
-                    : "text-gray-300"
+                    ? "text-green-500"
+                    : line.includes("Completed") || line.includes("Stored")
+                    ? "text-blue-500 font-medium"
+                    : "text-foreground/70"
                 }>
                   {line}
                 </div>

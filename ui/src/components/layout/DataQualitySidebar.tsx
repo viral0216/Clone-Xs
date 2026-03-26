@@ -2,7 +2,8 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Zap, ShieldCheck, BarChart3, ClipboardCheck,
   Rows3, Columns3, Activity, ScanSearch, Shield, GitCompare,
-  Fingerprint, CheckSquare, Search, SearchCode,
+  Fingerprint, CheckSquare, Search, SearchCode, History,
+  Clock, Database, AlertTriangle, Bell, ClipboardList,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -10,6 +11,15 @@ const NAV_SECTIONS = [
     title: "Overview",
     items: [
       { href: "/data-quality", label: "Dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: "Monitoring",
+    items: [
+      { href: "/data-quality/freshness", label: "Data Freshness", icon: Clock },
+      { href: "/data-quality/volume", label: "Volume Monitor", icon: Database },
+      { href: "/data-quality/anomalies", label: "Anomalies", icon: AlertTriangle },
+      { href: "/data-quality/incidents", label: "Incidents", icon: Bell },
     ],
   },
   {
@@ -22,11 +32,18 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "Suites",
+    items: [
+      { href: "/data-quality/expectations", label: "Expectation Suites", icon: ClipboardList },
+    ],
+  },
+  {
     title: "Reconciliation",
     items: [
       { href: "/data-quality/reconciliation/row-level", label: "Row-Level", icon: Rows3 },
       { href: "/data-quality/reconciliation/column-level", label: "Column-Level", icon: Columns3 },
       { href: "/data-quality/reconciliation/deep", label: "Deep Diff", icon: SearchCode },
+      { href: "/data-quality/reconciliation/history", label: "Run History", icon: History },
     ],
   },
   {

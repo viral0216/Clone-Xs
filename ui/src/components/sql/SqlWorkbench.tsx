@@ -355,21 +355,61 @@ export default function SqlWorkbench() {
     URL.revokeObjectURL(url);
   }
 
+  // Panel height + drag resize + fullscreen
+  const [panelHeight, setPanelHeight] = useState(50); // percentage of viewport
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isDragging = useRef(false);
+
+  function handleDragStart(e: React.MouseEvent) {
+    e.preventDefault();
+    isDragging.current = true;
+    const startY = e.clientY;
+    const startHeight = panelHeight;
+
+    function onMove(ev: MouseEvent) {
+      if (!isDragging.current) return;
+      const deltaY = startY - ev.clientY;
+      const deltaPct = (deltaY / window.innerHeight) * 100;
+      const newHeight = Math.min(95, Math.max(20, startHeight + deltaPct));
+      setPanelHeight(newHeight);
+    }
+    function onUp() {
+      isDragging.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
+  function toggleFullscreen() {
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      setPanelHeight(50);
+    } else {
+      setIsFullscreen(true);
+      setPanelHeight(95);
+    }
+  }
+
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-[#1C1C1C] text-white text-sm font-medium rounded-lg shadow-lg hover:bg-[#2C2C2C] transition-colors border border-white/10"
+        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-[#E8453C]/5 text-[#E8453C] text-sm font-medium rounded-lg shadow-lg hover:bg-[#E8453C]/10 transition-colors border border-[#E8453C]/20"
       >
-        <Terminal className="h-4 w-4" />
+        <Terminal className="h-4 w-4 text-[#E8453C]" />
         SQL Workbench
-        <PanelBottomOpen className="h-3.5 w-3.5 text-white/50" />
+        <PanelBottomOpen className="h-3.5 w-3.5 text-[#E8453C]/50" />
       </button>
     );
   }
 
   const columns = results?.length ? Object.keys(results[0]) : [];
-  // Infer column types from first 5 rows
   const columnTypes: Record<string, ColType> = {};
   if (results?.length) {
     for (const col of columns) {
@@ -379,15 +419,30 @@ export default function SqlWorkbench() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-border shadow-2xl" style={{ height: "50vh" }}>
+    <div
+      className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-border shadow-2xl flex flex-col"
+      style={{ height: `${panelHeight}vh`, transition: isDragging.current ? "none" : "height 0.2s ease" }}
+    >
+      {/* Drag handle to resize */}
+      <div
+        className="h-1.5 cursor-row-resize group flex items-center justify-center hover:bg-[#E8453C]/10 active:bg-[#E8453C]/20 shrink-0"
+        onMouseDown={handleDragStart}
+        onDoubleClick={toggleFullscreen}
+        title="Drag to resize, double-click to toggle fullscreen"
+      >
+        <div className="w-10 h-1 rounded-full bg-border group-hover:bg-[#E8453C]/50 transition-colors" />
+      </div>
+
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30 shrink-0">
         <div className="flex items-center gap-3">
           <Terminal className="h-4 w-4 text-[#E8453C]" />
           <span className="text-[13px] font-semibold">SQL Workbench</span>
 
+          <div className="w-px h-5 bg-border" style={{ marginInline: "44px" }} />
+
           {/* Execution mode toggle */}
-          <div className="flex items-center bg-muted rounded-lg p-1 ml-1 border border-border">
+          <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
             <button
               onClick={() => setExecMode("spark")}
               disabled={!sparkAvailable}
@@ -471,12 +526,19 @@ export default function SqlWorkbench() {
               <Button size="sm" variant="ghost" onClick={downloadCsv} title="Download CSV"><Download className="h-3.5 w-3.5" /></Button>
             </>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}><PanelBottomClose className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+            {isFullscreen ? (
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            ) : (
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            )}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setIsFullscreen(false); setPanelHeight(50); }}><PanelBottomClose className="h-3.5 w-3.5" /></Button>
         </div>
       </div>
 
       {/* Body: Catalog tree + Editor + Results */}
-      <div className="flex h-[calc(100%-44px)]">
+      <div className="flex flex-1 overflow-hidden">
         {/* Left: Catalog Browser */}
         <div className="w-64 border-r border-border bg-muted/10 overflow-hidden flex flex-col shrink-0">
           <div className="px-3 py-2 border-b border-border">

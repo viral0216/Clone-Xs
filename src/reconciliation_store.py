@@ -196,3 +196,71 @@ def store_reconciliation_result(
     storage_mode = "Spark" if _get_spark() else "SQL Warehouse"
     logger.info(f"Stored reconciliation run {run_id} via {storage_mode}: {len(details)} table results")
     return run_id
+
+
+def _query_sql(sql: str, limit: int = 20, client=None, warehouse_id: str = "") -> list[dict]:
+    """Execute a SELECT query and return rows as list of dicts.
+
+    Uses Spark (preferred) or SQL warehouse (fallback).
+    """
+    spark = _get_spark()
+    if spark:
+        rows = spark.sql(sql).limit(limit).collect()
+        result = []
+        for row in rows:
+            d = row.asDict()
+            for k, v in d.items():
+                if v is not None and not isinstance(v, (str, int, float, bool)):
+                    d[k] = str(v)
+            result.append(d)
+        return result
+
+    if client and warehouse_id:
+        from src.client import execute_sql
+        rows = execute_sql(client, warehouse_id, sql)
+        return (rows or [])[:limit]
+
+    raise RuntimeError("No Spark session or SQL warehouse available for querying")
+
+
+def get_reconciliation_history(
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+    limit: int = 20,
+    run_type: str = None,
+    source_catalog: str = None,
+) -> list[dict]:
+    """Query past reconciliation runs from Delta tables.
+
+    Uses Spark or SQL warehouse. Supports optional filters on run_type
+    and source_catalog. Returns list of run dicts ordered by executed_at DESC.
+    """
+    config = config or {}
+    schema = _get_schema(config)
+
+    where_clauses = []
+    if run_type:
+        where_clauses.append(f"run_type = '{_esc(run_type)}'")
+    if source_catalog:
+        where_clauses.append(f"source_catalog = '{_esc(source_catalog)}'")
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    query = f"""
+        SELECT run_id, run_type, source_catalog, destination_catalog,
+               schema_name, table_name, execution_mode, total_tables,
+               matched, mismatched, errors, checksum_enabled, max_workers,
+               duration_seconds, executed_at, executed_by
+        FROM {schema}.reconciliation_runs
+        {where_sql}
+        ORDER BY executed_at DESC
+    """
+
+    try:
+        return _query_sql(query, limit=limit, client=client, warehouse_id=warehouse_id)
+    except Exception as e:
+        logger.warning(f"Could not query reconciliation history: {e}")
+        return []

@@ -98,9 +98,11 @@ async def pipeline_health(req: DltPipelineHealthRequest, client=Depends(get_db_c
 
 @router.post("/query-performance", summary="Query performance analysis")
 async def query_performance(req: QueryPerformanceRequest, client=Depends(get_db_client)):
-    """Analyze recent query execution performance from query history."""
+    """Analyze recent query execution performance from system.query.history."""
     from src.system_insights import query_query_performance
-    return query_query_performance(client, req.days, req.max_results)
+    config = await get_app_config()
+    wid = req.warehouse_id or config.get("sql_warehouse_id", "")
+    return query_query_performance(client, wid, req.days, req.max_results)
 
 
 @router.post("/metastore", summary="Metastore summary")

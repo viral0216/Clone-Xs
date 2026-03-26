@@ -49,7 +49,8 @@ class DltPipelineHealthRequest(BaseModel):
 
 
 class QueryPerformanceRequest(BaseModel):
-    """Request for query performance data."""
+    """Request for query performance data from system.query.history."""
+    warehouse_id: str = Field(default="", description="SQL warehouse ID to execute the system table query")
     days: int = Field(default=30, ge=1, le=365)
     max_results: int = Field(default=200, ge=1, le=1000)
 

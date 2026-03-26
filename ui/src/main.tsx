@@ -11,7 +11,7 @@ import "./app/globals.css";
 // WCAG AAA: Runtime accessibility checker (dev only)
 if (import.meta.env.DEV) {
   import("@axe-core/react").then((axe) => {
-    axe.default(React, ReactDOM, 1000);
+    axe.default(React, ReactDOM, 3000);
   });
 }
 

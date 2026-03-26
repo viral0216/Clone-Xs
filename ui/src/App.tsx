@@ -69,6 +69,15 @@ const GovODCSDetail = lazy(() => import("@/app/governance/odcs/[id]/page"));
 const GovODCSValidate = lazy(() => import("@/app/governance/odcs/validate/[id]/page"));
 const GovDQX = lazy(() => import("@/app/governance/dqx/page"));
 
+function PageFallback() {
+  return (
+    <div className="p-8 text-center text-muted-foreground">
+      <h1 className="sr-only">Loading</h1>
+      Loading...
+    </div>
+  );
+}
+
 function RouteAnnouncer() {
   const location = useLocation();
   const [announcement, setAnnouncement] = useState("");
@@ -119,10 +128,13 @@ export default function App() {
   // Loading state while checking auth
   if (authenticated === null) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center" role="status" aria-busy="true" aria-label="Checking authentication">
-        <Loader2 className="h-8 w-8 text-[#dc2626] animate-spin" aria-hidden="true" />
-        <span className="sr-only">Checking authentication...</span>
-      </div>
+      <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center" aria-busy="true" aria-label="Checking authentication">
+        <h1 className="sr-only">Clone-Xs</h1>
+        <div role="status">
+          <Loader2 className="h-8 w-8 text-[#dc2626] animate-spin" aria-hidden="true" />
+          <span className="sr-only">Checking authentication...</span>
+        </div>
+      </main>
     );
   }
 
@@ -200,30 +212,30 @@ export default function App() {
               <Route path="/storage-metrics" element={<StorageMetricsPage />} />
 
               {/* UC Enhancement Routes */}
-              <Route path="/system-insights" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><SystemInsightsPage /></Suspense>} />
-              <Route path="/ml-assets" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><MLAssetsPage /></Suspense>} />
-              <Route path="/advanced-tables" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><AdvancedTablesPage /></Suspense>} />
-              <Route path="/lakehouse-monitor" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><LakehouseMonitorPage /></Suspense>} />
-              <Route path="/federation" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><FederationPage /></Suspense>} />
-              <Route path="/delta-sharing" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><DeltaSharingPage /></Suspense>} />
+              <Route path="/system-insights" element={<Suspense fallback={<PageFallback />}><SystemInsightsPage /></Suspense>} />
+              <Route path="/ml-assets" element={<Suspense fallback={<PageFallback />}><MLAssetsPage /></Suspense>} />
+              <Route path="/advanced-tables" element={<Suspense fallback={<PageFallback />}><AdvancedTablesPage /></Suspense>} />
+              <Route path="/lakehouse-monitor" element={<Suspense fallback={<PageFallback />}><LakehouseMonitorPage /></Suspense>} />
+              <Route path="/federation" element={<Suspense fallback={<PageFallback />}><FederationPage /></Suspense>} />
+              <Route path="/delta-sharing" element={<Suspense fallback={<PageFallback />}><DeltaSharingPage /></Suspense>} />
 
               {/* Governance Portal Routes */}
-              <Route path="/governance" element={<Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading...</div>}><GovernanceOverview /></Suspense>} />
-              <Route path="/governance/dictionary" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDictionary /></Suspense>} />
-              <Route path="/governance/search" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovSearch /></Suspense>} />
-              <Route path="/governance/dqx" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQX /></Suspense>} />
-              <Route path="/governance/dq-rules" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQRules /></Suspense>} />
-              <Route path="/governance/dq-dashboard" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQDashboard /></Suspense>} />
-              <Route path="/governance/dq-results" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovDQResults /></Suspense>} />
-              <Route path="/governance/certifications" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovCertifications /></Suspense>} />
-              <Route path="/governance/approvals" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovApprovals /></Suspense>} />
-              <Route path="/governance/sla" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovSLA /></Suspense>} />
-              <Route path="/governance/contracts" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovContracts /></Suspense>} />
-              <Route path="/governance/odcs" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCS /></Suspense>} />
-              <Route path="/governance/odcs/new" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSDetail /></Suspense>} />
-              <Route path="/governance/odcs/:contractId" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSDetail /></Suspense>} />
-              <Route path="/governance/odcs/validate/:contractId" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovODCSValidate /></Suspense>} />
-              <Route path="/governance/changes" element={<Suspense fallback={<div className="p-8">Loading...</div>}><GovChanges /></Suspense>} />
+              <Route path="/governance" element={<Suspense fallback={<PageFallback />}><GovernanceOverview /></Suspense>} />
+              <Route path="/governance/dictionary" element={<Suspense fallback={<PageFallback />}><GovDictionary /></Suspense>} />
+              <Route path="/governance/search" element={<Suspense fallback={<PageFallback />}><GovSearch /></Suspense>} />
+              <Route path="/governance/dqx" element={<Suspense fallback={<PageFallback />}><GovDQX /></Suspense>} />
+              <Route path="/governance/dq-rules" element={<Suspense fallback={<PageFallback />}><GovDQRules /></Suspense>} />
+              <Route path="/governance/dq-dashboard" element={<Suspense fallback={<PageFallback />}><GovDQDashboard /></Suspense>} />
+              <Route path="/governance/dq-results" element={<Suspense fallback={<PageFallback />}><GovDQResults /></Suspense>} />
+              <Route path="/governance/certifications" element={<Suspense fallback={<PageFallback />}><GovCertifications /></Suspense>} />
+              <Route path="/governance/approvals" element={<Suspense fallback={<PageFallback />}><GovApprovals /></Suspense>} />
+              <Route path="/governance/sla" element={<Suspense fallback={<PageFallback />}><GovSLA /></Suspense>} />
+              <Route path="/governance/contracts" element={<Suspense fallback={<PageFallback />}><GovContracts /></Suspense>} />
+              <Route path="/governance/odcs" element={<Suspense fallback={<PageFallback />}><GovODCS /></Suspense>} />
+              <Route path="/governance/odcs/new" element={<Suspense fallback={<PageFallback />}><GovODCSDetail /></Suspense>} />
+              <Route path="/governance/odcs/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSDetail /></Suspense>} />
+              <Route path="/governance/odcs/validate/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSValidate /></Suspense>} />
+              <Route path="/governance/changes" element={<Suspense fallback={<PageFallback />}><GovChanges /></Suspense>} />
             </Routes>
           </main>
         </div>

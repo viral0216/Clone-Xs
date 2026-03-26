@@ -60,12 +60,12 @@ def query_predictive_optimization(
             CONCAT(catalog_name, '.', schema_name, '.', table_name) AS table_fqn,
             operation_type AS recommendation_type,
             operation_status,
-            operation_metrics,
-            usage_date AS last_checked
+            usage_unit,
+            start_time AS last_checked
         FROM system.storage.predictive_optimization_operations_history
-        WHERE usage_date >= CURRENT_DATE() - INTERVAL 7 DAYS
+        WHERE start_time >= CURRENT_DATE() - INTERVAL 7 DAYS
           {catalog_filter}
-        ORDER BY usage_date DESC
+        ORDER BY start_time DESC
     """
     try:
         results = execute_sql(client, warehouse_id, sql)
@@ -195,23 +195,27 @@ def query_table_lineage(
 def query_storage_usage(
     client: WorkspaceClient, warehouse_id: str, catalog: str = "", days: int = 30
 ) -> list[dict]:
-    """Query system.storage.tables for storage consumption trends.
+    """Query information_schema.tables for table storage info.
 
     No REST API available — system table SQL is the only option.
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
     catalog_filter = ""
     if catalog:
-        catalog_filter = f"AND catalog_name = '{catalog}'"
+        catalog_filter = f"AND table_catalog = '{catalog}'"
 
-    # Use only columns guaranteed to exist. Some workspaces may not have
-    # delta_table_size_in_bytes or active_files_count.
     sql = f"""
-        SELECT *
-        FROM system.storage.tables
-        WHERE 1=1
+        SELECT
+            table_catalog,
+            table_schema,
+            table_name,
+            table_type,
+            data_source_format,
+            created,
+            last_altered
+        FROM system.information_schema.tables
+        WHERE table_schema != 'information_schema'
           {catalog_filter}
-        ORDER BY 1
+        ORDER BY last_altered DESC NULLS LAST
         LIMIT 200
     """
     try:
@@ -219,7 +223,7 @@ def query_storage_usage(
         logger.info(f"Retrieved {len(results)} storage records")
         return results
     except Exception as e:
-        logger.debug(f"system.storage.tables not available: {e}")
+        logger.debug(f"information_schema.tables not available: {e}")
         return []
 
 
@@ -382,70 +386,165 @@ def query_dlt_pipeline_health(client: WorkspaceClient, max_events_per_pipeline: 
     }
 
 
-def query_query_performance(client: WorkspaceClient, days: int = 30, max_results: int = 200) -> dict:
-    """Get query execution performance via SDK query history API."""
-    queries = []
+def query_query_performance(
+    client: WorkspaceClient,
+    warehouse_id: str = "",
+    days: int = 30,
+    max_results: int = 200,
+) -> dict:
+    """Get query execution performance from system.query.history table.
+
+    Uses the system table for richer data (compilation time, read bytes,
+    statement type) instead of the SDK query history API.
+    """
+    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # ── Discover actual columns first ─────────────────────────────────
+    # system.query.history schema varies across workspaces. Run a probe
+    # query to find available columns, then build SQL dynamically.
     try:
-        from databricks.sdk.service.sql import QueryFilter, TimeRange
+        if not warehouse_id:
+            raise ValueError("No SQL warehouse configured — set sql_warehouse_id in Settings.")
 
-        end_ms = int(datetime.utcnow().timestamp() * 1000)
-        start_ms = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
-
-        for q in client.query_history.list(
-            filter_by=QueryFilter(
-                query_start_time_range=TimeRange(start_time_ms=start_ms, end_time_ms=end_ms),
-            ),
-        ):
-            queries.append({
-                "query_id": q.query_id,
-                "query_text": (q.query_text or "")[:200],
-                "status": str(q.status) if q.status else None,
-                "duration_ms": q.duration,
-                "rows_produced": q.rows_produced,
-                "user_name": q.user_name,
-                "warehouse_id": q.warehouse_id,
-                "executed_as_user_name": getattr(q, "executed_as_user_name", None),
-            })
-            if len(queries) >= max_results:
-                break
-
-        # Compute stats
-        durations = [q["duration_ms"] for q in queries if q["duration_ms"]]
-        avg_duration = round(sum(durations) / len(durations)) if durations else 0
-        sorted_dur = sorted(durations)
-        p95_duration = sorted_dur[int(len(sorted_dur) * 0.95)] if sorted_dur else 0
-        failure_rate = sum(1 for q in queries if q["status"] and "FAILED" in str(q["status"]).upper()) / max(len(queries), 1)
-
-        # Top 10 slowest
-        slowest = sorted(queries, key=lambda x: x.get("duration_ms") or 0, reverse=True)[:10]
-
-        # By warehouse
-        by_warehouse = {}
-        for q in queries:
-            wh = q.get("warehouse_id") or "unknown"
-            if wh not in by_warehouse:
-                by_warehouse[wh] = {"warehouse_id": wh, "query_count": 0, "avg_duration_ms": 0, "total_duration_ms": 0}
-            by_warehouse[wh]["query_count"] += 1
-            by_warehouse[wh]["total_duration_ms"] += q.get("duration_ms") or 0
-        for wh in by_warehouse.values():
-            wh["avg_duration_ms"] = round(wh["total_duration_ms"] / max(wh["query_count"], 1))
-        by_warehouse_list = sorted(by_warehouse.values(), key=lambda x: x["query_count"], reverse=True)
-
-        logger.info(f"Retrieved {len(queries)} queries from history")
+        probe = execute_sql(client, warehouse_id, "SELECT * FROM system.query.history LIMIT 1")
+        available_cols = set(probe[0].keys()) if probe else set()
+        logger.info(f"system.query.history columns: {sorted(available_cols)}")
     except Exception as e:
-        logger.debug(f"Query History API not available: {e}")
-        return {"queries": [], "summary": {}, "slowest": [], "by_warehouse": [], "error": str(e)}
+        logger.warning(f"system.query.history not available: {e}")
+        return {
+            "queries": [], "summary": {}, "slowest": [],
+            "by_warehouse": [], "by_user": [], "by_statement_type": [],
+            "error": str(e),
+        }
+
+    # ── Resolve column names (handle schema variations) ───────────────
+    def pick(preferred: list[str], default: str = "NULL") -> str:
+        for col in preferred:
+            if col in available_cols:
+                return col
+        return default
+
+    col_id = pick(["statement_id", "query_id"])
+    col_text = pick(["statement_text", "query_text"])
+    col_user = pick(["executed_by", "user_name", "client_application_id"])
+    col_warehouse = pick(["warehouse_id", "compute_id"])
+    col_status = pick(["status", "execution_status"])
+    col_stmt_type = pick(["statement_type", "query_source"])
+    col_duration = pick(["total_duration_ms", "total_time_ms", "duration_ms"])
+    col_exec_dur = pick(["execution_duration_ms", "execution_time_ms"])
+    col_rows = pick(["rows_produced", "produced_rows"])
+    col_read_bytes = pick(["read_bytes", "read_io_bytes"])
+    col_start = pick(["start_time", "query_start_time"])
+    col_end = pick(["end_time", "query_end_time"])
+
+    # ── Top slow queries ──────────────────────────────────────────────
+    slow_sql = f"""
+        SELECT
+            {col_id} AS query_id,
+            SUBSTRING({col_text}, 1, 200) AS query_text,
+            {col_user} AS user_name,
+            {col_warehouse} AS warehouse_id,
+            {col_status} AS status,
+            {col_stmt_type} AS statement_type,
+            {col_duration} AS total_duration_ms,
+            {col_exec_dur} AS execution_duration_ms,
+            {col_rows} AS rows_produced,
+            {col_read_bytes} AS read_bytes,
+            {col_start} AS start_time,
+            {col_end} AS end_time
+        FROM system.query.history
+        WHERE {col_start} >= '{cutoff}'
+        ORDER BY {col_duration} DESC
+        LIMIT {max_results}
+    """
+
+    # ── Summary stats ─────────────────────────────────────────────────
+    summary_sql = f"""
+        SELECT
+            COUNT(*) AS total_queries,
+            ROUND(AVG({col_duration})) AS avg_duration_ms,
+            ROUND(PERCENTILE({col_duration}, 0.95)) AS p95_duration_ms,
+            ROUND(SUM(CASE WHEN {col_status} = 'FAILED' THEN 1 ELSE 0 END) / COUNT(*), 4) AS failure_rate,
+            SUM({col_read_bytes}) AS total_read_bytes,
+            ROUND(AVG({col_read_bytes})) AS avg_read_bytes
+        FROM system.query.history
+        WHERE {col_start} >= '{cutoff}'
+    """
+
+    # ── By warehouse breakdown ────────────────────────────────────────
+    warehouse_sql = f"""
+        SELECT
+            {col_warehouse} AS warehouse_id,
+            COUNT(*) AS query_count,
+            ROUND(AVG({col_duration})) AS avg_duration_ms,
+            ROUND(PERCENTILE({col_duration}, 0.95)) AS p95_duration_ms,
+            ROUND(SUM({col_duration}) / 1000.0 / 60.0, 1) AS total_minutes,
+            SUM(CASE WHEN {col_status} = 'FAILED' THEN 1 ELSE 0 END) AS failed_count,
+            SUM({col_read_bytes}) AS total_read_bytes
+        FROM system.query.history
+        WHERE {col_start} >= '{cutoff}'
+        GROUP BY {col_warehouse}
+        ORDER BY query_count DESC
+    """
+
+    # ── By user breakdown ─────────────────────────────────────────────
+    user_sql = f"""
+        SELECT
+            {col_user} AS user_name,
+            COUNT(*) AS query_count,
+            ROUND(AVG({col_duration})) AS avg_duration_ms,
+            ROUND(PERCENTILE({col_duration}, 0.95)) AS p95_duration_ms,
+            SUM({col_read_bytes}) AS total_read_bytes
+        FROM system.query.history
+        WHERE {col_start} >= '{cutoff}'
+        GROUP BY {col_user}
+        ORDER BY query_count DESC
+        LIMIT 20
+    """
+
+    # ── By statement type breakdown ───────────────────────────────────
+    statement_type_sql = f"""
+        SELECT
+            {col_stmt_type} AS statement_type,
+            COUNT(*) AS query_count,
+            ROUND(AVG({col_duration})) AS avg_duration_ms,
+            ROUND(PERCENTILE({col_duration}, 0.95)) AS p95_duration_ms
+        FROM system.query.history
+        WHERE {col_start} >= '{cutoff}'
+        GROUP BY {col_stmt_type}
+        ORDER BY query_count DESC
+    """
+
+    try:
+        queries = execute_sql(client, warehouse_id, slow_sql)
+        summary_rows = execute_sql(client, warehouse_id, summary_sql)
+        by_warehouse = execute_sql(client, warehouse_id, warehouse_sql)
+        by_user = execute_sql(client, warehouse_id, user_sql)
+        by_statement_type = execute_sql(client, warehouse_id, statement_type_sql)
+
+        summary = summary_rows[0] if summary_rows else {
+            "total_queries": 0, "avg_duration_ms": 0, "p95_duration_ms": 0,
+            "failure_rate": 0, "total_read_bytes": 0, "avg_read_bytes": 0,
+        }
+
+        slowest = queries[:10]
+
+        logger.info(f"Retrieved {len(queries)} queries from system.query.history (last {days} days)")
+    except Exception as e:
+        logger.warning(f"system.query.history query failed: {e}")
+        return {
+            "queries": [], "summary": {}, "slowest": [],
+            "by_warehouse": [], "by_user": [], "by_statement_type": [],
+            "error": str(e),
+        }
 
     return {
-        "queries": queries[:50],  # Only return top 50 to UI
-        "summary": {
-            "total_queries": len(queries),
-            "avg_duration_ms": avg_duration,
-            "p95_duration_ms": p95_duration,
-            "failure_rate": round(failure_rate, 4),
-        },
+        "queries": queries[:50],
+        "summary": summary,
         "slowest": slowest,
-        "by_warehouse": by_warehouse_list,
+        "by_warehouse": by_warehouse,
+        "by_user": by_user,
+        "by_statement_type": by_statement_type,
     }
 
 

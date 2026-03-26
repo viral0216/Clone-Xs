@@ -24,6 +24,25 @@ const CHART_COLORS = [
   "#a78bfa", "#fb923c", "#38bdf8",
 ];
 
+function formatDuration(ms: number | null | undefined): string {
+  const v = Number(ms || 0);
+  if (v < 1000) return `${v} ms`;
+  if (v < 60_000) return `${(v / 1000).toFixed(1)}s`;
+  const mins = Math.floor(v / 60_000);
+  const secs = ((v % 60_000) / 1000).toFixed(0);
+  return `${mins}m ${secs}s`;
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  const b = Number(bytes || 0);
+  if (b === 0) return "0 B";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
+  if (b < 1024 ** 4) return `${(b / 1024 ** 3).toFixed(2)} GB`;
+  return `${(b / 1024 ** 4).toFixed(2)} TB`;
+}
+
 function stateBadge(state: string) {
   const s = String(state || "").toUpperCase();
   const color = s.includes("RUNNING") || s === "OK" || s === "SUCCEEDED"
@@ -41,6 +60,8 @@ export default function SystemInsightsPage() {
   const [catalog, setCatalog] = useState(job?.params?.catalog || "");
   const [days, setDays] = useState(job?.params?.days || 30);
   const [jobFilter, setJobFilter] = useState(job?.params?.jobFilter || "");
+  const [queryDays, setQueryDays] = useState(30);
+  const [queryLimit, setQueryLimit] = useState(200);
 
   // Overview data (from /summary)
   const data = job?.data as any;
@@ -89,11 +110,11 @@ export default function SystemInsightsPage() {
     } catch {} finally { setPipelineLoading(false); }
   }
 
-  async function fetchQueries() {
-    if (queryData) return;
+  async function fetchQueries(force = false) {
+    if (queryData && !force) return;
     setQueryLoading(true);
     try {
-      setQueryData(await api.post("/system-insights/query-performance", { days }));
+      setQueryData(await api.post("/system-insights/query-performance", { warehouse_id: data?.warehouse_id || "", days: queryDays, max_results: queryLimit }));
     } catch {} finally { setQueryLoading(false); }
   }
 
@@ -397,13 +418,37 @@ export default function SystemInsightsPage() {
         {/* ===== QUERIES TAB ===== */}
         <TabsContent value="queries">
           <div className="space-y-6 mt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="w-28">
+                    <label htmlFor="query-days" className="text-xs text-muted-foreground mb-1 block">Days</label>
+                    <Input id="query-days" type="number" min={1} max={365} value={queryDays} onChange={(e) => setQueryDays(Number(e.target.value))} />
+                  </div>
+                  <div className="w-28">
+                    <label htmlFor="query-limit" className="text-xs text-muted-foreground mb-1 block">Max Results</label>
+                    <Input id="query-limit" type="number" min={1} max={1000} value={queryLimit} onChange={(e) => setQueryLimit(Number(e.target.value))} />
+                  </div>
+                  <Button onClick={() => fetchQueries(true)} disabled={queryLoading} size="sm">
+                    {queryLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    {queryLoading ? "Loading..." : "Fetch Queries"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
             {queryLoading && <LoadingState />}
             {queryData && (
               <>
+                {queryData.error && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400">
+                    <p className="font-medium">system.query.history error</p>
+                    <p className="mt-1 font-mono text-xs text-red-400/80">{queryData.error}</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <SummaryCard icon={Search} label="Total Queries" value={String(queryData.summary?.total_queries || 0)} sub={`Last ${days} days`} />
-                  <SummaryCard icon={Activity} label="Avg Duration" value={`${queryData.summary?.avg_duration_ms || 0} ms`} />
-                  <SummaryCard icon={Zap} label="P95 Duration" value={`${queryData.summary?.p95_duration_ms || 0} ms`} />
+                  <SummaryCard icon={Search} label="Total Queries" value={String(queryData.summary?.total_queries || 0)} sub={`Last ${queryDays} days`} />
+                  <SummaryCard icon={Activity} label="Avg Duration" value={formatDuration(queryData.summary?.avg_duration_ms)} />
+                  <SummaryCard icon={Zap} label="P95 Duration" value={formatDuration(queryData.summary?.p95_duration_ms)} />
                   <SummaryCard icon={AlertTriangle} label="Failure Rate" value={`${((queryData.summary?.failure_rate || 0) * 100).toFixed(1)}%`} alert={(queryData.summary?.failure_rate || 0) > 0.05} />
                 </div>
                 <Card>
@@ -413,12 +458,16 @@ export default function SystemInsightsPage() {
                       items={queryData.slowest || []}
                       columns={[
                         { key: "query_text", label: "Query", mono: true },
-                        { key: "duration_ms", label: "Duration", render: (v) => `${(v / 1000).toFixed(1)}s`, align: "right" },
+                        { key: "total_duration_ms", label: "Total", render: (v) => formatDuration(v), align: "right" },
+                        { key: "execution_duration_ms", label: "Execution", render: (v) => formatDuration(v), align: "right" },
+                        { key: "compilation_duration_ms", label: "Compile", render: (v) => formatDuration(v), align: "right" },
                         { key: "status", label: "Status", render: (v) => stateBadge(v) },
+                        { key: "statement_type", label: "Type" },
                         { key: "user_name", label: "User" },
                         { key: "rows_produced", label: "Rows", align: "right", render: (v) => Number(v || 0).toLocaleString() },
+                        { key: "read_bytes", label: "Read", align: "right", render: (v) => formatBytes(v) },
                       ]}
-                      emptyMessage="No query history available."
+                      emptyMessage="No query history available. Ensure system.query.history is accessible."
                     />
                   </CardContent>
                 </Card>
@@ -432,6 +481,43 @@ export default function SystemInsightsPage() {
                           { key: "warehouse_id", label: "Warehouse", mono: true },
                           { key: "query_count", label: "Queries", align: "right" },
                           { key: "avg_duration_ms", label: "Avg Duration", align: "right", render: (v) => `${v} ms` },
+                          { key: "p95_duration_ms", label: "P95", align: "right", render: (v) => `${v} ms` },
+                          { key: "total_minutes", label: "Total Min", align: "right" },
+                          { key: "failed_count", label: "Failed", align: "right" },
+                          { key: "total_read_bytes", label: "Read", align: "right", render: (v) => formatBytes(v) },
+                        ]}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+                {queryData.by_user?.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Top Users by Query Volume</CardTitle></CardHeader>
+                    <CardContent>
+                      <DataTable
+                        items={queryData.by_user}
+                        columns={[
+                          { key: "user_name", label: "User" },
+                          { key: "query_count", label: "Queries", align: "right" },
+                          { key: "avg_duration_ms", label: "Avg Duration", align: "right", render: (v) => `${v} ms` },
+                          { key: "p95_duration_ms", label: "P95", align: "right", render: (v) => `${v} ms` },
+                          { key: "total_read_bytes", label: "Read", align: "right", render: (v) => formatBytes(v) },
+                        ]}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+                {queryData.by_statement_type?.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Queries by Statement Type</CardTitle></CardHeader>
+                    <CardContent>
+                      <DataTable
+                        items={queryData.by_statement_type}
+                        columns={[
+                          { key: "statement_type", label: "Type" },
+                          { key: "query_count", label: "Queries", align: "right" },
+                          { key: "avg_duration_ms", label: "Avg Duration", align: "right", render: (v) => `${v} ms` },
+                          { key: "p95_duration_ms", label: "P95", align: "right", render: (v) => `${v} ms` },
                         ]}
                       />
                     </CardContent>

@@ -11,6 +11,7 @@ import PageHeader from "@/components/PageHeader";
 import {
   Rows3, Loader2, CheckCircle, XCircle, AlertTriangle,
   ChevronDown, ChevronUp, Hash, ArrowLeftRight, Zap,
+  Layers, Square, CheckSquare2,
 } from "lucide-react";
 
 function SummaryCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
@@ -57,9 +58,92 @@ export default function RowLevelReconciliationPage() {
   // Spark Connect state
   const [sparkStatus, setSparkStatus] = useState<any>({ available: false });
   const [sparkClusterId, setSparkClusterId] = useState("");
-  const [sparkServerless, setSparkServerless] = useState(true);
+  const [sparkServerless, setSparkServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-default-compute-serverless") !== "false"; } catch { return true; }
+  });
   const [sparkConfiguring, setSparkConfiguring] = useState(false);
   const [useSpark, setUseSpark] = useState(false);
+
+  // Batch mode state
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobPolling, setJobPolling] = useState(false);
+
+  function toggleTableSelection(table: string) {
+    setSelectedTables(prev => {
+      const next = new Set(prev);
+      if (next.has(table)) next.delete(table); else next.add(table);
+      return next;
+    });
+  }
+
+  function selectAllTables() {
+    if (selectedTables.size === sourceTables.length) setSelectedTables(new Set());
+    else setSelectedTables(new Set(sourceTables));
+  }
+
+  async function runBatchReconciliation() {
+    if (!source || !dest || selectedTables.size === 0) return;
+    const tables = [...selectedTables].map(t => ({ schema_name: sourceSchema, table_name: t }));
+    setResults(null);
+    setExpandedTable(null);
+    setSampleData({});
+    setLogs([`[${new Date().toLocaleTimeString()}] Submitting batch job: ${tables.length} tables from ${source}.${sourceSchema} → ${dest}`]);
+    try {
+      const data = await api.post("/reconciliation/batch-validate", {
+        source_catalog: source,
+        destination_catalog: dest,
+        tables,
+        use_checksum: useChecksum,
+        use_spark: useSpark,
+        max_workers: maxWorkers,
+      });
+      setActiveJobId(data.job_id);
+      setJobPolling(true);
+      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Job queued: ${data.job_id} (${data.total_tables} tables)`]);
+    } catch (e: any) {
+      toast.error(e.message);
+      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${e.message}`]);
+    }
+  }
+
+  // Poll batch job status
+  useEffect(() => {
+    if (!activeJobId || !jobPolling) return;
+    const interval = setInterval(async () => {
+      try {
+        const job = await api.get(`/reconciliation/batch-validate/${activeJobId}`);
+        const progress = job.progress || {};
+        if (progress.current_table) {
+          setLogs(prev => {
+            const lastLine = prev[prev.length - 1] || "";
+            const progressLine = `[${new Date().toLocaleTimeString()}] [${progress.completed || 0}/${progress.total || 0}] Processing ${progress.current_table}...`;
+            if (lastLine.includes("Processing") && lastLine.includes(progress.current_table)) return prev;
+            return [...prev, progressLine];
+          });
+        }
+        if (job.status === "completed") {
+          clearInterval(interval);
+          setJobPolling(false);
+          setResults(job.result);
+          const r = job.result || {};
+          setLogs(prev => [...prev,
+            `[${new Date().toLocaleTimeString()}] Batch complete: ${r.matched || 0}/${r.total_tables || 0} matched, ${r.mismatched || 0} mismatched, ${r.errors || 0} errors`,
+            r.run_id ? `[${new Date().toLocaleTimeString()}] Results stored in Delta → run_id: ${r.run_id}` : "",
+          ].filter(Boolean));
+          toast.success(`Batch reconciliation complete: ${r.matched || 0}/${r.total_tables || 0} matched`);
+        } else if (job.status === "failed") {
+          clearInterval(interval);
+          setJobPolling(false);
+          setResults({ error: job.error || "Job failed" });
+          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${job.error || "Job failed"}`]);
+          toast.error("Batch reconciliation failed");
+        }
+      } catch { /* polling error — continue */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [activeJobId, jobPolling]);
 
   useEffect(() => {
     api.get("/reconciliation/spark-status").then((s) => {
@@ -211,10 +295,26 @@ export default function RowLevelReconciliationPage() {
               />
               Enable checksums
             </label>
-            <Button onClick={runReconciliation} disabled={loading || !source || !dest}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
-              {loading ? "Running..." : "Run Reconciliation"}
-            </Button>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={batchMode}
+                onChange={(e) => { setBatchMode(e.target.checked); setSelectedTables(new Set()); }}
+                className="rounded border-border"
+              />
+              <Layers className="h-3.5 w-3.5" /> Batch mode
+            </label>
+            {batchMode ? (
+              <Button onClick={runBatchReconciliation} disabled={loading || jobPolling || !source || !dest || !sourceSchema || selectedTables.size === 0}>
+                {jobPolling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Layers className="h-4 w-4 mr-2" />}
+                {jobPolling ? "Running..." : `Run Batch (${selectedTables.size} tables)`}
+              </Button>
+            ) : (
+              <Button onClick={runReconciliation} disabled={loading || !source || !dest}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
+                {loading ? "Running..." : "Run Reconciliation"}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -267,7 +367,14 @@ export default function RowLevelReconciliationPage() {
       {source && sourceSchema && !results && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Tables in {source}.{sourceSchema}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Tables in {source}.{sourceSchema}</CardTitle>
+              {batchMode && sourceTables.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={selectAllTables} className="text-xs">
+                  {selectedTables.size === sourceTables.length ? "Deselect All" : "Select All"} ({sourceTables.length})
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {tablesLoading ? (
@@ -276,6 +383,16 @@ export default function RowLevelReconciliationPage() {
               </div>
             ) : sourceTables.length === 0 ? (
               <p className="text-sm text-muted-foreground">No tables found in this schema.</p>
+            ) : batchMode ? (
+              <div className="space-y-1">
+                {sourceTables.map((t) => (
+                  <label key={t} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors text-sm font-mono ${selectedTables.has(t) ? "bg-muted/50" : "hover:bg-muted/30"}`}>
+                    <input type="checkbox" checked={selectedTables.has(t)} onChange={() => toggleTableSelection(t)} className="rounded border-border" />
+                    {t}
+                  </label>
+                ))}
+                <p className="text-xs text-muted-foreground mt-2">{selectedTables.size} of {sourceTables.length} table(s) selected for batch reconciliation.</p>
+              </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {sourceTables.map((t) => (
@@ -284,6 +401,25 @@ export default function RowLevelReconciliationPage() {
                 <p className="w-full text-xs text-muted-foreground mt-2">{sourceTables.length} table(s) will be reconciled. Select a specific table above to narrow scope.</p>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Batch Job Progress ─────────────────────────────────────── */}
+      {jobPolling && activeJobId && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3 mb-3">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <p className="text-sm font-medium">Batch Job Running</p>
+              <Badge variant="outline" className="text-xs font-mono">{activeJobId}</Badge>
+              <Button size="sm" variant="ghost" className="ml-auto text-xs text-muted-foreground" onClick={() => { setJobPolling(false); setActiveJobId(null); }}>
+                Dismiss
+              </Button>
+            </div>
+            <div className="w-full bg-muted/50 rounded-full h-2">
+              <div className="bg-[#E8453C] h-2 rounded-full transition-all" style={{ width: `${(() => { try { const l = logs.filter(l => l.includes("Processing")); return l.length; } catch { return 0; } })() / Math.max(selectedTables.size, 1) * 100}%` }} />
+            </div>
           </CardContent>
         </Card>
       )}

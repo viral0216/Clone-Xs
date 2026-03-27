@@ -1717,7 +1717,7 @@ def cmd_metrics(args):
     _resolve_warehouse_id(args, config, client)
 
     warehouse_id = config["sql_warehouse_id"]
-    table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
     limit = args.limit
     source_filter = args.source
 

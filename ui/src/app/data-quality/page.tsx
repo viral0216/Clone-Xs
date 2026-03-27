@@ -70,8 +70,14 @@ export default function DataQualityOverviewPage() {
         if (checks.status === "fulfilled") setDqxChecks(Array.isArray(checks.value) ? checks.value : []);
         if (ruleList.status === "fulfilled") setRules(Array.isArray(ruleList.value) ? ruleList.value : []);
         if (freshness.status === "fulfilled" && freshness.value) setFreshnessSummary(freshness.value);
-        if (anomalies.status === "fulfilled") setRecentAnomalies(Array.isArray(anomalies.value) ? anomalies.value.slice(0, 5) : []);
-        if (incidents.status === "fulfilled") setRecentIncidents(Array.isArray(incidents.value) ? incidents.value.slice(0, 5) : []);
+        if (anomalies.status === "fulfilled") {
+          const av = anomalies.value;
+          setRecentAnomalies(Array.isArray(av) ? av.slice(0, 5) : Array.isArray(av?.anomalies) ? av.anomalies.slice(0, 5) : []);
+        }
+        if (incidents.status === "fulfilled") {
+          const iv = incidents.value;
+          setRecentIncidents(Array.isArray(iv) ? iv.slice(0, 5) : Array.isArray(iv?.incidents) ? iv.incidents.slice(0, 5) : []);
+        }
         if (trend.status === "fulfilled") setHealthTrend(Array.isArray(trend.value) ? trend.value : []);
       } finally {
         setLoading(false);

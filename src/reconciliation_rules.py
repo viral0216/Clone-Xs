@@ -11,8 +11,22 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-RULES_TABLE = "clone_audit.reconciliation.quality_rules"
-VIOLATIONS_TABLE = "clone_audit.reconciliation.quality_violations"
+DEFAULT_AUDIT_CATALOG = "clone_audit"
+
+
+def _get_audit_catalog(config: dict | None = None) -> str:
+    """Resolve audit catalog from config, falling back to default."""
+    if config:
+        return config.get("audit_trail", {}).get("catalog", DEFAULT_AUDIT_CATALOG)
+    return DEFAULT_AUDIT_CATALOG
+
+
+def _rules_table(config: dict | None = None) -> str:
+    return f"{_get_audit_catalog(config)}.reconciliation.quality_rules"
+
+
+def _violations_table(config: dict | None = None) -> str:
+    return f"{_get_audit_catalog(config)}.reconciliation.quality_violations"
 
 
 def _get_spark():
@@ -27,11 +41,12 @@ def _get_spark():
 # Rule persistence (Delta table)
 # ---------------------------------------------------------------------------
 
-def _ensure_rules_table(spark) -> None:
+def _ensure_rules_table(spark, config: dict | None = None) -> None:
     """Create the quality_rules Delta table if it does not exist."""
-    spark.sql("CREATE SCHEMA IF NOT EXISTS clone_audit.reconciliation")
+    catalog = _get_audit_catalog(config)
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.reconciliation")
     spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {RULES_TABLE} (
+        CREATE TABLE IF NOT EXISTS {_rules_table(config)} (
             rule_id STRING,
             name STRING,
             catalog STRING,
@@ -48,11 +63,12 @@ def _ensure_rules_table(spark) -> None:
     """)
 
 
-def _ensure_violations_table(spark) -> None:
+def _ensure_violations_table(spark, config: dict | None = None) -> None:
     """Create the quality_violations Delta table if it does not exist."""
-    spark.sql("CREATE SCHEMA IF NOT EXISTS clone_audit.reconciliation")
+    catalog = _get_audit_catalog(config)
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.reconciliation")
     spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {VIOLATIONS_TABLE} (
+        CREATE TABLE IF NOT EXISTS {_violations_table(config)} (
             violation_id STRING,
             rule_id STRING,
             rule_name STRING,
@@ -69,12 +85,12 @@ def _ensure_violations_table(spark) -> None:
     """)
 
 
-def list_quality_rules(catalog: str = "", schema_name: str = "", table_name: str = "") -> list[dict]:
+def list_quality_rules(catalog: str = "", schema_name: str = "", table_name: str = "", config: dict | None = None) -> list[dict]:
     """List quality rules, optionally filtered by catalog/schema/table."""
     spark = _get_spark()
-    _ensure_rules_table(spark)
+    _ensure_rules_table(spark, config)
 
-    query = f"SELECT * FROM {RULES_TABLE} WHERE 1=1"
+    query = f"SELECT * FROM {_rules_table(config)} WHERE 1=1"
     if catalog:
         query += f" AND catalog = '{catalog}'"
     if schema_name:
@@ -96,6 +112,7 @@ def create_quality_rule(
     column_name: str = "",
     parameters: Optional[dict] = None,
     severity: str = "warning",
+    config: dict | None = None,
 ) -> dict:
     """Create a new quality rule and persist it to Delta.
 
@@ -120,7 +137,7 @@ def create_quality_rule(
     import json as _json
 
     spark = _get_spark()
-    _ensure_rules_table(spark)
+    _ensure_rules_table(spark, config)
 
     rule_id = str(uuid.uuid4())[:8]
     now = datetime.now()
@@ -142,27 +159,27 @@ def create_quality_rule(
 
     from pyspark.sql import Row
     row = Row(**rule)
-    spark.createDataFrame([row]).write.mode("append").saveAsTable(RULES_TABLE)
+    spark.createDataFrame([row]).write.mode("append").saveAsTable(_rules_table(config))
 
     logger.info(f"Quality rule '{name}' created (id={rule_id})")
     rule["created_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
     return rule
 
 
-def delete_quality_rule(rule_id: str) -> bool:
+def delete_quality_rule(rule_id: str, config: dict | None = None) -> bool:
     """Delete a quality rule by ID."""
     spark = _get_spark()
-    _ensure_rules_table(spark)
-    spark.sql(f"DELETE FROM {RULES_TABLE} WHERE rule_id = '{rule_id}'")
+    _ensure_rules_table(spark, config)
+    spark.sql(f"DELETE FROM {_rules_table(config)} WHERE rule_id = '{rule_id}'")
     logger.info(f"Quality rule {rule_id} deleted")
     return True
 
 
-def toggle_quality_rule(rule_id: str, enabled: bool) -> bool:
+def toggle_quality_rule(rule_id: str, enabled: bool, config: dict | None = None) -> bool:
     """Enable or disable a quality rule."""
     spark = _get_spark()
-    _ensure_rules_table(spark)
-    spark.sql(f"UPDATE {RULES_TABLE} SET enabled = {enabled} WHERE rule_id = '{rule_id}'")
+    _ensure_rules_table(spark, config)
+    spark.sql(f"UPDATE {_rules_table(config)} SET enabled = {enabled} WHERE rule_id = '{rule_id}'")
     return True
 
 
@@ -276,6 +293,7 @@ def evaluate_quality_rules(
     schema: str,
     table_name: str,
     rules: Optional[list[dict]] = None,
+    config: dict | None = None,
 ) -> list[dict]:
     """Run quality rules against a table and return violations.
 
@@ -293,11 +311,11 @@ def evaluate_quality_rules(
     """
     import json as _json
 
-    _ensure_violations_table(spark)
+    _ensure_violations_table(spark, config)
 
     if rules is None:
         rules = list_quality_rules(
-            catalog=source_catalog, schema_name=schema, table_name=table_name,
+            catalog=source_catalog, schema_name=schema, table_name=table_name, config=config,
         )
         rules = [r for r in rules if r.get("enabled", True)]
 
@@ -358,7 +376,7 @@ def evaluate_quality_rules(
                 "executed_at": now,
             }
             from pyspark.sql import Row
-            spark.createDataFrame([Row(**violation_row)]).write.mode("append").saveAsTable(VIOLATIONS_TABLE)
+            spark.createDataFrame([Row(**violation_row)]).write.mode("append").saveAsTable(_violations_table(config))
         except Exception as e:
             logger.warning(f"Could not persist violation result: {e}")
 
@@ -370,12 +388,13 @@ def get_violation_history(
     schema_name: str = "",
     table_name: str = "",
     limit: int = 100,
+    config: dict | None = None,
 ) -> list[dict]:
     """Query past quality violation results from Delta."""
     spark = _get_spark()
-    _ensure_violations_table(spark)
+    _ensure_violations_table(spark, config)
 
-    query = f"SELECT * FROM {VIOLATIONS_TABLE} WHERE 1=1"
+    query = f"SELECT * FROM {_violations_table(config)} WHERE 1=1"
     if catalog:
         query += f" AND catalog = '{catalog}'"
     if schema_name:

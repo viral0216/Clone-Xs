@@ -84,8 +84,8 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
     parts = table_fqn.split(".")
     if len(parts) == 3:
         catalog, schema, table = parts
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`")
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
         CREATE TABLE IF NOT EXISTS {table_fqn} (
@@ -158,7 +158,7 @@ def save_operation_metrics(
     if not config.get("metrics_enabled", False):
         return
 
-    table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
     started = job.get("started_at", "")
     completed = job.get("completed_at", "")
@@ -349,7 +349,8 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
 
     audit_fqn = get_audit_table_fqn(config or {})
     run_logs_fqn = get_run_logs_fqn(config)
-    metrics_fqn = (config or {}).get("metrics_table", "clone_audit.metrics.clone_metrics")
+    _cfg = config or {}
+    metrics_fqn = _cfg.get("metrics_table", f"{_cfg.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
     # Each table has different column names — use SQL aliases to normalize:
     #   job_id, job_type, source_catalog, destination_catalog, clone_type,

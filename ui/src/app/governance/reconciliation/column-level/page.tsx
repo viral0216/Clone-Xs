@@ -56,7 +56,9 @@ export default function ColumnLevelReconciliationPage() {
   // Spark Connect state
   const [sparkStatus, setSparkStatus] = useState<any>({ available: false });
   const [sparkClusterId, setSparkClusterId] = useState("");
-  const [sparkServerless, setSparkServerless] = useState(true);
+  const [sparkServerless, setSparkServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-default-compute-serverless") !== "false"; } catch { return true; }
+  });
   const [sparkConfiguring, setSparkConfiguring] = useState(false);
   const [useSpark, setUseSpark] = useState(false);
 

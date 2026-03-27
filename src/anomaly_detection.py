@@ -15,9 +15,18 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-_BASELINE_WINDOW = 30  # number of recent measurements to compute baseline from
-_WARNING_THRESHOLD = 2.0  # z-score threshold for warning
-_CRITICAL_THRESHOLD = 3.0  # z-score threshold for critical
+_BASELINE_WINDOW = 30  # default: number of recent measurements to compute baseline from
+_WARNING_THRESHOLD = 2.0  # default: z-score threshold for warning
+_CRITICAL_THRESHOLD = 3.0  # default: z-score threshold for critical
+
+
+def _get_thresholds(config: dict | None = None) -> tuple[int, float, float]:
+    """Read anomaly detection thresholds from config, falling back to defaults."""
+    ad = (config or {}).get("anomaly_detection", {})
+    window = int(ad.get("baseline_window", _BASELINE_WINDOW))
+    warning = float(ad.get("warning_threshold", _WARNING_THRESHOLD))
+    critical = float(ad.get("critical_threshold", _CRITICAL_THRESHOLD))
+    return window, warning, critical
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +116,8 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
     schema = _get_schema(config)
 
     try:
-        _run_sql(f"CREATE SCHEMA IF NOT EXISTS {schema}", client, warehouse_id)
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -146,6 +156,7 @@ def record_metric(
     config = config or {}
     schema = _get_schema(config)
     ensure_tables(client, warehouse_id, config)
+    baseline_window, warning_threshold, critical_threshold = _get_thresholds(config)
 
     metric_id = str(uuid.uuid4())[:12]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -159,7 +170,7 @@ def record_metric(
         ORDER BY measured_at DESC
     """
     try:
-        recent = _query_sql(history_sql, limit=_BASELINE_WINDOW, client=client, warehouse_id=warehouse_id)
+        recent = _query_sql(history_sql, limit=baseline_window, client=client, warehouse_id=warehouse_id)
     except Exception:
         recent = []
 
@@ -181,10 +192,10 @@ def record_metric(
         z_score = 0.0
 
     # Classify anomaly
-    is_anomaly = z_score > _WARNING_THRESHOLD
-    if z_score > _CRITICAL_THRESHOLD:
+    is_anomaly = z_score > warning_threshold
+    if z_score > critical_threshold:
         severity = "critical"
-    elif z_score > _WARNING_THRESHOLD:
+    elif z_score > warning_threshold:
         severity = "warning"
     else:
         severity = "normal"
@@ -280,6 +291,7 @@ def get_metric_history(
     """
     config = config or {}
     schema = _get_schema(config)
+    _, warning_threshold, critical_threshold = _get_thresholds(config)
 
     query = f"""
         SELECT id, table_fqn, column_name, metric_name, value,
@@ -309,10 +321,10 @@ def get_metric_history(
     baseline = {
         "mean": round(mean, 6),
         "stddev": round(stddev, 6),
-        "upper_warning": round(mean + _WARNING_THRESHOLD * stddev, 6),
-        "lower_warning": round(mean - _WARNING_THRESHOLD * stddev, 6),
-        "upper_critical": round(mean + _CRITICAL_THRESHOLD * stddev, 6),
-        "lower_critical": round(mean - _CRITICAL_THRESHOLD * stddev, 6),
+        "upper_warning": round(mean + warning_threshold * stddev, 6),
+        "lower_warning": round(mean - warning_threshold * stddev, 6),
+        "upper_critical": round(mean + critical_threshold * stddev, 6),
+        "lower_critical": round(mean - critical_threshold * stddev, 6),
     }
 
     return {
@@ -340,6 +352,7 @@ def compute_baselines(
     """
     config = config or {}
     schema = _get_schema(config)
+    baseline_window, _, _ = _get_thresholds(config)
 
     # Get distinct metric keys
     keys_query = f"""
@@ -369,7 +382,7 @@ def compute_baselines(
             ORDER BY measured_at DESC
         """
         try:
-            recent = _query_sql(val_query, limit=_BASELINE_WINDOW, client=client, warehouse_id=warehouse_id)
+            recent = _query_sql(val_query, limit=baseline_window, client=client, warehouse_id=warehouse_id)
         except Exception:
             errors += 1
             continue

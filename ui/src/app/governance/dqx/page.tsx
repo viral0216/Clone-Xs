@@ -64,7 +64,9 @@ export default function DQXPage() {
   const [sparkStatus, setSparkStatus] = useState<any>({});
   const [sparkConfiguring, setSparkConfiguring] = useState(false);
   const [sparkClusterId, setSparkClusterId] = useState("");
-  const [sparkServerless, setSparkServerless] = useState(true);
+  const [sparkServerless, setSparkServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-default-compute-serverless") !== "false"; } catch { return true; }
+  });
 
   // Function browser expand
   const [expandedCat, setExpandedCat] = useState<string | null>(null);

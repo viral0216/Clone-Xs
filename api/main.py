@@ -28,8 +28,26 @@ from api.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start/stop the job manager with the app."""
+    """Start/stop the job manager with the app. Run non-blocking startup checks."""
+    import logging
+    logger = logging.getLogger("clone-xs.startup")
+
     app.state.job_manager = JobManager(max_concurrent=2)
+
+    # Non-blocking startup table validation
+    try:
+        from src.config import load_config_cached
+        config = load_config_cached()
+        catalog = config.get("audit_trail", {}).get("catalog", "")
+        if catalog:
+            from src.table_registry import TABLE_SECTIONS
+            expected_schemas = {s["schema"] for s in TABLE_SECTIONS if not s.get("schema_from_config")}
+            logger.info(f"Audit catalog: {catalog} | Expected schemas: {sorted(expected_schemas)}")
+        else:
+            logger.warning("No audit_trail.catalog configured — table init may fail. Set it in Settings.")
+    except Exception as e:
+        logger.warning(f"Startup config check failed: {e}")
+
     yield
     await app.state.job_manager.shutdown()
 

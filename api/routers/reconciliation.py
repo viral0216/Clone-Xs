@@ -4,10 +4,10 @@ import os
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from api.dependencies import get_db_client, get_app_config, get_credentials
+from api.dependencies import get_db_client, get_app_config, get_credentials, get_job_manager
 
 router = APIRouter()
 
@@ -63,6 +63,15 @@ class DeepReconciliationRequest(BaseModel):
     ignore_case: bool = False
     ignore_whitespace: bool = False
     decimal_precision: int = 0
+
+
+class BatchReconciliationRequest(BaseModel):
+    source_catalog: str
+    destination_catalog: str
+    tables: list[dict] = Field(default=[], description="List of {schema_name, table_name} pairs")
+    use_checksum: bool = False
+    max_workers: int = 4
+    use_spark: bool = False
 
 
 # ── Spark Status & Configure ─────────────────────────────────────────────────
@@ -633,3 +642,76 @@ async def resume_schedule(schedule_id: str):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
     return result
+
+
+# ── Batch Reconciliation (Background Jobs) ───────────────────────────────────
+
+@router.post("/batch-validate", summary="Submit batch row-level reconciliation job")
+async def batch_validate(
+    req: BatchReconciliationRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+    jm=Depends(get_job_manager),
+):
+    """Submit a batch reconciliation job that runs in the background.
+
+    Returns a job_id immediately. Poll GET /batch-validate/{job_id} for progress
+    or connect via WS /reconciliation/ws/{job_id} for live updates.
+    """
+    if not req.tables:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No tables specified")
+
+    config = dict(app_config)
+    config.update({
+        "source_catalog": req.source_catalog,
+        "destination_catalog": req.destination_catalog,
+        "tables": [t if isinstance(t, dict) else t for t in req.tables],
+        "use_checksum": req.use_checksum,
+        "max_workers": req.max_workers,
+        "use_spark": req.use_spark,
+    })
+    job_id = await jm.submit_job("reconciliation-batch", config, client)
+    return {"job_id": job_id, "status": "queued", "total_tables": len(req.tables)}
+
+
+@router.get("/batch-validate/{job_id}", summary="Get batch reconciliation job status")
+async def get_batch_job(job_id: str, jm=Depends(get_job_manager)):
+    """Get status and progress of a batch reconciliation job."""
+    job = jm.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.delete("/batch-validate/{job_id}", summary="Cancel a batch reconciliation job")
+async def cancel_batch_job(job_id: str, jm=Depends(get_job_manager)):
+    """Cancel a queued batch reconciliation job."""
+    jm.cancel_job(job_id)
+    return {"status": "cancelled", "job_id": job_id}
+
+
+@router.websocket("/ws/{job_id}")
+async def recon_progress_ws(websocket: WebSocket, job_id: str, jm=Depends(get_job_manager)):
+    """WebSocket endpoint for live batch reconciliation progress."""
+    await jm.connection_manager.connect(websocket, job_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        jm.connection_manager.disconnect(websocket, job_id)
+
+
+# ── Run Detail Drill-Down ────────────────────────────────────────────────────
+
+@router.get("/history/{run_id}/details", summary="Get per-table details for a reconciliation run")
+async def get_run_details_endpoint(run_id: str, client=Depends(get_db_client)):
+    """Get per-table details for a specific reconciliation run (for history drill-down)."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.reconciliation_store import get_run_details
+    details = get_run_details(client=client, warehouse_id=wid, config=config, run_id=run_id)
+    return {"run_id": run_id, "details": details}

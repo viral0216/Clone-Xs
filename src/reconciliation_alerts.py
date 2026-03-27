@@ -62,7 +62,8 @@ def ensure_alert_tables(client=None, warehouse_id: str = "", config: dict = None
     schema = _get_schema(config)
 
     try:
-        _exec_sql(f"CREATE SCHEMA IF NOT EXISTS {schema}", client, warehouse_id)
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -138,7 +139,12 @@ def list_alert_rules(client=None, warehouse_id: str = "", config: dict = None) -
     try:
         return _run_sql(f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id)
     except Exception:
-        return []
+        # Table may not exist yet — try to create it and retry once
+        try:
+            ensure_alert_tables(client, warehouse_id, config)
+            return _run_sql(f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id)
+        except Exception:
+            return []
 
 
 def delete_alert_rule(rule_id: str, client=None, warehouse_id: str = "", config: dict = None):

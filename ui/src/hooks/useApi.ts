@@ -6,6 +6,7 @@ export function useAuthStatus() {
   return useQuery<AuthStatus>({
     queryKey: ["auth-status"],
     queryFn: () => api.get("/auth/status"),
+    staleTime: 120_000, // 2 min — auth status rarely changes
     retry: false,
   });
 }
@@ -14,6 +15,7 @@ export function useWarehouses() {
   return useQuery<WarehouseInfo[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.get("/auth/warehouses"),
+    staleTime: 300_000, // 5 min — warehouse list is stable
     retry: false,
   });
 }
@@ -82,7 +84,8 @@ export function useDashboardStats() {
   return useQuery<DashboardStats>({
     queryKey: ["dashboard-stats"],
     queryFn: () => api.get("/monitor/metrics"),
-    refetchInterval: 30000,
+    staleTime: 60_000, // 1 min — dashboard doesn't need real-time
+    refetchInterval: 60_000,
     retry: 1,
   });
 }
@@ -125,7 +128,8 @@ export function useCatalogHealth() {
   return useQuery<{ catalogs: CatalogHealth[] }>({
     queryKey: ["catalog-health"],
     queryFn: () => api.get("/catalog-health"),
-    refetchInterval: 60000,
+    staleTime: 120_000, // 2 min — health data is semi-stable
+    refetchInterval: 120_000,
     retry: 1,
   });
 }

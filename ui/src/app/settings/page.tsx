@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,16 +28,22 @@ import {
   Check,
   PanelLeftClose,
   Play,
+  Cpu,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 type AuthTab = "token" | "oauth" | "azure" | "sp";
 
-type SettingsSection = "connection" | "auth" | "warehouse" | "audit" | "interface" | "performance" | "features";
+type SettingsSection = "connection" | "auth" | "warehouse" | "compute" | "anomaly" | "audit" | "interface" | "performance" | "features";
 
 const sectionMeta: { key: SettingsSection; label: string; icon: React.ElementType }[] = [
   { key: "connection", label: "Connection", icon: Globe },
   { key: "auth", label: "Authentication", icon: Key },
   { key: "warehouse", label: "Warehouses", icon: Server },
+  { key: "compute", label: "Compute", icon: Cpu },
+  { key: "anomaly", label: "Anomaly Detection", icon: AlertTriangle },
   { key: "audit", label: "Audit & Logs", icon: Database },
   { key: "interface", label: "Interface", icon: Settings2 },
   { key: "performance", label: "Performance", icon: Zap },
@@ -241,7 +247,6 @@ function AzureLoginWizard({ onConnected }: { onConnected: () => void }) {
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSection>("connection");
   const [activeTab, setActiveTab] = useState<AuthTab>("token");
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   // Databricks App runtime detection
   const [isDatabricksApp, setIsDatabricksApp] = useState(false);
@@ -320,27 +325,8 @@ export default function SettingsPage() {
     }
   }, [warehouses.data]);
 
-  // IntersectionObserver to highlight active sidebar section on scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveSection(entry.target.id as SettingsSection);
-          }
-        }
-      },
-      { rootMargin: "-20% 0px -60% 0px", threshold: 0 }
-    );
-    Object.values(sectionRefs.current).forEach((el) => {
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
-  }, []);
-
   const scrollToSection = (key: SettingsSection) => {
     setActiveSection(key);
-    sectionRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const saveCredentials = async () => {
@@ -474,10 +460,10 @@ export default function SettingsPage() {
         </nav>
 
         {/* Right content panel */}
-        <div className="flex-1 min-w-0 overflow-y-auto space-y-10 pb-16">
+        <div className="flex-1 min-w-0 overflow-y-auto pb-16">
 
           {/* ─── Connection ─── */}
-          <section id="connection" ref={(el) => { sectionRefs.current.connection = el; }}>
+          {activeSection === "connection" && <section id="connection">
             <SectionHeading title="Connection" subtitle="Current workspace connection status" />
 
             {/* Compact status bar */}
@@ -527,11 +513,11 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-          </section>
+          </section>}
 
           {/* ─── Authentication ─── */}
-          {!isDatabricksApp && (
-            <section id="auth" ref={(el) => { sectionRefs.current.auth = el; }}>
+          {activeSection === "auth" && !isDatabricksApp && (
+            <section id="auth">
               <SectionHeading title="Authentication" subtitle="Choose how to connect to your Databricks workspace" />
 
               {auth.data?.authenticated && auth.data?.auth_method?.toLowerCase().includes("azure") ? (
@@ -641,7 +627,7 @@ export default function SettingsPage() {
           )}
 
           {/* ─── Warehouses ─── */}
-          <section id="warehouse" ref={(el) => { sectionRefs.current.warehouse = el; }}>
+          {activeSection === "warehouse" && <section id="warehouse">
             <SectionHeading title="SQL Warehouses" subtitle="Select the warehouse to use for SQL operations" />
 
             <div className="mt-3">
@@ -711,27 +697,37 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-          </section>
+          </section>}
+
+          {/* ─── Compute ─── */}
+          {activeSection === "compute" && <section id="compute">
+            <ComputeSettings />
+          </section>}
+
+          {/* ─── Anomaly Detection ─── */}
+          {activeSection === "anomaly" && <section id="anomaly">
+            <AnomalyDetectionSettings />
+          </section>}
 
           {/* ─── Audit & Logs ─── */}
-          <section id="audit" ref={(el) => { sectionRefs.current.audit = el; }}>
+          {activeSection === "audit" && <section id="audit">
             <AuditSettings />
-          </section>
+          </section>}
 
           {/* ─── Interface ─── */}
-          <section id="interface" ref={(el) => { sectionRefs.current.interface = el; }}>
+          {activeSection === "interface" && <section id="interface">
             <UIPreferences />
-          </section>
+          </section>}
 
           {/* ─── Performance ─── */}
-          <section id="performance" ref={(el) => { sectionRefs.current.performance = el; }}>
+          {activeSection === "performance" && <section id="performance">
             <PerformanceSettings />
-          </section>
+          </section>}
 
           {/* ─── Features ─── */}
-          <section id="features" ref={(el) => { sectionRefs.current.features = el; }}>
+          {activeSection === "features" && <section id="features">
             <FeatureToggles />
-          </section>
+          </section>}
         </div>
       </div>
     </div>
@@ -762,6 +758,165 @@ function FieldGroup({ label, required, children }: { label: string; required?: b
 }
 
 /* ───────────────────────────── Performance ───────────────────────────── */
+
+function ComputeSettings() {
+  const [serverless, setServerless] = useState(() => {
+    try { return localStorage.getItem("clxs-default-compute-serverless") !== "false"; } catch { return true; }
+  });
+
+  const toggle = () => {
+    setServerless(prev => {
+      const next = !prev;
+      localStorage.setItem("clxs-default-compute-serverless", String(next));
+      window.dispatchEvent(new Event("clxs-settings-changed"));
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      <SectionHeading title="Compute" subtitle="Default compute mode for Spark-based operations" />
+      <div className="space-y-2 mt-4">
+        <label className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 cursor-pointer transition-colors">
+          <div className="flex items-center gap-3">
+            <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Default to Serverless Compute</p>
+              <p className="text-[11px] text-muted-foreground">DQX profiling, check execution, and reconciliation will use serverless compute. Disable to use a cluster instead.</p>
+            </div>
+          </div>
+          <input type="checkbox" checked={serverless} onChange={toggle} className="rounded border-gray-300 h-4 w-4" style={{ accentColor: "var(--primary)" }} />
+        </label>
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-2 px-1">This sets the initial default. You can still override compute on individual pages (DQX, Reconciliation).</p>
+    </div>
+  );
+}
+
+
+function AnomalyDetectionSettings() {
+  const [adWindow, setAdWindow] = useState(30);
+  const [adWarning, setAdWarning] = useState(2.0);
+  const [adCritical, setAdCritical] = useState(3.0);
+  const [adLoading, setAdLoading] = useState(true);
+  const [adSaved, setAdSaved] = useState(false);
+  const [sources, setSources] = useState({ billing: false, compute: false, query_history: false, storage: false });
+  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+
+  useEffect(() => {
+    api.get("/data-quality/anomaly-settings").then((data: any) => {
+      if (data.baseline_window) setAdWindow(data.baseline_window);
+      if (data.warning_threshold) setAdWarning(data.warning_threshold);
+      if (data.critical_threshold) setAdCritical(data.critical_threshold);
+      if (data.system_table_sources) setSources(data.system_table_sources);
+      if (data.max_parallel_queries != null) setMaxParallelQueries(data.max_parallel_queries);
+    }).catch(() => {}).finally(() => setAdLoading(false));
+  }, []);
+
+  async function saveSettings() {
+    try {
+      await api.put("/data-quality/anomaly-settings", {
+        baseline_window: adWindow,
+        warning_threshold: adWarning,
+        critical_threshold: adCritical,
+        system_table_sources: sources,
+        max_parallel_queries: maxParallelQueries,
+      });
+      setAdSaved(true);
+      setTimeout(() => setAdSaved(false), 2000);
+      toast.success("Anomaly detection settings saved");
+    } catch (e: any) { toast.error(e.message); }
+  }
+
+  function toggleSource(key: string) {
+    setSources((prev) => ({ ...prev, [key]: !prev[key as keyof typeof prev] }));
+  }
+
+  const systemTableSources = [
+    { key: "billing", label: "Billing & Usage", table: "system.billing.usage", description: "Detect DBU cost spikes and unusual warehouse consumption" },
+    { key: "compute", label: "Compute Clusters", table: "system.compute.clusters", description: "Monitor cluster failures, errors, and abnormal state changes" },
+    { key: "query_history", label: "Query History", table: "system.query.history", description: "Detect slow queries, failed queries, and unusual query patterns" },
+    { key: "storage", label: "Storage & Tables", table: "system.storage.tables", description: "Track storage growth anomalies and unexpected size changes" },
+  ];
+
+  return (
+    <div>
+      <SectionHeading title="Anomaly Detection" subtitle="Configure sensitivity for statistical anomaly detection on data quality metrics" />
+      {adLoading ? (
+        <p className="text-xs text-muted-foreground mt-4">Loading...</p>
+      ) : (
+        <div className="mt-4 space-y-6">
+          {/* Thresholds */}
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Detection Thresholds</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium block mb-1">Baseline Window</label>
+                <Input type="number" min={5} max={200} value={adWindow} onChange={(e) => setAdWindow(Number(e.target.value))} className="h-8 text-xs" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Recent measurements for rolling average</p>
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium block mb-1">Warning Threshold (z-score)</label>
+                <Input type="number" min={0.5} max={10} step={0.1} value={adWarning} onChange={(e) => setAdWarning(Number(e.target.value))} className="h-8 text-xs" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Standard deviations for warning</p>
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium block mb-1">Critical Threshold (z-score)</label>
+                <Input type="number" min={1} max={10} step={0.1} value={adCritical} onChange={(e) => setAdCritical(Number(e.target.value))} className="h-8 text-xs" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Standard deviations for critical</p>
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium block mb-1">Max Parallel Queries</label>
+                <Input type="number" min={1} max={50} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(Number(e.target.value))} className="h-8 text-xs" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Concurrent queries for volume counting</p>
+              </div>
+            </div>
+          </div>
+
+          {/* System Table Sources */}
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">System Table Sources</h4>
+            <p className="text-[10px] text-muted-foreground mb-3">Enable Databricks system tables to detect infrastructure and operational anomalies</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {systemTableSources.map(({ key, label, table, description }) => {
+                const enabled = sources[key as keyof typeof sources];
+                return (
+                  <div
+                    key={key}
+                    onClick={() => toggleSource(key)}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      enabled ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/20 hover:bg-muted/30"
+                    }`}
+                  >
+                    <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      enabled ? "border-primary bg-primary" : "border-muted-foreground/30"
+                    }`}>
+                      {enabled && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-tight">{label}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{table}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">{description}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={saveSettings}>
+              {adSaved ? <Check className="h-3.5 w-3.5 mr-1" /> : null}
+              {adSaved ? "Saved" : "Save"}
+            </Button>
+            <p className="text-[10px] text-muted-foreground">Lower thresholds = more sensitive. Defaults: window=30, warning=2.0, critical=3.0</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function PerformanceSettings() {
   const [maxWorkers, setMaxWorkers] = useState(10);
@@ -824,26 +979,51 @@ function PerformanceSettings() {
 /* ───────────────────────────── Audit ───────────────────────────── */
 
 function AuditSettings() {
-  const [auditCatalog, setAuditCatalog] = useState("clone_audit");
-  const [auditSchema, setAuditSchema] = useState("logs");
+  const [auditCatalog, setAuditCatalog] = useState("");
+  const [auditSchema, setAuditSchema] = useState("");
+  const [storageLocation, setStorageLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [initializing, setInitializing] = useState(false);
+  const [initResult, setInitResult] = useState<any>(null);
   const [tableSchemas, setTableSchemas] = useState<Record<string, any[]> | null>(null);
+
+  // Dynamic table registry from API
+  const [registrySections, setRegistrySections] = useState<any[]>([]);
+
+  // Per-section schema overrides
+  const [sectionOverrides, setSectionOverrides] = useState<Record<string, { catalog: string; schema: string }>>({});
+
+  function updateSectionCatalog(key: string, value: string) {
+    setSectionOverrides(prev => ({ ...prev, [key]: { ...prev[key] || {}, catalog: value } }));
+  }
+  function updateSectionSchema(key: string, value: string) {
+    setSectionOverrides(prev => ({ ...prev, [key]: { ...prev[key] || {}, schema: value } }));
+  }
+
+  // Load registry
+  useEffect(() => {
+    api.get("/audit/table-registry").then((data: any) => {
+      setRegistrySections(data?.sections || []);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.get<Record<string, any>>("/config").then((config) => {
       const at = config.audit_trail || {};
-      const cat = at.catalog || "clone_audit";
-      const sch = at.schema || "logs";
+      const cat = at.catalog || "";
+      const sch = at.schema || "";
       setAuditCatalog(cat);
       setAuditSchema(sch);
+      setStorageLocation(config.catalog_location || at.storage_location || "");
       localStorage.setItem("audit_catalog", cat);
       localStorage.setItem("audit_schema", sch);
+      setConfigLoaded(true);
     }).catch(() => {
-      const cat = localStorage.getItem("audit_catalog") || "clone_audit";
-      const sch = localStorage.getItem("audit_schema") || "logs";
+      const cat = localStorage.getItem("audit_catalog") || "";
+      const sch = localStorage.getItem("audit_schema") || "";
       setAuditCatalog(cat);
       setAuditSchema(sch);
+      setConfigLoaded(true);
     });
   }, []);
 
@@ -852,7 +1032,7 @@ function AuditSettings() {
     localStorage.setItem("audit_schema", auditSchema);
     setSaving(true);
     try {
-      await api.post("/config/audit", { catalog: auditCatalog, schema: auditSchema });
+      await api.post("/config/audit", { catalog: auditCatalog, schema: auditSchema, storage_location: storageLocation || undefined });
       toast.success("Audit settings saved");
     } catch {
       toast.success("Audit settings saved locally");
@@ -865,11 +1045,16 @@ function AuditSettings() {
     setInitializing(true);
     setTableSchemas(null);
     try {
-      const result = await api.post<{ status: string; tables_created: string[]; schemas: Record<string, any[]> }>("/audit/init", {
-        catalog: auditCatalog, schema: auditSchema,
+      const result = await api.post<{ status: string; tables_created: string[]; schemas: Record<string, any[]>; errors?: string[] }>("/audit/init", {
+        catalog: auditCatalog, schema: auditSchema, storage_location: storageLocation || undefined,
       });
       if (result.schemas) setTableSchemas(result.schemas);
-      toast.success(`Audit tables created in ${auditCatalog}.${auditSchema}`);
+      setInitResult(result);
+      if (result.errors?.length) {
+        toast.error(`Initialized with ${result.errors.length} error(s) — see details below`);
+      } else {
+        toast.success(`All tables created in ${auditCatalog}`);
+      }
     } catch (e: any) {
       toast.error(e.message || "Failed to initialize audit tables");
     } finally {
@@ -886,33 +1071,33 @@ function AuditSettings() {
     } catch { /* tables may not exist */ }
   };
 
-  useEffect(() => { loadSchemas(); }, []);
+  // Load schemas only after config sets the real catalog (not the default "clone_audit")
+  const [configLoaded, setConfigLoaded] = useState(false);
+  useEffect(() => { if (configLoaded) loadSchemas(); }, [configLoaded]);
 
   return (
     <>
       <SectionHeading title="Audit & Log Storage" subtitle="Configure where clone run logs, audit trail, and metrics are stored in Unity Catalog" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 max-w-lg">
         <FieldGroup label="Audit Catalog">
-          <Input value={auditCatalog} onChange={(e) => setAuditCatalog(e.target.value)} placeholder="clone_audit" />
+          <Input value={auditCatalog} onChange={(e) => setAuditCatalog(e.target.value)} placeholder="e.g. edp_dev" />
         </FieldGroup>
         <FieldGroup label="Audit Schema">
           <Input value={auditSchema} onChange={(e) => setAuditSchema(e.target.value)} placeholder="logs" />
         </FieldGroup>
       </div>
-
-      <div className="mt-3 p-3 rounded-lg bg-muted/30 space-y-0.5">
-        <p className="text-[11px] font-medium text-muted-foreground mb-1">Tables created:</p>
-        {[
-          `${auditCatalog}.${auditSchema}.run_logs`,
-          `${auditCatalog}.${auditSchema}.clone_operations`,
-          `${auditCatalog}.${auditSchema}.rollback_logs`,
-          `${auditCatalog}.metrics.clone_metrics`,
-          `${auditCatalog}.pii.pii_scans`,
-          `${auditCatalog}.pii.pii_detections`,
-          `${auditCatalog}.pii.pii_remediation`,
-        ].map((t) => (
-          <p key={t} className="text-xs font-mono text-muted-foreground">{t}</p>
-        ))}
+      <div className="mt-3 max-w-lg">
+        <FieldGroup label="Storage Location (for external/non-default catalogs)">
+          <Input
+            value={storageLocation}
+            onChange={(e) => setStorageLocation(e.target.value)}
+            placeholder="abfss://container@account.dfs.core.windows.net/path or s3://bucket/path"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Required when your catalog has no default storage root. Used as MANAGED LOCATION for schema creation.
+            Leave blank if your catalog uses default storage.
+          </p>
+        </FieldGroup>
       </div>
 
       <div className="flex flex-wrap gap-2 mt-4">
@@ -922,45 +1107,98 @@ function AuditSettings() {
         </Button>
         <Button size="sm" variant="outline" onClick={handleInitTable} disabled={initializing}>
           {initializing && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-          {initializing ? "Creating..." : "Initialize Tables"}
+          {initializing ? "Creating..." : "Initialize All Tables"}
         </Button>
         <Button size="sm" variant="ghost" onClick={loadSchemas}>Refresh Schema</Button>
       </div>
 
-      {/* Table Schemas */}
-      {tableSchemas && Object.keys(tableSchemas).length > 0 && (
-        <div className="space-y-3 mt-4">
-          {Object.entries(tableSchemas).map(([tableName, columns]) => (
-            <div key={tableName} className="rounded-lg border border-border overflow-hidden">
-              <div className="px-3 py-1.5 bg-muted/40 border-b border-border flex items-center gap-2">
-                <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-semibold">{tableName}</span>
-                <Badge variant="outline" className="ml-auto text-[10px]">{columns.length} cols</Badge>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/20">
-                      <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Column</th>
-                      <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Type</th>
-                      <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Nullable</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {columns.map((col: any, i: number) => (
-                      <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/10">
-                        <td className="py-1 px-3 font-mono">{col.col_name || col.column_name || col.name}</td>
-                        <td className="py-1 px-3"><Badge variant="outline" className="text-[10px] font-mono">{col.data_type || col.type}</Badge></td>
-                        <td className="py-1 px-3 text-muted-foreground">{col.nullable === false || col.is_nullable === "NO" ? "NOT NULL" : "YES"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+      {/* Init errors */}
+      {initResult?.errors?.length > 0 && (
+        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-1">
+          <p className="text-xs font-medium text-red-500">Initialization errors ({initResult.errors.length}):</p>
+          {initResult.errors.map((err: string, i: number) => (
+            <p key={i} className="text-[11px] text-red-400 font-mono break-all">{err}</p>
           ))}
         </div>
       )}
+
+      {/* ── Per-Section Table Schemas (from registry) ─────────────── */}
+      {registrySections.map((section) => {
+        const key = section.key;
+        const defaultCat = section.schema_fqn?.split(".")[0] || auditCatalog;
+        const defaultSch = section.schema;
+        const cat = sectionOverrides[key]?.catalog || defaultCat;
+        const sch = sectionOverrides[key]?.schema || defaultSch;
+        const tables = (section.tables || []).map((t: any) => ({
+          name: t.name,
+          fqn: `${cat}.${sch}.${t.name}`,
+        }));
+        const hasData = tableSchemas && tables.some((t: any) => (tableSchemas[t.fqn] || []).length > 0);
+        return (
+          <div key={key} className="mt-6">
+            <SectionHeading title={section.title} subtitle={section.subtitle} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 max-w-lg">
+              <FieldGroup label="Catalog">
+                <Input
+                  value={cat}
+                  onChange={(e) => updateSectionCatalog(key, e.target.value)}
+                />
+              </FieldGroup>
+              <FieldGroup label="Schema">
+                <Input
+                  value={sch}
+                  onChange={(e) => updateSectionSchema(key, e.target.value)}
+                />
+              </FieldGroup>
+            </div>
+            <div className="mt-3 rounded-lg border border-border overflow-hidden">
+              <div className="px-3 py-1.5 bg-muted/30 border-b border-border flex items-center justify-between">
+                <span className="text-[11px] font-medium text-muted-foreground">Tables in {cat}.{sch}</span>
+                <div className="flex items-center gap-2">
+                  {hasData ? (
+                    <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30">initialized</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30">not initialized</Badge>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">{tables.length} tables</span>
+                </div>
+              </div>
+              <div className="divide-y divide-border/30">
+                {tables.map((t: any) => {
+                  const cols = tableSchemas?.[t.fqn] || [];
+                  return (
+                    <div key={t.fqn}>
+                      <div className="px-3 py-1.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Database className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-[11px] font-mono">{t.name}</span>
+                        </div>
+                        {cols.length > 0 ? (
+                          <Badge variant="outline" className="text-[9px] text-green-500 border-green-500/30">{cols.length} cols</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[9px] text-muted-foreground">—</Badge>
+                        )}
+                      </div>
+                      {cols.length > 0 && (
+                        <div className="px-3 pb-2">
+                          <div className="flex flex-wrap gap-1">
+                            {cols.map((col: any, i: number) => (
+                              <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-muted/40 rounded px-1.5 py-0.5">
+                                <span className="font-mono text-foreground">{col.col_name || col.column_name || col.name}</span>
+                                <span className="text-muted-foreground">{col.data_type || col.type}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -1203,6 +1441,46 @@ function UIPreferences() {
 
 /* ───────────────────────────── Feature Toggles ───────────────────────────── */
 
+// Portal feature definitions — each portal has sections with page items
+const PORTAL_FEATURES = [
+  {
+    id: "clone-xs",
+    label: "Clone-Xs",
+    description: "Core catalog cloning, sync, and management tools",
+    required: true, // can't disable the main portal
+    sections: allNavSections,
+  },
+  {
+    id: "governance",
+    label: "Governance Portal",
+    description: "Data dictionary, certifications, contracts, SLA, and audit",
+    required: false,
+    sections: [
+      { title: "Overview", items: [{ href: "/governance", label: "Overview" }] },
+      { title: "Data Dictionary", items: [{ href: "/governance/dictionary", label: "Business Glossary" }, { href: "/governance/search", label: "Global Search" }] },
+      { title: "Certifications", items: [{ href: "/governance/certifications", label: "Board" }, { href: "/governance/approvals", label: "Approvals" }] },
+      { title: "Data Contracts", items: [{ href: "/governance/odcs", label: "ODCS Contracts" }, { href: "/governance/contracts", label: "Legacy Contracts" }] },
+      { title: "SLA & Freshness", items: [{ href: "/governance/sla", label: "SLA Dashboard" }] },
+      { title: "Audit", items: [{ href: "/governance/changes", label: "Change History" }] },
+    ],
+  },
+  {
+    id: "data-quality",
+    label: "Data Quality Portal",
+    description: "Monitoring, DQX checks, reconciliation, profiling, and compliance",
+    required: false,
+    sections: [
+      { title: "Overview", items: [{ href: "/data-quality", label: "Dashboard" }] },
+      { title: "Monitoring", items: [{ href: "/data-quality/freshness", label: "Data Freshness" }, { href: "/data-quality/volume", label: "Volume Monitor" }, { href: "/data-quality/anomalies", label: "Anomalies" }, { href: "/data-quality/incidents", label: "Incidents" }] },
+      { title: "Rules & Checks", items: [{ href: "/data-quality/dqx", label: "DQX Engine" }, { href: "/data-quality/rules", label: "Rules Engine" }, { href: "/data-quality/dashboard", label: "DQ Dashboard" }, { href: "/data-quality/results", label: "Results" }] },
+      { title: "Suites", items: [{ href: "/data-quality/expectations", label: "Expectation Suites" }] },
+      { title: "Reconciliation", items: [{ href: "/data-quality/reconciliation/row-level", label: "Row-Level" }, { href: "/data-quality/reconciliation/column-level", label: "Column-Level" }, { href: "/data-quality/reconciliation/deep", label: "Deep Diff" }, { href: "/data-quality/reconciliation/history", label: "Run History" }] },
+      { title: "Profiling", items: [{ href: "/data-quality/profiling", label: "Column Profiles" }, { href: "/data-quality/schema-drift", label: "Schema Drift" }, { href: "/data-quality/diff", label: "Diff & Compare" }] },
+      { title: "Validation", items: [{ href: "/data-quality/preflight", label: "Preflight Checks" }, { href: "/data-quality/compliance", label: "Compliance" }, { href: "/data-quality/pii", label: "PII Scanner" }] },
+    ],
+  },
+];
+
 function FeatureToggles() {
   const [disabled, setDisabled] = useState<Set<string>>(() => {
     try {
@@ -1210,72 +1488,163 @@ function FeatureToggles() {
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch { return new Set(); }
   });
+  const [disabledPortals, setDisabledPortals] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("clxs-disabled-portals");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
+  const [expandedPortals, setExpandedPortals] = useState<Set<string>>(new Set(["clone-xs"]));
+
+  const persist = (pages: Set<string>, portals: Set<string>) => {
+    localStorage.setItem("clxs-disabled-pages", JSON.stringify([...pages]));
+    localStorage.setItem("clxs-disabled-portals", JSON.stringify([...portals]));
+    window.dispatchEvent(new Event("clxs-features-changed"));
+  };
 
   const togglePage = (href: string) => {
     if (href === "/" || href === "/settings") return;
     setDisabled(prev => {
       const next = new Set(prev);
       if (next.has(href)) next.delete(href); else next.add(href);
-      localStorage.setItem("clxs-disabled-pages", JSON.stringify([...next]));
-      window.dispatchEvent(new Event("clxs-features-changed"));
+      persist(next, disabledPortals);
+      return next;
+    });
+  };
+
+  const togglePortal = (portalId: string) => {
+    const portal = PORTAL_FEATURES.find(p => p.id === portalId);
+    if (!portal || portal.required) return;
+    const allHrefs = portal.sections.flatMap(s => s.items.map(i => i.href));
+
+    setDisabledPortals(prev => {
+      const nextPortals = new Set(prev);
+      const isDisabling = !prev.has(portalId);
+
+      if (isDisabling) {
+        nextPortals.add(portalId);
+        // Disable all pages in this portal
+        setDisabled(prevPages => {
+          const nextPages = new Set(prevPages);
+          allHrefs.forEach(h => nextPages.add(h));
+          persist(nextPages, nextPortals);
+          return nextPages;
+        });
+      } else {
+        nextPortals.delete(portalId);
+        // Re-enable all pages in this portal
+        setDisabled(prevPages => {
+          const nextPages = new Set(prevPages);
+          allHrefs.forEach(h => nextPages.delete(h));
+          persist(nextPages, nextPortals);
+          return nextPages;
+        });
+      }
+      return nextPortals;
+    });
+  };
+
+  const toggleExpandPortal = (portalId: string) => {
+    setExpandedPortals(prev => {
+      const next = new Set(prev);
+      if (next.has(portalId)) next.delete(portalId); else next.add(portalId);
       return next;
     });
   };
 
   const enableAll = () => {
     setDisabled(new Set());
+    setDisabledPortals(new Set());
     localStorage.removeItem("clxs-disabled-pages");
+    localStorage.removeItem("clxs-disabled-portals");
     window.dispatchEvent(new Event("clxs-features-changed"));
   };
 
-  const totalPages = allNavSections.reduce((n: number, s: any) => n + s.items.length, 0);
-  const enabledCount = totalPages - disabled.size;
+  const allPages = PORTAL_FEATURES.flatMap(p => p.sections.flatMap(s => s.items));
+  const totalPages = allPages.length;
+  const enabledCount = allPages.filter(i => !disabled.has(i.href)).length;
 
   return (
     <>
-      <SectionHeading title="Navigation & Features" subtitle="Enable or disable sidebar pages" />
+      <SectionHeading title="Navigation & Features" subtitle="Enable or disable portals and individual pages" />
       <div className="flex items-center justify-between mt-4 mb-3">
         <span className="text-xs text-muted-foreground">{enabledCount} of {totalPages} pages enabled</span>
-        <Button variant="ghost" size="sm" onClick={enableAll} disabled={disabled.size === 0} className="h-7 text-xs">
+        <Button variant="ghost" size="sm" onClick={enableAll} disabled={disabled.size === 0 && disabledPortals.size === 0} className="h-7 text-xs">
           Enable All
         </Button>
       </div>
-      <div className="space-y-5">
-        {allNavSections.map((section: any) => (
-          <div key={section.title}>
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{section.title}</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-              {section.items.map((item: any) => {
-                const isCore = item.href === "/" || item.href === "/settings";
-                const isEnabled = !disabled.has(item.href);
-                const Icon = item.icon;
-                return (
-                  <label
-                    key={item.href}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
-                      isCore
-                        ? "bg-muted/20 opacity-50 cursor-not-allowed"
-                        : isEnabled
-                        ? "bg-muted/30 hover:bg-muted/50"
-                        : "bg-muted/10 opacity-40"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isEnabled}
-                      onChange={() => togglePage(item.href)}
-                      disabled={isCore}
-                      className="rounded border-gray-300 h-3.5 w-3.5" style={{ accentColor: "var(--primary)" }}
-                    />
-                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>{item.label}</span>
-                    {isCore && <span className="text-[10px] text-muted-foreground ml-auto">Required</span>}
-                  </label>
-                );
-              })}
+      <div className="space-y-4">
+        {PORTAL_FEATURES.map((portal) => {
+          const portalPages = portal.sections.flatMap(s => s.items);
+          const portalEnabled = !disabledPortals.has(portal.id);
+          const portalEnabledCount = portalPages.filter(i => !disabled.has(i.href)).length;
+          const isExpanded = expandedPortals.has(portal.id);
+
+          return (
+            <div key={portal.id} className={`border rounded-lg transition-colors ${portalEnabled ? "border-border" : "border-border/50 opacity-60"}`}>
+              {/* Portal header */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                {!portal.required && (
+                  <input
+                    type="checkbox"
+                    checked={portalEnabled}
+                    onChange={() => togglePortal(portal.id)}
+                    className="rounded border-gray-300 h-4 w-4 shrink-0" style={{ accentColor: "var(--primary)" }}
+                  />
+                )}
+                <button className="flex-1 text-left" onClick={() => toggleExpandPortal(portal.id)}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">{portal.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{portal.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">{portalEnabledCount}/{portalPages.length}</Badge>
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Expanded sub-features */}
+              {isExpanded && portalEnabled && (
+                <div className="border-t border-border px-4 py-3 space-y-4">
+                  {portal.sections.map((section) => (
+                    <div key={section.title}>
+                      <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">{section.title}</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                        {section.items.map((item) => {
+                          const isCore = item.href === "/" || item.href === "/settings";
+                          const isEnabled = !disabled.has(item.href);
+                          return (
+                            <label
+                              key={item.href}
+                              className={`flex items-center gap-2 px-2.5 py-1.5 rounded cursor-pointer transition-colors text-sm ${
+                                isCore ? "opacity-50 cursor-not-allowed" : isEnabled ? "hover:bg-muted/50" : "opacity-40"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isEnabled}
+                                onChange={() => togglePage(item.href)}
+                                disabled={isCore}
+                                className="rounded border-gray-300 h-3.5 w-3.5" style={{ accentColor: "var(--primary)" }}
+                              />
+                              <span className="text-xs">{item.label}</span>
+                              {isCore && <span className="text-[9px] text-muted-foreground ml-auto">Required</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

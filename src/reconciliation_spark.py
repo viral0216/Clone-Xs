@@ -21,13 +21,19 @@ def _get_spark():
 
 
 def _list_tables_spark(spark, catalog: str, schema: str) -> list[str]:
-    """List table names in a schema using Spark catalog API."""
+    """List table names in a schema using Spark catalog API, with SQL fallback."""
     try:
         tables = spark.catalog.listTables(f"{catalog}.{schema}")
         return [t.name for t in tables if not t.isTemporary]
     except Exception as e:
-        logger.debug(f"Could not list tables in {catalog}.{schema}: {e}")
-        return []
+        logger.debug(f"Spark catalog.listTables failed for {catalog}.{schema}: {e}")
+        # Fallback: use SHOW TABLES SQL (avoids table_properties dependency)
+        try:
+            rows = spark.sql(f"SHOW TABLES IN `{catalog}`.`{schema}`").collect()
+            return [r["tableName"] for r in rows if not r.get("isTemporary", False)]
+        except Exception as e2:
+            logger.warning(f"Could not list tables in {catalog}.{schema}: {e2}")
+            return []
 
 
 def _list_schemas_spark(spark, catalog: str, exclude: list[str] | None = None) -> list[str]:

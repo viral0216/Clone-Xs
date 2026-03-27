@@ -283,6 +283,27 @@ def execute_sql(
     raise last_exception
 
 
+def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl: int = 120) -> list[dict]:
+    """Execute SQL with caching for read-only queries (SELECT, SHOW, DESCRIBE).
+
+    Non-read queries pass through to execute_sql without caching.
+    Cache key is (warehouse_id, normalized_sql). TTL default 120 seconds.
+    """
+    normalized = sql.strip()
+    upper = normalized.upper()
+    if not (upper.startswith("SELECT") or upper.startswith("SHOW") or upper.startswith("DESCRIBE")):
+        return execute_sql(client, warehouse_id, sql)
+
+    from src.metadata_cache import metadata_cache
+    key = ("sql_cache", warehouse_id, normalized)
+    cached = metadata_cache.get(key)
+    if cached is not None:
+        return cached
+    result = execute_sql(client, warehouse_id, sql)
+    metadata_cache.put(key, result, ttl)
+    return result
+
+
 def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> list[dict]:
     """Execute a SQL statement once (no retries)."""
     response = client.statement_execution.execute_statement(

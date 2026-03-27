@@ -25,7 +25,8 @@ def ensure_dq_tables(client, warehouse_id, config):
     """Create DQ Delta tables if they don't exist."""
     schema = _get_dq_schema(config)
     try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 

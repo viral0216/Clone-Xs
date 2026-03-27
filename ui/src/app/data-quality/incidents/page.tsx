@@ -30,6 +30,7 @@ const SOURCE_LABELS: Record<string, string> = {
   freshness: "Freshness",
   anomaly: "Anomaly",
   reconciliation: "Reconciliation",
+  reconciliation_mismatch: "Reconciliation",
   pii: "PII",
 };
 
@@ -37,8 +38,9 @@ const SOURCE_LINKS: Record<string, string> = {
   dq_rule: "/data-quality/rules",
   freshness: "/data-quality/freshness",
   anomaly: "/data-quality/anomalies",
-  reconciliation: "/data-quality/reconciliation/row-level",
-  pii: "/data-quality/pii",
+  reconciliation: "/governance/reconciliation/row-level",
+  reconciliation_mismatch: "/governance/reconciliation/row-level",
+  pii: "/governance/pii",
 };
 
 function severityColor(severity: string) {
@@ -53,6 +55,7 @@ function sourceColor(source: string) {
     freshness: "text-cyan-500 border-cyan-500/30",
     anomaly: "text-amber-500 border-amber-500/30",
     reconciliation: "text-indigo-500 border-indigo-500/30",
+    reconciliation_mismatch: "text-indigo-500 border-indigo-500/30",
     pii: "text-pink-500 border-pink-500/30",
   };
   return colors[source] || "text-muted-foreground border-border";
@@ -74,8 +77,20 @@ export default function IncidentsPage() {
   async function loadIncidents() {
     setLoading(true);
     try {
-      const data = await api.get("/data-quality/incidents");
-      setIncidents(Array.isArray(data) ? data : []);
+      const data = await api.get<{ incidents?: any[]; [k: string]: any }>("/data-quality/incidents");
+      const raw = Array.isArray(data) ? data : (data?.incidents ?? []);
+      const mapped: Incident[] = raw.map((inc: any, idx: number) => ({
+        id: inc.id ?? `inc-${idx}`,
+        title: inc.title ?? "",
+        description: inc.description ?? "",
+        source: inc.source ?? inc.type ?? "anomaly",
+        severity: inc.severity ?? "warning",
+        status: inc.status ?? (inc.severity === "normal" ? "resolved" : "open"),
+        detected_at: inc.detected_at ?? inc.timestamp ?? "",
+        resolved_at: inc.resolved_at,
+        related_link: inc.related_link,
+      }));
+      setIncidents(mapped);
     } catch (err: any) {
       toast.error(err?.message || "Failed to load incidents.");
       setIncidents([]);

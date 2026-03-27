@@ -5,10 +5,13 @@ from contextvars import ContextVar
 from fastapi import Depends, Header, HTTPException, Request
 
 from src.auth import get_client
-from src.config import load_config
+from src.config import load_config, load_config_cached
 
 # Context variable set by middleware — holds the UI-selected warehouse ID
 _warehouse_ctx: ContextVar[str | None] = ContextVar("warehouse_ctx", default=None)
+
+# Context variable for serverless preference from UI Settings
+_serverless_ctx: ContextVar[bool | None] = ContextVar("serverless_ctx", default=None)
 
 
 def get_warehouse_from_context() -> str | None:
@@ -16,15 +19,25 @@ def get_warehouse_from_context() -> str | None:
     return _warehouse_ctx.get()
 
 
+def get_serverless_preference() -> bool | None:
+    """Get the serverless preference set by the middleware for the current request."""
+    return _serverless_ctx.get()
+
+
 async def warehouse_header_middleware(request: Request, call_next):
-    """Extract X-Databricks-Warehouse header and store in context for the request."""
+    """Extract X-Databricks-Warehouse and X-Use-Serverless headers into context."""
     wid = request.headers.get("x-databricks-warehouse")
-    token = _warehouse_ctx.set(wid)
+    use_serverless_header = request.headers.get("x-use-serverless")
+    use_serverless = use_serverless_header == "true" if use_serverless_header is not None else None
+
+    wh_token = _warehouse_ctx.set(wid)
+    sl_token = _serverless_ctx.set(use_serverless)
     try:
         response = await call_next(request)
         return response
     finally:
-        _warehouse_ctx.reset(token)
+        _warehouse_ctx.reset(wh_token)
+        _serverless_ctx.reset(sl_token)
 
 
 async def get_credentials(
@@ -76,7 +89,7 @@ async def get_db_client(creds: tuple = Depends(get_credentials)):
 async def get_app_config(config_path: str = "config/clone_config.yaml", profile: str | None = None):
     """Load clone config from YAML, with warehouse override from UI header."""
     try:
-        config = load_config(config_path, profile=profile)
+        config = load_config_cached(config_path, profile=profile)
         # UI-selected warehouse (from header) takes priority over YAML value
         ui_warehouse = get_warehouse_from_context()
         if ui_warehouse:

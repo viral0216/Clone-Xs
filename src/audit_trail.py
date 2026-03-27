@@ -35,20 +35,8 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     table = audit.get("table", DEFAULT_AUDIT_TABLE)
     fqn = f"{catalog}.{schema}.{table}"
 
-    # Create catalog — skip if it already exists or requires managed location
-    try:
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS {catalog}")
-    except Exception as e:
-        try:
-            execute_sql(client, warehouse_id, f"USE CATALOG {catalog}")
-        except Exception:
-            raise RuntimeError(
-                f"Cannot create or access catalog '{catalog}'. "
-                f"Either create it manually in the Databricks UI or use an existing catalog. "
-                f"Original error: {e}"
-            )
-    # Create schema
-    execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    from src.catalog_utils import ensure_catalog_and_schema
+    ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
     # Create table
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {fqn} (

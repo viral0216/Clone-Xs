@@ -24,8 +24,10 @@ def _get_governance_schema(config: dict) -> str:
 def ensure_governance_tables(client, warehouse_id, config):
     """Create governance Delta tables if they don't exist."""
     schema = _get_governance_schema(config)
+    cat, sch = schema.split(".", 1) if "." in schema else ("clone_audit", schema)
     try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(client, warehouse_id, cat, sch, config.get("catalog_location", ""))
     except Exception as e:
         logger.warning(f"Could not create governance schema: {e}")
         return

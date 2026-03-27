@@ -27,8 +27,10 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
 
     Called by DQX endpoints before any Spark operation. Uses host/token from
     request headers, or extracts from the authenticated WorkspaceClient.
+    Respects the global serverless preference from X-Use-Serverless header.
     """
     from src.spark_session import configure_spark, _spark_config
+    from api.dependencies import get_serverless_preference
 
     # Try to get host/token from client.config if not provided via headers
     if not host and client is not None:
@@ -37,6 +39,10 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
             token = token or getattr(client.config, "token", None)
         except Exception:
             pass
+
+    # Respect global serverless preference from Settings UI
+    serverless_pref = get_serverless_preference()
+    use_serverless = serverless_pref if serverless_pref is not None else _spark_config.get("serverless", True)
 
     current_host = _spark_config.get("host", "")
 
@@ -47,7 +53,7 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
         configure_spark(
             host=host,
             token=token or "",
-            serverless=_spark_config.get("serverless", True),
+            serverless=use_serverless,
             cluster_id=_spark_config.get("cluster_id", ""),
         )
     elif not current_host and not host:
@@ -58,7 +64,7 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
             configure_spark(
                 host=env_host,
                 token=os.environ.get("DATABRICKS_TOKEN", ""),
-                serverless=_spark_config.get("serverless", True),
+                serverless=use_serverless,
                 cluster_id=_spark_config.get("cluster_id", ""),
             )
 
@@ -78,16 +84,19 @@ async def init_governance_tables(client=Depends(get_db_client)):
     from src.governance import ensure_governance_tables
     from src.dq_rules import ensure_dq_tables
     from src.sla_monitor import ensure_sla_tables
-
     from src.data_contracts import ensure_odcs_tables
     from src.dqx_engine import ensure_dqx_tables
+    from src.reconciliation_store import ensure_reconciliation_tables
+    from src.reconciliation_alerts import ensure_alert_tables
 
     ensure_governance_tables(client, wid, config)
     ensure_dq_tables(client, wid, config)
     ensure_sla_tables(client, wid, config)
     ensure_odcs_tables(client, wid, config)
     ensure_dqx_tables(client, wid, config)
-    return {"status": "ok", "message": "Governance tables initialized (including ODCS + DQX)"}
+    ensure_reconciliation_tables(client, wid, config)
+    ensure_alert_tables(client, wid, config)
+    return {"status": "ok", "message": "All governance and reconciliation tables initialized"}
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +282,23 @@ async def sla_status(client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     from src.sla_monitor import get_sla_status
     return get_sla_status(client, wid, config)
+
+
+@router.get("/sla/compliance-trend")
+async def sla_compliance_trend(days: int = 30, client=Depends(get_db_client)):
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.sla_monitor import get_sla_compliance_trend
+    return get_sla_compliance_trend(client, wid, config, days)
+
+
+@router.delete("/sla/rules/{sla_id}")
+async def delete_sla(sla_id: str, client=Depends(get_db_client)):
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.sla_monitor import delete_sla_rule
+    delete_sla_rule(client, wid, config, sla_id)
+    return {"status": "deleted", "sla_id": sla_id}
 
 
 # ---------------------------------------------------------------------------

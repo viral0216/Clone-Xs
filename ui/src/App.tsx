@@ -81,6 +81,7 @@ const DQVolume = lazy(() => import("@/app/data-quality/volume/page"));
 const DQAnomalies = lazy(() => import("@/app/data-quality/anomalies/page"));
 const DQIncidents = lazy(() => import("@/app/data-quality/incidents/page"));
 const DQExpectations = lazy(() => import("@/app/data-quality/expectations/page"));
+const DQMonitoring = lazy(() => import("@/app/data-quality/monitoring/page"));
 
 function PageFallback() {
   return (
@@ -276,6 +277,7 @@ export default function App() {
               <Route path="/data-quality/anomalies" element={<Suspense fallback={<PageFallback />}><DQAnomalies /></Suspense>} />
               <Route path="/data-quality/incidents" element={<Suspense fallback={<PageFallback />}><DQIncidents /></Suspense>} />
               <Route path="/data-quality/expectations" element={<Suspense fallback={<PageFallback />}><DQExpectations /></Suspense>} />
+              <Route path="/data-quality/monitoring" element={<Suspense fallback={<PageFallback />}><DQMonitoring /></Suspense>} />
             </Routes>
           </main>
         </div>

@@ -88,7 +88,8 @@ def _ensure_freshness_table(client=None, warehouse_id: str = "", config: dict = 
     schema = _get_schema_prefix(config)
 
     try:
-        _run_sql(f"CREATE SCHEMA IF NOT EXISTS {schema}", client, warehouse_id)
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -126,6 +127,23 @@ def check_freshness(
     config = config or {}
     wid = warehouse_id or (config.get("sql_warehouse_id", "") if config else "")
 
+    # Skip Databricks internal catalogs that don't have information_schema
+    _skip_catalogs = {"system", "hive_metastore", "__databricks_internal", "samples"}
+    if catalog.lower() in _skip_catalogs or catalog.startswith("__"):
+        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
+                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
+                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
+
+    # Verify catalog has schemas before querying information_schema
+    # This avoids noisy Spark JVM ERROR stacktraces for invalid catalogs
+    try:
+        _query_sql(f"SHOW SCHEMAS IN `{_esc(catalog)}` LIMIT 1", limit=1, client=client, warehouse_id=wid)
+    except Exception:
+        logger.debug(f"Catalog '{catalog}' not accessible, skipping freshness check")
+        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
+                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
+                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
+
     # Query information_schema for table modification times
     schema_filter = ""
     if schema:
@@ -133,7 +151,7 @@ def check_freshness(
 
     tables_query = f"""
         SELECT table_catalog, table_schema, table_name, last_altered
-        FROM {_esc(catalog)}.information_schema.tables
+        FROM `{_esc(catalog)}`.information_schema.tables
         WHERE table_type = 'MANAGED'
           AND table_schema NOT IN ('information_schema', 'default')
           {schema_filter}
@@ -143,8 +161,10 @@ def check_freshness(
     try:
         tables = _query_sql(tables_query, limit=5000, client=client, warehouse_id=wid)
     except Exception as e:
-        logger.warning(f"Could not query information_schema for {catalog}: {e}")
-        return []
+        logger.debug(f"Could not query information_schema for {catalog}: {e}")
+        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
+                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
+                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
 
     now = datetime.now(timezone.utc)
     now_str = now.strftime("%Y-%m-%dT%H:%M:%S")

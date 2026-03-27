@@ -310,14 +310,8 @@ def ensure_rollback_table(client, warehouse_id: str, config: dict | None = None)
     catalog, schema, _ = fqn.split(".")
 
     try:
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS {catalog}")
-    except Exception:
-        try:
-            execute_sql(client, warehouse_id, f"USE CATALOG {catalog}")
-        except Exception:
-            pass
-    try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
     except Exception:
         pass
 

@@ -4,7 +4,7 @@ import yaml
 from fastapi import APIRouter, HTTPException
 
 from api.models.config import ConfigDiffRequest, ConfigUpdateRequest
-from src.config import load_config
+from src.config import load_config, invalidate_config_cache
 
 router = APIRouter()
 
@@ -27,6 +27,7 @@ async def update_config(req: ConfigUpdateRequest):
         yaml.safe_load(req.yaml_content)
         with open(req.path, "w") as f:
             f.write(req.yaml_content)
+        invalidate_config_cache()
         return {"status": "saved", "path": req.path}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
@@ -76,6 +77,7 @@ async def save_audit_settings(req: dict):
         raw["metrics_table"] = f"{req.get('catalog', 'clone_audit')}.metrics.clone_metrics"
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        invalidate_config_cache()
         return {"status": "saved"}
     except Exception as e:
         from fastapi import HTTPException
@@ -95,6 +97,7 @@ async def set_active_warehouse(req: dict):
         raw["sql_warehouse_id"] = warehouse_id
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        invalidate_config_cache()
         return {"status": "saved", "sql_warehouse_id": warehouse_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -112,6 +115,7 @@ async def set_performance(req: dict):
                 raw[key] = int(req[key])
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        invalidate_config_cache()
         return {"status": "saved"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -130,6 +134,7 @@ async def set_pricing(req: dict):
             raw["currency"] = str(req["currency"])
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+        invalidate_config_cache()
         return {"status": "saved", "price_per_gb": raw.get("price_per_gb"), "currency": raw.get("currency")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

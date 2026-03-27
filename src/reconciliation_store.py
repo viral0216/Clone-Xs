@@ -91,7 +91,8 @@ def ensure_reconciliation_tables(client=None, warehouse_id: str = "", config: di
     schema = _get_schema(config)
 
     try:
-        _run_sql(f"CREATE SCHEMA IF NOT EXISTS {schema}", client, warehouse_id)
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -263,4 +264,27 @@ def get_reconciliation_history(
         return _query_sql(query, limit=limit, client=client, warehouse_id=warehouse_id)
     except Exception as e:
         logger.warning(f"Could not query reconciliation history: {e}")
+        return []
+
+
+def get_run_details(
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+    run_id: str = "",
+) -> list[dict]:
+    """Get per-table details for a specific reconciliation run."""
+    config = config or {}
+    schema = _get_schema(config)
+    query = f"""
+        SELECT schema_name, table_name, source_count, dest_count,
+               delta_count, match, checksum_match, error, executed_at
+        FROM {schema}.reconciliation_details
+        WHERE run_id = '{_esc(run_id)}'
+        ORDER BY schema_name, table_name
+    """
+    try:
+        return _query_sql(query, limit=1000, client=client, warehouse_id=warehouse_id)
+    except Exception as e:
+        logger.warning(f"Could not query run details for {run_id}: {e}")
         return []

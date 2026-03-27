@@ -25,7 +25,8 @@ def ensure_sla_tables(client, warehouse_id, config):
     """Create SLA Delta tables if they don't exist."""
     schema = _get_sla_schema(config)
     try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -200,6 +201,107 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
                 "details": {"recent_schema_changes": recent_changes},
             }
 
+        elif metric == "completeness":
+            # Check null rate across all columns — SLA threshold is max allowed null %
+            threshold_pct = float(rule.get("threshold_value", 5.0))
+            try:
+                cols_result = execute_sql(client, warehouse_id,
+                    f"SELECT column_name FROM {table_fqn.rsplit('.', 1)[0]}.information_schema.columns "
+                    f"WHERE table_catalog = '{table_fqn.split('.')[0]}' "
+                    f"AND table_schema = '{table_fqn.split('.')[1]}' "
+                    f"AND table_name = '{table_fqn.split('.')[2]}'")
+                columns = [c["column_name"] for c in cols_result] if cols_result else []
+
+                if not columns:
+                    raise ValueError("No columns found")
+
+                # Compute null rate for each column
+                null_exprs = [f"SUM(CASE WHEN `{c}` IS NULL THEN 1 ELSE 0 END) AS `null_{c}`" for c in columns[:50]]
+                count_sql = f"SELECT COUNT(*) AS total, {', '.join(null_exprs)} FROM {table_fqn}"
+                result_rows = execute_sql(client, warehouse_id, count_sql)
+
+                if result_rows:
+                    row = result_rows[0]
+                    total = int(row.get("total", 0))
+                    if total > 0:
+                        null_rates = {}
+                        max_null_pct = 0.0
+                        for c in columns[:50]:
+                            nulls = int(row.get(f"null_{c}", 0))
+                            pct = round(nulls / total * 100, 2)
+                            null_rates[c] = pct
+                            max_null_pct = max(max_null_pct, pct)
+                        avg_null_pct = round(sum(null_rates.values()) / len(null_rates), 2) if null_rates else 0
+                    else:
+                        avg_null_pct = 0
+                        max_null_pct = 0
+                        null_rates = {}
+                else:
+                    avg_null_pct = 0
+                    max_null_pct = 0
+                    null_rates = {}
+            except Exception as e:
+                avg_null_pct = 100
+                max_null_pct = 100
+                null_rates = {"error": str(e)}
+
+            return {
+                "sla_id": rule["sla_id"],
+                "table_fqn": table_fqn,
+                "metric": "completeness",
+                "current_value": avg_null_pct,
+                "threshold": threshold_pct,
+                "passed": avg_null_pct <= threshold_pct,
+                "severity": rule.get("severity", "warning"),
+                "details": {
+                    "avg_null_pct": avg_null_pct,
+                    "max_null_pct": max_null_pct,
+                    "threshold_pct": threshold_pct,
+                    "column_null_rates": null_rates,
+                },
+            }
+
+        elif metric == "accuracy":
+            # Check match rate from latest reconciliation run for this table
+            threshold_pct = float(rule.get("threshold_value", 99.0))
+            try:
+                schema = _get_sla_schema(config)
+                audit = config.get("audit_trail", {})
+                recon_catalog = audit.get("catalog", "clone_audit")
+                recon_schema = f"{recon_catalog}.reconciliation"
+
+                rows = execute_sql(client, warehouse_id, f"""
+                    SELECT source_count, dest_count, delta_count, match
+                    FROM {recon_schema}.reconciliation_details
+                    WHERE table_name = '{_esc(table_fqn.rsplit(".", 1)[-1])}'
+                    ORDER BY executed_at DESC LIMIT 1
+                """)
+
+                if rows:
+                    row = rows[0]
+                    src = int(row.get("source_count", 0))
+                    dst = int(row.get("dest_count", 0))
+                    matched = str(row.get("match", "false")).lower() == "true"
+                    if src > 0:
+                        match_rate = round(min(src, dst) / max(src, dst) * 100, 2) if max(src, dst) > 0 else 0
+                    else:
+                        match_rate = 100.0 if matched else 0.0
+                else:
+                    match_rate = 100.0  # No recon data — assume OK
+            except Exception:
+                match_rate = 100.0
+
+            return {
+                "sla_id": rule["sla_id"],
+                "table_fqn": table_fqn,
+                "metric": "accuracy",
+                "current_value": match_rate,
+                "threshold": threshold_pct,
+                "passed": match_rate >= threshold_pct,
+                "severity": rule.get("severity", "warning"),
+                "details": {"match_rate_pct": match_rate, "threshold_pct": threshold_pct},
+            }
+
         else:
             return {"sla_id": rule["sla_id"], "table_fqn": table_fqn, "metric": metric,
                     "current_value": 0, "threshold": 0, "passed": True, "severity": "info",
@@ -359,6 +461,50 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
         }
     except Exception as e:
         return {"contract_id": contract_id, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Compliance Trend
+# ---------------------------------------------------------------------------
+
+def get_sla_compliance_trend(client, warehouse_id, config, days: int = 30) -> list[dict]:
+    """Get daily SLA compliance percentage over time.
+
+    Aggregates SLA check results by date, returning the pass rate per day.
+    """
+    schema = _get_sla_schema(config)
+    try:
+        rows = execute_sql(client, warehouse_id, f"""
+            SELECT DATE(checked_at) AS check_date,
+                   COUNT(*) AS total_checks,
+                   SUM(CASE WHEN passed = true THEN 1 ELSE 0 END) AS passed_checks
+            FROM {schema}.sla_checks
+            WHERE checked_at >= CURRENT_DATE() - INTERVAL {days} DAY
+            GROUP BY DATE(checked_at)
+            ORDER BY check_date
+        """)
+        trend = []
+        for r in (rows or []):
+            total = int(r.get("total_checks", 0))
+            passed = int(r.get("passed_checks", 0))
+            pct = round(passed / total * 100, 1) if total > 0 else 100.0
+            trend.append({
+                "date": str(r.get("check_date", "")),
+                "total_checks": total,
+                "passed_checks": passed,
+                "compliance_pct": pct,
+            })
+        return trend
+    except Exception as e:
+        logger.warning(f"Could not query SLA compliance trend: {e}")
+        return []
+
+
+def delete_sla_rule(client, warehouse_id, config, sla_id: str):
+    """Delete an SLA rule by ID."""
+    schema = _get_sla_schema(config)
+    execute_sql(client, warehouse_id,
+        f"DELETE FROM {schema}.sla_rules WHERE sla_id = '{_esc(sla_id)}'")
 
 
 # ---------------------------------------------------------------------------

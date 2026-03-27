@@ -9,18 +9,20 @@ from src.client import execute_sql
 logger = logging.getLogger(__name__)
 
 
-def ensure_lineage_table(client, warehouse_id: str, lineage_catalog: str = "clone_audit") -> str:
+def ensure_lineage_table(client, warehouse_id: str, lineage_catalog: str = "clone_audit", config: dict | None = None) -> str:
     """Create the lineage tracking table if it doesn't exist.
 
     Returns:
         Fully qualified table name.
     """
+    if config:
+        lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
     schema = "lineage"
     table = "clone_lineage"
     fqn = f"{lineage_catalog}.{schema}.{table}"
 
-    execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS {lineage_catalog}")
-    execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {lineage_catalog}.{schema}")
+    from src.catalog_utils import ensure_catalog_and_schema
+    ensure_catalog_and_schema(client, warehouse_id, lineage_catalog, schema)
 
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {fqn} (
@@ -71,9 +73,12 @@ def record_lineage(
     row_count: int | None = None,
     size_bytes: int | None = None,
     lineage_catalog: str = "clone_audit",
+    config: dict | None = None,
 ) -> None:
     """Record a single lineage entry for a cloned object."""
     import uuid
+    if config:
+        lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
     fqn = f"{lineage_catalog}.lineage.clone_lineage"
     lineage_id = str(uuid.uuid4())
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -112,6 +117,7 @@ def record_batch_lineage(
     clone_type: str,
     cloned_objects: list[dict],
     lineage_catalog: str = "clone_audit",
+    config: dict | None = None,
 ) -> int:
     """Record lineage for a batch of cloned objects.
 
@@ -134,6 +140,7 @@ def record_batch_lineage(
             row_count=obj.get("row_count"),
             size_bytes=obj.get("size_bytes"),
             lineage_catalog=lineage_catalog,
+            config=config,
         )
         count += 1
 
@@ -148,6 +155,7 @@ def query_lineage(
     operation_id: str | None = None,
     limit: int = 50,
     lineage_catalog: str = "clone_audit",
+    config: dict | None = None,
 ) -> list[dict]:
     """Query lineage history for a table or operation.
 
@@ -159,6 +167,8 @@ def query_lineage(
     Returns:
         List of lineage records.
     """
+    if config:
+        lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
     fqn = f"{lineage_catalog}.lineage.clone_lineage"
     where_clauses = []
     if table_fqn:

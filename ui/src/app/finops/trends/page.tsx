@@ -1,14 +1,14 @@
 // @ts-nocheck
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAzureCosts, useBillingData } from "@/hooks/useApi";
+import { useAzureCosts, useBillingCost } from "@/hooks/useApi";
 import PageHeader from "@/components/PageHeader";
-import CatalogPicker from "@/components/CatalogPicker";
+// CatalogPicker no longer needed — billing data is catalog-independent
 import {
-  TrendingUp, Loader2, TrendingDown, AlertTriangle, Calendar, DollarSign,
+  TrendingUp, Loader2, TrendingDown, AlertTriangle, Calendar, DollarSign, RefreshCw,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -18,18 +18,22 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function formatCost(value: number | null, currency: string = "USD"): string {
+function formatCost(value: number | string | null, currency: string = "USD"): string {
   if (value == null) return "\u2014";
+  const n = Number(value);
+  if (isNaN(n)) return "\u2014";
   const symbols: Record<string, string> = { USD: "$", EUR: "\u20AC", GBP: "\u00A3", INR: "\u20B9", AUD: "A$", CAD: "C$", JPY: "\u00A5" };
   const sym = symbols[currency] || "$";
-  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
-  return `${sym}${value.toFixed(2)}`;
+  if (n >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${sym}${(n / 1_000).toFixed(1)}K`;
+  return `${sym}${n.toFixed(2)}`;
 }
 
-function formatNumber(n: number | null): string {
+function formatNumber(n: number | string | null): string {
   if (n == null) return "\u2014";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const v = Number(n);
+  if (isNaN(v)) return "\u2014";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
 function SummaryCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -48,28 +52,27 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: strin
 // ── Component ────────────────────────────────────────────────────────
 
 export default function CostTrendsPage() {
-  const [catalog, setCatalog] = useState("");
   const [period, setPeriod] = useState(30);
 
   const azureQuery = useAzureCosts(period);
-  const billingQuery = useBillingData(catalog, period);
+  const billingQuery = useBillingCost(period);
 
   const loading = azureQuery.isLoading || billingQuery.isLoading;
 
   const azureCosts = azureQuery.data ?? null;
   const azureConfigured = !!azureCosts;
-  const billingRaw = billingQuery.data;
-  const billingData = Array.isArray(billingRaw) ? billingRaw : [];
+  const billingResult = billingQuery.data ?? null;
 
   // ── Daily trend data ───────────────────────────────────────────────
-  const dailyTrend = azureCosts?.daily_trend || [];
-  const currency = azureCosts?.currency || "USD";
+  // Prefer billing system table data; fall back to Azure daily_trend
+  const dailyTrend = billingResult?.daily_trend || azureCosts?.daily_trend || [];
+  const currency = billingResult?.currency || azureCosts?.currency || "USD";
 
   // ── DBU aggregation by day ─────────────────────────────────────────
   const dbuByDay: Record<string, number> = {};
-  billingData.forEach((r) => {
+  (dailyTrend as any[]).forEach((r: any) => {
     const d = r.date?.slice(0, 10);
-    if (d) dbuByDay[d] = (dbuByDay[d] || 0) + (Number(r.usage_quantity) || 0);
+    if (d && r.dbus != null) dbuByDay[d] = (dbuByDay[d] || 0) + Number(r.dbus);
   });
 
   // ── Combined chart data ────────────────────────────────────────────
@@ -77,10 +80,10 @@ export default function CostTrendsPage() {
     const dayMap: Record<string, any> = {};
     dailyTrend.forEach((d: any) => {
       const date = d.date?.slice(0, 10);
-      if (date) dayMap[date] = { ...dayMap[date], date, cost: d.cost || 0 };
+      if (date) dayMap[date] = { ...dayMap[date], date, cost: Number(d.cost || 0) };
     });
     Object.entries(dbuByDay).forEach(([date, dbus]) => {
-      dayMap[date] = { ...dayMap[date], date, dbus };
+      dayMap[date] = { ...dayMap[date], date, dbus: Number(dbus) };
     });
     return Object.values(dayMap).sort((a: any, b: any) => a.date.localeCompare(b.date));
   }, [dailyTrend, dbuByDay]);
@@ -129,27 +132,20 @@ export default function CostTrendsPage() {
       {/* ── Filters ─────────────────────────────────────────────────── */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4 items-end">
-            <div className="flex-1">
-              <CatalogPicker
-                catalog={catalog}
-                onCatalogChange={setCatalog}
-                showSchema={false}
-                showTable={false}
-              />
-            </div>
-            <div className="flex gap-2">
-              {[30, 60, 90].map((d) => (
-                <Button
-                  key={d}
-                  variant={period === d ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPeriod(d)}
-                >
-                  {d}d
-                </Button>
-              ))}
-            </div>
+          <div className="flex gap-2 justify-end">
+            {[30, 60, 90].map((d) => (
+              <Button
+                key={d}
+                variant={period === d ? "default" : "outline"}
+                size="sm"
+                onClick={() => setPeriod(d)}
+              >
+                {d}d
+              </Button>
+            ))}
+            <Button variant="outline" size="sm" onClick={() => { azureQuery.refetch(); billingQuery.refetch(); }} disabled={azureQuery.isRefetching || billingQuery.isRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${azureQuery.isRefetching || billingQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -159,10 +155,10 @@ export default function CostTrendsPage() {
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading trend data...
         </div>
-      ) : chartData.length === 0 && !azureConfigured ? (
+      ) : chartData.length === 0 && !billingResult ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <TrendingUp className="h-10 w-10 mb-3 opacity-40" />
-          <p className="text-sm">No trend data available. Configure Azure Cost Management or select a catalog.</p>
+          <p className="text-sm">No trend data available. Billing system tables may not be accessible.</p>
         </div>
       ) : (
         <>
@@ -215,9 +211,9 @@ export default function CostTrendsPage() {
                     <Tooltip formatter={(v: number, name: string) => name === "DBUs" ? formatNumber(v) : formatCost(v, currency)} />
                     <Legend />
                     <Line yAxisId="left" type="monotone" dataKey="cost" stroke="#E8453C" strokeWidth={2} dot={{ r: 1.5 }} name="Cost" />
-                    <Scatter yAxisId="left" dataKey="anomaly" fill="#dc2626" name="Anomaly (>2x avg)" shape="circle" />
+                    <Scatter yAxisId="left" dataKey="anomaly" fill="#B91C1C" name="Anomaly (>2x avg)" shape="circle" />
                     {Object.keys(dbuByDay).length > 0 && (
-                      <Line yAxisId="right" type="monotone" dataKey="dbus" stroke="#3b82f6" strokeWidth={1.5} dot={false} name="DBUs" strokeDasharray="4 2" />
+                      <Line yAxisId="right" type="monotone" dataKey="dbus" stroke="#374151" strokeWidth={1.5} dot={false} name="DBUs" strokeDasharray="4 2" />
                     )}
                   </ComposedChart>
                 </ResponsiveContainer>

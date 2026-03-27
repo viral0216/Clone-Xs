@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
 import CatalogPicker from "@/components/CatalogPicker";
 import { toast } from "sonner";
-import { useBillingData, useAzureCosts } from "@/hooks/useApi";
+import { useBillingCost, useAzureCosts } from "@/hooks/useApi";
 import {
-  Receipt, Loader2, DollarSign, TrendingUp, BarChart3, Zap,
+  Receipt, Loader2, DollarSign, TrendingUp, BarChart3, Zap, RefreshCw,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -18,18 +18,22 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function formatCost(value: number | null, currency: string = "USD"): string {
+function formatCost(value: number | string | null, currency: string = "USD"): string {
   if (value == null) return "\u2014";
+  const n = Number(value);
+  if (isNaN(n)) return "\u2014";
   const symbols: Record<string, string> = { USD: "$", EUR: "\u20AC", GBP: "\u00A3", INR: "\u20B9", AUD: "A$", CAD: "C$", JPY: "\u00A5" };
   const sym = symbols[currency] || "$";
-  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
-  return `${sym}${value.toFixed(2)}`;
+  if (n >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${sym}${(n / 1_000).toFixed(1)}K`;
+  return `${sym}${n.toFixed(2)}`;
 }
 
-function formatNumber(n: number | null): string {
+function formatNumber(n: number | string | null): string {
   if (n == null) return "\u2014";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const v = Number(n);
+  if (isNaN(v)) return "\u2014";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
 function SummaryCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -45,7 +49,7 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: strin
   );
 }
 
-const CHART_COLORS = ["#E8453C", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
+const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B91C1C", "#1F2937", "#4B5563"];
 
 // ── Component ────────────────────────────────────────────────────────
 
@@ -53,33 +57,26 @@ export default function BillingPage() {
   const [catalog, setCatalog] = useState("");
   const [days, setDays] = useState(30);
 
-  const billingQuery = useBillingData(catalog, days);
+  const billingQuery = useBillingCost(days);
   const azureQuery = useAzureCosts(days);
 
   const loading = billingQuery.isLoading;
-  const billingData = Array.isArray(billingQuery.data) ? billingQuery.data : billingQuery.data?.usage || [];
+  const billingResult = billingQuery.data || {};
+  const billingData = billingResult.daily_trend || [];
   const azureCosts = azureQuery.data || null;
   const azureConfigured = !!azureCosts;
 
-  // ── Derived metrics ────────────────────────────────────────────────
-  const totalDBUs = billingData.reduce((sum, r) => sum + (Number(r.usage_quantity) || 0), 0);
+  // ── Derived metrics (from system tables) ──────────────────────────
+  const totalDBUs = billingResult.total_dbus || 0;
+  const totalListCost = billingResult.total_cost || 0;
   const totalAzureCost = azureCosts?.total_cost ?? null;
-  const currency = azureCosts?.currency || "USD";
-  const avgDailyCost = azureCosts?.daily_trend?.length
-    ? azureCosts.daily_trend.reduce((s: number, d: any) => s + (d.cost || 0), 0) / azureCosts.daily_trend.length
-    : null;
+  const currency = billingResult.currency || azureCosts?.currency || "USD";
+  const avgDailyCost = billingResult.avg_daily_cost || null;
   const databricksCost = azureCosts?.databricks_costs?.total ?? null;
   const dbxPct = totalAzureCost && databricksCost ? ((databricksCost / totalAzureCost) * 100).toFixed(1) : null;
 
-  // ── Daily DBU aggregation ──────────────────────────────────────────
-  const dailyMap: Record<string, number> = {};
-  billingData.forEach((r) => {
-    const d = r.date?.slice(0, 10);
-    if (d) dailyMap[d] = (dailyMap[d] || 0) + (Number(r.usage_quantity) || 0);
-  });
-  const dailyDBU = Object.entries(dailyMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, dbus]) => ({ date, dbus }));
+  // ── Daily DBU aggregation (already aggregated by backend) ────────
+  const dailyDBU = billingData.map((d: any) => ({ date: d.date, dbus: d.dbus || 0 }));
 
   // Merge Azure daily trend
   const chartData = dailyDBU.map((d) => {
@@ -87,15 +84,12 @@ export default function BillingPage() {
     return { ...d, azure_cost: azureDay?.cost ?? null };
   });
 
-  // ── SKU breakdown ──────────────────────────────────────────────────
-  const skuMap: Record<string, number> = {};
-  billingData.forEach((r) => {
-    const sku = r.sku || "Unknown";
-    skuMap[sku] = (skuMap[sku] || 0) + (Number(r.usage_quantity) || 0);
-  });
-  const skuBreakdown = Object.entries(skuMap)
-    .sort(([, a], [, b]) => b - a)
-    .map(([sku, quantity]) => ({ sku, quantity }));
+  // ── SKU breakdown (from system tables) ─────────────────────────────
+  const skuBreakdown = (billingResult.by_sku || []).map((s: any) => ({
+    sku: s.sku || "Unknown",
+    quantity: s.dbus || 0,
+    cost: s.cost || 0,
+  }));
 
   // ── Azure service breakdown ────────────────────────────────────────
   const serviceBreakdown = azureCosts?.service_breakdown
@@ -137,6 +131,10 @@ export default function BillingPage() {
                 </Button>
               ))}
             </div>
+            <div className="flex-1" />
+            <Button variant="outline" size="sm" onClick={() => { billingQuery.refetch(); azureQuery.refetch(); }} disabled={billingQuery.isRefetching || azureQuery.isRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${billingQuery.isRefetching || azureQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -162,9 +160,9 @@ export default function BillingPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard label="Total DBUs" value={formatNumber(totalDBUs)} sub={`Last ${days} days`} />
             <SummaryCard
-              label="Total Azure Cost"
-              value={totalAzureCost != null ? formatCost(totalAzureCost, currency) : "\u2014"}
-              sub={azureConfigured ? `${days}d period` : "Azure not configured"}
+              label="List Cost"
+              value={formatCost(totalListCost, currency)}
+              sub={`${days}d (system.billing.list_prices)`}
             />
             <SummaryCard
               label="Avg Daily Cost"
@@ -172,10 +170,9 @@ export default function BillingPage() {
               sub="Per day average"
             />
             <SummaryCard
-              label="Databricks % of Total"
-              value={dbxPct != null ? `${dbxPct}%` : "\u2014"}
-              sub="Databricks vs total Azure"
-              color={dbxPct && parseFloat(dbxPct) > 80 ? "red" : dbxPct && parseFloat(dbxPct) > 50 ? "amber" : "green"}
+              label="SKUs"
+              value={skuBreakdown.length}
+              sub="Distinct billing SKUs"
             />
           </div>
 
@@ -198,7 +195,7 @@ export default function BillingPage() {
                     <Legend />
                     <Line yAxisId="left" type="monotone" dataKey="dbus" stroke="#E8453C" strokeWidth={2} dot={{ r: 2 }} name="DBUs" />
                     {azureConfigured && (
-                      <Line yAxisId="right" type="monotone" dataKey="azure_cost" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} name="Azure Cost" />
+                      <Line yAxisId="right" type="monotone" dataKey="azure_cost" stroke="#374151" strokeWidth={2} dot={{ r: 2 }} name="Azure Cost" />
                     )}
                   </LineChart>
                 </ResponsiveContainer>

@@ -204,100 +204,140 @@ export function useColumnUsage() {
   });
 }
 
-// ── FinOps Hooks (cached) ───────────────────────────────────────────
+// ── FinOps Hooks (system tables, 10-min cache) ─────────────────────
 
-const FINOPS_STALE_TIME = 120_000; // 2 min — cost data doesn't change fast
-const FINOPS_REFETCH = 300_000;    // 5 min auto-refresh
+const FINOPS_STALE = 600_000;   // 10 min — matches backend file cache TTL
+const FINOPS_REFETCH = 600_000; // 10 min auto-refresh
 
 export function useFinOpsConfig() {
   return useQuery<{ price_per_gb?: number; currency?: string }>({
     queryKey: ["finops-config"],
     queryFn: () => api.get("/config"),
-    staleTime: 300_000,
+    staleTime: FINOPS_STALE,
     retry: false,
     select: (cfg: any) => ({ price_per_gb: cfg?.price_per_gb ?? 0.023, currency: cfg?.currency ?? "USD" }),
   });
 }
 
-export function useBillingData(catalog: string, days: number = 30) {
+export function useBillingCost(days: number = 30) {
   return useQuery<any>({
-    queryKey: ["finops-billing", catalog, days],
-    queryFn: () => api.post("/system-insights/billing", { catalog, days }),
-    staleTime: FINOPS_STALE_TIME,
-    refetchInterval: FINOPS_REFETCH,
-    enabled: !!catalog,
-    retry: 1,
-  });
-}
-
-export function useStorageMetrics(catalog: string) {
-  return useQuery<any>({
-    queryKey: ["finops-storage", catalog],
-    queryFn: () => api.post("/storage-metrics", { source_catalog: catalog }),
-    staleTime: FINOPS_STALE_TIME,
-    refetchInterval: FINOPS_REFETCH,
-    enabled: !!catalog,
-    retry: 1,
-  });
-}
-
-export function useCostEstimate(catalog: string) {
-  return useQuery<any>({
-    queryKey: ["finops-estimate", catalog],
-    queryFn: () => api.post("/estimate", { source_catalog: catalog }),
-    staleTime: FINOPS_STALE_TIME,
-    refetchInterval: FINOPS_REFETCH,
-    enabled: !!catalog,
-    retry: 1,
-  });
-}
-
-export function useWarehouseInsights(catalog?: string) {
-  return useQuery<any>({
-    queryKey: ["finops-warehouses", catalog || ""],
-    queryFn: () => api.post("/system-insights/warehouses", { catalog: catalog || "" }),
-    staleTime: FINOPS_STALE_TIME,
+    queryKey: ["finops-billing", days],
+    queryFn: () => api.get(`/finops/billing?days=${days}`),
+    staleTime: FINOPS_STALE,
     refetchInterval: FINOPS_REFETCH,
     retry: 1,
   });
 }
 
-export function useQueryPerformance(catalog?: string, days: number = 30) {
+export function useFinOpsWarehouses() {
   return useQuery<any>({
-    queryKey: ["finops-query-perf", catalog || "", days],
-    queryFn: () => api.post("/system-insights/query-performance", { catalog: catalog || "", warehouse_id: "", days }),
-    staleTime: FINOPS_STALE_TIME,
+    queryKey: ["finops-warehouses"],
+    queryFn: () => api.get("/finops/warehouses"),
+    staleTime: FINOPS_STALE,
     refetchInterval: FINOPS_REFETCH,
     retry: 1,
   });
 }
 
-export function useClusterInsights() {
+export function useWarehouseEvents(days: number = 7) {
+  return useQuery<any>({
+    queryKey: ["finops-wh-events", days],
+    queryFn: () => api.get(`/finops/warehouse-events?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsClusters() {
   return useQuery<any>({
     queryKey: ["finops-clusters"],
-    queryFn: () => api.post("/system-insights/clusters", {}),
-    staleTime: FINOPS_STALE_TIME,
+    queryFn: () => api.get("/finops/clusters"),
+    staleTime: FINOPS_STALE,
     refetchInterval: FINOPS_REFETCH,
     retry: 1,
   });
 }
 
+export function useNodeUtilization(days: number = 7) {
+  return useQuery<any>({
+    queryKey: ["finops-node-util", days],
+    queryFn: () => api.get(`/finops/node-utilization?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsQueryStats(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-query-stats", days],
+    queryFn: () => api.get(`/finops/query-stats?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsStorage(catalog: string) {
+  return useQuery<any>({
+    queryKey: ["finops-storage", catalog],
+    queryFn: () => api.get(`/finops/storage?catalog=${catalog}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    enabled: !!catalog,
+    retry: 1,
+  });
+}
+
+export function useFinOpsRecommendations(catalog: string) {
+  return useQuery<any>({
+    queryKey: ["finops-recommendations", catalog],
+    queryFn: () => api.get(`/finops/recommendations?catalog=${catalog}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    enabled: !!catalog,
+    retry: 1,
+  });
+}
+
+export function useSystemTableStatus() {
+  return useQuery<any>({
+    queryKey: ["finops-system-status"],
+    queryFn: () => api.get("/finops/system-status"),
+    staleTime: FINOPS_STALE,
+    retry: false,
+  });
+}
+
+// Cost Attribution
+export function useQueryCosts(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-query-costs", days],
+    queryFn: () => api.get(`/finops/query-costs?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useJobCosts(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-job-costs", days],
+    queryFn: () => api.get(`/finops/job-costs?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+// Azure (supplementary — deferred)
 export function useAzureCosts(days: number = 30) {
   return useQuery<any>({
     queryKey: ["finops-azure-costs", days],
     queryFn: () => api.get(`/finops/azure/costs?days=${days}`),
-    staleTime: FINOPS_STALE_TIME,
+    staleTime: FINOPS_STALE,
     refetchInterval: FINOPS_REFETCH,
-    retry: false, // Azure may not be configured
-  });
-}
-
-export function useOptimizationInsights(catalog: string) {
-  return useQuery<any>({
-    queryKey: ["finops-optimization", catalog],
-    queryFn: () => api.post("/system-insights/optimization", { catalog }),
-    staleTime: FINOPS_STALE_TIME,
-    enabled: !!catalog,
-    retry: 1,
+    retry: false,
   });
 }

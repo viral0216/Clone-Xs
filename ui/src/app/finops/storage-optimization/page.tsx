@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
-import { useStorageMetrics } from "@/hooks/useApi";
+import { useFinOpsStorage } from "@/hooks/useApi";
 import PageHeader from "@/components/PageHeader";
 import CatalogPicker from "@/components/CatalogPicker";
 import { toast } from "sonner";
@@ -47,13 +47,13 @@ export default function StorageOptimizationPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionResults, setActionResults] = useState<any>(null);
 
-  const storageQuery = useStorageMetrics(catalog);
+  const storageQuery = useFinOpsStorage(catalog);
   const loading = storageQuery.isLoading;
 
   const storageData = storageQuery.data || {};
   const tables = (() => {
     const tbls = Array.isArray(storageData?.tables) ? storageData.tables : [];
-    return [...tbls].sort((a: any, b: any) => (b.vacuumable_pct || 0) - (a.vacuumable_pct || 0));
+    return [...tbls].sort((a: any, b: any) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0));
   })();
 
   function load() {
@@ -66,12 +66,12 @@ export default function StorageOptimizationPage() {
     ? tables.filter((t) => t.schema === schema || t.schema_name === schema)
     : tables;
 
-  // Totals
-  const totalBytes = filteredTables.reduce((acc, t) => acc + (t.total_bytes || t.size_bytes || 0), 0);
-  const vacuumableBytes = filteredTables.reduce((acc, t) => acc + (t.vacuumable_bytes || 0), 0);
-  const timeTravelBytes = filteredTables.reduce((acc, t) => acc + (t.time_travel_bytes || 0), 0);
-  const activeBytes = totalBytes - vacuumableBytes - timeTravelBytes;
-  const estimatedSavings = (vacuumableBytes / (1024 ** 3) * 0.023).toFixed(2);
+  // Totals — system tables only report total_bytes; vacuumable/time_travel unavailable
+  const totalBytes = filteredTables.reduce((acc: number, t: any) => acc + Number(t.total_bytes || t.size_bytes || 0), 0);
+  const vacuumableBytes = 0; // not available from system tables
+  const timeTravelBytes = 0; // not available from system tables
+  const activeBytes = totalBytes;
+  const estimatedSavings = "0.00"; // deep analysis deferred
 
   // Bar widths
   const barTotal = totalBytes || 1;
@@ -171,6 +171,22 @@ export default function StorageOptimizationPage() {
             <SummaryCard label="Time-Travel Overhead" value={formatBytes(timeTravelBytes)} color="amber" />
             <SummaryCard label="Est. Monthly Savings" value={`$${estimatedSavings}`} color="green" sub="via VACUUM" />
           </div>
+
+          {/* System tables limitation banner */}
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">Deep storage analysis deferred</p>
+                  <p className="text-xs text-muted-foreground">
+                    System tables report total size only. Vacuumable and time-travel breakdowns require a dedicated DESCRIBE DETAIL scan, which will be added in a future release.
+                    VACUUM and OPTIMIZE actions still work on selected tables.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Storage composition bar */}
           {totalBytes > 0 && (
@@ -346,8 +362,9 @@ export default function StorageOptimizationPage() {
                       {filteredTables.map((t, i) => {
                         const key = `${t.schema || t.schema_name}.${t.table || t.table_name}`;
                         const isSelected = selected.has(key);
-                        const vPct = t.vacuumable_pct ?? (t.total_bytes ? ((t.vacuumable_bytes || 0) / t.total_bytes * 100) : 0);
-                        const ttPct = t.time_travel_pct ?? (t.total_bytes ? ((t.time_travel_bytes || 0) / t.total_bytes * 100) : 0);
+                        const tTotalBytes = Number(t.total_bytes || 0);
+                        const vPct = 0; // not available from system tables
+                        const ttPct = 0; // not available from system tables
                         return (
                           <tr key={i} className={`border-b last:border-0 hover:bg-muted/20 ${isSelected ? "bg-[#E8453C]/5" : ""}`}>
                             <td className="p-3">
@@ -356,8 +373,8 @@ export default function StorageOptimizationPage() {
                               </button>
                             </td>
                             <td className="p-3 font-mono text-xs">{key}</td>
-                            <td className="p-3 text-xs text-right">{formatBytes(t.total_bytes || t.size_bytes || 0)}</td>
-                            <td className="p-3 text-xs text-right text-green-500">{formatBytes(t.vacuumable_bytes || 0)}</td>
+                            <td className="p-3 text-xs text-right">{formatBytes(Number(t.total_bytes || t.size_bytes || 0))}</td>
+                            <td className="p-3 text-xs text-right text-muted-foreground">{"\u2014"}</td>
                             <td className="p-3 text-xs text-right">
                               <span className={vPct > 30 ? "text-green-500 font-medium" : "text-muted-foreground"}>
                                 {vPct.toFixed(1)}%

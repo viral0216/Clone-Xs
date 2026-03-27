@@ -1,4 +1,8 @@
-"""FinOps API endpoints — Azure Cost Management integration and cost aggregation."""
+"""FinOps API endpoints — Databricks system tables + Azure Cost Management.
+
+Primary data source: Databricks system tables (billing, compute, query history).
+Supplementary: Azure Cost Management (optional, configured separately).
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.dependencies import get_db_client, get_app_config
@@ -6,12 +10,138 @@ from api.dependencies import get_db_client, get_app_config
 router = APIRouter()
 
 
-def _get_session_info(request: Request) -> tuple[str, any]:
-    """Extract auth method and client from the current session.
+# ── System Table Endpoints (primary) ─────────────────────────────────
 
-    Returns (auth_method, client) so Azure cost queries can reuse
-    existing Azure CLI or service principal credentials.
+@router.get("/billing", summary="Billing cost from system tables")
+async def billing_cost(
+    days: int = Query(default=30, ge=1, le=365),
+    client=Depends(get_db_client),
+):
+    """Query system.billing.usage JOIN system.billing.list_prices for actual $ costs.
+
+    Returns daily_trend, total_cost, total_dbus, breakdowns by SKU/product/warehouse/user.
     """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_billing_cost
+    return query_billing_cost(client, wid, days)
+
+
+@router.get("/warehouses", summary="SQL warehouses from system tables")
+async def warehouses(client=Depends(get_db_client)):
+    """Query system.compute.warehouses for latest state, config, and warnings."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_warehouses
+    return query_warehouses(client, wid)
+
+
+@router.get("/warehouse-events", summary="Warehouse start/stop/scale events")
+async def warehouse_events(
+    days: int = Query(default=7, ge=1, le=365),
+    client=Depends(get_db_client),
+):
+    """Query system.compute.warehouse_events for lifecycle events."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_warehouse_events
+    return query_warehouse_events(client, wid, days)
+
+
+@router.get("/clusters", summary="Clusters from system tables")
+async def clusters(client=Depends(get_db_client)):
+    """Query system.compute.clusters for latest state and config."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_clusters
+    return query_clusters(client, wid)
+
+
+@router.get("/node-utilization", summary="Node CPU/memory utilization")
+async def node_utilization(
+    days: int = Query(default=7, ge=1, le=90),
+    client=Depends(get_db_client),
+):
+    """Query system.compute.node_timeline for daily CPU/memory stats per cluster."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_node_utilization
+    return query_node_utilization(client, wid, days)
+
+
+@router.get("/query-stats", summary="Query performance from system tables")
+async def query_stats(
+    days: int = Query(default=30, ge=1, le=365),
+    client=Depends(get_db_client),
+):
+    """Query system.query.history for performance stats, by warehouse, by user, slowest queries."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_query_stats
+    return query_query_stats(client, wid, days)
+
+
+@router.get("/storage", summary="Storage metrics from information_schema")
+async def storage_summary(
+    catalog: str = Query(..., description="Catalog name"),
+    client=Depends(get_db_client),
+):
+    """Query {catalog}.information_schema.tables for table sizes. Single SQL query, no ANALYZE."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_storage
+    return query_storage(client, wid, catalog)
+
+
+@router.get("/recommendations", summary="Combined FinOps recommendations")
+async def recommendations(
+    catalog: str = Query(default="", description="Catalog name (optional)"),
+    client=Depends(get_db_client),
+):
+    """Combined recommendations from predictive optimization + warehouse warnings + utilization."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_recommendations
+    return query_recommendations(client, wid, catalog)
+
+
+@router.get("/query-costs", summary="Cost per query attribution")
+async def query_costs(
+    days: int = Query(default=30, ge=1, le=365),
+    client=Depends(get_db_client),
+):
+    """Attribute cost to individual queries using hourly warehouse cost allocation."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_cost_per_query
+    return query_cost_per_query(client, wid, days)
+
+
+@router.get("/job-costs", summary="Cost per job attribution")
+async def job_costs(
+    days: int = Query(default=30, ge=1, le=365),
+    client=Depends(get_db_client),
+):
+    """Attribute cost to jobs using billing.usage where job_id IS NOT NULL."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import query_cost_per_job
+    return query_cost_per_job(client, wid, days)
+
+
+@router.get("/system-status", summary="Check system table access")
+async def system_table_status(client=Depends(get_db_client)):
+    """Probe which system tables are accessible for graceful degradation."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.finops_queries import check_system_tables
+    return check_system_tables(client, wid)
+
+
+# ── Azure Cost Management (supplementary, deferred) ──────────────────
+
+def _get_session_info(request: Request) -> tuple[str, any]:
+    """Extract auth method and client from the current session."""
     session_id = request.headers.get("x-clone-session", "")
     if not session_id:
         return "", None
@@ -27,15 +157,11 @@ def _get_session_info(request: Request) -> tuple[str, any]:
 
 @router.get("/azure/status", summary="Check Azure Cost Management configuration")
 async def azure_cost_status(request: Request):
-    """Check if Azure subscription is configured for cost queries.
-
-    Also reports whether the current login can be reused for ARM access.
-    """
+    """Check if Azure subscription is configured for cost queries."""
     config = await get_app_config()
     from src.azure_costs import is_azure_configured
     status = is_azure_configured(config)
 
-    # Check if current session can provide ARM credentials
     auth_method, _ = _get_session_info(request)
     status["session_auth_method"] = auth_method
     status["can_reuse_session"] = auth_method in ("azure-cli", "service-principal")
@@ -52,32 +178,23 @@ async def azure_costs(
     request: Request,
     days: int = Query(default=30, ge=1, le=365),
 ):
-    """Query Azure Cost Management API for cost trends, service breakdown, and Databricks costs.
-
-    Automatically reuses existing Azure CLI or service principal credentials
-    if the user is already logged in with those methods.
-    """
+    """Query Azure Cost Management API for cost trends and service breakdown."""
     config = await get_app_config()
     azure = config.get("azure", {})
     subscription_id = azure.get("subscription_id", "")
     if not subscription_id:
-        raise HTTPException(status_code=400, detail="Azure subscription_id not configured. Set it in Settings → Azure / FinOps.")
+        raise HTTPException(status_code=400, detail="Azure subscription_id not configured.")
 
     resource_group = azure.get("resource_group", "")
     tenant_id = azure.get("tenant_id", "")
-
-    # Get session credentials for ARM token reuse
     auth_method, client = _get_session_info(request)
 
     from src.azure_costs import query_azure_costs
     try:
         result = query_azure_costs(
-            subscription_id=subscription_id,
-            resource_group=resource_group,
-            tenant_id=tenant_id,
-            days=days,
-            session_auth_method=auth_method,
-            session_client=client,
+            subscription_id=subscription_id, resource_group=resource_group,
+            tenant_id=tenant_id, days=days,
+            session_auth_method=auth_method, session_client=client,
         )
         return result.to_dict()
     except PermissionError as e:

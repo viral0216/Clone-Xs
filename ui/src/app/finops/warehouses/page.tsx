@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useWarehouseInsights, useQueryPerformance } from "@/hooks/useApi";
+import { useFinOpsWarehouses, useFinOpsQueryStats } from "@/hooks/useApi";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import {
@@ -66,8 +66,8 @@ function formatDuration(ms: number) {
 }
 
 export default function WarehouseEfficiencyPage() {
-  const whQuery = useWarehouseInsights();
-  const perfQuery = useQueryPerformance();
+  const whQuery = useFinOpsWarehouses();
+  const perfQuery = useFinOpsQueryStats(30);
 
   const loading = whQuery.isLoading || perfQuery.isLoading;
 
@@ -152,31 +152,31 @@ export default function WarehouseEfficiencyPage() {
                     </thead>
                     <tbody>
                       {warehouses.map((wh, i) => {
-                        const perf = queryPerf[wh.id] || queryPerf[wh.name] || {};
+                        const perf = queryPerf[wh.warehouse_id] || queryPerf[wh.name] || {};
                         return (
                           <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
-                            <td className="p-3 font-medium">{wh.name || wh.id}</td>
+                            <td className="p-3 font-medium">{wh.name || wh.warehouse_id}</td>
                             <td className="p-3">
                               <Badge variant="outline" className={`text-[10px] ${stateBadge(wh.state)}`}>
                                 {wh.state}
                               </Badge>
                             </td>
-                            <td className="p-3 text-xs">{wh.cluster_size || wh.size || "-"}</td>
+                            <td className="p-3 text-xs">{wh.size || "-"}</td>
                             <td className="p-3">
-                              {wh.auto_stop_mins || wh.auto_stop ? (
+                              {wh.auto_stop_minutes ? (
                                 <span className="text-green-500 text-xs font-medium">
-                                  {wh.auto_stop_mins || wh.auto_stop} min
+                                  {wh.auto_stop_minutes} min
                                 </span>
                               ) : (
                                 <span className="text-red-500 text-xs font-medium">Off</span>
                               )}
                             </td>
-                            <td className="p-3 text-xs">{wh.num_clusters || wh.min_num_clusters || 1}</td>
-                            <td className="p-3 text-xs">{wh.warehouse_type || wh.type || "-"}</td>
-                            <td className="p-3 text-xs">{perf.query_count ?? "-"}</td>
-                            <td className="p-3 text-xs">{perf.avg_duration_ms ? formatDuration(perf.avg_duration_ms) : "-"}</td>
-                            <td className="p-3 text-xs">{perf.p95_duration_ms ? formatDuration(perf.p95_duration_ms) : "-"}</td>
-                            <td className="p-3 text-xs">{perf.total_read_bytes ? formatBytes(perf.total_read_bytes) : "-"}</td>
+                            <td className="p-3 text-xs">{wh.min_clusters ?? wh.max_clusters ?? 1}</td>
+                            <td className="p-3 text-xs">{wh.type || "-"}</td>
+                            <td className="p-3 text-xs">{perf.query_count != null ? Number(perf.query_count) : "-"}</td>
+                            <td className="p-3 text-xs">{perf.avg_duration_ms ? formatDuration(Number(perf.avg_duration_ms)) : "-"}</td>
+                            <td className="p-3 text-xs">{perf.p95_duration_ms ? formatDuration(Number(perf.p95_duration_ms)) : "-"}</td>
+                            <td className="p-3 text-xs">{perf.total_read_bytes ? formatBytes(Number(perf.total_read_bytes)) : "-"}</td>
                           </tr>
                         );
                       })}

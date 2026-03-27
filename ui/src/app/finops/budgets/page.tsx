@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAzureCosts, useCostEstimate } from "@/hooks/useApi";
+import { useBillingCost } from "@/hooks/useApi";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import {
   Target, Loader2, Plus, Trash2, AlertTriangle, CheckCircle,
-  DollarSign, TrendingUp, PiggyBank,
+  DollarSign, TrendingUp, PiggyBank, RefreshCw,
 } from "lucide-react";
 
 const STORAGE_KEY = "clxs-finops-budgets";
@@ -66,26 +66,29 @@ function SummaryCard({ label, value, color, icon: Icon }: { label: string; value
 export default function BudgetTrackerPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
 
-  const catalogForEstimate = (typeof window !== "undefined" ? localStorage.getItem("clxs-last-catalog") : "") || "";
-  const azureQuery = useAzureCosts(30);
-  const estimateQuery = useCostEstimate(catalogForEstimate);
+  const billingQuery = useBillingCost(30);
 
-  const loading = azureQuery.isLoading || estimateQuery.isLoading;
+  const loading = billingQuery.isLoading;
 
   const actualSpend: Record<string, number> = (() => {
     const spend: Record<string, number> = { total: 0, databricks: 0, storage: 0, compute: 0 };
-    if (azureQuery.data) {
-      const data = azureQuery.data as any;
-      spend.total = data.total_cost || 0;
-      spend.databricks = data.databricks_costs?.total || 0;
-      spend.compute = (data.total_cost || 0) - (data.databricks_costs?.total || 0);
-    }
-    if (estimateQuery.data) {
-      const data = estimateQuery.data as any;
-      spend.storage = data.monthly_cost_usd || 0;
-    }
-    if (spend.total === 0 && spend.storage > 0) {
-      spend.total = spend.databricks + spend.storage + spend.compute;
+    if (billingQuery.data) {
+      const data = billingQuery.data as any;
+      spend.total = Number(data.total_cost || 0);
+      // Approximate category breakdown from billing data
+      const bySku = Array.isArray(data.by_sku) ? data.by_sku : [];
+      const byProduct = Array.isArray(data.by_product) ? data.by_product : [];
+      spend.databricks = spend.total; // all billing costs are Databricks costs
+      // Estimate storage vs compute from product breakdown
+      for (const p of byProduct) {
+        const name = (p.product || p.name || "").toLowerCase();
+        const cost = Number(p.cost ?? p.total ?? 0);
+        if (name.includes("storage")) spend.storage += cost;
+        else spend.compute += cost;
+      }
+      if (spend.storage === 0 && spend.compute === 0) {
+        spend.compute = spend.total; // fallback
+      }
     }
     return spend;
   })();
@@ -166,13 +169,18 @@ export default function BudgetTrackerPage() {
         icon={Target}
         breadcrumbs={["FinOps", "Budgets & Alerts", "Budgets"]}
         actions={
-          <Button
-            size="sm"
-            onClick={() => setShowForm(!showForm)}
-            className="bg-[#E8453C] hover:bg-[#D93025] text-white"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Budget
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => { billingQuery.refetch(); }} disabled={billingQuery.isRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${billingQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowForm(!showForm)}
+              className="bg-[#E8453C] hover:bg-[#D93025] text-white"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Budget
+            </Button>
+          </div>
         }
       />
 

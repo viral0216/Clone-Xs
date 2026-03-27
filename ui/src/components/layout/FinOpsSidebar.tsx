@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, DollarSign, HardDrive, Zap, Server,
   TrendingDown, Target, BarChart3, Lightbulb, Receipt,
-  Database, Clock, Settings, PieChart,
+  Database, Clock, Settings, PieChart, Briefcase,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
@@ -21,6 +21,13 @@ const NAV_SECTIONS = [
       { href: "/finops/storage", label: "Storage Costs", icon: HardDrive },
       { href: "/finops/compute", label: "Compute Costs", icon: Zap },
       { href: "/finops/breakdown", label: "Cost Breakdown", icon: PieChart },
+    ],
+  },
+  {
+    title: "Cost Attribution",
+    items: [
+      { href: "/finops/query-costs", label: "Query Costs", icon: Clock },
+      { href: "/finops/job-costs", label: "Job Costs", icon: Briefcase },
     ],
   },
   {

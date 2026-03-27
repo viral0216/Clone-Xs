@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { useClusterInsights, useQueryPerformance, useAzureCosts } from "@/hooks/useApi";
+import { useFinOpsClusters, useFinOpsQueryStats, useAzureCosts } from "@/hooks/useApi";
 import {
-  Zap, Loader2, Server, Clock, Activity, BarChart3,
+  Zap, Loader2, Server, Clock, Activity, BarChart3, RefreshCw,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -17,18 +17,22 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function formatCost(value: number | null, currency: string = "USD"): string {
+function formatCost(value: number | string | null, currency: string = "USD"): string {
   if (value == null) return "\u2014";
+  const n = Number(value);
+  if (isNaN(n)) return "\u2014";
   const symbols: Record<string, string> = { USD: "$", EUR: "\u20AC", GBP: "\u00A3", INR: "\u20B9", AUD: "A$", CAD: "C$", JPY: "\u00A5" };
   const sym = symbols[currency] || "$";
-  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
-  return `${sym}${value.toFixed(2)}`;
+  if (n >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${sym}${(n / 1_000).toFixed(1)}K`;
+  return `${sym}${n.toFixed(2)}`;
 }
 
-function formatNumber(n: number | null): string {
+function formatNumber(n: number | string | null): string {
   if (n == null) return "\u2014";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const v = Number(n);
+  if (isNaN(v)) return "\u2014";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
 function formatDuration(ms: number | null): string {
@@ -60,18 +64,18 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: strin
   );
 }
 
-const CHART_COLORS = ["#E8453C", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
+const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B91C1C", "#1F2937", "#4B5563"];
 
 // ── Component ────────────────────────────────────────────────────────
 
 export default function ComputeCostsPage() {
-  const clusterQuery = useClusterInsights();
-  const queryPerfQuery = useQueryPerformance();
+  const clusterQuery = useFinOpsClusters();
+  const queryStatsQuery = useFinOpsQueryStats(30);
   const azureQuery = useAzureCosts(30);
 
-  const loading = clusterQuery.isLoading || queryPerfQuery.isLoading;
+  const loading = clusterQuery.isLoading || queryStatsQuery.isLoading;
   const clusterData = clusterQuery.data || null;
-  const queryData = queryPerfQuery.data || null;
+  const queryStats = queryStatsQuery.data || null;
   const azureCosts = azureQuery.data || null;
   const azureConfigured = !!azureCosts;
 
@@ -79,12 +83,13 @@ export default function ComputeCostsPage() {
   const clusters = clusterData?.clusters || [];
   const runningClusters = clusters.filter((c: any) => c.state === "RUNNING" || c.state === "RESIZING").length;
 
-  const querySummary = queryData?.summary || {};
-  const totalQueries = querySummary.total_queries ?? querySummary.query_count ?? 0;
-  const p95Duration = querySummary.p95_duration_ms ?? querySummary.p95 ?? null;
+  const querySummary = queryStats?.summary || {};
+  const totalQueries = Number(querySummary.total_queries ?? 0);
+  const p95Duration = querySummary.p95_duration_ms != null ? Number(querySummary.p95_duration_ms) : null;
 
-  const byWarehouse = queryData?.by_warehouse || [];
-  const byUser = queryData?.by_user || [];
+  const byWarehouse = queryStats?.by_warehouse || [];
+  const byUser = queryStats?.by_user || [];
+  const slowestQueries = queryStats?.slowest || [];
 
   const databricksCost = azureCosts?.databricks_costs?.total ?? null;
   const currency = azureCosts?.currency || "USD";
@@ -104,6 +109,17 @@ export default function ComputeCostsPage() {
         icon={Zap}
         breadcrumbs={["FinOps", "Cost Analysis", "Compute"]}
       />
+
+      {/* ── Controls ────────────────────────────────────────────────── */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => { clusterQuery.refetch(); queryStatsQuery.refetch(); azureQuery.refetch(); }} disabled={clusterQuery.isRefetching || queryStatsQuery.isRefetching || azureQuery.isRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${clusterQuery.isRefetching || queryStatsQuery.isRefetching || azureQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Loading ─────────────────────────────────────────────────── */}
       {loading ? (
@@ -150,7 +166,7 @@ export default function ComputeCostsPage() {
                     <tbody>
                       {clusters.map((c: any, i: number) => (
                         <tr key={i} className="border-b border-border/50">
-                          <td className="py-2 pr-4 font-medium truncate max-w-[250px]">{c.cluster_name || c.name}</td>
+                          <td className="py-2 pr-4 font-medium truncate max-w-[250px]">{c.cluster_name || "\u2014"}</td>
                           <td className="py-2 pr-4">
                             <Badge
                               variant="outline"
@@ -160,12 +176,12 @@ export default function ComputeCostsPage() {
                                 "text-amber-500 border-amber-500/30"
                               }
                             >
-                              {c.state}
+                              {c.state || "\u2014"}
                             </Badge>
                           </td>
-                          <td className="py-2 pr-4 font-mono text-xs">{c.node_type_id || c.node_type || "\u2014"}</td>
-                          <td className="py-2 pr-4 text-right">{c.num_workers ?? c.workers ?? "\u2014"}</td>
-                          <td className="py-2 font-mono text-xs truncate max-w-[200px]">{c.spark_version || "\u2014"}</td>
+                          <td className="py-2 pr-4 font-mono text-xs">{c.worker_node_type || "\u2014"}</td>
+                          <td className="py-2 pr-4 text-right">{c.worker_count ?? "\u2014"}</td>
+                          <td className="py-2 font-mono text-xs truncate max-w-[200px]">{c.dbr_version || "\u2014"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -197,10 +213,10 @@ export default function ComputeCostsPage() {
                       {byWarehouse.map((w: any, i: number) => (
                         <tr key={i} className="border-b border-border/50">
                           <td className="py-2 pr-4 font-medium truncate max-w-[200px]">{w.warehouse_name || w.warehouse_id || w.warehouse}</td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatNumber(w.query_count ?? w.queries)}</td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatDuration(w.avg_duration_ms ?? w.avg_duration)}</td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatDuration(w.p95_duration_ms ?? w.p95)}</td>
-                          <td className="py-2 text-right font-mono">{formatBytes(w.total_read_bytes ?? w.total_bytes_read)}</td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatNumber(Number(w.query_count ?? w.queries ?? 0))}</td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatDuration(w.avg_duration_ms != null ? Number(w.avg_duration_ms) : null)}</td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatDuration(w.p95_duration_ms != null ? Number(w.p95_duration_ms) : null)}</td>
+                          <td className="py-2 text-right font-mono">{formatBytes(w.total_read_bytes != null ? Number(w.total_read_bytes) : null)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -226,6 +242,49 @@ export default function ComputeCostsPage() {
                     <Bar dataKey="cost" fill="#E8453C" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Longest Running Queries ───────────────────────────────── */}
+          {slowestQueries.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Longest Running Queries (Top 50)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-2 px-2 text-left font-medium">Query</th>
+                        <th className="py-2 px-2 text-left font-medium">User</th>
+                        <th className="py-2 px-2 text-left font-medium">Warehouse</th>
+                        <th className="py-2 px-2 text-right font-medium">Duration</th>
+                        <th className="py-2 px-2 text-right font-medium">Read</th>
+                        <th className="py-2 px-2 text-left font-medium">Started</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {slowestQueries.slice(0, 20).map((q: any, i: number) => (
+                        <tr key={q.query_id || i} className="border-b border-border/30 hover:bg-muted/30">
+                          <td className="py-1.5 px-2 max-w-[300px] truncate font-mono text-[10px]" title={q.query_text}>
+                            {q.query_text || "—"}
+                          </td>
+                          <td className="py-1.5 px-2 text-muted-foreground">{q.user_name || "—"}</td>
+                          <td className="py-1.5 px-2 font-mono text-muted-foreground">{(q.warehouse_id || "").slice(0, 8)}</td>
+                          <td className="py-1.5 px-2 text-right font-mono font-medium text-red-500">
+                            {formatDuration(q.total_duration_ms != null ? Number(q.total_duration_ms) : null)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-muted-foreground">
+                            {q.read_bytes != null ? formatBytes(Number(q.read_bytes)) : "—"}
+                          </td>
+                          <td className="py-1.5 px-2 text-muted-foreground">{String(q.start_time || "").slice(0, 16)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </CardContent>
             </Card>
           )}

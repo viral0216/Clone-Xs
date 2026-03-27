@@ -4,13 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useOptimizationInsights, useWarehouseInsights, useStorageMetrics } from "@/hooks/useApi";
+import { useFinOpsRecommendations } from "@/hooks/useApi";
 import PageHeader from "@/components/PageHeader";
 import CatalogPicker from "@/components/CatalogPicker";
 import { toast } from "sonner";
 import {
-  Lightbulb, Loader2, Zap, Trash2, Layers, AlertTriangle,
-  Server, Filter, RefreshCw, DollarSign, HardDrive,
+  Lightbulb, Loader2, Zap, Trash2, Layers,
+  Filter, RefreshCw, DollarSign,
 } from "lucide-react";
 
 function SummaryCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
@@ -48,39 +48,25 @@ export default function OptimizationRecommendationsPage() {
   const [catalog, setCatalog] = useState("");
   const [filter, setFilter] = useState("All");
 
-  const recsQuery = useOptimizationInsights(catalog);
-  const whQuery = useWarehouseInsights();
-  const storageQuery = useStorageMetrics(catalog);
+  const recsQuery = useFinOpsRecommendations(catalog);
 
-  const loading = recsQuery.isLoading || whQuery.isLoading || storageQuery.isLoading;
+  const loading = recsQuery.isLoading;
 
   const recsRaw = recsQuery.data;
-  const recommendations = Array.isArray(recsRaw) ? recsRaw : recsRaw?.recommendations || [];
-
-  const whData = whQuery.data || {};
-  const warehouses = Array.isArray(whData.warehouses) ? whData.warehouses : [];
-  const warnings = Array.isArray(whData.warnings) ? whData.warnings : [];
-
-  const storageData = storageQuery.data || null;
+  const recommendations = Array.isArray(recsRaw?.recommendations) ? recsRaw.recommendations : Array.isArray(recsRaw) ? recsRaw : [];
+  const optimizationOps = recsRaw?.optimization_ops || [];
 
   function load() {
     recsQuery.refetch();
-    whQuery.refetch();
-    storageQuery.refetch();
   }
 
-  const optimizeCount = recommendations.filter((r) => r.recommendation_type?.toUpperCase() === "OPTIMIZE").length;
-  const vacuumCount = recommendations.filter((r) => r.recommendation_type?.toUpperCase() === "VACUUM").length;
-  const zorderCount = recommendations.filter((r) => r.recommendation_type?.toUpperCase() === "ZORDER").length;
+  const optimizeCount = recommendations.filter((r: any) => r.recommendation_type?.toUpperCase() === "OPTIMIZE").length;
+  const vacuumCount = recommendations.filter((r: any) => r.recommendation_type?.toUpperCase() === "VACUUM").length;
+  const zorderCount = recommendations.filter((r: any) => r.recommendation_type?.toUpperCase() === "ZORDER").length;
 
   const filtered = filter === "All"
     ? recommendations
-    : recommendations.filter((r) => r.recommendation_type?.toUpperCase() === filter);
-
-  // Storage savings calculation
-  const vacuumableBytes = storageData?.tables?.reduce((acc: number, t: any) => acc + (t.vacuumable_bytes || 0), 0) || 0;
-  const vacuumableGB = (vacuumableBytes / (1024 ** 3)).toFixed(2);
-  const estimatedSavings = (parseFloat(vacuumableGB) * 0.023).toFixed(2); // ~$0.023/GB/month
+    : recommendations.filter((r: any) => r.recommendation_type?.toUpperCase() === filter);
 
   return (
     <div className="space-y-6">
@@ -120,25 +106,6 @@ export default function OptimizationRecommendationsPage() {
             <SummaryCard label="VACUUM" value={vacuumCount} color="green" />
             <SummaryCard label="ZORDER" value={zorderCount} color="amber" />
           </div>
-
-          {/* Storage savings callout */}
-          {parseFloat(vacuumableGB) > 0 && (
-            <Card className="border-green-500/30 bg-green-500/5">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <HardDrive className="h-5 w-5 text-green-500 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {vacuumableGB} GB reclaimable via VACUUM
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Estimated savings: <span className="text-green-500 font-semibold">${estimatedSavings}/mo</span> based on standard storage pricing
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Filter tabs */}
           <div className="flex items-center gap-2">
@@ -204,28 +171,40 @@ export default function OptimizationRecommendationsPage() {
             </Card>
           )}
 
-          {/* Warehouse Warnings */}
-          {warnings.length > 0 && (
+          {/* Optimization Operations History */}
+          {optimizationOps.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  Warehouse Warnings ({warnings.length})
-                </CardTitle>
+                <CardTitle className="text-base">Recent Optimization Operations</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {warnings.map((w, i) => (
-                    <div key={i} className="flex items-center gap-3 text-sm p-2 rounded-lg bg-muted/30">
-                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                      <span className="flex-1">{w.issue || w.message || w}</span>
-                      {w.severity && (
-                        <Badge variant="outline" className={`text-[10px] ${severityBadgeColor(w.severity)}`}>
-                          {w.severity}
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left p-3 font-medium text-muted-foreground">Table</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Operation</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {optimizationOps.slice(0, 20).map((op: any, i: number) => (
+                        <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="p-3 font-mono text-xs">{op.table_name || op.table_fqn || "\u2014"}</td>
+                          <td className="p-3">
+                            <Badge variant="outline" className={`text-[10px] ${typeBadgeColor(op.operation)}`}>
+                              {op.operation || op.type || "\u2014"}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-xs">{op.status || "\u2014"}</td>
+                          <td className="p-3 text-xs text-muted-foreground">
+                            {op.timestamp ? new Date(op.timestamp).toLocaleString() : "\u2014"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </CardContent>
             </Card>

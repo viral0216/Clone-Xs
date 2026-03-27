@@ -90,6 +90,8 @@ const FinOpsBilling = lazy(() => import("@/app/finops/billing/page"));
 const FinOpsStorage = lazy(() => import("@/app/finops/storage/page"));
 const FinOpsCompute = lazy(() => import("@/app/finops/compute/page"));
 const FinOpsBreakdown = lazy(() => import("@/app/finops/breakdown/page"));
+const FinOpsQueryCosts = lazy(() => import("@/app/finops/query-costs/page"));
+const FinOpsJobCosts = lazy(() => import("@/app/finops/job-costs/page"));
 const FinOpsRecommendations = lazy(() => import("@/app/finops/recommendations/page"));
 const FinOpsWarehouses = lazy(() => import("@/app/finops/warehouses/page"));
 const FinOpsStorageOpt = lazy(() => import("@/app/finops/storage-optimization/page"));
@@ -297,6 +299,8 @@ export default function App() {
               <Route path="/finops/storage" element={<Suspense fallback={<PageFallback />}><FinOpsStorage /></Suspense>} />
               <Route path="/finops/compute" element={<Suspense fallback={<PageFallback />}><FinOpsCompute /></Suspense>} />
               <Route path="/finops/breakdown" element={<Suspense fallback={<PageFallback />}><FinOpsBreakdown /></Suspense>} />
+              <Route path="/finops/query-costs" element={<Suspense fallback={<PageFallback />}><FinOpsQueryCosts /></Suspense>} />
+              <Route path="/finops/job-costs" element={<Suspense fallback={<PageFallback />}><FinOpsJobCosts /></Suspense>} />
               <Route path="/finops/recommendations" element={<Suspense fallback={<PageFallback />}><FinOpsRecommendations /></Suspense>} />
               <Route path="/finops/warehouses" element={<Suspense fallback={<PageFallback />}><FinOpsWarehouses /></Suspense>} />
               <Route path="/finops/storage-optimization" element={<Suspense fallback={<PageFallback />}><FinOpsStorageOpt /></Suspense>} />

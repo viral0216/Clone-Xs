@@ -294,10 +294,10 @@ def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl
     if not (upper.startswith("SELECT") or upper.startswith("SHOW") or upper.startswith("DESCRIBE")):
         return execute_sql(client, warehouse_id, sql)
 
-    from src.metadata_cache import metadata_cache
+    from src.metadata_cache import MISSING as _MISSING, metadata_cache
     key = ("sql_cache", warehouse_id, normalized)
     cached = metadata_cache.get(key)
-    if cached is not None:
+    if cached is not _MISSING:
         return cached
     result = execute_sql(client, warehouse_id, sql)
     metadata_cache.put(key, result, ttl)
@@ -305,11 +305,32 @@ def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl
 
 
 def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> list[dict]:
-    """Execute a SQL statement once (no retries)."""
+    """Execute a SQL statement once (no retries).
+
+    Uses INLINE disposition by default. On inline byte limit exceeded,
+    automatically retries with EXTERNAL_LINKS disposition for large results.
+    """
+    from databricks.sdk.service.sql import Disposition
+
+    try:
+        return _execute_sql_with_disposition(client, warehouse_id, sql, Disposition.INLINE)
+    except RuntimeError as e:
+        if "Inline byte limit exceeded" in str(e) or "INLINE" in str(e):
+            logger.info("Result too large for INLINE, retrying with EXTERNAL_LINKS")
+            return _execute_sql_with_disposition(client, warehouse_id, sql, Disposition.EXTERNAL_LINKS)
+        raise
+
+
+def _execute_sql_with_disposition(client: WorkspaceClient, warehouse_id: str, sql: str, disposition) -> list[dict]:
+    """Execute SQL with specified disposition (INLINE or EXTERNAL_LINKS)."""
+    from databricks.sdk.service.sql import Format
+
     response = client.statement_execution.execute_statement(
         warehouse_id=warehouse_id,
         statement=sql,
         wait_timeout="50s",
+        disposition=disposition,
+        format=Format.JSON_ARRAY,
     )
 
     if response.status and response.status.state:
@@ -318,7 +339,6 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
             error_msg = response.status.error.message if response.status.error else "Unknown error"
             raise RuntimeError(f"SQL execution failed: {error_msg}\nSQL: {sql}")
 
-        # Poll for RUNNING/PENDING states
         while state in ("RUNNING", "PENDING"):
             time.sleep(2)
             response = client.statement_execution.get_statement(response.statement_id)
@@ -328,12 +348,40 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
             error_msg = response.status.error.message if response.status.error else "Unknown error"
             raise RuntimeError(f"SQL execution failed: {error_msg}\nSQL: {sql}")
 
-    # Parse results
+    # Parse results — handle both INLINE and EXTERNAL_LINKS
+    columns = [col.name for col in response.manifest.schema.columns] if response.manifest else []
     rows = []
+
     if response.result and response.result.data_array:
-        columns = [col.name for col in response.manifest.schema.columns]
+        # INLINE: data is directly in the response
         for row in response.result.data_array:
             rows.append(dict(zip(columns, row)))
+    elif response.result and response.result.external_links:
+        # EXTERNAL_LINKS: download chunks from URLs
+        import httpx
+        for link in response.result.external_links:
+            try:
+                resp = httpx.get(link.external_link, timeout=60)
+                resp.raise_for_status()
+                chunk_data = resp.json()
+                for row in chunk_data:
+                    if isinstance(row, list):
+                        rows.append(dict(zip(columns, row)))
+                    elif isinstance(row, dict):
+                        rows.append(row)
+            except Exception as e:
+                logger.warning(f"Failed to fetch external link chunk: {e}")
+        # Fetch remaining chunks if paginated
+        while response.result.next_chunk_index is not None:
+            try:
+                response = client.statement_execution.get_statement_result_chunk_n(
+                    response.statement_id, response.result.next_chunk_index
+                )
+                if response.data_array:
+                    for row in response.data_array:
+                        rows.append(dict(zip(columns, row)))
+            except Exception:
+                break
 
     return rows
 

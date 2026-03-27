@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
 import CatalogPicker from "@/components/CatalogPicker";
 import { toast } from "sonner";
-import { useStorageMetrics, useFinOpsConfig } from "@/hooks/useApi";
+import { useFinOpsStorage, useFinOpsConfig } from "@/hooks/useApi";
 import {
-  HardDrive, Loader2, Database, Trash2, Clock, DollarSign,
+  HardDrive, Loader2, Database, Trash2, Clock, DollarSign, RefreshCw,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -27,18 +27,22 @@ function formatBytes(bytes: number | null): string {
   return `${bytes} B`;
 }
 
-function formatCost(value: number | null, currency: string = "USD"): string {
+function formatCost(value: number | string | null, currency: string = "USD"): string {
   if (value == null) return "\u2014";
+  const n = Number(value);
+  if (isNaN(n)) return "\u2014";
   const symbols: Record<string, string> = { USD: "$", EUR: "\u20AC", GBP: "\u00A3", INR: "\u20B9", AUD: "A$", CAD: "C$", JPY: "\u00A5" };
   const sym = symbols[currency] || "$";
-  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
-  return `${sym}${value.toFixed(2)}`;
+  if (n >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${sym}${(n / 1_000).toFixed(1)}K`;
+  return `${sym}${n.toFixed(2)}`;
 }
 
-function formatNumber(n: number | null): string {
+function formatNumber(n: number | string | null): string {
   if (n == null) return "\u2014";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const v = Number(n);
+  if (isNaN(v)) return "\u2014";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
 function SummaryCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -54,7 +58,7 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: strin
   );
 }
 
-const CHART_COLORS = ["#E8453C", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
+const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B91C1C", "#1F2937", "#4B5563"];
 
 // ── Component ────────────────────────────────────────────────────────
 
@@ -65,15 +69,15 @@ export default function StorageCostsPage() {
   const pricePerGb = configData?.price_per_gb ?? 0.023;
   const currency = configData?.currency ?? "USD";
 
-  const storageQuery = useStorageMetrics(catalog);
+  const storageQuery = useFinOpsStorage(catalog);
   const loading = storageQuery.isLoading;
   const storageData = storageQuery.data || null;
 
   // ── Derived metrics ────────────────────────────────────────────────
-  const totalBytes = storageData?.total_bytes ?? 0;
-  const activeBytes = storageData?.active_bytes ?? 0;
-  const vacuumableBytes = storageData?.vacuumable_bytes ?? 0;
-  const timeTravelBytes = storageData?.time_travel_bytes ?? 0;
+  const totalBytes = Number(storageData?.total_bytes ?? 0);
+  const activeBytes = totalBytes; // system tables report total only
+  const vacuumableBytes = 0; // not available from system tables
+  const timeTravelBytes = 0; // not available from system tables
   const totalGb = totalBytes / 1_073_741_824;
   const estMonthlyCost = totalGb * pricePerGb;
 
@@ -87,17 +91,24 @@ export default function StorageCostsPage() {
   const PIE_COLORS = ["#22c55e", "#E8453C", "#3b82f6"];
 
   // ── Schema breakdown ───────────────────────────────────────────────
-  const schemaSummaries = storageData?.schema_summaries
+  const schemaSummaries = Array.isArray(storageData?.schema_summaries)
+    ? storageData.schema_summaries
+        .map((s: any) => ({
+          schema: s.schema || s.schema_name || "unknown",
+          total_bytes: Number(s.total_bytes ?? 0),
+        }))
+        .sort((a: any, b: any) => b.total_bytes - a.total_bytes)
+    : storageData?.schema_summaries
     ? Object.entries(storageData.schema_summaries)
         .map(([schema, data]: [string, any]) => ({
           schema,
-          total_bytes: data?.total_bytes ?? data ?? 0,
+          total_bytes: Number(data?.total_bytes ?? data ?? 0),
         }))
         .sort((a, b) => b.total_bytes - a.total_bytes)
     : [];
 
   // ── Table data ─────────────────────────────────────────────────────
-  const tables = storageData?.top_tables_by_total || storageData?.tables || [];
+  const tables = storageData?.top_tables || storageData?.tables || [];
 
   return (
     <div className="space-y-6">
@@ -111,12 +122,19 @@ export default function StorageCostsPage() {
       {/* ── Catalog Picker ──────────────────────────────────────────── */}
       <Card>
         <CardContent className="pt-6">
-          <CatalogPicker
-            catalog={catalog}
-            onCatalogChange={setCatalog}
-            showSchema={false}
-            showTable={false}
-          />
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <CatalogPicker
+                catalog={catalog}
+                onCatalogChange={setCatalog}
+                showSchema={false}
+                showTable={false}
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { storageQuery.refetch(); }} disabled={storageQuery.isRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${storageQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -218,9 +236,9 @@ export default function StorageCostsPage() {
                     </thead>
                     <tbody>
                       {tables.map((t: any, i: number) => {
-                        const tTotal = t.total_bytes || 0;
-                        const tActive = t.active_bytes || 0;
-                        const tVac = t.vacuumable_bytes || 0;
+                        const tTotal = Number(t.total_bytes || 0);
+                        const tActive = Number(t.active_bytes || tTotal);
+                        const tVac = 0; // not available from system tables
                         const activePct = tTotal > 0 ? ((tActive / tTotal) * 100).toFixed(1) : "0.0";
                         const vacPct = tTotal > 0 ? ((tVac / tTotal) * 100).toFixed(1) : "0.0";
                         const tableCost = (tTotal / 1_073_741_824) * pricePerGb;

@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def generate_compliance_report(
     """
     report = {
         "report_metadata": {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "generated_by": _get_user(client),
             "from_date": from_date,
             "to_date": to_date,
@@ -34,7 +34,7 @@ def generate_compliance_report(
     }
 
     os.makedirs(output_dir, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     paths = {}
 
     if output_format in ("json", "all"):

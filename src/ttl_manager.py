@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.client import execute_sql
 
@@ -65,7 +65,7 @@ class TTLManager:
         operation_id: str | None = None, created_by: str | None = None,
     ) -> None:
         """Set TTL on a destination catalog."""
-        expires_at = (datetime.utcnow() + timedelta(days=ttl_days)).strftime("%Y-%m-%d %H:%M:%S")
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).strftime("%Y-%m-%d %H:%M:%S")
         sql = f"""
             MERGE INTO {self.table_fqn} AS target
             USING (SELECT '{dest_catalog}' AS dest_catalog) AS source

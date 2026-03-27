@@ -3,7 +3,7 @@
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def build_execution_plan(client, config: dict) -> dict:
         logger.debug(f"Could not estimate cost: {e}")
 
     plan = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_catalog": config["source_catalog"],
         "destination_catalog": config["destination_catalog"],
         "clone_type": config.get("clone_type", "DEEP"),

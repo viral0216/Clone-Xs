@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.client import execute_sql
 
@@ -21,7 +21,7 @@ def query_column_usage(
 
     Returns list of dicts with: column, table, usage_count, downstream_count.
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     table_filter = (
         f"source_table_full_name = '{table_fqn}'"
         if table_fqn
@@ -69,7 +69,7 @@ def query_column_users(
       columns: [{ column, table, usage_count, users: [{ user, count }] }]
       top_users: [{ user, column_count, query_count }]
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     catalog_lower = catalog.lower()
 
     # Determine which tables to look for

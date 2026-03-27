@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -81,7 +81,7 @@ def record_lineage(
         lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
     fqn = f"{lineage_catalog}.lineage.clone_lineage"
     lineage_id = str(uuid.uuid4())
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
 
     source_fqn = f"{source_catalog}.{source_schema}.{source_table}"

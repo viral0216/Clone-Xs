@@ -5,7 +5,7 @@ where no API exists (billing, storage, predictive optimization).
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from databricks.sdk import WorkspaceClient
 
@@ -22,7 +22,7 @@ def query_billing_usage(
     Uses only guaranteed columns (usage_date, sku_name, usage_quantity, usage_unit).
     The list_cost column is not available on all workspace tiers.
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = f"""
         SELECT
@@ -83,7 +83,7 @@ def query_job_run_timeline(
 
     Uses client.jobs.list_runs() instead of system.lakeflow.job_run_timeline SQL.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     cutoff_ms = int(cutoff.timestamp() * 1000)
 
     results = []
@@ -397,7 +397,7 @@ def query_query_performance(
     Uses the system table for richer data (compilation time, read bytes,
     statement type) instead of the SDK query history API.
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # ── Discover actual columns first ─────────────────────────────────
     # system.query.history schema varies across workspaces. Run a probe

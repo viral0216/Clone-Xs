@@ -7,7 +7,7 @@ querying table history and DESCRIBE DETAIL.
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.client import execute_sql
@@ -72,7 +72,7 @@ def create_sla_rule(client, warehouse_id, config, rule: dict, user: str = "") ->
     """Create a new SLA rule."""
     schema = _get_sla_schema(config)
     sla_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     execute_sql(client, warehouse_id, f"""
         INSERT INTO {schema}.sla_rules
@@ -112,7 +112,7 @@ def check_sla(client, warehouse_id, config) -> list[dict]:
         # Store check result
         try:
             check_id = str(uuid.uuid4())[:8]
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             execute_sql(client, warehouse_id, f"""
                 INSERT INTO {schema}.sla_checks
                 VALUES ('{check_id}', '{rule["sla_id"]}', '{_esc(rule["table_fqn"])}',
@@ -351,7 +351,7 @@ def create_contract(client, warehouse_id, config, contract: dict, user: str = ""
     """Create a new data contract."""
     schema = _get_sla_schema(config)
     contract_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     execute_sql(client, warehouse_id, f"""
         INSERT INTO {schema}.data_contracts
@@ -457,7 +457,7 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
             "table_fqn": table_fqn,
             "compliant": compliant,
             "violations": violations,
-            "checked_at": datetime.utcnow().isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         return {"contract_id": contract_id, "error": str(e)}

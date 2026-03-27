@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -111,7 +111,7 @@ def log_operation_start(
     clone_type = config.get("clone_type", "DEEP")
     host = os.environ.get("DATABRICKS_HOST", "unknown")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Sanitize config for storage (remove tokens)
     safe_config = {k: v for k, v in config.items() if "token" not in k.lower()}
@@ -156,7 +156,7 @@ def log_operation_complete(
 ) -> None:
     """Log the completion of a clone operation."""
     fqn = get_audit_table_fqn(config)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     duration = (now - started_at).total_seconds()
     completed_str = now.strftime("%Y-%m-%d %H:%M:%S")
 

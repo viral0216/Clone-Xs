@@ -7,7 +7,7 @@ referential) and custom SQL expressions. Results stored in Delta tables.
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.client import execute_sql
@@ -66,7 +66,7 @@ def create_rule(client, warehouse_id, config, rule: dict, user: str = "") -> dic
     """Create a new DQ rule."""
     schema = _get_dq_schema(config)
     rule_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     params_json = json.dumps(rule.get("params", {}))
 
     execute_sql(client, warehouse_id, f"""
@@ -102,7 +102,7 @@ def list_rules(client, warehouse_id, config, table_fqn: str = "", severity: str 
 def update_rule(client, warehouse_id, config, rule_id: str, updates: dict):
     """Update a DQ rule."""
     schema = _get_dq_schema(config)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     set_parts = [f"updated_at = '{now}'"]
     for key in ["name", "expression", "threshold", "severity", "schedule", "enabled"]:
         if key in updates:
@@ -153,7 +153,7 @@ def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog:
         # Store result
         try:
             result_id = str(uuid.uuid4())[:8]
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             execute_sql(client, warehouse_id, f"""
                 INSERT INTO {schema}.dq_results
                 VALUES ('{result_id}', '{rule["rule_id"]}', '{_esc(rule["name"])}',

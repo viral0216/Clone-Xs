@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -117,7 +117,7 @@ class PIIScanStore:
         config_json: str = "",
     ) -> None:
         """Save a PII scan and its detections to Delta tables."""
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         summary = result.get("summary", {})
         summary_json = json.dumps(summary).replace("'", "\\\\'")
 
@@ -261,7 +261,7 @@ class PIIScanStore:
         notes: str = "",
     ) -> None:
         """Update remediation status for a PII column."""
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         notes_escaped = notes.replace("'", "\\\\'")
 
         sql = f"""

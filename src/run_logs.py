@@ -11,7 +11,7 @@ Default table: clone_audit.logs.run_logs
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -125,7 +125,7 @@ def save_run_log(
     error_msg = (job.get("error") or "").replace("'", "''")
     host = os.environ.get("DATABRICKS_HOST", "unknown")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Duration
     duration = 0.0

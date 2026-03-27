@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -26,7 +26,7 @@ class MetricsCollector:
             "source_catalog": source,
             "destination_catalog": dest,
             "clone_type": clone_type,
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def record_table_clone(
@@ -41,13 +41,13 @@ class MetricsCollector:
             "success": success,
             "row_count": row_count,
             "size_bytes": size_bytes,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
     def end_operation(self, summary: dict):
         """Finalize and compute aggregate metrics."""
         duration = time.time() - self._start_time
-        self._operation["completed_at"] = datetime.utcnow().isoformat()
+        self._operation["completed_at"] = datetime.now(timezone.utc).isoformat()
         self._operation["duration_seconds"] = round(duration, 2)
         self._operation["summary"] = summary
         self._operation["table_metrics"] = self._table_metrics
@@ -165,7 +165,7 @@ def save_operation_metrics(
     duration = 0.0
     if started and completed:
         try:
-            from datetime import datetime
+            from datetime import datetime, timezone
             t1 = datetime.fromisoformat(started)
             t2 = datetime.fromisoformat(completed)
             duration = (t2 - t1).total_seconds()
@@ -343,7 +343,7 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     if not client or not warehouse_id:
         return _empty_summary()
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from src.audit_trail import get_audit_table_fqn
     from src.run_logs import get_run_logs_fqn
 
@@ -409,7 +409,7 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
 
     # --- Activity by day (last 7 days) ---
     activity = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for i in range(6, -1, -1):
         day = now - timedelta(days=i)
         day_str = day.strftime("%Y-%m-%d")

@@ -5,7 +5,7 @@ import logging
 import os
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class CheckpointManager:
             "source_catalog": config.get("source_catalog", ""),
             "destination_catalog": config.get("destination_catalog", ""),
             "clone_type": config.get("clone_type", "DEEP"),
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "completed_schemas": [],
             "completed_tables": [],
             "completed_views": [],
@@ -53,7 +53,7 @@ class CheckpointManager:
     def _generate_path(self, config: dict) -> str:
         """Generate checkpoint file path."""
         dest = config.get("destination_catalog", "unknown")
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return os.path.join(CHECKPOINT_DIR, f"chk_{dest}_{ts}.json")
 
     @property
@@ -104,7 +104,7 @@ class CheckpointManager:
 
     def _save(self) -> None:
         """Write checkpoint JSON to disk."""
-        self._state["last_updated"] = datetime.utcnow().isoformat()
+        self._state["last_updated"] = datetime.now(timezone.utc).isoformat()
         with open(self._checkpoint_path, "w") as f:
             json.dump(self._state, f, indent=2)
         self._tables_since_save = 0
@@ -117,8 +117,8 @@ class CheckpointManager:
     def save_final(self) -> None:
         """Force save checkpoint (called at end of clone or on error)."""
         with self._lock:
-            self._state["last_updated"] = datetime.utcnow().isoformat()
-            self._state["completed_at"] = datetime.utcnow().isoformat()
+            self._state["last_updated"] = datetime.now(timezone.utc).isoformat()
+            self._state["completed_at"] = datetime.now(timezone.utc).isoformat()
             with open(self._checkpoint_path, "w") as f:
                 json.dump(self._state, f, indent=2)
         logger.info(f"Final checkpoint saved: {self._checkpoint_path}")

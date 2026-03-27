@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 from databricks.sdk import WorkspaceClient
 
@@ -30,7 +30,7 @@ def create_rollback_log(config: dict, client=None, warehouse_id: str = "") -> st
 
     rollback_data = {
         "timestamp": datetime.now().isoformat(),
-        "clone_started_at": datetime.utcnow().isoformat(),
+        "clone_started_at": datetime.now(timezone.utc).isoformat(),
         "destination_catalog": dest,
         "source_catalog": config["source_catalog"],
         "table_versions": [],
@@ -388,7 +388,7 @@ def save_rollback_to_delta(
     source = rollback_data.get("source_catalog", "")
     dest = rollback_data.get("destination_catalog", "")
     created = rollback_data.get("created_objects", {})
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
     host = os.environ.get("DATABRICKS_HOST", "unknown")
 

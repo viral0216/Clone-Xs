@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.audit_trail import (
     ensure_audit_table,
@@ -116,7 +116,7 @@ def test_log_operation_complete_happy(mock_sql):
     mock_sql.return_value = []
     summary = {"tables": {"cloned": 5, "failed": 0}}
     log_operation_complete(
-        MagicMock(), "wh-1", _config(), "op-123", summary, datetime(2025, 1, 1)
+        MagicMock(), "wh-1", _config(), "op-123", summary, datetime(2025, 1, 1, tzinfo=timezone.utc)
     )
     sql_arg = mock_sql.call_args[0][2]
     assert "UPDATE" in sql_arg
@@ -130,7 +130,7 @@ def test_log_operation_complete_with_error(mock_sql):
     summary = {"tables": {"cloned": 0, "failed": 2}}
     log_operation_complete(
         MagicMock(), "wh-1", _config(), "op-123", summary,
-        datetime(2025, 1, 1), error_message="boom",
+        datetime(2025, 1, 1, tzinfo=timezone.utc), error_message="boom",
     )
     sql_arg = mock_sql.call_args[0][2]
     assert "'failed'" in sql_arg

@@ -15,7 +15,7 @@ Key capabilities:
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from src.client import execute_sql
@@ -57,7 +57,7 @@ def _esc(s) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _dqx_available() -> bool:

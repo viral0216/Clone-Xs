@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.client import execute_sql
 
@@ -16,7 +16,7 @@ def query_table_access_patterns(
 
     Tries system.access.audit first, falls back to system.query.history.
     """
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # Try system.access.audit first
     try:

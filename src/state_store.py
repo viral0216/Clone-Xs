@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -98,7 +98,7 @@ class StateStore:
         error_message: str | None = None,
     ) -> None:
         """Record a table clone result (upsert)."""
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         row_val = str(row_count) if row_count is not None else "NULL"
         size_val = str(size_bytes) if size_bytes is not None else "NULL"
         ver_val = str(version) if version is not None else "NULL"
@@ -141,7 +141,7 @@ class StateStore:
         status: str = "running",
     ) -> None:
         """Record a clone operation start."""
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         sql = f"""
         INSERT INTO {self._operations_table}
         (operation_id, source_catalog, dest_catalog, clone_type, started_at, status)
@@ -162,7 +162,7 @@ class StateStore:
         summary: dict | None = None,
     ) -> None:
         """Mark an operation as complete."""
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         summary_json = json.dumps(summary).replace("'", "\\\\'") if summary else ""
 
         sql = f"""

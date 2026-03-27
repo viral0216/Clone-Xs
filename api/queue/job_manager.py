@@ -6,7 +6,7 @@ import re
 import sys
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.websocket.manager import ConnectionManager
 
@@ -157,7 +157,7 @@ class JobManager:
             config["_api_managed_logs"] = True
 
             # Log operation start to audit trail (clone_operations table)
-            audit_start_time = datetime.utcnow()
+            audit_start_time = datetime.now(timezone.utc)
             try:
                 from src.audit_trail import ensure_audit_table, log_operation_start
                 ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)

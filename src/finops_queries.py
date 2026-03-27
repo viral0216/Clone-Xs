@@ -14,7 +14,7 @@ System tables used:
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
@@ -81,7 +81,7 @@ def query_billing_cost(
     if cached is not None:
         return cached
 
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = f"""
         SELECT
@@ -259,7 +259,7 @@ def query_warehouse_events(
     if cached is not None:
         return cached
 
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = f"""
         SELECT
@@ -358,7 +358,7 @@ def query_node_utilization(
         return cached
 
     days = min(days, 90)
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = f"""
         SELECT
@@ -409,7 +409,7 @@ def query_query_stats(
     if cached is not None:
         return cached
 
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # Probe columns
     try:
@@ -671,7 +671,7 @@ def query_cost_per_query(
     if cached is not None:
         return cached
 
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # 1. Query cost attribution (only active hours via INNER JOIN)
     sql = f"""
@@ -866,7 +866,7 @@ def query_cost_per_job(
     if cached is not None:
         return cached
 
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = f"""
         SELECT

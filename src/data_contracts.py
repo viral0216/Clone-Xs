@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.client import execute_sql
@@ -136,7 +136,7 @@ def _extract_table_fqns(doc: dict) -> list[str]:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -1456,7 +1456,7 @@ def _estimate_update_frequency(history_rows: list[dict]) -> dict | None:
         return None
     # Rough estimate: average gap between last few updates
     try:
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timezone
         parsed = sorted([dt.fromisoformat(t.replace("Z", "+00:00").split("+")[0]) for t in timestamps], reverse=True)
         gaps_hours = []
         for i in range(min(len(parsed) - 1, 5)):

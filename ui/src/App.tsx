@@ -44,6 +44,7 @@ import StorageMetricsPage from "@/app/storage-metrics/page";
 import DemoDataPage from "@/app/demo-data/page";
 import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
 import DataQualitySidebar from "@/components/layout/DataQualitySidebar";
+import FinOpsSidebar from "@/components/layout/FinOpsSidebar";
 import GovernanceOverview from "@/app/governance/page";
 
 // Lazy-load new UC enhancement pages
@@ -82,6 +83,18 @@ const DQAnomalies = lazy(() => import("@/app/data-quality/anomalies/page"));
 const DQIncidents = lazy(() => import("@/app/data-quality/incidents/page"));
 const DQExpectations = lazy(() => import("@/app/data-quality/expectations/page"));
 const DQMonitoring = lazy(() => import("@/app/data-quality/monitoring/page"));
+
+// FinOps portal pages
+const FinOpsDashboard = lazy(() => import("@/app/finops/page"));
+const FinOpsBilling = lazy(() => import("@/app/finops/billing/page"));
+const FinOpsStorage = lazy(() => import("@/app/finops/storage/page"));
+const FinOpsCompute = lazy(() => import("@/app/finops/compute/page"));
+const FinOpsBreakdown = lazy(() => import("@/app/finops/breakdown/page"));
+const FinOpsRecommendations = lazy(() => import("@/app/finops/recommendations/page"));
+const FinOpsWarehouses = lazy(() => import("@/app/finops/warehouses/page"));
+const FinOpsStorageOpt = lazy(() => import("@/app/finops/storage-optimization/page"));
+const FinOpsBudgets = lazy(() => import("@/app/finops/budgets/page"));
+const FinOpsTrends = lazy(() => import("@/app/finops/trends/page"));
 
 function PageFallback() {
   return (
@@ -183,6 +196,7 @@ export default function App() {
           <Routes>
             <Route path="/governance/*" element={<GovernanceSidebar />} />
             <Route path="/data-quality/*" element={<DataQualitySidebar />} />
+            <Route path="/finops/*" element={<FinOpsSidebar />} />
             <Route path="*" element={
               <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
             } />
@@ -278,6 +292,16 @@ export default function App() {
               <Route path="/data-quality/incidents" element={<Suspense fallback={<PageFallback />}><DQIncidents /></Suspense>} />
               <Route path="/data-quality/expectations" element={<Suspense fallback={<PageFallback />}><DQExpectations /></Suspense>} />
               <Route path="/data-quality/monitoring" element={<Suspense fallback={<PageFallback />}><DQMonitoring /></Suspense>} />
+              <Route path="/finops" element={<Suspense fallback={<PageFallback />}><FinOpsDashboard /></Suspense>} />
+              <Route path="/finops/billing" element={<Suspense fallback={<PageFallback />}><FinOpsBilling /></Suspense>} />
+              <Route path="/finops/storage" element={<Suspense fallback={<PageFallback />}><FinOpsStorage /></Suspense>} />
+              <Route path="/finops/compute" element={<Suspense fallback={<PageFallback />}><FinOpsCompute /></Suspense>} />
+              <Route path="/finops/breakdown" element={<Suspense fallback={<PageFallback />}><FinOpsBreakdown /></Suspense>} />
+              <Route path="/finops/recommendations" element={<Suspense fallback={<PageFallback />}><FinOpsRecommendations /></Suspense>} />
+              <Route path="/finops/warehouses" element={<Suspense fallback={<PageFallback />}><FinOpsWarehouses /></Suspense>} />
+              <Route path="/finops/storage-optimization" element={<Suspense fallback={<PageFallback />}><FinOpsStorageOpt /></Suspense>} />
+              <Route path="/finops/budgets" element={<Suspense fallback={<PageFallback />}><FinOpsBudgets /></Suspense>} />
+              <Route path="/finops/trends" element={<Suspense fallback={<PageFallback />}><FinOpsTrends /></Suspense>} />
             </Routes>
           </main>
         </div>

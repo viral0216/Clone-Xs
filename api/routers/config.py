@@ -116,6 +116,11 @@ async def set_performance(req: dict):
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
         invalidate_config_cache()
+        # Apply to running process immediately
+        from src.client import set_max_parallel_queries
+        if "max_parallel_queries" in req:
+            set_max_parallel_queries(int(req["max_parallel_queries"]))
+        invalidate_config_cache()
         return {"status": "saved"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -127,3 +127,7 @@ anomaly_detection:
     compute: true
     query_history: true
     storage: true
+azure:
+  subscription_id: ''
+  resource_group: ''
+  tenant_id: ''

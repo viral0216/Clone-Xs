@@ -43,6 +43,7 @@ class EstimateRequest(CatalogRequest):
 class StorageMetricsRequest(CatalogRequest):
     schema_filter: str | None = None
     table_filter: str | None = None
+    deep_analyze: bool = False  # When True, runs ANALYZE TABLE (expensive); default uses DESCRIBE DETAIL (fast)
 
 
 class TableMaintenanceRequest(BaseModel):

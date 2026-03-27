@@ -5,7 +5,7 @@ import {
   Rows3, Columns3, Activity, ScanSearch, Shield, GitCompare,
   Fingerprint, CheckSquare, Search, SearchCode, History,
   Clock, Database, AlertTriangle, Bell, ClipboardList, Settings,
-  PanelLeftClose, PanelLeftOpen,
+  DollarSign, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
 const NAV_SECTIONS = [

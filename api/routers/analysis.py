@@ -146,19 +146,22 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
 
 @router.post("/storage-metrics", summary="Analyze storage breakdown")
 async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_client)):
-    """Analyze per-table storage breakdown (active, vacuumable, time-travel).
+    """Analyze per-table storage breakdown.
 
-    Uses `ANALYZE TABLE ... COMPUTE STORAGE METRICS` (Runtime 18.0+) to show
-    total bytes, active bytes, vacuumable bytes (reclaimable via VACUUM), and
-    time-travel bytes. Falls back to `DESCRIBE DETAIL` on older runtimes.
+    By default uses DESCRIBE DETAIL (fast, no compute cost).
+    Pass deep_analyze=true to run ANALYZE TABLE ... COMPUTE STORAGE METRICS
+    for vacuumable/time-travel byte breakdown (Runtime 18.0+, expensive).
     """
     from src.storage_metrics import catalog_storage_metrics
     config = await get_app_config()
     wid = req.warehouse_id or config["sql_warehouse_id"]
+    max_workers = int(config.get("max_parallel_queries", 10))
     result = catalog_storage_metrics(
         client, wid, req.source_catalog, req.exclude_schemas,
         schema_filter=req.schema_filter,
         table_filter=req.table_filter,
+        max_workers=max_workers,
+        deep_analyze=req.deep_analyze,
     )
     return result
 

@@ -36,7 +36,7 @@ import {
 
 type AuthTab = "token" | "oauth" | "azure" | "sp";
 
-type SettingsSection = "connection" | "auth" | "warehouse" | "compute" | "anomaly" | "audit" | "interface" | "performance" | "features";
+type SettingsSection = "connection" | "auth" | "warehouse" | "compute" | "anomaly" | "audit" | "azure" | "interface" | "performance" | "features";
 
 const sectionMeta: { key: SettingsSection; label: string; icon: React.ElementType }[] = [
   { key: "connection", label: "Connection", icon: Globe },
@@ -45,6 +45,7 @@ const sectionMeta: { key: SettingsSection; label: string; icon: React.ElementTyp
   { key: "compute", label: "Compute", icon: Cpu },
   { key: "anomaly", label: "Anomaly Detection", icon: AlertTriangle },
   { key: "audit", label: "Audit & Logs", icon: Database },
+  { key: "azure", label: "Azure / FinOps", icon: DollarSign },
   { key: "interface", label: "Interface", icon: Settings2 },
   { key: "performance", label: "Performance", icon: Zap },
   { key: "features", label: "Features", icon: FolderTree },
@@ -714,6 +715,11 @@ export default function SettingsPage() {
             <AuditSettings />
           </section>}
 
+          {/* ─── Azure / FinOps ─── */}
+          {activeSection === "azure" && <section id="azure">
+            <AzureFinOpsSettings />
+          </section>}
+
           {/* ─── Interface ─── */}
           {activeSection === "interface" && <section id="interface">
             <UIPreferences />
@@ -790,6 +796,141 @@ function ComputeSettings() {
       </div>
       <p className="text-[10px] text-muted-foreground mt-2 px-1">This sets the initial default. You can still override compute on individual pages (DQX, Reconciliation).</p>
     </div>
+  );
+}
+
+
+/* ───────────────────────────── Azure / FinOps ───────────────────────────── */
+
+function AzureFinOpsSettings() {
+  const [subscriptionId, setSubscriptionId] = useState("");
+  const [resourceGroup, setResourceGroup] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<any>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    api.get("/config").then((cfg: any) => {
+      const az = cfg.azure || {};
+      setSubscriptionId(az.subscription_id || "");
+      setResourceGroup(az.resource_group || "");
+      setTenantId(az.tenant_id || "");
+    }).catch(() => {});
+    api.get("/finops/azure/status").then(setStatus).catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await api.post("/finops/azure/config", {
+        subscription_id: subscriptionId,
+        resource_group: resourceGroup,
+        tenant_id: tenantId,
+      });
+      toast.success("Azure configuration saved");
+      api.get("/finops/azure/status").then(setStatus).catch(() => {});
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save Azure config");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    try {
+      const data = await api.get("/finops/azure/costs?days=1");
+      if (data.errors?.length) {
+        toast.error(`Connection issues: ${data.errors[0]}`);
+      } else {
+        toast.success(`Connected! Total cost (1d): ${data.currency} ${data.total_cost?.toFixed(2) || "0.00"}`);
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Connection test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <>
+      <SectionHeading
+        title="Azure / FinOps"
+        subtitle="Connect to Azure Cost Management for billing data, cost trends, and Databricks-specific cost breakdowns"
+      />
+
+      {status && (
+        <div className={`mt-3 p-3 rounded-lg text-sm flex items-center gap-2 ${status.configured ? "bg-green-500/10 text-green-600" : "bg-amber-500/10 text-amber-600"}`}>
+          {status.configured ? (
+            <><CheckCircle className="h-4 w-4" /> Azure Cost Management configured (subscription: {status.subscription_id})</>
+          ) : (
+            <><AlertTriangle className="h-4 w-4" /> Azure Cost Management not configured — enter your subscription ID below</>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 mt-4 max-w-lg">
+        <FieldGroup label="Azure Subscription ID *">
+          <Input
+            value={subscriptionId}
+            onChange={e => setSubscriptionId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Found in Azure Portal → Subscriptions. Required for cost queries.
+          </p>
+        </FieldGroup>
+        <FieldGroup label="Resource Group (optional)">
+          <Input
+            value={resourceGroup}
+            onChange={e => setResourceGroup(e.target.value)}
+            placeholder="e.g. databricks-rg (leave empty for full subscription)"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Scope cost queries to a specific resource group. Leave blank for entire subscription.
+          </p>
+        </FieldGroup>
+        <FieldGroup label="Tenant ID (optional)">
+          <Input
+            value={tenantId}
+            onChange={e => setTenantId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Required for multi-tenant environments. Uses default tenant if blank.
+          </p>
+        </FieldGroup>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        <Button size="sm" onClick={handleSave} disabled={saving || !subscriptionId}>
+          {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+          Save
+        </Button>
+        <Button size="sm" variant="outline" onClick={testConnection} disabled={testing || !subscriptionId}>
+          {testing && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+          Test Connection
+        </Button>
+      </div>
+
+      <div className="mt-6 p-4 rounded-lg bg-muted/30 space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Prerequisites</p>
+        <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+          <li>Azure CLI installed and logged in (<code className="text-[10px]">az login</code>)</li>
+          <li>Cost Management Reader role on the subscription</li>
+          <li>For Databricks cost breakdown: Azure Databricks resources in the subscription</li>
+        </ul>
+        <p className="text-xs font-medium text-muted-foreground mt-3">What data is pulled</p>
+        <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+          <li>Daily cost trend (total Azure spend over time)</li>
+          <li>Service breakdown (Databricks, Storage, Networking, etc.)</li>
+          <li>Resource group cost allocation</li>
+          <li>Databricks sub-category costs (Jobs Compute, SQL, All-Purpose, etc.)</li>
+          <li>Top 30 resources by cost</li>
+        </ul>
+      </div>
+    </>
   );
 }
 
@@ -1477,6 +1618,18 @@ const PORTAL_FEATURES = [
       { title: "Reconciliation", items: [{ href: "/data-quality/reconciliation/row-level", label: "Row-Level" }, { href: "/data-quality/reconciliation/column-level", label: "Column-Level" }, { href: "/data-quality/reconciliation/deep", label: "Deep Diff" }, { href: "/data-quality/reconciliation/history", label: "Run History" }] },
       { title: "Profiling", items: [{ href: "/data-quality/profiling", label: "Column Profiles" }, { href: "/data-quality/schema-drift", label: "Schema Drift" }, { href: "/data-quality/diff", label: "Diff & Compare" }] },
       { title: "Validation", items: [{ href: "/data-quality/preflight", label: "Preflight Checks" }, { href: "/data-quality/compliance", label: "Compliance" }, { href: "/data-quality/pii", label: "PII Scanner" }] },
+    ],
+  },
+  {
+    id: "finops",
+    label: "FinOps Portal",
+    description: "Cost management, Azure billing, optimization, and budgets",
+    required: false,
+    sections: [
+      { title: "Overview", items: [{ href: "/finops", label: "Dashboard" }] },
+      { title: "Cost Analysis", items: [{ href: "/finops/billing", label: "Billing & DBUs" }, { href: "/finops/storage", label: "Storage Costs" }, { href: "/finops/compute", label: "Compute Costs" }, { href: "/finops/breakdown", label: "Cost Breakdown" }] },
+      { title: "Optimization", items: [{ href: "/finops/recommendations", label: "Recommendations" }, { href: "/finops/warehouses", label: "Warehouse Efficiency" }, { href: "/finops/storage-optimization", label: "Storage Optimization" }] },
+      { title: "Budgets & Alerts", items: [{ href: "/finops/budgets", label: "Budget Tracker" }, { href: "/finops/trends", label: "Cost Trends" }] },
     ],
   },
 ];

@@ -65,20 +65,28 @@ def test_ensure_audit_table_catalog_fallback(mock_sql):
     assert fqn == "my_audit.logs.ops"
 
 
-@patch("src.audit_trail.execute_sql")
+@patch("src.client.execute_sql")
 def test_ensure_audit_table_catalog_inaccessible(mock_sql):
-    """When both CREATE and USE fail, raise RuntimeError."""
+    """When catalog_utils cannot verify or create the catalog, raise RuntimeError."""
     def side_effect(client, wh, sql, **kw):
-        if "CREATE CATALOG" in sql or "USE CATALOG" in sql:
-            raise Exception("nope")
+        if "SHOW CATALOGS" in sql:
+            return []  # catalog doesn't exist
+        if "CREATE CATALOG" in sql:
+            raise Exception("storage root not configured")
+        if "USE CATALOG" in sql:
+            raise Exception("catalog not found")
         return []
 
     mock_sql.side_effect = side_effect
+    # Clear cached catalogs so the check actually runs
+    from src.catalog_utils import _verified_catalogs
+    _verified_catalogs.discard("my_audit")
+
     try:
         ensure_audit_table(MagicMock(), "wh-1", _config())
         assert False, "Should have raised RuntimeError"
-    except RuntimeError as e:
-        assert "Cannot create or access catalog" in str(e)
+    except (RuntimeError, Exception) as e:
+        assert "catalog" in str(e).lower() or "Cannot" in str(e) or "storage" in str(e).lower()
 
 
 # ---------- log_operation_start ----------

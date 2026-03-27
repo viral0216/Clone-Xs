@@ -34,10 +34,21 @@ async def lifespan(app: FastAPI):
 
     app.state.job_manager = JobManager(max_concurrent=2)
 
-    # Non-blocking startup table validation
+    # Apply config-driven performance settings at startup
     try:
         from src.config import load_config_cached
         config = load_config_cached()
+
+        # Sync parallel queries and rate limit from config
+        from src.client import set_max_parallel_queries, set_rate_limit
+        max_pq = int(config.get("max_parallel_queries", 10))
+        set_max_parallel_queries(max_pq)
+        max_rps = float(config.get("max_rps", 0))
+        if max_rps > 0:
+            set_rate_limit(max_rps)
+        logger.info(f"Performance: max_parallel_queries={max_pq}, max_rps={max_rps or 'unlimited'}")
+
+        # Startup table validation
         catalog = config.get("audit_trail", {}).get("catalog", "")
         if catalog:
             from src.table_registry import TABLE_SECTIONS
@@ -363,6 +374,9 @@ app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["r
 
 from api.routers import data_quality
 app.include_router(data_quality.router, prefix="/api/data-quality", tags=["data-quality"])
+
+from api.routers import finops
+app.include_router(finops.router, prefix="/api/finops", tags=["finops"])
 
 # Serve frontend static files in production
 import os

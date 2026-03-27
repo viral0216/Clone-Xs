@@ -164,13 +164,16 @@ def validate_catalog_spark(
 # ── Column-Level Reconciliation ──────────────────────────────────────────────
 
 
-def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, table_name: str) -> dict:
+def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, table_name: str, use_checksum: bool = False) -> dict:
     """Compare column schemas of a single table via Spark."""
     spark = _get_spark()
     result = {
         "schema": schema,
         "table": table_name,
         "schema_diff": None,
+        "checksum_match": None,
+        "source_checksum": None,
+        "dest_checksum": None,
         "issues": [],
     }
 
@@ -209,6 +212,30 @@ def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, tab
         if has_drift:
             result["issues"].append(f"{len(added_in_source)} added, {len(removed_from_source)} removed, {len(modified)} modified")
 
+        # Checksum verification via Spark
+        if use_checksum:
+            try:
+                from pyspark.sql.functions import md5, concat_ws, coalesce, lit, collect_list, col as spark_col
+                src_df = spark.table(src_fqn)
+                dst_df = spark.table(dst_fqn)
+                common_cols = sorted(set(src_df.columns) & set(dst_df.columns))
+                if common_cols:
+                    hash_exprs_src = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
+                    hash_exprs_dst = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
+                    src_hash = src_df.select(md5(concat_ws("|", *hash_exprs_src)).alias("row_hash")).select(
+                        md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash")
+                    ).collect()[0]["tbl_hash"]
+                    dst_hash = dst_df.select(md5(concat_ws("|", *hash_exprs_dst)).alias("row_hash")).select(
+                        md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash")
+                    ).collect()[0]["tbl_hash"]
+                    result["source_checksum"] = src_hash
+                    result["dest_checksum"] = dst_hash
+                    result["checksum_match"] = src_hash == dst_hash
+                    if not result["checksum_match"]:
+                        result["issues"].append("checksum_mismatch")
+            except Exception as ck_err:
+                result["issues"].append(f"checksum_error: {ck_err}")
+
     except Exception as e:
         result["issues"].append(str(e))
         logger.error(f"Spark compare failed for {schema}.{table_name}: {e}")
@@ -221,6 +248,7 @@ def compare_catalogs_spark(
     dest_catalog: str,
     exclude_schemas: list[str] | None = None,
     max_workers: int = 4,
+    use_checksum: bool = False,
 ) -> dict:
     """Compare column schemas across catalogs using Spark."""
     spark = _get_spark()
@@ -233,7 +261,7 @@ def compare_catalogs_spark(
         tables = _list_tables_spark(spark, dest_catalog, schema)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(compare_table_spark, source_catalog, dest_catalog, schema, t): t
+                executor.submit(compare_table_spark, source_catalog, dest_catalog, schema, t, use_checksum): t
                 for t in tables
             }
             for future in as_completed(futures):

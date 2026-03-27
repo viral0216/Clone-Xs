@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx vitest:*)",
       "Edit(~/.claude/skills/clone-xs-ui/**)",
-      "Edit(~/.claude/skills/clone-xs-backend/**)"
+      "Edit(~/.claude/skills/clone-xs-backend/**)",
+      "Bash(grep -n \"^def\\\\|^@router.*sample\" /Users/viral.patel/Clone-Xs/api/routers/*.py)"
     ]
   }
 }

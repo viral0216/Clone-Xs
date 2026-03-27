@@ -202,6 +202,7 @@ def deep_reconcile_table(
     include_columns: Optional[list[str]] = None,
     ignore_columns: Optional[list[str]] = None,
     sample_diffs: int = 10,
+    use_checksum: bool = False,
     comparison_options: Optional[dict] = None,
 ) -> dict:
     """Deep row-level reconciliation of a single table using PySpark.
@@ -222,6 +223,9 @@ def deep_reconcile_table(
         "extra_in_dest": 0,
         "modified_rows": 0,
         "match_rate_pct": 0.0,
+        "checksum_match": None,
+        "source_checksum": None,
+        "dest_checksum": None,
         "key_columns": key_columns or [],
         "ignored_columns": ignore_columns or [],
         "missing_sample": [],
@@ -349,6 +353,27 @@ def deep_reconcile_table(
         total = max(result["source_count"], 1)
         result["match_rate_pct"] = round((result["matched_rows"] / total) * 100, 2)
 
+        # Table-level checksum verification
+        if use_checksum:
+            try:
+                from pyspark.sql.functions import md5, concat_ws, coalesce, lit, collect_list, col as spark_col
+                src_raw = spark.table(f"{source_catalog}.{schema}.{table_name}")
+                dst_raw = spark.table(f"{dest_catalog}.{schema}.{table_name}")
+                common_cols = sorted(set(src_raw.columns) & set(dst_raw.columns))
+                if common_cols:
+                    hash_exprs = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
+                    src_hash = src_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh")).select(
+                        md5(concat_ws(",", collect_list("rh"))).alias("th")
+                    ).collect()[0]["th"]
+                    dst_hash = dst_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh")).select(
+                        md5(concat_ws(",", collect_list("rh"))).alias("th")
+                    ).collect()[0]["th"]
+                    result["source_checksum"] = src_hash
+                    result["dest_checksum"] = dst_hash
+                    result["checksum_match"] = src_hash == dst_hash
+            except Exception as ck_err:
+                logger.debug(f"Checksum computation failed for {schema}.{table_name}: {ck_err}")
+
     except Exception as e:
         result["error"] = str(e)
         logger.error(f"Deep reconciliation failed for {schema}.{table_name}: {e}")
@@ -416,6 +441,7 @@ def deep_reconcile_catalog(
     include_columns: Optional[list[str]] = None,
     ignore_columns: Optional[list[str]] = None,
     sample_diffs: int = 10,
+    use_checksum: bool = False,
     max_workers: int = 4,
     comparison_options: Optional[dict] = None,
 ) -> dict:
@@ -429,6 +455,7 @@ def deep_reconcile_catalog(
         detail = deep_reconcile_table(
             source_catalog, dest_catalog, schema_name, table_name,
             key_columns, include_columns, ignore_columns, sample_diffs,
+            use_checksum=use_checksum,
             comparison_options=comparison_options,
         )
         details = [detail]
@@ -448,7 +475,7 @@ def deep_reconcile_catalog(
                     executor.submit(
                         deep_reconcile_table, source_catalog, dest_catalog,
                         sch, t, key_columns, include_columns, ignore_columns, sample_diffs,
-                        comparison_options,
+                        use_checksum, comparison_options,
                     ): t for t in tables
                 }
                 for future in as_completed(futures):

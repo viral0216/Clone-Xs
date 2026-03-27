@@ -17,6 +17,7 @@ def compare_table_deep(
     dest_catalog: str,
     schema: str,
     table_name: str,
+    use_checksum: bool = False,
 ) -> dict:
     """Deep comparison of a single table: schema, row count, properties."""
     result = {
@@ -26,6 +27,9 @@ def compare_table_deep(
         "row_count_match": None,
         "source_rows": None,
         "dest_rows": None,
+        "checksum_match": None,
+        "source_checksum": None,
+        "dest_checksum": None,
         "properties_diff": None,
         "issues": [],
     }
@@ -60,6 +64,25 @@ def compare_table_deep(
     except Exception as e:
         result["issues"].append(f"row_count_error: {e}")
 
+    # Checksum comparison (MD5 hash of all rows)
+    if use_checksum:
+        try:
+            fqn_src = f"`{source_catalog}`.`{schema}`.`{table_name}`"
+            fqn_dst = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
+            checksum_sql_src = f"SELECT MD5(CAST(COLLECT_LIST(MD5(CAST(STRUCT(*) AS STRING))) AS STRING)) AS tbl_checksum FROM {fqn_src}"
+            checksum_sql_dst = f"SELECT MD5(CAST(COLLECT_LIST(MD5(CAST(STRUCT(*) AS STRING))) AS STRING)) AS tbl_checksum FROM {fqn_dst}"
+            src_cksum = execute_sql(client, warehouse_id, checksum_sql_src)
+            dst_cksum = execute_sql(client, warehouse_id, checksum_sql_dst)
+            src_hash = src_cksum[0]["tbl_checksum"] if src_cksum else None
+            dst_hash = dst_cksum[0]["tbl_checksum"] if dst_cksum else None
+            result["source_checksum"] = src_hash
+            result["dest_checksum"] = dst_hash
+            result["checksum_match"] = src_hash == dst_hash
+            if not result["checksum_match"]:
+                result["issues"].append("checksum_mismatch")
+        except Exception as e:
+            result["issues"].append(f"checksum_error: {e}")
+
     # Table properties comparison
     try:
         src_props = _get_tblproperties(client, warehouse_id, source_catalog, schema, table_name)
@@ -91,6 +114,7 @@ def compare_catalogs_deep(
     dest_catalog: str,
     exclude_schemas: list[str],
     max_workers: int = 4,
+    use_checksum: bool = False,
 ) -> dict:
     """Deep comparison of two catalogs: schema-level and table-level diffs."""
     logger.info(f"Deep comparison: {source_catalog} vs {dest_catalog}")
@@ -115,6 +139,7 @@ def compare_catalogs_deep(
                 executor.submit(
                     compare_table_deep, client, warehouse_id,
                     source_catalog, dest_catalog, schema, t["table_name"],
+                    use_checksum,
                 ): t["table_name"]
                 for t in filtered_tables
             }

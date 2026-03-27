@@ -14,6 +14,7 @@ import {
   ArrowLeftRight, Zap, Eye, ChevronDown, ChevronUp,
   Minus, Plus, Pencil, Search, Download, FileJson, FileText,
   TrendingUp, Columns3, Wrench, Bell, Trash2, Copy, ShieldAlert,
+  Shield, Layers, Settings2, X,
 } from "lucide-react";
 import SqlWorkbench from "@/components/sql/SqlWorkbench";
 import {
@@ -116,6 +117,8 @@ export default function DeepReconciliationPage() {
   const [keyColumns, setKeyColumns] = useState<string[]>([]);
 
   // ── Comparison options ────────────────────────────────────────
+  const [useChecksum, setUseChecksum] = useState(false);
+  const [maxWorkers, setMaxWorkers] = useState(4);
   const [ignoreNulls, setIgnoreNulls] = useState(false);
   const [ignoreCase, setIgnoreCase] = useState(false);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
@@ -127,6 +130,58 @@ export default function DeepReconciliationPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [sampleDiffs, setSampleDiffs] = useState(10);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
+
+  // ── Batch mode ────────────────────────────────────────────────
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
+  const [batchJobId, setBatchJobId] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] = useState<any>(null);
+  const [batchResults, setBatchResults] = useState<any>(null);
+  const [batchPreviewTable, setBatchPreviewTable] = useState("");
+
+  function addToBatch() {
+    if (!sourceSchema || !sourceTable) return;
+    const exists = batchQueue.some((t) => t.schema_name === sourceSchema && t.table_name === sourceTable);
+    if (!exists) {
+      setBatchQueue([...batchQueue, { schema_name: sourceSchema, table_name: sourceTable }]);
+      toast.success(`Added ${sourceSchema}.${sourceTable}`);
+    } else {
+      toast.info("Table already in batch queue");
+    }
+  }
+
+  function removeFromBatch(idx: number) {
+    setBatchQueue(batchQueue.filter((_, i) => i !== idx));
+  }
+
+  async function loadBatchPreview(tableName: string) {
+    if (!tableName || !source || !dest) return;
+    // Find the schema for this table from batchQueue
+    const entry = batchQueue.find((t) => t.table_name === tableName);
+    if (!entry) return;
+    setBatchPreviewTable(tableName);
+    setPreviewLoading(true);
+    setPreview(null);
+    try {
+      const data = await api.post("/reconciliation/preview", {
+        source_catalog: source,
+        destination_catalog: dest,
+        schema_name: entry.schema_name,
+        table_name: entry.table_name,
+      });
+      setPreview(data);
+      const matching = (data.column_match || [])
+        .filter((c: any) => c.status === "match" || c.status === "type_mismatch")
+        .map((c: any) => c.column);
+      setSelectedCols(new Set(matching));
+      setIgnoredCols(new Set());
+      setKeyColumns(data.key_columns || []);
+    } catch (e: any) {
+      toast.error("Preview failed: " + (e.message || "Unknown error"));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   // ── History / Trend ──────────────────────────────────────────
   const [history, setHistory] = useState<any[]>([]);
@@ -187,8 +242,61 @@ export default function DeepReconciliationPage() {
     }
   }
 
+  async function pollBatchDeepJob(jobId: string) {
+    const poll = async () => {
+      try {
+        const job = await api.get(`/reconciliation/batch-deep-validate/${jobId}`);
+        setBatchProgress(job.progress);
+        if (job.status === "completed") {
+          setBatchResults(job.result);
+          setLoading(false);
+          toast.success("Batch deep reconciliation complete");
+        } else if (job.status === "failed") {
+          toast.error("Batch job failed: " + (job.error || "Unknown"));
+          setLoading(false);
+        } else {
+          setTimeout(poll, 2000);
+        }
+      } catch {
+        setLoading(false);
+      }
+    };
+    poll();
+  }
+
   // ── Run deep reconciliation ────────────────────────────────────
   async function runDeepReconciliation() {
+    // Batch mode: submit as background job
+    if (batchMode && batchQueue.length > 0) {
+      setLoading(true);
+      setBatchResults(null);
+      setBatchProgress(null);
+      try {
+        const data = await api.post("/reconciliation/batch-deep-validate", {
+          source_catalog: source,
+          destination_catalog: dest,
+          tables: batchQueue,
+          key_columns: keyColumns,
+          include_columns: [...selectedCols],
+          ignore_columns: [...ignoredCols],
+          sample_diffs: sampleDiffs,
+          use_checksum: useChecksum,
+          max_workers: maxWorkers,
+          ignore_nulls: ignoreNulls,
+          ignore_case: ignoreCase,
+          ignore_whitespace: ignoreWhitespace,
+          decimal_precision: decimalPrecision,
+        });
+        setBatchJobId(data.job_id);
+        toast.success(`Batch job submitted: ${data.job_id}`);
+        pollBatchDeepJob(data.job_id);
+      } catch (e: any) {
+        toast.error(e.message || "Batch submission failed");
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!source || !dest || !sourceSchema || !sourceTable) return;
     setLoading(true);
     setResults(null);
@@ -198,6 +306,7 @@ export default function DeepReconciliationPage() {
       `[${t()}] Starting deep reconciliation: ${source}.${sourceSchema}.${sourceTable} → ${dest}`,
       `[${t()}] Key columns: ${keyColumns.length > 0 ? keyColumns.join(", ") : "(auto-detect / hash match)"}`,
       `[${t()}] Columns: ${selectedCols.size} selected, ${ignoredCols.size} ignored`,
+      `[${t()}] Options: checksum=${useChecksum} workers=${maxWorkers}`,
     ]);
 
     try {
@@ -210,6 +319,8 @@ export default function DeepReconciliationPage() {
         include_columns: [...selectedCols],
         ignore_columns: [...ignoredCols],
         sample_diffs: sampleDiffs,
+        use_checksum: useChecksum,
+        max_workers: maxWorkers,
         ignore_nulls: ignoreNulls,
         ignore_case: ignoreCase,
         ignore_whitespace: ignoreWhitespace,
@@ -347,6 +458,11 @@ export default function DeepReconciliationPage() {
               <label className="text-xs text-muted-foreground mb-1 block">Destination</label>
               <CatalogPicker catalog={dest} schema={destSchema} table={destTable} onCatalogChange={setDest} onSchemaChange={setDestSchema} onTableChange={setDestTable} showTable idPrefix="deep-dst" />
             </div>
+            {batchMode && sourceSchema && sourceTable && (
+              <Button variant="outline" onClick={addToBatch}>
+                <Plus className="h-4 w-4 mr-1" /> Add to Batch
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -369,6 +485,18 @@ export default function DeepReconciliationPage() {
               try { const res = await api.post("/reconciliation/spark-configure", { cluster_id: sparkClusterId, serverless: sparkServerless }); setSparkStatus(res); toast.success(res.available ? "Connected!" : "Failed"); } catch (e: any) { toast.error(e.message); }
               setSparkConfiguring(false);
             }}>{sparkConfiguring ? <Loader2 className="h-3 w-3 animate-spin" /> : "Connect"}</Button>
+            <div className="border-l border-border pl-3 ml-1">
+              <label className="flex items-center gap-2 text-sm font-medium cursor-default">
+                <input
+                  type="checkbox"
+                  checked={sparkStatus.available}
+                  disabled
+                  className="rounded"
+                />
+                Run via Spark
+                <span className="text-[10px] text-muted-foreground font-normal">(required for deep reconciliation)</span>
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -505,15 +633,205 @@ export default function DeepReconciliationPage() {
               </div>
               <Button
                 onClick={runDeepReconciliation}
-                disabled={loading || !sparkStatus.available || selectedCols.size === 0}
+                disabled={loading || !sparkStatus.available || (batchMode ? batchQueue.length === 0 : selectedCols.size === 0)}
                 className="mt-4"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
-                {loading ? "Running Deep Reconciliation..." : "Run Deep Reconciliation"}
+                {loading ? (batchMode ? "Running Batch..." : "Running Deep Reconciliation...") : (batchMode ? `Run Batch (${batchQueue.length} tables)` : "Run Deep Reconciliation")}
               </Button>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Advanced: Parallel, Checksum, Batch ─────────────────────── */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Advanced Options</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-5">
+            <div className="flex items-center gap-2">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              <label className="text-xs text-muted-foreground whitespace-nowrap">Parallel Workers</label>
+              <Input
+                type="number"
+                min={1}
+                max={16}
+                value={maxWorkers}
+                onChange={(e) => setMaxWorkers(Number(e.target.value) || 4)}
+                className="w-16 h-7 text-xs text-center"
+              />
+            </div>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={useChecksum} onChange={(e) => setUseChecksum(e.target.checked)} className="rounded" />
+              <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+              Enable Checksums
+              <span className="text-[10px] text-muted-foreground">(MD5 table-level verification)</span>
+            </label>
+            <div className="border-l border-border pl-4">
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input type="checkbox" checked={batchMode} onChange={(e) => setBatchMode(e.target.checked)} className="rounded" />
+                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                Batch Mode
+              </label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Batch Queue ───────────────────────────────────────────────── */}
+      {batchMode && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Batch Queue</CardTitle>
+              {batchQueue.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => { setBatchQueue([]); setBatchPreviewTable(""); }} className="text-xs text-muted-foreground">
+                  <Trash2 className="h-3 w-3 mr-1" /> Clear All
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {batchQueue.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No tables added yet. Select a table above and click "+ Add to Batch".</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {batchQueue.map((t, i) => (
+                    <Badge key={`${t.schema_name}.${t.table_name}`} variant="outline" className="text-xs font-mono gap-1 pr-1">
+                      {t.schema_name}.{t.table_name}
+                      <button onClick={() => removeFromBatch(i)} className="ml-1 p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+
+                {/* Preview a queued table's columns */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Preview table:</label>
+                  <select
+                    className="h-7 text-xs rounded border border-border bg-background px-2"
+                    value={batchPreviewTable}
+                    onChange={(e) => loadBatchPreview(e.target.value)}
+                  >
+                    <option value="">Select a table to preview columns...</option>
+                    {batchQueue.map((t) => (
+                      <option key={`${t.schema_name}.${t.table_name}`} value={t.table_name}>
+                        {t.schema_name}.{t.table_name}
+                      </option>
+                    ))}
+                  </select>
+                  {previewLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                </div>
+
+                {batchProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progress: {batchProgress.completed}/{batchProgress.total}</span>
+                      {batchProgress.current_table && <span>Current: {batchProgress.current_table}</span>}
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{ width: `${(batchProgress.completed / Math.max(batchProgress.total, 1)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">{batchQueue.length} table(s) queued</p>
+                  <Button
+                    onClick={runDeepReconciliation}
+                    disabled={loading || !sparkStatus.available || batchQueue.length === 0}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Layers className="h-4 w-4 mr-2" />}
+                    {loading ? "Running Batch..." : `Run Batch (${batchQueue.length} tables)`}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Batch Results ─────────────────────────────────────────── */}
+      {batchResults && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <SummaryCard label="Tables" value={batchResults.total_tables ?? 0} icon={Rows3} />
+            <SummaryCard label="Matched Rows" value={(batchResults.matched_rows ?? 0).toLocaleString()} color="green" icon={CheckCircle} />
+            <SummaryCard label="Missing" value={(batchResults.missing_in_dest ?? 0).toLocaleString()} color="red" icon={Minus} />
+            <SummaryCard label="Extra" value={(batchResults.extra_in_dest ?? 0).toLocaleString()} color="blue" icon={Plus} />
+            <SummaryCard label="Modified" value={(batchResults.modified_rows ?? 0).toLocaleString()} color="amber" icon={Pencil} />
+          </div>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Batch Deep Results</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="text-left py-2 px-2 font-medium">Table</th>
+                      <th className="text-right py-2 px-2 font-medium">Source</th>
+                      <th className="text-right py-2 px-2 font-medium">Dest</th>
+                      <th className="text-right py-2 px-2 font-medium">Matched</th>
+                      <th className="text-right py-2 px-2 font-medium">Missing</th>
+                      <th className="text-right py-2 px-2 font-medium">Extra</th>
+                      <th className="text-right py-2 px-2 font-medium">Modified</th>
+                      {useChecksum && <th className="text-center py-2 px-2 font-medium">Checksum</th>}
+                      <th className="text-right py-2 px-2 font-medium">Match&nbsp;%</th>
+                      <th className="text-left py-2 px-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(batchResults.details || []).map((d: any, i: number) => {
+                      const srcCount = d.source_count ?? 0;
+                      const matchPct = srcCount === 0 && (d.dest_count ?? 0) === 0 ? "—" : `${d.match_rate_pct ?? 0}%`;
+                      const isOk = (d.missing_in_dest ?? 0) === 0 && (d.extra_in_dest ?? 0) === 0 && (d.modified_rows ?? 0) === 0 && !d.error;
+                      return (
+                        <tr key={i} className={`border-b border-border/50 ${d.error ? "bg-amber-500/5" : !isOk ? "bg-red-500/5" : ""}`}>
+                          <td className="py-1.5 px-2 font-mono">{d.schema}.{d.table}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums">{srcCount.toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums">{(d.dest_count ?? 0).toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-green-500">{(d.matched_rows ?? 0).toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-red-500">{(d.missing_in_dest ?? 0).toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-blue-500">{(d.extra_in_dest ?? 0).toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-amber-500">{(d.modified_rows ?? 0).toLocaleString()}</td>
+                          {useChecksum && (
+                            <td className="py-1.5 px-2 text-center">
+                              {d.checksum_match == null ? "—" : d.checksum_match ? (
+                                <Shield className="h-3.5 w-3.5 text-green-500 mx-auto" />
+                              ) : (
+                                <Shield className="h-3.5 w-3.5 text-red-500 mx-auto" />
+                              )}
+                            </td>
+                          )}
+                          <td className="py-1.5 px-2 text-right tabular-nums font-medium">{matchPct}</td>
+                          <td className="py-1.5 px-2">
+                            {d.error ? (
+                              <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-[10px]">ERROR</Badge>
+                            ) : isOk ? (
+                              <Badge variant="outline" className="text-green-500 border-green-500/30 text-[10px]">PASS</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-red-500 border-red-500/30 text-[10px]">FAIL</Badge>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {preview?.error && (

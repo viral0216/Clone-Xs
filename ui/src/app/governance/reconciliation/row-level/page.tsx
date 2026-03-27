@@ -11,8 +11,15 @@ import PageHeader from "@/components/PageHeader";
 import {
   Rows3, Loader2, CheckCircle, XCircle, AlertTriangle,
   ChevronDown, ChevronUp, Hash, ArrowLeftRight, Zap,
-  Layers, Square, CheckSquare2,
+  Layers, Square, CheckSquare2, History, RefreshCw, Clock,
+  Shield, Settings2, Plus, X, Trash2,
 } from "lucide-react";
+
+function fmtDuration(s: number) {
+  if (!s && s !== 0) return "—";
+  if (s < 60) return `${Math.round(s)}s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
 
 function SummaryCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
   const colorClass = color === "green" ? "text-green-500" : color === "red" ? "text-red-500" : color === "amber" ? "text-amber-500" : "text-foreground";
@@ -66,26 +73,28 @@ export default function RowLevelReconciliationPage() {
 
   // Batch mode state
   const [batchMode, setBatchMode] = useState(false);
-  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobPolling, setJobPolling] = useState(false);
 
-  function toggleTableSelection(table: string) {
-    setSelectedTables(prev => {
-      const next = new Set(prev);
-      if (next.has(table)) next.delete(table); else next.add(table);
-      return next;
-    });
+  function addToBatch() {
+    if (!sourceSchema || !sourceTable) return;
+    const exists = batchQueue.some((t) => t.schema_name === sourceSchema && t.table_name === sourceTable);
+    if (!exists) {
+      setBatchQueue([...batchQueue, { schema_name: sourceSchema, table_name: sourceTable }]);
+      toast.success(`Added ${sourceSchema}.${sourceTable}`);
+    } else {
+      toast.info("Table already in batch queue");
+    }
   }
 
-  function selectAllTables() {
-    if (selectedTables.size === sourceTables.length) setSelectedTables(new Set());
-    else setSelectedTables(new Set(sourceTables));
+  function removeFromBatch(idx: number) {
+    setBatchQueue(batchQueue.filter((_, i) => i !== idx));
   }
 
   async function runBatchReconciliation() {
-    if (!source || !dest || selectedTables.size === 0) return;
-    const tables = [...selectedTables].map(t => ({ schema_name: sourceSchema, table_name: t }));
+    if (!source || !dest || batchQueue.length === 0) return;
+    const tables = batchQueue;
     setResults(null);
     setExpandedTable(null);
     setSampleData({});
@@ -282,34 +291,12 @@ export default function RowLevelReconciliationPage() {
                 idPrefix="dst"
               />
             </div>
-            <div className="w-24">
-              <label htmlFor="max-workers" className="text-xs text-muted-foreground mb-1 block">Parallel</label>
-              <Input id="max-workers" type="number" min={1} max={32} value={maxWorkers} onChange={(e) => setMaxWorkers(Number(e.target.value))} />
-            </div>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useChecksum}
-                onChange={(e) => setUseChecksum(e.target.checked)}
-                className="rounded border-border"
-              />
-              Enable checksums
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={batchMode}
-                onChange={(e) => { setBatchMode(e.target.checked); setSelectedTables(new Set()); }}
-                className="rounded border-border"
-              />
-              <Layers className="h-3.5 w-3.5" /> Batch mode
-            </label>
-            {batchMode ? (
-              <Button onClick={runBatchReconciliation} disabled={loading || jobPolling || !source || !dest || !sourceSchema || selectedTables.size === 0}>
-                {jobPolling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Layers className="h-4 w-4 mr-2" />}
-                {jobPolling ? "Running..." : `Run Batch (${selectedTables.size} tables)`}
+            {batchMode && sourceSchema && sourceTable && (
+              <Button variant="outline" onClick={addToBatch}>
+                <Plus className="h-4 w-4 mr-1" /> Add to Batch
               </Button>
-            ) : (
+            )}
+            {!batchMode && (
               <Button onClick={runReconciliation} disabled={loading || !source || !dest}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
                 {loading ? "Running..." : "Run Reconciliation"}
@@ -363,18 +350,57 @@ export default function RowLevelReconciliationPage() {
         </CardContent>
       </Card>
 
-      {/* ── Table Preview ────────────────────────────────────────────── */}
-      {source && sourceSchema && !results && (
+      {/* ── Advanced Options ──────────────────────────────────────────── */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Advanced Options</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              <label className="text-xs text-muted-foreground whitespace-nowrap">Parallel Workers</label>
+              <Input
+                type="number"
+                min={1}
+                max={32}
+                value={maxWorkers}
+                onChange={(e) => setMaxWorkers(Number(e.target.value) || 4)}
+                className="w-16 h-7 text-xs text-center"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useChecksum}
+                onChange={(e) => setUseChecksum(e.target.checked)}
+                className="rounded"
+              />
+              <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs">Enable Checksums</span>
+            </label>
+            <div className="border-l border-border pl-4 ml-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={batchMode}
+                  onChange={(e) => { setBatchMode(e.target.checked); setBatchQueue([]); }}
+                  className="rounded"
+                />
+                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs">Batch Mode</span>
+              </label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Table Preview (non-batch) ─────────────────────────────────── */}
+      {!batchMode && source && sourceSchema && !results && (
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Tables in {source}.{sourceSchema}</CardTitle>
-              {batchMode && sourceTables.length > 0 && (
-                <Button size="sm" variant="ghost" onClick={selectAllTables} className="text-xs">
-                  {selectedTables.size === sourceTables.length ? "Deselect All" : "Select All"} ({sourceTables.length})
-                </Button>
-              )}
-            </div>
+            <CardTitle className="text-base">Tables in {source}.{sourceSchema}</CardTitle>
           </CardHeader>
           <CardContent>
             {tablesLoading ? (
@@ -383,22 +409,53 @@ export default function RowLevelReconciliationPage() {
               </div>
             ) : sourceTables.length === 0 ? (
               <p className="text-sm text-muted-foreground">No tables found in this schema.</p>
-            ) : batchMode ? (
-              <div className="space-y-1">
-                {sourceTables.map((t) => (
-                  <label key={t} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors text-sm font-mono ${selectedTables.has(t) ? "bg-muted/50" : "hover:bg-muted/30"}`}>
-                    <input type="checkbox" checked={selectedTables.has(t)} onChange={() => toggleTableSelection(t)} className="rounded border-border" />
-                    {t}
-                  </label>
-                ))}
-                <p className="text-xs text-muted-foreground mt-2">{selectedTables.size} of {sourceTables.length} table(s) selected for batch reconciliation.</p>
-              </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {sourceTables.map((t) => (
                   <Badge key={t} variant="outline" className="text-xs font-mono">{t}</Badge>
                 ))}
                 <p className="w-full text-xs text-muted-foreground mt-2">{sourceTables.length} table(s) will be reconciled. Select a specific table above to narrow scope.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Batch Queue ───────────────────────────────────────────────── */}
+      {batchMode && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Batch Queue</CardTitle>
+              {batchQueue.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => setBatchQueue([])} className="text-xs text-muted-foreground">
+                  <Trash2 className="h-3 w-3 mr-1" /> Clear All
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {batchQueue.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No tables added yet. Select a table above and click "+ Add to Batch".</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {batchQueue.map((t, i) => (
+                    <Badge key={`${t.schema_name}.${t.table_name}`} variant="outline" className="text-xs font-mono gap-1 pr-1">
+                      {t.schema_name}.{t.table_name}
+                      <button onClick={() => removeFromBatch(i)} className="ml-1 p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">{batchQueue.length} table(s) queued</p>
+                  <Button onClick={runBatchReconciliation} disabled={loading || jobPolling || !source || !dest || batchQueue.length === 0}>
+                    {jobPolling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Layers className="h-4 w-4 mr-2" />}
+                    {jobPolling ? "Running..." : `Run Batch (${batchQueue.length} tables)`}
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -418,7 +475,7 @@ export default function RowLevelReconciliationPage() {
               </Button>
             </div>
             <div className="w-full bg-muted/50 rounded-full h-2">
-              <div className="bg-[#E8453C] h-2 rounded-full transition-all" style={{ width: `${(() => { try { const l = logs.filter(l => l.includes("Processing")); return l.length; } catch { return 0; } })() / Math.max(selectedTables.size, 1) * 100}%` }} />
+              <div className="bg-[#E8453C] h-2 rounded-full transition-all" style={{ width: `${(() => { try { const l = logs.filter(l => l.includes("Processing")); return l.length; } catch { return 0; } })() / Math.max(batchQueue.length, 1) * 100}%` }} />
             </div>
           </CardContent>
         </Card>

@@ -31,6 +31,7 @@ class ReconciliationCompareRequest(BaseModel):
     schema_name: str = ""
     table_name: str = ""
     exclude_schemas: list[str] = Field(default=["information_schema", "default"])
+    use_checksum: bool = False
     max_workers: int = 4
     use_spark: bool = False
 
@@ -58,6 +59,7 @@ class DeepReconciliationRequest(BaseModel):
     include_columns: list[str] = Field(default=[])
     ignore_columns: list[str] = Field(default=[])
     sample_diffs: int = 10
+    use_checksum: bool = False
     max_workers: int = 4
     ignore_nulls: bool = False
     ignore_case: bool = False
@@ -72,6 +74,31 @@ class BatchReconciliationRequest(BaseModel):
     use_checksum: bool = False
     max_workers: int = 4
     use_spark: bool = False
+
+
+class BatchCompareRequest(BaseModel):
+    source_catalog: str
+    destination_catalog: str
+    tables: list[dict] = Field(default=[], description="List of {schema_name, table_name} pairs")
+    use_checksum: bool = False
+    max_workers: int = 4
+    use_spark: bool = False
+
+
+class BatchDeepReconciliationRequest(BaseModel):
+    source_catalog: str
+    destination_catalog: str
+    tables: list[dict] = Field(default=[], description="List of {schema_name, table_name} pairs")
+    key_columns: list[str] = Field(default=[])
+    include_columns: list[str] = Field(default=[])
+    ignore_columns: list[str] = Field(default=[])
+    sample_diffs: int = 10
+    use_checksum: bool = False
+    max_workers: int = 4
+    ignore_nulls: bool = False
+    ignore_case: bool = False
+    ignore_whitespace: bool = False
+    decimal_precision: int = 0
 
 
 # ── Spark Status & Configure ─────────────────────────────────────────────────
@@ -226,6 +253,7 @@ async def compare(req: ReconciliationCompareRequest, client=Depends(get_db_clien
             dest_catalog=req.destination_catalog,
             exclude_schemas=req.exclude_schemas,
             max_workers=req.max_workers,
+            use_checksum=req.use_checksum,
         )
     else:
         from src.compare import compare_catalogs_deep
@@ -234,6 +262,8 @@ async def compare(req: ReconciliationCompareRequest, client=Depends(get_db_clien
             source_catalog=req.source_catalog,
             dest_catalog=req.destination_catalog,
             exclude_schemas=req.exclude_schemas,
+            max_workers=req.max_workers,
+            use_checksum=req.use_checksum,
         )
 
     duration = time.time() - start
@@ -268,6 +298,8 @@ async def compare(req: ReconciliationCompareRequest, client=Depends(get_db_clien
             schema_name=req.schema_name,
             table_name=req.table_name,
             execution_mode=execution_mode,
+            use_checksum=req.use_checksum,
+            max_workers=req.max_workers,
             duration_seconds=duration,
         )
         response["run_id"] = run_id
@@ -359,6 +391,7 @@ async def deep_validate(req: DeepReconciliationRequest, client=Depends(get_db_cl
         include_columns=req.include_columns or None,
         ignore_columns=req.ignore_columns or None,
         sample_diffs=req.sample_diffs,
+        use_checksum=req.use_checksum,
         max_workers=req.max_workers,
         comparison_options=comparison_options,
     )
@@ -394,6 +427,8 @@ async def deep_validate(req: DeepReconciliationRequest, client=Depends(get_db_cl
             schema_name=req.schema_name,
             table_name=req.table_name,
             execution_mode="spark-deep",
+            use_checksum=req.use_checksum,
+            max_workers=req.max_workers,
             duration_seconds=duration,
         )
         response["run_id"] = run_id
@@ -703,6 +738,111 @@ async def recon_progress_ws(websocket: WebSocket, job_id: str, jm=Depends(get_jo
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
         jm.connection_manager.disconnect(websocket, job_id)
+
+
+# ── Batch Column-Level Comparison (Background Jobs) ──────────────────────────
+
+@router.post("/batch-compare", summary="Submit batch column-level comparison job")
+async def batch_compare(
+    req: BatchCompareRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+    jm=Depends(get_job_manager),
+):
+    """Submit a batch column-level comparison job that runs in the background.
+
+    Returns a job_id immediately. Poll GET /batch-compare/{job_id} for progress
+    or connect via WS /reconciliation/ws/{job_id} for live updates.
+    """
+    if not req.tables:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No tables specified")
+
+    config = dict(app_config)
+    config.update({
+        "source_catalog": req.source_catalog,
+        "destination_catalog": req.destination_catalog,
+        "tables": [t if isinstance(t, dict) else t for t in req.tables],
+        "use_checksum": req.use_checksum,
+        "max_workers": req.max_workers,
+        "use_spark": req.use_spark,
+    })
+    job_id = await jm.submit_job("reconciliation-batch-compare", config, client)
+    return {"job_id": job_id, "status": "queued", "total_tables": len(req.tables)}
+
+
+@router.get("/batch-compare/{job_id}", summary="Get batch column-level comparison job status")
+async def get_batch_compare_job(job_id: str, jm=Depends(get_job_manager)):
+    """Get status and progress of a batch column-level comparison job."""
+    job = jm.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.delete("/batch-compare/{job_id}", summary="Cancel a batch column-level comparison job")
+async def cancel_batch_compare_job(job_id: str, jm=Depends(get_job_manager)):
+    """Cancel a queued batch column-level comparison job."""
+    jm.cancel_job(job_id)
+    return {"status": "cancelled", "job_id": job_id}
+
+
+# ── Batch Deep Reconciliation (Background Jobs) ─────────────────────────────
+
+@router.post("/batch-deep-validate", summary="Submit batch deep reconciliation job")
+async def batch_deep_validate(
+    req: BatchDeepReconciliationRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+    jm=Depends(get_job_manager),
+):
+    """Submit a batch deep reconciliation job that runs in the background.
+
+    Returns a job_id immediately. Poll GET /batch-deep-validate/{job_id} for progress
+    or connect via WS /reconciliation/ws/{job_id} for live updates.
+    """
+    if not req.tables:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No tables specified")
+
+    config = dict(app_config)
+    config.update({
+        "source_catalog": req.source_catalog,
+        "destination_catalog": req.destination_catalog,
+        "tables": [t if isinstance(t, dict) else t for t in req.tables],
+        "key_columns": req.key_columns,
+        "include_columns": req.include_columns,
+        "ignore_columns": req.ignore_columns,
+        "sample_diffs": req.sample_diffs,
+        "use_checksum": req.use_checksum,
+        "max_workers": req.max_workers,
+        "comparison_options": {
+            "ignore_nulls": req.ignore_nulls,
+            "ignore_case": req.ignore_case,
+            "ignore_whitespace": req.ignore_whitespace,
+            "decimal_precision": req.decimal_precision,
+        },
+    })
+    job_id = await jm.submit_job("reconciliation-batch-deep", config, client)
+    return {"job_id": job_id, "status": "queued", "total_tables": len(req.tables)}
+
+
+@router.get("/batch-deep-validate/{job_id}", summary="Get batch deep reconciliation job status")
+async def get_batch_deep_job(job_id: str, jm=Depends(get_job_manager)):
+    """Get status and progress of a batch deep reconciliation job."""
+    job = jm.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.delete("/batch-deep-validate/{job_id}", summary="Cancel a batch deep reconciliation job")
+async def cancel_batch_deep_job(job_id: str, jm=Depends(get_job_manager)):
+    """Cancel a queued batch deep reconciliation job."""
+    jm.cancel_job(job_id)
+    return {"status": "cancelled", "job_id": job_id}
 
 
 # ── Run Detail Drill-Down ────────────────────────────────────────────────────

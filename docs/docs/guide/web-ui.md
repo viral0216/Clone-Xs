@@ -18,7 +18,7 @@ The UI runs at `http://localhost:3001` and connects to the API server (by defaul
 - **Command palette search** — search any page by name or keyword (e.g., type "terraform" to jump to Generate, or "pii" to jump to PII Scanner)
 - **10 built-in themes** — Light, Dark, Midnight, Sunset, High Contrast, Ocean, Forest, Solarized, Rose, and Slate; pick from a visual grid in Settings or the HeaderBar theme picker; all themes use CSS variables for consistent sidebar, header, and content colors
 - **Real-time connection status indicator** — compact status bar with a green/red dot; polls `/api/health` every 15 seconds
-- **Notification center** — bell icon in the header bar showing recent clone events sourced from Delta tables with time-ago formatting (e.g., "3 minutes ago"); opens a slide-out panel with event details
+- **Notification center** — bell icon in the header bar showing unread clone events sourced from Delta tables with time-ago formatting (e.g., "3 minutes ago"); opens a slide-out panel with event details. The badge count tracks only new events since you last opened the panel (uses a "last seen" timestamp stored in localStorage), so it resets to zero when you check your notifications
 - **Pinned catalog pairs** — favorite source/destination pairs on the Dashboard for quick access
 - **Collapsible sidebar** — five collapsible navigation groups with 33 pages total; sidebar collapses to an icon-only rail via a button at the bottom or a toggle in Settings; Databricks-style density (13px font, 16px icons, compact padding) with theme-aware colors
 - **Page state persistence** — 10 analysis/management pages (PII Scanner, Schema Drift, Preflight, Diff & Compare, Cost Estimator, Profiling, Impact Analysis, Compliance, Monitor, and Storage Metrics) preserve their results when you navigate away and return, so you never lose work mid-investigation
@@ -158,3 +158,12 @@ Clone-Xs targets WCAG 2.1 AA compliance across the entire interface:
 | Warehouse | `/warehouse` | View, start, and stop SQL warehouses in your Databricks workspace. Shows real-time status with auto-refresh every 10 seconds. Uses `GET /api/auth/warehouses`, `POST /api/warehouse/start`, and `POST /api/warehouse/stop`. |
 | RBAC | `/rbac` | Manage role-based access control policies for clone operations. Create and view policies that restrict which users can clone specific catalogs. Uses `POST /api/rbac/policies`. |
 | Plugins | `/plugins` | Browse installed plugins and toggle them on or off. Each plugin extends Clone-Xs with additional hooks and capabilities. Uses `GET /api/plugins` and `POST /api/plugins/{id}/{enable\|disable}`. |
+
+### Governance Portal
+
+RTBF and DSAR are accessed through the **Governance portal** (via the Portal Switcher in the header). The Governance sidebar includes a **Compliance** section with links to both pages.
+
+| Page | Path | Description |
+|------|------|-------------|
+| RTBF / Erasure | `/governance/rtbf` | GDPR Article 17 erasure workflow. 4-tab page (Dashboard, Submit, Requests, Detail) with subject discovery across all catalogs, 3 deletion strategies, Delta VACUUM, verification, and compliance certificate generation. See [RTBF guide](../guide/rtbf.md). |
+| DSAR / Access | `/governance/dsar` | GDPR Article 15 access request workflow. 4-tab page (Dashboard, Submit, Requests, Detail) with subject discovery, export as CSV/JSON/Parquet, and 30-day deadline tracking. See [DSAR guide](../guide/dsar.md). |

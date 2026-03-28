@@ -104,6 +104,20 @@ TABLE_SECTIONS = [
         "schema": "rtbf",
         "tables": ["rtbf_requests", "rtbf_actions", "rtbf_certificates"],
     },
+    {
+        "key": "dsar",
+        "title": "DSAR / Right of Access",
+        "subtitle": "GDPR Article 15 access requests, actions, and exports",
+        "schema": "dsar",
+        "tables": ["dsar_requests", "dsar_actions", "dsar_exports"],
+    },
+    {
+        "key": "pipelines",
+        "title": "Clone Pipelines",
+        "subtitle": "Pipeline definitions, execution runs, and step results",
+        "schema": "pipelines",
+        "tables": ["pipelines", "pipeline_runs", "pipeline_step_results"],
+    },
 ]
 
 

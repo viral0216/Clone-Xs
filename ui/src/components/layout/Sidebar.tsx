@@ -8,7 +8,7 @@ import {
   Undo2, LayoutTemplate, CopyPlus, GitFork, Zap, Eye,
   Calculator, Server, Lock, Puzzle, HardDrive,
   X, Plus, Database, PanelLeftClose, PanelLeftOpen, Cpu, Brain, Layers,
-  Radio, Share2, Globe, UserX,
+  Radio, Share2, Globe,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -37,6 +37,7 @@ export const allNavSections: NavSection[] = [
       { href: "/audit", label: "Audit Trail", icon: History },
       { href: "/metrics", label: "Metrics", icon: BarChart3 },
       { href: "/system-insights", label: "System Insights", icon: Cpu },
+      { href: "/observability", label: "Observability", icon: Activity },
     ],
   },
   {
@@ -52,6 +53,7 @@ export const allNavSections: NavSection[] = [
       { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
       { href: "/demo-data", label: "Demo Data", icon: Database },
       { href: "/ml-assets", label: "ML Assets", icon: Brain },
+      { href: "/pipelines", label: "Pipelines", icon: GitBranch },
     ],
   },
   {
@@ -82,7 +84,6 @@ export const allNavSections: NavSection[] = [
       { href: "/warehouse", label: "Warehouse", icon: Server },
       { href: "/rbac", label: "RBAC", icon: Lock },
       { href: "/plugins", label: "Plugins", icon: Puzzle },
-      { href: "/rtbf", label: "RTBF / Erasure", icon: UserX },
     ],
   },
   {

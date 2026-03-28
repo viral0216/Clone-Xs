@@ -141,6 +141,25 @@ rtbf:
   exclude_schemas:
   - information_schema
   - default
+dsar:
+  deadline_days: 30
+  default_export_format: csv
+  export_output_dir: reports/dsar
+  require_approval: true
+pipelines:
+  max_concurrent_steps: 1
+  default_on_failure: abort
+  retry_max_attempts: 3
+  retry_backoff_seconds: 30
+observability:
+  health_score_weights:
+    freshness: 0.25
+    volume: 0.15
+    anomaly: 0.2
+    sla: 0.25
+    dq: 0.15
+  issue_lookback_hours: 24
+  trend_days: 30
 azure:
   subscription_id: ''
   resource_group: ''

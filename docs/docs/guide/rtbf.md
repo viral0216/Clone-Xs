@@ -71,7 +71,7 @@ clxs rtbf certificate --request-id <ID> --output-dir reports/rtbf
 
 ### Web UI
 
-Navigate to **Management > RTBF / Erasure** (or **Data Quality > Compliance > RTBF / Erasure**).
+Navigate to **Governance > Compliance > RTBF / Erasure** (accessible via the Portal Switcher or directly at `/governance/rtbf`).
 
 The page has four tabs:
 

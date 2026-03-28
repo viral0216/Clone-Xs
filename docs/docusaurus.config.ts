@@ -40,6 +40,15 @@ const config: Config = {
     ],
   ],
 
+  themes: [
+    [
+      '@cmfcmf/docusaurus-search-local',
+      {
+        indexBlog: false,
+      },
+    ],
+  ],
+
   themeConfig: {
     colorMode: {
       defaultMode: 'dark',

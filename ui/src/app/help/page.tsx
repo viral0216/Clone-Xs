@@ -13,7 +13,7 @@ import {
   Cpu, History, Activity, Wrench, Wand2, GitCompareArrows,
   DollarSign, TrendingUp, PieChart, Wallet, Receipt,
   ShieldCheck as ShieldCheckIcon, ClipboardCheck, Rows3, Columns3,
-  Bell, ScanSearch,
+  Bell, ScanSearch, Heart, Phone, Hash, Key, CreditCard, Plus, Play, Pause,
 } from "lucide-react";
 
 /* ── Reusable Components ──────────────────────────────────── */
@@ -91,6 +91,9 @@ export default function HelpPage() {
           <TabsTrigger value="finops" className="gap-1.5 text-xs"><DollarSign className="h-3 w-3" />FinOps</TabsTrigger>
           <TabsTrigger value="discovery" className="gap-1.5 text-xs"><FolderTree className="h-3 w-3" />Discovery</TabsTrigger>
           <TabsTrigger value="rtbf" className="gap-1.5 text-xs"><UserX className="h-3 w-3" />RTBF</TabsTrigger>
+          <TabsTrigger value="dsar" className="gap-1.5 text-xs"><Download className="h-3 w-3" />DSAR</TabsTrigger>
+          <TabsTrigger value="pipelines" className="gap-1.5 text-xs"><GitBranch className="h-3 w-3" />Pipelines</TabsTrigger>
+          <TabsTrigger value="observability" className="gap-1.5 text-xs"><Activity className="h-3 w-3" />Observability</TabsTrigger>
           <TabsTrigger value="shortcuts" className="gap-1.5 text-xs"><Keyboard className="h-3 w-3" />Shortcuts</TabsTrigger>
           <TabsTrigger value="about" className="gap-1.5 text-xs"><HelpCircle className="h-3 w-3" />About</TabsTrigger>
         </TabsList>
@@ -359,6 +362,83 @@ export default function HelpPage() {
             </G>
             <G icon={Clock} title="Deadlines & Notifications">
               <div><strong className="text-foreground">30-day GDPR deadline</strong> auto-calculated. Overdue alerts on Dashboard. Slack/Teams notifications for all lifecycle events.</div>
+            </G>
+          </div>
+        </TabsContent>
+
+        {/* ═══════════ DSAR ═══════════ */}
+        <TabsContent value="dsar" className="space-y-5 mt-5">
+          <PortalBanner icon={Download} title="DSAR — Data Subject Access Request" desc="GDPR Article 15 right of access. Find and export all personal data for a data subject across cloned catalogs. Same discovery engine as RTBF, but exports data instead of deleting it." color="purple" />
+          <G icon={BookOpen} title="DSAR Workflow">
+            <div className="space-y-4">
+              <Step n={1} title="Submit Request" desc="Go to DSAR / Access, then Submit tab. Enter subject type, value, requester details, and choose export format (CSV, JSON, or Parquet)." />
+              <Step n={2} title="Discover Subject Data" desc="Click Discover to find all tables containing the subject's data across cloned catalogs." />
+              <Step n={3} title="Approve Request" desc="Review the impact (tables and rows found), then approve for export." />
+              <Step n={4} title="Export Data" desc="Click Export Data. Clone-Xs runs SELECT queries on all discovered tables and writes the results to your chosen format." />
+              <Step n={5} title="Generate Report" desc="Generate a JSON summary report listing all tables, columns, and row counts for the subject." />
+              <Step n={6} title="Deliver and Complete" desc="Mark the report as delivered to the data subject, then complete the request." />
+            </div>
+          </G>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <G icon={FileText} title="Export Formats">
+              <div><strong className="text-foreground">CSV</strong> — spreadsheet-friendly, includes a _source_table column identifying where each row came from.</div>
+              <div><strong className="text-foreground">JSON</strong> — structured export grouped by source table with full metadata.</div>
+              <div><strong className="text-foreground">Parquet</strong> — columnar binary format for large datasets.</div>
+            </G>
+            <G icon={Clock} title="Deadlines">
+              <div>GDPR requires responding to access requests within <strong className="text-foreground">30 days</strong>. The dashboard tracks deadlines and flags overdue requests.</div>
+            </G>
+          </div>
+        </TabsContent>
+
+        {/* ═══════════ PIPELINES ═══════════ */}
+        <TabsContent value="pipelines" className="space-y-5 mt-5">
+          <PortalBanner icon={GitBranch} title="Clone Pipelines" desc="Chain multiple operations into reusable, automated workflows. Build pipelines from 6 step types, use pre-built templates, and track execution history." color="blue" />
+          <G icon={BookOpen} title="How Pipelines Work">
+            <div className="space-y-4">
+              <Step n={1} title="Create or Use Template" desc="Go to Pipelines, then Create tab to build a custom pipeline, or use the Templates tab to start from a pre-built workflow (Production-to-Dev, Clone and Validate, etc.)." />
+              <Step n={2} title="Configure Steps" desc="Each step has a type (clone, mask, validate, notify, vacuum, custom_sql), a name, and an on-failure policy (abort, skip, or retry)." />
+              <Step n={3} title="Run Pipeline" desc="Click Run on any pipeline. Steps execute sequentially. Progress is tracked in the Runs tab." />
+              <Step n={4} title="Monitor and Review" desc="View run history with per-step status, duration, and error details." />
+            </div>
+          </G>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <G icon={Zap} title="Step Types">
+              <div><strong className="text-foreground">clone</strong> — deep/shallow clone a catalog</div>
+              <div><strong className="text-foreground">mask</strong> — apply PII masking rules</div>
+              <div><strong className="text-foreground">validate</strong> — row count and checksum validation</div>
+              <div><strong className="text-foreground">notify</strong> — send Slack/Teams notification</div>
+              <div><strong className="text-foreground">vacuum</strong> — run VACUUM on destination tables</div>
+              <div><strong className="text-foreground">custom_sql</strong> — execute arbitrary SQL</div>
+            </G>
+            <G icon={AlertTriangle} title="Failure Policies">
+              <div><strong className="text-foreground">abort</strong> — stop the pipeline immediately on failure</div>
+              <div><strong className="text-foreground">skip</strong> — log the failure and continue to the next step</div>
+              <div><strong className="text-foreground">retry</strong> — retry the step up to 3 times with exponential backoff</div>
+            </G>
+          </div>
+        </TabsContent>
+
+        {/* ═══════════ OBSERVABILITY ═══════════ */}
+        <TabsContent value="observability" className="space-y-5 mt-5">
+          <PortalBanner icon={Activity} title="Data Observability" desc="Unified health dashboard combining freshness, volume, anomalies, SLA compliance, and data quality into a single composite health score (0-100)." color="cyan" />
+          <G icon={Heart} title="Health Score">
+            <div className="space-y-2">
+              <div>The health score is a <strong className="text-foreground">weighted average</strong> of 5 categories:</div>
+              <div><strong className="text-foreground">Freshness (25%)</strong> — percentage of tables updated within their freshness threshold</div>
+              <div><strong className="text-foreground">Volume (15%)</strong> — absence of unexpected volume changes</div>
+              <div><strong className="text-foreground">Anomaly (20%)</strong> — percentage of metrics within normal ranges</div>
+              <div><strong className="text-foreground">SLA (25%)</strong> — percentage of SLA checks passing</div>
+              <div><strong className="text-foreground">Data Quality (15%)</strong> — percentage of DQ rules passing</div>
+              <div className="mt-2 text-xs">Scores: <strong className="text-emerald-600">80+</strong> = Healthy, <strong className="text-amber-600">60-79</strong> = Degraded, <strong className="text-red-600">Below 60</strong> = Critical</div>
+            </div>
+          </G>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <G icon={Bell} title="Top Issues">
+              <div>The dashboard surfaces the most critical issues from the last 24 hours (configurable), ranked by severity and recency. Issues come from freshness failures, SLA violations, and DQ check failures.</div>
+            </G>
+            <G icon={TrendingUp} title="Trends">
+              <div>Category health bars show pass rates at a glance. The gauge visualization shows the overall score with color coding. Configure weights in <code className="text-xs bg-muted px-1 rounded">clone_config.yaml</code> under <code className="text-xs bg-muted px-1 rounded">observability.health_score_weights</code>.</div>
             </G>
           </div>
         </TabsContent>

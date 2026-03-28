@@ -19,6 +19,9 @@ import SettingsPage from "@/app/settings/page";
 import PiiPage from "@/app/pii/page";
 import RtbfPage from "@/app/rtbf/page";
 import HelpPage from "@/app/help/page";
+import ObservabilityPage from "@/app/observability/page";
+import DsarPage from "@/app/dsar/page";
+import PipelinesPage from "@/app/pipelines/page";
 import SchemaDriftPage from "@/app/schema-drift/page";
 import PreflightPage from "@/app/preflight/page";
 import SyncPage from "@/app/sync/page";
@@ -220,6 +223,9 @@ export default function App() {
               <Route path="/pii" element={<PiiPage />} />
               <Route path="/rtbf" element={<RtbfPage />} />
               <Route path="/help" element={<HelpPage />} />
+              <Route path="/observability" element={<ObservabilityPage />} />
+              <Route path="/dsar" element={<DsarPage />} />
+              <Route path="/pipelines" element={<PipelinesPage />} />
               <Route path="/schema-drift" element={<SchemaDriftPage />} />
               <Route path="/preflight" element={<PreflightPage />} />
               <Route path="/sync" element={<SyncPage />} />
@@ -275,6 +281,8 @@ export default function App() {
               <Route path="/governance/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
               <Route path="/governance/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
               <Route path="/governance/reconciliation/history" element={<Suspense fallback={<PageFallback />}><GovReconciliationHistory /></Suspense>} />
+              <Route path="/governance/rtbf" element={<RtbfPage />} />
+              <Route path="/governance/dsar" element={<DsarPage />} />
 
               {/* Data Quality Portal Routes */}
               <Route path="/data-quality" element={<Suspense fallback={<PageFallback />}><DQOverview /></Suspense>} />

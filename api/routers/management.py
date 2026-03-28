@@ -640,6 +640,28 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         tables_created.append(f"{catalog}.rtbf.rtbf_certificates")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create RTBF tables: {e}")
+    # Create DSAR tables
+    try:
+        from src.dsar_store import DSARStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        dsar_store = DSARStore(client, wid, state_catalog=catalog)
+        dsar_store.init_tables()
+        tables_created.append(f"{catalog}.dsar.dsar_requests")
+        tables_created.append(f"{catalog}.dsar.dsar_actions")
+        tables_created.append(f"{catalog}.dsar.dsar_exports")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create DSAR tables: {e}")
+    # Create Pipeline tables
+    try:
+        from src.pipeline_store import PipelineStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        pipe_store = PipelineStore(client, wid, state_catalog=catalog)
+        pipe_store.init_tables()
+        tables_created.append(f"{catalog}.pipelines.pipelines")
+        tables_created.append(f"{catalog}.pipelines.pipeline_runs")
+        tables_created.append(f"{catalog}.pipelines.pipeline_step_results")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Pipeline tables: {e}")
     # ── Pre-create all required schemas ─────────────────────────────────
     storage_location = req.get("storage_location", "")
     gov_config = {"audit_trail": audit_config["audit_trail"]}
@@ -648,7 +670,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     errors = []
     cat = audit_config["audit_trail"]["catalog"]
     audit_sch = audit_config["audit_trail"].get("schema", "logs")
-    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii", "rtbf"]
+    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii", "rtbf", "dsar", "pipelines"]
 
     # Ensure catalog exists
     from src.catalog_utils import ensure_catalog, ensure_schema
@@ -1383,7 +1405,7 @@ async def get_metrics(client=Depends(get_db_client)):
 
 
 @router.get("/notifications")
-async def get_notifications(client=Depends(get_db_client)):
+async def get_notifications(since: str | None = None, client=Depends(get_db_client)):
     """Get recent notifications from run logs (completions, failures, TTL warnings)."""
     try:
         from src.client import execute_sql
@@ -1460,7 +1482,15 @@ async def get_notifications(client=Depends(get_db_client)):
                 "job_id": r.get("job_id") or "",
             })
 
-        return {"unread_count": len(items), "items": items}
+        unread_count = len(items)
+        if since:
+            from datetime import datetime, timezone
+            try:
+                since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                unread_count = sum(1 for it in items if it.get("timestamp") and datetime.fromisoformat(str(it["timestamp"]).replace("Z", "+00:00")) > since_dt)
+            except (ValueError, TypeError):
+                pass
+        return {"unread_count": unread_count, "items": items}
     except Exception:
         return {"unread_count": 0, "items": []}
 

@@ -46,6 +46,9 @@ const ALL_PAGES = [
   { href: "/plugins", label: "Plugins", keywords: "extend hooks" },
   { href: "/rtbf", label: "RTBF / Erasure", keywords: "right to be forgotten gdpr erasure delete subject personal data compliance article 17" },
   { href: "/help", label: "Help & Guides", keywords: "help documentation guide tutorial how to rtbf keyboard shortcuts" },
+  { href: "/observability", label: "Data Observability", keywords: "observability health score freshness volume anomaly sla incidents dashboard unified" },
+  { href: "/dsar", label: "DSAR / Access Requests", keywords: "dsar right of access gdpr article 15 export subject data request" },
+  { href: "/pipelines", label: "Pipelines", keywords: "pipeline workflow chain steps clone mask validate notify automation template" },
 ];
 
 interface HeaderBarProps {

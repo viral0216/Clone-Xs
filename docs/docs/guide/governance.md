@@ -450,3 +450,15 @@ Clone-Xs includes a full GDPR Article 17 erasure workflow for handling data subj
 RTBF supports 34 legal bases from 18 global jurisdictions (EU GDPR, UK GDPR, US CCPA/CPRA + state laws, Brazil LGPD, India DPDPA, and more).
 
 For full documentation, see the dedicated [RTBF guide](rtbf.md).
+
+---
+
+## Data Subject Access Requests (DSAR)
+
+Clone-Xs provides a GDPR Article 15 access request workflow that discovers a data subject's personal data across all cloned catalogs and exports it as CSV, JSON, or Parquet — with full audit trail and 30-day deadline tracking.
+
+DSAR reuses the same subject discovery engine as RTBF — the same PII column patterns, lineage tracking, and information_schema queries. The difference: DSAR runs SELECT + export instead of DELETE.
+
+Both RTBF and DSAR are accessible from the **Governance portal** under the **Compliance** section in the Governance sidebar.
+
+For full documentation, see the dedicated [DSAR guide](dsar.md).

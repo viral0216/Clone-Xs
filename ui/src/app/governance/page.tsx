@@ -10,7 +10,7 @@ import PageHeader from "@/components/PageHeader";
 import { Link } from "react-router-dom";
 import {
   Shield, BookOpen, ShieldCheck, Award, Clock, History, FileCode,
-  CheckCircle2, XCircle, AlertTriangle, ArrowRight, Loader2,
+  CheckCircle2, XCircle, AlertTriangle, ArrowRight, Loader2, UserX, Download,
 } from "lucide-react";
 
 export default function GovernanceOverview() {
@@ -165,6 +165,8 @@ export default function GovernanceOverview() {
           { href: "/governance/sla", label: "SLA Monitor", desc: `${slaStatus.total_rules || 0} SLA rules`, icon: Clock, color: "text-muted-foreground" },
           { href: "/governance/odcs", label: "ODCS Contracts", desc: `${odcsContracts.length} contract(s), ${odcsContracts.filter((c: any) => c.status === "active").length} active`, icon: FileCode, color: "text-muted-foreground" },
           { href: "/governance/search", label: "Metadata Search", desc: "Search across catalogs", icon: History, color: "text-gray-600" },
+          { href: "/governance/rtbf", label: "RTBF / Erasure", desc: "Right to be forgotten", icon: UserX, color: "text-muted-foreground" },
+          { href: "/governance/dsar", label: "DSAR / Access", desc: "Subject access requests", icon: Download, color: "text-muted-foreground" },
         ].map((link) => (
           <Link key={link.href} to={link.href}>
             <Card className="hover:border-border dark:hover:border-border transition-colors cursor-pointer h-full">

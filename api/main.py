@@ -381,6 +381,15 @@ app.include_router(finops.router, prefix="/api/finops", tags=["finops"])
 from api.routers import rtbf
 app.include_router(rtbf.router, prefix="/api/rtbf", tags=["rtbf"])
 
+from api.routers import dsar
+app.include_router(dsar.router, prefix="/api/dsar", tags=["dsar"])
+
+from api.routers import observability
+app.include_router(observability.router, prefix="/api/observability", tags=["observability"])
+
+from api.routers import pipeline
+app.include_router(pipeline.router, prefix="/api/pipelines", tags=["pipelines"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

@@ -104,9 +104,10 @@ export interface NotificationsData {
 }
 
 export function useNotifications() {
+  const since = localStorage.getItem("notifications_last_seen") || "";
   return useQuery<NotificationsData>({
-    queryKey: ["notifications"],
-    queryFn: () => api.get("/notifications"),
+    queryKey: ["notifications", since],
+    queryFn: () => api.get(`/notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`),
     refetchInterval: 60000,
     retry: 1,
   });

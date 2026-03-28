@@ -9,6 +9,27 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.8.1 — Governance Consolidation & Notification Fix (2026-03-28)
+
+### Changed
+- **RTBF & DSAR moved to Governance portal** — RTBF and DSAR pages are now accessed under `/governance/rtbf` and `/governance/dsar` via the Governance sidebar's Compliance section, instead of appearing as separate items in the main sidebar. Accessible through the Portal Switcher.
+- **Notification badge fix** — the header notification bell now tracks a "last seen" timestamp in localStorage so the badge only shows genuinely new events. Previously it always showed the total count of recent items (typically 20). Opening the panel marks all current notifications as read and resets the badge to zero.
+
+### Removed
+- **RTBF / DSAR from main sidebar** — removed as standalone items from the Management section; consolidated under the Governance portal
+
+---
+
+## v0.8.0 — DSAR, Clone Pipelines & Data Observability (2026-03-28)
+
+### Added
+- **DSAR (Data Subject Access Request)** — GDPR Article 15 right-of-access workflow. Reuses RTBF's discovery engine to find subject data, then exports as CSV/JSON/Parquet. Full lifecycle: submit, discover, approve, export, deliver, complete. 3 Delta audit tables, 10 API endpoints, 11 CLI commands, 4-tab UI page
+- **Clone Pipelines** — chain multiple operations into reusable workflows. 6 step types (clone, mask, validate, notify, vacuum, custom_sql). 3 failure policies (abort, skip, retry). 4 built-in templates (production-to-dev, clone-and-validate, refresh-dev, compliance-clone). Pipeline builder UI with drag-to-reorder, template gallery, and run history
+- **Data Observability Dashboard** — unified health scoring (0-100) across freshness, volume, anomaly, SLA, and data quality. Health gauge visualization, category breakdown bars, top issues list, trend sparklines. Read-only aggregation from existing Delta tables — no new data collection needed
+- **Help Page Expansion** — 11 tabs covering every portal: Clone & Ops, Data Quality, Governance, FinOps, Discovery, RTBF, DSAR, Pipelines, Observability, Shortcuts, About. Step-by-step guides for each feature
+
+---
+
 ## v0.7.0 — RTBF / Right to Be Forgotten (2026-03-28)
 
 ### Added
@@ -31,7 +52,7 @@ All notable changes to Clone-Xs are documented here.
 - **Dry-Run Preview** — preview deletion SQL and row counts before committing
 - **Certificate Download** — `/certificate/download?format=html|json` endpoint with Download buttons in UI
 - **Compliance Report Integration** — RTBF section added to compliance reports (total, completed, overdue, completion rate)
-- **Navigation** — RTBF added to main sidebar (Management), Data Quality sidebar (Compliance section), Governance sidebar (Compliance section), and header search
+- **Navigation** — RTBF accessible via Governance portal sidebar (Compliance section) and header search
 
 ---
 

@@ -378,6 +378,9 @@ app.include_router(data_quality.router, prefix="/api/data-quality", tags=["data-
 from api.routers import finops
 app.include_router(finops.router, prefix="/api/finops", tags=["finops"])
 
+from api.routers import rtbf
+app.include_router(rtbf.router, prefix="/api/rtbf", tags=["rtbf"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

@@ -629,6 +629,17 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         tables_created.append(f"{catalog}.pii.pii_remediation")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create PII tables: {e}")
+    # Create RTBF (Right to Be Forgotten) tables
+    try:
+        from src.rtbf_store import RTBFStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        rtbf_store = RTBFStore(client, wid, state_catalog=catalog)
+        rtbf_store.init_tables()
+        tables_created.append(f"{catalog}.rtbf.rtbf_requests")
+        tables_created.append(f"{catalog}.rtbf.rtbf_actions")
+        tables_created.append(f"{catalog}.rtbf.rtbf_certificates")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create RTBF tables: {e}")
     # ── Pre-create all required schemas ─────────────────────────────────
     storage_location = req.get("storage_location", "")
     gov_config = {"audit_trail": audit_config["audit_trail"]}
@@ -637,7 +648,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     errors = []
     cat = audit_config["audit_trail"]["catalog"]
     audit_sch = audit_config["audit_trail"].get("schema", "logs")
-    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii"]
+    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii", "rtbf"]
 
     # Ensure catalog exists
     from src.catalog_utils import ensure_catalog, ensure_schema

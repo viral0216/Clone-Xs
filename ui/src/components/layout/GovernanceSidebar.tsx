@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, Search,
   Award, CheckSquare, Clock, FileText, History, FileCode,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, UserX,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -44,6 +44,12 @@ const NAV_SECTIONS = [
     title: "Audit",
     items: [
       { href: "/governance/changes", label: "Change History", icon: History },
+    ],
+  },
+  {
+    title: "Compliance",
+    items: [
+      { href: "/rtbf", label: "RTBF / Erasure", icon: UserX },
     ],
   },
 ];

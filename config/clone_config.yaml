@@ -127,6 +127,20 @@ anomaly_detection:
     compute: true
     query_history: true
     storage: true
+rtbf:
+  enabled: true
+  default_strategy: delete
+  deadline_days: 30
+  default_grace_period_days: 0
+  auto_vacuum: true
+  vacuum_retention_hours: 0
+  require_approval: true
+  verification_required: true
+  certificate_auto_generate: true
+  certificate_output_dir: reports/rtbf
+  exclude_schemas:
+  - information_schema
+  - default
 azure:
   subscription_id: ''
   resource_group: ''

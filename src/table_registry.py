@@ -97,6 +97,13 @@ TABLE_SECTIONS = [
         "schema": "lineage",
         "tables": ["clone_lineage"],
     },
+    {
+        "key": "rtbf",
+        "title": "RTBF / Right to Be Forgotten",
+        "subtitle": "GDPR Article 17 erasure requests, actions, and deletion certificates",
+        "schema": "rtbf",
+        "tables": ["rtbf_requests", "rtbf_actions", "rtbf_certificates"],
+    },
 ]
 
 

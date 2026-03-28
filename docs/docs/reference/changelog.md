@@ -9,6 +9,32 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.7.0 — RTBF / Right to Be Forgotten (2026-03-28)
+
+### Added
+- **RTBF Engine** — complete GDPR Article 17 erasure workflow: submit, discover, approve, execute, VACUUM, verify, certificate
+- **3 Deletion Strategies** — hard DELETE, anonymize (mask PII columns), pseudonymize (replace identifiers)
+- **Subject Discovery** — finds matching rows across all cloned catalogs using PII detection patterns + information_schema + lineage tracking
+- **Delta VACUUM Integration** — physically removes time-travel history with 0-hour retention for true GDPR compliance
+- **Verification Engine** — re-queries all affected tables to confirm zero rows remain post-deletion
+- **Compliance Certificates** — generates HTML + JSON deletion evidence with full action audit trail, stored in Delta
+- **3 Delta Audit Tables** — `rtbf_requests`, `rtbf_actions`, `rtbf_certificates` (created via Settings > Initialize All Tables)
+- **34 Global Legal Bases** — pre-configured privacy regulations from 18 jurisdictions (EU GDPR, UK GDPR, US CCPA/CPRA + 9 state laws, Brazil LGPD, India DPDPA, Japan APPI, China PIPL, and more)
+- **16 REST API Endpoints** — full lifecycle management under `/api/rtbf/` with async job execution
+- **12 CLI Subcommands** — `clxs rtbf submit|discover|impact|approve|execute|vacuum|verify|certificate|list|status|cancel|overdue`
+- **RTBF UI Page** — 4-tab page (Dashboard, Submit, Requests, Detail) with workflow visualization, stat cards, confirmation dialogs, dry-run preview, certificate download
+- **Plugin Hooks** — 4 lifecycle hooks: `on_rtbf_request`, `on_rtbf_deletion_start`, `on_rtbf_deletion_complete`, `on_rtbf_verification_failed`
+- **Slack/Teams Notifications** — alerts on submission, execution, completion, verification failure, deadline warnings
+- **Deadline Monitor** — `check_approaching_deadlines()` method and `/requests/approaching-deadline` API endpoint
+- **Row-Level Masking** — new `mask_subject_rows()` function in masking engine for subject-specific anonymization
+- **Confirmation Dialogs** — destructive actions (Execute, VACUUM, Cancel) require typing confirmation text
+- **Dry-Run Preview** — preview deletion SQL and row counts before committing
+- **Certificate Download** — `/certificate/download?format=html|json` endpoint with Download buttons in UI
+- **Compliance Report Integration** — RTBF section added to compliance reports (total, completed, overdue, completion rate)
+- **Navigation** — RTBF added to main sidebar (Management), Data Quality sidebar (Compliance section), Governance sidebar (Compliance section), and header search
+
+---
+
 ## v0.6.1 — UI Overhaul, Login Page & Session Persistence (2026-03-25)
 
 ### Added

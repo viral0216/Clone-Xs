@@ -5,7 +5,7 @@ import {
   Rows3, Columns3, Activity, ScanSearch, Shield, GitCompare,
   Fingerprint, CheckSquare, Search, SearchCode, History,
   Clock, Database, AlertTriangle, Bell, ClipboardList, Settings,
-  DollarSign, PanelLeftClose, PanelLeftOpen,
+  DollarSign, PanelLeftClose, PanelLeftOpen, UserX,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -63,6 +63,12 @@ const NAV_SECTIONS = [
       { href: "/data-quality/preflight", label: "Preflight Checks", icon: CheckSquare },
       { href: "/data-quality/compliance", label: "Compliance", icon: Shield },
       { href: "/data-quality/pii", label: "PII Scanner", icon: Fingerprint },
+    ],
+  },
+  {
+    title: "Compliance",
+    items: [
+      { href: "/data-quality/rtbf", label: "RTBF / Erasure", icon: UserX },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Sun, Moon, Sparkles, Sunset, Contrast, Waves, TreePine, Eclipse, Flower2, Mountain,
-  Settings2, Wifi, WifiOff, Menu, Search, Palette, Check, LogOut,
+  Settings2, Wifi, WifiOff, Menu, Search, Palette, Check, LogOut, HelpCircle,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
@@ -44,6 +44,8 @@ const ALL_PAGES = [
   { href: "/warehouse", label: "Warehouse", keywords: "sql warehouse manage" },
   { href: "/rbac", label: "RBAC", keywords: "access control roles permissions" },
   { href: "/plugins", label: "Plugins", keywords: "extend hooks" },
+  { href: "/rtbf", label: "RTBF / Erasure", keywords: "right to be forgotten gdpr erasure delete subject personal data compliance article 17" },
+  { href: "/help", label: "Help & Guides", keywords: "help documentation guide tutorial how to rtbf keyboard shortcuts" },
 ];
 
 interface HeaderBarProps {
@@ -337,6 +339,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
             </div>
           )}
         </div>
+        <Link to="/help" className={iconBtn} title="Help & Guides" aria-label="Help & Guides"><HelpCircle className="h-4 w-4" /></Link>
         <Link to="/settings" className={iconBtn} title="Settings" aria-label="Settings"><Settings2 className="h-4 w-4" /></Link>
         <button
           onClick={() => {

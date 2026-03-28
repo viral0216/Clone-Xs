@@ -123,3 +123,97 @@ def _get_mask_expression(column_name: str, strategy: str, data_type: str) -> str
 
     # Treat as custom SQL expression
     return strategy
+
+
+def mask_subject_rows(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
+    identifier_column: str,
+    identifier_value: str,
+    masking_rules: list[dict] | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Apply masking to specific rows matching a subject identifier.
+
+    Unlike apply_masking_rules() which masks entire columns, this function
+    targets only rows where identifier_column = identifier_value.
+
+    Args:
+        client: Databricks workspace client.
+        warehouse_id: SQL warehouse ID.
+        catalog: Catalog name.
+        schema: Schema name.
+        table_name: Table name.
+        identifier_column: Column used to identify the subject (e.g., "email").
+        identifier_value: Value to match (e.g., "user@example.com").
+        masking_rules: Optional explicit rules. If None, auto-detects PII columns.
+        dry_run: If True, returns SQL without executing.
+
+    Returns:
+        Dict with columns_masked count and sql_executed.
+    """
+    import re
+
+    dest = f"`{catalog}`.`{schema}`.`{table_name}`"
+
+    # Get columns for this table
+    col_sql = f"""
+        SELECT column_name, data_type
+        FROM {catalog}.information_schema.columns
+        WHERE table_schema = '{schema}'
+        AND table_name = '{table_name}'
+    """
+    columns = execute_sql(client, warehouse_id, col_sql)
+    col_map = {c["column_name"]: c["data_type"] for c in columns}
+
+    update_parts = []
+
+    if masking_rules:
+        # Use explicit rules
+        for rule in masking_rules:
+            col_name = rule.get("column", "")
+            strategy = rule.get("strategy", "redact")
+            if col_name in col_map:
+                mask_expr = _get_mask_expression(col_name, strategy, col_map[col_name])
+                if mask_expr:
+                    update_parts.append(f"`{col_name}` = {mask_expr}")
+    else:
+        # Auto-detect PII columns using column name patterns
+        from src.pii_detection import COLUMN_NAME_PATTERNS, SUGGESTED_MASKING
+
+        for col_name, data_type in col_map.items():
+            if col_name == identifier_column:
+                continue
+            for pattern, pii_type in COLUMN_NAME_PATTERNS.items():
+                if re.search(pattern, col_name):
+                    strategy = SUGGESTED_MASKING.get(pii_type, "redact")
+                    mask_expr = _get_mask_expression(col_name, strategy, data_type)
+                    if mask_expr:
+                        update_parts.append(f"`{col_name}` = {mask_expr}")
+                    break
+
+        # Also mask the identifier column itself
+        id_mask = _get_mask_expression(identifier_column, "hash", col_map.get(identifier_column, "STRING"))
+        if id_mask:
+            update_parts.append(f"`{identifier_column}` = {id_mask}")
+
+    if not update_parts:
+        return {"columns_masked": 0, "sql_executed": None}
+
+    sql = f"UPDATE {dest} SET {', '.join(update_parts)} WHERE `{identifier_column}` = '{identifier_value}'"
+
+    if dry_run:
+        logger.info(f"[DRY RUN] Row-level masking SQL: {sql}")
+        return {"columns_masked": len(update_parts), "sql_executed": sql, "dry_run": True}
+
+    try:
+        execute_sql(client, warehouse_id, sql)
+        logger.info(f"Masked {len(update_parts)} columns for subject rows in {dest}")
+    except Exception as e:
+        logger.error(f"Failed to apply row-level masking to {dest}: {e}")
+        raise
+
+    return {"columns_masked": len(update_parts), "sql_executed": sql}

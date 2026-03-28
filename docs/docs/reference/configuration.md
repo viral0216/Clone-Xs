@@ -207,6 +207,41 @@ Environment variables override config file values for auth settings:
 | `DATABRICKS_CONFIG_PROFILE` | Default CLI profile name |
 | `CLXS_CACHE_TTL` | Metadata cache TTL in seconds (default: `300`) |
 
+## RTBF (Right to Be Forgotten)
+
+```yaml
+rtbf:
+  enabled: true                     # Enable RTBF feature
+  default_strategy: delete          # delete | anonymize | pseudonymize
+  deadline_days: 30                 # GDPR 30-day deadline
+  default_grace_period_days: 0      # Days to wait before execution
+  auto_vacuum: true                 # Auto-VACUUM after deletion
+  vacuum_retention_hours: 0         # 0 = remove all Delta history
+  require_approval: true            # Require manual approval
+  verification_required: true       # Require verification pass
+  certificate_auto_generate: true   # Auto-generate certificate
+  certificate_output_dir: reports/rtbf
+  exclude_schemas:
+    - information_schema
+    - default
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Enable/disable RTBF feature |
+| `default_strategy` | `delete` | Default deletion strategy |
+| `deadline_days` | `30` | GDPR deadline in days |
+| `default_grace_period_days` | `0` | Default grace period before execution |
+| `auto_vacuum` | `true` | Automatically VACUUM after deletion |
+| `vacuum_retention_hours` | `0` | VACUUM retention (0 = aggressive) |
+| `require_approval` | `true` | Require approval before execution |
+| `verification_required` | `true` | Require verification before completion |
+| `certificate_auto_generate` | `true` | Auto-generate certificates |
+| `certificate_output_dir` | `reports/rtbf` | Output directory for certificates |
+| `exclude_schemas` | `[information_schema, default]` | Schemas to skip during discovery |
+
+---
+
 ## Config diff
 
 Compare two config files to see differences:

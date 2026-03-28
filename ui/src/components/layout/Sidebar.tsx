@@ -8,7 +8,7 @@ import {
   Undo2, LayoutTemplate, CopyPlus, GitFork, Zap, Eye,
   Calculator, Server, Lock, Puzzle, HardDrive,
   X, Plus, Database, PanelLeftClose, PanelLeftOpen, Cpu, Brain, Layers,
-  Radio, Share2, Globe,
+  Radio, Share2, Globe, UserX,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -82,6 +82,7 @@ export const allNavSections: NavSection[] = [
       { href: "/warehouse", label: "Warehouse", icon: Server },
       { href: "/rbac", label: "RBAC", icon: Lock },
       { href: "/plugins", label: "Plugins", icon: Puzzle },
+      { href: "/rtbf", label: "RTBF / Erasure", icon: UserX },
     ],
   },
   {

@@ -815,3 +815,57 @@ clxs dep-graph --catalog <catalog> [options]
 | Flag | Description |
 |------|-------------|
 | `--source`, `--catalog` | Catalog to analyze |
+
+---
+
+### `rtbf`
+
+Right to Be Forgotten (GDPR Article 17) — manage erasure requests.
+
+```bash
+clxs rtbf <action> [options]
+```
+
+**Actions:**
+
+| Action | Description |
+|---|---|
+| `submit` | Submit a new erasure request |
+| `discover` | Discover subject data across all catalogs |
+| `impact` | Show impact analysis for a request |
+| `approve` | Approve a request for execution |
+| `execute` | Execute deletion/anonymization |
+| `vacuum` | VACUUM affected tables (physical deletion) |
+| `verify` | Verify deletion completeness |
+| `certificate` | Generate deletion certificate |
+| `list` | List RTBF requests |
+| `status` | Get request status and details |
+| `cancel` | Cancel a request |
+| `overdue` | Show overdue requests |
+
+**Submit flags:**
+
+| Flag | Required | Description |
+|---|---|---|
+| `--subject-type` | Yes | email, customer_id, ssn, phone, name, national_id, passport, credit_card, custom |
+| `--subject-value` | Yes | The identifier value to erase |
+| `--requester-email` | Yes | Requester's email |
+| `--requester-name` | Yes | Requester's name |
+| `--legal-basis` | No | Legal basis (default: GDPR Art. 17(1)(a)) |
+| `--strategy` | No | delete, anonymize, pseudonymize (default: delete) |
+| `--scope-catalogs` | No | Limit search to specific catalogs |
+| `--grace-period-days` | No | Days to wait before execution (default: 0) |
+| `--subject-column` | No | Custom column name (required for `custom` type) |
+
+**Example workflow:**
+
+```bash
+clxs rtbf submit --subject-type email --subject-value "user@example.com" \
+  --requester-email "dpo@corp.com" --requester-name "DPO"
+clxs rtbf discover --request-id <ID> --subject-value "user@example.com"
+clxs rtbf approve --request-id <ID>
+clxs rtbf execute --request-id <ID> --subject-value "user@example.com"
+clxs rtbf vacuum --request-id <ID>
+clxs rtbf verify --request-id <ID> --subject-value "user@example.com"
+clxs rtbf certificate --request-id <ID>
+```

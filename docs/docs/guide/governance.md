@@ -434,3 +434,19 @@ When PII masking is applied during a clone, the compliance report automatically 
 :::tip
 Use `clxs pii-scan --apply-tags` to automatically tag PII columns in Unity Catalog, enabling downstream data governance policies.
 :::
+
+---
+
+## Right to Be Forgotten (RTBF)
+
+Clone-Xs includes a full GDPR Article 17 erasure workflow for handling data subject deletion requests across all cloned catalogs. The RTBF module:
+
+- **Discovers** subject data across every cloned catalog using PII detection patterns
+- **Deletes or anonymizes** the data with configurable strategies
+- **VACUUMs** Delta history to physically remove time-travel data
+- **Verifies** the deletion by re-querying all affected tables
+- **Generates compliance certificates** (HTML + JSON) for DPO/legal review
+
+RTBF supports 34 legal bases from 18 global jurisdictions (EU GDPR, UK GDPR, US CCPA/CPRA + state laws, Brazil LGPD, India DPDPA, and more).
+
+For full documentation, see the dedicated [RTBF guide](rtbf.md).

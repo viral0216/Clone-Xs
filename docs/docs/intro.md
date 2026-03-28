@@ -50,6 +50,7 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Metrics & History | Track throughput, failure rates, and operation history |
 | Delta Audit Logging | Every operation logs to run_logs, clone_operations, and clone_metrics |
 | Compliance Reports | Audit-ready reports covering PII, permissions, lineage |
+| RTBF / Right to Be Forgotten | GDPR Article 17 erasure workflow — discover, delete, VACUUM, verify, certificate across all cloned catalogs. 34 legal bases from 18 jurisdictions |
 | REST API Server | Expose clone operations as HTTP endpoints |
 | Plugin System | Extend with custom plugins from a marketplace |
 | Pre-flight Checks | Validate connectivity, permissions, and config before cloning |
@@ -106,6 +107,7 @@ Clone-Xs provides several deployment options because different teams and workflo
 - [Advanced Cloning](guide/advanced-clone) — data filtering, TTL, execution plans, plugins
 - [Safety & Rollback](guide/safety) — auto-rollback, checkpointing, config lint, impact analysis
 - [Governance](guide/governance) — RBAC, approval workflows, compliance reports
+- [RTBF](guide/rtbf) — Right to Be Forgotten / GDPR Article 17 erasure workflows
 - [Scheduling & Automation](guide/scheduling) — scheduled clones, templates, API server, throttling
 - [Analytics & Insights](guide/analytics) — usage analysis, metrics, history, data preview
 - [Storage Metrics](guide/storage-metrics) — analyze and optimize table storage

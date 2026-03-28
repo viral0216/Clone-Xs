@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
         'guide/safety',
         'guide/governance',
         'guide/pii-detection',
+        'guide/rtbf',
         'guide/scheduling',
         'guide/plugins',
         'guide/analytics',

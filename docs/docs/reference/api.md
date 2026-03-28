@@ -1523,3 +1523,119 @@ curl -X POST http://localhost:8080/api/cache/invalidate \
   "entries_removed": 8
 }
 ```
+
+---
+
+## RTBF (Right to Be Forgotten)
+
+GDPR Article 17 erasure workflow. All endpoints are under `/api/rtbf/`.
+
+### `POST /api/rtbf/requests`
+
+Submit a new erasure request.
+
+**Request body:**
+
+```json
+{
+  "subject_type": "email",
+  "subject_value": "user@example.com",
+  "requester_email": "dpo@company.com",
+  "requester_name": "Data Protection Officer",
+  "legal_basis": "GDPR Article 17(1)(a) - Consent withdrawn",
+  "strategy": "delete",
+  "grace_period_days": 0,
+  "notes": "Customer requested account deletion"
+}
+```
+
+**Parameters:**
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `subject_type` | Yes | `email` | Identifier type: email, customer_id, ssn, phone, name, national_id, passport, credit_card, custom |
+| `subject_value` | Yes | — | The identifier value to search for and delete |
+| `subject_column` | No | — | Required when subject_type is `custom` |
+| `requester_email` | Yes | — | Email of person requesting erasure |
+| `requester_name` | Yes | — | Name of person requesting erasure |
+| `legal_basis` | No | GDPR Art. 17(1)(a) | Legal basis for the erasure |
+| `strategy` | No | `delete` | Deletion strategy: delete, anonymize, pseudonymize |
+| `scope_catalogs` | No | all | Limit search to specific catalogs |
+| `grace_period_days` | No | `0` | Days to wait before execution |
+| `notes` | No | — | Additional context |
+
+### `GET /api/rtbf/requests`
+
+List requests with optional filters.
+
+**Query parameters:** `status`, `from_date`, `to_date`, `limit` (default 50)
+
+### `GET /api/rtbf/requests/{request_id}`
+
+Get full details for a single request.
+
+### `PUT /api/rtbf/requests/{request_id}/status`
+
+Update request status (approve, hold, cancel).
+
+**Request body:** `{ "status": "approved" | "on_hold" | "cancelled", "reason": "optional" }`
+
+### `POST /api/rtbf/requests/{request_id}/discover`
+
+Run subject discovery across all cloned catalogs (async job).
+
+**Request body:** `{ "subject_value": "user@example.com" }`
+
+### `GET /api/rtbf/requests/{request_id}/impact`
+
+Get impact analysis — affected catalogs, schemas, tables, row counts.
+
+### `POST /api/rtbf/requests/{request_id}/execute`
+
+Execute deletion/anonymization (async job). Supports dry-run.
+
+**Request body:** `{ "subject_value": "user@example.com", "strategy": "delete", "dry_run": false }`
+
+### `POST /api/rtbf/requests/{request_id}/vacuum`
+
+VACUUM all affected tables to physically remove Delta history (async job).
+
+**Request body:** `{ "retention_hours": 0 }`
+
+### `POST /api/rtbf/requests/{request_id}/verify`
+
+Verify deletion by re-querying all affected tables (async job).
+
+**Request body:** `{ "subject_value": "user@example.com" }`
+
+### `POST /api/rtbf/requests/{request_id}/certificate`
+
+Generate a GDPR-compliant deletion certificate (HTML + JSON).
+
+### `GET /api/rtbf/requests/{request_id}/certificate`
+
+Get the latest certificate for a request.
+
+### `GET /api/rtbf/requests/{request_id}/certificate/download`
+
+Download certificate as a file.
+
+**Query parameters:** `format=html` (default) or `format=json`
+
+### `GET /api/rtbf/requests/{request_id}/actions`
+
+Get all actions (discover, delete, vacuum, verify) for a request.
+
+### `GET /api/rtbf/requests/overdue`
+
+Get requests that have passed their GDPR 30-day deadline.
+
+### `GET /api/rtbf/requests/approaching-deadline`
+
+Get requests approaching their deadline.
+
+**Query parameters:** `warn_days` (default 5)
+
+### `GET /api/rtbf/dashboard`
+
+Dashboard summary: total, pending, in_progress, completed, overdue, avg_processing_days.

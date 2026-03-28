@@ -17,6 +17,8 @@ import ConfigPage from "@/app/config/page";
 import ReportsPage from "@/app/reports/page";
 import SettingsPage from "@/app/settings/page";
 import PiiPage from "@/app/pii/page";
+import RtbfPage from "@/app/rtbf/page";
+import HelpPage from "@/app/help/page";
 import SchemaDriftPage from "@/app/schema-drift/page";
 import PreflightPage from "@/app/preflight/page";
 import SyncPage from "@/app/sync/page";
@@ -216,6 +218,8 @@ export default function App() {
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/pii" element={<PiiPage />} />
+              <Route path="/rtbf" element={<RtbfPage />} />
+              <Route path="/help" element={<HelpPage />} />
               <Route path="/schema-drift" element={<SchemaDriftPage />} />
               <Route path="/preflight" element={<PreflightPage />} />
               <Route path="/sync" element={<SyncPage />} />
@@ -288,6 +292,7 @@ export default function App() {
               <Route path="/data-quality/preflight" element={<PreflightPage />} />
               <Route path="/data-quality/compliance" element={<CompliancePage />} />
               <Route path="/data-quality/pii" element={<PiiPage />} />
+              <Route path="/data-quality/rtbf" element={<RtbfPage />} />
               <Route path="/data-quality/freshness" element={<Suspense fallback={<PageFallback />}><DQFreshness /></Suspense>} />
               <Route path="/data-quality/volume" element={<Suspense fallback={<PageFallback />}><DQVolume /></Suspense>} />
               <Route path="/data-quality/anomalies" element={<Suspense fallback={<PageFallback />}><DQAnomalies /></Suspense>} />

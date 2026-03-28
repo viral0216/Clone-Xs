@@ -428,7 +428,7 @@ export default function HelpPage() {
               <Step n={1} title="Discover Pipelines" desc="Go to Operations then Delta Live Tables. The Dashboard tab shows all pipelines with state (Running/Idle/Failed) and health (Healthy/Unhealthy)." />
               <Step n={2} title="View Pipeline Details" desc="Click a pipeline in the Pipelines tab to see its full configuration, libraries, clusters, and notification settings." />
               <Step n={3} title="Trigger or Stop" desc="Click Run for an incremental update, Full Refresh to reprocess all data, or Stop to halt a running pipeline." />
-              <Step n={4} title="Clone a Pipeline" desc="Click the Clone button on any pipeline row. Choose Same Workspace or Different Workspace. For cross-workspace, enter the destination workspace URL and PAT token. Clone copies the full definition (catalog, libraries, clusters, config) to a new pipeline in development mode." />
+              <Step n={4} title="Clone a Pipeline" desc="Click the Clone button on any pipeline row. Choose Same Workspace or Different Workspace. For cross-workspace, enter the destination workspace URL and PAT token. Clone copies the full definition (catalog, target, config) to a new pipeline in development mode. For serverless/SQL pipelines with no notebooks, a placeholder notebook is created automatically." />
               <Step n={5} title="Monitor Events" desc="The Event Log shows errors, warnings, and flow progress. Filter by level to focus on issues." />
               <Step n={6} title="View Lineage" desc="The Datasets section maps DLT-managed tables to Unity Catalog, showing the full FQN, type, and format for each dataset." />
             </div>

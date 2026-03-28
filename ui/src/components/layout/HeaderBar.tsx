@@ -63,6 +63,8 @@ const ALL_PAGES = [
   { href: "/security/preflight", label: "Preflight Checks", keywords: "validate prerequisites check preflight" },
   // Automation portal
   { href: "/automation", label: "Automation", keywords: "automation workflows" },
+  { href: "/automation/jobs", label: "Clone Jobs", keywords: "jobs clone copy backup restore diff compare workspace migration" },
+  { href: "/automation/dlt", label: "DLT Pipelines", keywords: "dlt delta live tables pipeline clone" },
   { href: "/automation/pipelines", label: "Pipelines", keywords: "pipeline workflow chain steps clone mask validate notify template" },
   { href: "/automation/templates", label: "Templates", keywords: "recipes prebuilt production dev generate terraform pulumi iac" },
   { href: "/automation/create-job", label: "Create Job", keywords: "databricks job persistent scheduled cron" },

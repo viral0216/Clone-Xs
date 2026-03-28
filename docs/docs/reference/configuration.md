@@ -242,6 +242,42 @@ rtbf:
 
 ---
 
+## DSAR (Data Subject Access Request)
+
+```yaml
+dsar:
+  deadline_days: 30              # GDPR 30-day requirement
+  default_export_format: csv     # csv | json | parquet
+  export_output_dir: reports/dsar
+  require_approval: true
+```
+
+## Clone Pipelines
+
+```yaml
+pipelines:
+  max_concurrent_steps: 1          # sequential execution
+  default_on_failure: abort        # abort | skip | retry
+  retry_max_attempts: 3
+  retry_backoff_seconds: 30
+```
+
+## Data Observability
+
+```yaml
+observability:
+  health_score_weights:
+    freshness: 0.25
+    volume: 0.15
+    anomaly: 0.20
+    sla: 0.25
+    dq: 0.15
+  issue_lookback_hours: 24
+  trend_days: 30
+```
+
+---
+
 ## Config diff
 
 Compare two config files to see differences:

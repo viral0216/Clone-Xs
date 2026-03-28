@@ -111,6 +111,7 @@ const FinOpsTrends = lazy(() => import("@/app/finops/trends/page"));
 // New portal pages
 const SecurityOverview = lazy(() => import("@/app/security/page"));
 const AutomationOverview = lazy(() => import("@/app/automation/page"));
+const AutomationJobsPage = lazy(() => import("@/app/automation/jobs/page"));
 const InfrastructureOverview = lazy(() => import("@/app/infrastructure/page"));
 const MdmOverview = lazy(() => import("@/app/mdm/page"));
 const MdmGoldenRecords = lazy(() => import("@/app/mdm/golden-records/page"));
@@ -369,6 +370,8 @@ export default function App() {
               <Route path="/automation/pipelines" element={<PipelinesPage />} />
               <Route path="/automation/create-job" element={<CreateJobPage />} />
               <Route path="/automation/templates" element={<TemplatesPage />} />
+              <Route path="/automation/jobs" element={<Suspense fallback={<PageFallback />}><AutomationJobsPage /></Suspense>} />
+              <Route path="/automation/dlt" element={<Suspense fallback={<PageFallback />}><DltPage /></Suspense>} />
 
               {/* Infrastructure Portal */}
               <Route path="/infrastructure" element={<Suspense fallback={<PageFallback />}><InfrastructureOverview /></Suspense>} />

@@ -5,7 +5,7 @@ title: Web UI
 
 # Web UI
 
-Clone-Xs includes a full web interface with 33+ pages for managing Unity Catalog operations. Start it with:
+Clone-Xs includes a full web interface with 60+ pages across 8 portals for managing Unity Catalog operations. Start it with:
 
 ```bash
 make web-start
@@ -161,9 +161,67 @@ Clone-Xs targets WCAG 2.1 AA compliance across the entire interface:
 
 ### Governance Portal
 
-RTBF and DSAR are accessed through the **Governance portal** (via the Portal Switcher in the header). The Governance sidebar includes a **Compliance** section with links to both pages.
+Accessed via Portal Switcher. Includes RBAC, RTBF, DSAR, data dictionary, certifications, data contracts, SLA monitoring, and change history.
 
 | Page | Path | Description |
 |------|------|-------------|
-| RTBF / Erasure | `/governance/rtbf` | GDPR Article 17 erasure workflow. 4-tab page (Dashboard, Submit, Requests, Detail) with subject discovery across all catalogs, 3 deletion strategies, Delta VACUUM, verification, and compliance certificate generation. See [RTBF guide](../guide/rtbf.md). |
-| DSAR / Access | `/governance/dsar` | GDPR Article 15 access request workflow. 4-tab page (Dashboard, Submit, Requests, Detail) with subject discovery, export as CSV/JSON/Parquet, and 30-day deadline tracking. See [DSAR guide](../guide/dsar.md). |
+| RBAC | `/governance/rbac` | Role-based access control policies. |
+| RTBF / Erasure | `/governance/rtbf` | GDPR Article 17 erasure workflow. See [RTBF guide](../guide/rtbf.md). |
+| DSAR / Access | `/governance/dsar` | GDPR Article 15 access request workflow. See [DSAR guide](../guide/dsar.md). |
+
+### Security Portal
+
+PII detection, compliance validation, and pre-clone security checks.
+
+| Page | Path | Description |
+|------|------|-------------|
+| PII Scanner | `/security/pii` | Detect personally identifiable information across catalogs. |
+| Compliance | `/security/compliance` | Generate governance and compliance reports. |
+| Preflight Checks | `/security/preflight` | Validate permissions and config before cloning. |
+
+### Automation Portal
+
+Pipelines, job scheduling, templates, and workspace job management.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Pipelines | `/automation/pipelines` | Chain operations into reusable workflows. |
+| Templates | `/automation/templates` | Pre-built clone configurations and recipes. |
+| Create Job | `/automation/create-job` | Schedule persistent Databricks clone jobs. |
+| Clone Jobs | `/automation/jobs` | List, clone, compare, and backup Databricks Jobs across workspaces. Clone within same workspace or cross-workspace with host/token. Job diff view and JSON backup/restore. |
+| DLT Pipelines | `/automation/dlt` | Discover, clone, and monitor Delta Live Tables pipelines. |
+
+### Infrastructure Portal
+
+Warehouse management, cross-workspace federation, and data sharing.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Warehouse | `/infrastructure/warehouse` | View, start, and manage SQL warehouses. |
+| Lakehouse Monitor | `/infrastructure/lakehouse-monitor` | Monitor lakehouse table quality and metrics. |
+| Federation | `/infrastructure/federation` | Cross-workspace catalog federation. |
+| Delta Sharing | `/infrastructure/delta-sharing` | Share data across organizations. |
+
+### MDM Portal (Master Data Management)
+
+First open-source Databricks-native MDM — 19 pages covering entity resolution, golden records, stewardship, and compliance.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Overview | `/mdm` | Dashboard with entity stats, charts, global search, and table initialization. |
+| Golden Records | `/mdm/golden-records` | Master entities with entity 360 drawer (attributes, source records, timeline). |
+| Match & Merge | `/mdm/match-merge` | 5 tabs: Duplicates, Rules, Survivorship, Source Trust, Ingest. Match tuning tester. |
+| Relationships | `/mdm/relationship-graph` | Interactive SVG entity graph with zoom, filter, and detail panel. |
+| Merge History | `/mdm/merge-history` | All merge/split decisions with undo capability. |
+| Data Stewardship | `/mdm/stewardship` | Review queue with side-by-side compare, bulk ops, SLA timer, comments. |
+| Hierarchies | `/mdm/hierarchies` | Create and manage parent-child entity trees. |
+| Industry Templates | `/mdm/templates` | Healthcare (MPI), Financial (KYC), Retail (360), Manufacturing — one-click apply. |
+| Reference Data | `/mdm/reference-data` | Code lists with aliases and cross-system mapping tables. |
+| Negative Match | `/mdm/negative-match` | "Do not link" rules — pairs that should never be merged. |
+| Settings | `/mdm/settings` | Thresholds, SLA, notifications, retention, defaults. |
+| DQ Scorecards | `/mdm/scorecards` | Per-entity-type accuracy, completeness, and active rate. |
+| Data Profiling | `/mdm/profiling` | Attribute fill rates and distinct value analysis. |
+| Cross-Domain | `/mdm/cross-domain` | Match across entity types (Customer ↔ Supplier). |
+| Consent | `/mdm/consent` | GDPR consent matrix — 7 consent types per entity. |
+| Audit Log | `/mdm/audit-log` | Unified event log with search, filter, CSV export. |
+| Reports | `/mdm/reports` | Compliance reports with JSON/Markdown export. |

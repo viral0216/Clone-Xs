@@ -9,6 +9,71 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.10.0 — MDM, Portal Expansion & UI Declutter (2026-03-28)
+
+### Added
+- **Master Data Management (MDM) Portal** — first open-source Databricks-native MDM. 19 pages covering golden records, entity resolution, stewardship, and hierarchies
+  - **Entity Resolution Engine** — 6 match types (exact, Jaro-Winkler, Levenshtein, Soundex, normalized, numeric), configurable blocking strategies, weighted composite scoring
+  - **Golden Records** — entity 360 drawer with source records, attribute detail, and visual timeline
+  - **Match & Merge** — 5 tabs (Duplicates, Rules, Survivorship, Source Trust, Ingest), match tuning tester, configurable auto-merge/review thresholds
+  - **Data Stewardship** — review queue with side-by-side record comparison, bulk approve/reject, SLA timer (overdue/at-risk/on-track), task assignment, comments/notes
+  - **Hierarchy Management** — create and browse entity hierarchies
+  - **Industry Templates** — Healthcare (Patient MPI), Financial (KYC/AML), Retail (Customer 360), Manufacturing (Supplier MDM) — one-click rule setup
+  - **Reference Data Management** — code lists with aliases, cross-system mapping tables
+  - **Entity Relationship Graph** — interactive SVG visualization with zoom, filter, detail panel
+  - **Merge History** — full audit trail of all merge/split decisions with undo
+  - **DQ Scorecards** — per-entity-type accuracy, completeness, and active rate metrics
+  - **Cross-Domain Matching** — match across entity types (Customer ↔ Supplier)
+  - **Negative Match Rules** — "do not link" pairs with reasons
+  - **Consent Management** — GDPR consent matrix (7 consent types per entity)
+  - **Data Profiling** — attribute fill rates and distinct value analysis
+  - **MDM Audit Log** — unified event log with search, filter, CSV export
+  - **MDM Reports** — compliance reports with JSON/Markdown export
+  - **MDM Settings** — thresholds, SLA, notifications, retention, defaults
+  - **6 Delta tables** — `mdm_entities`, `mdm_source_records`, `mdm_match_pairs`, `mdm_matching_rules`, `mdm_stewardship_queue`, `mdm_hierarchies`
+  - **21 REST API endpoints** under `/api/mdm/`
+- **Databricks Jobs Cloning** — clone job definitions within or across workspaces
+  - List all workspace jobs with search/filter
+  - Clone job (same workspace) — strips runtime fields, applies name/overrides
+  - Clone cross-workspace — with destination host/token
+  - Job diff — field-by-field comparison of two job configs
+  - Backup/restore — export all job definitions as JSON, import them back
+  - 7 REST API endpoints under `/api/jobs/`
+- **4 New Portals** — Portal Switcher expanded from 4 to 8 portals
+  - **Security** — PII Scanner, Compliance, Preflight Checks
+  - **Automation** — Pipelines, Templates, Create Job, Clone Jobs, DLT Pipelines
+  - **Infrastructure** — Warehouse, Federation, Delta Sharing, Lakehouse Monitor
+  - **MDM** — 19 pages (see above)
+- **Notification badge fix** — bell icon now tracks "last seen" timestamp; badge resets to zero when panel is opened instead of always showing 20
+
+### Changed
+- **Dashboard decluttered** — stripped from 8 sections to 3: Metrics cards + Alerts + 3 Quick Actions (Clone, Explore, Diff). AI Insights, Catalog Health, Pinned Pairs, and Recent Operations removed from dashboard
+- **Sidebar reduced** — from 33 items to 14 items across 4 sections (Overview, Operations, Discovery, Management). Pages moved to dedicated portals
+- **Pinned Catalog Pairs** moved to Clone page as inline favorites bar
+- **RTBF & DSAR** accessible only through Governance portal (removed from main sidebar)
+- **RBAC** moved to Governance portal
+- **Cost Estimator & Storage Metrics** moved to FinOps portal
+- **Observability** moved to Data Quality portal
+- **Pipelines, Templates, Create Job** moved to Automation portal
+- **Warehouse, Federation, Delta Sharing, Lakehouse Monitor** moved to Infrastructure portal
+- **Docs site search** — added `@cmfcmf/docusaurus-search-local` for full-text search in dev and production
+
+---
+
+## v0.9.1 — DLT Clone Enhancements (2026-03-28)
+
+### Added
+- **Clone button per pipeline row** — visible directly in the Pipelines list, no need to navigate to Detail tab
+- **Cross-workspace DLT clone** — clone pipeline definitions to a different Databricks workspace with destination URL + PAT token
+- **Clone modal** — same-workspace / different-workspace toggle, dry-run preview, inline error display
+- **Placeholder notebook creation** — for serverless/SQL DLT pipelines with no notebook libraries, automatically creates a placeholder notebook in the destination workspace
+
+### Fixed
+- **Library-less pipeline clone** — pipelines without notebook libraries (serverless/SQL) now clone successfully by creating a placeholder notebook instead of failing with "libraries must contain at least one element"
+- **Cross-workspace clone error display** — specific error messages for auth failures (401), permission denied (403), and connection errors (502) instead of generic 400
+
+---
+
 ## v0.9.0 — Delta Live Tables Management (2026-03-28)
 
 ### Added

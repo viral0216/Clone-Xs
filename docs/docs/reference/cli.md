@@ -869,3 +869,63 @@ clxs rtbf vacuum --request-id <ID>
 clxs rtbf verify --request-id <ID> --subject-value "user@example.com"
 clxs rtbf certificate --request-id <ID>
 ```
+
+---
+
+### `dsar`
+
+Data Subject Access Request (GDPR Article 15) — find and export subject data.
+
+```bash
+clxs dsar <action> [options]
+```
+
+| Action | Description |
+|---|---|
+| `submit` | Submit a new access request |
+| `discover` | Discover subject data across catalogs |
+| `approve` | Approve a request for export |
+| `export` | Export subject data to CSV/JSON/Parquet |
+| `report` | Generate access report |
+| `deliver` | Mark report as delivered |
+| `list` | List DSAR requests |
+| `status` | Get request status |
+| `cancel` | Cancel a request |
+| `overdue` | Show overdue requests |
+
+---
+
+### `pipeline`
+
+Clone Pipelines — chain multiple operations into automated workflows.
+
+```bash
+clxs pipeline <action> [options]
+```
+
+| Action | Description |
+|---|---|
+| `create` | Create a new pipeline |
+| `run` | Run a pipeline |
+| `list` | List pipelines |
+| `status` | Get run status |
+| `delete` | Delete a pipeline |
+| `templates` | List built-in templates |
+| `cancel` | Cancel a running pipeline |
+
+---
+
+### `observability`
+
+Data Observability — unified health scoring dashboard.
+
+```bash
+clxs observability <action>
+```
+
+| Action | Description |
+|---|---|
+| `dashboard` | Show full observability dashboard |
+| `health` | Show health score (0-100) |
+| `issues` | List top issues |
+| `trends` | Show metric trends |

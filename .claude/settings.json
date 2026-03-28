@@ -6,7 +6,8 @@
       "Edit(~/.claude/skills/clone-xs-backend/**)",
       "Bash(grep -n \"^def\\\\|^@router.*sample\" /Users/viral.patel/Clone-Xs/api/routers/*.py)",
       "Bash(grep -r \"clone_pipeline\\\\|DLT.*clone\\\\|pipeline.*clone\" /Users/viral.patel/Clone-Xs/api --include=*.py)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(grep -n \"client.jobs\" /Users/viral.patel/Clone-Xs/api/routers/*.py)"
     ]
   }
 }

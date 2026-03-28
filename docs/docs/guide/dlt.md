@@ -85,6 +85,10 @@ curl -X POST /api/dlt/pipelines/{id}/clone \
 
 The clone copies: catalog, target schema, libraries (notebooks), cluster config, continuous/serverless flags, configuration, and notifications. The new pipeline is created in **development mode** by default.
 
+:::note
+If the source pipeline has **no notebook libraries** (common with serverless/SQL-based DLT pipelines), Clone-Xs automatically creates a placeholder notebook at `/Shared/clone-xs/dlt_placeholder_{name}` in the destination workspace. Replace this placeholder with your actual pipeline code after cloning.
+:::
+
 ### Cross-workspace clone
 
 Clone a DLT pipeline to a **different Databricks workspace**:
@@ -115,7 +119,8 @@ Cross-workspace clones always create the new pipeline in **development mode** fo
 :::
 
 :::caution
-Notebook references in the pipeline may not exist in the destination workspace. You may need to copy the notebooks separately before running the cloned pipeline.
+- Notebook references in the pipeline may not exist in the destination workspace. Copy the notebooks separately before running the cloned pipeline.
+- For **serverless/SQL DLT pipelines** with no notebooks, Clone-Xs creates a placeholder notebook automatically. Replace it with your actual code.
 :::
 
 ---

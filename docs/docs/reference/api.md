@@ -1526,6 +1526,75 @@ curl -X POST http://localhost:8080/api/cache/invalidate \
 
 ---
 
+## Delta Live Tables (DLT)
+
+Discover, clone, monitor, and manage DLT pipelines. All endpoints under `/api/dlt/`.
+
+### `GET /api/dlt/pipelines`
+
+List all DLT pipelines with state, health, and creator.
+
+**Query parameters:** `filter` (optional pipeline name filter)
+
+### `GET /api/dlt/pipelines/{pipeline_id}`
+
+Get full pipeline configuration, libraries, clusters, and status.
+
+### `POST /api/dlt/pipelines/{pipeline_id}/trigger`
+
+Trigger a pipeline run.
+
+**Request body:** `{ "full_refresh": false }`
+
+### `POST /api/dlt/pipelines/{pipeline_id}/stop`
+
+Stop a running pipeline.
+
+### `POST /api/dlt/pipelines/{pipeline_id}/clone`
+
+Clone pipeline definition within the same workspace.
+
+**Request body:** `{ "new_name": "My Clone", "dry_run": false }`
+
+### `POST /api/dlt/pipelines/{pipeline_id}/clone-to-workspace`
+
+Clone pipeline definition to a different Databricks workspace.
+
+**Request body:**
+
+```json
+{
+  "new_name": "Pipeline DR Copy",
+  "dest_host": "https://adb-xxx.azuredatabricks.net",
+  "dest_token": "dapi...",
+  "dry_run": false
+}
+```
+
+For pipelines without notebook libraries (serverless/SQL), a placeholder notebook is created automatically in the destination workspace.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/events`
+
+Get pipeline event log. **Query:** `max_events` (default 100)
+
+### `GET /api/dlt/pipelines/{pipeline_id}/updates`
+
+Get pipeline run/update history.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/lineage`
+
+Map DLT datasets to Unity Catalog tables in the pipeline's target schema.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/expectations`
+
+Query DLT expectation results from `system.lakeflow.pipeline_events`. **Query:** `days` (default 7)
+
+### `GET /api/dlt/dashboard`
+
+Full DLT health dashboard: pipeline states, health, recent events.
+
+---
+
 ## RTBF (Right to Be Forgotten)
 
 GDPR Article 17 erasure workflow. All endpoints are under `/api/rtbf/`.

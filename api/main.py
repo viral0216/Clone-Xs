@@ -396,6 +396,9 @@ app.include_router(dlt.router, prefix="/api/dlt", tags=["dlt"])
 from api.routers import mdm
 app.include_router(mdm.router, prefix="/api/mdm", tags=["mdm"])
 
+from api.routers import job_clone
+app.include_router(job_clone.router, prefix="/api/jobs", tags=["jobs"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

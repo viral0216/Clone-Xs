@@ -390,6 +390,12 @@ app.include_router(observability.router, prefix="/api/observability", tags=["obs
 from api.routers import pipeline
 app.include_router(pipeline.router, prefix="/api/pipelines", tags=["pipelines"])
 
+from api.routers import dlt
+app.include_router(dlt.router, prefix="/api/dlt", tags=["dlt"])
+
+from api.routers import mdm
+app.include_router(mdm.router, prefix="/api/mdm", tags=["mdm"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

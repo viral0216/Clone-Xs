@@ -9,6 +9,24 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.9.0 — Delta Live Tables Management (2026-03-28)
+
+### Added
+- **DLT Pipeline Discovery** — browse all DLT pipelines with state, health, creator, and latest update info
+- **DLT Pipeline Clone** — clone pipeline definitions (catalog, libraries, clusters, config) to new pipelines with dry-run preview
+- **DLT Trigger & Stop** — start pipeline runs (incremental or full refresh) and stop running pipelines
+- **DLT Event Monitoring** — view pipeline event logs (errors, warnings, flow progress) via SDK
+- **DLT Run History** — track pipeline update history with status and timing
+- **DLT Expectation Monitoring** — query expectation results from `system.lakeflow.pipeline_events` system tables
+- **DLT Lineage Integration** — map DLT datasets to Unity Catalog tables by querying target schema's information_schema
+- **DLT Health Dashboard** — aggregate pipeline state (running/failed/idle), health (healthy/unhealthy), and recent events
+- **DLT UI Page** — 3-tab page (Dashboard, Pipelines, Detail) with stat cards, event log, dataset lineage table, clone form
+- **10 DLT API Endpoints** — full CRUD under `/api/dlt/` including trigger, stop, clone, events, updates, lineage, expectations, dashboard
+- **DLT Documentation** — Docusaurus guide with API reference, lineage integration, and expectation monitoring
+- **22 DLT Unit Tests** — covering discovery, details, events, updates, clone, trigger, stop, dashboard, lineage, expectations
+
+---
+
 ## v0.8.1 — Governance Consolidation & Notification Fix (2026-03-28)
 
 ### Changed

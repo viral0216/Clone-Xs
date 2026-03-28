@@ -112,6 +112,13 @@ TABLE_SECTIONS = [
         "tables": ["dsar_requests", "dsar_actions", "dsar_exports"],
     },
     {
+        "key": "mdm",
+        "title": "Master Data Management",
+        "subtitle": "Golden records, matching, stewardship, and hierarchies",
+        "schema": "mdm",
+        "tables": ["mdm_entities", "mdm_source_records", "mdm_match_pairs", "mdm_matching_rules", "mdm_stewardship_queue", "mdm_hierarchies"],
+    },
+    {
         "key": "pipelines",
         "title": "Clone Pipelines",
         "subtitle": "Pipeline definitions, execution runs, and step results",

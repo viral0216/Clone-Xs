@@ -1,13 +1,28 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Copy, Shield, ChevronDown, BarChart3, DollarSign } from "lucide-react";
+import { Copy, Shield, ChevronDown, BarChart3, DollarSign, Lock, Zap, Server, Database } from "lucide-react";
 
 const PORTALS = [
   { id: "clone-xs", label: "Clone \u2192 Xs", description: "Catalog cloning & management", icon: Copy, path: "/" },
   { id: "governance", label: "Governance", description: "Metadata management & contracts", icon: Shield, path: "/governance" },
   { id: "data-quality", label: "Data Quality", description: "Quality rules, profiling & reconciliation", icon: BarChart3, path: "/data-quality" },
   { id: "finops", label: "FinOps", description: "Cost management, billing & optimization", icon: DollarSign, path: "/finops" },
+  { id: "security", label: "Security", description: "PII detection, compliance & validation", icon: Lock, path: "/security" },
+  { id: "automation", label: "Automation", description: "Pipelines, jobs & templates", icon: Zap, path: "/automation" },
+  { id: "infrastructure", label: "Infrastructure", description: "Warehouses, federation & sharing", icon: Server, path: "/infrastructure" },
+  { id: "mdm", label: "MDM", description: "Master data management", icon: Database, path: "/mdm" },
 ];
+
+function detectPortal(pathname: string) {
+  // Check longest prefix first to avoid false matches
+  const prefixes = ["/governance", "/data-quality", "/finops", "/security", "/automation", "/infrastructure", "/mdm"];
+  for (const prefix of prefixes) {
+    if (pathname.startsWith(prefix)) {
+      return PORTALS.find(p => p.path === prefix)!;
+    }
+  }
+  return PORTALS[0];
+}
 
 export default function PortalSwitcher() {
   const [open, setOpen] = useState(false);
@@ -17,10 +32,7 @@ export default function PortalSwitcher() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isGovernance = location.pathname.startsWith("/governance");
-  const isDataQuality = location.pathname.startsWith("/data-quality");
-  const isFinOps = location.pathname.startsWith("/finops");
-  const current = isFinOps ? PORTALS[3] : isDataQuality ? PORTALS[2] : isGovernance ? PORTALS[1] : PORTALS[0];
+  const current = detectPortal(location.pathname);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -84,7 +96,7 @@ export default function PortalSwitcher() {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 py-1" role="listbox" aria-label="Select portal">
+        <div className="absolute top-full right-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 py-1 max-h-[70vh] overflow-y-auto" role="listbox" aria-label="Select portal">
           {PORTALS.map((portal, idx) => {
             const Icon = portal.icon;
             const isActive = portal.id === current.id;

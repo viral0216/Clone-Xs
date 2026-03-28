@@ -66,6 +66,12 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "Observability",
+    items: [
+      { href: "/data-quality/observability", label: "Health Dashboard", icon: Activity },
+    ],
+  },
+  {
     title: "Compliance",
     items: [
       { href: "/data-quality/rtbf", label: "RTBF / Erasure", icon: UserX },

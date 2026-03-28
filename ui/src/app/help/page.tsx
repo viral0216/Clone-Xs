@@ -93,6 +93,7 @@ export default function HelpPage() {
           <TabsTrigger value="rtbf" className="gap-1.5 text-xs"><UserX className="h-3 w-3" />RTBF</TabsTrigger>
           <TabsTrigger value="dsar" className="gap-1.5 text-xs"><Download className="h-3 w-3" />DSAR</TabsTrigger>
           <TabsTrigger value="pipelines" className="gap-1.5 text-xs"><GitBranch className="h-3 w-3" />Pipelines</TabsTrigger>
+          <TabsTrigger value="dlt" className="gap-1.5 text-xs"><Zap className="h-3 w-3" />DLT</TabsTrigger>
           <TabsTrigger value="observability" className="gap-1.5 text-xs"><Activity className="h-3 w-3" />Observability</TabsTrigger>
           <TabsTrigger value="shortcuts" className="gap-1.5 text-xs"><Keyboard className="h-3 w-3" />Shortcuts</TabsTrigger>
           <TabsTrigger value="about" className="gap-1.5 text-xs"><HelpCircle className="h-3 w-3" />About</TabsTrigger>
@@ -415,6 +416,33 @@ export default function HelpPage() {
               <div><strong className="text-foreground">abort</strong> — stop the pipeline immediately on failure</div>
               <div><strong className="text-foreground">skip</strong> — log the failure and continue to the next step</div>
               <div><strong className="text-foreground">retry</strong> — retry the step up to 3 times with exponential backoff</div>
+            </G>
+          </div>
+        </TabsContent>
+
+        {/* ═══════════ DLT ═══════════ */}
+        <TabsContent value="dlt" className="space-y-5 mt-5">
+          <PortalBanner icon={Zap} title="Delta Live Tables (DLT)" desc="Discover, clone, monitor, and manage DLT pipelines. View pipeline health, event logs, run history, expectation results, and map DLT datasets to Unity Catalog tables." color="amber" />
+          <G icon={BookOpen} title="DLT Workflow">
+            <div className="space-y-4">
+              <Step n={1} title="Discover Pipelines" desc="Go to Operations then Delta Live Tables. The Dashboard tab shows all pipelines with state (Running/Idle/Failed) and health (Healthy/Unhealthy)." />
+              <Step n={2} title="View Pipeline Details" desc="Click a pipeline in the Pipelines tab to see its full configuration, libraries, clusters, and notification settings." />
+              <Step n={3} title="Trigger or Stop" desc="Click Run for an incremental update, Full Refresh to reprocess all data, or Stop to halt a running pipeline." />
+              <Step n={4} title="Clone a Pipeline" desc="Click the Clone button on any pipeline row. Choose Same Workspace or Different Workspace. For cross-workspace, enter the destination workspace URL and PAT token. Clone copies the full definition (catalog, libraries, clusters, config) to a new pipeline in development mode." />
+              <Step n={5} title="Monitor Events" desc="The Event Log shows errors, warnings, and flow progress. Filter by level to focus on issues." />
+              <Step n={6} title="View Lineage" desc="The Datasets section maps DLT-managed tables to Unity Catalog, showing the full FQN, type, and format for each dataset." />
+            </div>
+          </G>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <G icon={Heart} title="Pipeline Health">
+              <div><strong className="text-foreground">Healthy</strong> - pipeline is running without errors and expectations are passing.</div>
+              <div><strong className="text-foreground">Unhealthy</strong> - pipeline has recent failures, expectation violations, or is stuck.</div>
+              <div><strong className="text-foreground">States:</strong> Running (active), Idle (stopped), Failed (error).</div>
+            </G>
+            <G icon={Database} title="Expectations">
+              <div>DLT expectations (data quality rules in pipeline code) are tracked in <code className="text-xs bg-muted px-1 rounded">system.lakeflow.pipeline_events</code>.</div>
+              <div>Clone-Xs queries these system tables to surface quality violations, flow progress, and errors.</div>
+              <div className="text-xs text-muted-foreground mt-1">Requires system tables to be enabled in your workspace.</div>
             </G>
           </div>
         </TabsContent>

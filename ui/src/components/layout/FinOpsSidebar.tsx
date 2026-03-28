@@ -45,6 +45,13 @@ const NAV_SECTIONS = [
       { href: "/finops/trends", label: "Cost Trends", icon: BarChart3 },
     ],
   },
+  {
+    title: "Planning",
+    items: [
+      { href: "/finops/cost-estimator", label: "Cost Estimator", icon: DollarSign },
+      { href: "/finops/storage-metrics", label: "Storage Metrics", icon: Database },
+    ],
+  },
 ];
 
 const STORAGE_KEY = "clxs-finops-sidebar-collapsed";

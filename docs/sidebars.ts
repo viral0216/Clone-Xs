@@ -25,6 +25,7 @@ const sidebars: SidebarsConfig = {
         'guide/dsar',
         'guide/pipelines',
         'guide/observability',
+        'guide/dlt',
         'guide/scheduling',
         'guide/plugins',
         'guide/analytics',

@@ -50,6 +50,10 @@ import DemoDataPage from "@/app/demo-data/page";
 import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
 import DataQualitySidebar from "@/components/layout/DataQualitySidebar";
 import FinOpsSidebar from "@/components/layout/FinOpsSidebar";
+import SecuritySidebar from "@/components/layout/SecuritySidebar";
+import AutomationSidebar from "@/components/layout/AutomationSidebar";
+import InfrastructureSidebar from "@/components/layout/InfrastructureSidebar";
+import MdmSidebar from "@/components/layout/MdmSidebar";
 import GovernanceOverview from "@/app/governance/page";
 
 // Lazy-load new UC enhancement pages
@@ -59,6 +63,7 @@ const AdvancedTablesPage = lazy(() => import("@/app/advanced-tables/page"));
 const LakehouseMonitorPage = lazy(() => import("@/app/lakehouse-monitor/page"));
 const FederationPage = lazy(() => import("@/app/federation/page"));
 const DeltaSharingPage = lazy(() => import("@/app/delta-sharing/page"));
+const DltPage = lazy(() => import("@/app/dlt/page"));
 
 // Lazy-load governance pages
 const GovDictionary = lazy(() => import("@/app/governance/dictionary/page"));
@@ -102,6 +107,28 @@ const FinOpsWarehouses = lazy(() => import("@/app/finops/warehouses/page"));
 const FinOpsStorageOpt = lazy(() => import("@/app/finops/storage-optimization/page"));
 const FinOpsBudgets = lazy(() => import("@/app/finops/budgets/page"));
 const FinOpsTrends = lazy(() => import("@/app/finops/trends/page"));
+
+// New portal pages
+const SecurityOverview = lazy(() => import("@/app/security/page"));
+const AutomationOverview = lazy(() => import("@/app/automation/page"));
+const InfrastructureOverview = lazy(() => import("@/app/infrastructure/page"));
+const MdmOverview = lazy(() => import("@/app/mdm/page"));
+const MdmGoldenRecords = lazy(() => import("@/app/mdm/golden-records/page"));
+const MdmMatchMerge = lazy(() => import("@/app/mdm/match-merge/page"));
+const MdmStewardship = lazy(() => import("@/app/mdm/stewardship/page"));
+const MdmHierarchies = lazy(() => import("@/app/mdm/hierarchies/page"));
+const MdmReferenceData = lazy(() => import("@/app/mdm/reference-data/page"));
+const MdmRelationshipGraph = lazy(() => import("@/app/mdm/relationship-graph/page"));
+const MdmMergeHistory = lazy(() => import("@/app/mdm/merge-history/page"));
+const MdmAuditLog = lazy(() => import("@/app/mdm/audit-log/page"));
+const MdmTemplates = lazy(() => import("@/app/mdm/templates/page"));
+const MdmScorecards = lazy(() => import("@/app/mdm/scorecards/page"));
+const MdmNegativeMatch = lazy(() => import("@/app/mdm/negative-match/page"));
+const MdmSettings = lazy(() => import("@/app/mdm/settings/page"));
+const MdmConsent = lazy(() => import("@/app/mdm/consent/page"));
+const MdmCrossDomain = lazy(() => import("@/app/mdm/cross-domain/page"));
+const MdmReports = lazy(() => import("@/app/mdm/reports/page"));
+const MdmProfiling = lazy(() => import("@/app/mdm/profiling/page"));
 
 function PageFallback() {
   return (
@@ -204,6 +231,10 @@ export default function App() {
             <Route path="/governance/*" element={<GovernanceSidebar />} />
             <Route path="/data-quality/*" element={<DataQualitySidebar />} />
             <Route path="/finops/*" element={<FinOpsSidebar />} />
+            <Route path="/security/*" element={<SecuritySidebar />} />
+            <Route path="/automation/*" element={<AutomationSidebar />} />
+            <Route path="/infrastructure/*" element={<InfrastructureSidebar />} />
+            <Route path="/mdm/*" element={<MdmSidebar />} />
             <Route path="*" element={
               <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
             } />
@@ -259,6 +290,7 @@ export default function App() {
               <Route path="/lakehouse-monitor" element={<Suspense fallback={<PageFallback />}><LakehouseMonitorPage /></Suspense>} />
               <Route path="/federation" element={<Suspense fallback={<PageFallback />}><FederationPage /></Suspense>} />
               <Route path="/delta-sharing" element={<Suspense fallback={<PageFallback />}><DeltaSharingPage /></Suspense>} />
+              <Route path="/dlt" element={<Suspense fallback={<PageFallback />}><DltPage /></Suspense>} />
 
               {/* Governance Portal Routes */}
               <Route path="/governance" element={<Suspense fallback={<PageFallback />}><GovernanceOverview /></Suspense>} />
@@ -319,6 +351,50 @@ export default function App() {
               <Route path="/finops/storage-optimization" element={<Suspense fallback={<PageFallback />}><FinOpsStorageOpt /></Suspense>} />
               <Route path="/finops/budgets" element={<Suspense fallback={<PageFallback />}><FinOpsBudgets /></Suspense>} />
               <Route path="/finops/trends" element={<Suspense fallback={<PageFallback />}><FinOpsTrends /></Suspense>} />
+              <Route path="/finops/cost-estimator" element={<CostPage />} />
+              <Route path="/finops/storage-metrics" element={<StorageMetricsPage />} />
+
+              {/* Portal aliases for moved pages */}
+              <Route path="/data-quality/observability" element={<ObservabilityPage />} />
+              <Route path="/governance/rbac" element={<RbacPage />} />
+
+              {/* Security Portal */}
+              <Route path="/security" element={<Suspense fallback={<PageFallback />}><SecurityOverview /></Suspense>} />
+              <Route path="/security/pii" element={<PiiPage />} />
+              <Route path="/security/compliance" element={<CompliancePage />} />
+              <Route path="/security/preflight" element={<PreflightPage />} />
+
+              {/* Automation Portal */}
+              <Route path="/automation" element={<Suspense fallback={<PageFallback />}><AutomationOverview /></Suspense>} />
+              <Route path="/automation/pipelines" element={<PipelinesPage />} />
+              <Route path="/automation/create-job" element={<CreateJobPage />} />
+              <Route path="/automation/templates" element={<TemplatesPage />} />
+
+              {/* Infrastructure Portal */}
+              <Route path="/infrastructure" element={<Suspense fallback={<PageFallback />}><InfrastructureOverview /></Suspense>} />
+              <Route path="/infrastructure/warehouse" element={<WarehousePage />} />
+              <Route path="/infrastructure/federation" element={<Suspense fallback={<PageFallback />}><FederationPage /></Suspense>} />
+              <Route path="/infrastructure/delta-sharing" element={<Suspense fallback={<PageFallback />}><DeltaSharingPage /></Suspense>} />
+              <Route path="/infrastructure/lakehouse-monitor" element={<Suspense fallback={<PageFallback />}><LakehouseMonitorPage /></Suspense>} />
+
+              {/* MDM Portal */}
+              <Route path="/mdm" element={<Suspense fallback={<PageFallback />}><MdmOverview /></Suspense>} />
+              <Route path="/mdm/golden-records" element={<Suspense fallback={<PageFallback />}><MdmGoldenRecords /></Suspense>} />
+              <Route path="/mdm/match-merge" element={<Suspense fallback={<PageFallback />}><MdmMatchMerge /></Suspense>} />
+              <Route path="/mdm/stewardship" element={<Suspense fallback={<PageFallback />}><MdmStewardship /></Suspense>} />
+              <Route path="/mdm/hierarchies" element={<Suspense fallback={<PageFallback />}><MdmHierarchies /></Suspense>} />
+              <Route path="/mdm/reference-data" element={<Suspense fallback={<PageFallback />}><MdmReferenceData /></Suspense>} />
+              <Route path="/mdm/relationship-graph" element={<Suspense fallback={<PageFallback />}><MdmRelationshipGraph /></Suspense>} />
+              <Route path="/mdm/merge-history" element={<Suspense fallback={<PageFallback />}><MdmMergeHistory /></Suspense>} />
+              <Route path="/mdm/audit-log" element={<Suspense fallback={<PageFallback />}><MdmAuditLog /></Suspense>} />
+              <Route path="/mdm/templates" element={<Suspense fallback={<PageFallback />}><MdmTemplates /></Suspense>} />
+              <Route path="/mdm/scorecards" element={<Suspense fallback={<PageFallback />}><MdmScorecards /></Suspense>} />
+              <Route path="/mdm/negative-match" element={<Suspense fallback={<PageFallback />}><MdmNegativeMatch /></Suspense>} />
+              <Route path="/mdm/settings" element={<Suspense fallback={<PageFallback />}><MdmSettings /></Suspense>} />
+              <Route path="/mdm/consent" element={<Suspense fallback={<PageFallback />}><MdmConsent /></Suspense>} />
+              <Route path="/mdm/cross-domain" element={<Suspense fallback={<PageFallback />}><MdmCrossDomain /></Suspense>} />
+              <Route path="/mdm/reports" element={<Suspense fallback={<PageFallback />}><MdmReports /></Suspense>} />
+              <Route path="/mdm/profiling" element={<Suspense fallback={<PageFallback />}><MdmProfiling /></Suspense>} />
             </Routes>
           </main>
         </div>

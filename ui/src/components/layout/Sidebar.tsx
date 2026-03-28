@@ -2,13 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import ResizeHandle from "@/components/ResizeHandle";
 import {
-  LayoutDashboard, Briefcase, Copy, FolderTree, Activity,
+  LayoutDashboard, Copy, FolderTree, Activity,
   Settings2, FileText, Wrench, GitBranch, RefreshCw,
-  GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
-  Undo2, LayoutTemplate, CopyPlus, GitFork, Zap, Eye,
-  Calculator, Server, Lock, Puzzle, HardDrive,
-  X, Plus, Database, PanelLeftClose, PanelLeftOpen, Cpu, Brain, Layers,
-  Radio, Share2, Globe,
+  ChevronRight, ChevronDown, History, BarChart3,
+  Undo2, GitFork, Zap, Layers,
+  X, Plus, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -36,8 +34,7 @@ export const allNavSections: NavSection[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/audit", label: "Audit Trail", icon: History },
       { href: "/metrics", label: "Metrics", icon: BarChart3 },
-      { href: "/system-insights", label: "System Insights", icon: Cpu },
-      { href: "/observability", label: "Observability", icon: Activity },
+      { href: "/reports", label: "Reports", icon: FileText },
     ],
   },
   {
@@ -45,34 +42,17 @@ export const allNavSections: NavSection[] = [
     items: [
       { href: "/clone", label: "Clone", icon: Copy },
       { href: "/sync", label: "Sync", icon: RefreshCw },
-      { href: "/incremental-sync", label: "Incremental Sync", icon: GitCompareArrows },
-      { href: "/generate", label: "Generate", icon: Wand2 },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
-      { href: "/templates", label: "Templates", icon: LayoutTemplate },
-      { href: "/create-job", label: "Create Job", icon: Briefcase },
-      { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
-      { href: "/demo-data", label: "Demo Data", icon: Database },
-      { href: "/ml-assets", label: "ML Assets", icon: Brain },
-      { href: "/pipelines", label: "Pipelines", icon: GitBranch },
+      { href: "/dlt", label: "Delta Live Tables", icon: Zap },
     ],
   },
   {
     title: "Discovery",
     items: [
       { href: "/explore", label: "Explorer", icon: FolderTree },
-      { href: "/config-diff", label: "Config Diff", icon: GitCompareArrows },
       { href: "/lineage", label: "Lineage", icon: GitFork },
       { href: "/view-deps", label: "Dependencies", icon: GitBranch },
       { href: "/impact", label: "Impact Analysis", icon: Zap },
-      { href: "/preview", label: "Data Preview", icon: Eye },
-    ],
-  },
-  {
-    title: "Analysis",
-    items: [
-      { href: "/reports", label: "Reports", icon: FileText },
-      { href: "/cost", label: "Cost Estimator", icon: Calculator },
-      { href: "/storage-metrics", label: "Storage Metrics", icon: HardDrive },
     ],
   },
   {
@@ -81,18 +61,7 @@ export const allNavSections: NavSection[] = [
       { href: "/monitor", label: "Monitor", icon: Activity },
       { href: "/config", label: "Config", icon: Wrench },
       { href: "/settings", label: "Settings", icon: Settings2 },
-      { href: "/warehouse", label: "Warehouse", icon: Server },
-      { href: "/rbac", label: "RBAC", icon: Lock },
-      { href: "/plugins", label: "Plugins", icon: Puzzle },
-    ],
-  },
-  {
-    title: "Advanced",
-    items: [
       { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
-      { href: "/lakehouse-monitor", label: "Lakehouse Monitor", icon: Radio },
-      { href: "/federation", label: "Federation", icon: Globe },
-      { href: "/delta-sharing", label: "Delta Sharing", icon: Share2 },
     ],
   },
 ];

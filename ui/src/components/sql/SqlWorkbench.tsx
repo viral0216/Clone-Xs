@@ -542,7 +542,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Results view mode
-  const [viewMode, setViewMode] = useState<"table" | "chart" | "explain" | "schema">("table");
+  const [viewMode, setViewMode] = useState<"table" | "chart" | "explain" | "schema" | "profile" | "describe" | "lineage" | "sample">("table");
   const [chartType, setChartType] = useState<"bar" | "hbar" | "stacked" | "line" | "area" | "composed" | "scatter" | "pie" | "radar" | "funnel" | "treemap" | "map">("bar");
   const [chartXCol, setChartXCol] = useState<string>("");
   const [chartYCol, setChartYCol] = useState<string>("");
@@ -579,6 +579,15 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
 
+  // More menu dropdown
+  const [showMore, setShowMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (moreRef.current && !moreRef.current.contains(e.target as Node)) setShowMore(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
   // Query diff
   const [showDiff, setShowDiff] = useState(false);
   const [diffSql, setDiffSql] = useState("");
@@ -597,6 +606,14 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   // Explain results (separate from main results)
   const [explainResults, setExplainResults] = useState<any[] | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
+
+  // Describe results
+  const [describeResults, setDescribeResults] = useState<any[] | null>(null);
+  const [describeLoading, setDescribeLoading] = useState(false);
+
+  // Sample results
+  const [sampleResults, setSampleResults] = useState<any[] | null>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
 
   // Panels: history, saved queries
   const [showHistory, setShowHistory] = useState(false);
@@ -683,7 +700,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   async function runQuery() {
     if (!sql.trim()) return;
     if (execMode === "warehouse" && !whRunning) {
-      setError(`Warehouse is ${whState || "not selected"}. Start it first or switch to Serverless mode.`);
+      setError(`Warehouse is ${whState || "not selected"}. Start it first or switch to Spark Connect mode.`);
       return;
     }
     // Multi-statement: split by semicolons
@@ -813,8 +830,54 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     })();
   }, [viewMode]);
 
-  // Reset explain results when SQL changes
-  useEffect(() => { setExplainResults(null); }, [sql]);
+  // Reset tab-specific results when SQL changes
+  useEffect(() => { setExplainResults(null); setDescribeResults(null); setSampleResults(null); }, [sql]);
+
+  // Helper: extract table FQN from SQL
+  function getTableFromSql(): string | null {
+    const m = sql.match(/FROM\s+([\w.]+)/i);
+    return m ? m[1] : null;
+  }
+
+  // ── Auto-run DESCRIBE when switching to Describe tab ──────────────────────
+  useEffect(() => {
+    if (viewMode !== "describe" || !sql.trim() || describeLoading || describeResults) return;
+    const table = getTableFromSql();
+    if (!table) return;
+    setDescribeLoading(true);
+    (async () => {
+      try {
+        const payload: any = { sql: `DESCRIBE TABLE EXTENDED ${table}` };
+        if (execMode === "spark") payload.use_spark = true;
+        else { payload.use_spark = false; payload.warehouse_id = selectedWarehouse; }
+        const data = await api.post("/reconciliation/execute-sql", payload);
+        setDescribeResults(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        setDescribeResults([{ col_name: "Error", data_type: e.message || "Failed" }]);
+      }
+      setDescribeLoading(false);
+    })();
+  }, [viewMode]);
+
+  // ── Auto-run Sample when switching to Sample tab ──────────────────────────
+  useEffect(() => {
+    if (viewMode !== "sample" || !sql.trim() || sampleLoading || sampleResults) return;
+    const table = getTableFromSql();
+    if (!table) return;
+    setSampleLoading(true);
+    (async () => {
+      try {
+        const payload: any = { sql: `SELECT * FROM ${table} LIMIT 20` };
+        if (execMode === "spark") payload.use_spark = true;
+        else { payload.use_spark = false; payload.warehouse_id = selectedWarehouse; }
+        const data = await api.post("/reconciliation/execute-sql", payload);
+        setSampleResults(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        setSampleResults([]);
+      }
+      setSampleLoading(false);
+    })();
+  }, [viewMode]);
 
   // ── Query Diff ────────────────────────────────────────────────────────────
   async function runDiffQuery() {
@@ -1071,7 +1134,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
           <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border shrink-0">
             <button onClick={() => setExecMode("spark")} disabled={!sparkAvailable}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${execMode === "spark" ? "bg-[#E8453C] text-white shadow-sm" : "text-muted-foreground hover:text-foreground"} ${!sparkAvailable ? "opacity-40 cursor-not-allowed" : ""}`}>
-              <Zap className="h-3 w-3" /> Serverless
+              <Zap className="h-3 w-3" /> Spark Connect
             </button>
             <button onClick={() => setExecMode("warehouse")}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${execMode === "warehouse" ? "bg-[#E8453C] text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1094,29 +1157,60 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             </div>
           )}
 
-          {elapsed != null && <Badge variant="outline" className="text-[10px] shrink-0">{(elapsed / 1000).toFixed(2)}s</Badge>}
-          {results && <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30 shrink-0">{results.length} rows</Badge>}
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button size="sm" variant="ghost" onClick={() => setShowHistory(!showHistory)} title="Query History" className={showHistory ? "bg-accent" : ""}><Clock className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowSaved(!showSaved)} title="Saved Queries" className={showSaved ? "bg-accent" : ""}><BookOpen className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setSql(formatSQL(sql))} title="Format SQL (Ctrl+Shift+F)"><AlignLeft className="h-3.5 w-3.5" /></Button>
-          {results?.length > 0 && (
-            <Button size="sm" variant="ghost" onClick={() => setShowFilters(!showFilters)} title="Filter results" className={showFilters ? "bg-accent" : ""}>
-              <Search className="h-3.5 w-3.5" />
-              {activeFilterCount > 0 && <span className="ml-1 text-[9px] bg-[#E8453C] text-white rounded-full w-3.5 h-3.5 flex items-center justify-center">{activeFilterCount}</span>}
-            </Button>
-          )}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Group: Editor */}
+          <Button size="sm" variant="ghost" onClick={() => setShowHistory(!showHistory)} title="History" className={`gap-1 ${showHistory ? "bg-accent" : ""}`}><Clock className="h-3.5 w-3.5" /><span className="text-[10px] hidden xl:inline">History</span></Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowSaved(!showSaved)} title="Saved" className={`gap-1 ${showSaved ? "bg-accent" : ""}`}><BookOpen className="h-3.5 w-3.5" /><span className="text-[10px] hidden xl:inline">Saved</span></Button>
+          <Button size="sm" variant="ghost" onClick={() => setSql(formatSQL(sql))} title="Format (Ctrl+Shift+F)" className="gap-1"><AlignLeft className="h-3.5 w-3.5" /><span className="text-[10px] hidden xl:inline">Format</span></Button>
+
+          <div className="w-px h-4 bg-border mx-0.5" />
+
+          {/* Group: Export (only with results) */}
           {results?.length > 0 && (<>
-            <Button size="sm" variant="ghost" onClick={copyResults} title="Copy to clipboard"><Copy className="h-3.5 w-3.5" /></Button>
-            <Button size="sm" variant="ghost" onClick={downloadCsv} title="Download CSV"><Download className="h-3.5 w-3.5" /></Button>
-            <Button size="sm" variant="ghost" onClick={downloadJson} title="Download JSON"><FileJson className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowFilters(!showFilters)} title="Filter" className={showFilters ? "bg-accent" : ""}>
+              <Search className="h-3.5 w-3.5" />
+              {activeFilterCount > 0 && <span className="ml-0.5 text-[8px] bg-[#E8453C] text-white rounded-full w-3.5 h-3.5 flex items-center justify-center">{activeFilterCount}</span>}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={copyResults} title="Copy"><Copy className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={downloadCsv} title="CSV"><Download className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={downloadJson} title="JSON"><FileJson className="h-3.5 w-3.5" /></Button>
+            <div className="w-px h-4 bg-border mx-0.5" />
           </>)}
-          <Button size="sm" variant="ghost" onClick={shareQuery} title="Copy share link" disabled={!sql.trim()}><Share2 className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowDiff(!showDiff)} title="Query Diff" className={showDiff ? "bg-accent" : ""}><GitCompare className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowSchedule(!showSchedule)} title="Schedule query" className={scheduleActive ? "bg-green-500/20 text-green-500" : ""}><CalendarClock className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowSchema(!showSchema)} title="Schema Diagram" className={showSchema ? "bg-accent" : ""}><Network className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowShortcuts(!showShortcuts)} title="Keyboard Shortcuts"><Keyboard className="h-3.5 w-3.5" /></Button>
+
+          {/* More dropdown */}
+          <div ref={moreRef} className="relative">
+            <Button size="sm" variant="ghost" onClick={() => setShowMore(!showMore)} title="More tools" className={`gap-1 ${showMore ? "bg-accent" : ""}`}>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+              <span className="text-[10px] hidden xl:inline">More</span>
+            </Button>
+            {showMore && (
+              <div className="absolute top-full right-0 mt-1 w-52 bg-popover border border-border rounded-lg shadow-lg py-1 z-[100]">
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { shareQuery(); setShowMore(false); }}>
+                  <Share2 className="h-3.5 w-3.5 text-muted-foreground" /> Share Query Link
+                </button>
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setShowDiff(!showDiff); setShowMore(false); }}>
+                  <GitCompare className="h-3.5 w-3.5 text-muted-foreground" /> Query Diff {showDiff && <span className="ml-auto text-[9px] text-[#E8453C]">ON</span>}
+                </button>
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setShowSchedule(!showSchedule); setShowMore(false); }}>
+                  <CalendarClock className={`h-3.5 w-3.5 ${scheduleActive ? "text-green-500" : "text-muted-foreground"}`} /> Schedule Query {scheduleActive && <span className="ml-auto text-[9px] text-green-500">ACTIVE</span>}
+                </button>
+                <div className="h-px bg-border my-1" />
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setShowFind(!showFind); setShowMore(false); }}>
+                  <Search className="h-3.5 w-3.5 text-muted-foreground" /> Find & Replace <kbd className="ml-auto text-[9px] text-muted-foreground bg-muted px-1 rounded">Ctrl+H</kbd>
+                </button>
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setSaveDialogOpen(true); setShowMore(false); }}>
+                  <Save className="h-3.5 w-3.5 text-muted-foreground" /> Save Query <kbd className="ml-auto text-[9px] text-muted-foreground bg-muted px-1 rounded">Ctrl+S</kbd>
+                </button>
+                <div className="h-px bg-border my-1" />
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setShowShortcuts(!showShortcuts); setShowMore(false); }}>
+                  <Keyboard className="h-3.5 w-3.5 text-muted-foreground" /> Keyboard Shortcuts
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Fullscreen / Close (floating mode) */}
           {!embedded && (<>
             <Button size="sm" variant="ghost" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
               {isFullscreen ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
@@ -1288,7 +1382,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
           {displayResults && displayResults.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-muted/10 shrink-0">
               <div className="flex items-center bg-muted rounded-md p-0.5 border border-border">
-                {([["table", Rows3, "Table"], ["chart", BarChart3, "Chart"], ["explain", Info, "Plan"], ["schema", Network, "Schema"]] as const).map(([mode, Icon, label]) => (
+                {([["table", Rows3, "Table"], ["chart", BarChart3, "Chart"], ["profile", BarChart3, "Profile"], ["describe", Code, "Describe"], ["explain", Info, "Plan"], ["sample", Table2, "Sample"], ["schema", Network, "Schema"]] as const).map(([mode, Icon, label]) => (
                   <button key={mode} onClick={() => setViewMode(mode)}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${viewMode === mode ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                     <Icon className="h-3 w-3" /> {label}
@@ -1542,11 +1636,13 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
               }
 
               return (
-                <div className="p-4 h-full flex flex-col">
-                  <ResponsiveContainer width="100%" height="100%">
-                    {renderChart()}
-                  </ResponsiveContainer>
-                  {chartNote && <p className="text-[10px] text-muted-foreground text-center mt-1">{chartNote}</p>}
+                <div className="p-4 flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 min-h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                      {renderChart()}
+                    </ResponsiveContainer>
+                  </div>
+                  {chartNote && <p className="text-[10px] text-muted-foreground text-center mt-1 shrink-0">{chartNote}</p>}
                 </div>
               );
             })()}
@@ -1679,6 +1775,163 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <Info className="h-8 w-8 mb-2 opacity-20" />
                 <p className="text-sm">Write a SQL query and switch to Plan tab to see the execution plan</p>
+              </div>
+            )}
+
+            {/* Profiler view — computed from current results */}
+            {viewMode === "profile" && results && results.length > 0 && (() => {
+              const cols = Object.keys(results[0]);
+              const profiles = cols.map(col => {
+                const vals = results.map(r => r[col]);
+                const nonNull = vals.filter(v => v != null);
+                const nullCount = vals.length - nonNull.length;
+                const distinct = new Set(nonNull.map(String)).size;
+                const nums = nonNull.map(Number).filter(n => !isNaN(n));
+                const strs = nonNull.map(String);
+                return {
+                  column: col,
+                  type: inferColumnType(vals.slice(0, 5)),
+                  total: vals.length,
+                  nulls: nullCount,
+                  nullPct: ((nullCount / vals.length) * 100).toFixed(1),
+                  distinct,
+                  distinctPct: ((distinct / vals.length) * 100).toFixed(1),
+                  min: nums.length ? Math.min(...nums) : strs.sort()[0] ?? "—",
+                  max: nums.length ? Math.max(...nums) : strs.sort().reverse()[0] ?? "—",
+                  avg: nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2) : "—",
+                  sample: String(nonNull[0] ?? "NULL"),
+                };
+              });
+              return (
+                <div className="overflow-auto h-full">
+                  <table className="w-full text-[11px] font-mono">
+                    <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                      <tr className="border-b border-border">
+                        {["Column", "Type", "Total", "Nulls", "Null%", "Distinct", "Dist%", "Min", "Max", "Avg", "Sample"].map(h => (
+                          <th key={h} className="px-3 py-2 text-left text-[10px] text-muted-foreground font-semibold">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profiles.map((p, i) => (
+                        <tr key={p.column} className={`border-b border-border/30 hover:bg-accent/30 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                          <td className="px-3 py-1.5 font-semibold text-foreground">{p.column}</td>
+                          <td className="px-3 py-1.5"><Badge variant="outline" className="text-[9px]">{p.type}</Badge></td>
+                          <td className="px-3 py-1.5">{p.total}</td>
+                          <td className="px-3 py-1.5">{p.nulls > 0 ? <span className="text-amber-500">{p.nulls}</span> : <span className="text-green-500">0</span>}</td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-1">
+                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${p.nullPct}%` }} /></div>
+                              <span className="text-[9px]">{p.nullPct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5">{p.distinct}</td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-1">
+                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${p.distinctPct}%` }} /></div>
+                              <span className="text-[9px]">{p.distinctPct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 truncate max-w-[100px]">{String(p.min)}</td>
+                          <td className="px-3 py-1.5 truncate max-w-[100px]">{String(p.max)}</td>
+                          <td className="px-3 py-1.5">{String(p.avg)}</td>
+                          <td className="px-3 py-1.5 truncate max-w-[120px] text-muted-foreground">{p.sample}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+            {viewMode === "profile" && (!results || results.length === 0) && (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <BarChart3 className="h-8 w-8 mb-2 opacity-20" />
+                <p className="text-sm">Run a query first to see column profiles</p>
+              </div>
+            )}
+
+            {/* Describe view */}
+            {viewMode === "describe" && describeLoading && (
+              <div className="flex items-center justify-center h-full text-muted-foreground gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-[#E8453C]" />
+                <span className="text-sm">Running DESCRIBE TABLE EXTENDED...</span>
+              </div>
+            )}
+            {viewMode === "describe" && !describeLoading && describeResults && describeResults.length > 0 && (
+              <div className="overflow-auto h-full">
+                <table className="w-full text-[11px] font-mono">
+                  <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                    <tr className="border-b border-border">
+                      {Object.keys(describeResults[0]).map(h => (
+                        <th key={h} className="px-3 py-2 text-left text-[10px] text-muted-foreground font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {describeResults.map((row, i) => {
+                      const vals = Object.values(row);
+                      const isSection = String(vals[0] || "").startsWith("#");
+                      return (
+                        <tr key={i} className={`border-b border-border/30 ${isSection ? "bg-[#E8453C]/5 font-semibold" : i % 2 === 1 ? "bg-muted/20" : ""} hover:bg-accent/30`}>
+                          {vals.map((v, ci) => (
+                            <td key={ci} className={`px-3 py-1.5 ${isSection ? "text-[#E8453C]" : ci === 0 ? "text-foreground font-medium" : "text-muted-foreground"} truncate max-w-[300px]`}>
+                              {String(v ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {viewMode === "describe" && !describeLoading && !describeResults && (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <Code className="h-8 w-8 mb-2 opacity-20" />
+                <p className="text-sm">Write a query with a FROM clause to see table metadata</p>
+              </div>
+            )}
+
+            {/* Sample view */}
+            {viewMode === "sample" && sampleLoading && (
+              <div className="flex items-center justify-center h-full text-muted-foreground gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-[#E8453C]" />
+                <span className="text-sm">Loading sample data...</span>
+              </div>
+            )}
+            {viewMode === "sample" && !sampleLoading && sampleResults && sampleResults.length > 0 && (
+              <div className="overflow-auto h-full">
+                <table className="w-full text-[12px] font-mono">
+                  <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 text-left text-[11px] text-muted-foreground font-semibold w-10">#</th>
+                      {Object.keys(sampleResults[0]).map(col => (
+                        <th key={col} className="px-3 py-2 text-left text-[11px] text-muted-foreground font-semibold">{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sampleResults.map((row, i) => (
+                      <tr key={i} className={`border-b border-border/30 hover:bg-accent/30 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                        <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
+                        {Object.values(row).map((v, ci) => (
+                          <td key={ci} className={`px-3 py-1.5 truncate max-w-[200px] ${v == null ? "text-muted-foreground/40 italic" : ""}`}>
+                            {v == null ? "NULL" : String(v)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-3 py-1.5 bg-muted/50 border-t border-border text-[10px] text-muted-foreground">
+                  Sample: {sampleResults.length} rows from {getTableFromSql() || "table"}
+                </div>
+              </div>
+            )}
+            {viewMode === "sample" && !sampleLoading && (!sampleResults || sampleResults.length === 0) && !sampleLoading && (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <Table2 className="h-8 w-8 mb-2 opacity-20" />
+                <p className="text-sm">Write a query with a FROM clause to preview table data</p>
               </div>
             )}
 

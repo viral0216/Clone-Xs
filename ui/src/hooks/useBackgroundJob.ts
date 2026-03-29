@@ -66,7 +66,7 @@ export function useBackgroundJob({
     const id = jobIdRef.current;
     if (!id) return;
     try {
-      const data = await api.get(pollUrl(id));
+      const data = await api.get<{ status: string; error?: string; [key: string]: unknown }>(pollUrl(id));
       setJobData(data);
       onProgress?.(data);
 

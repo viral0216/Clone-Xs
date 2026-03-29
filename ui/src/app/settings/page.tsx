@@ -840,7 +840,7 @@ function AzureFinOpsSettings() {
   async function testConnection() {
     setTesting(true);
     try {
-      const data = await api.get("/finops/azure/costs?days=1");
+      const data = await api.get<{ errors?: string[]; currency?: string; total_cost?: number }>("/finops/azure/costs?days=1");
       if (data.errors?.length) {
         toast.error(`Connection issues: ${data.errors[0]}`);
       } else {

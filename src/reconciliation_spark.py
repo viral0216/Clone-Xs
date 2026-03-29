@@ -94,8 +94,8 @@ def validate_table_spark(
             src_cols = [coalesce(col(c).cast("string"), lit("NULL")) for c in src_df.columns]
             dst_cols = [coalesce(col(c).cast("string"), lit("NULL")) for c in dst_df.columns]
 
-            src_hash = src_df.select(md5(concat_ws("|", *src_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
-            dst_hash = dst_df.select(md5(concat_ws("|", *dst_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
+            src_df.select(md5(concat_ws("|", *src_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
+            dst_df.select(md5(concat_ws("|", *dst_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
 
             # Simple checksum: sort hashes and compare
             src_checksums = sorted([r[0] for r in src_df.select(md5(concat_ws("|", *src_cols))).limit(1000).collect()])
@@ -301,7 +301,7 @@ def profile_table_spark(catalog: str, schema: str, table_name: str) -> dict:
         profile["row_count"] = row_count
 
         from pyspark.sql.functions import (
-            count, countDistinct, col, sum as spark_sum, avg as spark_avg,
+            count, countDistinct, col, avg as spark_avg,
             min as spark_min, max as spark_max, length,
         )
         from pyspark.sql.types import StringType, NumericType, DateType, TimestampType

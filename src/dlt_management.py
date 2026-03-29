@@ -1,6 +1,5 @@
 """Delta Live Tables (DLT) management — discover, clone, monitor, and integrate DLT pipelines."""
 
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 

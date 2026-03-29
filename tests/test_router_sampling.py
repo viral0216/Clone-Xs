@@ -1,7 +1,7 @@
 """Tests for the sampling router."""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 pytest.importorskip("fastapi")
 

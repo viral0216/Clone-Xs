@@ -165,7 +165,7 @@ def save_operation_metrics(
     duration = 0.0
     if started and completed:
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
             t1 = datetime.fromisoformat(started)
             t2 = datetime.fromisoformat(completed)
             duration = (t2 - t1).total_seconds()

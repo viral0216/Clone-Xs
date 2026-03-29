@@ -1,7 +1,6 @@
 """Tests for the governance router — smoke tests for all endpoints."""
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 pytest.importorskip("fastapi")
 

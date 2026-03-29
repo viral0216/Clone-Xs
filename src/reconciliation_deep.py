@@ -72,8 +72,6 @@ def get_table_preview(
 ) -> dict:
     """Get preview metadata for a table pair before running deep reconciliation."""
     spark = _get_spark()
-    src_fqn = f"`{source_catalog}`.`{schema}`.`{table_name}`"
-    dst_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
 
     result = {
         "source_table": f"{source_catalog}.{schema}.{table_name}",
@@ -211,7 +209,7 @@ def deep_reconcile_table(
     For modified rows, identifies which columns differ.
     """
     spark = _get_spark()
-    from pyspark.sql.functions import col, coalesce, lit, sha2, concat_ws, when
+    from pyspark.sql.functions import col, coalesce, lit, sha2, concat_ws
 
     result = {
         "schema": schema,
@@ -403,7 +401,6 @@ def _collect_modified_diffs(
     - samples: list of row-level diff dicts
     - column_impact: dict mapping column name to count of rows where it differs
     """
-    from pyspark.sql.functions import col
 
     samples = []
     column_impact: dict[str, int] = {}

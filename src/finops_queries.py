@@ -429,7 +429,6 @@ def query_query_stats(
     col_text = pick(["statement_text", "query_text"])
     col_user = pick(["executed_by", "user_name"])
     col_wh = pick(["warehouse_id", "compute_id"])
-    col_status = pick(["status", "execution_status"])
     col_dur = pick(["total_duration_ms", "total_time_ms", "duration_ms"])
     col_read = pick(["read_bytes", "read_io_bytes"])
     col_start = pick(["start_time", "query_start_time"])

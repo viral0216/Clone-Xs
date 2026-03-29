@@ -57,7 +57,6 @@ class ObservabilityService:
 
     def get_summary(self) -> dict:
         """Get stat card values: pass rates, counts, totals."""
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         lookback = (datetime.now(timezone.utc) - timedelta(hours=self.issue_lookback_hours)).strftime("%Y-%m-%d %H:%M:%S")
 
         freshness = self._safe_query(f"""

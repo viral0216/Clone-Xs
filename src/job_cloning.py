@@ -2,7 +2,6 @@
 
 import json
 import logging
-from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +104,6 @@ class JobCloneManager:
                         settings[key] = value
 
             # Create the new job
-            from databricks.sdk.service.jobs import CreateJob
             result = self.client.jobs.create(**settings)
 
             return {

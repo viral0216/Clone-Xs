@@ -41,14 +41,13 @@ SELECT * FROM {src};""",
         return {"statements": statements, "source": src, "dest": dst}
 
     key_join = " AND ".join(f"src.{k} = dst.{k}" for k in key_columns)
-    key_not_in = " AND ".join(f"dst.{k} IS NULL" for k in key_columns)
     key_list = ", ".join(key_columns)
 
     # Fix missing rows (in source but not in dest)
     if fix_type in ("missing", "all"):
         statements.append({
             "type": "insert_missing",
-            "description": f"Insert rows that exist in source but are missing from destination",
+            "description": "Insert rows that exist in source but are missing from destination",
             "sql": f"""-- Insert missing rows into destination
 INSERT INTO {dst}
 SELECT src.*
@@ -62,7 +61,7 @@ ON {key_join};""",
     if fix_type in ("extra", "all"):
         statements.append({
             "type": "delete_extra",
-            "description": f"Delete rows from destination that don't exist in source",
+            "description": "Delete rows from destination that don't exist in source",
             "sql": f"""-- Delete extra rows from destination
 DELETE FROM {dst}
 WHERE ({key_list}) NOT IN (
@@ -75,7 +74,7 @@ WHERE ({key_list}) NOT IN (
     if fix_type in ("modified", "all"):
         statements.append({
             "type": "update_modified",
-            "description": f"Update modified rows in destination to match source values",
+            "description": "Update modified rows in destination to match source values",
             "sql": f"""-- Update modified rows using MERGE
 MERGE INTO {dst} AS dst
 USING {src} AS src
@@ -88,7 +87,7 @@ WHEN MATCHED THEN UPDATE SET *;""",
     if fix_type == "all":
         statements.append({
             "type": "full_merge",
-            "description": f"Full MERGE: insert missing, update modified, delete extra (all-in-one)",
+            "description": "Full MERGE: insert missing, update modified, delete extra (all-in-one)",
             "sql": f"""-- Full MERGE sync: source → destination
 MERGE INTO {dst} AS dst
 USING {src} AS src

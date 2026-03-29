@@ -119,8 +119,6 @@ def get_arm_token(tenant_id: str = "", session_auth_method: str = "", session_cl
         "2. Use a service principal with Azure tenant credentials\n"
         "3. Install Azure CLI and run 'az login' externally"
     )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Azure CLI timed out getting access token.")
 
 
 # ── Query payloads ────────────────────────────────────────────────────

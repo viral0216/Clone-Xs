@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
 
 from src.client import execute_sql
 from src.mdm_store import MDMStore

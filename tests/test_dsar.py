@@ -110,7 +110,8 @@ class TestDSARManager:
             self.mgr.approve_request("nonexistent")
 
     def test_export_data_creates_file(self):
-        import os, tempfile
+        import os
+        import tempfile
         export_dir = tempfile.mkdtemp()
         self.mgr.export_dir = export_dir
 

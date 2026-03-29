@@ -192,7 +192,6 @@ class PipelineEngine:
                                   checksum=config.get("checksum", False))
 
         elif step_type == "mask":
-            from src.masking import apply_masking_rules
             rules = self.config.get("masking_rules", [])
             if not rules:
                 return {"message": "No masking rules configured", "masked": 0}

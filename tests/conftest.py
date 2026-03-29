@@ -5,7 +5,7 @@ so router tests can call endpoints without a real workspace connection.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 # Skip all API tests if FastAPI / httpx not installed
 pytest.importorskip("fastapi")

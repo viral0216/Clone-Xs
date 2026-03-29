@@ -222,7 +222,6 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> 
         Summary with tables processed, metrics recorded, anomalies detected.
     """
     from src.anomaly_detection import record_metric
-    from src.client import execute_sql
 
     configs = [c for c in _load_configs() if c.get("enabled", True)]
     config = config or {}

@@ -8,7 +8,6 @@ import hashlib
 import json
 import logging
 import os
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,7 +15,6 @@ from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql
 from src.dsar_store import DSARStore, STATUS_TRANSITIONS
-from src.rtbf import SUBJECT_TYPE_PATTERNS
 
 logger = logging.getLogger(__name__)
 

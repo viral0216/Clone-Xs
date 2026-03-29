@@ -265,9 +265,7 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
             # Check match rate from latest reconciliation run for this table
             threshold_pct = float(rule.get("threshold_value", 99.0))
             try:
-                schema = _get_sla_schema(config)
-                audit = config.get("audit_trail", {})
-                recon_catalog = audit.get("catalog", "clone_audit")
+                recon_catalog = rule.get("catalog", "clone_audit")
                 recon_schema = f"{recon_catalog}.reconciliation"
 
                 rows = execute_sql(client, warehouse_id, f"""

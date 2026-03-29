@@ -1,7 +1,7 @@
 """Tests for the system-insights router — 11 endpoints."""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 pytest.importorskip("fastapi")
 

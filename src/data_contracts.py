@@ -1456,7 +1456,7 @@ def _estimate_update_frequency(history_rows: list[dict]) -> dict | None:
         return None
     # Rough estimate: average gap between last few updates
     try:
-        from datetime import datetime as dt, timezone
+        from datetime import datetime as dt
         parsed = sorted([dt.fromisoformat(t.replace("Z", "+00:00").split("+")[0]) for t in timestamps], reverse=True)
         gaps_hours = []
         for i in range(min(len(parsed) - 1, 5)):

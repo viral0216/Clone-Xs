@@ -3,7 +3,7 @@ estimate, storage-metrics, optimize, vacuum, check-predictive-optimization, expo
 snapshot, schema-drift, column-usage, table-usage."""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 pytest.importorskip("fastapi")
 

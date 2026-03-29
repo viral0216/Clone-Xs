@@ -1,6 +1,5 @@
 """MDM (Master Data Management) store — Delta table CRUD for golden records, matching, and stewardship."""
 
-import json
 import logging
 from datetime import datetime, timezone
 

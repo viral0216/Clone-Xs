@@ -1,6 +1,6 @@
 """Tests for Delta Live Tables (DLT) management."""
 
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 import pytest
 
 from src.dlt_management import (

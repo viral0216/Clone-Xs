@@ -567,7 +567,6 @@ def query_metastore_summary(client: WorkspaceClient) -> dict:
     # Count catalogs, schemas, tables
     catalog_count = 0
     schema_count = 0
-    table_count = 0
     try:
         for cat in client.catalogs.list():
             catalog_count += 1

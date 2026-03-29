@@ -2130,7 +2130,6 @@ def cmd_demo_data(args):
 
 def cmd_rtbf(args):
     """Right to Be Forgotten (GDPR Article 17) — manage erasure requests."""
-    import json as _json
 
     logger = logging.getLogger(__name__)
     try:
@@ -2218,7 +2217,7 @@ def cmd_rtbf(args):
 
     elif action == "certificate":
         result = mgr.generate_certificate(args.request_id, output_dir=getattr(args, "output_dir", None))
-        print(f"Certificate generated:")
+        print("Certificate generated:")
         print(f"  ID:             {result['certificate_id']}")
         print(f"  Tables:         {result['tables_processed']}")
         print(f"  Rows deleted:   {result['rows_deleted']}")

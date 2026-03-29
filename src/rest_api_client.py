@@ -14,7 +14,7 @@ Usage:
 
 import logging
 import time
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import quote
 
 import requests

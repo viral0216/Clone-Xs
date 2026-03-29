@@ -2,8 +2,7 @@
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -203,7 +202,7 @@ class TestRTBFManager:
 
     @patch("src.rtbf_store.execute_sql")
     def test_submit_request_with_grace_period(self, mock_sql):
-        result = self.mgr.submit_request(
+        self.mgr.submit_request(
             subject_type="email",
             subject_value="user@example.com",
             requester_email="dpo@company.com",

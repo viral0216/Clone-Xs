@@ -201,7 +201,6 @@ def _eval_not_null(spark, fqn: str, column_name: str) -> dict:
 
 def _eval_unique(spark, fqn: str, column_name: str) -> dict:
     """Check that a column has no duplicate values."""
-    from pyspark.sql.functions import col
     df = spark.table(fqn)
     dup_df = df.groupBy(column_name).count().filter("count > 1")
     dup_count = dup_df.count()

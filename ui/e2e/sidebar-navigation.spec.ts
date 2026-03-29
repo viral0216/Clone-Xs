@@ -20,9 +20,8 @@ test.describe("Sidebar Navigation", () => {
 
   for (const { href, label } of SIDEBAR_LINKS) {
     test(`navigate to ${label} via sidebar`, async ({ page }) => {
-      const link = page.locator(`a[href="${href}"]`).first();
-      await expect(link).toBeVisible({ timeout: 5000 });
-      await link.click();
+      const link = page.locator(`a[href="${href}"]`).and(page.locator(":visible")).first();
+      await link.click({ timeout: 10000 });
       await expect(page).toHaveURL(new RegExp(href));
       await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
     });

@@ -162,9 +162,10 @@ async def get_serving_endpoints(client=Depends(get_db_client)):
 
 
 @router.post("/serving-endpoints/export", summary="Export serving endpoint config")
-async def export_endpoint(name: str, client=Depends(get_db_client)):
+async def export_endpoint(req: dict, client=Depends(get_db_client)):
     """Export a serving endpoint configuration."""
     from src.clone_serving_endpoints import export_endpoint_config
+    name = req.get("name", "")
     config = export_endpoint_config(client, name)
     if config is None:
         from fastapi import HTTPException

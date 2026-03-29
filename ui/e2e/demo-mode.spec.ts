@@ -13,22 +13,26 @@ test.describe("Demo Mode", () => {
   });
 
   test("navigate to Clone page", async ({ page }) => {
-    await page.click('a[href="/clone"]');
-    await expect(page.locator("text=Clone")).toBeVisible({ timeout: 10000 });
+    await page.locator('a[href="/clone"]').and(page.locator(":visible")).first().click({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/clone/);
+    await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
   });
 
   test("navigate to Monitor page", async ({ page }) => {
-    await page.click('a[href="/monitor"]');
-    await expect(page.locator("text=Monitor")).toBeVisible({ timeout: 10000 });
+    await page.locator('a[href="/monitor"]').and(page.locator(":visible")).first().click({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/monitor/);
+    await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
   });
 
   test("navigate to Settings page", async ({ page }) => {
-    await page.click('a[href="/settings"]');
-    await expect(page.locator("text=Settings")).toBeVisible({ timeout: 10000 });
+    await page.locator('a[href="/settings"]').and(page.locator(":visible")).first().click({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/settings/);
+    await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
   });
 
   test("navigate to Audit page", async ({ page }) => {
-    await page.click('a[href="/audit"]');
-    await expect(page.locator("text=Audit")).toBeVisible({ timeout: 10000 });
+    await page.locator('a[href="/audit"]').and(page.locator(":visible")).first().click({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/audit/);
+    await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
   });
 });

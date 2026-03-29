@@ -11,17 +11,17 @@ test.describe("Settings", () => {
 
   test("settings page loads with section navigation", async ({ page }) => {
     await page.goto("/settings");
-    await expect(page.locator("text=Connection")).toBeVisible({ timeout: 10000 });
-    await expect(page.locator("text=Interface")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Connection" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: "Interface" })).toBeVisible();
   });
 
   test("theme picker shows theme options", async ({ page }) => {
     await page.goto("/settings");
-    const interfaceTab = page.locator("text=Interface").first();
+    const interfaceTab = page.getByRole("button", { name: "Interface" });
     await expect(interfaceTab).toBeVisible({ timeout: 10000 });
     await interfaceTab.click();
-    await expect(page.locator("text=Light")).toBeVisible({ timeout: 10000 });
-    await expect(page.locator("text=Dark")).toBeVisible();
-    await expect(page.locator("text=Midnight")).toBeVisible();
+    await expect(page.locator("text=Light").first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("text=Dark").first()).toBeVisible();
+    await expect(page.locator("text=Midnight").first()).toBeVisible();
   });
 });

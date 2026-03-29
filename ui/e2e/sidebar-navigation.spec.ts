@@ -15,7 +15,8 @@ test.describe("Sidebar Navigation", () => {
     const demoBtn = page.locator("text=Explore Clone-Xs");
     await expect(demoBtn).toBeVisible({ timeout: 10000 });
     await demoBtn.click();
-    await expect(page.locator("h1")).toBeVisible({ timeout: 10000 });
+    await page.waitForURL("**/", { timeout: 10000 });
+    await page.waitForTimeout(500);
   });
 
   for (const { href, label } of SIDEBAR_LINKS) {

@@ -47,6 +47,7 @@ import ViewDepsPage from "@/app/view-deps/page";
 import CreateJobPage from "@/app/create-job/page";
 import StorageMetricsPage from "@/app/storage-metrics/page";
 import DemoDataPage from "@/app/demo-data/page";
+import SqlWorkbenchPage from "@/app/sql-workbench/page";
 import GovernanceSidebar from "@/components/layout/GovernanceSidebar";
 import DataQualitySidebar from "@/components/layout/DataQualitySidebar";
 import FinOpsSidebar from "@/components/layout/FinOpsSidebar";
@@ -283,6 +284,7 @@ export default function App() {
               <Route path="/view-deps" element={<ViewDepsPage />} />
               <Route path="/create-job" element={<CreateJobPage />} />
               <Route path="/storage-metrics" element={<StorageMetricsPage />} />
+              <Route path="/sql-workbench" element={<SqlWorkbenchPage />} />
 
               {/* UC Enhancement Routes */}
               <Route path="/system-insights" element={<Suspense fallback={<PageFallback />}><SystemInsightsPage /></Suspense>} />

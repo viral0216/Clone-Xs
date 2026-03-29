@@ -1632,20 +1632,73 @@ const PORTAL_FEATURES = [
       { title: "Budgets & Alerts", items: [{ href: "/finops/budgets", label: "Budget Tracker" }, { href: "/finops/trends", label: "Cost Trends" }] },
     ],
   },
+  {
+    id: "security",
+    label: "Security Portal",
+    description: "PII detection, compliance & validation",
+    required: false,
+    sections: [
+      { title: "Security", items: [{ href: "/security", label: "Overview" }] },
+      { title: "Data Protection", items: [{ href: "/security/pii", label: "PII Scanner" }, { href: "/security/compliance", label: "Compliance" }] },
+      { title: "Validation", items: [{ href: "/security/preflight", label: "Preflight Checks" }] },
+    ],
+  },
+  {
+    id: "automation",
+    label: "Automation Portal",
+    description: "Pipelines, jobs & templates",
+    required: false,
+    sections: [
+      { title: "Automation", items: [{ href: "/automation", label: "Overview" }] },
+      { title: "Workflows", items: [{ href: "/automation/pipelines", label: "Pipelines" }, { href: "/automation/templates", label: "Templates" }] },
+      { title: "Jobs", items: [{ href: "/automation/jobs", label: "Clone Jobs" }, { href: "/automation/create-job", label: "Create Job" }] },
+      { title: "DLT", items: [{ href: "/automation/dlt", label: "DLT Pipelines" }] },
+    ],
+  },
+  {
+    id: "infrastructure",
+    label: "Infrastructure Portal",
+    description: "Warehouses, federation & sharing",
+    required: false,
+    sections: [
+      { title: "Infrastructure", items: [{ href: "/infrastructure", label: "Overview" }] },
+      { title: "Compute", items: [{ href: "/infrastructure/warehouse", label: "Warehouse" }, { href: "/infrastructure/lakehouse-monitor", label: "Lakehouse Monitor" }] },
+      { title: "Connectivity", items: [{ href: "/infrastructure/federation", label: "Federation" }, { href: "/infrastructure/delta-sharing", label: "Delta Sharing" }] },
+    ],
+  },
+  {
+    id: "mdm",
+    label: "MDM Portal",
+    description: "Master data management",
+    required: false,
+    sections: [
+      { title: "MDM", items: [{ href: "/mdm", label: "Overview" }] },
+      { title: "Master Data", items: [{ href: "/mdm/golden-records", label: "Golden Records" }, { href: "/mdm/match-merge", label: "Match & Merge" }, { href: "/mdm/relationship-graph", label: "Relationships" }, { href: "/mdm/merge-history", label: "Merge History" }] },
+      { title: "Stewardship", items: [{ href: "/mdm/stewardship", label: "Data Stewardship" }, { href: "/mdm/hierarchies", label: "Hierarchies" }] },
+      { title: "Configuration", items: [{ href: "/mdm/templates", label: "Industry Templates" }, { href: "/mdm/reference-data", label: "Reference Data" }, { href: "/mdm/negative-match", label: "Negative Match" }, { href: "/mdm/settings", label: "Settings" }] },
+      { title: "Quality & Compliance", items: [{ href: "/mdm/scorecards", label: "DQ Scorecards" }, { href: "/mdm/profiling", label: "Data Profiling" }, { href: "/mdm/cross-domain", label: "Cross-Domain" }, { href: "/mdm/consent", label: "Consent" }] },
+      { title: "Audit & Reports", items: [{ href: "/mdm/audit-log", label: "Audit Log" }, { href: "/mdm/reports", label: "Reports" }] },
+    ],
+  },
 ];
+
+const DEFAULT_DISABLED_PORTALS = ["finops", "infrastructure", "mdm"];
+const DEFAULT_DISABLED_PAGES = PORTAL_FEATURES
+  .filter(p => DEFAULT_DISABLED_PORTALS.includes(p.id))
+  .flatMap(p => p.sections.flatMap(s => s.items.map(i => i.href)));
 
 function FeatureToggles() {
   const [disabled, setDisabled] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem("clxs-disabled-pages");
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch { return new Set(); }
+      return saved ? new Set(JSON.parse(saved)) : new Set(DEFAULT_DISABLED_PAGES);
+    } catch { return new Set(DEFAULT_DISABLED_PAGES); }
   });
   const [disabledPortals, setDisabledPortals] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem("clxs-disabled-portals");
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch { return new Set(); }
+      return saved ? new Set(JSON.parse(saved)) : new Set(DEFAULT_DISABLED_PORTALS);
+    } catch { return new Set(DEFAULT_DISABLED_PORTALS); }
   });
   const [expandedPortals, setExpandedPortals] = useState<Set<string>>(new Set(["clone-xs"]));
 

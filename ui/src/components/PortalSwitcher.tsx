@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Copy, Shield, ChevronDown, BarChart3, DollarSign, Lock, Zap, Server, Database } from "lucide-react";
 
-const PORTALS = [
+const ALL_PORTALS = [
   { id: "clone-xs", label: "Clone \u2192 Xs", description: "Catalog cloning & management", icon: Copy, path: "/" },
   { id: "governance", label: "Governance", description: "Metadata management & contracts", icon: Shield, path: "/governance" },
   { id: "data-quality", label: "Data Quality", description: "Quality rules, profiling & reconciliation", icon: BarChart3, path: "/data-quality" },
@@ -13,25 +13,44 @@ const PORTALS = [
   { id: "mdm", label: "MDM", description: "Master data management", icon: Database, path: "/mdm" },
 ];
 
+function getDisabledPortals(): Set<string> {
+  try {
+    const saved = localStorage.getItem("clxs-disabled-portals");
+    return saved ? new Set(JSON.parse(saved)) : new Set(["finops", "infrastructure", "mdm"]);
+  } catch { return new Set(); }
+}
+
 function detectPortal(pathname: string) {
-  // Check longest prefix first to avoid false matches
   const prefixes = ["/governance", "/data-quality", "/finops", "/security", "/automation", "/infrastructure", "/mdm"];
   for (const prefix of prefixes) {
     if (pathname.startsWith(prefix)) {
-      return PORTALS.find(p => p.path === prefix)!;
+      return ALL_PORTALS.find(p => p.path === prefix)!;
     }
   }
-  return PORTALS[0];
+  return ALL_PORTALS[0];
 }
 
 export default function PortalSwitcher() {
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
+  const [disabledPortals, setDisabledPortals] = useState(getDisabledPortals);
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Re-read disabled portals when features change
+  useEffect(() => {
+    const handler = () => setDisabledPortals(getDisabledPortals());
+    window.addEventListener("clxs-features-changed", handler);
+    window.addEventListener("storage", handler);
+    return () => {
+      window.removeEventListener("clxs-features-changed", handler);
+      window.removeEventListener("storage", handler);
+    };
+  }, []);
+
+  const portals = ALL_PORTALS.filter(p => p.id === "clone-xs" || !disabledPortals.has(p.id));
   const current = detectPortal(location.pathname);
 
   useEffect(() => {
@@ -43,17 +62,17 @@ export default function PortalSwitcher() {
   }, []);
 
   const selectPortal = useCallback((idx: number) => {
-    navigate(PORTALS[idx].path);
+    navigate(portals[idx].path);
     setOpen(false);
     btnRef.current?.focus();
-  }, [navigate]);
+  }, [navigate, portals]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         setOpen(true);
-        setFocusIdx(PORTALS.findIndex(p => p.id === current.id));
+        setFocusIdx(portals.findIndex(p => p.id === current.id));
       }
       return;
     }
@@ -66,11 +85,11 @@ export default function PortalSwitcher() {
         break;
       case "ArrowDown":
         e.preventDefault();
-        setFocusIdx(i => (i + 1) % PORTALS.length);
+        setFocusIdx(i => (i + 1) % portals.length);
         break;
       case "ArrowUp":
         e.preventDefault();
-        setFocusIdx(i => (i - 1 + PORTALS.length) % PORTALS.length);
+        setFocusIdx(i => (i - 1 + portals.length) % portals.length);
         break;
       case "Enter":
       case " ":
@@ -78,7 +97,7 @@ export default function PortalSwitcher() {
         selectPortal(focusIdx);
         break;
     }
-  }, [open, focusIdx, current.id, selectPortal]);
+  }, [open, focusIdx, current.id, selectPortal, portals]);
 
   return (
     <div ref={ref} className="relative" onKeyDown={handleKeyDown}>
@@ -97,7 +116,7 @@ export default function PortalSwitcher() {
 
       {open && (
         <div className="absolute top-full right-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 py-1 max-h-[70vh] overflow-y-auto" role="listbox" aria-label="Select portal">
-          {PORTALS.map((portal, idx) => {
+          {portals.map((portal, idx) => {
             const Icon = portal.icon;
             const isActive = portal.id === current.id;
             const isFocused = idx === focusIdx;

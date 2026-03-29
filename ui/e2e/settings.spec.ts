@@ -2,15 +2,11 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Settings", () => {
   test.beforeEach(async ({ page }) => {
-    // Enter demo mode to bypass login
     await page.goto("/");
-    await page.waitForTimeout(1000);
-    // Click demo mode if available
     const demoBtn = page.locator("text=Explore Clone-Xs");
-    if (await demoBtn.isVisible()) {
-      await demoBtn.click();
-      await page.waitForTimeout(500);
-    }
+    await expect(demoBtn).toBeVisible({ timeout: 10000 });
+    await demoBtn.click();
+    await expect(page.locator("h1")).toBeVisible({ timeout: 10000 });
   });
 
   test("settings page loads with section navigation", async ({ page }) => {
@@ -21,8 +17,10 @@ test.describe("Settings", () => {
 
   test("theme picker shows theme options", async ({ page }) => {
     await page.goto("/settings");
-    await expect(page.locator("text=Theme")).toBeVisible({ timeout: 10000 });
-    await expect(page.locator("text=Light")).toBeVisible();
+    const interfaceTab = page.locator("text=Interface").first();
+    await expect(interfaceTab).toBeVisible({ timeout: 10000 });
+    await interfaceTab.click();
+    await expect(page.locator("text=Light")).toBeVisible({ timeout: 10000 });
     await expect(page.locator("text=Dark")).toBeVisible();
     await expect(page.locator("text=Midnight")).toBeVisible();
   });

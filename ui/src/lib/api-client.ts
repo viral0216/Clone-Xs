@@ -38,6 +38,8 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const warehouse = localStorage.getItem("dbx_warehouse_id") || "";
   const sessionId = localStorage.getItem("clxs_session_id") || "";
   const useServerless = localStorage.getItem("clxs-default-compute-serverless");
+  const aiModel = localStorage.getItem("dbx_model") || "";
+  const genieSpace = localStorage.getItem("dbx_genie_space_id") || "";
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -46,6 +48,8 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     ...(token && { "X-Databricks-Token": token }),
     ...(warehouse && { "X-Databricks-Warehouse": warehouse }),
     ...(useServerless !== null && { "X-Use-Serverless": useServerless }),
+    ...(aiModel && { "X-Databricks-Model": aiModel }),
+    ...(genieSpace && { "X-Databricks-Genie-Space": genieSpace }),
     ...(options.headers as Record<string, string>),
   };
 

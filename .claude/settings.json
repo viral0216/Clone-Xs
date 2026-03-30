@@ -7,7 +7,11 @@
       "Bash(grep -n \"^def\\\\|^@router.*sample\" /Users/viral.patel/Clone-Xs/api/routers/*.py)",
       "Bash(grep -r \"clone_pipeline\\\\|DLT.*clone\\\\|pipeline.*clone\" /Users/viral.patel/Clone-Xs/api --include=*.py)",
       "Bash(npx vite:*)",
-      "Bash(grep -n \"client.jobs\" /Users/viral.patel/Clone-Xs/api/routers/*.py)"
+      "Bash(grep -n \"client.jobs\" /Users/viral.patel/Clone-Xs/api/routers/*.py)",
+      "Bash(find /Users/viral.patel -maxdepth 3 -type d -name *energy*)",
+      "Bash(curl -s http://localhost:8000/api/auth/status)",
+      "Bash(curl -s http://localhost:8000/openapi.json)",
+      "Bash(lsof -ti:8000)"
     ]
   }
 }

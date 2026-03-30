@@ -23,6 +23,7 @@ const ALL_PAGES = [
   { href: "/create-job", label: "Create Job", keywords: "databricks job persistent scheduled cron" },
   // Discovery
   { href: "/explore", label: "Explorer", keywords: "browse catalog schemas tables columns config diff preview sample" },
+  { href: "/ai-assistant", label: "AI Assistant", keywords: "ai assistant genie natural language sql chat ask question data" },
   { href: "/diff", label: "Diff & Compare", keywords: "compare catalogs objects" },
   { href: "/lineage", label: "Lineage", keywords: "data flow tracking" },
   { href: "/view-deps", label: "Dependencies", keywords: "views functions dependency graph" },

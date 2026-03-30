@@ -62,3 +62,4 @@ class AIStatusResponse(BaseModel):
     available: bool
     reason: Optional[str] = None
     model: Optional[str] = None
+    backend: Optional[str] = None  # "anthropic", "databricks", "none"

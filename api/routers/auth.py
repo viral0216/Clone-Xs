@@ -432,3 +432,64 @@ async def logout(x_clone_session: Optional[str] = Header(None)):
     clear_session()
     delete_session(x_clone_session)
     return {"status": "ok", "message": "Logged out successfully"}
+
+
+@router.get("/serving-endpoints")
+async def list_serving_endpoints(client=Depends(get_db_client)):
+    """List Databricks Model Serving endpoints for AI model selection."""
+    try:
+        endpoints = []
+        for ep in client.serving_endpoints.list():
+            name = ep.name or ""
+            state = str(ep.state.ready) if ep.state else "UNKNOWN"
+            # Extract provider from served entities
+            provider = "custom"
+            try:
+                entities = ep.config.served_entities if ep.config else []
+                if entities:
+                    ext = getattr(entities[0], "external_model", None)
+                    if ext and hasattr(ext, "provider"):
+                        provider = ext.provider or "custom"
+            except Exception:
+                pass
+            endpoints.append({
+                "name": name,
+                "state": state,
+                "provider": provider,
+                "is_claude": "claude" in name.lower() or "anthropic" in provider.lower(),
+            })
+        return {"success": True, "endpoints": endpoints}
+    except Exception as e:
+        return {"success": False, "endpoints": [], "error": str(e)}
+
+
+@router.get("/genie-spaces")
+async def list_genie_spaces(client=Depends(get_db_client)):
+    """List Databricks Genie spaces for natural language SQL."""
+    try:
+        import requests as req
+        config = client.config
+        host = (config.host or "").rstrip("/")
+        headers = {"Content-Type": "application/json"}
+        try:
+            auth_headers = {}
+            config.authenticate(auth_headers)
+            headers.update(auth_headers)
+        except Exception:
+            token = getattr(config, "token", None)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
+        r = req.get(f"{host}/api/2.0/genie/spaces", headers=headers, timeout=15)
+        if r.status_code == 200:
+            spaces = []
+            for sp in r.json().get("spaces", []):
+                spaces.append({
+                    "space_id": sp.get("space_id", sp.get("id", "")),
+                    "title": sp.get("title", sp.get("name", "")),
+                    "description": sp.get("description", ""),
+                })
+            return {"success": True, "spaces": spaces}
+        return {"success": False, "spaces": [], "error": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"success": False, "spaces": [], "error": str(e)}

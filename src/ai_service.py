@@ -1,8 +1,9 @@
-"""AI service for Clone-Xs — Claude API integration for intelligent insights."""
+"""AI service for Clone-Xs — dual-backend: Anthropic API or Databricks Model Serving."""
 
 import os
 import json
 import logging
+import requests
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ _SYSTEM_PROMPTS = {
 
 
 class AIService:
-    """Claude API integration for intelligent insights."""
+    """Dual-backend AI service: Anthropic API or Databricks Model Serving."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
@@ -57,6 +58,12 @@ class AIService:
     @property
     def available(self) -> bool:
         return bool(self.api_key)
+
+    def is_available(self, endpoint_name: str = None) -> bool:
+        """Check if AI is available — either via Anthropic key or Databricks endpoint."""
+        if endpoint_name:
+            return True  # Databricks endpoint doesn't need Anthropic key
+        return self.available
 
     def _get_client(self):
         if self._client is None:
@@ -68,7 +75,7 @@ class AIService:
         return self._client
 
     def _call_claude(self, system_prompt: str, user_message: str, max_tokens: int = 1024) -> str:
-        """Make a Claude API call and return the text response."""
+        """Make a Claude API call via Anthropic directly."""
         client = self._get_client()
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -78,23 +85,95 @@ class AIService:
         )
         return response.content[0].text
 
-    def summarize(self, context_type: str, data: dict) -> str:
+    def _call_databricks_model(self, endpoint_name: str, system_prompt: str, user_message: str, max_tokens: int, client) -> str:
+        """Call a Databricks Model Serving endpoint (OpenAI chat format)."""
+        config = client.config
+        host = (config.host or "").rstrip("/")
+        if not host:
+            raise RuntimeError("Databricks host not configured. Please log in first.")
+
+        # Build auth headers from SDK config
+        headers = {"Content-Type": "application/json"}
+        has_auth = False
+        try:
+            auth_headers = {}
+            config.authenticate(auth_headers)
+            headers.update(auth_headers)
+            has_auth = bool(auth_headers)
+        except Exception:
+            pass
+        if not has_auth:
+            token = getattr(config, "token", None)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                has_auth = True
+        if not has_auth:
+            raise RuntimeError("No authentication credentials available for Databricks. Please log in.")
+
+        url = f"{host}/serving-endpoints/{endpoint_name}/invocations"
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "max_tokens": max_tokens,
+        }
+
+        logger.info(f"Calling Databricks model: {endpoint_name} at {host}")
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+        except requests.ConnectionError:
+            raise RuntimeError(f"Cannot connect to Databricks at {host}. Check your network connection.")
+        except requests.Timeout:
+            raise RuntimeError(f"Request to {endpoint_name} timed out after 120 seconds. The model may be starting up — try again.")
+
+        if resp.status_code == 401:
+            raise RuntimeError("Authentication failed. Your session may have expired — please log in again.")
+        if resp.status_code == 404:
+            raise RuntimeError(f"Serving endpoint '{endpoint_name}' not found. Check that the endpoint exists and is active.")
+        if resp.status_code == 429:
+            raise RuntimeError(f"Rate limited by {endpoint_name}. Please wait a moment and try again.")
+        if resp.status_code >= 400:
+            detail = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Model serving error ({resp.status_code}): {detail}")
+
+        data = resp.json()
+
+        # OpenAI-compatible response format
+        if "choices" in data and len(data.get("choices", [])) > 0:
+            choice = data["choices"][0]
+            if isinstance(choice, dict) and "message" in choice:
+                return choice["message"].get("content", "")
+            if isinstance(choice, dict) and "text" in choice:
+                return choice["text"]
+        # Fallback: some endpoints return differently
+        if "predictions" in data and data["predictions"]:
+            return str(data["predictions"][0])
+        # Last resort
+        logger.warning(f"Unexpected response format from {endpoint_name}: {list(data.keys())}")
+        return str(data)
+
+    def _call_llm(self, system_prompt: str, user_message: str, max_tokens: int = 1024, endpoint_name: str = None, client=None) -> str:
+        """Route to Databricks or Anthropic based on configuration."""
+        if endpoint_name and client:
+            return self._call_databricks_model(endpoint_name, system_prompt, user_message, max_tokens, client)
+        return self._call_claude(system_prompt, user_message, max_tokens)
+
+    def summarize(self, context_type: str, data: dict, endpoint_name: str = None, client=None) -> str:
         """Generate a narrative summary for the given context."""
         system_prompt = _SYSTEM_PROMPTS.get(context_type, _SYSTEM_PROMPTS["dashboard"])
         user_message = f"Here is the {context_type} data to analyze:\n\n{json.dumps(data, indent=2, default=str)}"
-        return self._call_claude(system_prompt, user_message)
+        return self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
 
-    def parse_clone_query(self, query: str, available_catalogs: list[str]) -> dict:
+    def parse_clone_query(self, query: str, available_catalogs: list[str], endpoint_name: str = None, client=None) -> dict:
         """Parse a natural language clone request into structured config."""
         system_prompt = _SYSTEM_PROMPTS["clone_builder"]
         user_message = (
             f"Available catalogs: {', '.join(available_catalogs) if available_catalogs else 'unknown'}\n\n"
             f"User request: {query}"
         )
-        response = self._call_claude(system_prompt, user_message)
-        # Try to parse JSON from response
+        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
         try:
-            # Handle markdown code blocks
             text = response.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0]
@@ -102,11 +181,11 @@ class AIService:
         except (json.JSONDecodeError, IndexError):
             return {"explanation": response, "error": "Could not parse structured config"}
 
-    def suggest_dq_rules(self, profiling_results: dict, table_name: str = "") -> list[dict]:
+    def suggest_dq_rules(self, profiling_results: dict, table_name: str = "", endpoint_name: str = None, client=None) -> list[dict]:
         """Suggest data quality rules from profiling results."""
         system_prompt = _SYSTEM_PROMPTS["profiling"]
         user_message = f"Table: {table_name}\n\nProfiling results:\n{json.dumps(profiling_results, indent=2, default=str)}"
-        response = self._call_claude(system_prompt, user_message)
+        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
         try:
             text = response.strip()
             if text.startswith("```"):
@@ -115,11 +194,11 @@ class AIService:
         except (json.JSONDecodeError, IndexError):
             return [{"raw_response": response}]
 
-    def suggest_pii_remediation(self, scan_results: dict) -> dict:
+    def suggest_pii_remediation(self, scan_results: dict, endpoint_name: str = None, client=None) -> dict:
         """Suggest PII remediation actions."""
         system_prompt = _SYSTEM_PROMPTS["pii"]
         user_message = f"PII scan results:\n{json.dumps(scan_results, indent=2, default=str)}"
-        response = self._call_claude(system_prompt, user_message)
+        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
         return {"summary": response, "recommendations": []}
 
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStatus, useWarehouses } from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -32,16 +33,20 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Sparkles,
+  RefreshCw,
 } from "lucide-react";
 
 type AuthTab = "token" | "oauth" | "azure" | "sp";
 
-type SettingsSection = "connection" | "auth" | "warehouse" | "compute" | "anomaly" | "audit" | "azure" | "interface" | "performance" | "features";
+type SettingsSection = "connection" | "auth" | "warehouse" | "ai-model" | "genie" | "compute" | "anomaly" | "audit" | "azure" | "interface" | "performance" | "features";
 
 const sectionMeta: { key: SettingsSection; label: string; icon: React.ElementType }[] = [
   { key: "connection", label: "Connection", icon: Globe },
   { key: "auth", label: "Authentication", icon: Key },
   { key: "warehouse", label: "Warehouses", icon: Server },
+  { key: "ai-model", label: "AI Model", icon: Cpu },
+  { key: "genie", label: "Genie Space", icon: Sparkles },
   { key: "compute", label: "Compute", icon: Cpu },
   { key: "anomaly", label: "Anomaly Detection", icon: AlertTriangle },
   { key: "audit", label: "Audit & Logs", icon: Database },
@@ -277,6 +282,32 @@ export default function SettingsPage() {
 
   const auth = useAuthStatus();
   const warehouses = useWarehouses();
+
+  // AI Model & Genie Space state
+  const [servingEndpoints, setServingEndpoints] = useState<any[]>([]);
+  const [loadingEndpoints, setLoadingEndpoints] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("dbx_model") || "");
+  const [genieSpaces, setGenieSpaces] = useState<any[]>([]);
+  const [loadingGenie, setLoadingGenie] = useState(false);
+  const [selectedGenie, setSelectedGenie] = useState(() => localStorage.getItem("dbx_genie_space_id") || "");
+
+  const fetchEndpoints = async () => {
+    setLoadingEndpoints(true);
+    try {
+      const data = await api.get<any>("/auth/serving-endpoints");
+      setServingEndpoints(data.endpoints || []);
+    } catch { setServingEndpoints([]); }
+    setLoadingEndpoints(false);
+  };
+
+  const fetchGenieSpaces = async () => {
+    setLoadingGenie(true);
+    try {
+      const data = await api.get<any>("/auth/genie-spaces");
+      setGenieSpaces(data.spaces || []);
+    } catch { setGenieSpaces([]); }
+    setLoadingGenie(false);
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -697,6 +728,103 @@ export default function SettingsPage() {
                   })}
                 </div>
               )}
+            </div>
+          </section>}
+
+          {/* ─── AI Model ─── */}
+          {activeSection === "ai-model" && <section id="ai-model">
+            <SectionHeading title="AI Model" subtitle="Select a serving endpoint for AI features, or use direct Anthropic API" />
+            <div className="mt-3 flex items-center gap-2 mb-3">
+              <Button size="sm" variant="outline" onClick={fetchEndpoints} disabled={loadingEndpoints}>
+                {loadingEndpoints ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Refresh
+              </Button>
+              {selectedModel && <Button size="sm" variant="ghost" onClick={() => { setSelectedModel(""); localStorage.removeItem("dbx_model"); toast.success("Switched to Anthropic API"); }}>Clear Selection</Button>}
+            </div>
+
+            <div className="space-y-2">
+              {/* Anthropic fallback option */}
+              <Card className={`cursor-pointer transition-colors ${!selectedModel ? "border-[#E8453C]/50 bg-[#E8453C]/5" : "hover:border-border"}`}
+                onClick={() => { setSelectedModel(""); localStorage.removeItem("dbx_model"); toast.success("Using Anthropic API (direct)"); }}>
+                <CardContent className="pt-3 pb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-2.5 w-2.5 rounded-full ${!selectedModel ? "bg-[#E8453C]" : "bg-muted"}`} />
+                    <div>
+                      <p className="text-sm font-medium">Anthropic API (Direct)</p>
+                      <p className="text-[10px] text-muted-foreground">Requires ANTHROPIC_API_KEY environment variable</p>
+                    </div>
+                  </div>
+                  {!selectedModel && <Badge className="bg-[#E8453C] text-white text-[9px]">ACTIVE</Badge>}
+                </CardContent>
+              </Card>
+
+              {/* Databricks endpoints */}
+              {servingEndpoints.map(ep => (
+                <Card key={ep.name} className={`cursor-pointer transition-colors ${selectedModel === ep.name ? "border-[#E8453C]/50 bg-[#E8453C]/5" : "hover:border-border"}`}
+                  onClick={() => { setSelectedModel(ep.name); localStorage.setItem("dbx_model", ep.name); toast.success(`AI Model: ${ep.name}`); }}>
+                  <CardContent className="pt-3 pb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2.5 w-2.5 rounded-full ${selectedModel === ep.name ? "bg-[#E8453C]" : ep.state === "READY" ? "bg-muted-foreground" : "bg-muted"}`} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{ep.name}</p>
+                          {ep.is_claude && <Badge className="bg-[#E8453C] text-white text-[9px]">CLAUDE</Badge>}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{ep.provider?.toUpperCase()}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={`text-[9px] ${ep.state === "READY" ? "" : "text-muted-foreground"}`}>{ep.state}</Badge>
+                      {selectedModel === ep.name && <Badge className="bg-[#E8453C] text-white text-[9px]">ACTIVE</Badge>}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {servingEndpoints.length === 0 && !loadingEndpoints && (
+                <p className="text-xs text-muted-foreground text-center py-4">Click Refresh to discover serving endpoints from your workspace</p>
+              )}
+            </div>
+          </section>}
+
+          {/* ─── Genie Space ─── */}
+          {activeSection === "genie" && <section id="genie">
+            <SectionHeading title="Genie Space" subtitle="Select a Databricks Genie space for natural language SQL queries" />
+            <div className="mt-3 flex items-center gap-2 mb-3">
+              <Button size="sm" variant="outline" onClick={fetchGenieSpaces} disabled={loadingGenie}>
+                {loadingGenie ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Refresh
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              {genieSpaces.map(sp => (
+                <Card key={sp.space_id} className={`cursor-pointer transition-colors ${selectedGenie === sp.space_id ? "border-[#E8453C]/50 bg-[#E8453C]/5" : "hover:border-border"}`}
+                  onClick={() => { setSelectedGenie(sp.space_id); localStorage.setItem("dbx_genie_space_id", sp.space_id); toast.success(`Genie Space: ${sp.title}`); }}>
+                  <CardContent className="pt-3 pb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2.5 w-2.5 rounded-full ${selectedGenie === sp.space_id ? "bg-[#E8453C]" : "bg-muted"}`} />
+                      <div>
+                        <p className="text-sm font-medium">{sp.title}</p>
+                        <p className="text-[10px] text-muted-foreground">{sp.space_id}</p>
+                        {sp.description && <p className="text-[10px] text-muted-foreground mt-0.5">{sp.description}</p>}
+                      </div>
+                    </div>
+                    {selectedGenie === sp.space_id && <Badge className="bg-[#E8453C] text-white text-[9px]">ACTIVE</Badge>}
+                  </CardContent>
+                </Card>
+              ))}
+
+              {genieSpaces.length === 0 && !loadingGenie && (
+                <p className="text-xs text-muted-foreground text-center py-4">Click Refresh to discover Genie spaces from your workspace</p>
+              )}
+
+              {/* Manual entry */}
+              <div className="pt-2 border-t border-border mt-3">
+                <p className="text-[10px] text-muted-foreground uppercase font-medium mb-1.5">Manual Entry</p>
+                <div className="flex items-center gap-2">
+                  <input className="flex-1 px-3 py-1.5 text-sm bg-muted border border-border rounded-md" placeholder="Genie Space ID" value={selectedGenie}
+                    onChange={e => { setSelectedGenie(e.target.value); localStorage.setItem("dbx_genie_space_id", e.target.value); }} />
+                </div>
+              </div>
             </div>
           </section>}
 

@@ -56,6 +56,23 @@ class TableMaintenanceRequest(BaseModel):
     dry_run: bool = False
 
 
+class TableProfileRequest(BaseModel):
+    """Request for deep-profiling a single table."""
+    table_fqn: str
+    warehouse_id: str | None = None
+    sample_limit: int = 0
+    top_n: int = 10
+    histogram_bins: int = 20
+
+
+class ResultsProfileRequest(BaseModel):
+    """Request for deep-profiling arbitrary SQL query results."""
+    sql: str
+    warehouse_id: str | None = None
+    top_n: int = 10
+    histogram_bins: int = 20
+
+
 class ExportRequest(CatalogRequest):
     format: Literal["csv", "json"] = "csv"
     output_path: str | None = None

@@ -8,7 +8,7 @@
  * Features: autocomplete, query tabs, query history, saved queries, column sorting,
  *   JSON export, SQL formatting, keyboard shortcuts, table preview, pagination
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,8 @@ import {
   GitCompare, CalendarClock, Share2, Network,
 } from "lucide-react";
 import { toast } from "sonner";
+import { recommendVisualization, buildColumnStats, type VizRecommendation } from "./auto-viz";
+import DataProfilePanel from "./DataProfilePanel";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, ScatterChart, Scatter, RadarChart, Radar,
@@ -56,16 +58,124 @@ function highlightSQL(code: string): string {
   return html;
 }
 
+// ── Simple Markdown Renderer for AI responses ──────────────────────────────
+
+function AiMarkdown({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        // Headings
+        if (trimmed.startsWith("## ")) return <p key={i} className="font-semibold text-foreground mt-2 mb-1">{renderInline(trimmed.slice(3))}</p>;
+        if (trimmed.startsWith("# ")) return <p key={i} className="font-bold text-foreground mt-2 mb-1">{renderInline(trimmed.slice(2))}</p>;
+        // Bullet points
+        if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+          return (
+            <div key={i} className="flex gap-2 pl-1">
+              <span className="text-[#E8453C] shrink-0 mt-0.5">•</span>
+              <span>{renderInline(trimmed.slice(2))}</span>
+            </div>
+          );
+        }
+        // Numbered list
+        const numMatch = trimmed.match(/^(\d+)\.\s/);
+        if (numMatch) {
+          return (
+            <div key={i} className="flex gap-2 pl-1">
+              <span className="text-[#E8453C] shrink-0 font-medium min-w-[16px]">{numMatch[1]}.</span>
+              <span>{renderInline(trimmed.slice(numMatch[0].length))}</span>
+            </div>
+          );
+        }
+        // Regular paragraph
+        return <p key={i}>{renderInline(trimmed)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderInline(text: string): React.ReactNode {
+  // Bold: **text** or __text__
+  const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+  return parts.map((part, i) => {
+    if ((part.startsWith("**") && part.endsWith("**")) || (part.startsWith("__") && part.endsWith("__"))) {
+      return <strong key={i} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+    }
+    // Inline code: `text`
+    const codeParts = part.split(/(`[^`]+`)/g);
+    if (codeParts.length > 1) {
+      return codeParts.map((cp, j) => {
+        if (cp.startsWith("`") && cp.endsWith("`")) {
+          return <code key={`${i}-${j}`} className="px-1 py-0.5 bg-muted rounded text-[10px] font-mono">{cp.slice(1, -1)}</code>;
+        }
+        return cp;
+      });
+    }
+    return part;
+  });
+}
+
 // ── Execution Plan Tree ─────────────────────────────────────────────────────
 
 function ExplainTree({ data }: { data: any[] }) {
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
   if (!data?.length) return null;
-  // EXPLAIN output is usually a single column with plan text
   const planText = data.map(r => Object.values(r)[0]).join("\n");
   const lines = planText.split("\n");
+
+  const explainWithAI = async () => {
+    setAiLoading(true);
+    try {
+      const res = await api.post("/ai/summarize", {
+        context_type: "report",
+        data: {
+          type: "execution_plan",
+          plan: planText,
+          instruction: "Explain this Databricks SQL execution plan. Use this EXACT markdown format:\n\n"
+            + "## What the Query Does\n- bullet point\n\n"
+            + "## Performance\n- bullet point about scans, shuffles, joins\n\n"
+            + "## Optimizations\n- bullet point suggestion\n\n"
+            + "Use **bold** for key terms. Keep each bullet to 1 sentence. Use simple language, no jargon. Max 3 bullets per section."
+        },
+      });
+      setAiExplanation(res.summary || res.error || "No explanation available");
+    } catch (e: any) {
+      setAiExplanation(`AI explanation failed: ${e.message || "Unknown error"}`);
+    }
+    setAiLoading(false);
+  };
+
   return (
     <div className="p-4 font-mono text-[11px] overflow-auto h-full">
-      <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase">Execution Plan</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase">Execution Plan</p>
+        <button
+          onClick={explainWithAI}
+          disabled={aiLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-[#E8453C]/10 text-[#E8453C] hover:bg-[#E8453C]/20 transition-colors disabled:opacity-50"
+        >
+          {aiLoading ? (
+            <><svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Explaining...</>
+          ) : (
+            <><svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg> Explain with AI</>
+          )}
+        </button>
+      </div>
+
+      {aiExplanation && (
+        <div className="mb-4 p-3 rounded-lg bg-[#E8453C]/5 border border-[#E8453C]/20 font-sans text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+          <div className="flex items-center gap-1.5 mb-2">
+            <svg className="h-3.5 w-3.5 text-[#E8453C]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>
+            <span className="font-semibold text-[#E8453C] text-[11px]">AI Explanation</span>
+          </div>
+          <AiMarkdown text={aiExplanation} />
+        </div>
+      )}
+
       {lines.map((line, i) => {
         const indent = line.search(/\S/);
         const isOperator = /^[\s]*[+\-*|\\]/.test(line) || /^\s*(Scan|Filter|Project|Aggregate|Sort|Join|Exchange|HashAggregate|BroadcastHashJoin|SortMergeJoin|WholeStageCodegen|FileScan|InMemoryTableScan)/i.test(line.trim());
@@ -176,7 +286,7 @@ interface TreeNode {
 // Column info cache for table preview on hover
 const _tableColumns: Record<string, string[]> = {};
 
-function CatalogTree({ onSelect, onShowDDL }: { onSelect: (fqn: string) => void; onShowDDL?: (fqn: string) => void }) {
+function CatalogTree({ onSelect, onShowDDL, onProfile }: { onSelect: (fqn: string) => void; onShowDDL?: (fqn: string) => void; onProfile?: (fqn: string) => void }) {
   const [catalogs, setCatalogs] = useState<TreeNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<Set<string>>(new Set());
@@ -354,6 +464,14 @@ function CatalogTree({ onSelect, onShowDDL }: { onSelect: (fqn: string) => void;
           <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 flex items-center gap-2" onClick={() => { navigator.clipboard.writeText(ctxMenu.fqn); toast.success("Copied"); setCtxMenu(null); }}>
             <Copy className="h-3 w-3" /> Copy FQN
           </button>
+          {onProfile && (
+            <>
+              <div className="h-px bg-border my-0.5" />
+              <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 flex items-center gap-2 text-[#E8453C]" onClick={() => { onProfile(ctxMenu.fqn); setCtxMenu(null); }}>
+                <BarChart3 className="h-3 w-3" /> Profile Table
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -493,15 +611,36 @@ interface TabState {
 
 let _nextTabId = 1;
 
+const STORAGE_KEY = "clxs-datalab-tabs";
+
+function loadPersistedTabs(): { tabs: TabState[]; activeId: number } {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.tabs?.length > 0) {
+        _nextTabId = Math.max(...parsed.tabs.map((t: TabState) => t.id)) + 1;
+        return { tabs: parsed.tabs, activeId: parsed.activeId || parsed.tabs[0].id };
+      }
+    }
+  } catch {}
+  return { tabs: [{ id: _nextTabId++, name: "Query 1", sql: "", results: null, error: null, elapsed: null }], activeId: 1 };
+}
+
 export default function SqlWorkbench({ embedded = false }: { embedded?: boolean }) {
   const [open, setOpen] = useState(embedded);
   const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Tabs
-  const [tabs, setTabs] = useState<TabState[]>([{ id: _nextTabId++, name: "Query 1", sql: "", results: null, error: null, elapsed: null }]);
-  const [activeTabId, setActiveTabId] = useState(tabs[0].id);
+  // Tabs — persisted in sessionStorage
+  const [tabs, setTabs] = useState<TabState[]>(() => loadPersistedTabs().tabs);
+  const [activeTabId, setActiveTabId] = useState(() => loadPersistedTabs().activeId);
+
+  // Persist tabs to sessionStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs, activeId: activeTabId })); } catch {}
+  }, [tabs, activeTabId]);
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
   function updateTab(id: number, patch: Partial<TabState>) {
@@ -559,6 +698,146 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     setPage(0);
   }
   function clearAllFilters() { setColumnFilters({}); setPage(0); }
+
+  // ── AI Features ──
+  const [aiFixing, setAiFixing] = useState(false);
+  const [aiFix, setAiFix] = useState<{ explanation: string; fixedSql: string } | null>(null);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiInsightLoading, setAiInsightLoading] = useState(false);
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [generatePrompt, setGeneratePrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  // ── Auto-Viz + AI Explain ──
+  const [autoVizEnabled, setAutoVizEnabled] = useState(true);
+  const [autoVizRec, setAutoVizRec] = useState<VizRecommendation | null>(null);
+  const [aiExplainText, setAiExplainText] = useState<string | null>(null);
+  const [aiExplainLoading, setAiExplainLoading] = useState(false);
+  const [profileTarget, setProfileTarget] = useState<string | null>(null);
+
+  async function fixWithAI() {
+    if (!error || !sql.trim()) return;
+    setAiFixing(true);
+    setAiFix(null);
+    try {
+      const res = await api.post("/ai/summarize", {
+        context_type: "report",
+        data: {
+          type: "fix_sql",
+          sql: sql.trim(),
+          error: error,
+          instruction: "The SQL query below failed with the given error on Databricks. "
+            + "Fix the SQL query and return ONLY the corrected SQL. No explanation, no markdown. "
+            + "Use Unity Catalog three-level namespace. "
+            + "information_schema.tables columns: table_catalog, table_schema, table_name, table_type, data_source_format, created, created_by, last_altered, comment. "
+            + "information_schema.table_storage DOES NOT EXIST. bytes/num_rows columns DO NOT EXIST on information_schema.tables."
+        },
+      });
+      const fixed = (res.summary || "").trim();
+      const cleanSql = fixed.startsWith("```") ? fixed.split("\n", 1)[1]?.split("```")[0]?.trim() || fixed : fixed;
+      setAiFix({ explanation: "AI suggested a fix", fixedSql: cleanSql });
+    } catch (e: any) {
+      setAiFix({ explanation: `Fix failed: ${e.message}`, fixedSql: "" });
+    }
+    setAiFixing(false);
+  }
+
+  async function analyzeResultsWithAI() {
+    if (!results?.length) return;
+    setAiInsightLoading(true);
+    setAiInsight(null);
+    try {
+      const cols = Object.keys(results[0]);
+      const res = await api.post("/ai/summarize", {
+        context_type: "report",
+        data: {
+          type: "query_results",
+          sql: sql.trim(),
+          columns: cols,
+          row_count: results.length,
+          sample: results.slice(0, 10),
+          instruction: "Analyze these SQL query results. Use this EXACT markdown format:\n\n"
+            + "## Key Findings\n- bullet with **bold** numbers\n\n"
+            + "## Patterns\n- bullet about trends or distributions\n\n"
+            + "## Notable\n- bullet about anomalies or concerns\n\n"
+            + "Keep each bullet to 1 sentence. Be specific with numbers. Max 2 bullets per section."
+        },
+      });
+      setAiInsight(res.summary || res.error || "No insights available");
+    } catch (e: any) {
+      setAiInsight(`Analysis failed: ${e.message}`);
+    }
+    setAiInsightLoading(false);
+  }
+
+  async function generateSqlFromNL() {
+    if (!generatePrompt.trim()) return;
+    setGenerating(true);
+    try {
+      const res = await api.post("/ai/summarize", {
+        context_type: "report",
+        data: {
+          type: "generate_sql",
+          question: generatePrompt.trim(),
+          instruction: "Convert this natural language question into a valid Databricks SQL query. "
+            + "Use Unity Catalog three-level namespace (catalog.schema.table). "
+            + "Return ONLY the SQL query. No explanation, no markdown, no code blocks. "
+            + "Add LIMIT 100 unless specified otherwise."
+        },
+      });
+      const genSql = (res.summary || "").trim();
+      const clean = genSql.startsWith("```") ? genSql.split("\n", 1)[1]?.split("```")[0]?.trim() || genSql : genSql;
+      if (clean) setSql(clean);
+      setShowGenerate(false);
+      setGeneratePrompt("");
+    } catch (e: any) {
+      // keep modal open on error
+    }
+    setGenerating(false);
+  }
+
+  // Auto-viz: recommend chart when results change
+  useEffect(() => {
+    if (!results?.length || !autoVizEnabled) { setAutoVizRec(null); return; }
+    const cols = Object.keys(results[0]);
+    const types: Record<string, any> = {};
+    for (const col of cols) { types[col] = inferColumnType(results.slice(0, 10).map(r => r[col])); }
+    const rec = recommendVisualization(cols, types, results.slice(0, 50), results.length);
+    setAutoVizRec(rec);
+    // Auto-apply for high-confidence recommendations when switching to chart view
+    if (rec.confidence === "high") {
+      setChartType(rec.chartType);
+      setChartXCol(rec.xCol);
+      setChartYCol(rec.yCol);
+    }
+  }, [results, autoVizEnabled]);
+
+  async function explainResultsWithAI() {
+    if (!results?.length) return;
+    setAiExplainLoading(true);
+    setAiExplainText(null);
+    try {
+      const cols = Object.keys(results[0]);
+      const types: Record<string, any> = {};
+      for (const col of cols) { types[col] = inferColumnType(results.slice(0, 5).map(r => r[col])); }
+      const stats = buildColumnStats(cols, types, results);
+      const res = await api.post("/ai/summarize", {
+        context_type: "query_explain",
+        data: {
+          sql: sql.trim(),
+          columns: cols,
+          column_types: types,
+          row_count: results.length,
+          column_stats: stats,
+          sample_rows: results.slice(0, 5),
+        },
+      });
+      setAiExplainText(res.summary || "No explanation available");
+    } catch (e: any) {
+      setAiExplainText(`Explanation failed: ${e.message}`);
+    }
+    setAiExplainLoading(false);
+  }
 
   // Pin tabs
   const [pinnedTabs, setPinnedTabs] = useState<Set<number>>(new Set());
@@ -909,7 +1188,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   // ── Share query ──────────────────────────────────────────────────────────
   function shareQuery() {
     const encoded = btoa(encodeURIComponent(sql));
-    const url = `${window.location.origin}/sql-workbench#q=${encoded}`;
+    const url = `${window.location.origin}/data-lab#q=${encoded}`;
     navigator.clipboard.writeText(url);
     toast.success("Share link copied to clipboard");
   }
@@ -1124,7 +1403,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     if (embedded) return null;
     return (
       <button onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-[#E8453C]/5 text-[#E8453C] text-sm font-medium rounded-lg shadow-lg hover:bg-[#E8453C]/10 transition-colors border border-[#E8453C]/20">
-        <Terminal className="h-4 w-4 text-[#E8453C]" /> SQL Workbench <PanelBottomOpen className="h-3.5 w-3.5 text-[#E8453C]/50" />
+        <Terminal className="h-4 w-4 text-[#E8453C]" /> Data Lab <PanelBottomOpen className="h-3.5 w-3.5 text-[#E8453C]/50" />
       </button>
     );
   }
@@ -1148,7 +1427,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30 shrink-0">
         <div className="flex items-center gap-3 overflow-x-auto">
           <Terminal className="h-4 w-4 text-[#E8453C] shrink-0" />
-          <span className="text-[13px] font-semibold shrink-0">SQL Workbench</span>
+          <span className="text-[13px] font-semibold shrink-0">Data Lab</span>
           <div className="w-px h-5 bg-border mx-2 shrink-0" />
 
           {/* Execution mode toggle */}
@@ -1196,6 +1475,18 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             <Button size="sm" variant="ghost" onClick={copyResults} title="Copy"><Copy className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={downloadCsv} title="CSV"><Download className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={downloadJson} title="JSON"><FileJson className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={analyzeResultsWithAI} disabled={aiInsightLoading} title="Quick AI Insights"
+              className={aiInsight ? "text-[#E8453C]" : ""}>
+              {aiInsightLoading
+                ? <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={explainResultsWithAI} disabled={aiExplainLoading} title="Explain Results with AI"
+              className={`gap-1 ${aiExplainText ? "text-[#E8453C]" : ""}`}>
+              {aiExplainLoading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span className="text-[10px] hidden xl:inline">Explain</span></>}
+            </Button>
             <div className="w-px h-4 bg-border mx-0.5" />
           </>)}
 
@@ -1227,6 +1518,10 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors" onClick={() => { setShowShortcuts(!showShortcuts); setShowMore(false); }}>
                   <Keyboard className="h-3.5 w-3.5 text-muted-foreground" /> Keyboard Shortcuts
                 </button>
+                <div className="h-px bg-border my-1" />
+                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-accent/50 transition-colors text-[#E8453C]" onClick={() => { setShowGenerate(true); setShowMore(false); }}>
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg> Generate SQL with AI
+                </button>
               </div>
             )}
           </div>
@@ -1254,6 +1549,31 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             </div>
           ))}
           <button onClick={() => setShowShortcuts(false)} className="mt-2 text-[10px] text-muted-foreground hover:text-foreground">Close</button>
+        </div>
+      )}
+
+      {/* Generate SQL with AI */}
+      {showGenerate && (
+        <div className="absolute top-14 right-4 z-[100] bg-popover border border-[#E8453C]/30 rounded-lg shadow-lg p-3 w-80">
+          <p className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-[#E8453C]">
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>
+            Generate SQL with AI
+          </p>
+          <textarea
+            value={generatePrompt}
+            onChange={e => setGeneratePrompt(e.target.value)}
+            placeholder="Describe what you want to query...&#10;e.g. 'Show me all tables in edp_dev with more than 10 columns'"
+            rows={3}
+            className="w-full text-xs border border-border rounded px-2 py-1.5 bg-background mb-2 resize-none"
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateSqlFromNL(); } }}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={generateSqlFromNL} disabled={!generatePrompt.trim() || generating} className="bg-[#E8453C] hover:bg-[#E8453C]/90">
+              {generating ? <><svg className="h-3 w-3 mr-1 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Generating...</> : "Generate"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowGenerate(false); setGeneratePrompt(""); }}>Cancel</Button>
+          </div>
         </div>
       )}
 
@@ -1316,7 +1636,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
           <div className="px-3 py-2.5 border-b border-border bg-muted/30">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5"><Database className="h-3 w-3" />Catalog Browser</p>
           </div>
-          <CatalogTree onSelect={insertAtCursor} onShowDDL={showDDL} />
+          <CatalogTree onSelect={insertAtCursor} onShowDDL={showDDL} onProfile={(fqn) => { setProfileTarget(fqn); setViewMode("profile"); }} />
         </div>
         <ResizeHandle width={browserWidth} onResize={setBrowserWidth} min={180} max={450} side="right" />
 
@@ -1343,7 +1663,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             {dragOver && <div className="absolute inset-2 z-10 rounded-lg border-2 border-dashed border-[#E8453C] bg-[#E8453C]/10 flex items-center justify-center pointer-events-none"><span className="text-sm font-medium text-[#E8453C]">Drop table here</span></div>}
             {/* Syntax-highlighted SQL editor */}
             <div className="flex-1 relative rounded-lg border border-border/60 overflow-hidden bg-muted/30">
-              <pre className="absolute inset-0 p-3 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none" aria-hidden="true"
+              <pre className="absolute inset-0 p-3 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none text-foreground" aria-hidden="true"
                 dangerouslySetInnerHTML={{ __html: highlightSQL(sql) + (sql.endsWith("\n") ? "\u00A0" : "") }} />
               <textarea ref={textareaRef} value={sql}
                 onChange={(e) => { setSql(e.target.value); setTimeout(updateSuggestions, 0); }}
@@ -1412,6 +1732,12 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 ))}
               </div>
               {viewMode === "chart" && (<>
+                {autoVizRec && (
+                  <button onClick={() => { setChartType(autoVizRec.chartType); setChartXCol(autoVizRec.xCol); setChartYCol(autoVizRec.yCol); }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#E8453C]/10 text-[#E8453C] hover:bg-[#E8453C]/20 transition-colors" title={autoVizRec.reason}>
+                    <Zap className="h-3 w-3" /> Auto
+                  </button>
+                )}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-muted-foreground">Type:</span>
                   <select value={chartType} onChange={e => setChartType(e.target.value as any)} className="text-[10px] bg-background border border-border rounded px-1 py-0.5">
@@ -1445,6 +1771,9 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                     </select>
                   </div>
                 )}
+                {autoVizRec && autoVizRec.confidence !== "low" && (
+                  <span className="text-[9px] text-muted-foreground italic ml-1">{autoVizRec.reason}</span>
+                )}
               </>)}
             </div>
           )}
@@ -1460,7 +1789,33 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 </div>
               </div>
             )}
-            {error && <div className="p-3 text-sm text-red-400 font-mono bg-red-500/5">{error}</div>}
+            {error && (
+              <div className="bg-red-500/5 border-b border-red-500/20">
+                <div className="flex items-start justify-between p-3 gap-3">
+                  <p className="text-sm text-red-400 font-mono flex-1">{error}</p>
+                  <button onClick={fixWithAI} disabled={aiFixing}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-[#E8453C]/10 text-[#E8453C] hover:bg-[#E8453C]/20 transition-colors disabled:opacity-50">
+                    {aiFixing ? <><svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Fixing...</>
+                      : <><svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg> Fix with AI</>}
+                  </button>
+                </div>
+                {aiFix && (
+                  <div className="px-3 pb-3">
+                    {aiFix.fixedSql && (
+                      <div className="rounded-md border border-[#E8453C]/20 bg-[#E8453C]/5 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-semibold text-[#E8453C] uppercase">AI Suggested Fix</span>
+                          <button onClick={() => { setSql(aiFix.fixedSql); setError(null); setAiFix(null); }}
+                            className="px-2 py-1 text-[10px] font-medium bg-[#E8453C] text-white rounded hover:bg-[#E8453C]/90">Apply Fix</button>
+                        </div>
+                        <pre className="text-xs font-mono text-foreground whitespace-pre-wrap">{aiFix.fixedSql}</pre>
+                      </div>
+                    )}
+                    {!aiFix.fixedSql && <p className="text-xs text-muted-foreground">{aiFix.explanation}</p>}
+                  </div>
+                )}
+              </div>
+            )}
             {results && results.length === 0 && !error && <div className="p-4 text-sm text-muted-foreground text-center">Query returned no rows.</div>}
             {displayResults && displayResults.length > 0 && viewMode === "chart" && (() => {
               // Brand-harmonized palette — primary red with warm/cool complements
@@ -1622,37 +1977,19 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 }
               }
 
-              // Geo Map — simple SVG world projection
+              // Geo Map — Leaflet interactive map
               if (chartType === "map") {
                 if (!latCol || !lngCol) return (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="text-center"><p className="text-sm font-medium">No geo columns detected</p><p className="text-xs mt-1">Map requires columns named latitude/longitude (or lat/lng/lon)</p></div>
                   </div>
                 );
-                // Simple equirectangular projection
-                const w = 800, h = 400;
-                const project = (lat: number, lng: number) => [((lng + 180) / 360) * w, ((90 - lat) / 180) * h];
+                const LeafletMap = lazy(() => import("@/components/sql/LeafletMap"));
                 return (
-                  <div className="p-4 h-full flex flex-col items-center justify-center">
-                    <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-h-full border border-border rounded-lg bg-muted/20" style={{ maxWidth: 900 }}>
-                      {/* Simple world outline */}
-                      <rect x={0} y={0} width={w} height={h} fill="none" />
-                      {/* Grid lines */}
-                      {[-60,-30,0,30,60].map(lat => { const y = ((90-lat)/180)*h; return <line key={`lat${lat}`} x1={0} y1={y} x2={w} y2={y} stroke="var(--border)" strokeWidth={0.5} opacity={0.3} />; })}
-                      {[-120,-60,0,60,120].map(lng => { const x = ((lng+180)/360)*w; return <line key={`lng${lng}`} x1={x} y1={0} x2={x} y2={h} stroke="var(--border)" strokeWidth={0.5} opacity={0.3} />; })}
-                      {/* Equator */}
-                      <line x1={0} y1={h/2} x2={w} y2={h/2} stroke="var(--border)" strokeWidth={1} opacity={0.5} />
-                      {/* Data points */}
-                      {mapData.map((p, i) => {
-                        const [px, py] = project(p.lat, p.lng);
-                        return <g key={i}>
-                          <circle cx={px} cy={py} r={4} fill="#E8453C" opacity={0.7} stroke="white" strokeWidth={1}>
-                            <title>{p.label || `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`}</title>
-                          </circle>
-                        </g>;
-                      })}
-                    </svg>
-                    <p className="text-[10px] text-muted-foreground mt-2">{mapData.length} points plotted from {latCol}/{lngCol}</p>
+                  <div className="h-full w-full">
+                    <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+                      <LeafletMap points={mapData} />
+                    </Suspense>
                   </div>
                 );
               }
@@ -1668,6 +2005,32 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 </div>
               );
             })()}
+            {/* AI Insight Card (quick) */}
+            {aiInsight && viewMode === "table" && (
+              <div className="mx-3 mt-2 mb-1 p-3 rounded-lg bg-[#E8453C]/5 border border-[#E8453C]/20 text-xs text-foreground leading-relaxed">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1.5 font-semibold text-[#E8453C] text-[11px]">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>
+                    AI Analysis
+                  </span>
+                  <button onClick={() => setAiInsight(null)} className="text-muted-foreground hover:text-foreground text-[10px]">Dismiss</button>
+                </div>
+                <AiMarkdown text={aiInsight} />
+              </div>
+            )}
+            {/* AI Explain Card (detailed — shows in any view mode) */}
+            {aiExplainText && (
+              <div className="mx-3 mt-2 mb-1 p-3 rounded-lg bg-gradient-to-r from-[#E8453C]/5 to-[#F06D55]/5 border border-[#E8453C]/20 text-xs text-foreground leading-relaxed">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1.5 font-semibold text-[#E8453C] text-[11px]">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    AI Explanation
+                  </span>
+                  <button onClick={() => setAiExplainText(null)} className="text-muted-foreground hover:text-foreground text-[10px]">Dismiss</button>
+                </div>
+                <AiMarkdown text={aiExplainText} />
+              </div>
+            )}
             {displayResults && displayResults.length > 0 && viewMode === "table" && (() => {
               const totalPages = Math.ceil(displayResults.length / pageSize);
               const startIdx = page * pageSize;
@@ -1799,76 +2162,13 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
               </div>
             )}
 
-            {/* Profiler view — computed from current results */}
-            {viewMode === "profile" && results && results.length > 0 && (() => {
-              const cols = Object.keys(results[0]);
-              const profiles = cols.map(col => {
-                const vals = results.map(r => r[col]);
-                const nonNull = vals.filter(v => v != null);
-                const nullCount = vals.length - nonNull.length;
-                const distinct = new Set(nonNull.map(String)).size;
-                const nums = nonNull.map(Number).filter(n => !isNaN(n));
-                const strs = nonNull.map(String);
-                return {
-                  column: col,
-                  type: inferColumnType(vals.slice(0, 5)),
-                  total: vals.length,
-                  nulls: nullCount,
-                  nullPct: ((nullCount / vals.length) * 100).toFixed(1),
-                  distinct,
-                  distinctPct: ((distinct / vals.length) * 100).toFixed(1),
-                  min: nums.length ? Math.min(...nums) : strs.sort()[0] ?? "—",
-                  max: nums.length ? Math.max(...nums) : strs.sort().reverse()[0] ?? "—",
-                  avg: nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2) : "—",
-                  sample: String(nonNull[0] ?? "NULL"),
-                };
-              });
-              return (
-                <div className="overflow-auto h-full">
-                  <table className="w-full text-[11px] font-mono">
-                    <thead className="sticky top-0 bg-muted/80 backdrop-blur">
-                      <tr className="border-b border-border">
-                        {["Column", "Type", "Total", "Nulls", "Null%", "Distinct", "Dist%", "Min", "Max", "Avg", "Sample"].map(h => (
-                          <th key={h} className="px-3 py-2 text-left text-[10px] text-muted-foreground font-semibold">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {profiles.map((p, i) => (
-                        <tr key={p.column} className={`border-b border-border/30 hover:bg-accent/30 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
-                          <td className="px-3 py-1.5 font-semibold text-foreground">{p.column}</td>
-                          <td className="px-3 py-1.5"><Badge variant="outline" className="text-[9px]">{p.type}</Badge></td>
-                          <td className="px-3 py-1.5">{p.total}</td>
-                          <td className="px-3 py-1.5">{p.nulls > 0 ? <span className="text-amber-500">{p.nulls}</span> : <span className="text-green-500">0</span>}</td>
-                          <td className="px-3 py-1.5">
-                            <div className="flex items-center gap-1">
-                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${p.nullPct}%` }} /></div>
-                              <span className="text-[9px]">{p.nullPct}%</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5">{p.distinct}</td>
-                          <td className="px-3 py-1.5">
-                            <div className="flex items-center gap-1">
-                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${p.distinctPct}%` }} /></div>
-                              <span className="text-[9px]">{p.distinctPct}%</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5 truncate max-w-[100px]">{String(p.min)}</td>
-                          <td className="px-3 py-1.5 truncate max-w-[100px]">{String(p.max)}</td>
-                          <td className="px-3 py-1.5">{String(p.avg)}</td>
-                          <td className="px-3 py-1.5 truncate max-w-[120px] text-muted-foreground">{p.sample}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-            {viewMode === "profile" && (!results || results.length === 0) && (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <BarChart3 className="h-8 w-8 mb-2 opacity-20" />
-                <p className="text-sm">Run a query first to see column profiles</p>
-              </div>
+            {/* Deep Profiler view */}
+            {viewMode === "profile" && (
+              <DataProfilePanel
+                tableFqn={profileTarget || undefined}
+                querySql={!profileTarget && results?.length ? sql.trim() : undefined}
+                onClose={() => { setProfileTarget(null); setViewMode("table"); }}
+              />
             )}
 
             {/* Describe view */}

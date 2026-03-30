@@ -45,6 +45,22 @@ _SYSTEM_PROMPTS = {
         "copy_permissions (bool), copy_tags (bool). If information is ambiguous, make reasonable defaults. "
         "Return ONLY a JSON object with these keys, plus an 'explanation' key describing what you understood."
     ),
+    "query_explain": (
+        "You are a data analyst assistant. Given a SQL query, its result column metadata, "
+        "summary statistics, and a sample of rows, explain what the data shows in plain English. "
+        "Use this EXACT markdown format:\n\n"
+        "## What This Data Shows\n- 1-2 bullets describing what the query returns\n\n"
+        "## Key Findings\n- Specific numbers, trends, distributions from the stats\n\n"
+        "## Notable Patterns\n- Any outliers, correlations, or anomalies\n\n"
+        "## Recommendations\n- What to investigate further or actions to consider\n\n"
+        "Be specific with numbers from the provided statistics. Keep each bullet to 1 sentence. Max 3 bullets per section."
+    ),
+    "ai_viz_suggest": (
+        "You are a data visualization expert. Given column names, types, cardinality, and sample data, "
+        "recommend the single best chart type from: bar, hbar, stacked, line, area, scatter, pie, radar, treemap, funnel, composed. "
+        "Return ONLY a JSON object: {\"chartType\": \"...\", \"xCol\": \"...\", \"yCol\": \"...\", \"reason\": \"...\"}. "
+        "No markdown, no explanation outside the JSON."
+    ),
 }
 
 

@@ -10,10 +10,12 @@ from api.models.analysis import (
     EstimateRequest,
     ExportRequest,
     ProfileRequest,
+    ResultsProfileRequest,
     SearchRequest,
     SnapshotRequest,
     StorageMetricsRequest,
     TableMaintenanceRequest,
+    TableProfileRequest,
     ValidateRequest,
 )
 
@@ -125,6 +127,40 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
         max_workers=req.max_workers, output_path=req.output_path,
     )
     return result
+
+
+@router.post("/profile-table", summary="Deep-profile a single table")
+async def profile_table_deep(req: TableProfileRequest, client=Depends(get_db_client)):
+    """Deep-profile a single table with histograms and top-N values.
+
+    Returns per-column stats (null count, distinct count, min/max/avg),
+    distribution histograms for numeric columns, and top-N value frequencies
+    for string columns.
+    """
+    from src.profiling_deep import deep_profile_table
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    return deep_profile_table(
+        client, wid, req.table_fqn,
+        top_n=req.top_n, histogram_bins=req.histogram_bins,
+        sample_limit=req.sample_limit,
+    )
+
+
+@router.post("/profile-results", summary="Deep-profile SQL query results")
+async def profile_results(req: ResultsProfileRequest, client=Depends(get_db_client)):
+    """Deep-profile the results of an arbitrary SQL query.
+
+    Wraps the user's SQL as a CTE and computes column stats, histograms,
+    and top-N values server-side without materializing results twice.
+    """
+    from src.profiling_deep import deep_profile_sql
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    return deep_profile_sql(
+        client, wid, req.sql,
+        top_n=req.top_n, histogram_bins=req.histogram_bins,
+    )
 
 
 @router.post("/estimate", summary="Estimate clone cost")

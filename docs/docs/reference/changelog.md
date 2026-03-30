@@ -9,6 +9,77 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.10.2 — Data Lab Enhancements: Notebooks, Profiler & Auto-Viz (2026-03-30)
+
+### Added
+- **SQL Notebooks** — multi-cell SQL + Markdown notebook interface for interactive data exploration
+  - Add, delete, reorder, duplicate cells (SQL or Markdown)
+  - Run individual cells or "Run All" sequentially
+  - Each SQL cell has its own results table and chart view with auto-visualization
+  - Markdown cells with rich rendering (headings, lists, bold, code, links)
+  - Save/load notebooks (localStorage + backend JSON API)
+  - Export notebooks as `.sql` files
+  - New route at `/notebooks` with sidebar navigation under Discovery
+  - Backend CRUD API at `/api/notebooks`
+  - **Catalog Browser Sidebar** — collapsible catalog → schema → table tree; click to insert `SELECT * FROM` into focused cell
+  - **Execution Counter** — Jupyter-style `[1]`, `[2]`, `[*]` badges on SQL cells showing execution order
+  - **AI Features per Cell** — Fix with AI (on error), Explain Results with AI, Generate SQL from natural language prompt
+  - **Parameterized Cells** — use `{{variable}}` syntax in SQL; auto-detected parameter bar with input fields for each variable
+  - **Cell Duplication** — one-click clone any cell
+  - **Auto-save** — automatic save to localStorage every 30 seconds when changes are detected
+  - **Table of Contents** — auto-generated from markdown headings; click to jump to section
+  - **Keyboard Shortcuts** — `Ctrl+S` save, `Ctrl+Enter` run cell, `Shift+Enter` run & advance to next, `Esc` blur
+  - **Output Collapse** — toggle to hide/show cell results for long notebooks
+- **Deep Data Profiler** — one-click column-level profiling with distribution charts
+  - Right-click any table in catalog browser → "Profile Table" for server-side deep profiling
+  - "Profile" tab on query results profiles via CTE wrapping (no double execution)
+  - Per-column stats: null count/%, distinct count/%, min, max, avg
+  - Visual histograms for numeric columns using `width_bucket()` (Recharts)
+  - Top-N value frequency bar charts for string/categorical columns
+  - Summary header with KPI cards: row count, columns, completeness %, type distribution pie
+  - Backend endpoints: `POST /api/profile-table`, `POST /api/profile-results`
+- **Auto-Visualization** — AI-powered chart recommendation engine
+  - Heuristic engine analyzes column types, cardinality, and naming patterns
+  - Automatically selects best chart type and axis mappings when results load
+  - Rules: time + numeric → line, category + value → bar/pie, two numerics → scatter
+  - "Auto" button in chart controls to re-apply recommendation
+  - Recommendation reason displayed as badge (e.g., "Time series: date_col over time")
+- **AI Explain Results** — detailed plain-English data narratives
+  - "Explain" button in toolbar sends column stats + sample to AI (< 5KB payload)
+  - Returns structured markdown: What This Data Shows, Key Findings, Notable Patterns, Recommendations
+  - New `query_explain` and `ai_viz_suggest` system prompts in AI service
+
+---
+
+## v0.10.1 — Data Lab, AI Features & Jobs Cloning (2026-03-30)
+
+### Added
+- **SQL Workbench renamed to Data Lab** — new name reflecting broader data exploration capabilities
+- **Data Lab AI Features** — 4 AI-powered tools integrated into the Data Lab:
+  - **Fix with AI** — when a query fails, click to get AI-corrected SQL with "Apply Fix" button
+  - **Analyze with AI** — summarize query results with key findings, patterns, and anomalies
+  - **Explain Plan with AI** — plain-English explanation of execution plans with performance concerns and optimization suggestions
+  - **Generate SQL with AI** — natural language to SQL via the More menu
+  - **AI Markdown Renderer** — all AI responses formatted with headings, bullet points, bold, and inline code
+- **Databricks LLM Integration** — dual-backend AI: Anthropic API (direct) or Databricks Model Serving endpoints
+  - Settings page: AI Model selection with endpoint discovery, Claude badge, state indicator
+  - Settings page: Genie Space selection for natural language SQL
+  - API client sends `X-Databricks-Model` and `X-Databricks-Genie-Space` headers automatically
+  - AI service routes calls through Databricks serving endpoints (OpenAI chat format) or falls back to Anthropic
+- **AI Assistant page** — under Discovery, currently marked "Coming Soon" with feature preview
+- **Databricks Jobs Cloning** — clone job definitions within or across workspaces
+  - List all workspace jobs with search/filter
+  - Clone same-workspace and cross-workspace (with host/token)
+  - Job diff — field-by-field comparison
+  - Backup/restore — export all job definitions as JSON
+  - 7 REST API endpoints under `/api/jobs/`
+- **Fullscreen button** — added to Data Lab embedded mode (browser native fullscreen API)
+
+### Changed
+- **Data Lab** (formerly SQL Workbench) — renamed throughout sidebar, header, and component
+
+---
+
 ## v0.10.0 — MDM, Portal Expansion & UI Declutter (2026-03-28)
 
 ### Added

@@ -6,7 +6,7 @@ import {
   Settings2, FileText, Wrench, GitBranch, RefreshCw,
   ChevronRight, ChevronDown, History, BarChart3,
   Undo2, GitFork, Zap, Layers, Terminal, Sparkles,
-  X, Plus, PanelLeftClose, PanelLeftOpen,
+  X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -50,8 +50,9 @@ export const allNavSections: NavSection[] = [
     title: "Discovery",
     items: [
       { href: "/explore", label: "Explorer", icon: FolderTree },
-      { href: "/sql-workbench", label: "SQL Workbench", icon: Terminal },
+      { href: "/data-lab", label: "Data Lab", icon: Terminal },
       { href: "/ai-assistant", label: "AI Assistant", icon: Sparkles },
+      { href: "/notebooks", label: "Notebooks", icon: BookOpen },
       { href: "/lineage", label: "Lineage", icon: GitFork },
       { href: "/view-deps", label: "Dependencies", icon: GitBranch },
       { href: "/impact", label: "Impact Analysis", icon: Zap },

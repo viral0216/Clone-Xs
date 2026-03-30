@@ -66,6 +66,7 @@ const LakehouseMonitorPage = lazy(() => import("@/app/lakehouse-monitor/page"));
 const FederationPage = lazy(() => import("@/app/federation/page"));
 const DeltaSharingPage = lazy(() => import("@/app/delta-sharing/page"));
 const DltPage = lazy(() => import("@/app/dlt/page"));
+const NotebooksPage = lazy(() => import("@/app/notebooks/page"));
 
 // Lazy-load governance pages
 const GovDictionary = lazy(() => import("@/app/governance/dictionary/page"));
@@ -285,8 +286,10 @@ export default function App() {
               <Route path="/view-deps" element={<ViewDepsPage />} />
               <Route path="/create-job" element={<CreateJobPage />} />
               <Route path="/storage-metrics" element={<StorageMetricsPage />} />
-              <Route path="/sql-workbench" element={<SqlWorkbenchPage />} />
+              <Route path="/data-lab" element={<SqlWorkbenchPage />} />
+              <Route path="/sql-workbench" element={<SqlWorkbenchPage />} />{/* redirect old URL */}
               <Route path="/ai-assistant" element={<AiAssistantPage />} />
+              <Route path="/notebooks" element={<Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin" /></div>}><NotebooksPage /></Suspense>} />
 
               {/* UC Enhancement Routes */}
               <Route path="/system-insights" element={<Suspense fallback={<PageFallback />}><SystemInsightsPage /></Suspense>} />

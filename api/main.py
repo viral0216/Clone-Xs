@@ -402,6 +402,9 @@ app.include_router(job_clone.router, prefix="/api/jobs", tags=["jobs"])
 from api.routers import ai_assistant
 app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-assistant"])
 
+from api.routers import notebooks
+app.include_router(notebooks.router, prefix="/api/notebooks", tags=["notebooks"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

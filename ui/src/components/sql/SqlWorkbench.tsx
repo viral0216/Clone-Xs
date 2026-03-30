@@ -1062,7 +1062,27 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     document.body.style.cursor = "row-resize"; document.body.style.userSelect = "none";
     document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp);
   }
-  function toggleFullscreen() { setIsFullscreen(!isFullscreen); setPanelHeight(isFullscreen ? 50 : 95); }
+  const containerRef = useRef<HTMLDivElement>(null);
+  function toggleFullscreen() {
+    if (embedded) {
+      if (!document.fullscreenElement) {
+        containerRef.current?.requestFullscreen?.();
+        setIsFullscreen(true);
+      } else {
+        document.exitFullscreen?.();
+        setIsFullscreen(false);
+      }
+    } else {
+      setIsFullscreen(!isFullscreen);
+      setPanelHeight(isFullscreen ? 50 : 95);
+    }
+  }
+  // Listen for fullscreen exit via Escape key
+  useEffect(() => {
+    const handler = () => { if (!document.fullscreenElement) setIsFullscreen(false); };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   // ── Filtered + Sorted results ──────────────────────────────────────────
   const filteredResults = useMemo(() => {
@@ -1116,6 +1136,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
 
   return (
     <div
+      ref={containerRef}
       className={embedded ? "flex flex-col h-full bg-background" : "fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-border shadow-2xl flex flex-col"}
       style={embedded ? undefined : { height: `${panelHeight}vh`, transition: isDragging.current ? "none" : "height 0.2s ease" }}
     >
@@ -1210,14 +1231,15 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             )}
           </div>
 
-          {/* Fullscreen / Close (floating mode) */}
-          {!embedded && (<>
-            <Button size="sm" variant="ghost" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
-              {isFullscreen ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>}
-            </Button>
+          {/* Fullscreen */}
+          <Button size="sm" variant="ghost" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}>
+            {isFullscreen ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>}
+          </Button>
+          {/* Close (floating mode only) */}
+          {!embedded && (
             <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setIsFullscreen(false); setPanelHeight(50); }}><PanelBottomClose className="h-3.5 w-3.5" /></Button>
-          </>)}
+          )}
         </div>
       </div>
 
@@ -1750,9 +1772,8 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                   {columns.map(col => (
                     <div key={col} className="py-2 border-b border-border/30">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{col}</p>
-                      <p className={`text-[12px] font-mono mt-0.5 break-all ${detailRow[col] == null ? "text-muted-foreground/40 italic" : ""}`}
-                        onClick={() => { navigator.clipboard.writeText(String(detailRow[col] ?? "")); toast.success("Copied"); }}
-                        className="cursor-pointer hover:bg-accent/30 rounded px-1 -mx-1">
+                      <p className={`text-[12px] font-mono mt-0.5 break-all cursor-pointer hover:bg-accent/30 rounded px-1 -mx-1 ${detailRow[col] == null ? "text-muted-foreground/40 italic" : ""}`}
+                        onClick={() => { navigator.clipboard.writeText(String(detailRow[col] ?? "")); toast.success("Copied"); }}>
                         {detailRow[col] == null ? "NULL" : String(detailRow[col])}
                       </p>
                     </div>

@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def generate_compliance_report(
     """
     report = {
         "report_metadata": {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "generated_by": _get_user(client),
             "from_date": from_date,
             "to_date": to_date,
@@ -31,10 +31,11 @@ def generate_compliance_report(
         "permission_audit": _gather_permission_data(client, warehouse_id, config),
         "data_lineage": _gather_lineage_data(client, warehouse_id, config, from_date, to_date),
         "validation_results": _gather_validation_data(client, warehouse_id, config),
+        "rtbf_compliance": _gather_rtbf_data(client, warehouse_id, config),
     }
 
     os.makedirs(output_dir, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     paths = {}
 
     if output_format in ("json", "all"):
@@ -191,6 +192,44 @@ def _gather_validation_data(client, warehouse_id: str, config: dict) -> dict:
         "checksum_enabled": config.get("validate_checksum", False),
         "message": "Validation data from latest clone operation" if config.get("validate_after_clone") else "Validation not enabled",
     }
+
+
+def _gather_rtbf_data(client, warehouse_id: str, config: dict) -> dict:
+    """Gather RTBF (Right to Be Forgotten) compliance data."""
+    from src.client import execute_sql
+
+    audit_catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    requests_table = f"{audit_catalog}.rtbf.rtbf_requests"
+
+    try:
+        sql = f"""
+        SELECT
+            COUNT(*) AS total_requests,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN status NOT IN ('completed', 'cancelled') AND deadline < current_timestamp()
+                THEN 1 ELSE 0 END) AS overdue,
+            AVG(CASE WHEN completed_at IS NOT NULL
+                THEN DATEDIFF(completed_at, created_at) END) AS avg_processing_days
+        FROM {requests_table}
+        """
+        rows = execute_sql(client, warehouse_id, sql)
+        stats = rows[0] if rows else {}
+
+        total = int(stats.get("total_requests", 0) or 0)
+        completed = int(stats.get("completed", 0) or 0)
+        overdue = int(stats.get("overdue", 0) or 0)
+
+        return {
+            "available": True,
+            "total_requests": total,
+            "completed": completed,
+            "overdue": overdue,
+            "completion_rate": f"{(completed / total * 100):.1f}%" if total > 0 else "N/A",
+            "avg_processing_days": round(float(stats.get("avg_processing_days", 0) or 0), 1),
+            "compliant": overdue == 0,
+        }
+    except Exception as e:
+        return {"available": False, "message": str(e)}
 
 
 def _build_compliance_html(report: dict) -> str:

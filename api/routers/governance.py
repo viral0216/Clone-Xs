@@ -1,7 +1,11 @@
 """Governance API endpoints — Data Dictionary, DQ Rules, Certifications, SLA, ODCS Contracts."""
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+import json
+import queue
+import threading
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response, StreamingResponse
 
 from api.dependencies import get_db_client, get_app_config, get_credentials
 from api.models.governance import (
@@ -23,8 +27,10 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
 
     Called by DQX endpoints before any Spark operation. Uses host/token from
     request headers, or extracts from the authenticated WorkspaceClient.
+    Respects the global serverless preference from X-Use-Serverless header.
     """
     from src.spark_session import configure_spark, _spark_config
+    from api.dependencies import get_serverless_preference
 
     # Try to get host/token from client.config if not provided via headers
     if not host and client is not None:
@@ -33,6 +39,10 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
             token = token or getattr(client.config, "token", None)
         except Exception:
             pass
+
+    # Respect global serverless preference from Settings UI
+    serverless_pref = get_serverless_preference()
+    use_serverless = serverless_pref if serverless_pref is not None else _spark_config.get("serverless", True)
 
     current_host = _spark_config.get("host", "")
 
@@ -43,7 +53,7 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
         configure_spark(
             host=host,
             token=token or "",
-            serverless=_spark_config.get("serverless", True),
+            serverless=use_serverless,
             cluster_id=_spark_config.get("cluster_id", ""),
         )
     elif not current_host and not host:
@@ -54,7 +64,7 @@ def _ensure_spark(host: str | None = None, token: str | None = None, client=None
             configure_spark(
                 host=env_host,
                 token=os.environ.get("DATABRICKS_TOKEN", ""),
-                serverless=_spark_config.get("serverless", True),
+                serverless=use_serverless,
                 cluster_id=_spark_config.get("cluster_id", ""),
             )
 
@@ -74,16 +84,19 @@ async def init_governance_tables(client=Depends(get_db_client)):
     from src.governance import ensure_governance_tables
     from src.dq_rules import ensure_dq_tables
     from src.sla_monitor import ensure_sla_tables
-
     from src.data_contracts import ensure_odcs_tables
     from src.dqx_engine import ensure_dqx_tables
+    from src.reconciliation_store import ensure_reconciliation_tables
+    from src.reconciliation_alerts import ensure_alert_tables
 
     ensure_governance_tables(client, wid, config)
     ensure_dq_tables(client, wid, config)
     ensure_sla_tables(client, wid, config)
     ensure_odcs_tables(client, wid, config)
     ensure_dqx_tables(client, wid, config)
-    return {"status": "ok", "message": "Governance tables initialized (including ODCS + DQX)"}
+    ensure_reconciliation_tables(client, wid, config)
+    ensure_alert_tables(client, wid, config)
+    return {"status": "ok", "message": "All governance and reconciliation tables initialized"}
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +282,23 @@ async def sla_status(client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     from src.sla_monitor import get_sla_status
     return get_sla_status(client, wid, config)
+
+
+@router.get("/sla/compliance-trend")
+async def sla_compliance_trend(days: int = 30, client=Depends(get_db_client)):
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.sla_monitor import get_sla_compliance_trend
+    return get_sla_compliance_trend(client, wid, config, days)
+
+
+@router.delete("/sla/rules/{sla_id}")
+async def delete_sla(sla_id: str, client=Depends(get_db_client)):
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.sla_monitor import delete_sla_rule
+    delete_sla_rule(client, wid, config, sla_id)
+    return {"status": "deleted", "sla_id": sla_id}
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +595,62 @@ async def dqx_profile_catalog_endpoint(req: dict, client=Depends(get_db_client),
         return {"error": str(e)}
 
 
+@router.post("/dqx/profile-stream")
+async def dqx_profile_stream_endpoint(req: dict, request: Request, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
+    """SSE endpoint that streams live profiling progress as tables are processed."""
+    _ensure_spark(creds[0], creds[1], client)
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    scope = req.get("scope", "schema")
+    catalog = req.get("catalog", "")
+    schema_name = req.get("schema_name", "")
+    opts = {k: v for k, v in req.items() if k not in ("catalog", "schema_name", "scope", "exclude_schemas")}
+
+    log_queue: queue.Queue = queue.Queue()
+
+    def on_progress(event):
+        log_queue.put(event)
+
+    def run_profiling():
+        try:
+            if scope == "catalog":
+                from src.dqx_engine import generate_checks_for_catalog
+                result = generate_checks_for_catalog(client, wid, config, catalog,
+                    req.get("exclude_schemas", ["information_schema"]), options=opts, on_progress=on_progress)
+            else:
+                from src.dqx_engine import generate_checks_for_schema
+                result = generate_checks_for_schema(client, wid, config, catalog, schema_name, options=opts, on_progress=on_progress)
+            log_queue.put({"type": "complete", "result": result})
+        except Exception as e:
+            log_queue.put({"type": "error", "error": str(e)})
+
+    worker = threading.Thread(target=run_profiling, daemon=True)
+    worker.start()
+
+    async def event_generator():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: log_queue.get(timeout=1.0)),
+                    timeout=1.5,
+                )
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("complete", "error"):
+                    break
+            except (asyncio.TimeoutError, queue.Empty):
+                # Send keepalive to prevent timeout
+                yield ": keepalive\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                                      "Connection": "keep-alive", "Content-Type": "text/event-stream"})
+
+
 @router.post("/dqx/checks")
 async def dqx_create_check_endpoint(req: DQXCheckCreate, client=Depends(get_db_client)):
     """Create a DQX check manually."""
@@ -683,6 +769,20 @@ async def dqx_import_checks_endpoint(req: dict, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import import_checks_yaml
     return import_checks_yaml(client, wid, config, req.get("table_fqn", ""), req.get("yaml_content", ""))
+
+
+@router.post("/dqx/checks/save-to-delta")
+async def dqx_save_checks_to_delta_endpoint(req: dict, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
+    """Save DQX checks to a user-specified Delta table."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import save_checks_to_delta
+    return save_checks_to_delta(
+        client, wid, config,
+        target_table=req.get("target_table", ""),
+        table_fqn=req.get("table_fqn", ""),
+        user=creds[0] if creds else "",
+    )
 
 
 @router.get("/dqx/profiles")

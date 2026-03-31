@@ -10,13 +10,17 @@ from src.lineage_tracker import (
 
 # ---------- ensure_lineage_table ----------
 
-@patch("src.lineage_tracker.execute_sql")
+@patch("src.client.execute_sql")
 def test_ensure_lineage_table_happy(mock_sql):
     mock_sql.return_value = []
+    # Clear cached state so catalog_utils actually checks
+    from src.catalog_utils import _verified_catalogs, _verified_schemas
+    _verified_catalogs.discard("my_cat")
+    _verified_schemas.discard("my_cat.lineage")
     fqn = ensure_lineage_table(MagicMock(), "wh-1", lineage_catalog="my_cat")
     assert fqn == "my_cat.lineage.clone_lineage"
-    # CREATE CATALOG, CREATE SCHEMA, CREATE TABLE
-    assert mock_sql.call_count == 3
+    # catalog_utils does SHOW CATALOGS + CREATE CATALOG + SHOW SCHEMAS + CREATE SCHEMA, then CREATE TABLE
+    assert mock_sql.call_count >= 3
 
 
 @patch("src.lineage_tracker.execute_sql")

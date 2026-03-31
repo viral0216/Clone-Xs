@@ -1,0 +1,16 @@
+{
+  "name": "Clone-Xs | Unity Catalog Clone Utility",
+  "short_name": "Clone-Xs",
+  "description": "Web UI for cloning Databricks Unity Catalog catalogs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#E8453C",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import re
 import sys
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.websocket.manager import ConnectionManager
 
@@ -157,7 +157,7 @@ class JobManager:
             config["_api_managed_logs"] = True
 
             # Log operation start to audit trail (clone_operations table)
-            audit_start_time = datetime.utcnow()
+            audit_start_time = datetime.now(timezone.utc)
             try:
                 from src.audit_trail import ensure_audit_table, log_operation_start
                 ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)
@@ -330,6 +330,361 @@ class JobManager:
                     end_date=config.get("end_date", "2025-01-01"),
                     progress_dict=self.jobs[job_id]["progress"],
                 )
+            elif job_type == "reconciliation-batch":
+                tables_list = config.get("tables", [])
+                use_spark = config.get("use_spark", False)
+                use_checksum = config.get("use_checksum", False)
+                wid = config.get("sql_warehouse_id", "")
+                total = len(tables_list)
+                all_details = []
+
+                self.jobs[job_id]["progress"] = {
+                    "total": total, "completed": 0,
+                    "current_table": "", "results": [],
+                }
+
+                for idx, tbl in enumerate(tables_list):
+                    schema_name = tbl.get("schema_name", "")
+                    table_name = tbl.get("table_name", "")
+                    fqn = f"{schema_name}.{table_name}"
+
+                    self.jobs[job_id]["progress"]["current_table"] = fqn
+                    self.jobs[job_id]["progress"]["completed"] = idx
+                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Validating {fqn}...")
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "progress",
+                        "completed": idx,
+                        "total": total,
+                        "current_table": fqn,
+                    })
+
+                    try:
+                        if use_spark:
+                            from src.reconciliation_spark import validate_table_spark
+                            detail = validate_table_spark(
+                                config["source_catalog"], config["destination_catalog"],
+                                schema_name, table_name, use_checksum,
+                            )
+                        else:
+                            from src.validation import validate_table
+                            detail = validate_table(
+                                client, wid,
+                                config["source_catalog"], config["destination_catalog"],
+                                schema_name, table_name, use_checksum,
+                            )
+                        status = "OK" if detail.get("match") else "MISMATCH"
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {status} {fqn}: src={detail.get('source_count', '?')} dst={detail.get('dest_count', '?')}")
+                        all_details.append(detail)
+                    except Exception as e:
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
+                        all_details.append({
+                            "schema": schema_name, "table": table_name,
+                            "source_count": None, "dest_count": None,
+                            "match": False, "error": str(e),
+                        })
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "table_result",
+                        "index": idx + 1,
+                        "total": total,
+                        "table_fqn": fqn,
+                        "detail": all_details[-1],
+                    })
+
+                matched = sum(1 for d in all_details if d.get("match"))
+                errors = sum(1 for d in all_details if d.get("error"))
+                result = {
+                    "total_tables": total,
+                    "matched": matched,
+                    "mismatched": total - matched - errors,
+                    "errors": errors,
+                    "details": all_details,
+                }
+
+                # Store in Delta
+                try:
+                    from src.reconciliation_store import store_reconciliation_result
+                    started = self.jobs[job_id].get("started_at", "")
+                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    run_id = store_reconciliation_result(
+                        client, wid, config, result,
+                        run_type="row-level-batch",
+                        source_catalog=config.get("source_catalog", ""),
+                        destination_catalog=config.get("destination_catalog", ""),
+                        execution_mode="spark" if use_spark else "sql",
+                        use_checksum=use_checksum,
+                        max_workers=config.get("max_workers", 4),
+                        duration_seconds=duration,
+                    )
+                    result["run_id"] = run_id
+                except Exception as store_err:
+                    logger.debug(f"Could not store reconciliation result: {store_err}")
+
+                # Evaluate alert rules
+                try:
+                    from src.reconciliation_alerts import evaluate_alerts
+                    evaluate_alerts(client, wid, config,
+                        run_id=result.get("run_id", ""), result=result,
+                        source_catalog=config.get("source_catalog", ""),
+                        destination_catalog=config.get("destination_catalog", ""),
+                    )
+                except Exception:
+                    pass
+
+                # Auto-evaluate SLAs after reconciliation batch
+                try:
+                    from src.sla_monitor import check_sla
+                    sla_results = check_sla(client, wid, config)
+                    sla_failed = sum(1 for s in sla_results if not s.get("passed"))
+                    if sla_failed:
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: {sla_failed} SLA(s) failing")
+                    else:
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: all SLAs passing")
+                except Exception as sla_err:
+                    logger.debug(f"Post-reconciliation SLA check failed: {sla_err}")
+
+                self.jobs[job_id]["progress"]["completed"] = total
+                self.jobs[job_id]["progress"]["current_table"] = ""
+                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch complete: {matched}/{total} matched, {errors} errors")
+
+            elif job_type == "reconciliation-batch-compare":
+                tables_list = config.get("tables", [])
+                use_spark = config.get("use_spark", False)
+                use_checksum = config.get("use_checksum", False)
+                max_workers = config.get("max_workers", 4)
+                wid = config.get("sql_warehouse_id", "")
+                total = len(tables_list)
+                all_details = []
+
+                self.jobs[job_id]["progress"] = {
+                    "total": total, "completed": 0,
+                    "current_table": "", "results": [],
+                }
+
+                for idx, tbl in enumerate(tables_list):
+                    schema_name = tbl.get("schema_name", "")
+                    table_name = tbl.get("table_name", "")
+                    fqn = f"{schema_name}.{table_name}"
+
+                    self.jobs[job_id]["progress"]["current_table"] = fqn
+                    self.jobs[job_id]["progress"]["completed"] = idx
+                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Comparing {fqn}...")
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "progress",
+                        "completed": idx,
+                        "total": total,
+                        "current_table": fqn,
+                    })
+
+                    try:
+                        if use_spark:
+                            from src.reconciliation_spark import compare_table_spark
+                            detail = compare_table_spark(
+                                config["source_catalog"], config["destination_catalog"],
+                                schema_name, table_name, use_checksum,
+                            )
+                        else:
+                            from src.compare import compare_table_deep
+                            detail = compare_table_deep(
+                                client, wid,
+                                config["source_catalog"], config["destination_catalog"],
+                                schema_name, table_name, use_checksum,
+                            )
+                        has_issues = bool(detail.get("issues"))
+                        status = "ISSUES" if has_issues else "OK"
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {status} {fqn}")
+                        all_details.append(detail)
+                    except Exception as e:
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
+                        all_details.append({
+                            "schema": schema_name, "table": table_name,
+                            "issues": [str(e)],
+                        })
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "table_result",
+                        "index": idx + 1,
+                        "total": total,
+                        "table_fqn": fqn,
+                        "detail": all_details[-1],
+                    })
+
+                tables_ok = sum(1 for d in all_details if not d.get("issues"))
+                result = {
+                    "total_tables": total,
+                    "tables_ok": tables_ok,
+                    "tables_with_issues": total - tables_ok,
+                    "details": all_details,
+                }
+
+                try:
+                    from src.reconciliation_store import store_reconciliation_result
+                    started = self.jobs[job_id].get("started_at", "")
+                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    adapted = {
+                        "total_tables": total,
+                        "matched": tables_ok,
+                        "mismatched": total - tables_ok,
+                        "errors": 0,
+                        "details": [
+                            {
+                                "schema": d.get("schema", ""),
+                                "table": d.get("table", ""),
+                                "source_count": d.get("source_rows"),
+                                "dest_count": d.get("dest_rows"),
+                                "match": not d.get("issues"),
+                                "checksum_match": d.get("checksum_match"),
+                                "error": "; ".join(d.get("issues", [])) if d.get("issues") else None,
+                            }
+                            for d in all_details
+                        ],
+                    }
+                    run_id = store_reconciliation_result(
+                        client, wid, config, adapted,
+                        run_type="column-level-batch",
+                        source_catalog=config.get("source_catalog", ""),
+                        destination_catalog=config.get("destination_catalog", ""),
+                        execution_mode="spark" if use_spark else "sql",
+                        use_checksum=use_checksum,
+                        max_workers=max_workers,
+                        duration_seconds=duration,
+                    )
+                    result["run_id"] = run_id
+                except Exception as store_err:
+                    logger.debug(f"Could not store batch compare result: {store_err}")
+
+                self.jobs[job_id]["progress"]["completed"] = total
+                self.jobs[job_id]["progress"]["current_table"] = ""
+                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch compare complete: {tables_ok}/{total} OK")
+
+            elif job_type == "reconciliation-batch-deep":
+                tables_list = config.get("tables", [])
+                use_checksum = config.get("use_checksum", False)
+                max_workers = config.get("max_workers", 4)
+                wid = config.get("sql_warehouse_id", "")
+                comparison_options = config.get("comparison_options", {})
+                key_columns = config.get("key_columns", []) or None
+                include_columns = config.get("include_columns", []) or None
+                ignore_columns = config.get("ignore_columns", []) or None
+                sample_diffs = config.get("sample_diffs", 10)
+                total = len(tables_list)
+                all_details = []
+
+                self.jobs[job_id]["progress"] = {
+                    "total": total, "completed": 0,
+                    "current_table": "", "results": [],
+                }
+
+                for idx, tbl in enumerate(tables_list):
+                    schema_name = tbl.get("schema_name", "")
+                    table_name = tbl.get("table_name", "")
+                    fqn = f"{schema_name}.{table_name}"
+
+                    self.jobs[job_id]["progress"]["current_table"] = fqn
+                    self.jobs[job_id]["progress"]["completed"] = idx
+                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Deep reconciling {fqn}...")
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "progress",
+                        "completed": idx,
+                        "total": total,
+                        "current_table": fqn,
+                    })
+
+                    try:
+                        from src.reconciliation_deep import deep_reconcile_table
+                        detail = deep_reconcile_table(
+                            config["source_catalog"], config["destination_catalog"],
+                            schema_name, table_name, key_columns,
+                            include_columns, ignore_columns, sample_diffs,
+                            use_checksum=use_checksum,
+                            comparison_options=comparison_options,
+                        )
+                        matched = detail.get("matched_rows", 0)
+                        missing = detail.get("missing_in_dest", 0)
+                        extra = detail.get("extra_in_dest", 0)
+                        modified = detail.get("modified_rows", 0)
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {fqn}: matched={matched} missing={missing} extra={extra} modified={modified}")
+                        all_details.append(detail)
+                    except Exception as e:
+                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
+                        all_details.append({
+                            "schema": schema_name, "table": table_name,
+                            "source_count": 0, "dest_count": 0,
+                            "matched_rows": 0, "missing_in_dest": 0,
+                            "extra_in_dest": 0, "modified_rows": 0,
+                            "error": str(e),
+                        })
+
+                    self._broadcast_sync(loop, job_id, {
+                        "type": "table_result",
+                        "index": idx + 1,
+                        "total": total,
+                        "table_fqn": fqn,
+                        "detail": all_details[-1],
+                    })
+
+                total_matched = sum(d.get("matched_rows", 0) for d in all_details)
+                total_missing = sum(d.get("missing_in_dest", 0) for d in all_details)
+                total_extra = sum(d.get("extra_in_dest", 0) for d in all_details)
+                total_modified = sum(d.get("modified_rows", 0) for d in all_details)
+                total_source = sum(d.get("source_count", 0) for d in all_details)
+                errors = sum(1 for d in all_details if d.get("error"))
+
+                result = {
+                    "total_tables": total,
+                    "source_rows": total_source,
+                    "matched_rows": total_matched,
+                    "missing_in_dest": total_missing,
+                    "extra_in_dest": total_extra,
+                    "modified_rows": total_modified,
+                    "errors": errors,
+                    "match_rate_pct": round((total_matched / max(total_source, 1)) * 100, 2),
+                    "details": all_details,
+                }
+
+                try:
+                    from src.reconciliation_store import store_reconciliation_result
+                    started = self.jobs[job_id].get("started_at", "")
+                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    adapted = {
+                        "total_tables": total,
+                        "matched": total_matched,
+                        "mismatched": total_missing + total_extra + total_modified,
+                        "errors": errors,
+                        "details": [
+                            {
+                                "schema": d.get("schema", ""),
+                                "table": d.get("table", ""),
+                                "source_count": d.get("source_count"),
+                                "dest_count": d.get("dest_count"),
+                                "match": d.get("missing_in_dest", 0) == 0 and d.get("extra_in_dest", 0) == 0 and d.get("modified_rows", 0) == 0,
+                                "checksum_match": d.get("checksum_match"),
+                                "error": d.get("error"),
+                            }
+                            for d in all_details
+                        ],
+                    }
+                    run_id = store_reconciliation_result(
+                        client, wid, config, adapted,
+                        run_type="deep-batch",
+                        source_catalog=config.get("source_catalog", ""),
+                        destination_catalog=config.get("destination_catalog", ""),
+                        execution_mode="spark-deep",
+                        use_checksum=use_checksum,
+                        max_workers=max_workers,
+                        duration_seconds=duration,
+                    )
+                    result["run_id"] = run_id
+                except Exception as store_err:
+                    logger.debug(f"Could not store batch deep result: {store_err}")
+
+                self.jobs[job_id]["progress"]["completed"] = total
+                self.jobs[job_id]["progress"]["current_table"] = ""
+                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch deep complete: {total_matched} matched across {total} tables")
+
             else:
                 result = {"error": f"Unknown job type: {job_type}"}
 

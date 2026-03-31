@@ -4,30 +4,44 @@ import { api } from "@/lib/api-client";
 import { Loader2, RefreshCw } from "lucide-react";
 
 interface CatalogPickerProps {
-  catalog: string;
+  catalog?: string;
   schema?: string;
   table?: string;
-  onCatalogChange: (catalog: string) => void;
+  onCatalogChange?: (catalog: string) => void;
   onSchemaChange?: (schema: string) => void;
   onTableChange?: (table: string) => void;
   showSchema?: boolean;
   showTable?: boolean;
   schemaLabel?: string;
   tableLabel?: string;
+  placeholder?: string;
+  /** Alias for `catalog` — used by some pages. */
+  value?: string;
+  /** Alias for `onCatalogChange` — used by some pages. */
+  onChange?: (catalog: string) => void;
+  /** Unique ID prefix when multiple pickers are on the same page. */
+  idPrefix?: string;
 }
 
 export default function CatalogPicker({
-  catalog,
+  catalog: catalogProp,
   schema = "",
   table = "",
-  onCatalogChange,
+  onCatalogChange: onCatalogChangeProp,
   onSchemaChange,
   onTableChange,
   showSchema = true,
   showTable = true,
   schemaLabel = "Schema",
   tableLabel = "Table",
+  value,
+  onChange,
+  idPrefix,
 }: CatalogPickerProps) {
+  // Support both prop conventions: catalog/onCatalogChange and value/onChange
+  const catalog = catalogProp ?? value ?? "";
+  const onCatalogChange = onCatalogChangeProp ?? onChange ?? (() => {});
+  const prefix = idPrefix ? `${idPrefix}-` : "catalog-picker-";
   const qc = useQueryClient();
 
   // Cached queries — persist to localStorage via React Query persister
@@ -74,13 +88,13 @@ export default function CatalogPicker({
       <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
         {/* Catalog */}
         <div className="flex-1">
-          <label htmlFor="catalog-picker-catalog" className="text-sm font-medium mb-1 block">Catalog</label>
+          <label htmlFor={`${prefix}catalog`} className="text-sm font-medium mb-1 block">Catalog</label>
           {catalogsQuery.isLoading && !catalogsQuery.data ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading catalogs...
             </div>
           ) : catalogs.length > 0 ? (
-            <select id="catalog-picker-catalog" className={selectClass} value={catalog} onChange={(e) => {
+            <select id={`${prefix}catalog`} className={selectClass} value={catalog} onChange={(e) => {
               onCatalogChange(e.target.value);
               onSchemaChange?.("");
               onTableChange?.("");
@@ -90,7 +104,7 @@ export default function CatalogPicker({
             </select>
           ) : (
             <input
-              id="catalog-picker-catalog"
+              id={`${prefix}catalog`}
               className={selectClass}
               value={catalog}
               onChange={(e) => onCatalogChange(e.target.value)}
@@ -102,13 +116,13 @@ export default function CatalogPicker({
         {/* Schema */}
         {showSchema && (
           <div className="flex-1">
-            <label htmlFor="catalog-picker-schema" className="text-sm font-medium mb-1 block">{schemaLabel}</label>
+            <label htmlFor={`${prefix}schema`} className="text-sm font-medium mb-1 block">{schemaLabel}</label>
             {schemasQuery.isLoading && !schemasQuery.data ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
               </div>
             ) : schemas.length > 0 ? (
-              <select id="catalog-picker-schema" className={selectClass} value={schema} onChange={(e) => {
+              <select id={`${prefix}schema`} className={selectClass} value={schema} onChange={(e) => {
                 onSchemaChange?.(e.target.value);
                 onTableChange?.("");
               }}>
@@ -117,7 +131,7 @@ export default function CatalogPicker({
               </select>
             ) : (
               <input
-                id="catalog-picker-schema"
+                id={`${prefix}schema`}
                 className={selectClass}
                 value={schema}
                 onChange={(e) => onSchemaChange?.(e.target.value)}
@@ -133,19 +147,19 @@ export default function CatalogPicker({
         {/* Table */}
         {showTable && (
           <div className="flex-1">
-            <label htmlFor="catalog-picker-table" className="text-sm font-medium mb-1 block">{tableLabel}</label>
+            <label htmlFor={`${prefix}table`} className="text-sm font-medium mb-1 block">{tableLabel}</label>
             {tablesQuery.isLoading && !tablesQuery.data ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading...
               </div>
             ) : tables.length > 0 ? (
-              <select id="catalog-picker-table" className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
+              <select id={`${prefix}table`} className={selectClass} value={table} onChange={(e) => onTableChange?.(e.target.value)}>
                 <option value="">All tables</option>
                 {tables.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             ) : (
               <input
-                id="catalog-picker-table"
+                id={`${prefix}table`}
                 className={selectClass}
                 value={table}
                 onChange={(e) => onTableChange?.(e.target.value)}

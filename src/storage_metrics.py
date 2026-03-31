@@ -1,7 +1,10 @@
-"""Storage metrics analysis using ANALYZE TABLE ... COMPUTE STORAGE METRICS.
+"""Storage metrics analysis.
 
-Requires Databricks Runtime 18.0+. Computes per-table storage breakdown:
-total, active, vacuumable (reclaimable via VACUUM), and time-travel bytes/files.
+Three strategies (fastest first):
+1. system.information_schema.tables — single SQL, no compute cost (default)
+2. DESCRIBE DETAIL — per-table but fast, no compute cost
+3. ANALYZE TABLE ... COMPUTE STORAGE METRICS — expensive, Runtime 18.0+,
+   gives vacuumable/time-travel breakdown (only when deep_analyze=True)
 """
 
 import logging
@@ -9,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, get_max_parallel_queries, list_schemas_sdk, list_tables_sdk
+from src.client import execute_sql, execute_sql_cached, get_max_parallel_queries, list_schemas_sdk, list_tables_sdk
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -48,11 +51,13 @@ def get_table_storage_metrics(
     catalog: str,
     schema: str,
     table_name: str,
+    deep_analyze: bool = False,
 ) -> dict:
     """Get storage metrics for a single table.
 
-    Runs ANALYZE TABLE ... COMPUTE STORAGE METRICS (Databricks Runtime 18.0+).
-    This is a read-only command — no dry_run parameter needed.
+    By default uses DESCRIBE DETAIL (fast, no compute cost).
+    When deep_analyze=True, runs ANALYZE TABLE ... COMPUTE STORAGE METRICS
+    (Databricks Runtime 18.0+) for vacuumable/time-travel breakdown.
     """
     fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
     metrics = {
@@ -76,67 +81,17 @@ def get_table_storage_metrics(
         "error": None,
     }
 
-    # Try ANALYZE TABLE first (Runtime 18.0+), fall back to DESCRIBE DETAIL
-    analyze_succeeded = False
+    # Fast path: DESCRIBE DETAIL (no compute cost, works on all runtimes)
+    # Cached for 2 minutes to avoid redundant warehouse queries
+    describe_succeeded = False
     try:
-        rows = execute_sql(
-            client, warehouse_id,
-            f"ANALYZE TABLE {fqn} COMPUTE STORAGE METRICS",
-        )
-        if rows:
-            # Databricks returns rows (one per metric) with columns:
-            #   metric_name | metric_value | metric_description
-            # Pivot into a single dict keyed by metric_name
-            first_keys = set(rows[0].keys())
-            if "metric_name" in first_keys or "metric_value" in first_keys:
-                # Row-per-metric format — pivot to dict
-                data = {}
-                for r in rows:
-                    name = (r.get("metric_name") or "").lower()
-                    val = r.get("metric_value")
-                    if name:
-                        data[name] = _safe_int(val)
-            else:
-                # Single-row format (column-per-metric) — use directly
-                data = {k.lower(): _safe_int(v) for k, v in rows[0].items()}
-
-            logger.info(f"Storage metrics for {fqn}: {data}")
-
-            total = data.get("total_bytes", 0)
-            active = data.get("active_bytes", 0)
-            vacuumable = data.get("vacuumable_bytes", 0)
-            time_travel = data.get("time_travel_bytes", 0)
-
-            if total > 0 or active > 0:
-                analyze_succeeded = True
-                metrics.update({
-                    "total_bytes": total,
-                    "total_display": _format_bytes(total),
-                    "num_total_files": data.get("num_total_files", 0),
-                    "active_bytes": active,
-                    "active_display": _format_bytes(active),
-                    "active_pct": _pct(active, total),
-                    "num_active_files": data.get("num_active_files", 0),
-                    "vacuumable_bytes": vacuumable,
-                    "vacuumable_display": _format_bytes(vacuumable),
-                    "vacuumable_pct": _pct(vacuumable, total),
-                    "num_vacuumable_files": data.get("num_vacuumable_files", 0),
-                    "time_travel_bytes": time_travel,
-                    "time_travel_display": _format_bytes(time_travel),
-                    "time_travel_pct": _pct(time_travel, total),
-                    "num_time_travel_files": data.get("num_time_travel_files", 0),
-                })
-    except Exception as e:
-        logger.debug(f"ANALYZE TABLE failed for {fqn}: {e}")
-
-    # Fallback: use DESCRIBE DETAIL (works on all runtimes)
-    if not analyze_succeeded:
-        try:
-            detail = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL {fqn}")
-            if detail:
-                d = detail[0]
-                size = _safe_int(d.get("sizeInBytes"))
-                files = _safe_int(d.get("numFiles"))
+        detail = execute_sql_cached(client, warehouse_id, f"DESCRIBE DETAIL {fqn}", ttl=120)
+        if detail:
+            d = detail[0]
+            size = _safe_int(d.get("sizeInBytes"))
+            files = _safe_int(d.get("numFiles"))
+            if size > 0 or files > 0:
+                describe_succeeded = True
                 metrics.update({
                     "total_bytes": size,
                     "total_display": _format_bytes(size),
@@ -145,11 +100,57 @@ def get_table_storage_metrics(
                     "active_display": _format_bytes(size),
                     "active_pct": 100.0 if size > 0 else 0.0,
                     "num_active_files": files,
-                    "note": "DESCRIBE DETAIL fallback — vacuumable/time-travel breakdown requires Runtime 18.0+",
                 })
-        except Exception as e2:
-            logger.debug(f"DESCRIBE DETAIL also failed for {fqn}: {e2}")
-            metrics["error"] = str(e2)
+    except Exception as e:
+        logger.debug(f"DESCRIBE DETAIL failed for {fqn}: {e}")
+        metrics["error"] = str(e)
+
+    # Deep analysis: ANALYZE TABLE (expensive, only when explicitly requested)
+    if deep_analyze:
+        try:
+            rows = execute_sql(
+                client, warehouse_id,
+                f"ANALYZE TABLE {fqn} COMPUTE STORAGE METRICS",
+            )
+            if rows:
+                first_keys = set(rows[0].keys())
+                if "metric_name" in first_keys or "metric_value" in first_keys:
+                    data = {}
+                    for r in rows:
+                        name = (r.get("metric_name") or "").lower()
+                        val = r.get("metric_value")
+                        if name:
+                            data[name] = _safe_int(val)
+                else:
+                    data = {k.lower(): _safe_int(v) for k, v in rows[0].items()}
+
+                total = data.get("total_bytes", 0)
+                active = data.get("active_bytes", 0)
+                vacuumable = data.get("vacuumable_bytes", 0)
+                time_travel = data.get("time_travel_bytes", 0)
+
+                if total > 0 or active > 0:
+                    metrics.update({
+                        "total_bytes": total,
+                        "total_display": _format_bytes(total),
+                        "num_total_files": data.get("num_total_files", 0),
+                        "active_bytes": active,
+                        "active_display": _format_bytes(active),
+                        "active_pct": _pct(active, total),
+                        "num_active_files": data.get("num_active_files", 0),
+                        "vacuumable_bytes": vacuumable,
+                        "vacuumable_display": _format_bytes(vacuumable),
+                        "vacuumable_pct": _pct(vacuumable, total),
+                        "num_vacuumable_files": data.get("num_vacuumable_files", 0),
+                        "time_travel_bytes": time_travel,
+                        "time_travel_display": _format_bytes(time_travel),
+                        "time_travel_pct": _pct(time_travel, total),
+                        "num_time_travel_files": data.get("num_time_travel_files", 0),
+                    })
+        except Exception as e:
+            logger.debug(f"ANALYZE TABLE failed for {fqn}: {e}")
+            if not describe_succeeded:
+                metrics["error"] = str(e)
 
     return metrics
 
@@ -161,12 +162,13 @@ def _process_schema_storage_metrics(
     schema: str,
     table_filter: str | None = None,
     max_workers: int | None = None,
+    deep_analyze: bool = False,
 ) -> tuple[str, list[dict]]:
     """Get storage metrics for all tables in a schema (or a single table)."""
     max_workers = max_workers or get_max_parallel_queries()
 
     if table_filter:
-        result = get_table_storage_metrics(client, warehouse_id, catalog, schema, table_filter)
+        result = get_table_storage_metrics(client, warehouse_id, catalog, schema, table_filter, deep_analyze=deep_analyze)
         return schema, [result]
 
     all_tables = list_tables_sdk(client, catalog, schema)
@@ -179,7 +181,7 @@ def _process_schema_storage_metrics(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                get_table_storage_metrics, client, warehouse_id, catalog, schema, t["table_name"]
+                get_table_storage_metrics, client, warehouse_id, catalog, schema, t["table_name"], deep_analyze=deep_analyze,
             ): t["table_name"]
             for t in tables
         }
@@ -187,6 +189,146 @@ def _process_schema_storage_metrics(
             schema_tables.append(future.result())
 
     return schema, schema_tables
+
+
+def catalog_storage_metrics_fast(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    exclude_schemas: list[str],
+) -> dict:
+    """Fast storage metrics via information_schema.tables (single SQL query).
+
+    No per-table ANALYZE or DESCRIBE — just one query.
+    Returns total/active bytes per table (no vacuumable/time-travel breakdown).
+    Tries catalog-scoped information_schema first, falls back to SHOW TABLES + DESCRIBE DETAIL.
+    """
+    exclude_list = ", ".join(f"'{s}'" for s in (exclude_schemas or []))
+    exclude_clause = f"AND table_schema NOT IN ({exclude_list})" if exclude_list else ""
+
+    # Try catalog-scoped information_schema (most reliable)
+    rows = None
+    for sql in [
+        # Strategy 1: catalog-scoped information_schema with data_size_bytes
+        f"""
+            SELECT
+                table_schema,
+                table_name,
+                table_type,
+                COALESCE(CAST(data_size_bytes AS BIGINT), 0) AS total_bytes,
+                last_altered
+            FROM `{catalog}`.information_schema.tables
+            WHERE table_type IN ('MANAGED', 'EXTERNAL')
+              AND table_schema NOT IN ('information_schema')
+              {exclude_clause}
+            ORDER BY total_bytes DESC
+        """,
+        # Strategy 2: system.information_schema (if catalog-scoped fails)
+        f"""
+            SELECT
+                table_schema,
+                table_name,
+                table_type,
+                0 AS total_bytes,
+                last_altered
+            FROM `{catalog}`.information_schema.tables
+            WHERE table_type IN ('MANAGED', 'EXTERNAL')
+              AND table_schema NOT IN ('information_schema')
+              {exclude_clause}
+            ORDER BY table_schema, table_name
+        """,
+    ]:
+        try:
+            rows = execute_sql_cached(client, warehouse_id, sql, ttl=120)
+            if rows is not None:
+                break
+        except Exception as e:
+            logger.debug(f"Fast storage query attempt failed: {e}")
+            continue
+
+    if rows is None:
+        logger.warning("All fast storage query strategies failed")
+        return None  # Caller should fall back to per-table approach
+
+    all_tables = []
+    schema_map: dict[str, list[dict]] = {}
+    for r in rows:
+        total = _safe_int(r.get("total_bytes"))
+        table = {
+            "schema": r.get("table_schema", ""),
+            "table": r.get("table_name", ""),
+            "total_bytes": total,
+            "total_display": _format_bytes(total),
+            "num_total_files": 0,
+            "active_bytes": total,
+            "active_display": _format_bytes(total),
+            "active_pct": 100.0 if total > 0 else 0.0,
+            "num_active_files": 0,
+            "vacuumable_bytes": 0,
+            "vacuumable_display": "0 B",
+            "vacuumable_pct": 0.0,
+            "num_vacuumable_files": 0,
+            "time_travel_bytes": 0,
+            "time_travel_display": "0 B",
+            "time_travel_pct": 0.0,
+            "num_time_travel_files": 0,
+            "error": None,
+        }
+        all_tables.append(table)
+        schema_map.setdefault(r.get("table_schema", ""), []).append(table)
+
+    # Build schema summaries
+    schema_summaries = []
+    for schema_name, tables in sorted(schema_map.items()):
+        s_total = sum(t["total_bytes"] for t in tables)
+        schema_summaries.append({
+            "schema": schema_name,
+            "num_tables": len(tables),
+            "total_bytes": s_total,
+            "total_display": _format_bytes(s_total),
+            "active_bytes": s_total,
+            "active_display": _format_bytes(s_total),
+            "vacuumable_bytes": 0,
+            "vacuumable_display": "0 B",
+            "vacuumable_pct": 0.0,
+            "time_travel_bytes": 0,
+            "time_travel_display": "0 B",
+            "time_travel_pct": 0.0,
+        })
+
+    total_bytes = sum(t["total_bytes"] for t in all_tables)
+
+    return {
+        "catalog": catalog,
+        "num_schemas": len(schema_map),
+        "num_tables": len(all_tables),
+        "total_bytes": total_bytes,
+        "total_display": _format_bytes(total_bytes),
+        "num_total_files": 0,
+        "active_bytes": total_bytes,
+        "active_display": _format_bytes(total_bytes),
+        "active_pct": 100.0 if total_bytes > 0 else 0.0,
+        "num_active_files": 0,
+        "vacuumable_bytes": 0,
+        "vacuumable_display": "0 B",
+        "vacuumable_pct": 0.0,
+        "num_vacuumable_files": 0,
+        "time_travel_bytes": 0,
+        "time_travel_display": "0 B",
+        "time_travel_pct": 0.0,
+        "num_time_travel_files": 0,
+        "schema_summaries": schema_summaries,
+        "tables": all_tables,
+        "top_tables_by_vacuumable": [],
+        "top_tables_by_total": sorted(
+            [t for t in all_tables if t["total_bytes"] > 0],
+            key=lambda t: t["total_bytes"],
+            reverse=True,
+        )[:10],
+        "num_errors": 0,
+        "errors": [],
+        "source": "system.information_schema.tables",
+    }
 
 
 def catalog_storage_metrics(
@@ -198,14 +340,41 @@ def catalog_storage_metrics(
     schema_filter: str | None = None,
     table_filter: str | None = None,
     max_workers: int | None = None,
+    deep_analyze: bool = False,
 ) -> dict:
     """Get storage metrics for an entire catalog (or filtered schema/table).
 
-    Uses ANALYZE TABLE ... COMPUTE STORAGE METRICS (Databricks Runtime 18.0+).
+    Strategy:
+    1. Default (deep_analyze=False, no filters): Single SQL query to
+       system.information_schema.tables — fastest, no per-table overhead.
+    2. With schema/table filters: Per-table DESCRIBE DETAIL (fast).
+    3. deep_analyze=True: Per-table ANALYZE TABLE ... COMPUTE STORAGE METRICS
+       for vacuumable/time-travel breakdown (expensive, Runtime 18.0+).
     """
     max_workers = max_workers or get_max_parallel_queries()
     logger.info(f"Analyzing storage metrics for catalog: {catalog}")
 
+    # Fast path: use system table (single query, no per-table overhead)
+    if not deep_analyze:
+        fast_result = catalog_storage_metrics_fast(client, warehouse_id, catalog, exclude_schemas)
+        if fast_result is not None:
+            logger.info(f"Used fast system table path: {fast_result['num_tables']} tables")
+            return fast_result
+        logger.warning("Fast path failed — returning empty result. Use deep_analyze=True for per-table metrics.")
+        # Don't fall through to per-table DESCRIBE DETAIL — that's too expensive for default loads
+        return {
+            "catalog": catalog, "num_schemas": 0, "num_tables": 0,
+            "total_bytes": 0, "total_display": "0 B", "num_total_files": 0,
+            "active_bytes": 0, "active_display": "0 B", "active_pct": 0.0, "num_active_files": 0,
+            "vacuumable_bytes": 0, "vacuumable_display": "0 B", "vacuumable_pct": 0.0, "num_vacuumable_files": 0,
+            "time_travel_bytes": 0, "time_travel_display": "0 B", "time_travel_pct": 0.0, "num_time_travel_files": 0,
+            "schema_summaries": [], "tables": [],
+            "top_tables_by_vacuumable": [], "top_tables_by_total": [],
+            "num_errors": 0, "errors": [],
+            "runtime_error": "Could not query information_schema.tables. Use the Deep Analyze button for per-table metrics.",
+        }
+
+    # Per-table path: only reached when deep_analyze=True
     # Determine schemas to process
     if schema_filter:
         schemas = [schema_filter]
@@ -224,7 +393,7 @@ def catalog_storage_metrics(
         futures = {
             executor.submit(
                 _process_schema_storage_metrics, client, warehouse_id, catalog,
-                schema, table_filter if schema == schema_filter else None, max_workers,
+                schema, table_filter if schema == schema_filter else None, max_workers, deep_analyze,
             ): schema
             for schema in schemas
         }

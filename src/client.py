@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import logging
 import threading
 import time
@@ -12,6 +13,60 @@ from src.metadata_cache import MISSING as _MISSING, metadata_cache as _cache
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────
+# REST API fallback decorator
+# ──────────────────────────────────────────────────────────────────
+
+# Errors that should NOT trigger a REST API fallback (permanent failures)
+_PERMANENT_ERROR_PHRASES = [
+    "was not found", "not found", "does not exist",
+    "permission denied", "unauthorized", "forbidden",
+    "not authenticated", "invalid token",
+]
+
+
+def _is_permanent_error(err: Exception) -> bool:
+    """Check if an error is permanent and should not trigger REST fallback."""
+    msg = str(err).lower()
+    return any(phrase in msg for phrase in _PERMANENT_ERROR_PHRASES)
+
+
+def with_rest_fallback(rest_method_name: str):
+    """Decorator: try SDK call first, fall back to REST API on SDK failure.
+
+    The decorated function must accept a WorkspaceClient as its first arg.
+    On SDK failure (except permanent errors), the REST API equivalent is called.
+
+    Args:
+        rest_method_name: Method name on DatabricksRestClient to call as fallback.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(client: WorkspaceClient, *args, **kwargs):
+            try:
+                return func(client, *args, **kwargs)
+            except Exception as sdk_err:
+                if _is_permanent_error(sdk_err):
+                    raise
+                try:
+                    from src.rest_api_client import get_rest_client
+                    rest_client = get_rest_client(client)
+                    rest_func = getattr(rest_client, rest_method_name, None)
+                    if rest_func is None:
+                        raise  # No REST fallback available
+                    logger.info(
+                        f"SDK {func.__name__} failed ({sdk_err}), "
+                        f"falling back to REST API ({rest_method_name})"
+                    )
+                    return rest_func(*args, **kwargs)
+                except ImportError:
+                    raise sdk_err  # REST client not available
+                except Exception as rest_err:
+                    logger.warning(f"REST fallback {rest_method_name} also failed: {rest_err}")
+                    raise sdk_err  # Raise original SDK error
+        return wrapper
+    return decorator
 
 # Retry settings
 MAX_RETRIES = 3
@@ -228,12 +283,54 @@ def execute_sql(
     raise last_exception
 
 
+def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl: int = 120) -> list[dict]:
+    """Execute SQL with caching for read-only queries (SELECT, SHOW, DESCRIBE).
+
+    Non-read queries pass through to execute_sql without caching.
+    Cache key is (warehouse_id, normalized_sql). TTL default 120 seconds.
+    """
+    normalized = sql.strip()
+    upper = normalized.upper()
+    if not (upper.startswith("SELECT") or upper.startswith("SHOW") or upper.startswith("DESCRIBE")):
+        return execute_sql(client, warehouse_id, sql)
+
+    from src.metadata_cache import MISSING as _MISSING, metadata_cache
+    key = ("sql_cache", warehouse_id, normalized)
+    cached = metadata_cache.get(key)
+    if cached is not _MISSING:
+        return cached
+    result = execute_sql(client, warehouse_id, sql)
+    metadata_cache.put(key, result, ttl)
+    return result
+
+
 def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> list[dict]:
-    """Execute a SQL statement once (no retries)."""
+    """Execute a SQL statement once (no retries).
+
+    Uses INLINE disposition by default. On inline byte limit exceeded,
+    automatically retries with EXTERNAL_LINKS disposition for large results.
+    """
+    from databricks.sdk.service.sql import Disposition
+
+    try:
+        return _execute_sql_with_disposition(client, warehouse_id, sql, Disposition.INLINE)
+    except RuntimeError as e:
+        if "Inline byte limit exceeded" in str(e) or "INLINE" in str(e):
+            logger.info("Result too large for INLINE, retrying with EXTERNAL_LINKS")
+            return _execute_sql_with_disposition(client, warehouse_id, sql, Disposition.EXTERNAL_LINKS)
+        raise
+
+
+def _execute_sql_with_disposition(client: WorkspaceClient, warehouse_id: str, sql: str, disposition) -> list[dict]:
+    """Execute SQL with specified disposition (INLINE or EXTERNAL_LINKS)."""
+    from databricks.sdk.service.sql import Format
+
     response = client.statement_execution.execute_statement(
         warehouse_id=warehouse_id,
         statement=sql,
         wait_timeout="50s",
+        disposition=disposition,
+        format=Format.JSON_ARRAY,
     )
 
     if response.status and response.status.state:
@@ -242,7 +339,6 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
             error_msg = response.status.error.message if response.status.error else "Unknown error"
             raise RuntimeError(f"SQL execution failed: {error_msg}\nSQL: {sql}")
 
-        # Poll for RUNNING/PENDING states
         while state in ("RUNNING", "PENDING"):
             time.sleep(2)
             response = client.statement_execution.get_statement(response.statement_id)
@@ -252,12 +348,40 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
             error_msg = response.status.error.message if response.status.error else "Unknown error"
             raise RuntimeError(f"SQL execution failed: {error_msg}\nSQL: {sql}")
 
-    # Parse results
+    # Parse results — handle both INLINE and EXTERNAL_LINKS
+    columns = [col.name for col in response.manifest.schema.columns] if response.manifest else []
     rows = []
+
     if response.result and response.result.data_array:
-        columns = [col.name for col in response.manifest.schema.columns]
+        # INLINE: data is directly in the response
         for row in response.result.data_array:
             rows.append(dict(zip(columns, row)))
+    elif response.result and response.result.external_links:
+        # EXTERNAL_LINKS: download chunks from URLs
+        import httpx
+        for link in response.result.external_links:
+            try:
+                resp = httpx.get(link.external_link, timeout=60)
+                resp.raise_for_status()
+                chunk_data = resp.json()
+                for row in chunk_data:
+                    if isinstance(row, list):
+                        rows.append(dict(zip(columns, row)))
+                    elif isinstance(row, dict):
+                        rows.append(row)
+            except Exception as e:
+                logger.warning(f"Failed to fetch external link chunk: {e}")
+        # Fetch remaining chunks if paginated
+        while response.result.next_chunk_index is not None:
+            try:
+                response = client.statement_execution.get_statement_result_chunk_n(
+                    response.statement_id, response.result.next_chunk_index
+                )
+                if response.data_array:
+                    for row in response.data_array:
+                        rows.append(dict(zip(columns, row)))
+            except Exception:
+                break
 
     return rows
 
@@ -267,33 +391,65 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
 # ──────────────────────────────────────────────────────────────────
 
 def list_schemas_sdk(client: WorkspaceClient, catalog: str, exclude: list[str] | None = None) -> list[str]:
-    """List schema names in a catalog using the SDK (no SQL warehouse needed)."""
+    """List schema names in a catalog using the SDK (no SQL warehouse needed).
+
+    Falls back to REST API if the SDK call fails.
+    """
     key = ("schemas", catalog, frozenset(exclude or []))
     cached = _cache.get(key)
     if cached is not _MISSING:
         return cached
     try:
-        schemas = [s.name for s in client.schemas.list(catalog_name=catalog) if s.name]
+        schemas = _list_schemas_inner(client, catalog)
         if exclude:
             schemas = [s for s in schemas if s not in exclude]
         _cache.put(key, schemas)
         return schemas
     except Exception as e:
-        logger.warning(f"SDK schemas.list failed for {catalog}: {e}")
+        logger.warning(f"list_schemas_sdk failed for {catalog}: {e}")
         return []
+
+
+def _list_schemas_inner(client: WorkspaceClient, catalog: str) -> list[str]:
+    """SDK call for listing schemas — with REST API fallback."""
+    try:
+        return [s.name for s in client.schemas.list(catalog_name=catalog) if s.name]
+    except Exception as sdk_err:
+        if _is_permanent_error(sdk_err):
+            raise
+        # REST API fallback
+        try:
+            from src.rest_api_client import get_rest_client
+            logger.info(f"SDK schemas.list failed ({sdk_err}), falling back to REST API")
+            rest = get_rest_client(client)
+            return [s.get("name", "") for s in rest.list_schemas(catalog) if s.get("name")]
+        except Exception as rest_err:
+            logger.warning(f"REST fallback list_schemas also failed: {rest_err}")
+            raise sdk_err
 
 
 def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[dict]:
     """List tables in a schema using the SDK (no SQL warehouse needed).
 
     Returns list of dicts with: table_name, table_type, data_source_format.
+    Falls back to REST API if the SDK call fails.
     """
     key = ("tables", catalog, schema)
     cached = _cache.get(key)
     if cached is not _MISSING:
         return cached
     try:
-        result = [
+        result = _list_tables_inner(client, catalog, schema)
+        _cache.put(key, result)
+        return result
+    except Exception as e:
+        logger.warning(f"list_tables_sdk failed for {catalog}.{schema}: {e}")
+        return []
+
+
+def _list_tables_inner(client: WorkspaceClient, catalog: str, schema: str) -> list[dict]:
+    try:
+        return [
             {
                 "table_name": t.name,
                 "table_type": t.table_type.value if t.table_type else "UNKNOWN",
@@ -302,11 +458,25 @@ def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[
             for t in client.tables.list(catalog_name=catalog, schema_name=schema)
             if t.name
         ]
-        _cache.put(key, result)
-        return result
-    except Exception as e:
-        logger.warning(f"SDK tables.list failed for {catalog}.{schema}: {e}")
-        return []
+    except Exception as sdk_err:
+        if _is_permanent_error(sdk_err):
+            raise
+        try:
+            from src.rest_api_client import get_rest_client
+            logger.info(f"SDK tables.list failed ({sdk_err}), falling back to REST API")
+            rest = get_rest_client(client)
+            return [
+                {
+                    "table_name": t.get("name", ""),
+                    "table_type": t.get("table_type", "UNKNOWN"),
+                    "data_source_format": t.get("data_source_format"),
+                }
+                for t in rest.list_tables(catalog, schema)
+                if t.get("name")
+            ]
+        except Exception as rest_err:
+            logger.warning(f"REST fallback list_tables also failed: {rest_err}")
+            raise sdk_err
 
 
 def list_views_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[dict]:
@@ -390,11 +560,23 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
     """Get table metadata using the SDK (no SQL warehouse needed).
 
     Returns dict with: name, table_type, columns, storage_location, data_source_format, etc.
+    Falls back to REST API if the SDK call fails.
     """
     key = ("table_info", full_name)
     cached = _cache.get(key)
     if cached is not _MISSING:
         return cached
+    try:
+        result = _get_table_info_inner(client, full_name)
+        if result:
+            _cache.put(key, result)
+        return result
+    except Exception as e:
+        logger.warning(f"get_table_info_sdk failed for {full_name}: {e}")
+        return None
+
+
+def _get_table_info_inner(client: WorkspaceClient, full_name: str) -> dict | None:
     try:
         t = client.tables.get(full_name)
         columns = []
@@ -406,7 +588,7 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
                     "comment": getattr(c, "comment", ""),
                     "nullable": getattr(c, "nullable", True),
                 })
-        result = {
+        return {
             "name": t.name,
             "full_name": t.full_name,
             "table_type": t.table_type.value if t.table_type else "UNKNOWN",
@@ -419,43 +601,111 @@ def get_table_info_sdk(client: WorkspaceClient, full_name: str) -> dict | None:
             "created_at": str(getattr(t, "created_at", "")),
             "updated_at": str(getattr(t, "updated_at", "")),
         }
-        _cache.put(key, result)
-        return result
-    except Exception as e:
-        logger.warning(f"SDK tables.get failed for {full_name}: {e}")
-        return None
+    except Exception as sdk_err:
+        if _is_permanent_error(sdk_err):
+            raise
+        try:
+            from src.rest_api_client import get_rest_client
+            logger.info(f"SDK tables.get failed ({sdk_err}), falling back to REST API")
+            rest = get_rest_client(client)
+            t = rest.get_table(full_name)
+            columns = [
+                {
+                    "column_name": c.get("name", ""),
+                    "data_type": c.get("type_text", c.get("type_name", "")),
+                    "comment": c.get("comment", ""),
+                    "nullable": c.get("nullable", True),
+                }
+                for c in t.get("columns", [])
+            ]
+            return {
+                "name": t.get("name", ""),
+                "full_name": t.get("full_name", full_name),
+                "table_type": t.get("table_type", "UNKNOWN"),
+                "columns": columns,
+                "storage_location": t.get("storage_location", ""),
+                "data_source_format": t.get("data_source_format", ""),
+                "owner": t.get("owner", ""),
+                "comment": t.get("comment", ""),
+                "properties": t.get("properties", {}),
+                "created_at": str(t.get("created_at", "")),
+                "updated_at": str(t.get("updated_at", "")),
+            }
+        except Exception as rest_err:
+            logger.warning(f"REST fallback get_table also failed: {rest_err}")
+            raise sdk_err
 
 
 def get_catalog_info_sdk(client: WorkspaceClient, catalog: str) -> dict | None:
-    """Get catalog metadata using the SDK (no SQL warehouse needed)."""
+    """Get catalog metadata using the SDK (no SQL warehouse needed).
+
+    Falls back to REST API if the SDK call fails.
+    """
     key = ("catalog_info", catalog)
     cached = _cache.get(key)
     if cached is not _MISSING:
         return cached
     try:
+        result = _get_catalog_info_inner(client, catalog)
+        if result:
+            _cache.put(key, result)
+        return result
+    except Exception as e:
+        logger.warning(f"get_catalog_info_sdk failed for {catalog}: {e}")
+        return None
+
+
+def _get_catalog_info_inner(client: WorkspaceClient, catalog: str) -> dict | None:
+    try:
         c = client.catalogs.get(catalog)
-        result = {
+        return {
             "name": c.name,
             "owner": getattr(c, "owner", ""),
             "comment": getattr(c, "comment", ""),
             "storage_root": getattr(c, "storage_root", None) or getattr(c, "storage_location", None) or "",
             "properties": dict(c.properties) if c.properties else {},
         }
-        _cache.put(key, result)
-        return result
-    except Exception as e:
-        logger.warning(f"SDK catalogs.get failed for {catalog}: {e}")
-        return None
+    except Exception as sdk_err:
+        if _is_permanent_error(sdk_err):
+            raise
+        try:
+            from src.rest_api_client import get_rest_client
+            logger.info(f"SDK catalogs.get failed ({sdk_err}), falling back to REST API")
+            rest = get_rest_client(client)
+            c = rest.get_catalog(catalog)
+            return {
+                "name": c.get("name", catalog),
+                "owner": c.get("owner", ""),
+                "comment": c.get("comment", ""),
+                "storage_root": c.get("storage_root", c.get("storage_location", "")),
+                "properties": c.get("properties", {}),
+            }
+        except Exception as rest_err:
+            logger.warning(f"REST fallback get_catalog also failed: {rest_err}")
+            raise sdk_err
 
 
 def delete_table_sdk(client: WorkspaceClient, full_name: str) -> bool:
-    """Delete a table using the SDK (no SQL warehouse needed)."""
+    """Delete a table using the SDK (no SQL warehouse needed).
+
+    Falls back to REST API if the SDK call fails.
+    """
     try:
         client.tables.delete(full_name)
         return True
-    except Exception as e:
-        logger.warning(f"SDK tables.delete failed for {full_name}: {e}")
-        return False
+    except Exception as sdk_err:
+        if _is_permanent_error(sdk_err):
+            logger.warning(f"SDK tables.delete failed for {full_name}: {sdk_err}")
+            return False
+        try:
+            from src.rest_api_client import get_rest_client
+            logger.info(f"SDK tables.delete failed ({sdk_err}), falling back to REST API")
+            rest = get_rest_client(client)
+            rest.delete_table(full_name)
+            return True
+        except Exception as rest_err:
+            logger.warning(f"REST fallback delete_table also failed: {rest_err}")
+            return False
 
 
 def invalidate_catalog_cache(catalog: str) -> int:

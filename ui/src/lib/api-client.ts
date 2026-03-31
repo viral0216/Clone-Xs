@@ -37,6 +37,9 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const token = localStorage.getItem("dbx_token") || "";
   const warehouse = localStorage.getItem("dbx_warehouse_id") || "";
   const sessionId = localStorage.getItem("clxs_session_id") || "";
+  const useServerless = localStorage.getItem("clxs-default-compute-serverless");
+  const aiModel = localStorage.getItem("dbx_model") || "";
+  const genieSpace = localStorage.getItem("dbx_genie_space_id") || "";
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -44,14 +47,39 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     ...(host && { "X-Databricks-Host": host }),
     ...(token && { "X-Databricks-Token": token }),
     ...(warehouse && { "X-Databricks-Warehouse": warehouse }),
+    ...(useServerless !== null && { "X-Use-Serverless": useServerless }),
+    ...(aiModel && { "X-Databricks-Model": aiModel }),
+    ...(genieSpace && { "X-Databricks-Genie-Space": genieSpace }),
     ...(options.headers as Record<string, string>),
   };
 
-  const res = await fetch(url, { ...fetchOpts, headers });
+  // Retry on transient errors (503, 429, network failures)
+  let res: Response;
+  let lastError: Error | null = null;
+  const maxRetries = fetchOpts.method === "GET" ? 3 : 1;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      res = await fetch(url, { ...fetchOpts, headers });
+      if (res.status === 503 || res.status === 429) {
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+      }
+      break;
+    } catch (networkErr: any) {
+      lastError = networkErr;
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      throw new Error(networkErr.message || "Network error — server may be restarting");
+    }
+  }
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    let message = `API error: ${res.status}`;
+  if (!res!.ok) {
+    const error = await res!.json().catch(() => ({ detail: res!.statusText }));
+    let message = `API error: ${res!.status}`;
     if (typeof error.detail === "string") {
       message = error.detail;
     } else if (Array.isArray(error.detail)) {
@@ -78,7 +106,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     throw new Error(message);
   }
 
-  return res.json();
+  return res!.json();
 }
 
 export const api = {

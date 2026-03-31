@@ -815,3 +815,117 @@ clxs dep-graph --catalog <catalog> [options]
 | Flag | Description |
 |------|-------------|
 | `--source`, `--catalog` | Catalog to analyze |
+
+---
+
+### `rtbf`
+
+Right to Be Forgotten (GDPR Article 17) — manage erasure requests.
+
+```bash
+clxs rtbf <action> [options]
+```
+
+**Actions:**
+
+| Action | Description |
+|---|---|
+| `submit` | Submit a new erasure request |
+| `discover` | Discover subject data across all catalogs |
+| `impact` | Show impact analysis for a request |
+| `approve` | Approve a request for execution |
+| `execute` | Execute deletion/anonymization |
+| `vacuum` | VACUUM affected tables (physical deletion) |
+| `verify` | Verify deletion completeness |
+| `certificate` | Generate deletion certificate |
+| `list` | List RTBF requests |
+| `status` | Get request status and details |
+| `cancel` | Cancel a request |
+| `overdue` | Show overdue requests |
+
+**Submit flags:**
+
+| Flag | Required | Description |
+|---|---|---|
+| `--subject-type` | Yes | email, customer_id, ssn, phone, name, national_id, passport, credit_card, custom |
+| `--subject-value` | Yes | The identifier value to erase |
+| `--requester-email` | Yes | Requester's email |
+| `--requester-name` | Yes | Requester's name |
+| `--legal-basis` | No | Legal basis (default: GDPR Art. 17(1)(a)) |
+| `--strategy` | No | delete, anonymize, pseudonymize (default: delete) |
+| `--scope-catalogs` | No | Limit search to specific catalogs |
+| `--grace-period-days` | No | Days to wait before execution (default: 0) |
+| `--subject-column` | No | Custom column name (required for `custom` type) |
+
+**Example workflow:**
+
+```bash
+clxs rtbf submit --subject-type email --subject-value "user@example.com" \
+  --requester-email "dpo@corp.com" --requester-name "DPO"
+clxs rtbf discover --request-id <ID> --subject-value "user@example.com"
+clxs rtbf approve --request-id <ID>
+clxs rtbf execute --request-id <ID> --subject-value "user@example.com"
+clxs rtbf vacuum --request-id <ID>
+clxs rtbf verify --request-id <ID> --subject-value "user@example.com"
+clxs rtbf certificate --request-id <ID>
+```
+
+---
+
+### `dsar`
+
+Data Subject Access Request (GDPR Article 15) — find and export subject data.
+
+```bash
+clxs dsar <action> [options]
+```
+
+| Action | Description |
+|---|---|
+| `submit` | Submit a new access request |
+| `discover` | Discover subject data across catalogs |
+| `approve` | Approve a request for export |
+| `export` | Export subject data to CSV/JSON/Parquet |
+| `report` | Generate access report |
+| `deliver` | Mark report as delivered |
+| `list` | List DSAR requests |
+| `status` | Get request status |
+| `cancel` | Cancel a request |
+| `overdue` | Show overdue requests |
+
+---
+
+### `pipeline`
+
+Clone Pipelines — chain multiple operations into automated workflows.
+
+```bash
+clxs pipeline <action> [options]
+```
+
+| Action | Description |
+|---|---|
+| `create` | Create a new pipeline |
+| `run` | Run a pipeline |
+| `list` | List pipelines |
+| `status` | Get run status |
+| `delete` | Delete a pipeline |
+| `templates` | List built-in templates |
+| `cancel` | Cancel a running pipeline |
+
+---
+
+### `observability`
+
+Data Observability — unified health scoring dashboard.
+
+```bash
+clxs observability <action>
+```
+
+| Action | Description |
+|---|---|
+| `dashboard` | Show full observability dashboard |
+| `health` | Show health score (0-100) |
+| `issues` | List top issues |
+| `trends` | Show metric trends |

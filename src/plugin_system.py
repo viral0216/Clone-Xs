@@ -58,6 +58,24 @@ class ClonePlugin(ABC):
         """Custom validation for a cloned table. Return {valid: bool, message: str}."""
         return {"valid": True, "message": ""}
 
+    # ── RTBF hooks ────────────────────────────────────────────────────────
+
+    def on_rtbf_request(self, request_id: str, subject_type: str, subject_value_hash: str) -> None:
+        """Called when a new RTBF erasure request is submitted."""
+        pass
+
+    def on_rtbf_deletion_start(self, request_id: str, affected_tables: list[dict]) -> None:
+        """Called before RTBF deletion execution begins."""
+        pass
+
+    def on_rtbf_deletion_complete(self, request_id: str, summary: dict) -> None:
+        """Called after RTBF deletion and verification complete."""
+        pass
+
+    def on_rtbf_verification_failed(self, request_id: str, failures: list[dict]) -> None:
+        """Called when RTBF verification finds remaining data."""
+        pass
+
 
 class PluginManager:
     """Manages loading and executing plugins."""
@@ -186,6 +204,40 @@ class PluginManager:
             except Exception as e:
                 results.append({"plugin": plugin.name, "valid": False, "message": str(e)})
         return results
+
+    # ── RTBF plugin runners ───────────────────────────────────────────────
+
+    def run_on_rtbf_request(self, request_id: str, subject_type: str, subject_value_hash: str) -> None:
+        """Run all on_rtbf_request hooks."""
+        for plugin in self.plugins:
+            try:
+                plugin.on_rtbf_request(request_id, subject_type, subject_value_hash)
+            except Exception as e:
+                logger.error(f"Plugin {plugin.name} on_rtbf_request failed: {e}")
+
+    def run_on_rtbf_deletion_start(self, request_id: str, affected_tables: list[dict]) -> None:
+        """Run all on_rtbf_deletion_start hooks."""
+        for plugin in self.plugins:
+            try:
+                plugin.on_rtbf_deletion_start(request_id, affected_tables)
+            except Exception as e:
+                logger.error(f"Plugin {plugin.name} on_rtbf_deletion_start failed: {e}")
+
+    def run_on_rtbf_deletion_complete(self, request_id: str, summary: dict) -> None:
+        """Run all on_rtbf_deletion_complete hooks."""
+        for plugin in self.plugins:
+            try:
+                plugin.on_rtbf_deletion_complete(request_id, summary)
+            except Exception as e:
+                logger.error(f"Plugin {plugin.name} on_rtbf_deletion_complete failed: {e}")
+
+    def run_on_rtbf_verification_failed(self, request_id: str, failures: list[dict]) -> None:
+        """Run all on_rtbf_verification_failed hooks."""
+        for plugin in self.plugins:
+            try:
+                plugin.on_rtbf_verification_failed(request_id, failures)
+            except Exception as e:
+                logger.error(f"Plugin {plugin.name} on_rtbf_verification_failed failed: {e}")
 
 
 # --- Built-in example plugins ---

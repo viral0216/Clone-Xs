@@ -9,6 +9,244 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.10.4 — Enhanced Presentation Mode (2026-03-31)
+
+### Added
+- **Slide Transitions** — smooth fade + slide-up animations between slides with staggered content entry (both live and export)
+- **Speaker Notes** — per-cell notes editor (speech bubble icon in toolbar), notes panel in presentation (N key), persisted in save/load
+- **Elapsed Timer** — running clock in presentation controls bar (live and export)
+- **Grid/Thumbnail View** — press G for 4-column slide overview with click-to-jump
+- **Light/Dark Theme Toggle** — press T to switch between dark and light presentation themes
+- **Print to PDF** — press P to print with @media print styles hiding controls
+- **Touch/Swipe Navigation** — swipe left/right on mobile/tablet
+- **All 12 Chart Types in Presentation** — bar, hbar, line, area, scatter, pie, radar, stacked, composed, funnel, treemap
+- **Full Table Rendering** — removed 20-row limit in presentation, added sticky headers and horizontal scroll
+- **Keyboard Hints** — shown at bottom of presentation screen
+- **Export Enhancements** — HTML export now includes transitions, notes (data-notes attributes), timer, theme toggle, touch/swipe, print support
+- **Explorer AI Explain** — "Explain" button on Schema Breakdown sends catalog stats to AI for structured analysis
+- **Explorer Caching** — stats cached in sessionStorage, last catalog remembered across page navigation
+
+---
+
+## v0.10.3 — Notebook Power Features (2026-03-31)
+
+### Added
+- **Cell Result Export** — CSV and JSON download buttons on every SQL cell's results toolbar
+- **Data Profiler per Cell** — "Profile" view mode on cell results with histograms and frequency charts
+- **Temp View Chaining** — "Create View" button creates `TEMP VIEW cell_N` for cross-cell SQL references
+- **Import SQL File** — load `.sql` files, auto-splitting by `;` into separate cells (comments become markdown)
+- **Notebook Templates** — 5 starter notebooks: Explore Table, Data Quality Check, Schema Comparison, Row Count Audit, Cost Analysis
+- **Drag-and-Drop Reorder** — drag the grip handle on any cell to reorder (in addition to up/down buttons)
+- **Find Across Cells** — `Ctrl+F` search bar with match highlighting, count, and prev/next navigation
+- **Cell Execution Timer** — live stopwatch while running + "ran Xm ago" relative timestamp after execution
+- **Undo/Redo** — `Ctrl+Z` / `Ctrl+Shift+Z` for cell structure changes (add, delete, move, content edit), capped at 50 entries
+- **Presentation Mode** — fullscreen slide-by-slide view with arrow key navigation, progress bar, and slide dots
+- **Export as HTML Report** — standalone HTML document with branded dark theme, syntax-highlighted SQL, results tables, ToC, and execution metadata
+- **Data Lab Documentation** — comprehensive guide page at `/guide/data-lab` covering SQL Workbench, Notebooks, and Data Profiler
+
+---
+
+## v0.10.2 — Data Lab Enhancements: Notebooks, Profiler & Auto-Viz (2026-03-30)
+
+### Added
+- **SQL Notebooks** — multi-cell SQL + Markdown notebook interface for interactive data exploration
+  - Add, delete, reorder, duplicate cells (SQL or Markdown)
+  - Run individual cells or "Run All" sequentially
+  - Each SQL cell has its own results table and chart view with auto-visualization
+  - Markdown cells with rich rendering (headings, lists, bold, code, links)
+  - Save/load notebooks (localStorage + backend JSON API)
+  - Export notebooks as `.sql` files
+  - New route at `/notebooks` with sidebar navigation under Discovery
+  - Backend CRUD API at `/api/notebooks`
+  - **Catalog Browser Sidebar** — collapsible catalog → schema → table tree; click to insert `SELECT * FROM` into focused cell
+  - **Execution Counter** — Jupyter-style `[1]`, `[2]`, `[*]` badges on SQL cells showing execution order
+  - **AI Features per Cell** — Fix with AI (on error), Explain Results with AI, Generate SQL from natural language prompt
+  - **Parameterized Cells** — use `{{variable}}` syntax in SQL; auto-detected parameter bar with input fields for each variable
+  - **Cell Duplication** — one-click clone any cell
+  - **Auto-save** — automatic save to localStorage every 30 seconds when changes are detected
+  - **Table of Contents** — auto-generated from markdown headings; click to jump to section
+  - **Keyboard Shortcuts** — `Ctrl+S` save, `Ctrl+Enter` run cell, `Shift+Enter` run & advance to next, `Esc` blur
+  - **Output Collapse** — toggle to hide/show cell results for long notebooks
+- **Deep Data Profiler** — one-click column-level profiling with distribution charts
+  - Right-click any table in catalog browser → "Profile Table" for server-side deep profiling
+  - "Profile" tab on query results profiles via CTE wrapping (no double execution)
+  - Per-column stats: null count/%, distinct count/%, min, max, avg
+  - Visual histograms for numeric columns using `width_bucket()` (Recharts)
+  - Top-N value frequency bar charts for string/categorical columns
+  - Summary header with KPI cards: row count, columns, completeness %, type distribution pie
+  - Backend endpoints: `POST /api/profile-table`, `POST /api/profile-results`
+- **Auto-Visualization** — AI-powered chart recommendation engine
+  - Heuristic engine analyzes column types, cardinality, and naming patterns
+  - Automatically selects best chart type and axis mappings when results load
+  - Rules: time + numeric → line, category + value → bar/pie, two numerics → scatter
+  - "Auto" button in chart controls to re-apply recommendation
+  - Recommendation reason displayed as badge (e.g., "Time series: date_col over time")
+- **AI Explain Results** — detailed plain-English data narratives
+  - "Explain" button in toolbar sends column stats + sample to AI (< 5KB payload)
+  - Returns structured markdown: What This Data Shows, Key Findings, Notable Patterns, Recommendations
+  - New `query_explain` and `ai_viz_suggest` system prompts in AI service
+
+---
+
+## v0.10.1 — Data Lab, AI Features & Jobs Cloning (2026-03-30)
+
+### Added
+- **SQL Workbench renamed to Data Lab** — new name reflecting broader data exploration capabilities
+- **Data Lab AI Features** — 4 AI-powered tools integrated into the Data Lab:
+  - **Fix with AI** — when a query fails, click to get AI-corrected SQL with "Apply Fix" button
+  - **Analyze with AI** — summarize query results with key findings, patterns, and anomalies
+  - **Explain Plan with AI** — plain-English explanation of execution plans with performance concerns and optimization suggestions
+  - **Generate SQL with AI** — natural language to SQL via the More menu
+  - **AI Markdown Renderer** — all AI responses formatted with headings, bullet points, bold, and inline code
+- **Databricks LLM Integration** — dual-backend AI: Anthropic API (direct) or Databricks Model Serving endpoints
+  - Settings page: AI Model selection with endpoint discovery, Claude badge, state indicator
+  - Settings page: Genie Space selection for natural language SQL
+  - API client sends `X-Databricks-Model` and `X-Databricks-Genie-Space` headers automatically
+  - AI service routes calls through Databricks serving endpoints (OpenAI chat format) or falls back to Anthropic
+- **AI Assistant page** — under Discovery, currently marked "Coming Soon" with feature preview
+- **Databricks Jobs Cloning** — clone job definitions within or across workspaces
+  - List all workspace jobs with search/filter
+  - Clone same-workspace and cross-workspace (with host/token)
+  - Job diff — field-by-field comparison
+  - Backup/restore — export all job definitions as JSON
+  - 7 REST API endpoints under `/api/jobs/`
+- **Fullscreen button** — added to Data Lab embedded mode (browser native fullscreen API)
+
+### Changed
+- **Data Lab** (formerly SQL Workbench) — renamed throughout sidebar, header, and component
+
+---
+
+## v0.10.0 — MDM, Portal Expansion & UI Declutter (2026-03-28)
+
+### Added
+- **Master Data Management (MDM) Portal** — first open-source Databricks-native MDM. 19 pages covering golden records, entity resolution, stewardship, and hierarchies
+  - **Entity Resolution Engine** — 6 match types (exact, Jaro-Winkler, Levenshtein, Soundex, normalized, numeric), configurable blocking strategies, weighted composite scoring
+  - **Golden Records** — entity 360 drawer with source records, attribute detail, and visual timeline
+  - **Match & Merge** — 5 tabs (Duplicates, Rules, Survivorship, Source Trust, Ingest), match tuning tester, configurable auto-merge/review thresholds
+  - **Data Stewardship** — review queue with side-by-side record comparison, bulk approve/reject, SLA timer (overdue/at-risk/on-track), task assignment, comments/notes
+  - **Hierarchy Management** — create and browse entity hierarchies
+  - **Industry Templates** — Healthcare (Patient MPI), Financial (KYC/AML), Retail (Customer 360), Manufacturing (Supplier MDM) — one-click rule setup
+  - **Reference Data Management** — code lists with aliases, cross-system mapping tables
+  - **Entity Relationship Graph** — interactive SVG visualization with zoom, filter, detail panel
+  - **Merge History** — full audit trail of all merge/split decisions with undo
+  - **DQ Scorecards** — per-entity-type accuracy, completeness, and active rate metrics
+  - **Cross-Domain Matching** — match across entity types (Customer ↔ Supplier)
+  - **Negative Match Rules** — "do not link" pairs with reasons
+  - **Consent Management** — GDPR consent matrix (7 consent types per entity)
+  - **Data Profiling** — attribute fill rates and distinct value analysis
+  - **MDM Audit Log** — unified event log with search, filter, CSV export
+  - **MDM Reports** — compliance reports with JSON/Markdown export
+  - **MDM Settings** — thresholds, SLA, notifications, retention, defaults
+  - **6 Delta tables** — `mdm_entities`, `mdm_source_records`, `mdm_match_pairs`, `mdm_matching_rules`, `mdm_stewardship_queue`, `mdm_hierarchies`
+  - **21 REST API endpoints** under `/api/mdm/`
+- **Databricks Jobs Cloning** — clone job definitions within or across workspaces
+  - List all workspace jobs with search/filter
+  - Clone job (same workspace) — strips runtime fields, applies name/overrides
+  - Clone cross-workspace — with destination host/token
+  - Job diff — field-by-field comparison of two job configs
+  - Backup/restore — export all job definitions as JSON, import them back
+  - 7 REST API endpoints under `/api/jobs/`
+- **4 New Portals** — Portal Switcher expanded from 4 to 8 portals
+  - **Security** — PII Scanner, Compliance, Preflight Checks
+  - **Automation** — Pipelines, Templates, Create Job, Clone Jobs, DLT Pipelines
+  - **Infrastructure** — Warehouse, Federation, Delta Sharing, Lakehouse Monitor
+  - **MDM** — 19 pages (see above)
+- **Notification badge fix** — bell icon now tracks "last seen" timestamp; badge resets to zero when panel is opened instead of always showing 20
+
+### Changed
+- **Dashboard decluttered** — stripped from 8 sections to 3: Metrics cards + Alerts + 3 Quick Actions (Clone, Explore, Diff). AI Insights, Catalog Health, Pinned Pairs, and Recent Operations removed from dashboard
+- **Sidebar reduced** — from 33 items to 14 items across 4 sections (Overview, Operations, Discovery, Management). Pages moved to dedicated portals
+- **Pinned Catalog Pairs** moved to Clone page as inline favorites bar
+- **RTBF & DSAR** accessible only through Governance portal (removed from main sidebar)
+- **RBAC** moved to Governance portal
+- **Cost Estimator & Storage Metrics** moved to FinOps portal
+- **Observability** moved to Data Quality portal
+- **Pipelines, Templates, Create Job** moved to Automation portal
+- **Warehouse, Federation, Delta Sharing, Lakehouse Monitor** moved to Infrastructure portal
+- **Docs site search** — added `@cmfcmf/docusaurus-search-local` for full-text search in dev and production
+
+---
+
+## v0.9.1 — DLT Clone Enhancements (2026-03-28)
+
+### Added
+- **Clone button per pipeline row** — visible directly in the Pipelines list, no need to navigate to Detail tab
+- **Cross-workspace DLT clone** — clone pipeline definitions to a different Databricks workspace with destination URL + PAT token
+- **Clone modal** — same-workspace / different-workspace toggle, dry-run preview, inline error display
+- **Placeholder notebook creation** — for serverless/SQL DLT pipelines with no notebook libraries, automatically creates a placeholder notebook in the destination workspace
+
+### Fixed
+- **Library-less pipeline clone** — pipelines without notebook libraries (serverless/SQL) now clone successfully by creating a placeholder notebook instead of failing with "libraries must contain at least one element"
+- **Cross-workspace clone error display** — specific error messages for auth failures (401), permission denied (403), and connection errors (502) instead of generic 400
+
+---
+
+## v0.9.0 — Delta Live Tables Management (2026-03-28)
+
+### Added
+- **DLT Pipeline Discovery** — browse all DLT pipelines with state, health, creator, and latest update info
+- **DLT Pipeline Clone** — clone pipeline definitions (catalog, libraries, clusters, config) to new pipelines with dry-run preview
+- **DLT Trigger & Stop** — start pipeline runs (incremental or full refresh) and stop running pipelines
+- **DLT Event Monitoring** — view pipeline event logs (errors, warnings, flow progress) via SDK
+- **DLT Run History** — track pipeline update history with status and timing
+- **DLT Expectation Monitoring** — query expectation results from `system.lakeflow.pipeline_events` system tables
+- **DLT Lineage Integration** — map DLT datasets to Unity Catalog tables by querying target schema's information_schema
+- **DLT Health Dashboard** — aggregate pipeline state (running/failed/idle), health (healthy/unhealthy), and recent events
+- **DLT UI Page** — 3-tab page (Dashboard, Pipelines, Detail) with stat cards, event log, dataset lineage table, clone form
+- **10 DLT API Endpoints** — full CRUD under `/api/dlt/` including trigger, stop, clone, events, updates, lineage, expectations, dashboard
+- **DLT Documentation** — Docusaurus guide with API reference, lineage integration, and expectation monitoring
+- **22 DLT Unit Tests** — covering discovery, details, events, updates, clone, trigger, stop, dashboard, lineage, expectations
+
+---
+
+## v0.8.1 — Governance Consolidation & Notification Fix (2026-03-28)
+
+### Changed
+- **RTBF & DSAR moved to Governance portal** — RTBF and DSAR pages are now accessed under `/governance/rtbf` and `/governance/dsar` via the Governance sidebar's Compliance section, instead of appearing as separate items in the main sidebar. Accessible through the Portal Switcher.
+- **Notification badge fix** — the header notification bell now tracks a "last seen" timestamp in localStorage so the badge only shows genuinely new events. Previously it always showed the total count of recent items (typically 20). Opening the panel marks all current notifications as read and resets the badge to zero.
+
+### Removed
+- **RTBF / DSAR from main sidebar** — removed as standalone items from the Management section; consolidated under the Governance portal
+
+---
+
+## v0.8.0 — DSAR, Clone Pipelines & Data Observability (2026-03-28)
+
+### Added
+- **DSAR (Data Subject Access Request)** — GDPR Article 15 right-of-access workflow. Reuses RTBF's discovery engine to find subject data, then exports as CSV/JSON/Parquet. Full lifecycle: submit, discover, approve, export, deliver, complete. 3 Delta audit tables, 10 API endpoints, 11 CLI commands, 4-tab UI page
+- **Clone Pipelines** — chain multiple operations into reusable workflows. 6 step types (clone, mask, validate, notify, vacuum, custom_sql). 3 failure policies (abort, skip, retry). 4 built-in templates (production-to-dev, clone-and-validate, refresh-dev, compliance-clone). Pipeline builder UI with drag-to-reorder, template gallery, and run history
+- **Data Observability Dashboard** — unified health scoring (0-100) across freshness, volume, anomaly, SLA, and data quality. Health gauge visualization, category breakdown bars, top issues list, trend sparklines. Read-only aggregation from existing Delta tables — no new data collection needed
+- **Help Page Expansion** — 11 tabs covering every portal: Clone & Ops, Data Quality, Governance, FinOps, Discovery, RTBF, DSAR, Pipelines, Observability, Shortcuts, About. Step-by-step guides for each feature
+
+---
+
+## v0.7.0 — RTBF / Right to Be Forgotten (2026-03-28)
+
+### Added
+- **RTBF Engine** — complete GDPR Article 17 erasure workflow: submit, discover, approve, execute, VACUUM, verify, certificate
+- **3 Deletion Strategies** — hard DELETE, anonymize (mask PII columns), pseudonymize (replace identifiers)
+- **Subject Discovery** — finds matching rows across all cloned catalogs using PII detection patterns + information_schema + lineage tracking
+- **Delta VACUUM Integration** — physically removes time-travel history with 0-hour retention for true GDPR compliance
+- **Verification Engine** — re-queries all affected tables to confirm zero rows remain post-deletion
+- **Compliance Certificates** — generates HTML + JSON deletion evidence with full action audit trail, stored in Delta
+- **3 Delta Audit Tables** — `rtbf_requests`, `rtbf_actions`, `rtbf_certificates` (created via Settings > Initialize All Tables)
+- **34 Global Legal Bases** — pre-configured privacy regulations from 18 jurisdictions (EU GDPR, UK GDPR, US CCPA/CPRA + 9 state laws, Brazil LGPD, India DPDPA, Japan APPI, China PIPL, and more)
+- **16 REST API Endpoints** — full lifecycle management under `/api/rtbf/` with async job execution
+- **12 CLI Subcommands** — `clxs rtbf submit|discover|impact|approve|execute|vacuum|verify|certificate|list|status|cancel|overdue`
+- **RTBF UI Page** — 4-tab page (Dashboard, Submit, Requests, Detail) with workflow visualization, stat cards, confirmation dialogs, dry-run preview, certificate download
+- **Plugin Hooks** — 4 lifecycle hooks: `on_rtbf_request`, `on_rtbf_deletion_start`, `on_rtbf_deletion_complete`, `on_rtbf_verification_failed`
+- **Slack/Teams Notifications** — alerts on submission, execution, completion, verification failure, deadline warnings
+- **Deadline Monitor** — `check_approaching_deadlines()` method and `/requests/approaching-deadline` API endpoint
+- **Row-Level Masking** — new `mask_subject_rows()` function in masking engine for subject-specific anonymization
+- **Confirmation Dialogs** — destructive actions (Execute, VACUUM, Cancel) require typing confirmation text
+- **Dry-Run Preview** — preview deletion SQL and row counts before committing
+- **Certificate Download** — `/certificate/download?format=html|json` endpoint with Download buttons in UI
+- **Compliance Report Integration** — RTBF section added to compliance reports (total, completed, overdue, completion rate)
+- **Navigation** — RTBF accessible via Governance portal sidebar (Compliance section) and header search
+
+---
+
 ## v0.6.1 — UI Overhaul, Login Page & Session Persistence (2026-03-25)
 
 ### Added

@@ -9,9 +9,11 @@ import { useStartClone, useVolumes } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
+import { useFavorites } from "@/hooks/useFavorites";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
+  Star, Plus, X,
 } from "lucide-react";
 
 type Step = "source" | "options" | "preview" | "execute";
@@ -633,6 +635,10 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
 export default function ClonePage() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const { favorites, addFavorite, removeFavorite } = useFavorites();
+  const [showAddFav, setShowAddFav] = useState(false);
+  const [favSource, setFavSource] = useState("");
+  const [favDest, setFavDest] = useState("");
 
   // Default config
   const defaults = {
@@ -821,6 +827,38 @@ export default function ClonePage() {
         docsUrl="https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-create-table-clone"
         docsLabel="CREATE TABLE CLONE"
       />
+
+      {/* Pinned Catalog Pairs */}
+      {(favorites.length > 0 || showAddFav) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Star className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {favorites.map((fav, i) => (
+            <div key={i} className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/30 hover:border-[#E8453C]/50 transition-all cursor-pointer text-xs"
+              onClick={() => setConfig(c => ({ ...c, source_catalog: fav.source, destination_catalog: fav.destination }))}
+            >
+              <span className="font-medium text-foreground">{fav.source}</span>
+              <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
+              <span className="text-foreground">{fav.destination}</span>
+              <button className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); removeFavorite(fav.source, fav.destination); }}>
+                <X className="h-2.5 w-2.5 text-muted-foreground hover:text-red-500" />
+              </button>
+            </div>
+          ))}
+          {showAddFav ? (
+            <div className="flex items-center gap-1.5">
+              <input className="px-2 py-1 text-xs bg-muted border border-border rounded-md text-foreground w-28" placeholder="Source" value={favSource} onChange={(e) => setFavSource(e.target.value)} />
+              <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
+              <input className="px-2 py-1 text-xs bg-muted border border-border rounded-md text-foreground w-28" placeholder="Destination" value={favDest} onChange={(e) => setFavDest(e.target.value)} />
+              <Button size="sm" className="h-6 text-xs px-2" disabled={!favSource.trim() || !favDest.trim()} onClick={() => { addFavorite(favSource.trim(), favDest.trim()); setFavSource(""); setFavDest(""); setShowAddFav(false); }}>Pin</Button>
+              <button onClick={() => setShowAddFav(false)} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+            </div>
+          ) : (
+            <button onClick={() => setShowAddFav(true)} className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors">
+              <Plus className="h-3 w-3" /> Pin pair
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Step indicators */}
       <div className="flex gap-2">

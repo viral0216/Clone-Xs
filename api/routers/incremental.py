@@ -11,6 +11,9 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
+from typing import Literal
+
+
 class IncrementalSyncRequest(BaseModel):
     source_catalog: str
     destination_catalog: str
@@ -20,6 +23,7 @@ class IncrementalSyncRequest(BaseModel):
     dry_run: bool = False
     serverless: bool = False
     volume: str | None = None
+    sync_mode: Literal["version", "cdf", "auto"] = "auto"
 
 
 def _check_via_spark_connect(client, source_catalog, destination_catalog, schema_name):
@@ -70,6 +74,41 @@ async def start_incremental_sync(
         "dry_run": req.dry_run,
         "serverless": req.serverless,
         "volume": req.volume,
+        "sync_mode": req.sync_mode,
     }
     job_id = await jm.submit_job("incremental_sync", job_config, client)
     return {"job_id": job_id, "status": "queued", "message": "Incremental sync job submitted"}
+
+
+class CdfCheckRequest(BaseModel):
+    source_catalog: str
+    schema_name: str
+    table_name: str
+    destination_catalog: str | None = None
+    warehouse_id: str | None = None
+
+
+@router.post("/incremental/cdf-check")
+async def check_cdf_status(req: CdfCheckRequest, client=Depends(get_db_client)):
+    """Check if CDF is enabled on a table and get a change summary."""
+    from src.incremental_sync import check_cdf_enabled, get_cdf_change_summary, get_last_sync_version
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+
+    cdf_enabled = check_cdf_enabled(client, wid, req.source_catalog, req.schema_name, req.table_name)
+
+    result = {
+        "table": f"{req.source_catalog}.{req.schema_name}.{req.table_name}",
+        "cdf_enabled": cdf_enabled,
+        "change_summary": None,
+    }
+
+    if cdf_enabled:
+        dest_catalog = req.destination_catalog or config.get("destination_catalog", "")
+        last_version = get_last_sync_version(req.source_catalog, dest_catalog, req.schema_name, req.table_name)
+        if last_version is not None:
+            result["change_summary"] = get_cdf_change_summary(
+                client, wid, req.source_catalog, req.schema_name, req.table_name, last_version,
+            )
+
+    return result

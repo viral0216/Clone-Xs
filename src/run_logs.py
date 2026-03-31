@@ -11,7 +11,7 @@ Default table: clone_audit.logs.run_logs
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -43,20 +43,8 @@ def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None)
     fqn = get_run_logs_fqn(config)
     catalog, schema, _ = fqn.split(".")
 
-    # Try to create catalog — skip if it already exists or if storage location is needed
-    try:
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS {catalog}")
-    except Exception as e:
-        # Catalog may already exist or require managed location — check if it's usable
-        try:
-            execute_sql(client, warehouse_id, f"USE CATALOG {catalog}")
-        except Exception:
-            raise RuntimeError(
-                f"Cannot create or access catalog '{catalog}'. "
-                f"Either create it manually in the Databricks UI or use an existing catalog. "
-                f"Original error: {e}"
-            )
-    execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    from src.catalog_utils import ensure_catalog_and_schema
+    ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {fqn} (
@@ -137,7 +125,7 @@ def save_run_log(
     error_msg = (job.get("error") or "").replace("'", "''")
     host = os.environ.get("DATABRICKS_HOST", "unknown")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Duration
     duration = 0.0

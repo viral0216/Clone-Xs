@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, Union
 
 import yaml
@@ -343,7 +343,7 @@ class ODCSContract(BaseModel):
     @model_validator(mode="after")
     def set_defaults(self):
         if not self.contractCreatedTs:
-            self.contractCreatedTs = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            self.contractCreatedTs = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         return self
 
     # --- YAML serialization ---

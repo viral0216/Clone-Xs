@@ -50,6 +50,10 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Metrics & History | Track throughput, failure rates, and operation history |
 | Delta Audit Logging | Every operation logs to run_logs, clone_operations, and clone_metrics |
 | Compliance Reports | Audit-ready reports covering PII, permissions, lineage |
+| RTBF / Right to Be Forgotten | GDPR Article 17 erasure workflow — discover, delete, VACUUM, verify, certificate across all cloned catalogs. 34 legal bases from 18 jurisdictions |
+| DSAR / Right of Access | GDPR Article 15 access request — discover and export subject data as CSV/JSON/Parquet with audit trail and 30-day deadline tracking |
+| Clone Pipelines | Chain operations into reusable workflows — clone, mask, validate, notify, vacuum. 4 built-in templates, 3 failure policies, execution history |
+| Data Observability | Unified health dashboard (0-100 score) combining freshness, volume, anomaly, SLA, and data quality metrics |
 | REST API Server | Expose clone operations as HTTP endpoints |
 | Plugin System | Extend with custom plugins from a marketplace |
 | Pre-flight Checks | Validate connectivity, permissions, and config before cloning |
@@ -70,6 +74,10 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Page State Persistence | Navigate away and come back — scan results are preserved across all pages |
 | Auto Storage Location | Clone and Create Job pages auto-populate storage location from source catalog |
 | Template Config Pass-through | Templates pre-fill all clone checkboxes, not just clone type |
+| Master Data Management | First open-source Databricks-native MDM — entity resolution (6 match types), golden records, survivorship rules, data stewardship with SLA tracking, hierarchy management, industry templates (Healthcare, Financial, Retail, Manufacturing), reference data, DQ scorecards, consent management. 19 pages, 6 Delta tables, 21 API endpoints |
+| Databricks Jobs Cloning | Clone job definitions within or across workspaces — with diff view, backup/restore, and cross-workspace migration |
+| DLT Pipeline Cloning | Clone Delta Live Tables pipeline definitions — same workspace or cross-workspace with credential handling |
+| 8-Portal Architecture | Clone-Xs, Governance, Data Quality, FinOps, Security, Automation, Infrastructure, MDM — each with dedicated sidebar and pages |
 
 ## Quick install
 
@@ -106,13 +114,18 @@ Clone-Xs provides several deployment options because different teams and workflo
 - [Advanced Cloning](guide/advanced-clone) — data filtering, TTL, execution plans, plugins
 - [Safety & Rollback](guide/safety) — auto-rollback, checkpointing, config lint, impact analysis
 - [Governance](guide/governance) — RBAC, approval workflows, compliance reports
+- [RTBF](guide/rtbf) — Right to Be Forgotten / GDPR Article 17 erasure workflows
+- [DSAR](guide/dsar) — Data Subject Access Request / GDPR Article 15
+- [Clone Pipelines](guide/pipelines) — chain clone, mask, validate, notify into workflows
+- [Data Observability](guide/observability) — unified health dashboard
+- [Delta Live Tables](guide/dlt) — discover, clone, and monitor DLT pipelines
 - [Scheduling & Automation](guide/scheduling) — scheduled clones, templates, API server, throttling
 - [Analytics & Insights](guide/analytics) — usage analysis, metrics, history, data preview
 - [Storage Metrics](guide/storage-metrics) — analyze and optimize table storage
 - [Create Job](guide/create-job) — schedule clone operations as Databricks Jobs
 - [Desktop App](guide/desktop) — run as a native desktop application
 - [Databricks App](guide/databricks-app) — deploy to your Databricks workspace
-- [Web UI](guide/web-ui) — all 33 pages of the web interface
+- [Web UI](guide/web-ui) — all 60+ pages across 8 portals
 - [CLI Reference](reference/cli) — full command reference
 - [API Reference](reference/api) — REST API endpoint reference
 - [Changelog](reference/changelog) — version history

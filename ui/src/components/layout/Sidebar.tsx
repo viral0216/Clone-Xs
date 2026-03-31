@@ -2,12 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import ResizeHandle from "@/components/ResizeHandle";
 import {
-  LayoutDashboard, Briefcase, Copy, FolderTree, GitCompare, Activity,
-  Settings2, FileText, Wrench, Shield, GitBranch, ClipboardCheck, RefreshCw,
-  GitCompareArrows, Wand2, ChevronRight, ChevronDown, History, BarChart3,
-  Undo2, LayoutTemplate, CalendarClock, CopyPlus, GitFork, Zap, Eye,
-  ScanSearch, Calculator, ShieldCheck, Server, Lock, Puzzle, HardDrive,
-  X, Plus, Database, PanelLeftClose, PanelLeftOpen,
+  LayoutDashboard, Copy, FolderTree, Activity,
+  Settings2, FileText, Wrench, GitBranch, RefreshCw,
+  ChevronRight, ChevronDown, History, BarChart3,
+  Undo2, GitFork, Zap, Layers, Terminal, Sparkles, Database,
+  X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -35,6 +34,7 @@ export const allNavSections: NavSection[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/audit", label: "Audit Trail", icon: History },
       { href: "/metrics", label: "Metrics", icon: BarChart3 },
+      { href: "/reports", label: "Reports", icon: FileText },
     ],
   },
   {
@@ -42,49 +42,30 @@ export const allNavSections: NavSection[] = [
     items: [
       { href: "/clone", label: "Clone", icon: Copy },
       { href: "/sync", label: "Sync", icon: RefreshCw },
-      { href: "/incremental-sync", label: "Incremental Sync", icon: GitCompareArrows },
-      { href: "/generate", label: "Generate", icon: Wand2 },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
-      { href: "/templates", label: "Templates", icon: LayoutTemplate },
-      { href: "/create-job", label: "Create Job", icon: Briefcase },
-      { href: "/multi-clone", label: "Multi-Clone", icon: CopyPlus },
       { href: "/demo-data", label: "Demo Data", icon: Database },
+      { href: "/dlt", label: "Delta Live Tables", icon: Zap },
+      { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
     ],
   },
   {
     title: "Discovery",
     items: [
       { href: "/explore", label: "Explorer", icon: FolderTree },
-      { href: "/diff", label: "Diff & Compare", icon: GitCompare },
-      { href: "/config-diff", label: "Config Diff", icon: GitCompareArrows },
+      { href: "/data-lab", label: "Data Lab", icon: Terminal },
+      { href: "/ai-assistant", label: "AI Assistant", icon: Sparkles },
+      { href: "/notebooks", label: "Notebooks", icon: BookOpen },
       { href: "/lineage", label: "Lineage", icon: GitFork },
       { href: "/view-deps", label: "Dependencies", icon: GitBranch },
       { href: "/impact", label: "Impact Analysis", icon: Zap },
-      { href: "/preview", label: "Data Preview", icon: Eye },
-    ],
-  },
-  {
-    title: "Analysis",
-    items: [
-      { href: "/reports", label: "Reports", icon: FileText },
-      { href: "/pii", label: "PII Scanner", icon: Shield },
-      { href: "/schema-drift", label: "Schema Drift", icon: GitBranch },
-      { href: "/profiling", label: "Profiling", icon: ScanSearch },
-      { href: "/cost", label: "Cost Estimator", icon: Calculator },
-      { href: "/storage-metrics", label: "Storage Metrics", icon: HardDrive },
-      { href: "/compliance", label: "Compliance", icon: ShieldCheck },
     ],
   },
   {
     title: "Management",
     items: [
       { href: "/monitor", label: "Monitor", icon: Activity },
-      { href: "/preflight", label: "Preflight", icon: ClipboardCheck },
       { href: "/config", label: "Config", icon: Wrench },
       { href: "/settings", label: "Settings", icon: Settings2 },
-      { href: "/warehouse", label: "Warehouse", icon: Server },
-      { href: "/rbac", label: "RBAC", icon: Lock },
-      { href: "/plugins", label: "Plugins", icon: Puzzle },
     ],
   },
 ];

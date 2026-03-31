@@ -1,4 +1,34 @@
+import time
+import threading
+
 import yaml
+
+# ── Config cache (thread-safe) ──────────────────────────────────────────────
+_config_cache: dict[tuple, dict] = {}
+_config_timestamps: dict[tuple, float] = {}
+_CONFIG_CACHE_TTL = 60  # seconds
+_config_lock = threading.Lock()
+
+
+def load_config_cached(config_path: str = "config/clone_config.yaml", profile: str | None = None) -> dict:
+    """Load config with in-memory caching (60s TTL). Thread-safe."""
+    key = (config_path, profile or "")
+    now = time.time()
+    with _config_lock:
+        if key in _config_cache and (now - _config_timestamps.get(key, 0)) < _CONFIG_CACHE_TTL:
+            return _config_cache[key]
+    config = load_config(config_path, profile)
+    with _config_lock:
+        _config_cache[key] = config
+        _config_timestamps[key] = now
+    return config
+
+
+def invalidate_config_cache():
+    """Clear the config cache. Call after saving config changes."""
+    with _config_lock:
+        _config_cache.clear()
+        _config_timestamps.clear()
 
 
 def load_config(config_path: str = "config/clone_config.yaml", profile: str | None = None) -> dict:
@@ -137,7 +167,8 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     # Metrics (#6)
     config.setdefault("metrics_enabled", False)
     config.setdefault("metrics_destination", "delta")
-    config.setdefault("metrics_table", "clone_audit.metrics.clone_metrics")
+    audit_catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    config.setdefault("metrics_table", f"{audit_catalog}.metrics.clone_metrics")
     config.setdefault("metrics_output_path", None)
     config.setdefault("metrics_webhook_url", None)
 

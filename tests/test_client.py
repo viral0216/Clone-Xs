@@ -32,6 +32,7 @@ def test_execute_sql_empty_result(mock_ws_class):
     mock_response = MagicMock()
     mock_response.status.state.value = "SUCCEEDED"
     mock_response.result.data_array = []
+    mock_response.result.external_links = None
     mock_response.manifest.schema.columns = []
     mock_client.statement_execution.execute_statement.return_value = mock_response
 

@@ -1,7 +1,7 @@
 """Compliance API — structured compliance reports for the Web UI."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -50,7 +50,7 @@ def generate_compliance_report_api(
         "summary": {
             "catalog": catalog,
             "report_type": report_type,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "total_checks": len(sections),
             "passed": passed,
             "warnings": warnings,

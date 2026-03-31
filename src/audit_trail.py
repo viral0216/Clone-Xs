@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -35,20 +35,8 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     table = audit.get("table", DEFAULT_AUDIT_TABLE)
     fqn = f"{catalog}.{schema}.{table}"
 
-    # Create catalog — skip if it already exists or requires managed location
-    try:
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS {catalog}")
-    except Exception as e:
-        try:
-            execute_sql(client, warehouse_id, f"USE CATALOG {catalog}")
-        except Exception:
-            raise RuntimeError(
-                f"Cannot create or access catalog '{catalog}'. "
-                f"Either create it manually in the Databricks UI or use an existing catalog. "
-                f"Original error: {e}"
-            )
-    # Create schema
-    execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    from src.catalog_utils import ensure_catalog_and_schema
+    ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
     # Create table
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {fqn} (
@@ -123,7 +111,7 @@ def log_operation_start(
     clone_type = config.get("clone_type", "DEEP")
     host = os.environ.get("DATABRICKS_HOST", "unknown")
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Sanitize config for storage (remove tokens)
     safe_config = {k: v for k, v in config.items() if "token" not in k.lower()}
@@ -168,7 +156,7 @@ def log_operation_complete(
 ) -> None:
     """Log the completion of a clone operation."""
     fqn = get_audit_table_fqn(config)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     duration = (now - started_at).total_seconds()
     completed_str = now.strftime("%Y-%m-%d %H:%M:%S")
 

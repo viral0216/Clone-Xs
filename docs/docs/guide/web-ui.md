@@ -5,7 +5,7 @@ title: Web UI
 
 # Web UI
 
-Clone-Xs includes a full web interface with 33+ pages for managing Unity Catalog operations. Start it with:
+Clone-Xs includes a full web interface with 60+ pages across 8 portals for managing Unity Catalog operations. Start it with:
 
 ```bash
 make web-start
@@ -18,7 +18,7 @@ The UI runs at `http://localhost:3001` and connects to the API server (by defaul
 - **Command palette search** — search any page by name or keyword (e.g., type "terraform" to jump to Generate, or "pii" to jump to PII Scanner)
 - **10 built-in themes** — Light, Dark, Midnight, Sunset, High Contrast, Ocean, Forest, Solarized, Rose, and Slate; pick from a visual grid in Settings or the HeaderBar theme picker; all themes use CSS variables for consistent sidebar, header, and content colors
 - **Real-time connection status indicator** — compact status bar with a green/red dot; polls `/api/health` every 15 seconds
-- **Notification center** — bell icon in the header bar showing recent clone events sourced from Delta tables with time-ago formatting (e.g., "3 minutes ago"); opens a slide-out panel with event details
+- **Notification center** — bell icon in the header bar showing unread clone events sourced from Delta tables with time-ago formatting (e.g., "3 minutes ago"); opens a slide-out panel with event details. The badge count tracks only new events since you last opened the panel (uses a "last seen" timestamp stored in localStorage), so it resets to zero when you check your notifications
 - **Pinned catalog pairs** — favorite source/destination pairs on the Dashboard for quick access
 - **Collapsible sidebar** — five collapsible navigation groups with 33 pages total; sidebar collapses to an icon-only rail via a button at the bottom or a toggle in Settings; Databricks-style density (13px font, 16px icons, compact padding) with theme-aware colors
 - **Page state persistence** — 10 analysis/management pages (PII Scanner, Schema Drift, Preflight, Diff & Compare, Cost Estimator, Profiling, Impact Analysis, Compliance, Monitor, and Storage Metrics) preserve their results when you navigate away and return, so you never lose work mid-investigation
@@ -121,12 +121,15 @@ Clone-Xs targets WCAG 2.1 AA compliance across the entire interface:
 | Templates | `/templates` | Redesigned template browser with category filter pills, unique icons and accent colors per template, configuration badges showing key options at a glance, and expandable long descriptions. Click anywhere on a card to launch the Clone page with all template configuration passed as URL parameters. Uses `GET /api/templates`. |
 | Create Job | `/create-job` | Create a persistent Databricks Job with auto-populated storage location, Clone-Xs job dropdown for updates, cron schedule, email notifications, retries, and full clone options. Uses `POST /api/generate/create-job` and `GET /api/generate/clone-jobs`. |
 | Multi-Clone | `/multi-clone` | Clone a single source catalog to multiple destination workspaces in parallel. Add/remove destination rows, then execute all clones concurrently. Uses `POST /api/clone` (one per destination). |
+| Advanced Tables | `/advanced-tables` | Manage advanced Unity Catalog table types: materialized views, streaming tables, online tables, vector search indexes, and feature tables. Create, inspect, and refresh advanced tables with full metadata display. Uses `GET /api/advanced-tables` and `POST /api/advanced-tables`. |
 | Demo Data | `/demo-data` | Generate realistic demo catalogs with synthetic data. 10 industries (healthcare, financial, retail, telecom, manufacturing, energy, education, real_estate, logistics, insurance), each with 20 tables/views/UDFs. Template presets (Quick/Sales/Full), medallion architecture toggle, **Create UDFs** checkbox (toggle UDF creation), **Create Volumes** checkbox (toggle volume and sample file creation), **date range inputs** (start/end date pickers for controlling the generated data time range), **destination catalog input** (auto-clone to a second catalog after generation), generation preview with cost estimates, per-industry progress bars with **estimated time remaining** (ETA based on elapsed time and industries completed), cleanup button, and direct link to Explorer. Uses `POST /api/generate/demo-data`. |
 
 ### Discovery
 
 | Page | Path | Description |
 |------|------|-------------|
+| Data Lab | `/data-lab` | Interactive SQL query editor with catalog browser, 12 chart types, auto-visualization, deep data profiler, execution plan analysis, schema diagrams, and 4 AI features (Fix, Analyze, Explain, Generate). See the [Data Lab guide](data-lab.md). Uses `POST /api/reconciliation/execute-sql`, `POST /api/profile-table`, `POST /api/profile-results`, and `POST /api/ai/summarize`. |
+| Notebooks | `/notebooks` | Multi-cell SQL + Markdown notebook for interactive data exploration. Features: catalog browser sidebar, execution counter, AI per cell (fix/explain/generate), parameterized cells with `{{variable}}` syntax, cell duplication, auto-save, table of contents, drag-and-drop reorder, find across cells, undo/redo, presentation mode, HTML export, notebook templates, and temp view chaining. See the [Data Lab guide](data-lab.md#sql-notebooks). Uses `POST /api/reconciliation/execute-sql` and `/api/notebooks` CRUD. |
 | Explorer | `/explore` | Full catalog exploration page with a Databricks-style **Catalog Browser** tree sidebar (catalogs → schemas → tables, lazy loading, search filter, resizable, hideable via Settings). Tabs include: **Overview** (8 stat cards with Monthly/Yearly cost estimates, schema size donut, table type distribution donut, Top Used Tables, Most Used Columns, schema filter pills), **UC Objects** (External Locations, Storage Credentials, Connections, Registered Models, Metastore, Shares, Recipients), **Views** (all views with column counts), **Functions** (all UDFs with lazy loading), **Volumes** (type and path), **PII Detection** (inline scanner), and **Feature Store** (auto-detected feature tables). Click any table to open the **Table Detail Drawer** (columns, properties, owner, storage location, dates). Per-table **quick actions** (Preview, Clone, Profile), **Compare shortcut** to Diff page, and **Export CSV**. Uses `POST /api/search`, `POST /api/stats`, `POST /api/column-usage`, `GET /api/uc-objects`, `POST /api/table-usage`, and `GET /api/catalogs/{catalog}/{schema}/{table}/info`. |
 | Diff & Compare | `/diff` | Compare two catalogs side-by-side to see which tables are missing, extra, or different. Also supports validation to verify row counts match. Uses `POST /api/diff` and `POST /api/validate`. |
 | Config Diff | `/config-diff` | Side-by-side comparison of two clone configurations (paste YAML/JSON or load from profiles). Highlights added, removed, and changed keys. Uses `POST /api/config/diff`. |
@@ -158,3 +161,70 @@ Clone-Xs targets WCAG 2.1 AA compliance across the entire interface:
 | Warehouse | `/warehouse` | View, start, and stop SQL warehouses in your Databricks workspace. Shows real-time status with auto-refresh every 10 seconds. Uses `GET /api/auth/warehouses`, `POST /api/warehouse/start`, and `POST /api/warehouse/stop`. |
 | RBAC | `/rbac` | Manage role-based access control policies for clone operations. Create and view policies that restrict which users can clone specific catalogs. Uses `POST /api/rbac/policies`. |
 | Plugins | `/plugins` | Browse installed plugins and toggle them on or off. Each plugin extends Clone-Xs with additional hooks and capabilities. Uses `GET /api/plugins` and `POST /api/plugins/{id}/{enable\|disable}`. |
+
+### Governance Portal
+
+Accessed via Portal Switcher. Includes RBAC, RTBF, DSAR, data dictionary, certifications, data contracts, SLA monitoring, and change history.
+
+| Page | Path | Description |
+|------|------|-------------|
+| RBAC | `/governance/rbac` | Role-based access control policies. |
+| RTBF / Erasure | `/governance/rtbf` | GDPR Article 17 erasure workflow. See [RTBF guide](../guide/rtbf.md). |
+| DSAR / Access | `/governance/dsar` | GDPR Article 15 access request workflow. See [DSAR guide](../guide/dsar.md). |
+
+### Security Portal
+
+PII detection, compliance validation, and pre-clone security checks.
+
+| Page | Path | Description |
+|------|------|-------------|
+| PII Scanner | `/security/pii` | Detect personally identifiable information across catalogs. |
+| Compliance | `/security/compliance` | Generate governance and compliance reports. |
+| Preflight Checks | `/security/preflight` | Validate permissions and config before cloning. |
+
+### Automation Portal
+
+Pipelines, job scheduling, templates, and workspace job management.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Pipelines | `/automation/pipelines` | Chain operations into reusable workflows. |
+| Templates | `/automation/templates` | Pre-built clone configurations and recipes. |
+| Create Job | `/automation/create-job` | Schedule persistent Databricks clone jobs. |
+| Clone Jobs | `/automation/jobs` | List, clone, compare, and backup Databricks Jobs across workspaces. Clone within same workspace or cross-workspace with host/token. Job diff view and JSON backup/restore. |
+| DLT Pipelines | `/automation/dlt` | Discover, clone, and monitor Delta Live Tables pipelines. |
+
+### Infrastructure Portal
+
+Warehouse management, cross-workspace federation, and data sharing.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Warehouse | `/infrastructure/warehouse` | View, start, and manage SQL warehouses. |
+| Lakehouse Monitor | `/infrastructure/lakehouse-monitor` | Monitor lakehouse table quality and metrics. |
+| Federation | `/infrastructure/federation` | Cross-workspace catalog federation. |
+| Delta Sharing | `/infrastructure/delta-sharing` | Share data across organizations. |
+
+### MDM Portal (Master Data Management)
+
+First open-source Databricks-native MDM — 19 pages covering entity resolution, golden records, stewardship, and compliance.
+
+| Page | Path | Description |
+|------|------|-------------|
+| Overview | `/mdm` | Dashboard with entity stats, charts, global search, and table initialization. |
+| Golden Records | `/mdm/golden-records` | Master entities with entity 360 drawer (attributes, source records, timeline). |
+| Match & Merge | `/mdm/match-merge` | 5 tabs: Duplicates, Rules, Survivorship, Source Trust, Ingest. Match tuning tester. |
+| Relationships | `/mdm/relationship-graph` | Interactive SVG entity graph with zoom, filter, and detail panel. |
+| Merge History | `/mdm/merge-history` | All merge/split decisions with undo capability. |
+| Data Stewardship | `/mdm/stewardship` | Review queue with side-by-side compare, bulk ops, SLA timer, comments. |
+| Hierarchies | `/mdm/hierarchies` | Create and manage parent-child entity trees. |
+| Industry Templates | `/mdm/templates` | Healthcare (MPI), Financial (KYC), Retail (360), Manufacturing — one-click apply. |
+| Reference Data | `/mdm/reference-data` | Code lists with aliases and cross-system mapping tables. |
+| Negative Match | `/mdm/negative-match` | "Do not link" rules — pairs that should never be merged. |
+| Settings | `/mdm/settings` | Thresholds, SLA, notifications, retention, defaults. |
+| DQ Scorecards | `/mdm/scorecards` | Per-entity-type accuracy, completeness, and active rate. |
+| Data Profiling | `/mdm/profiling` | Attribute fill rates and distinct value analysis. |
+| Cross-Domain | `/mdm/cross-domain` | Match across entity types (Customer ↔ Supplier). |
+| Consent | `/mdm/consent` | GDPR consent matrix — 7 consent types per entity. |
+| Audit Log | `/mdm/audit-log` | Unified event log with search, filter, CSV export. |
+| Reports | `/mdm/reports` | Compliance reports with JSON/Markdown export. |

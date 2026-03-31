@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import CatalogPicker from "@/components/CatalogPicker";
-import { useSearch, useStats, useColumnUsage } from "@/hooks/useApi";
+import { useSearch, useStats, useColumnUsage, getCachedStats } from "@/hooks/useApi";
 import { useShowExports, useShowCatalogBrowser, usePersistedNumber, useCurrency, useStoragePrice } from "@/hooks/useSettings";
 import ResizeHandle from "@/components/ResizeHandle";
 import PageHeader from "@/components/PageHeader";
@@ -20,7 +20,7 @@ import {
   Loader2, FolderTree, Columns, Users, Eye, Box,
   ChevronRight, ChevronDown, TrendingUp, Download, DollarSign, Clock, Zap,
   X, GitCompare, Copy, ScanSearch, ExternalLink, Activity,
-  ShieldAlert, FunctionSquare, Package, Layers, AlertTriangle, Globe, Key, Share2, Brain,
+  ShieldAlert, FunctionSquare, Package, Layers, AlertTriangle, Globe, Key, Share2, Brain, Sparkles,
 } from "lucide-react";
 
 // ─── Helpers ───
@@ -363,13 +363,15 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
 
 // ─── Main Page ───
 export default function ExplorePage() {
-  const [catalog, setCatalog] = useState("");
+  const [catalog, setCatalog] = useState(() => sessionStorage.getItem("clxs-explore-catalog") || "");
   const [pattern, setPattern] = useState("");
   const [searchColumns, setSearchColumns] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "tables" | "search" | "usage" | "views" | "functions" | "volumes" | "pii" | "feature_store" | "uc_objects">("overview");
   const [expandedSchema, setExpandedSchema] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<{ catalog: string; schema: string; table: string } | null>(null);
   const [schemaFilter, setSchemaFilter] = useState<Set<string>>(new Set());
+  const [schemaInsight, setSchemaInsight] = useState<string | null>(null);
+  const [schemaInsightLoading, setSchemaInsightLoading] = useState(false);
   const [tableUsage, setTableUsage] = useState<any>(null);
   const [tableUsageLoading, setTableUsageLoading] = useState(false);
   const browserGlobal = useShowCatalogBrowser();
@@ -397,8 +399,16 @@ export default function ExplorePage() {
   const stats = useStats();
   const columnUsage = useColumnUsage();
 
+  // Auto-load stats for persisted catalog on mount
+  useEffect(() => {
+    if (catalog && !stats.data && !stats.isPending) {
+      stats.mutate({ source_catalog: catalog });
+    }
+  }, []);
+
   const loadCatalog = (cat: string) => {
     setCatalog(cat);
+    try { sessionStorage.setItem("clxs-explore-catalog", cat); } catch {}
     setSchemaFilter(new Set());
     setActiveTab("overview");
     stats.mutate({ source_catalog: cat });
@@ -815,7 +825,34 @@ export default function ExplorePage() {
                       <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                         <FolderTree className="h-4 w-4" />Schema Breakdown
                       </CardTitle>
-                      <Badge variant="outline" className="text-[10px]">{data.catalog}</Badge>
+                      <div className="flex items-center gap-2">
+                        <button onClick={async () => {
+                          if (schemaInsight) { setSchemaInsight(null); return; }
+                          setSchemaInsightLoading(true);
+                          try {
+                            const res = await api.post("/ai/summarize", {
+                              context_type: "report",
+                              data: {
+                                type: "catalog_overview",
+                                catalog: data.catalog,
+                                total_schemas: data.schema_count,
+                                total_tables: data.table_count,
+                                total_size: data.total_size_display,
+                                schemas: filteredSummaries.map((s: any) => ({ name: s.schema, tables: s.num_tables, size: s.total_size_display, rows: s.total_rows })),
+                                instruction: "Analyze this Unity Catalog breakdown. Use markdown format:\n## Summary\n- bullet\n## Key Observations\n- bullet\n## Recommendations\n- bullet\nMax 2 bullets per section. Be specific with numbers."
+                              },
+                            });
+                            setSchemaInsight(res.summary || "No insights available");
+                          } catch { setSchemaInsight("AI analysis unavailable"); }
+                          setSchemaInsightLoading(false);
+                        }}
+                          disabled={schemaInsightLoading}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-[#E8453C]/10 text-[#E8453C] hover:bg-[#E8453C]/20 transition-colors disabled:opacity-50">
+                          {schemaInsightLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                          {schemaInsight ? "Hide" : "Explain"}
+                        </button>
+                        <Badge variant="outline" className="text-[10px]">{data.catalog}</Badge>
+                      </div>
                     </div>
                     {/* Schema filter pills */}
                     {allSchemas.length > 1 && (
@@ -838,35 +875,74 @@ export default function ExplorePage() {
                     )}
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-1">
-                      {filteredSummaries.sort((a: any, b: any) => b.total_size_bytes - a.total_size_bytes).map((s: any) => {
+                    {/* AI Insight */}
+                    {schemaInsight && (
+                      <div className="mb-3 p-3 rounded-lg bg-[#E8453C]/5 border border-[#E8453C]/20 text-xs text-foreground leading-relaxed">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="flex items-center gap-1.5 font-semibold text-[#E8453C] text-[11px]">
+                            <Sparkles className="h-3.5 w-3.5" /> AI Analysis
+                          </span>
+                          <button onClick={() => setSchemaInsight(null)} className="text-muted-foreground hover:text-foreground text-[10px]">Dismiss</button>
+                        </div>
+                        {(() => {
+                          // Simple markdown renderer
+                          return schemaInsight.split("\n").map((line, i) => {
+                            const t = line.trim();
+                            if (!t) return null;
+                            if (t.startsWith("## ")) return <p key={i} className="font-semibold text-foreground mt-2 mb-1">{t.slice(3)}</p>;
+                            if (t.startsWith("- ")) {
+                              // Bold within bullets
+                              const parts = t.slice(2).split(/(\*\*[^*]+\*\*)/g);
+                              return <div key={i} className="flex gap-2 pl-1"><span className="text-[#E8453C] shrink-0">•</span><span>{parts.map((p, j) => p.startsWith("**") && p.endsWith("**") ? <strong key={j} className="font-semibold">{p.slice(2, -2)}</strong> : p)}</span></div>;
+                            }
+                            return <p key={i}>{t}</p>;
+                          });
+                        })()}
+                      </div>
+                    )}
+                    {/* Column headers */}
+                    <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border mb-1">
+                      <span className="w-5" />
+                      <span className="w-4" />
+                      <span className="flex-1">Schema</span>
+                      <span className="w-24 text-center">Size</span>
+                      <span className="w-12 text-center">Tables</span>
+                      <span className="w-20 text-right">Rows</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {filteredSummaries.sort((a: any, b: any) => b.total_size_bytes - a.total_size_bytes).map((s: any, idx: number) => {
                         const isExpanded = expandedSchema === s.schema;
                         const schemaTables = schemaGroups[s.schema] || [];
                         const pct = data.total_size_bytes > 0 ? Math.round((s.total_size_bytes / data.total_size_bytes) * 100) : 0;
                         return (
                           <div key={s.schema}>
-                            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                            <div className={`flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors ${isExpanded ? "bg-[#E8453C]/5 border border-[#E8453C]/20" : idx % 2 === 0 ? "bg-muted/20 hover:bg-muted/40" : "hover:bg-muted/30"}`}
                               onClick={() => setExpandedSchema(isExpanded ? null : s.schema)}>
-                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                              <Database className="h-3.5 w-3.5 text-[#E8453C] shrink-0" />
-                              <span className="text-sm font-medium text-foreground">{s.schema}</span>
-                              <div className="flex-1 mx-3"><div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${pct}%` }} /></div></div>
-                              <span className="text-xs text-muted-foreground shrink-0">{s.num_tables} tbl</span>
-                              <Badge variant="outline" className={`text-[10px] font-mono shrink-0 ${sizeBadgeColor(s.total_size_bytes)}`}>{s.total_size_display}</Badge>
-                              <span className="text-xs text-muted-foreground font-mono shrink-0 w-16 text-right">{formatNumber(s.total_rows)}</span>
+                              {isExpanded ? <ChevronDown className="h-4 w-4 text-[#E8453C] shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                              <Database className={`h-4 w-4 shrink-0 ${isExpanded ? "text-[#E8453C]" : "text-muted-foreground"}`} />
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-sm font-semibold ${isExpanded ? "text-[#E8453C]" : "text-foreground"}`}>{s.schema}</span>
+                                <div className="mt-1.5 h-2 bg-muted/50 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all ${pct > 50 ? "bg-[#E8453C]" : pct > 10 ? "bg-[#E8453C]/70" : "bg-[#E8453C]/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+                                </div>
+                              </div>
+                              <div className="w-24 text-center shrink-0">
+                                <Badge variant="outline" className={`text-[11px] font-mono ${sizeBadgeColor(s.total_size_bytes)}`}>{s.total_size_display}</Badge>
+                              </div>
+                              <span className="w-12 text-center text-sm font-medium text-foreground shrink-0">{s.num_tables}</span>
+                              <span className="w-20 text-right text-sm text-muted-foreground font-mono shrink-0">{formatNumber(s.total_rows)}</span>
                             </div>
                             {isExpanded && schemaTables.length > 0 && (
-                              <div className="ml-10 mt-1 mb-2 space-y-0.5">
-                                {schemaTables.sort((a: any, b: any) => (b.size_bytes || 0) - (a.size_bytes || 0)).map((t: any) => (
+                              <div className="ml-6 mt-1 mb-3 border-l-2 border-[#E8453C]/20 pl-4 space-y-0.5">
+                                {schemaTables.sort((a: any, b: any) => (b.size_bytes || 0) - (a.size_bytes || 0)).map((t: any, ti: number) => (
                                   <div key={t.table || t.table_name}
-                                    className="flex items-center gap-3 px-3 py-1.5 rounded hover:bg-muted/30 text-xs cursor-pointer group"
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-xs cursor-pointer group transition-colors ${ti % 2 === 0 ? "bg-muted/10" : ""} hover:bg-[#E8453C]/5`}
                                     onClick={() => setSelectedTable({ catalog, schema: s.schema, table: t.table || t.table_name })}>
-                                    <Table2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    <Table2 className="h-3.5 w-3.5 text-muted-foreground group-hover:text-[#E8453C] shrink-0" />
                                     <span className="font-medium text-foreground group-hover:text-[#E8453C] truncate">{t.table || t.table_name}</span>
                                     {typeBadge(t.table_type || t.type)}
                                     <span className="text-muted-foreground ml-auto shrink-0">{t.row_count ? formatNumber(t.row_count) + " rows" : ""}</span>
                                     {t.size_bytes > 0 && <span className="text-muted-foreground font-mono shrink-0">{formatBytes(t.size_bytes)}</span>}
-                                    {/* Quick actions on hover */}
                                     <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
                                       <Link to={`/preview?catalog=${catalog}&schema=${s.schema}&table=${t.table || t.table_name}`} onClick={(e) => e.stopPropagation()}>
                                         <span className="p-1 rounded hover:bg-muted"><Eye className="h-3 w-3 text-muted-foreground" /></span>

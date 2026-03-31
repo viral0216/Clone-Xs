@@ -561,6 +561,102 @@ Create a point-in-time metadata snapshot of a catalog. Useful for before/after c
 
 ---
 
+## Notebooks
+
+CRUD operations for SQL Notebooks in Data Lab. Notebooks are stored as JSON files on the server.
+
+### `GET /api/notebooks`
+
+List all saved notebooks with basic metadata (id, title, cell count, updated date).
+
+### `GET /api/notebooks/{id}`
+
+Get a single notebook by ID, including all cells.
+
+### `POST /api/notebooks`
+
+Create a new notebook.
+
+| Field   | Type     | Required | Description                      |
+|---------|----------|----------|----------------------------------|
+| `title` | string   | Yes      | Notebook title                   |
+| `cells` | object[] | Yes      | Array of `{id, type, content}`   |
+
+### `PUT /api/notebooks/{id}`
+
+Update an existing notebook's title and/or cells.
+
+### `DELETE /api/notebooks/{id}`
+
+Delete a notebook by ID.
+
+### `POST /api/notebooks/{id}/export`
+
+Export a notebook as a concatenated `.sql` file. Markdown cells become SQL comments.
+
+---
+
+## Deep Profiling
+
+Column-level data profiling with histograms and top-N value frequencies.
+
+### `POST /api/profile-table`
+
+Deep-profile a single catalog table.
+
+| Field            | Type   | Required | Default | Description                   |
+|------------------|--------|----------|---------|-------------------------------|
+| `table_fqn`      | string | Yes      |         | Three-part name `catalog.schema.table` |
+| `warehouse_id`   | string | No       | Config  | SQL warehouse ID              |
+| `sample_limit`   | int    | No       | 0       | Limit rows (0 = full table)   |
+| `top_n`          | int    | No       | 10      | Top N values for string cols  |
+| `histogram_bins` | int    | No       | 20      | Histogram bucket count        |
+
+**Example response:**
+
+```json
+{
+  "table_fqn": "catalog.schema.table",
+  "row_count": 50000,
+  "profiled_at": "2026-03-31T10:00:00Z",
+  "columns": [
+    {
+      "column_name": "age",
+      "data_type": "INT",
+      "null_count": 150,
+      "null_pct": 0.3,
+      "distinct_count": 85,
+      "min": 18, "max": 99, "avg": 42.3,
+      "histogram": [{"bucket": 1, "freq": 120, "range_min": 18, "range_max": 22}, "..."],
+      "top_values": null
+    },
+    {
+      "column_name": "status",
+      "data_type": "STRING",
+      "null_count": 0,
+      "null_pct": 0,
+      "distinct_count": 4,
+      "min_length": 4, "max_length": 11, "avg_length": 6.8,
+      "histogram": null,
+      "top_values": [{"value": "active", "freq": 30000, "pct": 60.0}, "..."]
+    }
+  ]
+}
+```
+
+### `POST /api/profile-results`
+
+Deep-profile the results of an arbitrary SQL query. Wraps the SQL as a CTE to compute stats server-side without double execution.
+
+| Field            | Type   | Required | Default | Description                 |
+|------------------|--------|----------|---------|-----------------------------|
+| `sql`            | string | Yes      |         | SQL query to profile        |
+| `warehouse_id`   | string | No       | Config  | SQL warehouse ID            |
+| `top_n`          | int    | No       | 10      | Top N values for string cols |
+| `histogram_bins` | int    | No       | 20      | Histogram bucket count      |
+
+---
+
 ## Config
 
 Read, write, and compare clone configuration files.
@@ -1523,3 +1619,188 @@ curl -X POST http://localhost:8080/api/cache/invalidate \
   "entries_removed": 8
 }
 ```
+
+---
+
+## Delta Live Tables (DLT)
+
+Discover, clone, monitor, and manage DLT pipelines. All endpoints under `/api/dlt/`.
+
+### `GET /api/dlt/pipelines`
+
+List all DLT pipelines with state, health, and creator.
+
+**Query parameters:** `filter` (optional pipeline name filter)
+
+### `GET /api/dlt/pipelines/{pipeline_id}`
+
+Get full pipeline configuration, libraries, clusters, and status.
+
+### `POST /api/dlt/pipelines/{pipeline_id}/trigger`
+
+Trigger a pipeline run.
+
+**Request body:** `{ "full_refresh": false }`
+
+### `POST /api/dlt/pipelines/{pipeline_id}/stop`
+
+Stop a running pipeline.
+
+### `POST /api/dlt/pipelines/{pipeline_id}/clone`
+
+Clone pipeline definition within the same workspace.
+
+**Request body:** `{ "new_name": "My Clone", "dry_run": false }`
+
+### `POST /api/dlt/pipelines/{pipeline_id}/clone-to-workspace`
+
+Clone pipeline definition to a different Databricks workspace.
+
+**Request body:**
+
+```json
+{
+  "new_name": "Pipeline DR Copy",
+  "dest_host": "https://adb-xxx.azuredatabricks.net",
+  "dest_token": "dapi...",
+  "dry_run": false
+}
+```
+
+For pipelines without notebook libraries (serverless/SQL), a placeholder notebook is created automatically in the destination workspace.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/events`
+
+Get pipeline event log. **Query:** `max_events` (default 100)
+
+### `GET /api/dlt/pipelines/{pipeline_id}/updates`
+
+Get pipeline run/update history.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/lineage`
+
+Map DLT datasets to Unity Catalog tables in the pipeline's target schema.
+
+### `GET /api/dlt/pipelines/{pipeline_id}/expectations`
+
+Query DLT expectation results from `system.lakeflow.pipeline_events`. **Query:** `days` (default 7)
+
+### `GET /api/dlt/dashboard`
+
+Full DLT health dashboard: pipeline states, health, recent events.
+
+---
+
+## RTBF (Right to Be Forgotten)
+
+GDPR Article 17 erasure workflow. All endpoints are under `/api/rtbf/`.
+
+### `POST /api/rtbf/requests`
+
+Submit a new erasure request.
+
+**Request body:**
+
+```json
+{
+  "subject_type": "email",
+  "subject_value": "user@example.com",
+  "requester_email": "dpo@company.com",
+  "requester_name": "Data Protection Officer",
+  "legal_basis": "GDPR Article 17(1)(a) - Consent withdrawn",
+  "strategy": "delete",
+  "grace_period_days": 0,
+  "notes": "Customer requested account deletion"
+}
+```
+
+**Parameters:**
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `subject_type` | Yes | `email` | Identifier type: email, customer_id, ssn, phone, name, national_id, passport, credit_card, custom |
+| `subject_value` | Yes | — | The identifier value to search for and delete |
+| `subject_column` | No | — | Required when subject_type is `custom` |
+| `requester_email` | Yes | — | Email of person requesting erasure |
+| `requester_name` | Yes | — | Name of person requesting erasure |
+| `legal_basis` | No | GDPR Art. 17(1)(a) | Legal basis for the erasure |
+| `strategy` | No | `delete` | Deletion strategy: delete, anonymize, pseudonymize |
+| `scope_catalogs` | No | all | Limit search to specific catalogs |
+| `grace_period_days` | No | `0` | Days to wait before execution |
+| `notes` | No | — | Additional context |
+
+### `GET /api/rtbf/requests`
+
+List requests with optional filters.
+
+**Query parameters:** `status`, `from_date`, `to_date`, `limit` (default 50)
+
+### `GET /api/rtbf/requests/{request_id}`
+
+Get full details for a single request.
+
+### `PUT /api/rtbf/requests/{request_id}/status`
+
+Update request status (approve, hold, cancel).
+
+**Request body:** `{ "status": "approved" | "on_hold" | "cancelled", "reason": "optional" }`
+
+### `POST /api/rtbf/requests/{request_id}/discover`
+
+Run subject discovery across all cloned catalogs (async job).
+
+**Request body:** `{ "subject_value": "user@example.com" }`
+
+### `GET /api/rtbf/requests/{request_id}/impact`
+
+Get impact analysis — affected catalogs, schemas, tables, row counts.
+
+### `POST /api/rtbf/requests/{request_id}/execute`
+
+Execute deletion/anonymization (async job). Supports dry-run.
+
+**Request body:** `{ "subject_value": "user@example.com", "strategy": "delete", "dry_run": false }`
+
+### `POST /api/rtbf/requests/{request_id}/vacuum`
+
+VACUUM all affected tables to physically remove Delta history (async job).
+
+**Request body:** `{ "retention_hours": 0 }`
+
+### `POST /api/rtbf/requests/{request_id}/verify`
+
+Verify deletion by re-querying all affected tables (async job).
+
+**Request body:** `{ "subject_value": "user@example.com" }`
+
+### `POST /api/rtbf/requests/{request_id}/certificate`
+
+Generate a GDPR-compliant deletion certificate (HTML + JSON).
+
+### `GET /api/rtbf/requests/{request_id}/certificate`
+
+Get the latest certificate for a request.
+
+### `GET /api/rtbf/requests/{request_id}/certificate/download`
+
+Download certificate as a file.
+
+**Query parameters:** `format=html` (default) or `format=json`
+
+### `GET /api/rtbf/requests/{request_id}/actions`
+
+Get all actions (discover, delete, vacuum, verify) for a request.
+
+### `GET /api/rtbf/requests/overdue`
+
+Get requests that have passed their GDPR 30-day deadline.
+
+### `GET /api/rtbf/requests/approaching-deadline`
+
+Get requests approaching their deadline.
+
+**Query parameters:** `warn_days` (default 5)
+
+### `GET /api/rtbf/dashboard`
+
+Dashboard summary: total, pending, in_progress, completed, overdue, avg_processing_days.

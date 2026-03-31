@@ -8,7 +8,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class CloneJob:
     dest_catalog: str = field(compare=False)
     config: dict = field(compare=False, repr=False)
     status: JobStatus = field(default=JobStatus.QUEUED, compare=False)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat(), compare=False)
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), compare=False)
     started_at: str | None = field(default=None, compare=False)
     completed_at: str | None = field(default=None, compare=False)
     result: dict | None = field(default=None, compare=False)
@@ -155,7 +155,7 @@ class CloneQueue:
                     if job.status == JobStatus.CANCELLED:
                         continue
                     job.status = JobStatus.RUNNING
-                    job.started_at = datetime.utcnow().isoformat()
+                    job.started_at = datetime.now(timezone.utc).isoformat()
                     self._running_count += 1
                     self._save_state()
 
@@ -177,7 +177,7 @@ class CloneQueue:
 
             with self._lock:
                 job.status = JobStatus.COMPLETED
-                job.completed_at = datetime.utcnow().isoformat()
+                job.completed_at = datetime.now(timezone.utc).isoformat()
                 job.result = summary
                 self._running_count -= 1
                 self._save_state()
@@ -191,7 +191,7 @@ class CloneQueue:
         except Exception as e:
             with self._lock:
                 job.status = JobStatus.FAILED
-                job.completed_at = datetime.utcnow().isoformat()
+                job.completed_at = datetime.now(timezone.utc).isoformat()
                 job.error = str(e)
                 self._running_count -= 1
                 self._save_state()

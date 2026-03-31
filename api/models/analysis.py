@@ -43,6 +43,7 @@ class EstimateRequest(CatalogRequest):
 class StorageMetricsRequest(CatalogRequest):
     schema_filter: str | None = None
     table_filter: str | None = None
+    deep_analyze: bool = False  # When True, runs ANALYZE TABLE (expensive); default uses DESCRIBE DETAIL (fast)
 
 
 class TableMaintenanceRequest(BaseModel):
@@ -53,6 +54,23 @@ class TableMaintenanceRequest(BaseModel):
     schema_filter: str | None = None
     retention_hours: int = 168  # VACUUM only
     dry_run: bool = False
+
+
+class TableProfileRequest(BaseModel):
+    """Request for deep-profiling a single table."""
+    table_fqn: str
+    warehouse_id: str | None = None
+    sample_limit: int = 0
+    top_n: int = 10
+    histogram_bins: int = 20
+
+
+class ResultsProfileRequest(BaseModel):
+    """Request for deep-profiling arbitrary SQL query results."""
+    sql: str
+    warehouse_id: str | None = None
+    top_n: int = 10
+    histogram_bins: int = 20
 
 
 class ExportRequest(CatalogRequest):

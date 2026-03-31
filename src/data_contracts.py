@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.client import execute_sql
@@ -55,7 +55,8 @@ def ensure_odcs_tables(client, warehouse_id, config):
     """Create ODCS Delta tables if they don't exist."""
     schema = _get_schema(config)
     try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        from src.catalog_utils import safe_ensure_schema_from_fqn
+        safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
@@ -135,7 +136,7 @@ def _extract_table_fqns(doc: dict) -> list[str]:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------

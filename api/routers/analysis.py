@@ -10,10 +10,12 @@ from api.models.analysis import (
     EstimateRequest,
     ExportRequest,
     ProfileRequest,
+    ResultsProfileRequest,
     SearchRequest,
     SnapshotRequest,
     StorageMetricsRequest,
     TableMaintenanceRequest,
+    TableProfileRequest,
     ValidateRequest,
 )
 
@@ -127,6 +129,40 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
     return result
 
 
+@router.post("/profile-table", summary="Deep-profile a single table")
+async def profile_table_deep(req: TableProfileRequest, client=Depends(get_db_client)):
+    """Deep-profile a single table with histograms and top-N values.
+
+    Returns per-column stats (null count, distinct count, min/max/avg),
+    distribution histograms for numeric columns, and top-N value frequencies
+    for string columns.
+    """
+    from src.profiling_deep import deep_profile_table
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    return deep_profile_table(
+        client, wid, req.table_fqn,
+        top_n=req.top_n, histogram_bins=req.histogram_bins,
+        sample_limit=req.sample_limit,
+    )
+
+
+@router.post("/profile-results", summary="Deep-profile SQL query results")
+async def profile_results(req: ResultsProfileRequest, client=Depends(get_db_client)):
+    """Deep-profile the results of an arbitrary SQL query.
+
+    Wraps the user's SQL as a CTE and computes column stats, histograms,
+    and top-N values server-side without materializing results twice.
+    """
+    from src.profiling_deep import deep_profile_sql
+    config = await get_app_config()
+    wid = req.warehouse_id or config["sql_warehouse_id"]
+    return deep_profile_sql(
+        client, wid, req.sql,
+        top_n=req.top_n, histogram_bins=req.histogram_bins,
+    )
+
+
 @router.post("/estimate", summary="Estimate clone cost")
 async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     """Estimate storage and compute costs for a clone operation.
@@ -146,19 +182,22 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
 
 @router.post("/storage-metrics", summary="Analyze storage breakdown")
 async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_client)):
-    """Analyze per-table storage breakdown (active, vacuumable, time-travel).
+    """Analyze per-table storage breakdown.
 
-    Uses `ANALYZE TABLE ... COMPUTE STORAGE METRICS` (Runtime 18.0+) to show
-    total bytes, active bytes, vacuumable bytes (reclaimable via VACUUM), and
-    time-travel bytes. Falls back to `DESCRIBE DETAIL` on older runtimes.
+    By default uses DESCRIBE DETAIL (fast, no compute cost).
+    Pass deep_analyze=true to run ANALYZE TABLE ... COMPUTE STORAGE METRICS
+    for vacuumable/time-travel byte breakdown (Runtime 18.0+, expensive).
     """
     from src.storage_metrics import catalog_storage_metrics
     config = await get_app_config()
     wid = req.warehouse_id or config["sql_warehouse_id"]
+    max_workers = int(config.get("max_parallel_queries", 10))
     result = catalog_storage_metrics(
         client, wid, req.source_catalog, req.exclude_schemas,
         schema_filter=req.schema_filter,
         table_filter=req.table_filter,
+        max_workers=max_workers,
+        deep_analyze=req.deep_analyze,
     )
     return result
 

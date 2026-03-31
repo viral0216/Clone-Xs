@@ -1717,7 +1717,7 @@ def cmd_metrics(args):
     _resolve_warehouse_id(args, config, client)
 
     warehouse_id = config["sql_warehouse_id"]
-    table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
     limit = args.limit
     source_filter = args.source
 
@@ -2126,6 +2126,160 @@ def cmd_demo_data(args):
         for err in result["errors"]:
             print(f"    - {err}")
     print(f"{'='*60}")
+
+
+def cmd_rtbf(args):
+    """Right to Be Forgotten (GDPR Article 17) — manage erasure requests."""
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = load_config(args.config, profile=args.profile)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
+
+    client = _get_auth_client(args)
+    _resolve_warehouse_id(args, config, client)
+
+    from src.rtbf import RTBFManager
+    mgr = RTBFManager(client, config["sql_warehouse_id"], config=config)
+
+    action = getattr(args, "rtbf_action", None)
+    if not action:
+        print("Usage: clxs rtbf {init|submit|discover|impact|execute|vacuum|verify|certificate|list|status|approve|cancel|overdue}")
+        sys.exit(1)
+
+    if action == "init":
+        print("RTBF tables are initialized via Settings > Initialize All Tables.")
+        print("Use the UI Settings page or POST /api/audit/init to create all audit tables.")
+        sys.exit(0)
+
+    elif action == "submit":
+        result = mgr.submit_request(
+            subject_type=args.subject_type,
+            subject_value=args.subject_value,
+            requester_email=args.requester_email,
+            requester_name=args.requester_name,
+            legal_basis=args.legal_basis,
+            strategy=args.strategy,
+            scope_catalogs=args.scope_catalogs or [],
+            grace_period_days=args.grace_period_days,
+            subject_column=getattr(args, "subject_column", None),
+            notes=getattr(args, "notes", None),
+        )
+        print(f"Request ID: {result['request_id']}")
+        print(f"Status:     {result['status']}")
+        print(f"Deadline:   {result['deadline']}")
+
+    elif action == "discover":
+        result = mgr.discover_subject(args.request_id, args.subject_value)
+        print(f"Discovery complete: {result['total_tables']} tables, {result['total_rows']} rows")
+        for t in result.get("affected_tables", []):
+            print(f"  {t['catalog']}.{t['schema']}.{t['table']}.{t['column']} — {t['row_count']} rows")
+
+    elif action == "impact":
+        result = mgr.analyze_impact(args.request_id)
+        print(f"Impact Analysis for {args.request_id}:")
+        print(f"  Tables:   {result['total_tables']}")
+        print(f"  Rows:     {result['total_rows']}")
+        print(f"  Catalogs: {', '.join(result['catalogs_affected'])}")
+        print(f"  Strategy: {result['strategy']}")
+        print(f"  Deadline: {result['deadline']}")
+
+    elif action == "execute":
+        result = mgr.execute_deletion(
+            args.request_id, args.subject_value,
+            strategy=getattr(args, "strategy", None),
+            dry_run=getattr(args, "dry_run", False),
+        )
+        prefix = "[DRY RUN] " if result.get("dry_run") else ""
+        print(f"{prefix}Execution complete: {result['total_rows_affected']} rows affected across {result['total_tables']} tables")
+        for a in result.get("actions", []):
+            if "error" in a:
+                print(f"  FAILED: {a['table']} — {a['error']}")
+            else:
+                print(f"  {a['table']}.{a['column']} — {a.get('rows_affected', '?')} rows")
+
+    elif action == "vacuum":
+        result = mgr.execute_vacuum(args.request_id, retention_hours=getattr(args, "retention_hours", None))
+        print(f"VACUUM complete: {result['tables_vacuumed']} tables vacuumed, {result['tables_failed']} failed")
+
+    elif action == "verify":
+        result = mgr.verify_deletion(args.request_id, args.subject_value)
+        status = "PASS" if result["all_clear"] else "FAIL"
+        print(f"Verification: {status}")
+        for r in result.get("results", []):
+            icon = "OK" if r.get("passed") else "FAIL"
+            remaining = r.get("remaining_rows", r.get("error", "?"))
+            print(f"  [{icon}] {r['table']}.{r['column']} — remaining: {remaining}")
+        if not result["all_clear"]:
+            sys.exit(1)
+
+    elif action == "certificate":
+        result = mgr.generate_certificate(args.request_id, output_dir=getattr(args, "output_dir", None))
+        print("Certificate generated:")
+        print(f"  ID:             {result['certificate_id']}")
+        print(f"  Tables:         {result['tables_processed']}")
+        print(f"  Rows deleted:   {result['rows_deleted']}")
+        print(f"  Verified:       {result['verification_passed']}")
+        for fmt, path in result.get("paths", {}).items():
+            print(f"  {fmt.upper()}: {path}")
+
+    elif action == "list":
+        requests = mgr.list_requests(
+            status=getattr(args, "status", None),
+            from_date=getattr(args, "from_date", None),
+            to_date=getattr(args, "to_date", None),
+            limit=getattr(args, "limit", 50),
+        )
+        if not requests:
+            print("No RTBF requests found.")
+        else:
+            print(f"{'ID':<38} {'Type':<12} {'Status':<20} {'Tables':<8} {'Deadline'}")
+            print("-" * 100)
+            for r in requests:
+                print(f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
+                      f"{r.get('status', ''):<20} {r.get('affected_tables', 0):<8} "
+                      f"{r.get('deadline', '')}")
+
+    elif action == "status":
+        req = mgr.get_request(args.request_id)
+        if not req:
+            print(f"Request {args.request_id} not found.")
+            sys.exit(1)
+        print(f"Request:     {req.get('request_id')}")
+        print(f"Subject:     {req.get('subject_type')} (hash: {str(req.get('subject_value_hash', ''))[:16]}...)")
+        print(f"Status:      {req.get('status')}")
+        print(f"Strategy:    {req.get('strategy')}")
+        print(f"Created:     {req.get('created_at')}")
+        print(f"Deadline:    {req.get('deadline')}")
+        print(f"Tables:      {req.get('affected_tables', 0)}")
+        print(f"Rows:        {req.get('affected_rows', 0)}")
+        print(f"Requester:   {req.get('requester_name')} ({req.get('requester_email')})")
+        print(f"Legal basis: {req.get('legal_basis')}")
+
+    elif action == "approve":
+        result = mgr.approve_request(args.request_id)
+        print(f"Request {args.request_id} approved (was: {result['previous_status']})")
+
+    elif action == "cancel":
+        result = mgr.cancel_request(args.request_id, reason=getattr(args, "reason", ""))
+        print(f"Request {args.request_id} cancelled (was: {result['previous_status']})")
+
+    elif action == "overdue":
+        overdue = mgr.get_overdue_requests()
+        if not overdue:
+            print("No overdue RTBF requests.")
+        else:
+            print(f"{'ID':<38} {'Type':<12} {'Status':<20} {'Deadline'}")
+            print("-" * 90)
+            for r in overdue:
+                print(f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
+                      f"{r.get('status', ''):<20} {r.get('deadline', '')}")
+
+    else:
+        print(f"Unknown RTBF action: {action}")
+        sys.exit(1)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2707,6 +2861,83 @@ def build_parser() -> argparse.ArgumentParser:
     demo_parser.add_argument("--end-date", default="2025-01-01", help="Data end date (default: 2025-01-01)")
     demo_parser.add_argument("--dest-catalog", help="Clone generated catalog to this destination")
     demo_parser.set_defaults(func=cmd_demo_data)
+
+    # --- rtbf command ---
+    rtbf_parser = subparsers.add_parser("rtbf", help="Right to Be Forgotten (GDPR Article 17) erasure requests")
+    add_common_args(rtbf_parser)
+    rtbf_sub = rtbf_parser.add_subparsers(dest="rtbf_action", help="RTBF sub-command")
+
+    rtbf_init = rtbf_sub.add_parser("init", help="Initialize RTBF Delta tables")
+    rtbf_init.set_defaults(rtbf_action="init")
+
+    rtbf_submit = rtbf_sub.add_parser("submit", help="Submit a new RTBF erasure request")
+    rtbf_submit.add_argument("--subject-type", required=True, choices=["email", "customer_id", "ssn", "phone", "name", "national_id", "passport", "credit_card", "custom"])
+    rtbf_submit.add_argument("--subject-value", required=True, help="The value to erase (e.g., user@example.com)")
+    rtbf_submit.add_argument("--subject-column", help="Explicit column name (required for custom subject-type)")
+    rtbf_submit.add_argument("--requester-email", required=True, help="Email of the person requesting erasure")
+    rtbf_submit.add_argument("--requester-name", required=True, help="Name of the person requesting erasure")
+    rtbf_submit.add_argument("--legal-basis", default="GDPR Article 17(1)(a) - Consent withdrawn")
+    rtbf_submit.add_argument("--strategy", choices=["delete", "anonymize", "pseudonymize"], default="delete")
+    rtbf_submit.add_argument("--scope-catalogs", nargs="+", help="Limit search to these catalogs")
+    rtbf_submit.add_argument("--grace-period-days", type=int, default=0)
+    rtbf_submit.add_argument("--notes", help="Additional notes")
+    rtbf_submit.set_defaults(rtbf_action="submit")
+
+    rtbf_discover = rtbf_sub.add_parser("discover", help="Discover subject data across all catalogs")
+    rtbf_discover.add_argument("--request-id", required=True)
+    rtbf_discover.add_argument("--subject-value", required=True, help="The value to search for")
+    rtbf_discover.set_defaults(rtbf_action="discover")
+
+    rtbf_impact = rtbf_sub.add_parser("impact", help="Show impact analysis for a request")
+    rtbf_impact.add_argument("--request-id", required=True)
+    rtbf_impact.set_defaults(rtbf_action="impact")
+
+    rtbf_execute = rtbf_sub.add_parser("execute", help="Execute deletion/anonymization")
+    rtbf_execute.add_argument("--request-id", required=True)
+    rtbf_execute.add_argument("--subject-value", required=True, help="The value to delete")
+    rtbf_execute.add_argument("--strategy", choices=["delete", "anonymize", "pseudonymize"])
+    rtbf_execute.add_argument("--dry-run", action="store_true")
+    rtbf_execute.set_defaults(rtbf_action="execute")
+
+    rtbf_vacuum = rtbf_sub.add_parser("vacuum", help="VACUUM affected tables (physical deletion)")
+    rtbf_vacuum.add_argument("--request-id", required=True)
+    rtbf_vacuum.add_argument("--retention-hours", type=int, help="VACUUM retention hours (default: 0)")
+    rtbf_vacuum.set_defaults(rtbf_action="vacuum")
+
+    rtbf_verify = rtbf_sub.add_parser("verify", help="Verify deletion completeness")
+    rtbf_verify.add_argument("--request-id", required=True)
+    rtbf_verify.add_argument("--subject-value", required=True, help="The value to verify is gone")
+    rtbf_verify.set_defaults(rtbf_action="verify")
+
+    rtbf_cert = rtbf_sub.add_parser("certificate", help="Generate deletion certificate")
+    rtbf_cert.add_argument("--request-id", required=True)
+    rtbf_cert.add_argument("--output-dir", default="reports/rtbf")
+    rtbf_cert.set_defaults(rtbf_action="certificate")
+
+    rtbf_list = rtbf_sub.add_parser("list", help="List RTBF requests")
+    rtbf_list.add_argument("--status", help="Filter by status")
+    rtbf_list.add_argument("--from-date", help="Filter from date (YYYY-MM-DD)")
+    rtbf_list.add_argument("--to-date", help="Filter to date (YYYY-MM-DD)")
+    rtbf_list.add_argument("--limit", type=int, default=50)
+    rtbf_list.set_defaults(rtbf_action="list")
+
+    rtbf_status = rtbf_sub.add_parser("status", help="Get request status and details")
+    rtbf_status.add_argument("--request-id", required=True)
+    rtbf_status.set_defaults(rtbf_action="status")
+
+    rtbf_approve = rtbf_sub.add_parser("approve", help="Approve an RTBF request for execution")
+    rtbf_approve.add_argument("--request-id", required=True)
+    rtbf_approve.set_defaults(rtbf_action="approve")
+
+    rtbf_cancel = rtbf_sub.add_parser("cancel", help="Cancel an RTBF request")
+    rtbf_cancel.add_argument("--request-id", required=True)
+    rtbf_cancel.add_argument("--reason", default="")
+    rtbf_cancel.set_defaults(rtbf_action="cancel")
+
+    rtbf_overdue = rtbf_sub.add_parser("overdue", help="Show overdue RTBF requests")
+    rtbf_overdue.set_defaults(rtbf_action="overdue")
+
+    rtbf_parser.set_defaults(func=cmd_rtbf)
 
     return parser
 

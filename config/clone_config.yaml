@@ -5,7 +5,7 @@ clone_type: DEEP
 load_type: FULL
 catalog_location: ''
 max_workers: 10
-max_parallel_queries: 10
+max_parallel_queries: 50
 parallel_tables: 10
 include_schemas: []
 exclude_schemas:
@@ -95,7 +95,72 @@ profiles:
     approval_required: true
     impact_check_before_clone: true
     metrics_enabled: true
+system_insights:
+  enabled: true
+  billing_days: 30
+  job_name_filter: ''
+incremental_sync_mode: auto
+ml_assets:
+  clone_models: true
+  clone_feature_tables: true
+  clone_vector_indexes: true
+advanced_tables:
+  clone_materialized_views: true
+  clone_streaming_tables: true
+  clone_online_tables: true
+lakehouse_monitor:
+  clone_monitors: true
+federation:
+  enabled: true
+delta_sharing:
+  enabled: true
 audit_trail:
   catalog: edp_dev
   schema: logs
   table: clone_operations
+anomaly_detection:
+  baseline_window: 30
+  warning_threshold: 2.0
+  critical_threshold: 3.0
+  system_table_sources:
+    billing: true
+    compute: true
+    query_history: true
+    storage: true
+rtbf:
+  enabled: true
+  default_strategy: delete
+  deadline_days: 30
+  default_grace_period_days: 0
+  auto_vacuum: true
+  vacuum_retention_hours: 0
+  require_approval: true
+  verification_required: true
+  certificate_auto_generate: true
+  certificate_output_dir: reports/rtbf
+  exclude_schemas:
+  - information_schema
+  - default
+dsar:
+  deadline_days: 30
+  default_export_format: csv
+  export_output_dir: reports/dsar
+  require_approval: true
+pipelines:
+  max_concurrent_steps: 1
+  default_on_failure: abort
+  retry_max_attempts: 3
+  retry_backoff_seconds: 30
+observability:
+  health_score_weights:
+    freshness: 0.25
+    volume: 0.15
+    anomaly: 0.2
+    sla: 0.25
+    dq: 0.15
+  issue_lookback_hours: 24
+  trend_days: 30
+azure:
+  subscription_id: ''
+  resource_group: ''
+  tenant_id: ''

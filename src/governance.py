@@ -6,7 +6,7 @@ Stores governance metadata in Delta tables within the configured audit catalog.
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.client import execute_sql
@@ -24,8 +24,10 @@ def _get_governance_schema(config: dict) -> str:
 def ensure_governance_tables(client, warehouse_id, config):
     """Create governance Delta tables if they don't exist."""
     schema = _get_governance_schema(config)
+    cat, sch = schema.split(".", 1) if "." in schema else ("clone_audit", schema)
     try:
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(client, warehouse_id, cat, sch, config.get("catalog_location", ""))
     except Exception as e:
         logger.warning(f"Could not create governance schema: {e}")
         return
@@ -73,7 +75,7 @@ def create_glossary_term(client, warehouse_id, config, term: dict, user: str = "
     """Create a new business glossary term."""
     schema = _get_governance_schema(config)
     term_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     tags_json = json.dumps(term.get("tags", []))
 
     execute_sql(client, warehouse_id, f"""
@@ -129,7 +131,7 @@ def link_term_to_columns(client, warehouse_id, config, term_id: str, column_fqns
     schema = _get_governance_schema(config)
     for fqn in column_fqns:
         link_id = str(uuid.uuid4())[:8]
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         try:
             execute_sql(client, warehouse_id, f"""
                 INSERT INTO {schema}.glossary_links
@@ -149,7 +151,7 @@ def certify_table(client, warehouse_id, config, cert: dict, user: str = "") -> d
     """Create or update a table certification."""
     schema = _get_governance_schema(config)
     cert_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     expiry = cert.get("expiry_date") or "NULL"
     expiry_clause = f"'{expiry}'" if expiry != "NULL" else "NULL"
 
@@ -185,7 +187,7 @@ def approve_certification(client, warehouse_id, config, cert_id: str, action: st
     """Approve or reject a certification."""
     schema = _get_governance_schema(config)
     new_status = "certified" if action == "approve" else "deprecated"
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     execute_sql(client, warehouse_id, f"""
         UPDATE {schema}.certifications
         SET status = '{new_status}', notes = concat(notes, ' | {action}: {_esc(reviewer_notes)}'),
@@ -288,7 +290,7 @@ def _track_change(client, warehouse_id, config, entity_type, entity_id, change_t
     """Record a metadata change in the change history table."""
     schema = _get_governance_schema(config)
     change_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     details_json = json.dumps(details) if details else "{}"
     try:
         execute_sql(client, warehouse_id, f"""

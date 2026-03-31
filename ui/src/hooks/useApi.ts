@@ -6,6 +6,7 @@ export function useAuthStatus() {
   return useQuery<AuthStatus>({
     queryKey: ["auth-status"],
     queryFn: () => api.get("/auth/status"),
+    staleTime: 120_000, // 2 min — auth status rarely changes
     retry: false,
   });
 }
@@ -14,6 +15,7 @@ export function useWarehouses() {
   return useQuery<WarehouseInfo[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.get("/auth/warehouses"),
+    staleTime: 300_000, // 5 min — warehouse list is stable
     retry: false,
   });
 }
@@ -82,7 +84,8 @@ export function useDashboardStats() {
   return useQuery<DashboardStats>({
     queryKey: ["dashboard-stats"],
     queryFn: () => api.get("/monitor/metrics"),
-    refetchInterval: 30000,
+    staleTime: 60_000, // 1 min — dashboard doesn't need real-time
+    refetchInterval: 60_000,
     retry: 1,
   });
 }
@@ -101,9 +104,10 @@ export interface NotificationsData {
 }
 
 export function useNotifications() {
+  const since = localStorage.getItem("notifications_last_seen") || "";
   return useQuery<NotificationsData>({
-    queryKey: ["notifications"],
-    queryFn: () => api.get("/notifications"),
+    queryKey: ["notifications", since],
+    queryFn: () => api.get(`/notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`),
     refetchInterval: 60000,
     retry: 1,
   });
@@ -125,7 +129,8 @@ export function useCatalogHealth() {
   return useQuery<{ catalogs: CatalogHealth[] }>({
     queryKey: ["catalog-health"],
     queryFn: () => api.get("/catalog-health"),
-    refetchInterval: 60000,
+    staleTime: 120_000, // 2 min — health data is semi-stable
+    refetchInterval: 120_000,
     retry: 1,
   });
 }
@@ -153,9 +158,21 @@ export function useValidate() {
 
 export function useStats() {
   return useMutation({
-    mutationFn: (req: { source_catalog: string; warehouse_id?: string }) =>
-      api.post("/stats", req),
+    mutationFn: async (req: { source_catalog: string; warehouse_id?: string }) => {
+      const result = await api.post("/stats", req);
+      // Cache in sessionStorage for page navigation persistence
+      try { sessionStorage.setItem(`clxs-stats-${req.source_catalog}`, JSON.stringify(result)); } catch {}
+      return result;
+    },
   });
+}
+
+/** Load cached stats for a catalog (survives page navigation) */
+export function getCachedStats(catalog: string): any | null {
+  try {
+    const cached = sessionStorage.getItem(`clxs-stats-${catalog}`);
+    return cached ? JSON.parse(cached) : null;
+  } catch { return null; }
 }
 
 export function useSearch() {
@@ -197,5 +214,143 @@ export function useColumnUsage() {
   return useMutation({
     mutationFn: (req: { catalog: string; table?: string; days?: number }) =>
       api.post("/column-usage", req),
+  });
+}
+
+// ── FinOps Hooks (system tables, 10-min cache) ─────────────────────
+
+const FINOPS_STALE = 600_000;   // 10 min — matches backend file cache TTL
+const FINOPS_REFETCH = 600_000; // 10 min auto-refresh
+
+export function useFinOpsConfig() {
+  return useQuery<{ price_per_gb?: number; currency?: string }>({
+    queryKey: ["finops-config"],
+    queryFn: () => api.get("/config"),
+    staleTime: FINOPS_STALE,
+    retry: false,
+    select: (cfg: any) => ({ price_per_gb: cfg?.price_per_gb ?? 0.023, currency: cfg?.currency ?? "USD" }),
+  });
+}
+
+export function useBillingCost(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-billing", days],
+    queryFn: () => api.get(`/finops/billing?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsWarehouses() {
+  return useQuery<any>({
+    queryKey: ["finops-warehouses"],
+    queryFn: () => api.get("/finops/warehouses"),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useWarehouseEvents(days: number = 7) {
+  return useQuery<any>({
+    queryKey: ["finops-wh-events", days],
+    queryFn: () => api.get(`/finops/warehouse-events?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsClusters() {
+  return useQuery<any>({
+    queryKey: ["finops-clusters"],
+    queryFn: () => api.get("/finops/clusters"),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useNodeUtilization(days: number = 7) {
+  return useQuery<any>({
+    queryKey: ["finops-node-util", days],
+    queryFn: () => api.get(`/finops/node-utilization?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsQueryStats(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-query-stats", days],
+    queryFn: () => api.get(`/finops/query-stats?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useFinOpsStorage(catalog: string) {
+  return useQuery<any>({
+    queryKey: ["finops-storage", catalog],
+    queryFn: () => api.get(`/finops/storage?catalog=${catalog}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    enabled: !!catalog,
+    retry: 1,
+  });
+}
+
+export function useFinOpsRecommendations(catalog: string) {
+  return useQuery<any>({
+    queryKey: ["finops-recommendations", catalog],
+    queryFn: () => api.get(`/finops/recommendations?catalog=${catalog}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    enabled: !!catalog,
+    retry: 1,
+  });
+}
+
+export function useSystemTableStatus() {
+  return useQuery<any>({
+    queryKey: ["finops-system-status"],
+    queryFn: () => api.get("/finops/system-status"),
+    staleTime: FINOPS_STALE,
+    retry: false,
+  });
+}
+
+// Cost Attribution
+export function useQueryCosts(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-query-costs", days],
+    queryFn: () => api.get(`/finops/query-costs?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+export function useJobCosts(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-job-costs", days],
+    queryFn: () => api.get(`/finops/job-costs?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: 1,
+  });
+}
+
+// Azure (supplementary — deferred)
+export function useAzureCosts(days: number = 30) {
+  return useQuery<any>({
+    queryKey: ["finops-azure-costs", days],
+    queryFn: () => api.get(`/finops/azure/costs?days=${days}`),
+    staleTime: FINOPS_STALE,
+    refetchInterval: FINOPS_REFETCH,
+    retry: false,
   });
 }

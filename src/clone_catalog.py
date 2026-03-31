@@ -552,7 +552,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                     save_metrics_webhook(metrics_summary, webhook_url)
             elif dest_type == "delta" and not dry_run:
                 from src.metrics import save_metrics_delta
-                table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+                table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
                 save_metrics_delta(client, warehouse_id, metrics_summary, table_fqn)
         except Exception as e:
             logger.warning(f"Failed to save metrics: {e}")

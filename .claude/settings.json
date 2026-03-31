@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest:*)",
+      "Bash(npx vite:*)",
+      "Bash(npm ls:*)",
+      "Bash(gh pr:*)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(lsof -ti:*)",
+      "Bash(grep:*)"
+    ]
+  }
+}

@@ -6,7 +6,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from dataclasses import dataclass, asdict
 
@@ -73,7 +73,7 @@ def submit_approval_request(client, config: dict) -> str:
         dest_catalog=config.get("destination_catalog", ""),
         clone_type=config.get("clone_type", "DEEP"),
         requested_by=requested_by,
-        requested_at=datetime.utcnow().isoformat(),
+        requested_at=datetime.now(timezone.utc).isoformat(),
         status=ApprovalStatus.PENDING.value,
         timeout_hours=config.get("approval_timeout_hours", 24),
         config_summary={
@@ -139,7 +139,7 @@ def check_approval_status(request_id: str) -> ApprovalRequest | None:
     # Check for expiration
     if request.status == ApprovalStatus.PENDING.value:
         requested_at = datetime.fromisoformat(request.requested_at)
-        if datetime.utcnow() > requested_at + timedelta(hours=request.timeout_hours):
+        if datetime.now(timezone.utc) > requested_at + timedelta(hours=request.timeout_hours):
             request.status = ApprovalStatus.EXPIRED.value
             _save_request(request)
 
@@ -158,7 +158,7 @@ def approve_request(request_id: str, approved_by: str = "cli") -> bool:
 
     request.status = ApprovalStatus.APPROVED.value
     request.approved_by = approved_by
-    request.decided_at = datetime.utcnow().isoformat()
+    request.decided_at = datetime.now(timezone.utc).isoformat()
     _save_request(request)
     logger.info(f"Request {request_id} approved by {approved_by}")
     return True
@@ -176,7 +176,7 @@ def deny_request(request_id: str, denied_by: str = "cli", reason: str = "") -> b
 
     request.status = ApprovalStatus.DENIED.value
     request.denied_by = denied_by
-    request.decided_at = datetime.utcnow().isoformat()
+    request.decided_at = datetime.now(timezone.utc).isoformat()
     request.deny_reason = reason
     _save_request(request)
     logger.info(f"Request {request_id} denied by {denied_by}: {reason}")
@@ -202,9 +202,9 @@ def list_pending_requests() -> list[ApprovalRequest]:
 def wait_for_approval(request_id: str, timeout_hours: int = 24, poll_interval: int = 30) -> bool:
     """Block and poll until approval is granted, denied, or times out."""
     logger.info(f"Waiting for approval of request {request_id} (timeout: {timeout_hours}h)")
-    deadline = datetime.utcnow() + timedelta(hours=timeout_hours)
+    deadline = datetime.now(timezone.utc) + timedelta(hours=timeout_hours)
 
-    while datetime.utcnow() < deadline:
+    while datetime.now(timezone.utc) < deadline:
         request = check_approval_status(request_id)
         if not request:
             logger.error(f"Request {request_id} not found")

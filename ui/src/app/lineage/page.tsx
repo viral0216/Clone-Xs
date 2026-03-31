@@ -677,7 +677,7 @@ export default function LineagePage() {
                           <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-mono text-foreground truncate">{mc.name.split(".").pop()}</span>
+                              <span className="text-xs font-mono text-foreground truncate">{(mc.name || "unknown").split(".").pop()}</span>
                               <span className="text-xs font-semibold text-foreground ml-2">{mc.degree}</span>
                             </div>
                             <div className="h-1.5 bg-muted rounded-full overflow-hidden">

@@ -28,8 +28,37 @@ from api.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start/stop the job manager with the app."""
+    """Start/stop the job manager with the app. Run non-blocking startup checks."""
+    import logging
+    logger = logging.getLogger("clone-xs.startup")
+
     app.state.job_manager = JobManager(max_concurrent=2)
+
+    # Apply config-driven performance settings at startup
+    try:
+        from src.config import load_config_cached
+        config = load_config_cached()
+
+        # Sync parallel queries and rate limit from config
+        from src.client import set_max_parallel_queries, set_rate_limit
+        max_pq = int(config.get("max_parallel_queries", 10))
+        set_max_parallel_queries(max_pq)
+        max_rps = float(config.get("max_rps", 0))
+        if max_rps > 0:
+            set_rate_limit(max_rps)
+        logger.info(f"Performance: max_parallel_queries={max_pq}, max_rps={max_rps or 'unlimited'}")
+
+        # Startup table validation
+        catalog = config.get("audit_trail", {}).get("catalog", "")
+        if catalog:
+            from src.table_registry import TABLE_SECTIONS
+            expected_schemas = {s["schema"] for s in TABLE_SECTIONS if not s.get("schema_from_config")}
+            logger.info(f"Audit catalog: {catalog} | Expected schemas: {sorted(expected_schemas)}")
+        else:
+            logger.warning("No audit_trail.catalog configured — table init may fail. Set it in Settings.")
+    except Exception as e:
+        logger.warning(f"Startup config check failed: {e}")
+
     yield
     await app.state.job_manager.shutdown()
 
@@ -249,6 +278,10 @@ _tag_metadata = [
         "name": "dependencies",
         "description": "Dependency analysis — map view and function dependencies, compute creation order for cloning.",
     },
+    {
+        "name": "data-quality",
+        "description": "Data quality observability — freshness monitoring, anomaly detection, volume tracking, expectation suites, incidents, and health scores.",
+    },
 ]
 
 app = FastAPI(
@@ -311,6 +344,66 @@ app.include_router(deps.router, prefix="/api", tags=["dependencies"])
 
 from api.routers import governance
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
+
+from api.routers import system_insights
+app.include_router(system_insights.router, prefix="/api/system-insights", tags=["system-insights"])
+
+from api.routers import ml_assets
+app.include_router(ml_assets.router, prefix="/api/ml-assets", tags=["ml-assets"])
+
+from api.routers import advanced_tables
+app.include_router(advanced_tables.router, prefix="/api/advanced-tables", tags=["advanced-tables"])
+
+from api.routers import ai
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+
+from api.routers import notifications
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+
+from api.routers import lakehouse_monitor
+app.include_router(lakehouse_monitor.router, prefix="/api/lakehouse-monitor", tags=["lakehouse-monitor"])
+
+from api.routers import federation
+app.include_router(federation.router, prefix="/api/federation", tags=["federation"])
+
+from api.routers import delta_sharing
+app.include_router(delta_sharing.router, prefix="/api/delta-sharing", tags=["delta-sharing"])
+
+from api.routers import reconciliation
+app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["reconciliation"])
+
+from api.routers import data_quality
+app.include_router(data_quality.router, prefix="/api/data-quality", tags=["data-quality"])
+
+from api.routers import finops
+app.include_router(finops.router, prefix="/api/finops", tags=["finops"])
+
+from api.routers import rtbf
+app.include_router(rtbf.router, prefix="/api/rtbf", tags=["rtbf"])
+
+from api.routers import dsar
+app.include_router(dsar.router, prefix="/api/dsar", tags=["dsar"])
+
+from api.routers import observability
+app.include_router(observability.router, prefix="/api/observability", tags=["observability"])
+
+from api.routers import pipeline
+app.include_router(pipeline.router, prefix="/api/pipelines", tags=["pipelines"])
+
+from api.routers import dlt
+app.include_router(dlt.router, prefix="/api/dlt", tags=["dlt"])
+
+from api.routers import mdm
+app.include_router(mdm.router, prefix="/api/mdm", tags=["mdm"])
+
+from api.routers import job_clone
+app.include_router(job_clone.router, prefix="/api/jobs", tags=["jobs"])
+
+from api.routers import ai_assistant
+app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-assistant"])
+
+from api.routers import notebooks
+app.include_router(notebooks.router, prefix="/api/notebooks", tags=["notebooks"])
 
 # Serve frontend static files in production
 import os

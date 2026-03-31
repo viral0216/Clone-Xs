@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.client import execute_sql
 
@@ -26,7 +26,7 @@ class MetricsCollector:
             "source_catalog": source,
             "destination_catalog": dest,
             "clone_type": clone_type,
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def record_table_clone(
@@ -41,13 +41,13 @@ class MetricsCollector:
             "success": success,
             "row_count": row_count,
             "size_bytes": size_bytes,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
     def end_operation(self, summary: dict):
         """Finalize and compute aggregate metrics."""
         duration = time.time() - self._start_time
-        self._operation["completed_at"] = datetime.utcnow().isoformat()
+        self._operation["completed_at"] = datetime.now(timezone.utc).isoformat()
         self._operation["duration_seconds"] = round(duration, 2)
         self._operation["summary"] = summary
         self._operation["table_metrics"] = self._table_metrics
@@ -84,8 +84,8 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
     parts = table_fqn.split(".")
     if len(parts) == 3:
         catalog, schema, table = parts
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`")
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
         CREATE TABLE IF NOT EXISTS {table_fqn} (
@@ -158,7 +158,7 @@ def save_operation_metrics(
     if not config.get("metrics_enabled", False):
         return
 
-    table_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
     started = job.get("started_at", "")
     completed = job.get("completed_at", "")
@@ -343,13 +343,14 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     if not client or not warehouse_id:
         return _empty_summary()
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from src.audit_trail import get_audit_table_fqn
     from src.run_logs import get_run_logs_fqn
 
     audit_fqn = get_audit_table_fqn(config or {})
     run_logs_fqn = get_run_logs_fqn(config)
-    metrics_fqn = (config or {}).get("metrics_table", "clone_audit.metrics.clone_metrics")
+    _cfg = config or {}
+    metrics_fqn = _cfg.get("metrics_table", f"{_cfg.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
     # Each table has different column names — use SQL aliases to normalize:
     #   job_id, job_type, source_catalog, destination_catalog, clone_type,
@@ -408,7 +409,7 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
 
     # --- Activity by day (last 7 days) ---
     activity = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for i in range(6, -1, -1):
         day = now - timedelta(days=i)
         day_str = day.strftime("%Y-%m-%d")

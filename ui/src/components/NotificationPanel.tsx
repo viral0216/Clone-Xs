@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from "react";
 import { useNotifications } from "@/hooks/useApi";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCircle, XCircle, Info } from "lucide-react";
 
 const typeIcon = {
@@ -23,10 +24,16 @@ function timeAgo(ts: string) {
 export default function NotificationPanel() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
   const { data } = useNotifications();
 
   const count = data?.unread_count ?? 0;
   const items = data?.items ?? [];
+
+  function markAsRead() {
+    localStorage.setItem("notifications_last_seen", new Date().toISOString());
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  }
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -39,7 +46,7 @@ export default function NotificationPanel() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => { if (!open) markAsRead(); setOpen(!open); }}
         aria-label={count > 0 ? `${count} notifications` : "Notifications"}
         aria-expanded={open}
         aria-haspopup="true"
@@ -57,7 +64,7 @@ export default function NotificationPanel() {
         <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden" role="region" aria-label="Notifications" aria-live="polite">
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
-            <p className="text-xs text-muted-foreground">{count} recent events</p>
+            <p className="text-xs text-muted-foreground">{items.length} recent events</p>
           </div>
           <div className="max-h-80 overflow-y-auto">
             {items.length === 0 ? (

@@ -509,6 +509,14 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
         return []
 
 
+@router.get("/audit/table-registry")
+async def get_table_registry():
+    """Return the full registry of all project tables grouped by section."""
+    config = await get_app_config()
+    from src.table_registry import get_all_table_fqns
+    return {"sections": get_all_table_fqns(config)}
+
+
 @router.post("/audit/init")
 async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     """Initialize audit and run log Delta tables in Unity Catalog."""
@@ -530,10 +538,11 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     if not wid:
         raise HTTPException(status_code=400, detail="No SQL warehouse available. Select a warehouse in Settings first.")
 
+    cfg_audit = config.get("audit_trail", {})
     audit_config = {
         "audit_trail": {
-            "catalog": req.get("catalog", "clone_audit"),
-            "schema": req.get("schema", "logs"),
+            "catalog": req.get("catalog") or cfg_audit.get("catalog", "clone_audit"),
+            "schema": req.get("schema") or cfg_audit.get("schema", "logs"),
         }
     }
     tables_created = []
@@ -552,7 +561,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create metrics table
     try:
         from src.client import execute_sql
-        catalog = req.get("catalog", "clone_audit")
+        catalog = audit_config["audit_trail"]["catalog"]
         metrics_schema = f"{catalog}.metrics"
         metrics_fqn = f"{metrics_schema}.clone_metrics"
         try:
@@ -612,7 +621,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create PII scan tables
     try:
         from src.pii_scan_store import PIIScanStore
-        catalog = req.get("catalog", "clone_audit")
+        catalog = audit_config["audit_trail"]["catalog"]
         pii_store = PIIScanStore(client, wid, state_catalog=catalog)
         pii_store.init_tables()
         tables_created.append(f"{catalog}.pii.pii_scans")
@@ -620,7 +629,129 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         tables_created.append(f"{catalog}.pii.pii_remediation")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create PII tables: {e}")
-    # Describe the tables we just created
+    # Create RTBF (Right to Be Forgotten) tables
+    try:
+        from src.rtbf_store import RTBFStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        rtbf_store = RTBFStore(client, wid, state_catalog=catalog)
+        rtbf_store.init_tables()
+        tables_created.append(f"{catalog}.rtbf.rtbf_requests")
+        tables_created.append(f"{catalog}.rtbf.rtbf_actions")
+        tables_created.append(f"{catalog}.rtbf.rtbf_certificates")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create RTBF tables: {e}")
+    # Create DSAR tables
+    try:
+        from src.dsar_store import DSARStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        dsar_store = DSARStore(client, wid, state_catalog=catalog)
+        dsar_store.init_tables()
+        tables_created.append(f"{catalog}.dsar.dsar_requests")
+        tables_created.append(f"{catalog}.dsar.dsar_actions")
+        tables_created.append(f"{catalog}.dsar.dsar_exports")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create DSAR tables: {e}")
+    # Create Pipeline tables
+    try:
+        from src.pipeline_store import PipelineStore
+        catalog = audit_config["audit_trail"]["catalog"]
+        pipe_store = PipelineStore(client, wid, state_catalog=catalog)
+        pipe_store.init_tables()
+        tables_created.append(f"{catalog}.pipelines.pipelines")
+        tables_created.append(f"{catalog}.pipelines.pipeline_runs")
+        tables_created.append(f"{catalog}.pipelines.pipeline_step_results")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Pipeline tables: {e}")
+    # ── Pre-create all required schemas ─────────────────────────────────
+    storage_location = req.get("storage_location", "")
+    gov_config = {"audit_trail": audit_config["audit_trail"]}
+    if storage_location:
+        gov_config["catalog_location"] = storage_location
+    errors = []
+    cat = audit_config["audit_trail"]["catalog"]
+    audit_sch = audit_config["audit_trail"].get("schema", "logs")
+    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii", "rtbf", "dsar", "pipelines"]
+
+    # Ensure catalog exists
+    from src.catalog_utils import ensure_catalog, ensure_schema
+    try:
+        ensure_catalog(client, wid, cat, storage_location)
+    except Exception as e:
+        err_msg = str(e)
+        if "INVALID_STATE" in err_msg or "storage root" in err_msg.lower():
+            errors.append(
+                f"Cannot create catalog `{cat}`: No default storage. "
+                f"Set a Storage Location above, or create it manually: "
+                f"CREATE CATALOG `{cat}` MANAGED LOCATION '<your-location>'"
+            )
+        else:
+            errors.append(f"Catalog `{cat}`: {err_msg}")
+
+    # Ensure all schemas exist
+    for sch in required_schemas:
+        try:
+            ensure_schema(client, wid, cat, sch, storage_location)
+        except Exception as e:
+            err_msg = str(e)
+            if "INVALID_STATE" in err_msg or "storage root" in err_msg.lower():
+                errors.append(
+                    f"Cannot create schema `{cat}`.`{sch}`: No default storage. "
+                    f"Set a Storage Location above, or create it manually: "
+                    f"CREATE SCHEMA `{cat}`.`{sch}` MANAGED LOCATION '<your-location>'"
+                )
+            else:
+                errors.append(f"Schema `{cat}`.`{sch}`: {err_msg}")
+
+    # ── Create tables in all modules ─────────────────────────────────────
+
+    ensure_steps = [
+        ("governance", "src.governance", "ensure_governance_tables"),
+        ("dq_rules", "src.dq_rules", "ensure_dq_tables"),
+        ("sla", "src.sla_monitor", "ensure_sla_tables"),
+        ("odcs", "src.data_contracts", "ensure_odcs_tables"),
+        ("dqx", "src.dqx_engine", "ensure_dqx_tables"),
+        ("reconciliation_store", "src.reconciliation_store", "ensure_reconciliation_tables"),
+        ("reconciliation_alerts", "src.reconciliation_alerts", "ensure_alert_tables"),
+        ("anomaly_detection", "src.anomaly_detection", "ensure_tables"),
+        ("freshness", "src.data_freshness", "_ensure_freshness_table"),
+    ]
+
+    for label, module_path, func_name in ensure_steps:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            func = getattr(mod, func_name)
+            func(client, wid, gov_config)
+        except Exception as e:
+            errors.append(f"{label}: {e}")
+
+    # Lineage
+    try:
+        from src.lineage_tracker import ensure_lineage_table
+        cat = audit_config["audit_trail"]["catalog"]
+        ensure_lineage_table(client, wid, lineage_catalog=cat, config=gov_config)
+    except Exception as e:
+        errors.append(f"lineage: {e}")
+
+    # Reconciliation quality rules (Spark-only, skip if no Spark)
+    try:
+        from src.reconciliation_rules import _ensure_rules_table, _ensure_violations_table
+        from src.anomaly_detection import _get_spark
+        spark = _get_spark()
+        if spark:
+            _ensure_rules_table(spark, gov_config)
+            _ensure_violations_table(spark, gov_config)
+    except Exception:
+        pass  # Spark not available — these tables are optional
+
+    # ── Build tables_created from registry ────────────────────────────────
+    from src.table_registry import get_all_table_fqns
+    all_sections = get_all_table_fqns(gov_config)
+    for section in all_sections:
+        for t in section["tables"]:
+            tables_created.append(t["fqn"])
+
+    # ── Describe tables ──────────────────────────────────────────────────
     schemas = {}
     for fqn in tables_created:
         try:
@@ -630,7 +761,12 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         except Exception:
             schemas[fqn] = []
 
-    return {"status": "ok", "tables_created": tables_created, "schemas": schemas}
+    return {
+        "status": "ok" if not errors else "partial",
+        "tables_created": tables_created,
+        "schemas": schemas,
+        "errors": errors,
+    }
 
 
 @router.post("/audit/describe")
@@ -649,17 +785,15 @@ async def describe_audit_tables(req: dict, client=Depends(get_db_client)):
     if not wid:
         return {"schemas": {}}
 
-    catalog = req.get("catalog", "clone_audit")
-    schema = req.get("schema", "logs")
-    tables = [
-        f"{catalog}.{schema}.run_logs",
-        f"{catalog}.{schema}.clone_operations",
-        f"{catalog}.{schema}.rollback_logs",
-        f"{catalog}.metrics.clone_metrics",
-        f"{catalog}.pii.pii_scans",
-        f"{catalog}.pii.pii_detections",
-        f"{catalog}.pii.pii_remediation",
-    ]
+    cfg_audit = config.get("audit_trail", {})
+    catalog = req.get("catalog") or cfg_audit.get("catalog", "clone_audit")
+    schema = req.get("schema") or cfg_audit.get("schema", "logs")
+
+    # Use registry for complete table list
+    from src.table_registry import get_flat_table_list
+    reg_config = {"audit_trail": {"catalog": catalog, "schema": schema}}
+    tables = get_flat_table_list(reg_config)
+
     schemas = {}
     from src.client import execute_sql
     for fqn in tables:
@@ -1124,6 +1258,9 @@ async def analyze_impact_endpoint(req: dict, client=Depends(get_db_client)):
             "affected_views": result.get("dependent_views", []),
             "affected_functions": result.get("dependent_functions", []),
             "downstream_tables": [],
+            "referencing_jobs": result.get("referencing_jobs", []),
+            "active_queries": result.get("active_queries", []),
+            "dashboard_references": result.get("dashboard_references", []),
             "risk_level": result.get("risk_level", "unknown"),
             "total_dependent_objects": result.get("total_dependent_objects", 0),
         }
@@ -1271,7 +1408,7 @@ async def get_metrics(client=Depends(get_db_client)):
 
 
 @router.get("/notifications")
-async def get_notifications(client=Depends(get_db_client)):
+async def get_notifications(since: str | None = None, client=Depends(get_db_client)):
     """Get recent notifications from run logs (completions, failures, TTL warnings)."""
     try:
         from src.client import execute_sql
@@ -1282,7 +1419,7 @@ async def get_notifications(client=Depends(get_db_client)):
 
         run_logs_fqn = get_run_logs_fqn(config)
         audit_fqn = get_audit_table_fqn(config)
-        metrics_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+        metrics_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
         # Normalize column names via SQL aliases for each table
         queries = [
@@ -1348,7 +1485,15 @@ async def get_notifications(client=Depends(get_db_client)):
                 "job_id": r.get("job_id") or "",
             })
 
-        return {"unread_count": len(items), "items": items}
+        unread_count = len(items)
+        if since:
+            from datetime import datetime, timezone
+            try:
+                since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                unread_count = sum(1 for it in items if it.get("timestamp") and datetime.fromisoformat(str(it["timestamp"]).replace("Z", "+00:00")) > since_dt)
+            except (ValueError, TypeError):
+                pass
+        return {"unread_count": unread_count, "items": items}
     except Exception:
         return {"unread_count": 0, "items": []}
 
@@ -1366,7 +1511,7 @@ async def get_catalog_health(client=Depends(get_db_client)):
         # Get recent operation stats per source catalog
         run_logs_fqn = get_run_logs_fqn(config)
         audit_fqn = get_audit_table_fqn(config)
-        metrics_fqn = config.get("metrics_table", "clone_audit.metrics.clone_metrics")
+        metrics_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
         catalogs = {}
 

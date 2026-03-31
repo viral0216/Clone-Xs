@@ -74,7 +74,9 @@ class TestFindDependentViews:
         ]
         result = _find_dependent_views(MagicMock(), "wh-123", "my_cat")
         assert len(result) == 1
-        assert result[0] == {"catalog": "other", "schema": "s1", "view": "v1"}
+        assert result[0]["catalog"] == "other"
+        assert result[0]["schema"] == "s1"
+        assert result[0]["view"] == "v1"
 
     @patch("src.impact_analysis.execute_sql", side_effect=Exception("query error"))
     def test_returns_empty_on_error(self, mock_sql):

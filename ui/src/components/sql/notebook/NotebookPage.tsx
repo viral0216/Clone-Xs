@@ -133,6 +133,8 @@ export default function NotebookPage() {
   } = useNotebook();
   const [showLoad, setShowLoad] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(() => { try { return Number(localStorage.getItem("clxs-nb-sidebar-w")) || 224; } catch { return 224; } });
+  const sidebarDragging = useRef(false);
   const [showToc, setShowToc] = useState(false);
   const [showParams, setShowParams] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -455,14 +457,25 @@ export default function NotebookPage() {
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* Catalog browser sidebar */}
+        {/* Catalog browser sidebar (resizable) */}
         {showSidebar && (
-          <div className="w-56 border-r border-border shrink-0 overflow-hidden">
-            <div className="px-2 py-1.5 border-b border-border bg-muted/20 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Catalog Browser
+          <>
+            <div className="border-r border-border shrink-0 overflow-hidden flex flex-col" style={{ width: sidebarWidth }}>
+              <div className="px-2 py-1.5 border-b border-border bg-muted/20 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Catalog Browser
+              </div>
+              <CatalogBrowser onInsert={insertFromCatalog} />
             </div>
-            <CatalogBrowser onInsert={insertFromCatalog} />
-          </div>
+            {/* Drag handle */}
+            <div className="w-1 shrink-0 cursor-col-resize group flex items-center justify-center hover:bg-[#E8453C]/10 active:bg-[#E8453C]/20 transition-colors"
+              onMouseDown={(e) => { e.preventDefault(); sidebarDragging.current = true; const sX = e.clientX; const sW = sidebarWidth;
+                document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
+                const m = (ev: MouseEvent) => { if (!sidebarDragging.current) return; const newW = Math.min(450, Math.max(150, sW + (ev.clientX - sX))); setSidebarWidth(newW); try { localStorage.setItem("clxs-nb-sidebar-w", String(newW)); } catch {} };
+                const u = () => { sidebarDragging.current = false; document.body.style.cursor = ""; document.body.style.userSelect = ""; document.removeEventListener("mousemove", m); document.removeEventListener("mouseup", u); };
+                document.addEventListener("mousemove", m); document.addEventListener("mouseup", u); }}>
+              <div className="w-px h-8 bg-border group-hover:bg-[#E8453C] transition-colors" />
+            </div>
+          </>
         )}
 
         {/* ToC sidebar */}

@@ -629,15 +629,20 @@ async def dqx_profile_stream_endpoint(req: dict, request: Request, client=Depend
     worker.start()
 
     async def event_generator():
+        import asyncio
+        loop = asyncio.get_event_loop()
         while True:
             if await request.is_disconnected():
                 break
             try:
-                event = log_queue.get(timeout=0.5)
+                event = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: log_queue.get(timeout=1.0)),
+                    timeout=1.5,
+                )
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("type") in ("complete", "error"):
                     break
-            except queue.Empty:
+            except (asyncio.TimeoutError, queue.Empty):
                 # Send keepalive to prevent timeout
                 yield ": keepalive\n\n"
 

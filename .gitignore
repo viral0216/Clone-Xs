@@ -49,6 +49,7 @@ htmlcov/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+.claude/settings.json
 *.swp
 *.swo
 *~

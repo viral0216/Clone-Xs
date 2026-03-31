@@ -115,7 +115,6 @@ async def set_performance(req: dict):
                 raw[key] = int(req[key])
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
-        invalidate_config_cache()
         # Apply to running process immediately
         from src.client import set_max_parallel_queries
         if "max_parallel_queries" in req:

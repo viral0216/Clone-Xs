@@ -28,7 +28,7 @@ def invalidate_config_cache():
     """Clear the config cache. Call after saving config changes."""
     with _config_lock:
         _config_cache.clear()
-    _config_timestamps.clear()
+        _config_timestamps.clear()
 
 
 def load_config(config_path: str = "config/clone_config.yaml", profile: str | None = None) -> dict:

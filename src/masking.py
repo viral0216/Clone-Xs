@@ -125,6 +125,14 @@ def _get_mask_expression(column_name: str, strategy: str, data_type: str) -> str
     return strategy
 
 
+def _validate_ident(name: str) -> str:
+    """Validate a Databricks identifier (alphanumeric, underscores, hyphens)."""
+    import re as _re
+    if not name or not _re.match(r"^[A-Za-z0-9_\-]+$", name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return name
+
+
 def mask_subject_rows(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -157,10 +165,15 @@ def mask_subject_rows(
     """
     import re
 
+    # Validate identifiers to prevent SQL injection
+    _validate_ident(catalog)
+    _validate_ident(schema)
+    _validate_ident(table_name)
+    _validate_ident(identifier_column)
+
     dest = f"`{catalog}`.`{schema}`.`{table_name}`"
 
     # Get columns for this table
-    # Escape literals to prevent SQL injection
     safe_schema = schema.replace("'", "''")
     safe_table = table_name.replace("'", "''")
     col_sql = f"""
@@ -171,6 +184,10 @@ def mask_subject_rows(
     """
     columns = execute_sql(client, warehouse_id, col_sql)
     col_map = {c["column_name"]: c["data_type"] for c in columns}
+
+    # Validate identifier_column exists in table
+    if identifier_column not in col_map:
+        raise ValueError(f"Identifier column '{identifier_column}' not found in {dest}")
 
     update_parts = []
 

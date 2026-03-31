@@ -11,7 +11,7 @@ router = APIRouter()
 class PipelineStep(BaseModel):
     type: str
     name: str = ""
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
     on_failure: str = "abort"
 
 

@@ -67,6 +67,11 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
     return impact
 
 
+def _escape_like(s: str) -> str:
+    """Escape LIKE metacharacters (% and _) so they match literally."""
+    return s.replace("%", "\\%").replace("_", "\\_")
+
+
 def _find_dependent_views(client, warehouse_id: str, catalog: str,
                           schema_filter: str = None, table_filter: str = None) -> list[dict]:
     """Find views that reference this catalog across all accessible catalogs."""
@@ -79,10 +84,11 @@ def _find_dependent_views(client, warehouse_id: str, catalog: str,
         else:
             like_target = f"{catalog}."
 
+        escaped = _escape_like(like_target)
         sql = f"""
             SELECT table_catalog, table_schema, table_name, view_definition
             FROM system.information_schema.views
-            WHERE view_definition LIKE '%{like_target}%'
+            WHERE view_definition LIKE '%{escaped}%' ESCAPE '\\\\'
               AND table_catalog != '{catalog}'
             LIMIT 200
         """
@@ -112,10 +118,11 @@ def _find_dependent_functions(client, warehouse_id: str, catalog: str,
         else:
             like_target = f"{catalog}."
 
+        escaped = _escape_like(like_target)
         sql = f"""
             SELECT routine_catalog, routine_schema, routine_name
             FROM system.information_schema.routines
-            WHERE routine_definition LIKE '%{like_target}%'
+            WHERE routine_definition LIKE '%{escaped}%' ESCAPE '\\\\'
               AND routine_catalog != '{catalog}'
             LIMIT 200
         """
@@ -164,7 +171,7 @@ def _find_active_queries(client, warehouse_id: str, catalog: str) -> list[dict]:
             SELECT query_id, statement_text, executed_by, start_time
             FROM system.query.history
             WHERE status = 'RUNNING'
-              AND LOWER(statement_text) LIKE '%{catalog.lower()}%'
+              AND LOWER(statement_text) LIKE '%{_escape_like(catalog.lower())}%' ESCAPE '\\\\'
             LIMIT 20
         """
         return execute_sql(client, warehouse_id, sql)

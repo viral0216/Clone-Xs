@@ -856,11 +856,22 @@ def import_checks_yaml(client, warehouse_id, config, table_fqn: str, yaml_conten
 # Save checks to a user-specified Delta table
 # ---------------------------------------------------------------------------
 
+def _validate_fqn(fqn: str) -> str:
+    """Validate a 3-part fully qualified table name (catalog.schema.table)."""
+    import re
+    parts = fqn.split(".")
+    if len(parts) != 3 or not all(re.match(r"^[A-Za-z0-9_\-]+$", p) for p in parts):
+        raise ValueError(f"Invalid table name: {fqn!r}. Expected catalog.schema.table with alphanumeric identifiers.")
+    return f"`{parts[0]}`.`{parts[1]}`.`{parts[2]}`"
+
+
 def save_checks_to_delta(client, warehouse_id, config, target_table: str, table_fqn: str = "", user: str = "") -> dict:
     """Save DQX checks to a user-specified Delta table for sharing/auditing.
 
     Creates the table if it doesn't exist and inserts all matching checks.
     """
+    safe_table = _validate_fqn(target_table)
+
     checks = list_checks(client, warehouse_id, config, table_fqn)
     if not checks:
         return {"error": "No checks found to save", "count": 0}
@@ -868,7 +879,7 @@ def save_checks_to_delta(client, warehouse_id, config, target_table: str, table_
     # Create target table if not exists
     try:
         execute_sql(client, warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {target_table} (
+            CREATE TABLE IF NOT EXISTS {safe_table} (
                 check_id STRING,
                 name STRING,
                 table_fqn STRING,
@@ -904,9 +915,13 @@ def save_checks_to_delta(client, warehouse_id, config, target_table: str, table_
             f"'{now}', '{_esc(user)}')"
         )
 
+    # Insert in chunks to avoid exceeding query size limits
+    chunk_size = 50
     try:
-        batch_sql = f"INSERT INTO {target_table} VALUES {', '.join(values_list)}"
-        execute_sql(client, warehouse_id, batch_sql)
+        for i in range(0, len(values_list), chunk_size):
+            chunk = values_list[i:i + chunk_size]
+            batch_sql = f"INSERT INTO {safe_table} VALUES {', '.join(chunk)}"
+            execute_sql(client, warehouse_id, batch_sql)
         return {"target_table": target_table, "count": len(checks), "message": f"Saved {len(checks)} checks to {target_table}"}
     except Exception as e:
         return {"error": f"Failed to insert checks: {e}", "count": 0}

@@ -97,21 +97,26 @@ async def deep_health_check():
             from src.table_registry import get_all_table_fqns
             reg_config = {"audit_trail": {"catalog": catalog}}
             sections = get_all_table_fqns(reg_config)
-            total_expected = sum(len(s["tables"]) for s in sections)
+            all_tables = [t for s in sections for t in s["tables"]]
+            total_expected = len(all_tables)
+            # Cap table validation to avoid overloading the warehouse
+            max_check = min(total_expected, 20)
             found = 0
-            for section in sections:
-                for t in section["tables"]:
-                    try:
-                        from src.client import execute_sql
-                        execute_sql(client, wid, f"DESCRIBE TABLE {t['fqn']}", max_retries=1)
-                        found += 1
-                    except Exception:
-                        pass
+            checked = 0
+            for t in all_tables[:max_check]:
+                checked += 1
+                try:
+                    from src.client import execute_sql
+                    execute_sql(client, wid, f"DESCRIBE TABLE {t['fqn']}", max_retries=1)
+                    found += 1
+                except Exception:
+                    pass
             checks["tables"] = {
-                "status": "ok" if found == total_expected else "degraded",
+                "status": "ok" if found == checked else "degraded",
                 "expected": total_expected,
+                "checked": checked,
                 "found": found,
-                "missing": total_expected - found,
+                "missing": checked - found,
             }
         except Exception as e:
             checks["tables"] = {"status": "error", "error": str(e)[:200]}

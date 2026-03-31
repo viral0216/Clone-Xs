@@ -1,28 +1,33 @@
 import time
+import threading
 
 import yaml
 
-# ── Config cache ────────────────────────────────────────────────────────────
+# ── Config cache (thread-safe) ──────────────────────────────────────────────
 _config_cache: dict[tuple, dict] = {}
 _config_timestamps: dict[tuple, float] = {}
 _CONFIG_CACHE_TTL = 60  # seconds
+_config_lock = threading.Lock()
 
 
 def load_config_cached(config_path: str = "config/clone_config.yaml", profile: str | None = None) -> dict:
-    """Load config with in-memory caching (60s TTL). Use this for API requests."""
+    """Load config with in-memory caching (60s TTL). Thread-safe."""
     key = (config_path, profile or "")
     now = time.time()
-    if key in _config_cache and (now - _config_timestamps.get(key, 0)) < _CONFIG_CACHE_TTL:
-        return _config_cache[key]
+    with _config_lock:
+        if key in _config_cache and (now - _config_timestamps.get(key, 0)) < _CONFIG_CACHE_TTL:
+            return _config_cache[key]
     config = load_config(config_path, profile)
-    _config_cache[key] = config
-    _config_timestamps[key] = now
+    with _config_lock:
+        _config_cache[key] = config
+        _config_timestamps[key] = now
     return config
 
 
 def invalidate_config_cache():
     """Clear the config cache. Call after saving config changes."""
-    _config_cache.clear()
+    with _config_lock:
+        _config_cache.clear()
     _config_timestamps.clear()
 
 

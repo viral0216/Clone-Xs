@@ -103,7 +103,8 @@ async def check_cdf_status(req: CdfCheckRequest, client=Depends(get_db_client)):
     }
 
     if cdf_enabled:
-        last_version = get_last_sync_version(req.source_catalog, "", req.schema_name, req.table_name)
+        dest_catalog = getattr(req, "destination_catalog", "") or config.get("destination_catalog", "")
+        last_version = get_last_sync_version(req.source_catalog, dest_catalog, req.schema_name, req.table_name)
         if last_version is not None:
             result["change_summary"] = get_cdf_change_summary(
                 client, wid, req.source_catalog, req.schema_name, req.table_name, last_version,

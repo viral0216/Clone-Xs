@@ -1,7 +1,7 @@
 """Clone Pipelines API — create, run, and manage multi-step clone workflows."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
 
@@ -23,7 +23,7 @@ class PipelineCreate(BaseModel):
 
 class PipelineFromTemplate(BaseModel):
     template_name: str
-    overrides: dict = {}
+    overrides: dict = Field(default_factory=dict)
 
 
 class PipelineRunRequest(BaseModel):

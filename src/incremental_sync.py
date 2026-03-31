@@ -393,12 +393,16 @@ def _get_primary_keys(
     # Fallback: query information_schema via SQL
     try:
         sql = f"""
-            SELECT column_name
-            FROM {catalog}.information_schema.constraint_column_usage
-            WHERE table_schema = '{schema}'
-              AND table_name = '{table_name}'
-              AND constraint_type = 'PRIMARY KEY'
-            ORDER BY ordinal_position
+            SELECT kcu.column_name
+            FROM `{catalog}`.information_schema.table_constraints AS tc
+            JOIN `{catalog}`.information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+             AND tc.table_name = kcu.table_name
+            WHERE tc.table_schema = '{schema}'
+              AND tc.table_name = '{table_name}'
+              AND tc.constraint_type = 'PRIMARY KEY'
+            ORDER BY kcu.ordinal_position
         """
         rows = execute_sql(client, warehouse_id, sql)
         return [r["column_name"] for r in rows]

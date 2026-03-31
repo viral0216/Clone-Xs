@@ -160,11 +160,14 @@ def mask_subject_rows(
     dest = f"`{catalog}`.`{schema}`.`{table_name}`"
 
     # Get columns for this table
+    # Escape literals to prevent SQL injection
+    safe_schema = schema.replace("'", "''")
+    safe_table = table_name.replace("'", "''")
     col_sql = f"""
         SELECT column_name, data_type
-        FROM {catalog}.information_schema.columns
-        WHERE table_schema = '{schema}'
-        AND table_name = '{table_name}'
+        FROM `{catalog}`.information_schema.columns
+        WHERE table_schema = '{safe_schema}'
+        AND table_name = '{safe_table}'
     """
     columns = execute_sql(client, warehouse_id, col_sql)
     col_map = {c["column_name"]: c["data_type"] for c in columns}
@@ -203,7 +206,8 @@ def mask_subject_rows(
     if not update_parts:
         return {"columns_masked": 0, "sql_executed": None}
 
-    sql = f"UPDATE {dest} SET {', '.join(update_parts)} WHERE `{identifier_column}` = '{identifier_value}'"
+    safe_value = identifier_value.replace("'", "''")
+    sql = f"UPDATE {dest} SET {', '.join(update_parts)} WHERE `{identifier_column}` = '{safe_value}'"
 
     if dry_run:
         logger.info(f"[DRY RUN] Row-level masking SQL: {sql}")

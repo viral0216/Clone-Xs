@@ -7,7 +7,7 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-# Databricks identifiers: alphanumeric, underscores, hyphens, dots
+# Databricks identifiers: alphanumeric, underscores, hyphens (no dots — full names use backticks)
 _IDENT_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 

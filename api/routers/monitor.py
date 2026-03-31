@@ -20,6 +20,7 @@ async def monitor_once(
     result = monitor_once(
         client, wid, req.source_catalog, req.destination_catalog,
         config.get("exclude_schemas", []),
-        check_drift=True, check_counts=False,
+        check_drift=getattr(req, "check_drift", True),
+        check_counts=getattr(req, "check_counts", False),
     )
     return result

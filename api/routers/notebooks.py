@@ -3,7 +3,7 @@
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -62,7 +62,7 @@ async def get_notebook(notebook_id: str):
 @router.post("", response_model=NotebookResponse, summary="Create a notebook")
 async def create_notebook(req: NotebookCreate):
     """Create a new notebook."""
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     data = {
         "id": str(uuid.uuid4())[:8],
         "title": req.title,
@@ -82,7 +82,7 @@ async def update_notebook(notebook_id: str, req: NotebookUpdate):
         data["title"] = req.title
     if req.cells is not None:
         data["cells"] = [c.model_dump() for c in req.cells]
-    data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    data["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     _save_notebook(data)
     return NotebookResponse(**data)
 

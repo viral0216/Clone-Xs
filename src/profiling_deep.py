@@ -196,7 +196,7 @@ def deep_profile_table(
             try:
                 rows = execute_sql(client, warehouse_id, sql)
                 return cn, [{"value": r["value"], "freq": int(r["freq"]), "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0} for r in rows]
-            except Exception as e:
+            except Exception:
                 return cn, []
 
         with ThreadPoolExecutor(max_workers=4) as pool:

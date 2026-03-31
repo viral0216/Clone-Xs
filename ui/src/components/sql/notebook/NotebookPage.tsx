@@ -128,7 +128,7 @@ export default function NotebookPage() {
     state, addCell, deleteCell, duplicateCell, moveCell, updateCell,
     setTitle, loadNotebook, newNotebook, save, setRunningAll,
     incrementExecution, setParams, setFocusedCell, toggleCollapse,
-    reorderCells, importCells,
+    reorderCells, importCells, undo, redo,
   } = useNotebook();
   const [showLoad, setShowLoad] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -290,6 +290,16 @@ export default function NotebookPage() {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         setShowSearch(true);
+      }
+      // Ctrl/Cmd + Z: Undo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+      // Ctrl/Cmd + Shift + Z: Redo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) {
+        e.preventDefault();
+        redo();
       }
       // Shift + Enter: Run focused cell and advance to next
       if (e.shiftKey && e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
@@ -572,6 +582,8 @@ export default function NotebookPage() {
             <span><kbd className="px-1 bg-muted rounded">Ctrl+Enter</kbd> Run cell</span>
             <span><kbd className="px-1 bg-muted rounded">Shift+Enter</kbd> Run & advance</span>
             <span><kbd className="px-1 bg-muted rounded">Ctrl+S</kbd> Save</span>
+            <span><kbd className="px-1 bg-muted rounded">Ctrl+F</kbd> Find</span>
+            <span><kbd className="px-1 bg-muted rounded">Ctrl+Z</kbd> Undo</span>
             <span><kbd className="px-1 bg-muted rounded">Esc</kbd> Blur</span>
           </div>
         </div>

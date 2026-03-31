@@ -25,15 +25,20 @@ export interface NotebookParams {
   [key: string]: string;
 }
 
+interface CellSnapshot { id: string; type: "sql" | "markdown"; content: string }
+
 export interface NotebookState {
   id: string | null;
   title: string;
   cells: NotebookCell[];
   dirty: boolean;
   runningAll: boolean;
-  executionCounter: number; // global counter for execution order
-  params: NotebookParams; // parameterized variables
-  focusedCellId: string | null; // for keyboard navigation
+  executionCounter: number;
+  params: NotebookParams;
+  focusedCellId: string | null;
+  // Undo/redo
+  undoStack: CellSnapshot[][];
+  redoStack: CellSnapshot[][];
 }
 
 type Action =
@@ -53,7 +58,10 @@ type Action =
   | { type: "SET_PARAMS"; payload: NotebookParams }
   | { type: "SET_FOCUSED_CELL"; payload: string | null }
   | { type: "TOGGLE_COLLAPSE"; payload: { id: string } }
-  | { type: "IMPORT_CELLS"; payload: NotebookCell[] };
+  | { type: "IMPORT_CELLS"; payload: NotebookCell[] }
+  | { type: "UNDO" }
+  | { type: "REDO" }
+  | { type: "PUSH_UNDO" };
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -72,6 +80,8 @@ const initialState: NotebookState = {
   executionCounter: 0,
   params: {},
   focusedCellId: null,
+  undoStack: [],
+  redoStack: [],
 };
 
 function reducer(state: NotebookState, action: Action): NotebookState {
@@ -173,6 +183,38 @@ function reducer(state: NotebookState, action: Action): NotebookState {
     case "IMPORT_CELLS":
       return { ...state, cells: [...state.cells, ...action.payload], dirty: true };
 
+    case "PUSH_UNDO": {
+      const snapshot = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      const stack = [...state.undoStack, snapshot].slice(-50); // cap at 50
+      return { ...state, undoStack: stack, redoStack: [] };
+    }
+
+    case "UNDO": {
+      if (state.undoStack.length === 0) return state;
+      const prev = state.undoStack[state.undoStack.length - 1];
+      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      return {
+        ...state,
+        cells: prev.map(s => ({ ...makeCell(s.type), id: s.id, content: s.content })),
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, currentSnap],
+        dirty: true,
+      };
+    }
+
+    case "REDO": {
+      if (state.redoStack.length === 0) return state;
+      const next = state.redoStack[state.redoStack.length - 1];
+      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      return {
+        ...state,
+        cells: next.map(s => ({ ...makeCell(s.type), id: s.id, content: s.content })),
+        redoStack: state.redoStack.slice(0, -1),
+        undoStack: [...state.undoStack, currentSnap],
+        dirty: true,
+      };
+    }
+
     default:
       return state;
   }
@@ -271,19 +313,35 @@ export function useNotebook() {
     return () => { if (autoSaveTimer.current) clearInterval(autoSaveTimer.current); };
   }, [state.dirty, state.cells, state.title, state.id]);
 
+  const pushUndo = useCallback(() => {
+    dispatch({ type: "PUSH_UNDO" });
+  }, []);
+
+  const undo = useCallback(() => {
+    dispatch({ type: "UNDO" });
+  }, []);
+
+  const redo = useCallback(() => {
+    dispatch({ type: "REDO" });
+  }, []);
+
   const addCell = useCallback((cellType: "sql" | "markdown", afterId?: string) => {
+    dispatch({ type: "PUSH_UNDO" });
     dispatch({ type: "ADD_CELL", payload: { cellType, afterId } });
   }, []);
 
   const deleteCell = useCallback((id: string) => {
+    dispatch({ type: "PUSH_UNDO" });
     dispatch({ type: "DELETE_CELL", payload: { id } });
   }, []);
 
   const duplicateCell = useCallback((id: string) => {
+    dispatch({ type: "PUSH_UNDO" });
     dispatch({ type: "DUPLICATE_CELL", payload: { id } });
   }, []);
 
   const moveCell = useCallback((id: string, direction: "up" | "down") => {
+    dispatch({ type: "PUSH_UNDO" });
     dispatch({ type: "MOVE_CELL", payload: { id, direction } });
   }, []);
 
@@ -356,5 +414,7 @@ export function useNotebook() {
     toggleCollapse,
     reorderCells,
     importCells,
+    undo,
+    redo,
   };
 }

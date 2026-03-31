@@ -9,6 +9,24 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.10.3 — Notebook Power Features (2026-03-31)
+
+### Added
+- **Cell Result Export** — CSV and JSON download buttons on every SQL cell's results toolbar
+- **Data Profiler per Cell** — "Profile" view mode on cell results with histograms and frequency charts
+- **Temp View Chaining** — "Create View" button creates `TEMP VIEW cell_N` for cross-cell SQL references
+- **Import SQL File** — load `.sql` files, auto-splitting by `;` into separate cells (comments become markdown)
+- **Notebook Templates** — 5 starter notebooks: Explore Table, Data Quality Check, Schema Comparison, Row Count Audit, Cost Analysis
+- **Drag-and-Drop Reorder** — drag the grip handle on any cell to reorder (in addition to up/down buttons)
+- **Find Across Cells** — `Ctrl+F` search bar with match highlighting, count, and prev/next navigation
+- **Cell Execution Timer** — live stopwatch while running + "ran Xm ago" relative timestamp after execution
+- **Undo/Redo** — `Ctrl+Z` / `Ctrl+Shift+Z` for cell structure changes (add, delete, move, content edit), capped at 50 entries
+- **Presentation Mode** — fullscreen slide-by-slide view with arrow key navigation, progress bar, and slide dots
+- **Export as HTML Report** — standalone HTML document with branded dark theme, syntax-highlighted SQL, results tables, ToC, and execution metadata
+- **Data Lab Documentation** — comprehensive guide page at `/guide/data-lab` covering SQL Workbench, Notebooks, and Data Profiler
+
+---
+
 ## v0.10.2 — Data Lab Enhancements: Notebooks, Profiler & Auto-Viz (2026-03-30)
 
 ### Added

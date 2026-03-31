@@ -32,6 +32,7 @@ const sidebars: SidebarsConfig = {
         'guide/validation',
         'guide/monitoring',
         'guide/notebooks',
+        'guide/data-lab',
         'guide/storage-metrics',
         'guide/create-job',
         'guide/desktop',

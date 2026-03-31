@@ -561,6 +561,102 @@ Create a point-in-time metadata snapshot of a catalog. Useful for before/after c
 
 ---
 
+## Notebooks
+
+CRUD operations for SQL Notebooks in Data Lab. Notebooks are stored as JSON files on the server.
+
+### `GET /api/notebooks`
+
+List all saved notebooks with basic metadata (id, title, cell count, updated date).
+
+### `GET /api/notebooks/{id}`
+
+Get a single notebook by ID, including all cells.
+
+### `POST /api/notebooks`
+
+Create a new notebook.
+
+| Field   | Type     | Required | Description                      |
+|---------|----------|----------|----------------------------------|
+| `title` | string   | Yes      | Notebook title                   |
+| `cells` | object[] | Yes      | Array of `{id, type, content}`   |
+
+### `PUT /api/notebooks/{id}`
+
+Update an existing notebook's title and/or cells.
+
+### `DELETE /api/notebooks/{id}`
+
+Delete a notebook by ID.
+
+### `POST /api/notebooks/{id}/export`
+
+Export a notebook as a concatenated `.sql` file. Markdown cells become SQL comments.
+
+---
+
+## Deep Profiling
+
+Column-level data profiling with histograms and top-N value frequencies.
+
+### `POST /api/profile-table`
+
+Deep-profile a single catalog table.
+
+| Field            | Type   | Required | Default | Description                   |
+|------------------|--------|----------|---------|-------------------------------|
+| `table_fqn`      | string | Yes      |         | Three-part name `catalog.schema.table` |
+| `warehouse_id`   | string | No       | Config  | SQL warehouse ID              |
+| `sample_limit`   | int    | No       | 0       | Limit rows (0 = full table)   |
+| `top_n`          | int    | No       | 10      | Top N values for string cols  |
+| `histogram_bins` | int    | No       | 20      | Histogram bucket count        |
+
+**Example response:**
+
+```json
+{
+  "table_fqn": "catalog.schema.table",
+  "row_count": 50000,
+  "profiled_at": "2026-03-31T10:00:00Z",
+  "columns": [
+    {
+      "column_name": "age",
+      "data_type": "INT",
+      "null_count": 150,
+      "null_pct": 0.3,
+      "distinct_count": 85,
+      "min": 18, "max": 99, "avg": 42.3,
+      "histogram": [{"bucket": 1, "freq": 120, "range_min": 18, "range_max": 22}, "..."],
+      "top_values": null
+    },
+    {
+      "column_name": "status",
+      "data_type": "STRING",
+      "null_count": 0,
+      "null_pct": 0,
+      "distinct_count": 4,
+      "min_length": 4, "max_length": 11, "avg_length": 6.8,
+      "histogram": null,
+      "top_values": [{"value": "active", "freq": 30000, "pct": 60.0}, "..."]
+    }
+  ]
+}
+```
+
+### `POST /api/profile-results`
+
+Deep-profile the results of an arbitrary SQL query. Wraps the SQL as a CTE to compute stats server-side without double execution.
+
+| Field            | Type   | Required | Default | Description                 |
+|------------------|--------|----------|---------|-----------------------------|
+| `sql`            | string | Yes      |         | SQL query to profile        |
+| `warehouse_id`   | string | No       | Config  | SQL warehouse ID            |
+| `top_n`          | int    | No       | 10      | Top N values for string cols |
+| `histogram_bins` | int    | No       | 20      | Histogram bucket count      |
+
+---
+
 ## Config
 
 Read, write, and compare clone configuration files.

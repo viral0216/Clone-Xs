@@ -19,13 +19,14 @@ export interface NotebookCell {
   collapsed?: boolean;
   executionCount?: number | null; // Jupyter-style [1], [2], [*]
   lastRunAt?: number | null;
+  speakerNotes?: string; // Presentation speaker notes per slide
 }
 
 export interface NotebookParams {
   [key: string]: string;
 }
 
-interface CellSnapshot { id: string; type: "sql" | "markdown"; content: string }
+interface CellSnapshot { id: string; type: "sql" | "markdown"; content: string; speakerNotes?: string }
 
 export interface NotebookState {
   id: string | null;
@@ -184,7 +185,7 @@ function reducer(state: NotebookState, action: Action): NotebookState {
       return { ...state, cells: [...state.cells, ...action.payload], dirty: true };
 
     case "PUSH_UNDO": {
-      const snapshot = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      const snapshot = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content, speakerNotes: c.speakerNotes }));
       const stack = [...state.undoStack, snapshot].slice(-50); // cap at 50
       return { ...state, undoStack: stack, redoStack: [] };
     }
@@ -192,7 +193,7 @@ function reducer(state: NotebookState, action: Action): NotebookState {
     case "UNDO": {
       if (state.undoStack.length === 0) return state;
       const prev = state.undoStack[state.undoStack.length - 1];
-      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content, speakerNotes: c.speakerNotes }));
       return {
         ...state,
         cells: prev.map(s => ({ ...makeCell(s.type), id: s.id, content: s.content })),
@@ -205,7 +206,7 @@ function reducer(state: NotebookState, action: Action): NotebookState {
     case "REDO": {
       if (state.redoStack.length === 0) return state;
       const next = state.redoStack[state.redoStack.length - 1];
-      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+      const currentSnap = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content, speakerNotes: c.speakerNotes }));
       return {
         ...state,
         cells: next.map(s => ({ ...makeCell(s.type), id: s.id, content: s.content })),
@@ -242,7 +243,7 @@ export function persistNotebooks(notebooks: SavedNotebook[]) {
 export function saveNotebook(state: NotebookState): string {
   const notebooks = loadNotebooks();
   const now = new Date().toISOString();
-  const cells = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content }));
+  const cells = state.cells.map(c => ({ id: c.id, type: c.type, content: c.content, speakerNotes: c.speakerNotes }));
 
   if (state.id) {
     const idx = notebooks.findIndex(n => n.id === state.id);

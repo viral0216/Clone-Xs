@@ -89,9 +89,11 @@ SQL Notebooks (`/notebooks`) provide a multi-cell interface for interactive data
 | **Run individual cells** | `Ctrl+Enter` or click the play button |
 | **Run All** | Execute all SQL cells sequentially, top to bottom |
 | **Execution counter** | Jupyter-style `[1]`, `[2]`, `[*]` badges tracking execution order |
+| **Execution timer** | Live stopwatch while a cell is running + "ran 2m ago" relative timestamp after execution |
 | **Auto-save** | Saves to localStorage every 30 seconds when changes are detected |
 | **Save/Load** | Persist notebooks to localStorage or the backend API (`/api/notebooks`) |
 | **Export** | Download as `.sql` file or standalone **HTML report** |
+| **Data Profiler per cell** | Click the "Profile" view mode on any SQL cell's results to see column stats, histograms, and frequency charts inline |
 
 ### Catalog Browser
 
@@ -168,18 +170,53 @@ Click the **Import** button to load a `.sql` file. Statements are split by `;` i
 
 ### Presentation Mode
 
-Click the **Present** button to enter a fullscreen, slide-by-slide view of the notebook. Navigate with arrow keys or spacebar. Markdown cells render in large format; SQL cells show highlighted code and results. Press `Esc` to exit.
+Click **Present** to enter fullscreen slide view. Each cell becomes one slide.
+
+**Navigation & Controls:**
+
+| Key | Action |
+|-----|--------|
+| Arrow keys / Space | Navigate slides |
+| `N` | Toggle speaker notes panel |
+| `G` | Grid/thumbnail view (click to jump) |
+| `T` | Toggle light/dark theme |
+| `P` | Print to PDF |
+| `Esc` | Exit presentation |
+| Swipe left/right | Mobile navigation |
+
+**Features:**
+- **Smooth transitions** — fade + slide-up animations between slides with staggered content entry
+- **Speaker notes** — add notes per cell via the speech bubble icon in the cell toolbar. Notes appear in a panel below the slide during presentation
+- **Elapsed timer** — running clock in the controls bar
+- **Grid view** — press `G` for a 4-column thumbnail overview of all slides with click-to-jump
+- **Light/dark theme** — press `T` to toggle between dark (default) and light presentation themes
+- **All chart types** — SQL cells with charts render using Recharts (bar, line, area, scatter, pie, radar, and more)
+- **Full tables** — no row limit, with sticky headers and horizontal scroll
+- **Progress bar** — visual progress indicator at the top
+
+### Speaker Notes
+
+Each notebook cell has an optional speaker notes field. Click the **speech bubble icon** in the cell toolbar to expand the notes editor. Notes are:
+
+- Saved with the notebook (persists across save/load)
+- Shown in the presentation notes panel (press `N`)
+- Included in HTML exports (accessible via `N` key)
 
 ### HTML Export
 
-Click the HTML export button to generate a standalone HTML report with:
+Click the HTML export button to generate a standalone presentation file with:
 
-- Branded dark-theme styling
-- Table of contents from Markdown headings
+- **Slide transitions** — CSS animations (slideIn + fadeInUp with staggered delays)
+- Branded dark-theme styling with light theme toggle (`T` key)
 - Syntax-highlighted SQL code blocks
-- Results tables (up to 100 rows)
-- Execution times and cell indices
-- Parameter values
+- Results tables with full data
+- SVG charts (bar, line, pie, scatter, area)
+- Speaker notes panel (toggle with `N` key)
+- Elapsed timer
+- Touch/swipe navigation for mobile
+- Print support (`P` key)
+- Keyboard navigation (arrows, Space, Home, End)
+- Self-contained single HTML file — no external dependencies
 
 ### Cell Result Export
 

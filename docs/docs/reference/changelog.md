@@ -9,6 +9,25 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.10.4 — Enhanced Presentation Mode (2026-03-31)
+
+### Added
+- **Slide Transitions** — smooth fade + slide-up animations between slides with staggered content entry (both live and export)
+- **Speaker Notes** — per-cell notes editor (speech bubble icon in toolbar), notes panel in presentation (N key), persisted in save/load
+- **Elapsed Timer** — running clock in presentation controls bar (live and export)
+- **Grid/Thumbnail View** — press G for 4-column slide overview with click-to-jump
+- **Light/Dark Theme Toggle** — press T to switch between dark and light presentation themes
+- **Print to PDF** — press P to print with @media print styles hiding controls
+- **Touch/Swipe Navigation** — swipe left/right on mobile/tablet
+- **All 12 Chart Types in Presentation** — bar, hbar, line, area, scatter, pie, radar, stacked, composed, funnel, treemap
+- **Full Table Rendering** — removed 20-row limit in presentation, added sticky headers and horizontal scroll
+- **Keyboard Hints** — shown at bottom of presentation screen
+- **Export Enhancements** — HTML export now includes transitions, notes (data-notes attributes), timer, theme toggle, touch/swipe, print support
+- **Explorer AI Explain** — "Explain" button on Schema Breakdown sends catalog stats to AI for structured analysis
+- **Explorer Caching** — stats cached in sessionStorage, last catalog remembered across page navigation
+
+---
+
 ## v0.10.3 — Notebook Power Features (2026-03-31)
 
 ### Added

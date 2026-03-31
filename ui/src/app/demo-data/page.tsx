@@ -804,6 +804,19 @@ export default function DemoDataPage() {
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground font-normal">Job {jobId}</span>
                 {statusBadge(job.status)}
+                {isRunning && (
+                  <Button size="sm" variant="destructive" className="h-7 text-xs"
+                    onClick={async () => {
+                      try {
+                        await api.post(`/clone/${jobId}/cancel`);
+                        toast.success("Job cancelled");
+                      } catch (e: any) {
+                        toast.error("Cancel failed: " + (e.message || ""));
+                      }
+                    }}>
+                    Cancel
+                  </Button>
+                )}
               </div>
             </CardTitle>
           </CardHeader>

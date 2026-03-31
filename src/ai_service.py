@@ -99,6 +99,10 @@ class AIService:
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
+        # Extract the text block, skipping any reasoning/thinking blocks
+        for block in response.content:
+            if block.type == "text":
+                return block.text
         return response.content[0].text
 
     def _call_databricks_model(self, endpoint_name: str, system_prompt: str, user_message: str, max_tokens: int, client) -> str:
@@ -159,7 +163,15 @@ class AIService:
         if "choices" in data and len(data.get("choices", [])) > 0:
             choice = data["choices"][0]
             if isinstance(choice, dict) and "message" in choice:
-                return choice["message"].get("content", "")
+                content = choice["message"].get("content", "")
+                # Handle Claude-style content blocks (list of dicts with type/text)
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            return block.get("text", "")
+                    # Fallback: join all text fields
+                    return " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                return content
             if isinstance(choice, dict) and "text" in choice:
                 return choice["text"]
         # Fallback: some endpoints return differently

@@ -13,11 +13,12 @@ import {
   Play, Plus, Save, FolderOpen, FileDown, FileUp, Trash2,
   ChevronUp, ChevronDown, ChevronRight, GripVertical, Code, Type,
   Loader2, X, BookOpen, Copy, PanelLeftClose, PanelLeftOpen,
-  ListTree, Settings2, ChevronsUpDown, Search, Presentation, FileCode, LayoutTemplate,
+  ListTree, Settings2, ChevronsUpDown, Search, Presentation, FileCode, LayoutTemplate, MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { downloadFile } from "@/lib/pdf-export";
 import { exportNotebookAsHTML } from "@/lib/notebook-html-export";
+import { exportNotebookAsPresentation } from "@/lib/notebook-presentation-export";
 import NotebookSearchBar from "./NotebookSearchBar";
 import PresentationMode from "./PresentationMode";
 import { notebookTemplates } from "./notebookTemplates";
@@ -138,6 +139,7 @@ export default function NotebookPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showTemplates, setShowTemplates] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
+  const [notesCell, setNotesCell] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -240,6 +242,13 @@ export default function NotebookPage() {
     const html = exportNotebookAsHTML(state.title, state.cells, state.params);
     downloadFile(html, `${state.title.replace(/\s+/g, "_")}.html`, "text/html");
     toast.success("HTML report exported");
+  }, [state]);
+
+  // Export as presentation
+  const exportPresentation = useCallback(() => {
+    const html = exportNotebookAsPresentation(state.title, state.cells, state.params);
+    downloadFile(html, `${state.title.replace(/\s+/g, "_")}_presentation.html`, "text/html");
+    toast.success("Presentation exported");
   }, [state]);
 
   // Load template
@@ -409,6 +418,9 @@ export default function NotebookPage() {
           <Button size="sm" variant="ghost" onClick={exportHtml} title="Export as HTML report" className="gap-1 text-[10px]">
             <FileDown className="h-3 w-3 text-[#E8453C]" />
           </Button>
+          <Button size="sm" variant="ghost" onClick={exportPresentation} title="Export as Presentation" className="gap-1 text-[10px]">
+            <Presentation className="h-3 w-3 text-[#E8453C]" />
+          </Button>
         </div>
       </div>
 
@@ -532,6 +544,11 @@ export default function NotebookPage() {
                     <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => moveCell(cell.id, "down")} disabled={idx === state.cells.length - 1} title="Move down">
                       <ChevronDown className="h-3 w-3" />
                     </Button>
+                    {/* Speaker Notes */}
+                    <Button size="sm" variant="ghost" className={`h-5 w-5 p-0 ${cell.speakerNotes ? "text-[#E8453C]" : ""}`}
+                      onClick={() => setNotesCell(notesCell === cell.id ? null : cell.id)} title="Speaker notes">
+                      <MessageSquare className="h-3 w-3" />
+                    </Button>
                     {/* Delete */}
                     <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-muted-foreground hover:text-red-500" onClick={() => deleteCell(cell.id)} disabled={state.cells.length <= 1} title="Delete cell">
                       <Trash2 className="h-3 w-3" />
@@ -567,6 +584,22 @@ export default function NotebookPage() {
                   />
                 )}
               </div>
+
+              {/* Speaker Notes (collapsible) */}
+              {notesCell === cell.id && (
+                <div className="mx-3 mb-2 mt-1">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <MessageSquare className="h-3 w-3 text-[#E8453C]" />
+                    <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Speaker Notes</span>
+                  </div>
+                  <textarea
+                    value={cell.speakerNotes || ""}
+                    onChange={e => updateCell(cell.id, { speakerNotes: e.target.value })}
+                    placeholder="Add speaker notes for this slide..."
+                    className="w-full text-xs bg-muted/20 border border-border rounded-md p-2 min-h-[50px] max-h-[120px] resize-y focus:outline-none focus:ring-1 focus:ring-[#E8453C]/30"
+                  />
+                </div>
+              )}
 
               {/* Add cell between cards */}
               <div className="flex items-center justify-center py-1 opacity-0 group-hover:opacity-100 transition-opacity">

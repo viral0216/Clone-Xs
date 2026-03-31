@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Copy, FolderTree, Activity,
   Settings2, FileText, Wrench, GitBranch, RefreshCw,
   ChevronRight, ChevronDown, History, BarChart3,
-  Undo2, GitFork, Zap, Layers, Terminal, Sparkles,
+  Undo2, GitFork, Zap, Layers, Terminal, Sparkles, Database,
   X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
 } from "lucide-react";
 
@@ -43,7 +43,9 @@ export const allNavSections: NavSection[] = [
       { href: "/clone", label: "Clone", icon: Copy },
       { href: "/sync", label: "Sync", icon: RefreshCw },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
+      { href: "/demo-data", label: "Demo Data", icon: Database },
       { href: "/dlt", label: "Delta Live Tables", icon: Zap },
+      { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
     ],
   },
   {
@@ -64,7 +66,6 @@ export const allNavSections: NavSection[] = [
       { href: "/monitor", label: "Monitor", icon: Activity },
       { href: "/config", label: "Config", icon: Wrench },
       { href: "/settings", label: "Settings", icon: Settings2 },
-      { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
     ],
   },
 ];

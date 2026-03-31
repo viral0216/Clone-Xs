@@ -1258,6 +1258,9 @@ async def analyze_impact_endpoint(req: dict, client=Depends(get_db_client)):
             "affected_views": result.get("dependent_views", []),
             "affected_functions": result.get("dependent_functions", []),
             "downstream_tables": [],
+            "referencing_jobs": result.get("referencing_jobs", []),
+            "active_queries": result.get("active_queries", []),
+            "dashboard_references": result.get("dashboard_references", []),
             "risk_level": result.get("risk_level", "unknown"),
             "total_dependent_objects": result.get("total_dependent_objects", 0),
         }

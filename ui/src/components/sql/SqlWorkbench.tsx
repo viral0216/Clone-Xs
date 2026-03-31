@@ -20,9 +20,10 @@ import {
   PanelBottomClose, Search, X, Zap, Plus, Trash2, Clock,
   Save, BookOpen, ArrowUpDown, ArrowUp, ArrowDown, FileJson, AlignLeft,
   Keyboard, Info, Pin, PinOff, Rows3, BarChart3, Code, PieChart as PieChartIcon,
-  GitCompare, CalendarClock, Share2, Network, RefreshCw,
+  GitCompare, CalendarClock, Share2, Network, RefreshCw, Presentation,
 } from "lucide-react";
 import { toast } from "sonner";
+import { exportWorkbenchAsPresentation } from "@/lib/notebook-presentation-export";
 import { recommendVisualization, buildColumnStats, type VizRecommendation } from "./auto-viz";
 import DataProfilePanel from "./DataProfilePanel";
 import {
@@ -1328,6 +1329,18 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     URL.revokeObjectURL(url);
   }
 
+  function exportPresentation() {
+    if (!results?.length) return;
+    const html = exportWorkbenchAsPresentation({
+      sql, results, elapsed,
+      chartType, chartXCol, chartYCol, aiInsight,
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "query_presentation.html"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Layout state ──────────────────────────────────────────────────────────
   const [browserWidth, setBrowserWidth] = useState(256);
   const [editorHeight, setEditorHeight] = useState(160);
@@ -1480,6 +1493,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
             <Button size="sm" variant="ghost" onClick={copyResults} title="Copy"><Copy className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={downloadCsv} title="CSV"><Download className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={downloadJson} title="JSON"><FileJson className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={exportPresentation} title="Presentation"><Presentation className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={analyzeResultsWithAI} disabled={aiInsightLoading} title="Quick AI Insights"
               className={aiInsight ? "text-[#E8453C]" : ""}>
               {aiInsightLoading

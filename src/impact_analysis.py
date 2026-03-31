@@ -1,10 +1,21 @@
 """Clone impact analysis — analyze downstream effects before cloning."""
 
 import logging
+import re
 
 from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
+
+# Databricks identifiers: alphanumeric, underscores, hyphens, dots
+_IDENT_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _sanitize_ident(name: str) -> str:
+    """Validate and return a safe identifier, or raise ValueError."""
+    if not name or not _IDENT_RE.match(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return name
 
 
 def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dict:
@@ -12,6 +23,14 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
 
     Returns impact report dict with dependent objects and risk assessment.
     """
+    catalog = _sanitize_ident(catalog)
+    schema_filter = config.get("schema") or None
+    table_filter = config.get("table") or None
+    if schema_filter:
+        schema_filter = _sanitize_ident(schema_filter)
+    if table_filter:
+        table_filter = _sanitize_ident(table_filter)
+
     impact = {
         "catalog": catalog,
         "dependent_views": [],
@@ -22,10 +41,10 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
     }
 
     # Find dependent views
-    impact["dependent_views"] = _find_dependent_views(client, warehouse_id, catalog)
+    impact["dependent_views"] = _find_dependent_views(client, warehouse_id, catalog, schema_filter, table_filter)
 
     # Find dependent functions
-    impact["dependent_functions"] = _find_dependent_functions(client, warehouse_id, catalog)
+    impact["dependent_functions"] = _find_dependent_functions(client, warehouse_id, catalog, schema_filter, table_filter)
 
     # Find referencing jobs
     impact["referencing_jobs"] = _find_referencing_jobs(client, catalog)
@@ -48,15 +67,24 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
     return impact
 
 
-def _find_dependent_views(client, warehouse_id: str, catalog: str) -> list[dict]:
+def _find_dependent_views(client, warehouse_id: str, catalog: str,
+                          schema_filter: str = None, table_filter: str = None) -> list[dict]:
     """Find views that reference this catalog across all accessible catalogs."""
     try:
+        # Build the LIKE pattern for the target objects
+        if table_filter and schema_filter:
+            like_target = f"{catalog}.{schema_filter}.{table_filter}"
+        elif schema_filter:
+            like_target = f"{catalog}.{schema_filter}."
+        else:
+            like_target = f"{catalog}."
+
         sql = f"""
             SELECT table_catalog, table_schema, table_name, view_definition
             FROM system.information_schema.views
-            WHERE view_definition LIKE '%{catalog}%'
+            WHERE view_definition LIKE '%{like_target}%'
               AND table_catalog != '{catalog}'
-            LIMIT 100
+            LIMIT 200
         """
         rows = execute_sql(client, warehouse_id, sql)
         return [
@@ -64,6 +92,7 @@ def _find_dependent_views(client, warehouse_id: str, catalog: str) -> list[dict]
                 "catalog": r.get("table_catalog"),
                 "schema": r.get("table_schema"),
                 "view": r.get("table_name"),
+                "references": _extract_references(r.get("view_definition", ""), like_target),
             }
             for r in rows
         ]
@@ -72,15 +101,23 @@ def _find_dependent_views(client, warehouse_id: str, catalog: str) -> list[dict]
         return []
 
 
-def _find_dependent_functions(client, warehouse_id: str, catalog: str) -> list[dict]:
+def _find_dependent_functions(client, warehouse_id: str, catalog: str,
+                              schema_filter: str = None, table_filter: str = None) -> list[dict]:
     """Find functions that reference this catalog."""
     try:
+        if table_filter and schema_filter:
+            like_target = f"{catalog}.{schema_filter}.{table_filter}"
+        elif schema_filter:
+            like_target = f"{catalog}.{schema_filter}."
+        else:
+            like_target = f"{catalog}."
+
         sql = f"""
             SELECT routine_catalog, routine_schema, routine_name
             FROM system.information_schema.routines
-            WHERE routine_definition LIKE '%{catalog}%'
+            WHERE routine_definition LIKE '%{like_target}%'
               AND routine_catalog != '{catalog}'
-            LIMIT 100
+            LIMIT 200
         """
         rows = execute_sql(client, warehouse_id, sql)
         return [
@@ -153,6 +190,24 @@ def _find_dashboard_references(client, catalog: str) -> list[dict]:
         logger.debug(f"Could not list dashboards: {e}")
 
     return results[:50]
+
+
+def _extract_references(definition: str, target: str) -> str:
+    """Extract a snippet showing how target is referenced in the definition."""
+    if not definition:
+        return ""
+    lower = definition.lower()
+    idx = lower.find(target.lower())
+    if idx == -1:
+        return ""
+    start = max(0, idx - 20)
+    end = min(len(definition), idx + len(target) + 30)
+    snippet = definition[start:end].strip()
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(definition):
+        snippet = snippet + "..."
+    return snippet
 
 
 def _assess_risk(impact: dict, threshold: int) -> str:

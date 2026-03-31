@@ -158,9 +158,21 @@ export function useValidate() {
 
 export function useStats() {
   return useMutation({
-    mutationFn: (req: { source_catalog: string; warehouse_id?: string }) =>
-      api.post("/stats", req),
+    mutationFn: async (req: { source_catalog: string; warehouse_id?: string }) => {
+      const result = await api.post("/stats", req);
+      // Cache in sessionStorage for page navigation persistence
+      try { sessionStorage.setItem(`clxs-stats-${req.source_catalog}`, JSON.stringify(result)); } catch {}
+      return result;
+    },
   });
+}
+
+/** Load cached stats for a catalog (survives page navigation) */
+export function getCachedStats(catalog: string): any | null {
+  try {
+    const cached = sessionStorage.getItem(`clxs-stats-${catalog}`);
+    return cached ? JSON.parse(cached) : null;
+  } catch { return null; }
 }
 
 export function useSearch() {

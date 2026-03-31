@@ -24,11 +24,9 @@ const _kwSet = new Set(["SELECT","FROM","WHERE","AND","OR","NOT","IN","IS","NULL
 
 function highlightSQL(code: string): string {
   let html = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  html = html.replace(/'[^']*'/g, m => `<span style="color:#C73A32">${m}</span>`);
-  html = html.replace(/\b(\d+\.?\d*)\b/g, `<span style="color:#B83028">$1</span>`);
-  html = html.replace(/--.*/g, m => `<span style="color:#9CA3AF;font-style:italic">${m}</span>`);
+  html = html.replace(/--.*/g, m => `<span style="color:#6B7280;font-style:italic">${m}</span>`);
   html = html.replace(/\b([A-Z_]+)\b/gi, (m) => {
-    if (_kwSet.has(m.toUpperCase())) return `<span style="color:#E8453C;font-weight:600">${m}</span>`;
+    if (_kwSet.has(m.toUpperCase())) return `<span style="font-weight:700">${m}</span>`;
     return m;
   });
   // Highlight {{params}} in blue

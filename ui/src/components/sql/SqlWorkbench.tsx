@@ -20,7 +20,7 @@ import {
   PanelBottomClose, Search, X, Zap, Plus, Trash2, Clock,
   Save, BookOpen, ArrowUpDown, ArrowUp, ArrowDown, FileJson, AlignLeft,
   Keyboard, Info, Pin, PinOff, Rows3, BarChart3, Code, PieChart as PieChartIcon,
-  GitCompare, CalendarClock, Share2, Network,
+  GitCompare, CalendarClock, Share2, Network, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { recommendVisualization, buildColumnStats, type VizRecommendation } from "./auto-viz";
@@ -41,20 +41,14 @@ const _sqlFnSet = new Set(["COUNT","SUM","AVG","MIN","MAX","ROW_NUMBER","RANK","
 function highlightSQL(code: string): string {
   // Escape HTML
   let html = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  // Strings (single quotes)
-  html = html.replace(/'[^']*'/g, m => `<span style="color:#C73A32">${m}</span>`);
-  // Numbers
-  html = html.replace(/\b(\d+\.?\d*)\b/g, `<span style="color:#B83028">$1</span>`);
   // Comments
-  html = html.replace(/--.*/g, m => `<span style="color:#9CA3AF;font-style:italic">${m}</span>`);
-  // Keywords
+  html = html.replace(/--.*/g, m => `<span style="color:#6B7280;font-style:italic">${m}</span>`);
+  // Keywords (bold only, no color change)
   html = html.replace(/\b([A-Z_]+)\b/gi, (m) => {
-    if (_sqlKwSet.has(m.toUpperCase())) return `<span style="color:#E8453C;font-weight:600">${m}</span>`;
-    if (_sqlFnSet.has(m.toUpperCase())) return `<span style="color:#D94F3C">${m}</span>`;
+    if (_sqlKwSet.has(m.toUpperCase())) return `<span style="font-weight:700">${m}</span>`;
+    if (_sqlFnSet.has(m.toUpperCase())) return `<span style="font-weight:600">${m}</span>`;
     return m;
   });
-  // Dot-separated identifiers (catalog.schema.table)
-  html = html.replace(/\b(\w+\.\w+(?:\.\w+)?)\b/g, `<span style="color:#F06D55">$&</span>`);
   return html;
 }
 
@@ -302,15 +296,18 @@ function CatalogTree({ onSelect, onShowDDL, onProfile }: { onSelect: (fqn: strin
     return () => document.removeEventListener("click", close);
   }, []);
 
-  useEffect(() => {
+  function fetchCatalogs() {
     api.get("/catalogs").then((data: string[]) => {
       const list = (Array.isArray(data) ? data : []);
       setCatalogs(list.map((c) => ({
         name: c, type: "catalog" as const, fqn: c, children: [], loaded: false,
       })));
+      setExpanded(new Set());
       addCompletionItems(list.map(c => ({ label: c, type: "catalog" as const })));
     }).catch(() => {});
-  }, []);
+  }
+
+  useEffect(() => { fetchCatalogs(); }, []);
 
   async function toggleExpand(node: TreeNode) {
     const key = node.fqn;
@@ -714,6 +711,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   const [aiExplainText, setAiExplainText] = useState<string | null>(null);
   const [aiExplainLoading, setAiExplainLoading] = useState(false);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
+  const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
 
   async function fixWithAI() {
     if (!error || !sql.trim()) return;
@@ -917,7 +915,10 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
   const [sparkAvailable, setSparkAvailable] = useState(false);
   const [startingWarehouse, setStartingWarehouse] = useState(false);
 
-  function loadWarehouses() {
+  const [refreshingWarehouses, setRefreshingWarehouses] = useState(false);
+
+  function loadWarehouses(showToast = false) {
+    if (showToast) setRefreshingWarehouses(true);
     api.get("/auth/warehouses").then((wh: any[]) => {
       const list = Array.isArray(wh) ? wh : [];
       setWarehouses(list);
@@ -925,7 +926,9 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
         const running = list.find((w) => w.state === "RUNNING");
         setSelectedWarehouse(running?.id || list[0].id);
       }
-    }).catch(() => {});
+      if (showToast) toast.success(`${list.length} warehouse${list.length !== 1 ? "s" : ""} loaded`);
+    }).catch(() => { if (showToast) toast.error("Failed to refresh warehouses"); })
+      .finally(() => setRefreshingWarehouses(false));
   }
 
   useEffect(() => {
@@ -1444,7 +1447,7 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
 
           {execMode === "warehouse" && (
             <div className="flex items-center gap-1.5 shrink-0">
-              <select value={selectedWarehouse} onChange={(e) => setSelectedWarehouse(e.target.value)} className="h-7 text-xs bg-background border border-border rounded-md px-2 min-w-[160px]">
+              <select value={selectedWarehouse} onChange={(e) => setSelectedWarehouse(e.target.value)} className="h-8 text-sm text-foreground bg-background border border-border rounded-md px-2.5 min-w-[240px] max-w-[400px]">
                 {warehouses.length === 0 && <option value="">No warehouses</option>}
                 {warehouses.map((wh) => <option key={wh.id} value={wh.id}>{wh.name} ({wh.state})</option>)}
               </select>
@@ -1453,7 +1456,9 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
                 {startingWarehouse ? "STARTING" : whState || "—"}
               </span>
               {!whRunning && !startingWarehouse && selectedWarehouse && <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1" onClick={startWarehouse}><Play className="h-3 w-3" /> Start</Button>}
-              <button onClick={loadWarehouses} className="p-1 rounded hover:bg-accent/50 text-muted-foreground" title="Refresh"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg></button>
+              <button onClick={() => loadWarehouses(true)} className="p-1 rounded hover:bg-accent/50 text-muted-foreground" title="Refresh warehouses">
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshingWarehouses ? "animate-spin" : ""}`} />
+              </button>
             </div>
           )}
 
@@ -1633,10 +1638,13 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Catalog Browser */}
         <div className="border-r border-border bg-muted/5 overflow-hidden flex flex-col shrink-0" style={{ width: browserWidth }}>
-          <div className="px-3 py-2.5 border-b border-border bg-muted/30">
+          <div className="px-3 py-2.5 border-b border-border bg-muted/30 flex items-center justify-between">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5"><Database className="h-3 w-3" />Catalog Browser</p>
+            <button onClick={() => setCatalogRefreshKey(k => k + 1)} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-accent/30" title="Refresh catalogs">
+              <RefreshCw className="h-3 w-3" />
+            </button>
           </div>
-          <CatalogTree onSelect={insertAtCursor} onShowDDL={showDDL} onProfile={(fqn) => { setProfileTarget(fqn); setViewMode("profile"); }} />
+          <CatalogTree key={catalogRefreshKey} onSelect={insertAtCursor} onShowDDL={showDDL} onProfile={(fqn) => { setProfileTarget(fqn); setViewMode("profile"); }} />
         </div>
         <ResizeHandle width={browserWidth} onResize={setBrowserWidth} min={180} max={450} side="right" />
 

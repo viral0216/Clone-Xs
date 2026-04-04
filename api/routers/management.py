@@ -691,51 +691,90 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
             else:
                 errors.append(f"Schema `{cat}`.`{sch}`: {err_msg}")
 
-    # ── Create tables in all modules ─────────────────────────────────────
+    # ── Create tables in all modules (parallel) ───────────────────────────
+    import importlib
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    ensure_steps = [
-        ("governance", "src.governance", "ensure_governance_tables"),
-        ("dq_rules", "src.dq_rules", "ensure_dq_tables"),
-        ("sla", "src.sla_monitor", "ensure_sla_tables"),
-        ("odcs", "src.data_contracts", "ensure_odcs_tables"),
-        ("dqx", "src.dqx_engine", "ensure_dqx_tables"),
-        ("reconciliation_store", "src.reconciliation_store", "ensure_reconciliation_tables"),
-        ("reconciliation_alerts", "src.reconciliation_alerts", "ensure_alert_tables"),
-        ("anomaly_detection", "src.anomaly_detection", "ensure_tables"),
-        ("freshness", "src.data_freshness", "_ensure_freshness_table"),
+    def _run_ensure(label, func, *args):
+        """Run an ensure function and return (label, error_or_None)."""
+        try:
+            func(*args)
+            return label, None
+        except Exception as e:
+            return label, str(e)
+
+    # Collect all ensure tasks
+    ensure_module_steps = [
+        ("governance", "src.governance", "ensure_governance_tables", [client, wid, gov_config]),
+        ("dq_rules", "src.dq_rules", "ensure_dq_tables", [client, wid, gov_config]),
+        ("sla", "src.sla_monitor", "ensure_sla_tables", [client, wid, gov_config]),
+        ("odcs", "src.data_contracts", "ensure_odcs_tables", [client, wid, gov_config]),
+        ("dqx", "src.dqx_engine", "ensure_dqx_tables", [client, wid, gov_config]),
+        ("reconciliation_store", "src.reconciliation_store", "ensure_reconciliation_tables", [client, wid, gov_config]),
+        ("reconciliation_alerts", "src.reconciliation_alerts", "ensure_alert_tables", [client, wid, gov_config]),
+        ("anomaly_detection", "src.anomaly_detection", "ensure_tables", [client, wid, gov_config]),
+        ("freshness", "src.data_freshness", "_ensure_freshness_table", [client, wid, gov_config]),
     ]
 
-    for label, module_path, func_name in ensure_steps:
-        try:
-            import importlib
-            mod = importlib.import_module(module_path)
-            func = getattr(mod, func_name)
-            func(client, wid, gov_config)
-        except Exception as e:
-            errors.append(f"{label}: {e}")
+    # Resolve module functions
+    ensure_tasks = []
+    for label, module_path, func_name, args in ensure_module_steps:
+        mod = importlib.import_module(module_path)
+        func = getattr(mod, func_name)
+        ensure_tasks.append((label, func, args))
 
-    # Lineage
-    try:
-        from src.lineage_tracker import ensure_lineage_table
-        cat = audit_config["audit_trail"]["catalog"]
-        ensure_lineage_table(client, wid, lineage_catalog=cat, config=gov_config)
-    except Exception as e:
-        errors.append(f"lineage: {e}")
+    # Add store-based tasks
+    from src.lineage_tracker import ensure_lineage_table
+    from src.reconciliation_rules import ensure_quality_tables_sql
+    from src.monitoring_config import ensure_monitoring_config_table
+    from src.expectation_suites import ensure_expectation_suites_table
+    from src.reconciliation_schedule import ensure_reconciliation_schedules_table
+    from src.monitoring_scheduler import ensure_scheduler_state_table
 
-    # Reconciliation quality rules
-    try:
-        from src.reconciliation_rules import ensure_quality_tables_sql
-        ensure_quality_tables_sql(client, wid, gov_config)
-    except Exception as e:
-        errors.append(f"reconciliation_rules: {e}")
+    at_cat = audit_config["audit_trail"]["catalog"]
+    ensure_tasks += [
+        ("lineage", ensure_lineage_table, [client, wid], {"lineage_catalog": at_cat, "config": gov_config}),
+        ("reconciliation_rules", ensure_quality_tables_sql, [client, wid, gov_config]),
+        ("monitoring_configs", ensure_monitoring_config_table, [client, wid, gov_config]),
+        ("expectation_suites", ensure_expectation_suites_table, [client, wid, gov_config]),
+        ("reconciliation_schedules", ensure_reconciliation_schedules_table, [client, wid, gov_config]),
+        ("scheduler_state", ensure_scheduler_state_table, [client, wid, gov_config]),
+    ]
 
-    # MDM tables
-    try:
+    # Store-class tasks (need instantiation)
+    def _init_mdm():
         from src.mdm_store import MDMStore
-        mdm_store = MDMStore(client, wid, config=audit_config)
-        mdm_store.init_tables()
-    except Exception as e:
-        errors.append(f"mdm: {e}")
+        MDMStore(client, wid, config=audit_config).init_tables()
+
+    def _init_state():
+        from src.state_store import StateStore
+        StateStore(client, wid, config=audit_config).init_tables()
+
+    def _init_ttl():
+        from src.ttl_manager import TTLManager
+        TTLManager(client, wid, config=audit_config).init_ttl_table()
+
+    ensure_tasks += [
+        ("mdm", _init_mdm, []),
+        ("state_store", _init_state, []),
+        ("ttl_manager", _init_ttl, []),
+    ]
+
+    # Run all ensure tasks in parallel
+    max_workers = min(len(ensure_tasks), 10)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {}
+        for task in ensure_tasks:
+            label = task[0]
+            func = task[1]
+            args = task[2] if len(task) > 2 else []
+            kwargs = task[3] if len(task) > 3 else {}
+            futures[pool.submit(_run_ensure, label, func, *args, **kwargs)] = label
+
+        for future in as_completed(futures):
+            label, err = future.result()
+            if err:
+                errors.append(f"{label}: {err}")
 
     # ── Build tables_created from registry ────────────────────────────────
     from src.table_registry import get_all_table_fqns
@@ -744,15 +783,19 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         for t in section["tables"]:
             tables_created.append(t["fqn"])
 
-    # ── Describe tables ──────────────────────────────────────────────────
-    schemas = {}
-    for fqn in tables_created:
+    # ── Describe tables (parallel) ──────────────────────────────────────
+    from src.client import execute_sql as _exec_sql
+
+    def _describe(fqn):
         try:
-            from src.client import execute_sql
-            cols = execute_sql(client, wid, f"DESCRIBE TABLE {fqn}")
-            schemas[fqn] = cols
+            return fqn, _exec_sql(client, wid, f"DESCRIBE TABLE {fqn}")
         except Exception:
-            schemas[fqn] = []
+            return fqn, []
+
+    schemas = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        for fqn, cols in pool.map(lambda f: _describe(f), tables_created):
+            schemas[fqn] = cols
 
     return {
         "status": "ok" if not errors else "partial",

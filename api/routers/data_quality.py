@@ -416,34 +416,42 @@ async def volume_history(
 # ── Suites ───────────────────────────────────────────────────────────────────
 
 @router.get("/suites", summary="List expectation suites")
-async def list_suites():
+async def list_suites(client=Depends(get_db_client)):
     """List all expectation suites."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import list_suites as _list
-    return {"suites": _list()}
+    return {"suites": _list(client, wid, config)}
 
 
 @router.post("/suites", summary="Create an expectation suite")
-async def create_suite(req: CreateSuiteRequest):
+async def create_suite(req: CreateSuiteRequest, client=Depends(get_db_client)):
     """Create a new expectation suite with grouped DQ checks."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import create_suite as _create
-    return _create(name=req.name, description=req.description, checks=req.checks)
+    return _create(client, wid, config, name=req.name, description=req.description, checks=req.checks)
 
 
 @router.get("/suites/{suite_id}", summary="Get expectation suite details")
-async def get_suite(suite_id: str):
+async def get_suite(suite_id: str, client=Depends(get_db_client)):
     """Get a single expectation suite by ID."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import get_suite as _get
-    suite = _get(suite_id)
+    suite = _get(client, wid, config, suite_id)
     if not suite:
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
     return suite
 
 
 @router.delete("/suites/{suite_id}", summary="Delete an expectation suite")
-async def delete_suite(suite_id: str):
+async def delete_suite(suite_id: str, client=Depends(get_db_client)):
     """Delete an expectation suite by ID."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import delete_suite as _delete
-    if not _delete(suite_id):
+    if not _delete(client, wid, config, suite_id):
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
     return {"status": "deleted", "suite_id": suite_id}
 
@@ -455,7 +463,7 @@ async def run_suite(suite_id: str, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
 
     from src.expectation_suites import run_suite as _run
-    result = _run(suite_id, client=client, warehouse_id=wid, config=config)
+    result = _run(client, wid, config, suite_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
@@ -515,6 +523,50 @@ async def incidents(
     except Exception as e:
         import logging
         logging.getLogger(__name__).debug(f"Could not load reconciliation incidents: {e}")
+
+    # 3. DQ rule failures
+    try:
+        from src.dq_rules import get_latest_results
+        results = get_latest_results(client, wid, config, limit=limit)
+        for r in results:
+            if not r.get("passed", True):
+                rate = r.get("failure_rate", 0) or 0
+                incidents_list.append({
+                    "type": "dq_rule",
+                    "severity": "critical" if rate > 0.1 else "warning",
+                    "title": f"DQ rule failed: {r.get('rule_name', 'unknown')} on {r.get('table_fqn', 'unknown')}",
+                    "description": f"{r.get('failed_rows', 0)} failed rows ({rate * 100:.1f}% failure rate)",
+                    "table_fqn": r.get("table_fqn"),
+                    "timestamp": r.get("executed_at"),
+                    "details": r,
+                })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"Could not load DQ rule incidents: {e}")
+
+    # 4. Freshness + SLA + DQ from observability service
+    try:
+        from src.observability import ObservabilityService
+        obs = ObservabilityService(client, wid, config)
+        issues = obs.get_top_issues(limit=limit)
+        # Deduplicate by (type, table_fqn) — direct sources above take priority
+        seen = {(i["type"], i.get("table_fqn")) for i in incidents_list}
+        for issue in issues:
+            key = (issue.get("category", "unknown"), issue.get("table"))
+            if key not in seen:
+                seen.add(key)
+                incidents_list.append({
+                    "type": issue.get("category", "unknown"),
+                    "severity": issue.get("severity", "warning"),
+                    "title": issue.get("message", "Unknown issue"),
+                    "description": f"Table: {issue.get('table', 'unknown')}",
+                    "table_fqn": issue.get("table"),
+                    "timestamp": issue.get("time"),
+                    "details": issue,
+                })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"Could not load observability incidents: {e}")
 
     # Sort by timestamp descending (most recent first)
     incidents_list.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
@@ -985,18 +1037,23 @@ class BulkMonitorRequest(BaseModel):
 
 
 @router.get("/monitoring/configs", summary="List all monitoring configurations")
-async def list_monitoring_configs():
+async def list_monitoring_configs(client=Depends(get_db_client)):
     """List all table monitoring configurations."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import list_monitoring_configs as _list
-    configs = _list()
+    configs = _list(client, wid, config)
     return {"configs": configs, "total": len(configs)}
 
 
 @router.post("/monitoring/configs", summary="Create or update a monitoring configuration")
-async def create_monitoring_config(req: MonitoringConfigRequest):
+async def create_monitoring_config(req: MonitoringConfigRequest, client=Depends(get_db_client)):
     """Create or update monitoring config for a table."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import create_monitoring_config as _create
     return _create(
+        client, wid, config,
         table_fqn=req.table_fqn, metrics=req.metrics,
         frequency=req.frequency, auto_baseline=req.auto_baseline,
         baseline_days=req.baseline_days, enabled=req.enabled,
@@ -1004,11 +1061,14 @@ async def create_monitoring_config(req: MonitoringConfigRequest):
 
 
 @router.put("/monitoring/configs/{config_id}", summary="Update monitoring configuration")
-async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest):
+async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest, client=Depends(get_db_client)):
     """Update an existing monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import update_monitoring_config as _update
     result = _update(
-        config_id, metrics=req.metrics, frequency=req.frequency,
+        client, wid, config, config_id,
+        metrics=req.metrics, frequency=req.frequency,
         auto_baseline=req.auto_baseline, baseline_days=req.baseline_days,
         enabled=req.enabled,
     )
@@ -1018,29 +1078,35 @@ async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest)
 
 
 @router.delete("/monitoring/configs/{config_id}", summary="Delete monitoring configuration")
-async def delete_monitoring_config(config_id: str):
+async def delete_monitoring_config(config_id: str, client=Depends(get_db_client)):
     """Delete a monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import delete_monitoring_config as _delete
-    if not _delete(config_id):
+    if not _delete(client, wid, config, config_id):
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
     return {"status": "deleted", "config_id": config_id}
 
 
 @router.post("/monitoring/configs/{config_id}/toggle", summary="Toggle monitoring on/off")
-async def toggle_monitoring_config(config_id: str):
+async def toggle_monitoring_config(config_id: str, client=Depends(get_db_client)):
     """Toggle enabled/disabled for a monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import toggle_monitoring_config as _toggle
-    result = _toggle(config_id)
+    result = _toggle(client, wid, config, config_id)
     if not result:
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
     return result
 
 
 @router.post("/monitoring/bulk-add", summary="Add multiple tables for monitoring")
-async def bulk_add_monitoring(req: BulkMonitorRequest):
+async def bulk_add_monitoring(req: BulkMonitorRequest, client=Depends(get_db_client)):
     """Add multiple tables for monitoring at once."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import add_tables_bulk
-    results = add_tables_bulk(req.table_fqns, req.metrics, req.frequency)
+    results = add_tables_bulk(client, wid, config, req.table_fqns, req.metrics, req.frequency)
     return {"added": len(results), "configs": results}
 
 
@@ -1065,3 +1131,66 @@ async def run_monitoring(client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import run_monitoring as _run
     return _run(client=client, warehouse_id=wid, config=config)
+
+
+# ── Monitoring Scheduler ──────────────────────────────────────────────────────
+
+@router.get("/monitoring/scheduler", summary="Get scheduler status")
+async def scheduler_status():
+    """Get the current monitoring scheduler status — enabled, frequency, last/next run."""
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/enable", summary="Enable monitoring scheduler")
+async def scheduler_enable(
+    frequency_minutes: int = Query(default=60, ge=1, le=1440),
+    client=Depends(get_db_client),
+):
+    """Enable the background monitoring scheduler with the given frequency (in minutes)."""
+    from src.monitoring_scheduler import enable_scheduler, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    enable_scheduler(frequency_minutes)
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/disable", summary="Disable monitoring scheduler")
+async def scheduler_disable(client=Depends(get_db_client)):
+    """Disable the background monitoring scheduler."""
+    from src.monitoring_scheduler import disable_scheduler, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    disable_scheduler()
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.put("/monitoring/scheduler/frequency", summary="Update scheduler frequency")
+async def scheduler_update_frequency(
+    frequency_minutes: int = Query(ge=1, le=1440),
+    client=Depends(get_db_client),
+):
+    """Update the scheduler frequency (in minutes). Restarts the scheduler if running."""
+    from src.monitoring_scheduler import update_frequency, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    update_frequency(frequency_minutes)
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/run-now", summary="Trigger immediate monitoring run")
+async def scheduler_run_now(client=Depends(get_db_client)):
+    """Trigger an immediate monitoring run without waiting for the next scheduled cycle."""
+    from src.monitoring_scheduler import trigger_run_now, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    await trigger_run_now()
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()

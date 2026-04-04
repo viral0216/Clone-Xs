@@ -61,7 +61,7 @@ class ObservabilityService:
 
         freshness = self._safe_query(f"""
             SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN is_fresh = true THEN 1 ELSE 0 END) AS fresh
+                   SUM(CASE WHEN is_stale = false THEN 1 ELSE 0 END) AS fresh
             FROM {self._freshness_table}
             WHERE checked_at >= '{lookback}'
         """)
@@ -84,7 +84,7 @@ class ObservabilityService:
             SELECT COUNT(*) AS total,
                    SUM(CASE WHEN is_anomaly = true THEN 1 ELSE 0 END) AS anomalies
             FROM {self._baselines_table}
-            WHERE updated_at >= '{lookback}'
+            WHERE measured_at >= '{lookback}'
         """)
 
         f_row = freshness[0] if freshness else {}
@@ -125,23 +125,23 @@ class ObservabilityService:
 
         # Freshness failures
         stale = self._safe_query(f"""
-            SELECT catalog, schema_name, table_name, checked_at, hours_since_update
+            SELECT table_fqn, checked_at, hours_since_update
             FROM {self._freshness_table}
-            WHERE is_fresh = false AND checked_at >= '{lookback}'
+            WHERE is_stale = true AND checked_at >= '{lookback}'
             ORDER BY checked_at DESC LIMIT {limit}
         """)
         for r in (stale or []):
             issues.append({
                 "category": "freshness",
                 "severity": "warning",
-                "table": f"{r.get('catalog','')}.{r.get('schema_name','')}.{r.get('table_name','')}",
+                "table": r.get("table_fqn", ""),
                 "message": f"Stale data — {r.get('hours_since_update', '?')} hours since last update",
                 "time": str(r.get("checked_at", "")),
             })
 
         # SLA violations
         sla_fail = self._safe_query(f"""
-            SELECT rule_name, catalog, schema_name, table_name, checked_at
+            SELECT sla_id, table_fqn, metric, checked_at
             FROM {self._sla_checks_table}
             WHERE passed = false AND checked_at >= '{lookback}'
             ORDER BY checked_at DESC LIMIT {limit}
@@ -150,14 +150,14 @@ class ObservabilityService:
             issues.append({
                 "category": "sla",
                 "severity": "critical",
-                "table": f"{r.get('catalog','')}.{r.get('schema_name','')}.{r.get('table_name','')}",
-                "message": f"SLA violation — {r.get('rule_name', 'unknown rule')}",
+                "table": r.get("table_fqn", ""),
+                "message": f"SLA violation — {r.get('metric', 'unknown')}",
                 "time": str(r.get("checked_at", "")),
             })
 
         # DQ failures
         dq_fail = self._safe_query(f"""
-            SELECT rule_name, catalog, schema_name, table_name, executed_at
+            SELECT rule_name, table_fqn, rule_type, executed_at
             FROM {self._dq_results_table}
             WHERE passed = false AND executed_at >= '{lookback}'
             ORDER BY executed_at DESC LIMIT {limit}
@@ -166,7 +166,7 @@ class ObservabilityService:
             issues.append({
                 "category": "dq",
                 "severity": "warning",
-                "table": f"{r.get('catalog','')}.{r.get('schema_name','')}.{r.get('table_name','')}",
+                "table": r.get("table_fqn", ""),
                 "message": f"DQ check failed — {r.get('rule_name', 'unknown')}",
                 "time": str(r.get("executed_at", "")),
             })
@@ -185,7 +185,7 @@ class ObservabilityService:
             return self._safe_query(f"""
                 SELECT DATE(checked_at) AS day,
                        COUNT(*) AS total,
-                       SUM(CASE WHEN is_fresh = true THEN 1 ELSE 0 END) AS passed
+                       SUM(CASE WHEN is_stale = false THEN 1 ELSE 0 END) AS passed
                 FROM {self._freshness_table}
                 WHERE checked_at >= '{start}'
                 GROUP BY DATE(checked_at) ORDER BY day

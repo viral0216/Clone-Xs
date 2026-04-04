@@ -196,7 +196,8 @@ def record_metrics_batch(
     """Batch-insert multiple metrics in a single SQL statement.
 
     Each item in *metrics* must have: table_fqn, column_name, metric_name, value.
-    Baseline z-score computation uses the existing per-metric history.
+    Baseline z-score computation fetches all relevant history in a single query
+    instead of one query per metric.
     """
     if not metrics:
         return []
@@ -206,6 +207,38 @@ def record_metrics_batch(
     ensure_tables(client, warehouse_id, config)
     baseline_window, warning_threshold, critical_threshold = _get_thresholds(config)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Fetch all baseline history in a single query using window functions
+    # This replaces N sequential SELECTs with 1 query
+    baselines: dict[tuple, list[float]] = {}
+    try:
+        # Build unique metric keys for the WHERE clause
+        metric_keys = set()
+        for m in metrics:
+            metric_keys.add((m["table_fqn"], m["column_name"], m["metric_name"]))
+
+        # Single query: fetch recent values for all metric keys, ranked by recency
+        union_parts = []
+        for tbl, col, met in metric_keys:
+            union_parts.append(
+                f"SELECT table_fqn, column_name, metric_name, value, measured_at "
+                f"FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY measured_at DESC) AS rn "
+                f"FROM {schema}.metric_baselines "
+                f"WHERE table_fqn = '{_esc(tbl)}' AND column_name = '{_esc(col)}' "
+                f"AND metric_name = '{_esc(met)}') WHERE rn <= {baseline_window}"
+            )
+
+        if union_parts:
+            # Execute in batches of 20 UNIONs to avoid query size limits
+            for i in range(0, len(union_parts), 20):
+                batch_sql = " UNION ALL ".join(union_parts[i:i + 20])
+                rows = _query_sql(batch_sql, limit=len(metric_keys) * baseline_window,
+                                  client=client, warehouse_id=warehouse_id)
+                for r in (rows or []):
+                    key = (r.get("table_fqn", ""), r.get("column_name", ""), r.get("metric_name", ""))
+                    baselines.setdefault(key, []).append(float(r["value"]))
+    except Exception as e:
+        logger.debug(f"Could not bulk-fetch baselines: {e}")
 
     records = []
     value_rows = []
@@ -217,20 +250,8 @@ def record_metrics_batch(
         value = m["value"]
         metric_id = str(uuid.uuid4())[:12]
 
-        # Fetch baseline (still per-metric, but INSERT is batched)
-        try:
-            recent = _query_sql(
-                f"SELECT value FROM {schema}.metric_baselines "
-                f"WHERE table_fqn = '{_esc(table_fqn)}' "
-                f"AND column_name = '{_esc(column_name)}' "
-                f"AND metric_name = '{_esc(metric_name)}' "
-                f"ORDER BY measured_at DESC",
-                limit=baseline_window, client=client, warehouse_id=warehouse_id,
-            )
-        except Exception:
-            recent = []
-
-        vals = [float(r["value"]) for r in recent if r.get("value") is not None]
+        # Use pre-fetched baseline
+        vals = baselines.get((table_fqn, column_name, metric_name), [])
         if len(vals) >= 3:
             mean = sum(vals) / len(vals)
             variance = sum((v - mean) ** 2 for v in vals) / len(vals)

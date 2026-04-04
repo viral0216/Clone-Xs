@@ -184,7 +184,7 @@ _sql_executor = None
 _sql_capture = None
 
 # Global parallelism for SQL queries
-_max_parallel_queries = 10
+_max_parallel_queries = 100
 
 
 def set_sql_executor(executor) -> None:

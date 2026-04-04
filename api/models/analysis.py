@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CatalogRequest(BaseModel):
@@ -20,6 +20,13 @@ class CatalogPairRequest(BaseModel):
     exclude_schemas: list[str] = ["information_schema", "default"]
 
 
+class SchemaDriftRequest(CatalogPairRequest):
+    """Request for schema drift detection with optional schema/table filtering."""
+    model_config = {"populate_by_name": True}
+    schema_name: str | None = Field(None, alias="schema")
+    table: str | None = None
+
+
 class ValidateRequest(CatalogPairRequest):
     use_checksum: bool = False
     max_workers: int = 4
@@ -31,7 +38,8 @@ class SearchRequest(CatalogRequest):
 
 
 class ProfileRequest(CatalogRequest):
-    schema: str | None = None
+    model_config = {"populate_by_name": True}
+    schema_name: str | None = Field(None, alias="schema")
     max_workers: int = 4
     output_path: str | None = None
 

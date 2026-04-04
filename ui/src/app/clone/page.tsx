@@ -634,7 +634,7 @@ export default function ClonePage() {
     dry_run: false,
     max_workers: 4,
     parallel_tables: 1,
-    max_parallel_queries: 10,
+    max_parallel_queries: 100,
     max_rps: 0,
     // Copy options
     copy_permissions: true,
@@ -999,8 +999,8 @@ export default function ClonePage() {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Max Parallel Queries</label>
-                  <Input type="number" min={1} max={50} value={config.max_parallel_queries}
-                    onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 10 })} />
+                  <Input type="number" min={1} max={200} value={config.max_parallel_queries}
+                    onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 100 })} />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Max RPS (0=unlimited)</label>

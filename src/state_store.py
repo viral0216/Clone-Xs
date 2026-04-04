@@ -52,7 +52,7 @@ class StateStore:
                     dest_row_count BIGINT,
                     source_size_bytes BIGINT,
                     source_version BIGINT,
-                    is_stale BOOLEAN DEFAULT false,
+                    is_stale BOOLEAN,
                     error_message STRING
                 )
                 USING DELTA

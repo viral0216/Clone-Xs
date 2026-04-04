@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   Settings, Loader2, Search, Trash2, RefreshCw, Play, Plus,
   Eye, EyeOff, Clock, Activity, Pause, CheckCircle,
+  Timer, Power, PowerOff, Zap,
 } from "lucide-react";
 
 interface MonitoringConfig {
@@ -58,7 +59,62 @@ export default function MonitoringConfigPage() {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<any>(null);
 
-  useEffect(() => { loadConfigs(); }, []);
+  // Scheduler state
+  const [scheduler, setScheduler] = useState<any>(null);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [freqInput, setFreqInput] = useState(60);
+
+  useEffect(() => { loadConfigs(); loadScheduler(); }, []);
+
+  async function loadScheduler() {
+    try {
+      const data = await api.get("/data-quality/monitoring/scheduler");
+      setScheduler(data);
+      setFreqInput(data.frequency_minutes || 60);
+    } catch { /* scheduler not available */ }
+  }
+
+  async function toggleScheduler() {
+    setSchedulerLoading(true);
+    try {
+      if (scheduler?.enabled) {
+        const data = await api.post("/data-quality/monitoring/scheduler/disable", {});
+        setScheduler(data);
+        toast.success("Scheduler disabled.");
+      } else {
+        const data = await api.post(`/data-quality/monitoring/scheduler/enable?frequency_minutes=${freqInput}`, {});
+        setScheduler(data);
+        toast.success(`Scheduler enabled — running every ${freqInput} minutes.`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to toggle scheduler.");
+    } finally {
+      setSchedulerLoading(false);
+    }
+  }
+
+  async function updateFrequency() {
+    try {
+      const data = await api.put(`/data-quality/monitoring/scheduler/frequency?frequency_minutes=${freqInput}`, {});
+      setScheduler(data);
+      toast.success(`Frequency updated to every ${freqInput} minutes.`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update frequency.");
+    }
+  }
+
+  async function triggerNow() {
+    setSchedulerLoading(true);
+    try {
+      const data = await api.post("/data-quality/monitoring/scheduler/run-now", {});
+      setScheduler(data);
+      toast.success("Monitoring run triggered.");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to trigger run.");
+    } finally {
+      setSchedulerLoading(false);
+    }
+  }
 
   async function loadConfigs() {
     setLoading(true);
@@ -209,6 +265,109 @@ export default function MonitoringConfigPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Scheduler Controls */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Timer className="h-4 w-4" /> Auto-Scheduler
+            </CardTitle>
+            {scheduler && (
+              <Badge variant="outline" className={`text-[10px] ${scheduler.enabled ? "text-green-500 border-green-500/30" : "text-muted-foreground"}`}>
+                {scheduler.enabled ? "Enabled" : "Disabled"}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-4">
+            {/* Frequency input */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Frequency (minutes)</label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={freqInput}
+                  onChange={e => setFreqInput(Number(e.target.value))}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm w-36"
+                >
+                  <option value={15}>Every 15 min</option>
+                  <option value={30}>Every 30 min</option>
+                  <option value={60}>Every 1 hour</option>
+                  <option value={120}>Every 2 hours</option>
+                  <option value={360}>Every 6 hours</option>
+                  <option value={720}>Every 12 hours</option>
+                  <option value={1440}>Every 24 hours</option>
+                </select>
+                {scheduler?.enabled && freqInput !== scheduler?.frequency_minutes && (
+                  <Button variant="outline" size="sm" onClick={updateFrequency} className="h-9 text-xs">
+                    Update
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Enable/Disable toggle */}
+            <Button
+              variant={scheduler?.enabled ? "destructive" : "default"}
+              onClick={toggleScheduler}
+              disabled={schedulerLoading}
+              className="gap-1.5"
+            >
+              {schedulerLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : scheduler?.enabled ? (
+                <PowerOff className="h-4 w-4" />
+              ) : (
+                <Power className="h-4 w-4" />
+              )}
+              {scheduler?.enabled ? "Disable Scheduler" : "Enable Scheduler"}
+            </Button>
+
+            {/* Run Now button */}
+            {scheduler?.enabled && (
+              <Button variant="outline" onClick={triggerNow} disabled={schedulerLoading || scheduler?.running} className="gap-1.5">
+                <Zap className="h-4 w-4" />
+                {scheduler?.running ? "Running..." : "Run Now"}
+              </Button>
+            )}
+          </div>
+
+          {/* Scheduler info bar — always visible when enabled */}
+          {scheduler?.enabled && (
+            <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground">
+              <span>
+                <Clock className="h-3 w-3 inline mr-1" />
+                Runs every <span className="text-foreground font-medium">{scheduler.frequency_minutes} min</span>
+              </span>
+              {scheduler.running ? (
+                <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30 gap-1">
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" /> Running now...
+                </Badge>
+              ) : scheduler.last_run_at ? (
+                <span>
+                  Last run: <span className="text-foreground font-medium">{new Date(scheduler.last_run_at).toLocaleString()}</span>
+                </span>
+              ) : (
+                <span>Next run in ~{scheduler.frequency_minutes} min (first run pending)</span>
+              )}
+              {scheduler.last_run_result && !scheduler.last_run_result.error && (
+                <span className="text-green-500">
+                  {scheduler.last_run_result.tables_processed} tables, {scheduler.last_run_result.metrics_recorded} metrics, {scheduler.last_run_result.anomalies_found} anomalies
+                </span>
+              )}
+              {scheduler.last_run_result?.error && (
+                <span className="text-red-500">Error: {scheduler.last_run_result.error}</span>
+              )}
+            </div>
+          )}
+          {scheduler && !scheduler.enabled && (
+            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
+              Enable the scheduler to automatically collect metrics and detect anomalies on a recurring interval.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Controls */}
       <Card>

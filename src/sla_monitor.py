@@ -210,9 +210,10 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
             # Check null rate across all columns — SLA threshold is max allowed null %
             threshold_pct = float(rule.get("threshold_value", 5.0))
             try:
+                catalog = table_fqn.split('.')[0]
                 cols_result = execute_sql(client, warehouse_id,
-                    f"SELECT column_name FROM {table_fqn.rsplit('.', 1)[0]}.information_schema.columns "
-                    f"WHERE table_catalog = '{table_fqn.split('.')[0]}' "
+                    f"SELECT column_name FROM {catalog}.information_schema.columns "
+                    f"WHERE table_catalog = '{catalog}' "
                     f"AND table_schema = '{table_fqn.split('.')[1]}' "
                     f"AND table_name = '{table_fqn.split('.')[2]}'")
                 columns = [c["column_name"] for c in cols_result] if cols_result else []
@@ -409,9 +410,12 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
         try:
             expected = json.loads(contract.get("expected_columns", "[]"))
             if expected:
+                cat = table_fqn.split('.')[0]
                 actual_cols = execute_sql(client, warehouse_id,
-                    f"SELECT column_name, data_type FROM {table_fqn.rsplit('.', 1)[0]}.information_schema.columns "
-                    f"WHERE table_name = '{table_fqn.rsplit('.', 1)[1]}'")
+                    f"SELECT column_name, data_type FROM {cat}.information_schema.columns "
+                    f"WHERE table_catalog = '{cat}' "
+                    f"AND table_schema = '{table_fqn.split('.')[1]}' "
+                    f"AND table_name = '{table_fqn.split('.')[2]}'")
                 actual_names = {c["column_name"] for c in actual_cols}
                 for exp_col in expected:
                     if exp_col.get("name") not in actual_names:

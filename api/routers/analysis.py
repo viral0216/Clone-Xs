@@ -12,6 +12,7 @@ from api.models.analysis import (
     ExportRequest,
     ProfileRequest,
     ResultsProfileRequest,
+    SchemaDriftRequest,
     SearchRequest,
     SnapshotRequest,
     StorageMetricsRequest,
@@ -69,16 +70,34 @@ async def validate_clone(req: ValidateRequest, client=Depends(get_db_client)):
 
 
 @router.post("/schema-drift", summary="Detect schema drift")
-async def schema_drift(req: CatalogPairRequest, client=Depends(get_db_client)):
+async def schema_drift(req: SchemaDriftRequest, client=Depends(get_db_client)):
     """Detect schema drift between two catalogs.
 
     Identifies added, removed, and modified columns across all tables.
-    Useful for catching unintended schema changes after cloning.
+    Supports optional schema and table filtering for targeted comparisons.
     """
-    from src.schema_drift import detect_schema_drift
+    from src.schema_drift import detect_schema_drift, compare_table_schema
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = detect_schema_drift(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
+
+    # Single-table mode: compare one specific table
+    if req.schema_name and req.table:
+        drift = compare_table_schema(
+            client, wid, req.source_catalog, req.destination_catalog,
+            req.schema_name, req.table,
+        )
+        return {
+            "total_tables_checked": 1,
+            "tables_with_drift": 1 if drift["has_drift"] else 0,
+            "drifts": [drift] if drift["has_drift"] else [],
+        }
+
+    # Schema or catalog level
+    include_schemas = [req.schema_name] if req.schema_name else None
+    result = detect_schema_drift(
+        client, wid, req.source_catalog, req.destination_catalog,
+        req.exclude_schemas, include_schemas=include_schemas,
+    )
     return result
 
 
@@ -123,7 +142,7 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
     from src.profiling import profile_catalog
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    include_schemas = [req.schema] if req.schema else None
+    include_schemas = [req.schema_name] if req.schema_name else None
     result = profile_catalog(
         client, wid, req.source_catalog, req.exclude_schemas,
         max_workers=req.max_workers, include_schemas=include_schemas,

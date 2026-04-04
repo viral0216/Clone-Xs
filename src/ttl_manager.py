@@ -60,7 +60,7 @@ class TTLManager:
                     expires_at TIMESTAMP,
                     created_by STRING,
                     operation_id STRING,
-                    status STRING DEFAULT 'active'
+                    status STRING
                 )
             """)
         except Exception as e:

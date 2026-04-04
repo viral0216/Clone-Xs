@@ -1070,7 +1070,7 @@ function AnomalyDetectionSettings() {
   const [adLoading, setAdLoading] = useState(true);
   const [adSaved, setAdSaved] = useState(false);
   const [sources, setSources] = useState({ billing: false, compute: false, query_history: false, storage: false });
-  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(100);
 
   useEffect(() => {
     api.get("/data-quality/anomaly-settings").then((data: any) => {
@@ -1136,7 +1136,7 @@ function AnomalyDetectionSettings() {
               </div>
               <div>
                 <label className="text-[11px] text-muted-foreground font-medium block mb-1">Max Parallel Queries</label>
-                <Input type="number" min={1} max={50} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(Number(e.target.value))} className="h-8 text-xs" />
+                <Input type="number" min={1} max={200} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(Number(e.target.value))} className="h-8 text-xs" />
                 <p className="text-[10px] text-muted-foreground mt-0.5">Concurrent queries for volume counting</p>
               </div>
             </div>
@@ -1190,7 +1190,7 @@ function AnomalyDetectionSettings() {
 function PerformanceSettings() {
   const [maxWorkers, setMaxWorkers] = useState(10);
   const [parallelTables, setParallelTables] = useState(10);
-  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(100);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -1229,7 +1229,7 @@ function PerformanceSettings() {
           <p className="text-[11px] text-muted-foreground">Tables cloned concurrently per schema</p>
         </FieldGroup>
         <FieldGroup label="Max Parallel Queries">
-          <Input type="number" min={1} max={64} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 1)} />
+          <Input type="number" min={1} max={200} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 1)} />
           <p className="text-[11px] text-muted-foreground">SQL warehouse concurrent query limit</p>
         </FieldGroup>
       </div>

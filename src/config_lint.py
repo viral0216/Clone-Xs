@@ -32,7 +32,7 @@ CONFIG_SCHEMA = {
     "parallel_tables": {"type": int, "range": (1, 32)},
     "max_rps": {"type": (int, float), "range": (0.0, 100.0)},
     "max_retries": {"type": int, "range": (0, 20)},
-    "max_parallel_queries": {"type": int, "range": (1, 50)},
+    "max_parallel_queries": {"type": int, "range": (1, 200)},
     "rollback_threshold": {"type": (int, float), "range": (0.0, 100.0)},
 }
 

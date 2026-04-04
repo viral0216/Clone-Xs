@@ -75,7 +75,7 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     config.setdefault("include_schemas", [])
     config.setdefault("exclude_tables", [])
     config.setdefault("max_workers", 4)
-    config.setdefault("max_parallel_queries", 10)
+    config.setdefault("max_parallel_queries", 100)
     config.setdefault("load_type", "FULL")
     config.setdefault("dry_run", False)
     config.setdefault("max_retries", 3)

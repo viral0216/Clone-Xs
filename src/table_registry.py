@@ -149,6 +149,7 @@ TABLE_SECTIONS = [
             "reconciliation_runs", "reconciliation_details",
             "alert_rules", "alert_history",
             "quality_rules", "quality_violations",
+            "reconciliation_schedules",
         ],
     },
     {
@@ -156,7 +157,7 @@ TABLE_SECTIONS = [
         "title": "Data Quality Monitoring",
         "subtitle": "Anomaly detection baselines and freshness tracking",
         "schema": "data_quality",
-        "tables": ["metric_baselines", "freshness_history"],
+        "tables": ["metric_baselines", "freshness_history", "monitoring_configs", "expectation_suites"],
     },
     {
         "key": "lineage",
@@ -192,6 +193,13 @@ TABLE_SECTIONS = [
         "subtitle": "Pipeline definitions, execution runs, and step results",
         "schema": "pipelines",
         "tables": ["pipelines", "pipeline_runs", "pipeline_step_results"],
+    },
+    {
+        "key": "state",
+        "title": "State & Scheduler",
+        "subtitle": "Clone state tracking, TTL policies, and scheduler configuration",
+        "schema": "state",
+        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state"],
     },
 ]
 

@@ -1,7 +1,7 @@
 [
   {
-    "config_id": "dc924300-57b",
-    "table_fqn": "cat.schema.table",
+    "config_id": "4aa46e3e-3c3",
+    "table_fqn": "samples_clone.accuweather.forecast_daily_calendar_imperial",
     "metrics": [
       "row_count",
       "null_rate",
@@ -12,7 +12,1463 @@
     "baseline_days": 7,
     "enabled": true,
     "baseline_status": "pending",
-    "created_at": "2026-04-04T12:52:13",
-    "updated_at": "2026-04-04T13:05:29"
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:18:24"
+  },
+  {
+    "config_id": "93180af6-ce2",
+    "table_fqn": "samples_clone.accuweather.forecast_daily_calendar_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "be2efce4-e66",
+    "table_fqn": "samples_clone.accuweather.forecast_daynight_imperial",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "dc1428d1-53b",
+    "table_fqn": "samples_clone.accuweather.forecast_daynight_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "63c1705c-476",
+    "table_fqn": "samples_clone.accuweather.forecast_hourly_imperial",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "0394b1e1-a81",
+    "table_fqn": "samples_clone.accuweather.forecast_hourly_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "3137e88b-701",
+    "table_fqn": "samples_clone.accuweather.historical_daily_calendar_imperial",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "ae6d4657-c0a",
+    "table_fqn": "samples_clone.accuweather.historical_daily_calendar_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "9355656f-cb7",
+    "table_fqn": "samples_clone.accuweather.historical_daynight_imperial",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "435ffb25-7f6",
+    "table_fqn": "samples_clone.accuweather.historical_daynight_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "3a99a3b8-01d",
+    "table_fqn": "samples_clone.accuweather.historical_hourly_imperial",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "e08d783e-6d1",
+    "table_fqn": "samples_clone.accuweather.historical_hourly_metric",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "f9803a0f-12e",
+    "table_fqn": "samples_clone.bakehouse.media_customer_reviews",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "96fde4da-22d",
+    "table_fqn": "samples_clone.bakehouse.media_gold_reviews_chunked",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "e9408e0c-621",
+    "table_fqn": "samples_clone.bakehouse.sales_customers",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "1d8b47f1-668",
+    "table_fqn": "samples_clone.bakehouse.sales_franchises",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "27db8333-429",
+    "table_fqn": "samples_clone.bakehouse.sales_suppliers",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "a5985ef3-11a",
+    "table_fqn": "samples_clone.bakehouse.sales_transactions",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "3aa3723b-8f2",
+    "table_fqn": "samples_clone.healthverity.claims_sample_synthetic",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "47740e5b-766",
+    "table_fqn": "samples_clone.nyctaxi.trips",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "eeaef3c4-0ea",
+    "table_fqn": "samples_clone.tpcds_sf1.call_center",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "bac47028-141",
+    "table_fqn": "samples_clone.tpcds_sf1.catalog_page",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "f0a9c250-287",
+    "table_fqn": "samples_clone.tpcds_sf1.catalog_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "fdc8731f-d98",
+    "table_fqn": "samples_clone.tpcds_sf1.catalog_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "40d407b9-669",
+    "table_fqn": "samples_clone.tpcds_sf1.customer",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "4db5a6f2-9f1",
+    "table_fqn": "samples_clone.tpcds_sf1.customer_address",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "47735ce6-672",
+    "table_fqn": "samples_clone.tpcds_sf1.customer_demographics",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "2f62ff78-a12",
+    "table_fqn": "samples_clone.tpcds_sf1.date_dim",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "d96ace1f-b85",
+    "table_fqn": "samples_clone.tpcds_sf1.household_demographics",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "7b2a4ec4-b2b",
+    "table_fqn": "samples_clone.tpcds_sf1.income_band",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "9a17ebef-977",
+    "table_fqn": "samples_clone.tpcds_sf1.inventory",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "8acf6040-993",
+    "table_fqn": "samples_clone.tpcds_sf1.item",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "b84b2f84-c92",
+    "table_fqn": "samples_clone.tpcds_sf1.promotion",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "3971c62d-52d",
+    "table_fqn": "samples_clone.tpcds_sf1.reason",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "5eddbfc9-7e9",
+    "table_fqn": "samples_clone.tpcds_sf1.ship_mode",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "e4b6e4b7-089",
+    "table_fqn": "samples_clone.tpcds_sf1.store",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "0c150335-8bc",
+    "table_fqn": "samples_clone.tpcds_sf1.store_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "6f6ea32e-6bd",
+    "table_fqn": "samples_clone.tpcds_sf1.store_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "8e1681bd-65a",
+    "table_fqn": "samples_clone.tpcds_sf1.time_dim",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "804d7a3f-966",
+    "table_fqn": "samples_clone.tpcds_sf1.warehouse",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "dc1fcebf-0a2",
+    "table_fqn": "samples_clone.tpcds_sf1.web_page",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "90c9d037-6b0",
+    "table_fqn": "samples_clone.tpcds_sf1.web_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "31168f20-a25",
+    "table_fqn": "samples_clone.tpcds_sf1.web_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "a4660143-247",
+    "table_fqn": "samples_clone.tpcds_sf1.web_site",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "1013901b-98d",
+    "table_fqn": "samples_clone.tpcds_sf1000.call_center",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "59d4c2e3-9e9",
+    "table_fqn": "samples_clone.tpcds_sf1000.catalog_page",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "3c6a36bd-4c0",
+    "table_fqn": "samples_clone.tpcds_sf1000.catalog_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "f32b59e4-738",
+    "table_fqn": "samples_clone.tpcds_sf1000.catalog_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "a295a0b0-54e",
+    "table_fqn": "samples_clone.tpcds_sf1000.customer",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "4d9099f8-dd4",
+    "table_fqn": "samples_clone.tpcds_sf1000.customer_address",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "330444e9-d96",
+    "table_fqn": "samples_clone.tpcds_sf1000.customer_demographics",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "0f005966-3af",
+    "table_fqn": "samples_clone.tpcds_sf1000.date_dim",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "f2d6db52-33e",
+    "table_fqn": "samples_clone.tpcds_sf1000.household_demographics",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "fc33a734-2a1",
+    "table_fqn": "samples_clone.tpcds_sf1000.income_band",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "c66de68c-05e",
+    "table_fqn": "samples_clone.tpcds_sf1000.inventory",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "e4ec06c2-e8b",
+    "table_fqn": "samples_clone.tpcds_sf1000.item",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "95aa58a0-a86",
+    "table_fqn": "samples_clone.tpcds_sf1000.promotion",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "7b9574e9-8e9",
+    "table_fqn": "samples_clone.tpcds_sf1000.reason",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "fef2e8a7-103",
+    "table_fqn": "samples_clone.tpcds_sf1000.ship_mode",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "2c39a4bc-093",
+    "table_fqn": "samples_clone.tpcds_sf1000.store",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "106c598a-1be",
+    "table_fqn": "samples_clone.tpcds_sf1000.store_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "5cb281d7-f2f",
+    "table_fqn": "samples_clone.tpcds_sf1000.store_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "8bb9bab8-d83",
+    "table_fqn": "samples_clone.tpcds_sf1000.time_dim",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "50aa87e1-848",
+    "table_fqn": "samples_clone.tpcds_sf1000.warehouse",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "a8f09898-165",
+    "table_fqn": "samples_clone.tpcds_sf1000.web_page",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "26495c2e-39b",
+    "table_fqn": "samples_clone.tpcds_sf1000.web_returns",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "634c9ca0-6c5",
+    "table_fqn": "samples_clone.tpcds_sf1000.web_sales",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "2412d7d1-53d",
+    "table_fqn": "samples_clone.tpcds_sf1000.web_site",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "520b1ecc-b35",
+    "table_fqn": "samples_clone.tpch.customer",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "edf290aa-c4a",
+    "table_fqn": "samples_clone.tpch.lineitem",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "bca436c2-01c",
+    "table_fqn": "samples_clone.tpch.nation",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "1022c96f-737",
+    "table_fqn": "samples_clone.tpch.orders",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "2654cdeb-55b",
+    "table_fqn": "samples_clone.tpch.part",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "a53a2a94-1c8",
+    "table_fqn": "samples_clone.tpch.partsupp",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "8ba6354b-421",
+    "table_fqn": "samples_clone.tpch.region",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "340514a1-ebf",
+    "table_fqn": "samples_clone.tpch.supplier",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "ea9749ce-696",
+    "table_fqn": "samples_clone.wanderbricks.amenities",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "931d85b5-a5b",
+    "table_fqn": "samples_clone.wanderbricks.booking_updates",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "59c264fd-4ca",
+    "table_fqn": "samples_clone.wanderbricks.bookings",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "616bf796-c05",
+    "table_fqn": "samples_clone.wanderbricks.clickstream",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "7ce392f7-562",
+    "table_fqn": "samples_clone.wanderbricks.countries",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "61b98663-c97",
+    "table_fqn": "samples_clone.wanderbricks.customer_support_logs",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "bea3ebd1-265",
+    "table_fqn": "samples_clone.wanderbricks.destinations",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "082a9cab-480",
+    "table_fqn": "samples_clone.wanderbricks.employees",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "f1f0eaf7-160",
+    "table_fqn": "samples_clone.wanderbricks.hosts",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "73ec2675-aa2",
+    "table_fqn": "samples_clone.wanderbricks.page_views",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "e5817519-667",
+    "table_fqn": "samples_clone.wanderbricks.payments",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "9fb45c70-b68",
+    "table_fqn": "samples_clone.wanderbricks.properties",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "7b0159e4-c25",
+    "table_fqn": "samples_clone.wanderbricks.property_amenities",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "ed697ef2-992",
+    "table_fqn": "samples_clone.wanderbricks.property_images",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "de5ddd55-652",
+    "table_fqn": "samples_clone.wanderbricks.reviews",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
+  },
+  {
+    "config_id": "173d7884-4d8",
+    "table_fqn": "samples_clone.wanderbricks.users",
+    "metrics": [
+      "row_count",
+      "null_rate",
+      "distinct_count"
+    ],
+    "frequency": "daily",
+    "auto_baseline": true,
+    "baseline_days": 7,
+    "enabled": true,
+    "baseline_status": "pending",
+    "created_at": "2026-04-04T14:10:34",
+    "updated_at": "2026-04-04T14:10:34"
   }
 ]

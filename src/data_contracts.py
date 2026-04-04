@@ -28,15 +28,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _get_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.governance"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "governance")
 
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
+from src.client import sql_escape as _esc  # noqa: E402
 
 
 def _parse_val(v):

@@ -1,8 +1,9 @@
 """Management endpoints: rollback, preflight, PII scan, sync."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
+from api.routers.deps import get_warehouse_id
 from api.models.management import (
     PIIRemediationRequest,
     PIIScanRequest,
@@ -22,7 +23,7 @@ async def run_preflight(req: PreflightRequest, client=Depends(get_db_client)):
     """Run pre-flight checks before cloning."""
     from src.preflight import run_preflight
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = run_preflight(
         client, wid, req.source_catalog, req.destination_catalog,
         check_write=req.check_write,
@@ -53,7 +54,7 @@ async def rollback(req: RollbackRequest, client=Depends(get_db_client)):
     """Rollback a previous clone operation."""
     from src.rollback import rollback
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = rollback(client, wid, req.log_file, drop_catalog=req.drop_catalog, config=config)
     return result
 
@@ -63,7 +64,7 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
     """Scan catalog for PII columns."""
     from src.pii_detection import scan_catalog_for_pii
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
 
     # Merge request pii_config with file-based config (request overrides file)
     pii_config = config.get("pii_detection") or {}
@@ -108,9 +109,8 @@ async def get_pii_scan_history(catalog: str, limit: int = 20, client=Depends(get
     """Get PII scan history for a catalog."""
     from src.pii_scan_store import PIIScanStore
     config = await get_app_config()
-    wid = config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    store = PIIScanStore(client, wid, state_catalog=sc)
+    wid = get_warehouse_id(config)
+    store = PIIScanStore(client, wid, config=config)
     return store.get_scan_history(catalog, limit=limit)
 
 
@@ -119,9 +119,8 @@ async def get_pii_scan_detail(scan_id: str, client=Depends(get_db_client)):
     """Get full details for a specific PII scan."""
     from src.pii_scan_store import PIIScanStore
     config = await get_app_config()
-    wid = config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    store = PIIScanStore(client, wid, state_catalog=sc)
+    wid = get_warehouse_id(config)
+    store = PIIScanStore(client, wid, config=config)
     detections = store.get_scan_detections(scan_id)
     return {"scan_id": scan_id, "detections": detections}
 
@@ -131,9 +130,8 @@ async def diff_pii_scans(scan_a: str, scan_b: str, client=Depends(get_db_client)
     """Compare two PII scans and return differences."""
     from src.pii_scan_store import PIIScanStore
     config = await get_app_config()
-    wid = config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    store = PIIScanStore(client, wid, state_catalog=sc)
+    wid = get_warehouse_id(config)
+    store = PIIScanStore(client, wid, config=config)
     return store.diff_scans(scan_a, scan_b)
 
 
@@ -144,12 +142,10 @@ async def apply_pii_tags(req: PIITagRequest, client=Depends(get_db_client)):
     from src.pii_scan_store import PIIScanStore
     from src.pii_detection import scan_catalog_for_pii
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-
+    wid = req.warehouse_id or get_warehouse_id(config)
     # Get detections from a specific scan or run a fresh scan
     if req.scan_id:
-        store = PIIScanStore(client, wid, state_catalog=sc)
+        store = PIIScanStore(client, wid, config=config)
         raw_dets = store.get_scan_detections(req.scan_id)
         # Remap keys from store format to detection format
         detections = [{
@@ -176,9 +172,8 @@ async def update_pii_remediation(req: PIIRemediationRequest, client=Depends(get_
     """Update remediation status for a PII column."""
     from src.pii_scan_store import PIIScanStore
     config = await get_app_config()
-    wid = config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    store = PIIScanStore(client, wid, state_catalog=sc)
+    wid = get_warehouse_id(config)
+    store = PIIScanStore(client, wid, config=config)
     store.init_tables()
     store.update_remediation(
         catalog=req.catalog,
@@ -197,9 +192,8 @@ async def get_pii_remediation(catalog: str, client=Depends(get_db_client)):
     """Get remediation statuses for a catalog."""
     from src.pii_scan_store import PIIScanStore
     config = await get_app_config()
-    wid = config["sql_warehouse_id"]
-    sc = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    store = PIIScanStore(client, wid, state_catalog=sc)
+    wid = get_warehouse_id(config)
+    store = PIIScanStore(client, wid, config=config)
     return store.get_remediation_status(catalog)
 
 
@@ -436,7 +430,7 @@ async def get_table_info(catalog: str, schema: str, table: str, client=Depends(g
     info = get_table_info_sdk(client, full_name)
     if info:
         return info
-    return {"error": f"Table {full_name} not found", "name": table, "full_name": full_name}
+    raise HTTPException(status_code=404, detail=f"Table {full_name} not found")
 
 
 @router.get("/audit")
@@ -520,7 +514,6 @@ async def get_table_registry():
 @router.post("/audit/init")
 async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     """Initialize audit and run log Delta tables in Unity Catalog."""
-    from fastapi import HTTPException
     config = await get_app_config()
     wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
     if not wid:
@@ -561,9 +554,9 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create metrics table
     try:
         from src.client import execute_sql
-        catalog = audit_config["audit_trail"]["catalog"]
-        metrics_schema = f"{catalog}.metrics"
-        metrics_fqn = f"{metrics_schema}.clone_metrics"
+        from src.table_registry import get_schema_fqn, get_table_fqn
+        metrics_schema = get_schema_fqn(audit_config, "metrics")
+        metrics_fqn = get_table_fqn(audit_config, "metrics", "clone_metrics")
         try:
             execute_sql(client, wid, f"CREATE SCHEMA IF NOT EXISTS {metrics_schema}")
         except Exception:
@@ -621,45 +614,41 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create PII scan tables
     try:
         from src.pii_scan_store import PIIScanStore
-        catalog = audit_config["audit_trail"]["catalog"]
-        pii_store = PIIScanStore(client, wid, state_catalog=catalog)
+        pii_store = PIIScanStore(client, wid, config=audit_config)
         pii_store.init_tables()
-        tables_created.append(f"{catalog}.pii.pii_scans")
-        tables_created.append(f"{catalog}.pii.pii_detections")
-        tables_created.append(f"{catalog}.pii.pii_remediation")
+        tables_created.append(f"{pii_store.state_catalog}.{pii_store.state_schema}.pii_scans")
+        tables_created.append(f"{pii_store.state_catalog}.{pii_store.state_schema}.pii_detections")
+        tables_created.append(f"{pii_store.state_catalog}.{pii_store.state_schema}.pii_remediation")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create PII tables: {e}")
     # Create RTBF (Right to Be Forgotten) tables
     try:
         from src.rtbf_store import RTBFStore
-        catalog = audit_config["audit_trail"]["catalog"]
-        rtbf_store = RTBFStore(client, wid, state_catalog=catalog)
+        rtbf_store = RTBFStore(client, wid, config=audit_config)
         rtbf_store.init_tables()
-        tables_created.append(f"{catalog}.rtbf.rtbf_requests")
-        tables_created.append(f"{catalog}.rtbf.rtbf_actions")
-        tables_created.append(f"{catalog}.rtbf.rtbf_certificates")
+        tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_requests")
+        tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_actions")
+        tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_certificates")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create RTBF tables: {e}")
     # Create DSAR tables
     try:
         from src.dsar_store import DSARStore
-        catalog = audit_config["audit_trail"]["catalog"]
-        dsar_store = DSARStore(client, wid, state_catalog=catalog)
+        dsar_store = DSARStore(client, wid, config=audit_config)
         dsar_store.init_tables()
-        tables_created.append(f"{catalog}.dsar.dsar_requests")
-        tables_created.append(f"{catalog}.dsar.dsar_actions")
-        tables_created.append(f"{catalog}.dsar.dsar_exports")
+        tables_created.append(f"{dsar_store.state_catalog}.{dsar_store.state_schema}.dsar_requests")
+        tables_created.append(f"{dsar_store.state_catalog}.{dsar_store.state_schema}.dsar_actions")
+        tables_created.append(f"{dsar_store.state_catalog}.{dsar_store.state_schema}.dsar_exports")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create DSAR tables: {e}")
     # Create Pipeline tables
     try:
         from src.pipeline_store import PipelineStore
-        catalog = audit_config["audit_trail"]["catalog"]
-        pipe_store = PipelineStore(client, wid, state_catalog=catalog)
+        pipe_store = PipelineStore(client, wid, config=audit_config)
         pipe_store.init_tables()
-        tables_created.append(f"{catalog}.pipelines.pipelines")
-        tables_created.append(f"{catalog}.pipelines.pipeline_runs")
-        tables_created.append(f"{catalog}.pipelines.pipeline_step_results")
+        tables_created.append(f"{pipe_store.state_catalog}.pipelines.pipelines")
+        tables_created.append(f"{pipe_store.state_catalog}.pipelines.pipeline_runs")
+        tables_created.append(f"{pipe_store.state_catalog}.pipelines.pipeline_step_results")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create Pipeline tables: {e}")
     # ── Pre-create all required schemas ─────────────────────────────────
@@ -668,9 +657,9 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     if storage_location:
         gov_config["catalog_location"] = storage_location
     errors = []
-    cat = audit_config["audit_trail"]["catalog"]
-    audit_sch = audit_config["audit_trail"].get("schema", "logs")
-    required_schemas = [audit_sch, "governance", "reconciliation", "data_quality", "lineage", "metrics", "pii", "rtbf", "dsar", "pipelines"]
+    from src.table_registry import get_catalog, _DEFAULT_SCHEMAS
+    cat = get_catalog(audit_config)
+    required_schemas = list(set(_DEFAULT_SCHEMAS.values()))
 
     # Ensure catalog exists
     from src.catalog_utils import ensure_catalog, ensure_schema
@@ -733,16 +722,20 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     except Exception as e:
         errors.append(f"lineage: {e}")
 
-    # Reconciliation quality rules (Spark-only, skip if no Spark)
+    # Reconciliation quality rules
     try:
-        from src.reconciliation_rules import _ensure_rules_table, _ensure_violations_table
-        from src.anomaly_detection import _get_spark
-        spark = _get_spark()
-        if spark:
-            _ensure_rules_table(spark, gov_config)
-            _ensure_violations_table(spark, gov_config)
-    except Exception:
-        pass  # Spark not available — these tables are optional
+        from src.reconciliation_rules import ensure_quality_tables_sql
+        ensure_quality_tables_sql(client, wid, gov_config)
+    except Exception as e:
+        errors.append(f"reconciliation_rules: {e}")
+
+    # MDM tables
+    try:
+        from src.mdm_store import MDMStore
+        mdm_store = MDMStore(client, wid, config=audit_config)
+        mdm_store.init_tables()
+    except Exception as e:
+        errors.append(f"mdm: {e}")
 
     # ── Build tables_created from registry ────────────────────────────────
     from src.table_registry import get_all_table_fqns
@@ -815,9 +808,11 @@ async def get_job_run_log(job_id: str, client=Depends(get_db_client)):
     try:
         from src.run_logs import get_run_log_detail
         detail = get_run_log_detail(client, wid, job_id, config)
-        return detail or {"error": "Log not found"}
+        if not detail:
+            raise HTTPException(status_code=404, detail="Log not found")
+        return detail
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/compliance")
@@ -872,7 +867,7 @@ async def create_schedule_endpoint(req: dict, client=Depends(get_db_client)):
             client=client,
         )
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/schedule/{schedule_id}/pause")
@@ -880,7 +875,9 @@ async def pause_schedule_endpoint(schedule_id: str):
     """Pause a scheduled clone job."""
     from src.scheduler import pause_schedule
     result = pause_schedule(schedule_id)
-    return result or {"error": "Schedule not found"}
+    if not result:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return result
 
 
 @router.post("/schedule/{schedule_id}/resume")
@@ -888,7 +885,9 @@ async def resume_schedule_endpoint(schedule_id: str):
     """Resume a paused scheduled clone job."""
     from src.scheduler import resume_schedule
     result = resume_schedule(schedule_id)
-    return result or {"error": "Schedule not found"}
+    if not result:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return result
 
 
 @router.delete("/schedule/{schedule_id}")
@@ -1288,7 +1287,6 @@ async def preview_data(req: dict, client=Depends(get_db_client)):
 @router.post("/execute-sql")
 async def execute_sql_endpoint(req: dict, client=Depends(get_db_client)):
     """Execute arbitrary SQL via the configured warehouse (for testing/admin)."""
-    from fastapi import HTTPException
     config = await get_app_config()
     wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
     sql = req.get("sql", "")
@@ -1311,7 +1309,7 @@ async def start_warehouse(req: dict, client=Depends(get_db_client)):
         client.warehouses.start(req["warehouse_id"])
         return {"status": "starting", "warehouse_id": req["warehouse_id"]}
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/warehouse/stop")
@@ -1321,7 +1319,7 @@ async def stop_warehouse(req: dict, client=Depends(get_db_client)):
         client.warehouses.stop(req["warehouse_id"])
         return {"status": "stopping", "warehouse_id": req["warehouse_id"]}
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/rbac/policies")
@@ -1341,7 +1339,7 @@ async def create_rbac_policy(req: RbacPolicyRequest):
         from src.rbac import create_policy
         return create_policy(req.model_dump())
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/rbac/policies/{index}")
@@ -1351,7 +1349,7 @@ async def delete_rbac_policy(index: int):
         from src.rbac import delete_policy
         return delete_policy(index)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/plugins")
@@ -1371,7 +1369,7 @@ async def toggle_plugin_body(req: dict):
         from src.plugin_registry import toggle_plugin
         return toggle_plugin(req.get("name", ""), req.get("enabled", True))
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/plugins/{plugin_id}/enable")
@@ -1381,7 +1379,7 @@ async def enable_plugin(plugin_id: str):
         from src.plugin_registry import toggle_plugin
         return toggle_plugin(plugin_id, True)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/plugins/{plugin_id}/disable")
@@ -1391,7 +1389,7 @@ async def disable_plugin(plugin_id: str):
         from src.plugin_registry import toggle_plugin
         return toggle_plugin(plugin_id, False)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/monitor/metrics")
@@ -1648,7 +1646,7 @@ async def cache_invalidate(request: Request):
     body = await request.json()
     catalog = body.get("catalog", "")
     if not catalog:
-        return {"error": "catalog is required"}
+        raise HTTPException(status_code=400, detail="catalog is required")
     from src.client import invalidate_catalog_cache
     removed = invalidate_catalog_cache(catalog)
     return {"status": "invalidated", "catalog": catalog, "entries_removed": removed}

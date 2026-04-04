@@ -4,6 +4,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
+from src.log_formatter import (
+    header, divider, kv, bold, bold_green, bold_red, bold_yellow,
+    green, red, yellow, OK, FAIL, WARN, ARROW,
+)
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -212,28 +216,41 @@ def validate_catalog(
     }
 
     # Print summary
-    logger.info("=" * 60)
-    logger.info(f"VALIDATION SUMMARY: {source_catalog} vs {dest_catalog}")
-    logger.info("=" * 60)
-    logger.info(f"  Total tables:  {total}")
-    logger.info(f"  Matched:       {matched}")
-    logger.info(f"  Mismatched:    {mismatched}")
-    logger.info(f"  Errors:        {errors}")
+    title = f"VALIDATION SUMMARY: {source_catalog} vs {dest_catalog}"
+    logger.info(header(title))
+    logger.info(kv("Total tables", bold(str(total))))
+    logger.info(f"  {OK} {kv('Matched', bold_green(str(matched)))}")
+    if mismatched:
+        logger.info(f"  {FAIL} {kv('Mismatched', bold_red(str(mismatched)))}")
+    else:
+        logger.info(f"  {OK} {kv('Mismatched', bold_green('0'))}")
+    if errors:
+        logger.info(f"  {WARN} {kv('Errors', bold_yellow(str(errors)))}")
+    else:
+        logger.info(kv("Errors", "0"))
     if use_checksum:
-        logger.info(f"  Checksum mismatches: {checksum_mismatches}")
+        if checksum_mismatches:
+            logger.info(f"  {FAIL} {kv('Checksum mismatches', bold_red(str(checksum_mismatches)))}")
+        else:
+            logger.info(f"  {OK} {kv('Checksum mismatches', bold_green('0'))}")
 
     if summary["mismatched_tables"]:
-        logger.warning("  Mismatched tables:")
+        logger.info(divider())
+        logger.warning(f"  {WARN} {bold_yellow('Mismatched tables:')}")
         for t in summary["mismatched_tables"]:
             extra = ""
             if t.get("checksum_match") is False:
-                extra = " [checksum mismatch]"
+                extra = f" {bold_red('[checksum mismatch]')}"
             logger.warning(
-                f"    {t['schema']}.{t['table']}: "
-                f"source={t['source_count']} dest={t['dest_count']}{extra}"
+                f"    {FAIL} {t['schema']}.{t['table']}: "
+                f"source={bold(str(t['source_count']))} {ARROW} dest={bold(str(t['dest_count']))}{extra}"
             )
 
-    logger.info("=" * 60)
+    logger.info(divider())
+    if mismatched == 0 and errors == 0:
+        logger.info(f"  {OK} {bold_green('Validation passed')}")
+    else:
+        logger.info(f"  {WARN} {bold_yellow('Validation completed with issues')}")
 
     # Save run log + audit trail to Delta (skip if called from API JobManager)
     if not kwargs.get("_api_managed_logs"):

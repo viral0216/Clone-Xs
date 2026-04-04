@@ -13,6 +13,11 @@ router = APIRouter()
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+def get_warehouse_id(config: dict) -> str:
+    """Safely get the SQL warehouse ID from config."""
+    return config.get("sql_warehouse_id", "")
+
+
 def _validate_catalog(catalog: str) -> str:
     """Validate catalog name is a safe SQL identifier."""
     if not _IDENTIFIER_RE.match(catalog):
@@ -88,7 +93,7 @@ async def view_dependencies(req: DepsRequest, client=Depends(get_db_client)):
     try:
         from src.dependencies import get_view_dependencies
         config = await get_app_config()
-        wid = req.warehouse_id or config["sql_warehouse_id"]
+        wid = req.warehouse_id or get_warehouse_id(config)
         deps = get_view_dependencies(client, wid, req.catalog, req.schema_name)
         return {"catalog": req.catalog, "schema": req.schema_name, "dependencies": deps}
     except Exception as e:
@@ -101,7 +106,7 @@ async def function_dependencies(req: DepsRequest, client=Depends(get_db_client))
     try:
         from src.dependencies import get_function_dependencies
         config = await get_app_config()
-        wid = req.warehouse_id or config["sql_warehouse_id"]
+        wid = req.warehouse_id or get_warehouse_id(config)
         deps = get_function_dependencies(client, wid, req.catalog, req.schema_name)
         return {"catalog": req.catalog, "schema": req.schema_name, "dependencies": deps}
     except Exception as e:
@@ -114,7 +119,7 @@ async def creation_order(req: DepsRequest, client=Depends(get_db_client)):
     try:
         from src.dependencies import get_ordered_views
         config = await get_app_config()
-        wid = req.warehouse_id or config["sql_warehouse_id"]
+        wid = req.warehouse_id or get_warehouse_id(config)
         order = get_ordered_views(client, wid, req.catalog, req.schema_name)
         return {"catalog": req.catalog, "schema": req.schema_name, "creation_order": order}
     except Exception as e:

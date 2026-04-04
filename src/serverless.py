@@ -158,7 +158,8 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
 
     cell_3 = "\n".join([
         "import json, logging, os",
-        "logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')",
+        "from src.log_formatter import setup_color_logging",
+        "setup_color_logging(verbose=False)",
         "logger = logging.getLogger('clxs')",
         "",
         "# Set auth env vars from notebook context before importing the library.",
@@ -172,6 +173,12 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
         "",
         "dbutils.widgets.text('config', '{}')",
         "config = json.loads(dbutils.widgets.get('config'))",
+        "",
+        "# Reconfigure logging with verbose level from config",
+        "if config.get('verbose', False):",
+        "    setup_color_logging(verbose=True)",
+        "    logger.info('Verbose logging enabled')",
+        "",
         "logger.info(f\"Clone job: {config.get('source_catalog')} -> {config.get('dest_catalog')}\")",
         "",
         "# Wire spark.sql() as the SQL executor",
@@ -179,8 +186,11 @@ def _ensure_clone_notebook(client: WorkspaceClient, wheel_volume_path: str) -> s
         "    df = spark.sql(sql)",
         "    return [row.asDict() for row in df.collect()]",
         "",
-        "from src.client import set_sql_executor",
+        "from src.client import set_sql_executor, get_executor_info",
         "set_sql_executor(spark_sql_executor)",
+        "info = get_executor_info()",
+        "assert info['executor_set'], 'FATAL: SQL executor not set — queries will hit warehouse!'",
+        "logger.info(f'Execution mode: {info}')",
         "",
         "# Run the clone — pass all config options through",
         "from src.catalog_clone_api import clone_full_catalog",
@@ -374,14 +384,28 @@ def submit_clone_job(
     run_id = run.response.run_id
     logger.info("Job submitted (run_id=%s). Waiting for completion...", run_id)
 
+    # Fetch the full run details to get job_id (not available on SubmitRunResponse)
+    dbx_job_id = None
+    try:
+        run_details = client.jobs.get_run(run_id)
+        dbx_job_id = run_details.job_id
+        logger.info("Job submitted (run_id=%s, job_id=%s). Waiting for completion...", run_id, dbx_job_id)
+    except Exception:
+        pass
+
     # Wait for completion
     result = run.result(timeout=timedelta(seconds=timeout))
+
+    # Try to get job_id from result if we didn't get it earlier
+    if not dbx_job_id:
+        dbx_job_id = getattr(result, "job_id", None)
 
     # Extract result from job output
     clone_result = _extract_result(client, result, run_id)
 
     if clone_result:
         clone_result["run_id"] = run_id
+        clone_result["job_id"] = dbx_job_id
         logger.info("Serverless clone complete.")
     else:
         logger.warning("Job completed but could not parse result. Check job logs (run_id=%s).", run_id)
@@ -392,6 +416,7 @@ def submit_clone_job(
             "functions": {"success": 0, "failed": 0, "skipped": 0},
             "volumes": {"success": 0, "failed": 0, "skipped": 0},
             "run_id": run_id,
+            "job_id": dbx_job_id,
             "errors": [f"Check Databricks job run_id={run_id} for details"],
         }
 
@@ -446,32 +471,16 @@ def build_job_config(config: dict) -> dict:
 
 
 def _get_audit_catalog(config: dict) -> str:
-    """Resolve audit catalog from config, trying multiple config shapes."""
-    # Try audit_trail.catalog (from clone_config.yaml)
-    at = config.get("audit_trail")
-    if isinstance(at, dict) and at.get("catalog"):
-        return at["catalog"]
-    # Try audit.catalog
-    a = config.get("audit")
-    if isinstance(a, dict) and a.get("catalog"):
-        return a["catalog"]
-    # Try direct key
-    if config.get("audit_catalog"):
-        return config["audit_catalog"]
-    return "clone_audit"
+    """Resolve audit catalog from config via table_registry."""
+    from src.table_registry import get_catalog
+    return get_catalog(config)
 
 
 def _get_audit_schema(config: dict) -> str:
-    """Resolve audit schema from config, trying multiple config shapes."""
-    at = config.get("audit_trail")
-    if isinstance(at, dict) and at.get("schema"):
-        return at["schema"]
-    a = config.get("audit")
-    if isinstance(a, dict) and a.get("schema"):
-        return a["schema"]
-    if config.get("audit_schema"):
-        return config["audit_schema"]
-    return "logs"
+    """Resolve audit schema from config via table_registry."""
+    from src.table_registry import get_schema_fqn
+    schema_fqn = get_schema_fqn(config, "logs")
+    return schema_fqn.split(".", 1)[1] if "." in schema_fqn else "logs"
 
 
 def _extract_result(client: WorkspaceClient, result, run_id: int) -> dict | None:

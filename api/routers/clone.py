@@ -1,6 +1,6 @@
 """Clone endpoints + WebSocket progress."""
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
 from api.models.clone import CloneJobResponse, CloneJobStatus, CloneRequest
@@ -54,7 +54,7 @@ async def get_job(job_id: str, jm: JobManager = Depends(get_job_manager)):
     """Get clone job status."""
     job = jm.get_job(job_id)
     if not job:
-        return {"error": "Job not found"}
+        raise HTTPException(status_code=404, detail="Job not found")
     return CloneJobStatus(**job)
 
 

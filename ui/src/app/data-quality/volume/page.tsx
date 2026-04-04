@@ -608,11 +608,14 @@ export default function VolumeMonitorPage() {
               <select
                 value={filterSchema}
                 onChange={(e) => setFilterSchema(e.target.value)}
-                className={`h-7 rounded-full border px-3 text-xs font-medium transition-colors ${
+                className={`h-9 rounded-lg border px-3 pr-8 text-sm font-medium transition-colors appearance-none bg-no-repeat bg-[length:16px] bg-[right_8px_center] cursor-pointer ${
                   filterSchema
                     ? "bg-[#E8453C] text-white border-[#E8453C]"
-                    : "border-border text-muted-foreground hover:border-[#E8453C]/50"
+                    : "bg-card border-border text-foreground shadow-sm hover:border-[#E8453C]/50"
                 }`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='${filterSchema ? 'white' : '%236b7280'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                }}
               >
                 <option value="">All Schemas ({availableSchemas.length})</option>
                 {availableSchemas.map((s) => {

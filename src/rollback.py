@@ -285,19 +285,10 @@ def list_rollback_logs() -> list[dict]:
 
 # ─── Delta Table Persistence ───────────────────────────────────────────
 
-DEFAULT_ROLLBACK_TABLE = "rollback_logs"
-
-
 def get_rollback_table_fqn(config: dict | None = None) -> str:
     """Get fully qualified name for the rollback Delta table."""
-    if config:
-        audit = config.get("audit_trail", {})
-        catalog = audit.get("catalog", "clone_audit")
-        schema = audit.get("schema", "logs")
-    else:
-        catalog = "clone_audit"
-        schema = "logs"
-    return f"{catalog}.{schema}.{DEFAULT_ROLLBACK_TABLE}"
+    from src.table_registry import get_table_fqn
+    return get_table_fqn(config or {}, "logs", "rollback_logs")
 
 
 def ensure_rollback_table(client, warehouse_id: str, config: dict | None = None) -> str:

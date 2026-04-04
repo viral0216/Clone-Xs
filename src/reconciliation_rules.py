@@ -11,22 +11,14 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AUDIT_CATALOG = "clone_audit"
-
-
-def _get_audit_catalog(config: dict | None = None) -> str:
-    """Resolve audit catalog from config, falling back to default."""
-    if config:
-        return config.get("audit_trail", {}).get("catalog", DEFAULT_AUDIT_CATALOG)
-    return DEFAULT_AUDIT_CATALOG
-
-
 def _rules_table(config: dict | None = None) -> str:
-    return f"{_get_audit_catalog(config)}.reconciliation.quality_rules"
+    from src.table_registry import get_table_fqn
+    return get_table_fqn(config or {}, "reconciliation", "quality_rules")
 
 
 def _violations_table(config: dict | None = None) -> str:
-    return f"{_get_audit_catalog(config)}.reconciliation.quality_violations"
+    from src.table_registry import get_table_fqn
+    return get_table_fqn(config or {}, "reconciliation", "quality_violations")
 
 
 def _get_spark():
@@ -43,8 +35,9 @@ def _get_spark():
 
 def _ensure_rules_table(spark, config: dict | None = None) -> None:
     """Create the quality_rules Delta table if it does not exist."""
-    catalog = _get_audit_catalog(config)
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.reconciliation")
+    from src.table_registry import get_schema_fqn
+    schema_fqn = get_schema_fqn(config or {}, "reconciliation")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_fqn}")
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {_rules_table(config)} (
             rule_id STRING,
@@ -65,9 +58,53 @@ def _ensure_rules_table(spark, config: dict | None = None) -> None:
 
 def _ensure_violations_table(spark, config: dict | None = None) -> None:
     """Create the quality_violations Delta table if it does not exist."""
-    catalog = _get_audit_catalog(config)
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.reconciliation")
+    from src.table_registry import get_schema_fqn
+    schema_fqn = get_schema_fqn(config or {}, "reconciliation")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_fqn}")
     spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {_violations_table(config)} (
+            violation_id STRING,
+            rule_id STRING,
+            rule_name STRING,
+            rule_type STRING,
+            catalog STRING,
+            schema_name STRING,
+            table_name STRING,
+            column_name STRING,
+            violation_count LONG,
+            details STRING,
+            executed_at TIMESTAMP
+        )
+        USING DELTA
+    """)
+
+
+def ensure_quality_tables_sql(client, warehouse_id: str, config: dict | None = None) -> None:
+    """Create quality_rules and quality_violations via SQL warehouse (no Spark needed)."""
+    from src.table_registry import get_schema_fqn
+    from src.client import execute_sql
+    from src.catalog_utils import safe_ensure_schema_from_fqn
+
+    schema_fqn = get_schema_fqn(config or {}, "reconciliation")
+    safe_ensure_schema_from_fqn(schema_fqn, client, warehouse_id, config)
+
+    execute_sql(client, warehouse_id, f"""
+        CREATE TABLE IF NOT EXISTS {_rules_table(config)} (
+            rule_id STRING,
+            name STRING,
+            catalog STRING,
+            schema_name STRING,
+            table_name STRING,
+            rule_type STRING,
+            column_name STRING,
+            parameters STRING,
+            severity STRING,
+            enabled BOOLEAN,
+            created_at TIMESTAMP
+        )
+        USING DELTA
+    """)
+    execute_sql(client, warehouse_id, f"""
         CREATE TABLE IF NOT EXISTS {_violations_table(config)} (
             violation_id STRING,
             rule_id STRING,

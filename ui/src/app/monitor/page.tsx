@@ -8,6 +8,7 @@ import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
 import { Activity, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 
 export default function MonitorPage() {
   const { job, run, isRunning } = usePageJob("monitor");
@@ -117,24 +118,18 @@ export default function MonitorPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="text-left py-2 px-3 font-medium">#</th>
-                          <th className="text-left py-2 px-3 font-medium">Table</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.missing_tables.map((t, i) => (
-                          <tr key={i} className="border-b hover:bg-gray-50">
-                            <td className="py-2 px-3 text-gray-400">{i + 1}</td>
-                            <td className="py-2 px-3 font-mono text-sm">{t}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    data={r.missing_tables.map((t, i) => ({ _name: t }))}
+                    columns={[
+                      { key: "_name", label: "Table", sortable: true, className: "font-mono text-sm" },
+                    ] as Column[]}
+                    searchable
+                    searchKeys={["_name"]}
+                    pageSize={25}
+                    compact
+                    tableId="monitor-missing-tables"
+                    emptyMessage="No missing tables."
+                  />
                 </CardContent>
               </Card>
             )}
@@ -149,24 +144,18 @@ export default function MonitorPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="text-left py-2 px-3 font-medium">#</th>
-                          <th className="text-left py-2 px-3 font-medium">Table</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.extra_tables.map((t, i) => (
-                          <tr key={i} className="border-b hover:bg-gray-50">
-                            <td className="py-2 px-3 text-gray-400">{i + 1}</td>
-                            <td className="py-2 px-3 font-mono text-sm">{t}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    data={r.extra_tables.map((t) => ({ _name: t }))}
+                    columns={[
+                      { key: "_name", label: "Table", sortable: true, className: "font-mono text-sm" },
+                    ] as Column[]}
+                    searchable
+                    searchKeys={["_name"]}
+                    pageSize={25}
+                    compact
+                    tableId="monitor-extra-tables"
+                    emptyMessage="No extra tables."
+                  />
                 </CardContent>
               </Card>
             )}
@@ -181,26 +170,22 @@ export default function MonitorPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="text-left py-2 px-3 font-medium">#</th>
-                          <th className="text-left py-2 px-3 font-medium">Table</th>
-                          <th className="text-left py-2 px-3 font-medium">Reason</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.drifted_tables.map((t, i) => (
-                          <tr key={i} className="border-b hover:bg-gray-50">
-                            <td className="py-2 px-3 text-gray-400">{i + 1}</td>
-                            <td className="py-2 px-3 font-mono text-sm">{t.table}</td>
-                            <td className="py-2 px-3 text-gray-500 text-xs">{t.reason ?? "Schema or data drift"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    data={r.drifted_tables}
+                    columns={[
+                      { key: "table", label: "Table", sortable: true, className: "font-mono text-sm" },
+                      {
+                        key: "reason", label: "Reason", sortable: true,
+                        render: (v) => <span className="text-gray-500 text-xs">{v ?? "Schema or data drift"}</span>,
+                      },
+                    ] as Column[]}
+                    searchable
+                    searchKeys={["table", "reason"]}
+                    pageSize={25}
+                    compact
+                    tableId="monitor-drifted-tables"
+                    emptyMessage="No drifted tables."
+                  />
                 </CardContent>
               </Card>
             )}

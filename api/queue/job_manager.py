@@ -23,6 +23,7 @@ class JobLogHandler(logging.Handler):
         self.workspace_host = workspace_host.rstrip("/")
         self.max_lines = max_lines
         self._run_id_re = re.compile(r"run_id[=:]?\s*(\d+)")
+        self._job_id_re = re.compile(r"job_id[=:]?\s*(\d+)")
 
     _config_noise_re = re.compile(r"\. Config: .*$")
 
@@ -35,11 +36,16 @@ class JobLogHandler(logging.Handler):
             # Keep only the last N lines
             if len(self.job_logs) > self.max_lines:
                 del self.job_logs[: len(self.job_logs) - self.max_lines]
-            # Detect Databricks run_id in log messages and set run_url early
+            # Detect Databricks run_id/job_id in log messages and set run_url early
             if self.job_dict and not self.job_dict.get("run_url") and self.workspace_host:
-                m = self._run_id_re.search(msg)
-                if m:
-                    self.job_dict["run_url"] = f"{self.workspace_host}/#job/{m.group(1)}"
+                run_m = self._run_id_re.search(msg)
+                if run_m:
+                    run_id = run_m.group(1)
+                    job_m = self._job_id_re.search(msg)
+                    if job_m:
+                        self.job_dict["run_url"] = f"{self.workspace_host}/jobs/{job_m.group(1)}/runs/{run_id}"
+                    else:
+                        self.job_dict["run_url"] = f"{self.workspace_host}/#job/{run_id}"
         except Exception:
             pass
 
@@ -690,9 +696,13 @@ class JobManager:
 
             # Build Databricks job run URL if a run_id is available
             run_id = result.get("run_id") if isinstance(result, dict) else None
+            dbx_job_id = result.get("job_id") if isinstance(result, dict) else None
             if run_id and workspace_host:
                 host = workspace_host.rstrip("/")
-                self.jobs[job_id]["run_url"] = f"{host}/#job/{run_id}"
+                if dbx_job_id:
+                    self.jobs[job_id]["run_url"] = f"{host}/jobs/{dbx_job_id}/runs/{run_id}"
+                else:
+                    self.jobs[job_id]["run_url"] = f"{host}/#job/{run_id}"
 
             self.jobs[job_id]["status"] = "completed"
             self.jobs[job_id]["result"] = result

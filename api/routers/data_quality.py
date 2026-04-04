@@ -303,7 +303,9 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
-    def _count_and_record(tbl):
+    from src.anomaly_detection import record_metrics_batch
+
+    def _count_row(tbl):
         table_fqn = f"{tbl['table_catalog']}.{tbl['table_schema']}.{tbl['table_name']}"
         try:
             count_rows = _query_sql(
@@ -311,23 +313,22 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
                 limit=1, client=client, warehouse_id=wid,
             )
             row_count = int(count_rows[0]["row_count"]) if count_rows else 0
-            _record(
-                table_fqn=table_fqn, column_name="*",
-                metric_name="row_count", value=float(row_count),
-                client=client, warehouse_id=wid, config=config,
-            )
-            return True
+            return {"table_fqn": table_fqn, "column_name": "*",
+                    "metric_name": "row_count", "value": float(row_count)}
         except Exception:
-            return False
+            return None
 
     max_workers = min(len(tables), config.get("max_parallel_queries", 10))
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [loop.run_in_executor(pool, _count_and_record, tbl) for tbl in tables]
+        futures = [loop.run_in_executor(pool, _count_row, tbl) for tbl in tables]
         results = await asyncio.gather(*futures)
 
-    recorded = sum(1 for r in results if r)
-    errors = sum(1 for r in results if not r)
+    metrics = [m for m in results if m is not None]
+    errors = sum(1 for r in results if r is None)
+
+    record_metrics_batch(metrics, client=client, warehouse_id=wid, config=config)
+    recorded = len(metrics)
 
     return {
         "catalog": req.catalog,

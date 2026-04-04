@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import { useJobCosts } from "@/hooks/useApi";
 import {
-  Briefcase, Loader2, DollarSign, Search, User, RefreshCw,
+  Briefcase, Loader2, DollarSign, RefreshCw,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -37,7 +38,6 @@ const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B
 
 export default function JobCostsPage() {
   const [days, setDays] = useState(30);
-  const [search, setSearch] = useState("");
 
   const jobCostsQuery = useJobCosts(days);
   const data = jobCostsQuery.data;
@@ -46,10 +46,6 @@ export default function JobCostsPage() {
   const summary = data?.summary || {};
   const byUser = data?.by_user || [];
   const byProduct = data?.by_product || [];
-
-  const filtered = jobs.filter((j) =>
-    !search || JSON.stringify(j).toLowerCase().includes(search.toLowerCase())
-  );
 
   const mostExpensive = jobs[0];
 
@@ -74,15 +70,6 @@ export default function JobCostsPage() {
               ))}
             </div>
             <div className="flex-1" />
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                placeholder="Search jobs..."
-                className="pl-9 h-9 w-64 rounded-md border border-input bg-background px-3 text-sm"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
             <Button variant="outline" size="sm" onClick={() => { jobCostsQuery.refetch(); }} disabled={jobCostsQuery.isRefetching}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${jobCostsQuery.isRefetching ? "animate-spin" : ""}`} /> Refresh
             </Button>
@@ -162,43 +149,55 @@ export default function JobCostsPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">Top Jobs by Cost</CardTitle></CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Job</th>
-                      <th className="py-2 pr-3 font-medium">User</th>
-                      <th className="py-2 pr-3 font-medium">Product</th>
-                      <th className="py-2 pr-3 font-medium text-right">Cost</th>
-                      <th className="py-2 pr-3 font-medium text-right">DBUs</th>
-                      <th className="py-2 pr-3 font-medium text-right">Active Days</th>
-                      <th className="py-2 font-medium">Last Run</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((j, i) => (
-                      <tr key={j.job_id || i} className="border-b border-border/50 hover:bg-muted/30">
-                        <td className="py-1.5 pr-3 font-medium text-xs truncate max-w-[200px]" title={j.job_name}>
-                          {j.job_name || j.job_id}
-                        </td>
-                        <td className="py-1.5 pr-3 text-xs truncate max-w-[120px]">{j.run_as}</td>
-                        <td className="py-1.5 pr-3">
-                          <Badge variant="outline" className="text-[9px]">{j.product}</Badge>
-                        </td>
-                        <td className="py-1.5 pr-3 text-right font-mono text-xs font-medium text-red-500">
-                          {formatCost(j.total_cost)}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right font-mono text-xs">{formatNumber(j.total_dbus)}</td>
-                        <td className="py-1.5 pr-3 text-right font-mono text-xs">{j.active_days}</td>
-                        <td className="py-1.5 text-xs text-muted-foreground">{j.last_run?.slice(0, 10)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {filtered.length === 0 && (
-                <div className="text-center py-8 text-sm text-muted-foreground">No jobs found.</div>
-              )}
+              <DataTable
+                data={jobs}
+                columns={[
+                  {
+                    key: "job_name",
+                    label: "Job",
+                    sortable: true,
+                    render: (v: string, row: any) => (
+                      <span className="font-medium text-xs truncate max-w-[200px] block" title={row.job_name}>
+                        {row.job_name || row.job_id}
+                      </span>
+                    ),
+                  },
+                  { key: "run_as", label: "User", sortable: true, render: (v: string) => <span className="text-xs truncate max-w-[120px] block">{v}</span> },
+                  {
+                    key: "product",
+                    label: "Product",
+                    sortable: true,
+                    render: (v: string) => <Badge variant="outline" className="text-[9px]">{v}</Badge>,
+                  },
+                  {
+                    key: "total_cost",
+                    label: "Cost",
+                    sortable: true,
+                    align: "right",
+                    render: (v: number) => <span className="font-mono text-xs font-medium text-red-500">{formatCost(v)}</span>,
+                  },
+                  {
+                    key: "total_dbus",
+                    label: "DBUs",
+                    sortable: true,
+                    align: "right",
+                    render: (v: number) => <span className="font-mono text-xs">{formatNumber(v)}</span>,
+                  },
+                  { key: "active_days", label: "Active Days", sortable: true, align: "right", render: (v: number) => <span className="font-mono text-xs">{v}</span> },
+                  {
+                    key: "last_run",
+                    label: "Last Run",
+                    sortable: true,
+                    render: (v: string) => <span className="text-xs text-muted-foreground">{v?.slice(0, 10)}</span>,
+                  },
+                ] as Column[]}
+                searchable
+                searchKeys={["job_name", "job_id", "run_as", "product"]}
+                pageSize={25}
+                compact
+                tableId="finops-job-costs"
+                emptyMessage="No jobs found."
+              />
             </CardContent>
           </Card>
         </>

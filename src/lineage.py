@@ -66,7 +66,8 @@ def record_lineage_to_uc(
     """
     execute_sql(client, warehouse_id, create_sql, dry_run=dry_run)
 
-    now = datetime.now().isoformat()
+    from src.client import utc_now
+    now = utc_now()
     insert_sql = f"""
         INSERT INTO {table} VALUES (
             '{source_catalog}.{schema}.{object_name}',
@@ -80,6 +81,54 @@ def record_lineage_to_uc(
         execute_sql(client, warehouse_id, insert_sql, dry_run=dry_run)
     except Exception as e:
         logger.warning(f"Failed to record lineage for {schema}.{object_name}: {e}")
+
+
+def record_lineage_batch(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    lineage_catalog: str,
+    lineage_schema: str,
+    entries: list[dict],
+    dry_run: bool = False,
+    config: dict | None = None,
+) -> None:
+    """Batch-insert lineage records.
+
+    Each entry: {source, dest, schema, object_name, object_type, clone_type}
+    """
+    table = f"`{lineage_catalog}`.`{lineage_schema}`.`clone_lineage`"
+    create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            source_object STRING,
+            destination_object STRING,
+            object_type STRING,
+            clone_type STRING,
+            clone_timestamp TIMESTAMP
+        )
+    """
+    execute_sql(client, warehouse_id, create_sql, dry_run=dry_run)
+
+    from src.client import utc_now
+    now = utc_now()
+    value_rows = []
+    for e in entries:
+        src_fqn = f"{e['source']}.{e['schema']}.{e['object_name']}"
+        dst_fqn = f"{e['dest']}.{e['schema']}.{e['object_name']}"
+        value_rows.append(
+            f"('{src_fqn}', '{dst_fqn}', '{e['object_type']}', "
+            f"'{e['clone_type']}', TIMESTAMP '{now}')"
+        )
+
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(value_rows), batch_size):
+        batch = value_rows[i:i + batch_size]
+        try:
+            execute_sql(client, warehouse_id,
+                        f"INSERT INTO {table} VALUES {', '.join(batch)}",
+                        dry_run=dry_run)
+        except Exception as e:
+            logger.warning(f"Failed to batch-insert lineage: {e}")
 
 
 def get_lineage_for_object(

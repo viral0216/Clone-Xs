@@ -1,11 +1,11 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { History, Clock, Plus, Pencil, Trash2, CheckCircle2, XCircle } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
 
 const CHANGE_ICONS: Record<string, { icon: any; color: string }> = {
   created: { icon: Plus, color: "text-foreground bg-muted/40 dark:bg-white/5" },
@@ -50,47 +50,57 @@ export default function ChangesPage() {
         {entities.filter(Boolean).map(e => <option key={e} value={e}>{e.replace("_", " ")}</option>)}
       </select>
 
-      {changes.length === 0 ? (
-        <div className="text-center py-16"><Clock className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" /><p className="text-muted-foreground">No changes recorded yet</p></div>
-      ) : (
-        <div className="relative">
-          <div className="absolute left-6 top-0 bottom-0 w-px bg-border" />
-          <div className="space-y-4">
-            {changes.map((ch, i) => {
-              const cfg = CHANGE_ICONS[ch.change_type] || CHANGE_ICONS.updated;
+      <DataTable
+        data={changes}
+        columns={[
+          {
+            key: "change_type",
+            label: "Change",
+            sortable: true,
+            render: (v: any) => {
+              const cfg = CHANGE_ICONS[v] || CHANGE_ICONS.updated;
               const Icon = cfg.icon;
-              let details: Record<string, any> = {};
-              try { details = typeof ch.details === "string" ? JSON.parse(ch.details) : (ch.details || {}); } catch {}
-
               return (
-                <div key={i} className="relative flex items-start gap-4 pl-12">
-                  <div className={`absolute left-4 w-5 h-5 rounded-full flex items-center justify-center ${cfg.color}`}>
-                    <Icon className="h-3 w-3" />
-                  </div>
-                  <Card className="flex-1">
-                    <CardContent className="pt-3 pb-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={ch.change_type === "created" ? "bg-muted/40 text-foreground" : ch.change_type === "deleted" ? "bg-red-100 text-red-800" : ch.change_type === "approved" ? "bg-muted/40 text-foreground" : ch.change_type === "rejected" ? "bg-red-100 text-red-800" : "bg-muted/50 text-foreground"}>{ch.change_type}</Badge>
-                        <Badge variant="outline" className="text-xs">{ch.entity_type}</Badge>
-                        <span className="font-mono text-xs text-muted-foreground">{ch.entity_id}</span>
-                        <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(ch.changed_at)}</span>
-                      </div>
-                      {ch.changed_by && <p className="text-xs text-muted-foreground mt-1">by {ch.changed_by}</p>}
-                      {Object.keys(details).length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {Object.entries(details).map(([k, v]) => (
-                            <span key={k} className="text-xs bg-accent/50 rounded px-2 py-0.5"><span className="text-muted-foreground">{k}:</span> {typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                <div className="flex items-center gap-2">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center ${cfg.color}`}><Icon className="h-3 w-3" /></div>
+                  <Badge className={v === "created" ? "bg-muted/40 text-foreground" : v === "deleted" ? "bg-red-100 text-red-800" : v === "approved" ? "bg-muted/40 text-foreground" : v === "rejected" ? "bg-red-100 text-red-800" : "bg-muted/50 text-foreground"}>{v}</Badge>
                 </div>
               );
-            })}
-          </div>
-        </div>
-      )}
+            },
+          },
+          { key: "entity_type", label: "Entity Type", sortable: true, render: (v: any) => <Badge variant="outline" className="text-xs">{v}</Badge> },
+          { key: "entity_id", label: "Entity ID", sortable: true, render: (v: any) => <span className="font-mono text-xs text-muted-foreground">{v}</span> },
+          { key: "changed_by", label: "Changed By", sortable: true, render: (v: any) => v ? <span className="text-xs text-muted-foreground">{v}</span> : null },
+          {
+            key: "changed_at",
+            label: "When",
+            sortable: true,
+            render: (v: any) => <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(v)}</span>,
+          },
+          {
+            key: "details",
+            label: "Details",
+            render: (v: any) => {
+              let details: Record<string, any> = {};
+              try { details = typeof v === "string" ? JSON.parse(v) : (v || {}); } catch {}
+              if (Object.keys(details).length === 0) return null;
+              return (
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(details).map(([k, val]) => (
+                    <span key={k} className="text-xs bg-accent/50 rounded px-2 py-0.5"><span className="text-muted-foreground">{k}:</span> {typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
+                  ))}
+                </div>
+              );
+            },
+          },
+        ] as Column[]}
+        searchable
+        searchKeys={["change_type", "entity_type", "entity_id", "changed_by"]}
+        pageSize={25}
+        compact
+        tableId="change-history"
+        emptyMessage="No changes recorded yet."
+      />
     </div>
   );
 }

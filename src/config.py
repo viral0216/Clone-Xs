@@ -38,6 +38,8 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     are merged on top of the base config.  If the config file does not exist,
     returns sensible defaults so the CLI can run purely from flags (e.g. in
     Databricks notebooks).
+
+    The returned dict conforms to :class:`src.types.CloneConfig` (TypedDict).
     """
     import os
     if not os.path.exists(config_path):
@@ -101,6 +103,7 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     config.setdefault("validate_checksum", False)
     config.setdefault("show_progress", True)
     config.setdefault("parallel_tables", 1)
+    config.setdefault("batch_insert_size", 50)
     config.setdefault("include_tables_regex", None)
     config.setdefault("exclude_tables_regex", None)
     config.setdefault("log_file", None)
@@ -117,6 +120,26 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
         "catalog": "clone_audit",
         "schema": "logs",
         "table": "clone_operations",
+    })
+
+    # Centralised table locations — single source of truth for all internal tables
+    config.setdefault("tables", {
+        "catalog": config.get("audit_trail", {}).get("catalog", "clone_audit"),
+        "schemas": {
+            "logs": config.get("audit_trail", {}).get("schema", "logs"),
+            "metrics": "metrics",
+            "governance": "governance",
+            "reconciliation": "reconciliation",
+            "data_quality": "data_quality",
+            "lineage": "lineage",
+            "pii": "pii",
+            "rtbf": "rtbf",
+            "dsar": "dsar",
+            "mdm": "mdm",
+            "pipelines": "pipelines",
+            "data_contracts": "data_contracts",
+            "state": "state",
+        },
     })
 
     # PII detection settings

@@ -26,18 +26,16 @@ class TestStateStoreInit:
 
 
 class TestStateStoreInitTables:
+    @patch("src.catalog_utils.ensure_catalog_and_schema")
     @patch("src.state_store.execute_sql")
-    def test_creates_catalog_schema_tables(self, mock_sql):
+    def test_creates_catalog_schema_tables(self, mock_sql, mock_ensure):
         mock_sql.return_value = []
         store = StateStore(MagicMock(), "wh-123")
         store.init_tables()
 
-        # Should call execute_sql multiple times for CREATE statements
-        assert mock_sql.call_count >= 4  # catalog, schema, 2 tables
+        mock_ensure.assert_called_once()
+        assert mock_sql.call_count >= 2  # 2 tables
         all_sql = [c[0][2] for c in mock_sql.call_args_list]
-
-        assert any("CREATE CATALOG" in sql for sql in all_sql)
-        assert any("CREATE SCHEMA" in sql for sql in all_sql)
         assert any("clone_state" in sql and "CREATE TABLE" in sql for sql in all_sql)
         assert any("clone_operations" in sql and "CREATE TABLE" in sql for sql in all_sql)
 

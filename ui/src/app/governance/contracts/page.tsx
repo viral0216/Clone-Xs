@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import { FileText, Plus, Play, CheckCircle2, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<any[]>([]);
@@ -58,48 +59,65 @@ export default function ContractsPage() {
         </CardContent></Card>
       )}
 
-      <div className="space-y-4">
-        {contracts.map(c => (
-          <Card key={c.contract_id}>
-            <CardContent className="pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-[#E8453C]" />
-                  <span className="font-medium">{c.name}</span>
-                  <Badge variant="outline" className="font-mono text-xs">{c.table_fqn}</Badge>
-                  <Badge className={c.status === "active" ? "bg-muted/40 text-foreground" : c.status === "violated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{c.status}</Badge>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => validate(c.contract_id)} disabled={validating === c.contract_id}>
-                  {validating === c.contract_id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}Validate
+      <DataTable
+        data={contracts}
+        columns={[
+          {
+            key: "name",
+            label: "Contract",
+            sortable: true,
+            render: (v: any) => (
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-[#E8453C]" />
+                <span className="font-medium">{v}</span>
+              </div>
+            ),
+          },
+          { key: "table_fqn", label: "Table", sortable: true, render: (v: any) => <Badge variant="outline" className="font-mono text-xs">{v}</Badge> },
+          {
+            key: "status",
+            label: "Status",
+            sortable: true,
+            render: (v: any) => <Badge className={v === "active" ? "bg-muted/40 text-foreground" : v === "violated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{v}</Badge>,
+          },
+          { key: "producer_team", label: "Producer", sortable: true, render: (v: any) => <span className="text-xs text-muted-foreground">{v}</span> },
+          { key: "consumer_teams", label: "Consumers", render: (v: any) => <span className="text-xs text-muted-foreground">{Array.isArray(v) ? v.join(", ") : v}</span> },
+          { key: "freshness_sla_hours", label: "Freshness", sortable: true, align: "right" as const, render: (v: any) => <span className="text-xs text-muted-foreground">{v}h</span> },
+          { key: "row_count_min", label: "Min Rows", sortable: true, align: "right" as const, render: (v: any) => v > 0 ? <span className="text-xs text-muted-foreground">{Number(v).toLocaleString()}</span> : null },
+          {
+            key: "contract_id",
+            label: "Actions",
+            render: (v: any, row: any) => (
+              <div className="space-y-2">
+                <Button variant="outline" size="sm" onClick={() => validate(row.contract_id)} disabled={validating === row.contract_id}>
+                  {validating === row.contract_id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}Validate
                 </Button>
-              </div>
-              <div className="flex gap-6 text-xs text-muted-foreground">
-                <span>Producer: {c.producer_team}</span>
-                <span>Consumers: {Array.isArray(c.consumer_teams) ? c.consumer_teams.join(", ") : c.consumer_teams}</span>
-                <span>Freshness: {c.freshness_sla_hours}h</span>
-                {c.row_count_min > 0 && <span>Min rows: {Number(c.row_count_min).toLocaleString()}</span>}
-              </div>
-
-              {validationResult?.contract_id === c.contract_id && (
-                <div className={`rounded-lg p-3 ${validationResult.compliant ? "bg-muted/20 dark:bg-white/5 border border-border" : "bg-red-50 dark:bg-red-950/20 border border-red-200"}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {validationResult.compliant ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}
-                    <span className="text-sm font-medium">{validationResult.compliant ? "Compliant" : "Violations Detected"}</span>
+                {validationResult?.contract_id === row.contract_id && (
+                  <div className={`rounded-lg p-3 ${validationResult.compliant ? "bg-muted/20 dark:bg-white/5 border border-border" : "bg-red-50 dark:bg-red-950/20 border border-red-200"}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      {validationResult.compliant ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                      <span className="text-sm font-medium">{validationResult.compliant ? "Compliant" : "Violations Detected"}</span>
+                    </div>
+                    {validationResult.violations?.length > 0 && (
+                      <div className="space-y-1">{validationResult.violations.map((vi: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-red-600">
+                          <AlertTriangle className="h-3 w-3" />{vi.type}: {JSON.stringify(vi)}
+                        </div>
+                      ))}</div>
+                    )}
                   </div>
-                  {validationResult.violations?.length > 0 && (
-                    <div className="space-y-1">{validationResult.violations.map((v: any, i: number) => (
-                      <div key={i} className="flex items-center gap-2 text-xs text-red-600">
-                        <AlertTriangle className="h-3 w-3" />{v.type}: {JSON.stringify(v)}
-                      </div>
-                    ))}</div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-        {contracts.length === 0 && <div className="text-center py-12 text-muted-foreground">No contracts defined. Click "New Contract" to create your first data contract.</div>}
-      </div>
+                )}
+              </div>
+            ),
+          },
+        ] as Column[]}
+        searchable
+        searchKeys={["name", "table_fqn", "status", "producer_team"]}
+        pageSize={25}
+        compact
+        tableId="data-contracts"
+        emptyMessage='No contracts defined. Click "New Contract" to create your first data contract.'
+      />
     </div>
   );
 }

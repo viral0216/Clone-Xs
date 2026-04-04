@@ -102,7 +102,7 @@ def get_table_storage_metrics(
                     "num_active_files": files,
                 })
     except Exception as e:
-        logger.debug(f"DESCRIBE DETAIL failed for {fqn}: {e}")
+        logger.warning(f"DESCRIBE DETAIL failed for {fqn}: {e}")
         metrics["error"] = str(e)
 
     # Deep analysis: ANALYZE TABLE (expensive, only when explicitly requested)
@@ -148,7 +148,7 @@ def get_table_storage_metrics(
                         "num_time_travel_files": data.get("num_time_travel_files", 0),
                     })
         except Exception as e:
-            logger.debug(f"ANALYZE TABLE failed for {fqn}: {e}")
+            logger.warning(f"ANALYZE TABLE failed for {fqn}: {e}")
             if not describe_succeeded:
                 metrics["error"] = str(e)
 
@@ -243,7 +243,7 @@ def catalog_storage_metrics_fast(
             if rows is not None:
                 break
         except Exception as e:
-            logger.debug(f"Fast storage query attempt failed: {e}")
+            logger.warning(f"Fast storage query attempt failed: {e}")
             continue
 
     if rows is None:

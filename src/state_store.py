@@ -8,9 +8,6 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE_CATALOG = "clone_audit"
-DEFAULT_STATE_SCHEMA = "state"
-
 
 class StateStore:
     """Delta table-based state store for tracking clone operations."""
@@ -19,9 +16,16 @@ class StateStore:
         self,
         client,
         warehouse_id: str,
-        state_catalog: str = DEFAULT_STATE_CATALOG,
-        state_schema: str = DEFAULT_STATE_SCHEMA,
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
     ):
+        if state_catalog is None or state_schema is None:
+            from src.table_registry import get_catalog, get_schema_fqn
+            cfg = config or {}
+            state_catalog = state_catalog or get_catalog(cfg)
+            schema_fqn = get_schema_fqn(cfg, "state")
+            state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.state_catalog = state_catalog
@@ -31,59 +35,63 @@ class StateStore:
 
     def init_tables(self) -> None:
         """Create the state tracking Delta tables if they don't exist."""
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE CATALOG IF NOT EXISTS {self.state_catalog}")
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE SCHEMA IF NOT EXISTS {self.state_catalog}.{self.state_schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
 
         # Clone state table — tracks individual table clone status
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._clone_state_table} (
-                source_fqn STRING NOT NULL,
-                dest_fqn STRING NOT NULL,
-                object_type STRING NOT NULL,
-                clone_type STRING,
-                last_cloned_at TIMESTAMP,
-                last_status STRING,
-                source_row_count BIGINT,
-                dest_row_count BIGINT,
-                source_size_bytes BIGINT,
-                source_version BIGINT,
-                is_stale BOOLEAN DEFAULT false,
-                error_message STRING
-            )
-            USING DELTA
-            COMMENT 'Per-table clone state tracking'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._clone_state_table} (
+                    source_fqn STRING NOT NULL,
+                    dest_fqn STRING NOT NULL,
+                    object_type STRING NOT NULL,
+                    clone_type STRING,
+                    last_cloned_at TIMESTAMP,
+                    last_status STRING,
+                    source_row_count BIGINT,
+                    dest_row_count BIGINT,
+                    source_size_bytes BIGINT,
+                    source_version BIGINT,
+                    is_stale BOOLEAN DEFAULT false,
+                    error_message STRING
+                )
+                USING DELTA
+                COMMENT 'Per-table clone state tracking'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._clone_state_table}: {e}")
 
         # Operations table — tracks overall clone operations
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._operations_table} (
-                operation_id STRING,
-                source_catalog STRING,
-                dest_catalog STRING,
-                clone_type STRING,
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                status STRING,
-                tables_total INT,
-                tables_cloned INT,
-                tables_failed INT,
-                summary STRING
-            )
-            USING DELTA
-            COMMENT 'Clone operation history'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._operations_table} (
+                    operation_id STRING,
+                    source_catalog STRING,
+                    dest_catalog STRING,
+                    clone_type STRING,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    status STRING,
+                    tables_total INT,
+                    tables_cloned INT,
+                    tables_failed INT,
+                    summary STRING
+                )
+                USING DELTA
+                COMMENT 'Clone operation history'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._operations_table}: {e}")
 
-        logger.info(f"State store tables ready in {self.state_catalog}.{self.state_schema}")
+        logger.info(f"State store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def record_table_clone(
         self,

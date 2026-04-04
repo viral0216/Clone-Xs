@@ -17,15 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.reconciliation"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "reconciliation")
 
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
+from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _run_sql  # noqa: E402
 
 
 _RUNS_DDL = """
@@ -61,28 +57,6 @@ _DETAILS_DDL = """
 """
 
 
-def _get_spark():
-    """Try to get Spark session; return None if unavailable."""
-    try:
-        from src.spark_session import get_spark_safe
-        return get_spark_safe()
-    except Exception:
-        return None
-
-
-def _run_sql(sql: str, client=None, warehouse_id: str = ""):
-    """Execute SQL via Spark (preferred) or SQL warehouse (fallback)."""
-    spark = _get_spark()
-    if spark:
-        spark.sql(sql)
-        return
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        execute_sql(client, warehouse_id, sql)
-        return
-
-    raise RuntimeError("No Spark session or SQL warehouse available for storage")
 
 
 def ensure_reconciliation_tables(client=None, warehouse_id: str = "", config: dict = None):
@@ -163,9 +137,10 @@ def store_reconciliation_result(
     except Exception as e:
         logger.warning(f"Could not store reconciliation run: {e}")
 
-    # Insert details (batch in groups of 50)
+    # Insert details in batches
     details = result.get("details", [])
-    batch_size = 50
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(details), batch_size):
         batch = details[i:i + batch_size]
         values = []
@@ -199,29 +174,6 @@ def store_reconciliation_result(
     return run_id
 
 
-def _query_sql(sql: str, limit: int = 20, client=None, warehouse_id: str = "") -> list[dict]:
-    """Execute a SELECT query and return rows as list of dicts.
-
-    Uses Spark (preferred) or SQL warehouse (fallback).
-    """
-    spark = _get_spark()
-    if spark:
-        rows = spark.sql(sql).limit(limit).collect()
-        result = []
-        for row in rows:
-            d = row.asDict()
-            for k, v in d.items():
-                if v is not None and not isinstance(v, (str, int, float, bool)):
-                    d[k] = str(v)
-            result.append(d)
-        return result
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        rows = execute_sql(client, warehouse_id, sql)
-        return (rows or [])[:limit]
-
-    raise RuntimeError("No Spark session or SQL warehouse available for querying")
 
 
 def get_reconciliation_history(

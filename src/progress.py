@@ -3,6 +3,8 @@ import sys
 import threading
 import time
 
+from src.log_formatter import _IS_TTY
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +71,18 @@ class ProgressTracker:
                 pct = done / self.total * 100
                 bar_len = 30
                 filled = int(bar_len * done / self.total)
-                bar = "█" * filled + "░" * (bar_len - filled)
+                bar_fill = "█" * filled
+                bar_empty = "░" * (bar_len - filled)
+                if _IS_TTY:
+                    # Color the bar: green for success, red portion for failures
+                    if self.failed > 0:
+                        fail_len = max(1, int(bar_len * self.failed / self.total))
+                        ok_len = filled - fail_len
+                        bar = f"\033[32m{'█' * max(0, ok_len)}\033[31m{'█' * fail_len}\033[0m{bar_empty}"
+                    else:
+                        bar = f"\033[32m{bar_fill}\033[0m{bar_empty}"
+                else:
+                    bar = bar_fill + bar_empty
             else:
                 pct = 0
                 bar = "░" * 30
@@ -80,14 +93,24 @@ class ProgressTracker:
                 eta = (self.total - done) / rate
                 eta_str = _format_time(eta)
             elif done >= self.total:
-                eta_str = "done"
+                eta_str = "\033[32mdone\033[0m" if _IS_TTY else "done"
             else:
                 eta_str = "..."
+
+            # Color-coded stats
+            if _IS_TTY:
+                ok_s = f"\033[32m{self.completed}ok\033[0m"
+                fail_s = f"\033[31m{self.failed}fail\033[0m" if self.failed else f"{self.failed}fail"
+                skip_s = f"\033[33m{self.skipped}skip\033[0m" if self.skipped else f"{self.skipped}skip"
+            else:
+                ok_s = f"{self.completed}ok"
+                fail_s = f"{self.failed}fail"
+                skip_s = f"{self.skipped}skip"
 
             status = (
                 f"\r  {self.description} |{bar}| "
                 f"{done}/{self.total} ({pct:.0f}%) "
-                f"[{self.completed}ok/{self.failed}fail/{self.skipped}skip] "
+                f"[{ok_s}/{fail_s}/{skip_s}] "
                 f"ETA: {eta_str}  "
             )
 

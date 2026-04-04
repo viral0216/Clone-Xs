@@ -12,48 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.reconciliation"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "reconciliation")
 
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
-
-
-def _run_sql(sql: str, client=None, warehouse_id: str = ""):
-    """Execute SQL via Spark (preferred) or SQL warehouse (fallback)."""
-    try:
-        from src.spark_session import get_spark_safe
-        spark = get_spark_safe()
-        if spark:
-            return [row.asDict() for row in spark.sql(sql).collect()]
-    except Exception:
-        pass
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        return execute_sql(client, warehouse_id, sql) or []
-
-    return []
-
-
-def _exec_sql(sql: str, client=None, warehouse_id: str = ""):
-    """Execute DDL/DML via Spark or SQL warehouse."""
-    try:
-        from src.spark_session import get_spark_safe
-        spark = get_spark_safe()
-        if spark:
-            spark.sql(sql)
-            return
-    except Exception:
-        pass
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        execute_sql(client, warehouse_id, sql)
+from src.client import sql_escape as _esc, query_sql as _run_sql, run_sql as _exec_sql  # noqa: E402
 
 
 def ensure_alert_tables(client=None, warehouse_id: str = "", config: dict = None):
@@ -168,6 +131,7 @@ def evaluate_alerts(
     schema = _get_schema(config)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     fired = []
+    alert_value_rows = []
 
     # Extract metrics from result
     metrics = {
@@ -225,22 +189,26 @@ def evaluate_alerts(
                 "severity": rule.get("severity", "warning"),
             }
             fired.append(alert)
-
-            # Store in Delta
-            try:
-                _exec_sql(f"""
-                    INSERT INTO {schema}.alert_history VALUES (
-                        '{alert_id}', '{_esc(rule.get("rule_id", ""))}',
-                        '{_esc(rule.get("name", ""))}', '{_esc(run_id)}',
-                        '{_esc(metric_name)}', {actual}, {threshold},
-                        '{_esc(rule.get("severity", "warning"))}', '{now}', false
-                    )
-                """, client, warehouse_id)
-            except Exception as e:
-                logger.warning(f"Could not store alert: {e}")
+            alert_value_rows.append(
+                f"('{alert_id}', '{_esc(rule.get('rule_id', ''))}', "
+                f"'{_esc(rule.get('name', ''))}', '{_esc(run_id)}', "
+                f"'{_esc(metric_name)}', {actual}, {threshold}, "
+                f"'{_esc(rule.get('severity', 'warning'))}', '{now}', false)"
+            )
 
             logger.warning(f"ALERT [{rule.get('severity', 'warning').upper()}] "
                           f"{rule.get('name', '')}: {metric_name}={actual} {op} {threshold}")
+
+    # Batch insert all fired alerts
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(alert_value_rows), batch_size):
+        batch = alert_value_rows[i:i + batch_size]
+        try:
+            _exec_sql(f"INSERT INTO {schema}.alert_history VALUES {', '.join(batch)}",
+                      client, warehouse_id)
+        except Exception as e:
+            logger.warning(f"Could not store alerts batch: {e}")
 
     return fired
 

@@ -2,13 +2,78 @@
 
 Single source of truth for table names, schemas, and their ensure functions.
 Used by Settings UI init, health checks, and anywhere tables need discovery.
+
+All modules should use ``get_catalog``, ``get_schema_fqn``, and
+``get_table_fqn`` instead of hardcoding catalog/schema names.
 """
+
+_FALLBACK_CATALOG = "clone_audit"
+
+_DEFAULT_SCHEMAS: dict[str, str] = {
+    "logs": "logs",
+    "metrics": "metrics",
+    "governance": "governance",
+    "reconciliation": "reconciliation",
+    "data_quality": "data_quality",
+    "lineage": "lineage",
+    "pii": "pii",
+    "rtbf": "rtbf",
+    "dsar": "dsar",
+    "mdm": "mdm",
+    "pipelines": "pipelines",
+    "data_contracts": "data_contracts",
+    "state": "state",
+}
+
+
+def get_catalog(config: dict) -> str:
+    """Return the catalog used for all internal tables.
+
+    Resolution order:
+      1. ``config["tables"]["catalog"]``
+      2. ``config["audit_trail"]["catalog"]``
+      3. ``"clone_audit"`` (hard fallback)
+    """
+    tables = config.get("tables")
+    if isinstance(tables, dict) and tables.get("catalog"):
+        return tables["catalog"]
+    audit = config.get("audit_trail")
+    if isinstance(audit, dict) and audit.get("catalog"):
+        return audit["catalog"]
+    return _FALLBACK_CATALOG
+
+
+def get_schema_fqn(config: dict, section_key: str) -> str:
+    """Return ``catalog.schema`` for the given section key.
+
+    *section_key* must match a key in ``tables.schemas`` (e.g. ``"logs"``,
+    ``"governance"``, ``"pii"``).
+    """
+    catalog = get_catalog(config)
+    tables = config.get("tables")
+    if isinstance(tables, dict):
+        schemas = tables.get("schemas")
+        if isinstance(schemas, dict) and section_key in schemas:
+            return f"{catalog}.{schemas[section_key]}"
+    return f"{catalog}.{_DEFAULT_SCHEMAS.get(section_key, section_key)}"
+
+
+def get_table_fqn(config: dict, section_key: str, table_name: str) -> str:
+    """Return ``catalog.schema.table`` for a specific table."""
+    return f"{get_schema_fqn(config, section_key)}.{table_name}"
+
+
+# ── Backward-compatible alias ───────────────────────────────────────
+
+
+def get_batch_insert_size(config: dict) -> int:
+    """Return the batch size for INSERT statements (default 50)."""
+    return int(config.get("batch_insert_size", 50))
 
 
 def get_audit_catalog(config: dict) -> str:
     """Get the audit catalog from config."""
-    audit = config.get("audit_trail", {})
-    return audit.get("catalog", "")
+    return get_catalog(config)
 
 
 # Each entry: (section_key, section_title, schema_name, table_name, ensure_module, ensure_func)
@@ -20,7 +85,6 @@ TABLE_SECTIONS = [
         "title": "Audit & Logs",
         "subtitle": "Clone run logs, audit trail, and rollback history",
         "schema": "logs",
-        "schema_from_config": True,  # uses config.audit_trail.schema
         "tables": ["run_logs", "clone_operations", "rollback_logs"],
     },
     {
@@ -46,6 +110,7 @@ TABLE_SECTIONS = [
     },
     {
         "key": "dq_rules",
+        "schema_key": "governance",
         "title": "DQ Rules & Results",
         "subtitle": "Data quality rules engine and execution results",
         "schema": "governance",
@@ -53,6 +118,7 @@ TABLE_SECTIONS = [
     },
     {
         "key": "sla",
+        "schema_key": "governance",
         "title": "SLA & Contracts",
         "subtitle": "SLA rules, checks, and legacy data contracts",
         "schema": "governance",
@@ -60,6 +126,7 @@ TABLE_SECTIONS = [
     },
     {
         "key": "odcs",
+        "schema_key": "governance",
         "title": "ODCS Contracts",
         "subtitle": "Open Data Contract Standard v3.1.0 contracts and validation",
         "schema": "governance",
@@ -67,6 +134,7 @@ TABLE_SECTIONS = [
     },
     {
         "key": "dqx",
+        "schema_key": "governance",
         "title": "DQX Engine",
         "subtitle": "DQX profiles, checks, definitions, and run results",
         "schema": "governance",
@@ -133,19 +201,17 @@ def get_all_table_fqns(config: dict) -> list[dict]:
 
     Returns list of dicts: [{key, title, subtitle, schema_fqn, tables: [{name, fqn}]}]
     """
-    catalog = get_audit_catalog(config)
-    audit_schema = config.get("audit_trail", {}).get("schema", "logs")
-
     result = []
     for section in TABLE_SECTIONS:
-        schema = audit_schema if section.get("schema_from_config") else section["schema"]
-        schema_fqn = f"{catalog}.{schema}"
+        section_key = section.get("schema_key", section["key"])
+        schema_fqn = get_schema_fqn(config, section_key)
+        schema_name = schema_fqn.split(".", 1)[1] if "." in schema_fqn else schema_fqn
         tables = [{"name": t, "fqn": f"{schema_fqn}.{t}"} for t in section["tables"]]
         result.append({
             "key": section["key"],
             "title": section["title"],
             "subtitle": section["subtitle"],
-            "schema": schema,
+            "schema": schema_name,
             "schema_fqn": schema_fqn,
             "tables": tables,
         })

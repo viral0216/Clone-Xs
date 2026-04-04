@@ -14,24 +14,14 @@ import os
 from datetime import datetime, timezone
 
 from src.client import execute_sql
+from src.table_registry import get_catalog, get_schema_fqn, get_table_fqn
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CATALOG = "clone_audit"
-DEFAULT_SCHEMA = "logs"
-DEFAULT_TABLE = "run_logs"
 
 
 def get_run_logs_fqn(config: dict | None = None) -> str:
     """Get fully qualified table name for run logs."""
-    if config:
-        audit = config.get("audit_trail", {})
-        catalog = audit.get("catalog", DEFAULT_CATALOG)
-        schema = audit.get("schema", DEFAULT_SCHEMA)
-    else:
-        catalog = DEFAULT_CATALOG
-        schema = DEFAULT_SCHEMA
-    return f"{catalog}.{schema}.{DEFAULT_TABLE}"
+    return get_table_fqn(config or {}, "logs", "run_logs")
 
 
 def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None) -> str:

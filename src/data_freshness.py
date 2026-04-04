@@ -10,59 +10,14 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
-def _get_spark():
-    """Try to get a Spark session; return None if unavailable."""
-    try:
-        from src.spark_session import get_spark_safe
-        return get_spark_safe()
-    except Exception:
-        return None
-
-
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
-
-
-def _query_sql(sql: str, limit: int = 1000, client=None, warehouse_id: str = "") -> list[dict]:
-    """Execute a SELECT query and return rows as list of dicts."""
-    spark = _get_spark()
-    if spark:
-        rows = spark.sql(sql).limit(limit).collect()
-        result = []
-        for row in rows:
-            d = row.asDict()
-            for k, v in d.items():
-                if v is not None and not isinstance(v, (str, int, float, bool)):
-                    d[k] = str(v)
-            result.append(d)
-        return result
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        rows = execute_sql(client, warehouse_id, sql)
-        return (rows or [])[:limit]
-
-    raise RuntimeError("No Spark session or SQL warehouse available for querying")
+from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _run_sql  # noqa: E402
 
 
 def _get_schema_prefix(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.data_quality"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "data_quality")
 
 
-def _run_sql(sql: str, client=None, warehouse_id: str = ""):
-    """Execute SQL via Spark (preferred) or SQL warehouse (fallback)."""
-    spark = _get_spark()
-    if spark:
-        spark.sql(sql)
-        return
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        execute_sql(client, warehouse_id, sql)
         return
 
     raise RuntimeError("No Spark session or SQL warehouse available for storage")
@@ -137,11 +92,12 @@ def check_freshness(
     # Verify catalog has schemas before querying information_schema
     # This avoids noisy Spark JVM ERROR stacktraces for invalid catalogs
     try:
-        _query_sql(f"SHOW SCHEMAS IN `{_esc(catalog)}` LIMIT 1", limit=1, client=client, warehouse_id=wid)
-    except Exception:
-        logger.debug(f"Catalog '{catalog}' not accessible, skipping freshness check")
+        _query_sql(f"SHOW SCHEMAS IN `{_esc(catalog)}`", limit=1, client=client, warehouse_id=wid)
+    except Exception as e:
+        logger.warning(f"Catalog '{catalog}' not accessible, skipping freshness check: {e}")
         return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
                 "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
+                "error": f"Catalog not accessible: {e}",
                 "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
 
     # Query information_schema for table modification times
@@ -152,7 +108,7 @@ def check_freshness(
     tables_query = f"""
         SELECT table_catalog, table_schema, table_name, last_altered
         FROM `{_esc(catalog)}`.information_schema.tables
-        WHERE table_type = 'MANAGED'
+        WHERE table_type IN ('MANAGED', 'EXTERNAL')
           AND table_schema NOT IN ('information_schema', 'default')
           {schema_filter}
         ORDER BY table_schema, table_name
@@ -161,9 +117,10 @@ def check_freshness(
     try:
         tables = _query_sql(tables_query, limit=5000, client=client, warehouse_id=wid)
     except Exception as e:
-        logger.debug(f"Could not query information_schema for {catalog}: {e}")
+        logger.warning(f"Could not query information_schema for {catalog}: {e}")
         return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
                 "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
+                "error": f"Failed to query information_schema: {e}",
                 "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
 
     now = datetime.now(timezone.utc)
@@ -220,7 +177,8 @@ def check_freshness(
     try:
         _ensure_freshness_table(client, wid, config)
         schema_prefix = _get_schema_prefix(config)
-        batch_size = 50
+        from src.table_registry import get_batch_insert_size
+        batch_size = get_batch_insert_size(config)
         for i in range(0, len(results), batch_size):
             batch = results[i:i + batch_size]
             values = []

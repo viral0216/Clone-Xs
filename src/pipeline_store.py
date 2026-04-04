@@ -12,46 +12,62 @@ logger = logging.getLogger(__name__)
 class PipelineStore:
     """Delta table store for pipeline definitions, runs, and step results."""
 
-    def __init__(self, client, warehouse_id: str, state_catalog: str = "clone_audit", state_schema: str = "pipelines"):
+    def __init__(self, client, warehouse_id: str, state_catalog: str | None = None, state_schema: str | None = None, config: dict | None = None):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "pipelines")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.state_catalog = state_catalog
+        self.state_schema = state_schema
         self._pipelines = f"{state_catalog}.{state_schema}.pipelines"
         self._runs = f"{state_catalog}.{state_schema}.pipeline_runs"
         self._steps = f"{state_catalog}.{state_schema}.pipeline_step_results"
 
     def init_tables(self) -> None:
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE SCHEMA IF NOT EXISTS {self.state_catalog}.pipelines")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._pipelines} (
-                pipeline_id STRING NOT NULL, name STRING, description STRING,
-                steps_json STRING, is_template BOOLEAN, template_name STRING,
-                created_by STRING, created_at TIMESTAMP, updated_at TIMESTAMP
-            ) USING DELTA COMMENT 'Clone pipeline definitions'
-            TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._pipelines} (
+                    pipeline_id STRING NOT NULL, name STRING, description STRING,
+                    steps_json STRING, is_template BOOLEAN, template_name STRING,
+                    created_by STRING, created_at TIMESTAMP, updated_at TIMESTAMP
+                ) USING DELTA COMMENT 'Clone pipeline definitions'
+                TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._pipelines}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._runs} (
-                run_id STRING NOT NULL, pipeline_id STRING NOT NULL, pipeline_name STRING,
-                status STRING, started_at TIMESTAMP, completed_at TIMESTAMP,
-                triggered_by STRING, total_steps INT, completed_steps INT, error STRING
-            ) USING DELTA COMMENT 'Pipeline execution runs'
-            TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._runs} (
+                    run_id STRING NOT NULL, pipeline_id STRING NOT NULL, pipeline_name STRING,
+                    status STRING, started_at TIMESTAMP, completed_at TIMESTAMP,
+                    triggered_by STRING, total_steps INT, completed_steps INT, error STRING
+                ) USING DELTA COMMENT 'Pipeline execution runs'
+                TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._runs}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._steps} (
-                result_id STRING NOT NULL, run_id STRING NOT NULL, step_index INT,
-                step_type STRING, step_name STRING, status STRING,
-                started_at TIMESTAMP, completed_at TIMESTAMP,
-                duration_seconds DOUBLE, result_json STRING, error STRING
-            ) USING DELTA COMMENT 'Pipeline step execution results'
-            TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
-        """)
-        logger.info("Pipeline store tables ready")
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._steps} (
+                    result_id STRING NOT NULL, run_id STRING NOT NULL, step_index INT,
+                    step_type STRING, step_name STRING, status STRING,
+                    started_at TIMESTAMP, completed_at TIMESTAMP,
+                    duration_seconds DOUBLE, result_json STRING, error STRING
+                ) USING DELTA COMMENT 'Pipeline step execution results'
+                TBLPROPERTIES ('delta.enableChangeDataFeed'='true','delta.autoOptimize.optimizeWrite'='true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._steps}: {e}")
+
+        logger.info(f"Pipeline store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def save_pipeline(self, pipeline_id: str, name: str, description: str, steps: list, created_by: str, is_template: bool = False, template_name: str = "") -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

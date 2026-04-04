@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import { Award, Plus, CheckCircle2, XCircle, AlertTriangle, Ban } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
   certified: { color: "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-300", icon: CheckCircle2 },
@@ -58,29 +59,40 @@ export default function CertificationsPage() {
         </CardContent></Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(c => {
-          const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.draft;
-          const Icon = cfg.icon;
-          return (
-            <Card key={c.cert_id} className="hover:border-border transition-colors">
-              <CardContent className="pt-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><span className="font-mono text-sm font-medium">{c.table_fqn}</span></div>
-                  <Badge className={cfg.color}>{c.status?.replace("_", " ")}</Badge>
-                </div>
-                {c.notes && <p className="text-xs text-muted-foreground">{c.notes}</p>}
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>By: {c.certified_by}</span>
-                  <span>Review: {c.review_frequency}</span>
-                  {c.expiry_date && <span>Expires: {c.expiry_date}</span>}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-        {filtered.length === 0 && <div className="col-span-3 text-center py-12 text-muted-foreground">No certifications found</div>}
-      </div>
+      <DataTable
+        data={filtered}
+        columns={[
+          {
+            key: "table_fqn",
+            label: "Table",
+            sortable: true,
+            render: (v: any, row: any) => {
+              const cfg = STATUS_CONFIG[row.status] || STATUS_CONFIG.draft;
+              const Icon = cfg.icon;
+              return <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><span className="font-mono text-sm font-medium">{v}</span></div>;
+            },
+          },
+          {
+            key: "status",
+            label: "Status",
+            sortable: true,
+            render: (v: any) => {
+              const cfg = STATUS_CONFIG[v] || STATUS_CONFIG.draft;
+              return <Badge className={cfg.color}>{v?.replace("_", " ")}</Badge>;
+            },
+          },
+          { key: "notes", label: "Notes", render: (v: any) => v ? <span className="text-xs text-muted-foreground">{v}</span> : null },
+          { key: "certified_by", label: "Certified By", sortable: true, render: (v: any) => <span className="text-xs text-muted-foreground">{v}</span> },
+          { key: "review_frequency", label: "Review", sortable: true, render: (v: any) => <span className="text-xs text-muted-foreground">{v}</span> },
+          { key: "expiry_date", label: "Expires", sortable: true, render: (v: any) => v ? <span className="text-xs text-muted-foreground">{v}</span> : null },
+        ] as Column[]}
+        searchable
+        searchKeys={["table_fqn", "status", "certified_by", "notes"]}
+        pageSize={25}
+        compact
+        tableId="certifications-board"
+        emptyMessage="No certifications found."
+      />
     </div>
   );
 }

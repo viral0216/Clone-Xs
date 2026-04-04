@@ -16,18 +16,8 @@ logger = logging.getLogger(__name__)
 
 def setup_logging(verbose: bool = False, log_file: str | None = None) -> None:
     """Configure logging for the CLI with optional file output."""
-    level = logging.DEBUG if verbose else logging.INFO
-    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
-
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
-
-    if log_file:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
-        handlers.append(file_handler)
-
-    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
+    from src.log_formatter import setup_color_logging
+    setup_color_logging(verbose=verbose, log_file=log_file)
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:

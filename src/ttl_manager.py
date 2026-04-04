@@ -30,9 +30,15 @@ class TTLManager:
 
     def __init__(
         self, client, warehouse_id: str,
-        state_catalog: str = "clone_audit",
-        state_schema: str = "state",
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
     ):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "state")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.table_fqn = f"`{state_catalog}`.`{state_schema}`.`ttl_policies`"
@@ -41,24 +47,26 @@ class TTLManager:
 
     def init_ttl_table(self) -> None:
         """Create the TTL policies Delta table if it doesn't exist."""
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE CATALOG IF NOT EXISTS `{self.state_catalog}`")
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE SCHEMA IF NOT EXISTS `{self.state_catalog}`.`{self.state_schema}`")
-        sql = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_fqn} (
-                dest_catalog STRING,
-                dest_schema STRING,
-                ttl_days INT,
-                created_at TIMESTAMP,
-                expires_at TIMESTAMP,
-                created_by STRING,
-                operation_id STRING,
-                status STRING DEFAULT 'active'
-            )
-        """
-        execute_sql(self.client, self.warehouse_id, sql)
-        logger.info(f"TTL table initialized: {self.table_fqn}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self.table_fqn} (
+                    dest_catalog STRING,
+                    dest_schema STRING,
+                    ttl_days INT,
+                    created_at TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    created_by STRING,
+                    operation_id STRING,
+                    status STRING DEFAULT 'active'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self.table_fqn}: {e}")
+
+        logger.info(f"TTL store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def set_ttl(
         self, dest_catalog: str, ttl_days: int,

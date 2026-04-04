@@ -4,7 +4,7 @@ import json
 import queue
 import threading
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from api.dependencies import get_db_client, get_app_config, get_credentials
@@ -79,7 +79,7 @@ async def init_governance_tables(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     if not wid:
-        return {"error": "No SQL warehouse configured"}
+        raise HTTPException(status_code=400, detail="No SQL warehouse configured")
 
     from src.governance import ensure_governance_tables
     from src.dq_rules import ensure_dq_tables
@@ -124,7 +124,10 @@ async def get_term(term_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.governance import get_glossary_term
-    return get_glossary_term(client, wid, config, term_id) or {"error": "Term not found"}
+    result = get_glossary_term(client, wid, config, term_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Term not found")
+    return result
 
 
 @router.delete("/glossary/{term_id}")
@@ -329,7 +332,10 @@ async def get_odcs_contract_endpoint(contract_id: str, client=Depends(get_db_cli
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_contracts import get_odcs_contract
-    return get_odcs_contract(client, wid, config, contract_id) or {"error": "Contract not found"}
+    result = get_odcs_contract(client, wid, config, contract_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    return result
 
 
 @router.put("/odcs/contracts/{contract_id}")
@@ -352,7 +358,7 @@ async def delete_odcs_contract_endpoint(contract_id: str, client=Depends(get_db_
         delete_odcs_contract(client, wid, config, contract_id)
         return {"status": "deleted", "contract_id": contract_id}
     except Exception as e:
-        return {"error": f"Failed to delete contract: {e}"}
+        raise HTTPException(status_code=500, detail=f"Failed to delete contract: {e}")
 
 
 @router.post("/odcs/contracts/{contract_id}/validate")
@@ -379,7 +385,10 @@ async def get_odcs_version_endpoint(contract_id: str, version: str, client=Depen
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_contracts import get_contract_version
-    return get_contract_version(client, wid, config, contract_id, version) or {"error": "Version not found"}
+    result = get_contract_version(client, wid, config, contract_id, version)
+    if not result:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return result
 
 
 @router.post("/odcs/import")
@@ -399,7 +408,7 @@ async def export_odcs_yaml_endpoint(contract_id: str, client=Depends(get_db_clie
     from src.data_contracts import export_odcs_yaml
     yaml_content = export_odcs_yaml(client, wid, config, contract_id)
     if not yaml_content:
-        return {"error": "Contract not found"}
+        raise HTTPException(status_code=404, detail="Contract not found")
     return Response(content=yaml_content, media_type="text/yaml",
                     headers={"Content-Disposition": f"attachment; filename={contract_id}.odcs.yaml"})
 
@@ -578,7 +587,7 @@ async def dqx_profile_schema_endpoint(req: dict, client=Depends(get_db_client), 
         opts = {k: v for k, v in req.items() if k not in ("catalog", "schema_name")}
         return generate_checks_for_schema(client, wid, config, req.get("catalog", ""), req.get("schema_name", ""), options=opts)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/dqx/profile-catalog")
@@ -592,7 +601,7 @@ async def dqx_profile_catalog_endpoint(req: dict, client=Depends(get_db_client),
         opts = {k: v for k, v in req.items() if k not in ("catalog", "exclude_schemas")}
         return generate_checks_for_catalog(client, wid, config, req.get("catalog", ""), req.get("exclude_schemas", ["information_schema"]), options=opts)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/dqx/profile-stream")
@@ -748,7 +757,7 @@ async def dqx_run_all_endpoint(client=Depends(get_db_client), creds: tuple = Dep
     try:
         return run_all_checks(client, wid, config)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/dqx/checks/export")

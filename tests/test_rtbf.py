@@ -20,16 +20,16 @@ class TestRTBFStore:
         self.client = MagicMock()
         self.store = RTBFStore(self.client, "wh-1", "audit_cat", "rtbf")
 
+    @patch("src.catalog_utils.ensure_catalog_and_schema")
     @patch("src.rtbf_store.execute_sql")
-    def test_init_tables_creates_schema_and_tables(self, mock_sql):
+    def test_init_tables_creates_schema_and_tables(self, mock_sql, mock_ensure):
         self.store.init_tables()
-        calls = mock_sql.call_args_list
-        # Should create schema + 3 tables = 4 calls
-        assert len(calls) == 4
-        assert "CREATE SCHEMA" in calls[0][0][2]
-        assert "rtbf_requests" in calls[1][0][2]
-        assert "rtbf_actions" in calls[2][0][2]
-        assert "rtbf_certificates" in calls[3][0][2]
+        mock_ensure.assert_called_once()
+        assert mock_sql.call_count == 3  # 3 tables
+        all_sql = [c[0][2] for c in mock_sql.call_args_list]
+        assert any("rtbf_requests" in sql for sql in all_sql)
+        assert any("rtbf_actions" in sql for sql in all_sql)
+        assert any("rtbf_certificates" in sql for sql in all_sql)
 
     @patch("src.rtbf_store.execute_sql")
     def test_save_request(self, mock_sql):

@@ -158,7 +158,8 @@ def save_operation_metrics(
     if not config.get("metrics_enabled", False):
         return
 
-    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+    from src.table_registry import get_table_fqn as _get_table_fqn
+    table_fqn = config.get("metrics_table") or _get_table_fqn(config, "metrics", "clone_metrics")
 
     started = job.get("started_at", "")
     completed = job.get("completed_at", "")

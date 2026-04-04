@@ -221,16 +221,16 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> 
     Returns:
         Summary with tables processed, metrics recorded, anomalies detected.
     """
-    from src.anomaly_detection import record_metric
+    from src.anomaly_detection import record_metrics_batch
 
     configs = [c for c in _load_configs() if c.get("enabled", True)]
     config = config or {}
     wid = warehouse_id or config.get("sql_warehouse_id", "")
 
     tables_processed = 0
-    metrics_recorded = 0
     anomalies_found = 0
     errors = 0
+    all_metrics = []
 
     for mc in configs:
         table_fqn = mc["table_fqn"]
@@ -240,27 +240,25 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> 
             for metric_name in metrics_list:
                 value = _collect_metric(client, wid, table_fqn, metric_name)
                 if value is not None:
-                    result = record_metric(
-                        table_fqn=table_fqn,
-                        column_name="*",
-                        metric_name=metric_name,
-                        value=float(value),
-                        client=client,
-                        warehouse_id=wid,
-                        config=config,
-                    )
-                    metrics_recorded += 1
-                    if result.get("is_anomaly"):
-                        anomalies_found += 1
+                    all_metrics.append({
+                        "table_fqn": table_fqn,
+                        "column_name": "*",
+                        "metric_name": metric_name,
+                        "value": float(value),
+                    })
             tables_processed += 1
         except Exception as e:
             logger.warning(f"Monitoring error for {table_fqn}: {e}")
             errors += 1
 
+    # Batch insert all collected metrics
+    records = record_metrics_batch(all_metrics, client=client, warehouse_id=wid, config=config)
+    anomalies_found = sum(1 for r in records if r.get("severity") != "normal")
+
     return {
         "status": "completed",
         "tables_processed": tables_processed,
-        "metrics_recorded": metrics_recorded,
+        "metrics_recorded": len(records),
         "anomalies_found": anomalies_found,
         "errors": errors,
         "total_configs": len(configs),

@@ -12,6 +12,10 @@ import {
   TrendingUp, BarChart3, Settings2, Timer, Layers,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import StatusBadge from "@/components/StatusBadge";
+import LoadingState from "@/components/LoadingState";
+import EmptyState from "@/components/EmptyState";
+import ErrorCard from "@/components/ErrorCard";
 
 interface AuditEntry {
   job_id?: string;
@@ -53,18 +57,7 @@ function formatBytes(bytes?: number) {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
 }
 
-function statusBadge(status: string) {
-  const s = status?.toLowerCase();
-  if (s === "success" || s === "completed")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-border/30 text-foreground bg-muted/200/5">{status}</Badge>;
-  if (s === "failed")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-red-500/30 text-red-500 bg-red-500/5">{status}</Badge>;
-  if (s === "running")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-[#E8453C]/30 text-[#E8453C] bg-muted/300/5">{status}</Badge>;
-  if (s === "completed_with_errors")
-    return <Badge variant="outline" className="text-[10px] font-semibold border-border/30 text-muted-foreground bg-muted/200/5">with errors</Badge>;
-  return <Badge variant="outline" className="text-[10px] font-semibold">{status}</Badge>;
-}
+/* statusBadge replaced by <StatusBadge /> component */
 
 function statusIcon(status: string) {
   const s = status?.toLowerCase();
@@ -87,7 +80,7 @@ function LogDetailPanel({ jobId }: { jobId: string }) {
       .finally(() => setLoading(false));
   }, [jobId]);
 
-  if (loading) return <div className="py-4 text-center text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading logs...</div>;
+  if (loading) return <LoadingState message="Loading logs..." />;
   if (!detail || detail.error) return <div className="py-4 text-center text-muted-foreground text-sm">No detailed logs available</div>;
 
   // log_lines can be: array, JSON string, or comma-separated string from Delta
@@ -522,12 +515,7 @@ export default function AuditPage() {
       </Card>
 
       {error && (
-        <Card className="border-red-500/30 bg-card">
-          <CardContent className="pt-6 text-red-500 flex items-center gap-2">
-            <XCircle className="h-4 w-4" />
-            {error}
-          </CardContent>
-        </Card>
+        <ErrorCard error={error} onRetry={loadAudit} />
       )}
 
       {/* Entries List */}
@@ -539,10 +527,12 @@ export default function AuditPage() {
         </div>
       ) : filtered.length === 0 ? (
         <Card className="bg-card border-border">
-          <CardContent className="py-16 text-center">
-            <History className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-30" />
-            <p className="text-sm text-muted-foreground">No audit entries found</p>
-            <p className="text-xs text-muted-foreground mt-1">Operations are logged automatically when you run clones, syncs, or other operations.</p>
+          <CardContent className="py-4">
+            <EmptyState
+              icon={History}
+              title="No audit entries found"
+              description="Operations are logged automatically when you run clones, syncs, or other operations."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -586,7 +576,7 @@ export default function AuditPage() {
                     </Badge>
 
                     {/* Status */}
-                    {statusBadge(entry.status)}
+                    <StatusBadge status={entry.status} />
 
                     {/* Duration */}
                     <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">

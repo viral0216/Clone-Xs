@@ -13,15 +13,16 @@ class TestPipelineStore:
     def setup_method(self):
         self.store = PipelineStore(MagicMock(), "wh-1", "audit")
 
+    @patch("src.catalog_utils.ensure_catalog_and_schema")
     @patch("src.pipeline_store.execute_sql")
-    def test_init_tables_creates_schema_and_3_tables(self, mock_sql):
+    def test_init_tables_creates_schema_and_3_tables(self, mock_sql, mock_ensure):
         self.store.init_tables()
-        assert mock_sql.call_count == 4  # schema + 3 tables
-        calls = [c[0][2] for c in mock_sql.call_args_list]
-        assert "CREATE SCHEMA" in calls[0]
-        assert "pipelines" in calls[1]
-        assert "pipeline_runs" in calls[2]
-        assert "pipeline_step_results" in calls[3]
+        mock_ensure.assert_called_once()
+        assert mock_sql.call_count == 3  # 3 tables
+        all_sql = [c[0][2] for c in mock_sql.call_args_list]
+        assert any("pipelines" in sql for sql in all_sql)
+        assert any("pipeline_runs" in sql for sql in all_sql)
+        assert any("pipeline_step_results" in sql for sql in all_sql)
 
     @patch("src.pipeline_store.execute_sql")
     def test_save_pipeline(self, mock_sql):

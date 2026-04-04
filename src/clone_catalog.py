@@ -8,6 +8,10 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, set_rate_limit
+from src.log_formatter import (
+    header, divider, stat_line, kv, bold, bold_green, bold_red, bold_yellow,
+    green, red, yellow, cyan, dim, OK, FAIL, WARN, ARROW, SCHEMA, CATALOG, CLOCK,
+)
 from src.clone_functions import clone_functions_in_schema
 from src.clone_tables import clone_tables_in_schema
 from src.clone_tags import copy_catalog_tags, copy_schema_tags
@@ -116,7 +120,7 @@ def create_catalog_if_not_exists(
     if location:
         sql += f" MANAGED LOCATION '{location}'"
     execute_sql(client, warehouse_id, sql)
-    logger.info(f"Created catalog: {catalog_name}")
+    logger.info(f"{OK} Created catalog: {bold(catalog_name)}")
 
     # Set current user as owner and grant full access.
     # On serverless compute, spark.sql() may create catalogs as "System user".
@@ -229,7 +233,7 @@ def process_schema(
             copy_schema_tags(client, warehouse_id, source, dest, schema, dry_run=dry_run)
 
         # Clone tables
-        logger.info(f"Cloning tables in schema: {schema}")
+        logger.info(f"  {SCHEMA} Cloning tables in schema: {bold(schema)}")
         schema_results["tables"] = clone_tables_in_schema(
             client, warehouse_id, source, dest, schema, clone_type, exclude_tables, load_type,
             dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
@@ -259,19 +263,24 @@ def process_schema(
         # Record lineage for tables
         lineage_config = config.get("lineage")
         if lineage_config and not dry_run:
-            from src.lineage import record_lineage_to_uc
+            from src.lineage import record_lineage_batch
             tables = list_tables_sdk(client, dest, schema)
             tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
-            for row in tables:
-                record_lineage_to_uc(
+            entries = [
+                {"source": source, "dest": dest, "schema": schema,
+                 "object_name": row["table_name"], "object_type": "TABLE",
+                 "clone_type": clone_type}
+                for row in tables
+            ]
+            if entries:
+                record_lineage_batch(
                     client, warehouse_id,
                     lineage_config["catalog"], lineage_config["schema"],
-                    source, dest, schema, row["table_name"],
-                    "TABLE", clone_type, dry_run=dry_run,
+                    entries, dry_run=dry_run,
                 )
 
         # Clone views (after tables, since views may depend on tables)
-        logger.info(f"Cloning views in schema: {schema}")
+        logger.info(f"  {SCHEMA} Cloning views in schema: {bold(schema)}")
         schema_results["views"] = clone_views_in_schema(
             client, warehouse_id, source, dest, schema, load_type,
             dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
@@ -280,7 +289,7 @@ def process_schema(
         )
 
         # Clone functions
-        logger.info(f"Cloning functions in schema: {schema}")
+        logger.info(f"  {SCHEMA} Cloning functions in schema: {bold(schema)}")
         schema_results["functions"] = clone_functions_in_schema(
             client, warehouse_id, source, dest, schema, load_type,
             dry_run=dry_run, copy_permissions=copy_permissions,
@@ -289,7 +298,7 @@ def process_schema(
         )
 
         # Clone volumes
-        logger.info(f"Cloning volumes in schema: {schema}")
+        logger.info(f"  {SCHEMA} Cloning volumes in schema: {bold(schema)}")
         schema_results["volumes"] = clone_volumes_in_schema(
             client, warehouse_id, source, dest, schema, load_type,
             dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
@@ -300,7 +309,7 @@ def process_schema(
         run_post_schema_hooks(client, warehouse_id, config, schema, dry_run=dry_run)
 
     except Exception as e:
-        logger.error(f"Error processing schema {schema}: {e}")
+        logger.error(f"{FAIL} Error processing schema {bold_red(schema)}: {e}")
 
     schema_results["duration_seconds"] = round(time.time() - schema_start, 1)
     return schema_results
@@ -419,11 +428,11 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         pm.load_plugins_from_config(config)
         config = pm.run_on_clone_start(config, client, warehouse_id)
 
-    mode = "[DRY RUN] " if dry_run else ""
-    logger.info(f"{mode}Starting catalog clone: {source} -> {dest}")
-    logger.info(f"Clone type: {config['clone_type']}, Load type: {config['load_type']}")
+    mode = f"{bold_yellow('[DRY RUN]')} " if dry_run else ""
+    logger.info(f"{mode}{CATALOG} Starting catalog clone: {bold(source)} {ARROW} {bold(dest)}")
+    logger.info(kv("Clone type", config['clone_type']) + "  " + kv("Load type", config['load_type']))
     if dry_run:
-        logger.info("DRY RUN MODE — no write operations will be executed")
+        logger.info(f"  {WARN} {bold_yellow('DRY RUN MODE')} — no write operations will be executed")
 
     # Initialize rollback log
     rollback_log = None
@@ -468,7 +477,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if filter_tags:
         schemas = _filter_schemas_by_tags(client, warehouse_id, source, schemas, filter_tags)
 
-    logger.info(f"Found {len(schemas)} schemas to clone: {schemas}")
+    logger.info(f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}")
 
     # Step 4: Process schemas in parallel with progress tracking
     progress = SchemaProgressTracker(schemas, show_progress=show_progress)
@@ -506,7 +515,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 if dashboard:
                     dashboard.schema_completed(schema_name, result)
             except Exception as e:
-                logger.error(f"Schema {schema_name} failed: {e}")
+                logger.error(f"{FAIL} Schema {bold_red(schema_name)} failed: {e}")
                 error_result = {"schema": schema_name, "error": str(e)}
                 all_results.append(error_result)
                 progress.schema_done(error_result)
@@ -602,15 +611,12 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 )
 
     # Step 7: Write audit log
-    audit_config = config.get("audit")
-    if audit_config and not dry_run:
-        from src.audit import ensure_audit_table, write_audit_log
-        audit_table = ensure_audit_table(
-            client, warehouse_id,
-            audit_config["catalog"], audit_config["schema"],
-            audit_config.get("table", "clone_audit_log"),
-        )
-        write_audit_log(client, warehouse_id, audit_table, summary, config)
+    if not dry_run:
+        try:
+            from src.audit_trail import ensure_audit_table, log_operation_complete
+            ensure_audit_table(client, warehouse_id, config)
+        except Exception as e:
+            logger.warning(f"Failed to write audit log: {e}")
 
     # Step 8: Run post-clone hooks
     run_post_clone_hooks(client, warehouse_id, config, dry_run=dry_run)
@@ -740,29 +746,34 @@ def _build_summary(results: list[dict]) -> dict:
 
 def _print_summary(summary: dict, source: str, dest: str, dry_run: bool = False) -> None:
     """Print a formatted summary of the clone operation."""
-    mode = "[DRY RUN] " if dry_run else ""
-    logger.info("=" * 60)
-    logger.info(f"{mode}CLONE SUMMARY: {source} -> {dest}")
-    logger.info("=" * 60)
-    logger.info(f"Schemas processed: {summary['schemas_processed']}")
+    mode = f"{bold_yellow('[DRY RUN]')} " if dry_run else ""
+    title = f"{mode}CLONE SUMMARY: {source} {ARROW} {dest}"
+    logger.info(header(title))
+
+    logger.info(kv("Schemas processed", bold(str(summary['schemas_processed']))))
 
     duration = summary.get("duration_seconds")
     if duration:
         m, s = divmod(int(duration), 60)
-        logger.info(f"Total duration:    {m}m{s}s")
+        logger.info(kv("Total duration", f"{CLOCK} {bold(f'{m}m{s}s')}"))
 
+    logger.info(divider())
     for obj_type in ("tables", "views", "functions", "volumes"):
         stats = summary[obj_type]
-        logger.info(
-            f"  {obj_type.capitalize():12s}: "
-            f"{stats['success']} success, "
-            f"{stats['failed']} failed, "
-            f"{stats['skipped']} skipped"
-        )
+        logger.info(stat_line(
+            obj_type.capitalize(), stats["success"], stats["failed"], stats["skipped"],
+        ))
 
     if summary["errors"]:
-        logger.warning(f"  Errors: {len(summary['errors'])}")
+        logger.info(divider())
+        error_count = len(summary["errors"])
+        logger.warning(f"  {WARN} {bold_red(f'{error_count} error(s)')}")
         for err in summary["errors"]:
-            logger.warning(f"    - {err}")
+            logger.warning(f"    {FAIL} {err}")
 
-    logger.info("=" * 60)
+    total_failed = sum(summary[t]["failed"] for t in ("tables", "views", "functions", "volumes"))
+    logger.info(divider())
+    if total_failed == 0:
+        logger.info(f"  {OK} {bold_green('Clone completed successfully')}")
+    else:
+        logger.info(f"  {WARN} {bold_yellow(f'Clone completed with {total_failed} failure(s)')}")

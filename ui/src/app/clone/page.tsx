@@ -15,6 +15,8 @@ import {
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
   Star, Plus, X,
 } from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
+import LoadingState from "@/components/LoadingState";
 
 type Step = "source" | "options" | "preview" | "execute";
 
@@ -285,21 +287,8 @@ function JobProgress({ jobId }: { jobId: string }) {
 
 
   if (!job) {
-    return (
-      <div className="flex items-center gap-2 text-gray-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading job status...
-      </div>
-    );
+    return <LoadingState message="Loading job status..." />;
   }
-
-  const statusColor = {
-    queued: "bg-muted/40 text-foreground",
-    running: "bg-muted/50 text-foreground",
-    completed: "bg-muted/40 text-foreground",
-    failed: "bg-red-100 text-red-800",
-    cancelled: "bg-gray-100 text-gray-800",
-  }[job.status] || "bg-gray-100 text-gray-800";
 
   const statusIcon = {
     queued: <Clock className="h-5 w-5 text-muted-foreground" />,
@@ -356,9 +345,7 @@ function JobProgress({ jobId }: { jobId: string }) {
               </Button>
             </>
           )}
-          <Badge className={statusColor}>
-            {job.status.toUpperCase()}
-          </Badge>
+          <StatusBadge status={job.status ?? "unknown"} />
         </div>
       </div>
 
@@ -584,9 +571,7 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
     <div>
       <label className="text-sm font-medium">Destination Catalog</label>
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
-        </div>
+        <LoadingState message="Loading catalogs..." className="py-2" />
       ) : isNew ? (
         <div className="space-y-2">
           <div className="flex gap-2">
@@ -1308,7 +1293,7 @@ export default function ClonePage() {
                 Back to Preview
               </Button>
               <a
-                href={`/preview?source=${encodeURIComponent(sourceCatalog)}&dest=${encodeURIComponent(destCatalog)}`}
+                href={`/preview?source=${encodeURIComponent(config.source_catalog)}&dest=${encodeURIComponent(config.destination_catalog)}`}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border text-[#E8453C] hover:bg-muted/30 dark:hover:bg-white/5 text-sm font-medium"
               >
                 Compare Data →

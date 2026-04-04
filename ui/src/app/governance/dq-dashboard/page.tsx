@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import { BarChart3, CheckCircle2, XCircle, Play, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +23,20 @@ export default function DQDashboardPage() {
   const failed = results.length - passed;
   const passRate = results.length > 0 ? Math.round((passed / results.length) * 100) : 100;
   const critical = results.filter(r => (r.passed === false || r.passed === "false") && r.severity === "critical").length;
+
+  const columns: Column[] = [
+    { key: "passed", label: "Status", sortable: true, render: (v) => {
+      const pass = v === true || v === "true";
+      return pass ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />;
+    }},
+    { key: "rule_name", label: "Rule", sortable: true, render: (v) => <span className="font-medium">{v}</span> },
+    { key: "table_fqn", label: "Table", sortable: true, render: (v) => <span className="font-mono text-xs">{v}</span> },
+    { key: "severity", label: "Severity", sortable: true, render: (v) => <Badge className={v === "critical" ? "bg-red-100 text-red-800" : v === "warning" ? "bg-muted/40 text-foreground" : "bg-muted/50 text-foreground"}>{v}</Badge> },
+    { key: "total_rows", label: "Total", sortable: true, align: "right", render: (v) => Number(v || 0).toLocaleString() },
+    { key: "failed_rows", label: "Failed", sortable: true, align: "right", render: (v) => <span className="font-medium text-red-600">{Number(v || 0).toLocaleString()}</span> },
+    { key: "failure_rate", label: "Rate", sortable: true, align: "right", render: (v) => `${((Number(v) || 0) * 100).toFixed(2)}%` },
+    { key: "execution_time_ms", label: "Time", sortable: true, align: "right", render: (v) => <span className="text-xs text-muted-foreground">{v}ms</span> },
+  ];
 
   return (
     <div className="space-y-4">
@@ -46,33 +61,22 @@ export default function DQDashboardPage() {
       )}
 
       <Card><CardHeader className="pb-2"><CardTitle className="text-base">Latest Results</CardTitle></CardHeader>
-        <CardContent><div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-border">
-              <th className="text-left py-2 px-3">Status</th><th className="text-left py-2 px-3">Rule</th><th className="text-left py-2 px-3">Table</th>
-              <th className="text-left py-2 px-3">Severity</th><th className="text-right py-2 px-3">Total</th><th className="text-right py-2 px-3">Failed</th>
-              <th className="text-right py-2 px-3">Rate</th><th className="text-right py-2 px-3">Time</th>
-            </tr></thead>
-            <tbody>
-              {results.map((r, i) => {
-                const pass = r.passed === true || r.passed === "true";
-                return (
-                  <tr key={i} className={`border-b border-border ${!pass ? "bg-red-50/50 dark:bg-red-950/10" : ""}`}>
-                    <td className="py-2 px-3">{pass ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : <XCircle className="h-4 w-4 text-red-600" />}</td>
-                    <td className="py-2 px-3 font-medium">{r.rule_name}</td>
-                    <td className="py-2 px-3 font-mono text-xs">{r.table_fqn}</td>
-                    <td className="py-2 px-3"><Badge className={r.severity === "critical" ? "bg-red-100 text-red-800" : r.severity === "warning" ? "bg-muted/40 text-foreground" : "bg-muted/50 text-foreground"}>{r.severity}</Badge></td>
-                    <td className="py-2 px-3 text-right">{Number(r.total_rows || 0).toLocaleString()}</td>
-                    <td className="py-2 px-3 text-right font-medium text-red-600">{Number(r.failed_rows || 0).toLocaleString()}</td>
-                    <td className="py-2 px-3 text-right">{((Number(r.failure_rate) || 0) * 100).toFixed(2)}%</td>
-                    <td className="py-2 px-3 text-right text-xs text-muted-foreground">{r.execution_time_ms}ms</td>
-                  </tr>
-                );
-              })}
-              {results.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No results. Run DQ rules to see results here.</td></tr>}
-            </tbody>
-          </table>
-        </div></CardContent>
+        <CardContent>
+          <DataTable
+            data={results}
+            columns={columns}
+            searchable
+            searchKeys={["rule_name", "table_fqn", "severity"]}
+            pageSize={25}
+            compact
+            tableId="dq-dashboard-table"
+            emptyMessage="No results. Run DQ rules to see results here."
+            rowClassName={(r) => {
+              const pass = r.passed === true || r.passed === "true";
+              return !pass ? "bg-red-50/50 dark:bg-red-950/10" : "";
+            }}
+          />
+        </CardContent>
       </Card>
     </div>
   );

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import {
   GitCompareArrows, Loader2, Upload, CheckCircle, XCircle,
 } from "lucide-react";
@@ -196,52 +197,55 @@ export default function ConfigDiffPage() {
                 <p className="font-medium">Configurations are identical</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-gray-50">
-                      <th className="text-left py-2 px-3 font-medium">Key</th>
-                      <th className="text-left py-2 px-3 font-medium">Value A</th>
-                      <th className="text-left py-2 px-3 font-medium">Value B</th>
-                      <th className="text-left py-2 px-3 font-medium">Changed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(Array.isArray(differences) ? differences : []).map((diff: any, i: number) => {
-                      const changed = diff.changed ?? (diff.value_a !== diff.value_b);
-                      return (
-                        <tr
-                          key={i}
-                          className={`border-b ${
-                            changed
-                              ? "bg-red-50 hover:bg-red-100"
-                              : "bg-muted/20 hover:bg-muted/40"
-                          }`}
-                        >
-                          <td className="py-2 px-3 font-mono text-xs font-medium">{diff.key}</td>
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {typeof diff.value_a === "object"
-                              ? JSON.stringify(diff.value_a)
-                              : String(diff.value_a ?? "\u2014")}
-                          </td>
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {typeof diff.value_b === "object"
-                              ? JSON.stringify(diff.value_b)
-                              : String(diff.value_b ?? "\u2014")}
-                          </td>
-                          <td className="py-2 px-3">
-                            {changed ? (
-                              <Badge variant="destructive" className="text-xs">Changed</Badge>
-                            ) : (
-                              <Badge className="bg-foreground text-xs">Same</Badge>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                data={(Array.isArray(differences) ? differences : []).map((diff: any) => ({
+                  ...diff,
+                  _changed: diff.changed ?? (diff.value_a !== diff.value_b),
+                }))}
+                columns={[
+                  { key: "key", label: "Key", sortable: true, render: (v: string) => <span className="font-mono text-xs font-medium">{v}</span> },
+                  {
+                    key: "value_a",
+                    label: "Value A",
+                    sortable: true,
+                    render: (v: any) => (
+                      <span className="font-mono text-xs">
+                        {typeof v === "object" ? JSON.stringify(v) : String(v ?? "\u2014")}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "value_b",
+                    label: "Value B",
+                    sortable: true,
+                    render: (v: any) => (
+                      <span className="font-mono text-xs">
+                        {typeof v === "object" ? JSON.stringify(v) : String(v ?? "\u2014")}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "_changed",
+                    label: "Changed",
+                    sortable: true,
+                    render: (v: boolean) =>
+                      v ? (
+                        <Badge variant="destructive" className="text-xs">Changed</Badge>
+                      ) : (
+                        <Badge className="bg-foreground text-xs">Same</Badge>
+                      ),
+                  },
+                ] as Column[]}
+                searchable
+                searchKeys={["key", "value_a", "value_b"]}
+                pageSize={25}
+                compact
+                tableId="config-diff-differences"
+                rowClassName={(row: any) =>
+                  row._changed ? "bg-red-50 hover:bg-red-100" : "bg-muted/20 hover:bg-muted/40"
+                }
+                emptyMessage="No differences found."
+              />
             )}
           </CardContent>
         </Card>

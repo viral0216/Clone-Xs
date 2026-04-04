@@ -1,19 +1,18 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { BookOpen, Plus, Trash2, Link2, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { BookOpen, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
 
 export default function DictionaryPage() {
   const [terms, setTerms] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", abbreviation: "", definition: "", domain: "General", owner: "", tags: "", status: "draft" });
@@ -21,9 +20,7 @@ export default function DictionaryPage() {
   useEffect(() => { load(); }, []);
 
   async function load() {
-    setLoading(true);
     try { const data = await api.get("/governance/glossary"); setTerms(Array.isArray(data) ? data : []); } catch {}
-    setLoading(false);
   }
 
   async function addTerm() {
@@ -41,7 +38,6 @@ export default function DictionaryPage() {
     try { await api.delete(`/governance/glossary/${id}`); toast.success("Deleted"); load(); } catch (e: any) { toast.error(e.message); }
   }
 
-  const filtered = terms.filter(t => !search || t.name?.toLowerCase().includes(search.toLowerCase()) || t.definition?.toLowerCase().includes(search.toLowerCase()));
   const domains = ["General", "Marketing", "Finance", "Engineering", "Operations", "Legal", "HR", "Data"];
 
   return (
@@ -49,10 +45,6 @@ export default function DictionaryPage() {
       <PageHeader title="Data Dictionary" icon={BookOpen} breadcrumbs={["Governance", "Data Dictionary"]} description="Centralized business glossary — define, govern, and link business terms to data columns." />
 
       <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search terms..." className="pl-10" />
-        </div>
         <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />Add Term</Button>
       </div>
 
@@ -80,37 +72,53 @@ export default function DictionaryPage() {
         </CardContent></Card>
       )}
 
-      <Card><CardContent className="pt-4">
-        <div className="space-y-1">
-          {filtered.length === 0 && <p className="text-center text-muted-foreground py-8">No terms found. Click "Add Term" to create your first business term.</p>}
-          {filtered.map(t => (
-            <div key={t.term_id} className="border-b border-border last:border-0">
-              <button onClick={() => setExpanded(expanded === t.term_id ? null : t.term_id)} className="w-full flex items-center gap-3 py-3 px-2 text-left hover:bg-accent/30">
-                {expanded === t.term_id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                <span className="font-medium">{t.name}</span>
-                {t.abbreviation && <Badge variant="outline" className="text-xs">{t.abbreviation}</Badge>}
-                <Badge className={t.status === "approved" ? "bg-muted/40 text-foreground" : t.status === "deprecated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{t.status}</Badge>
-                <Badge variant="outline" className="text-xs">{t.domain}</Badge>
-                <span className="text-xs text-muted-foreground ml-auto">{t.owner}</span>
-              </button>
-              {expanded === t.term_id && (
-                <div className="px-10 pb-3 space-y-2">
-                  <p className="text-sm text-foreground">{t.definition}</p>
-                  {t.tags?.length > 0 && <div className="flex gap-1">{t.tags.map((tag: string) => <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>)}</div>}
-                  {t.linked_columns?.length > 0 && (
-                    <div><p className="text-xs font-medium text-muted-foreground mb-1">Linked Columns:</p>
-                      {t.linked_columns.map((c: string) => <Badge key={c} variant="outline" className="text-xs font-mono mr-1">{c}</Badge>)}
+      <DataTable
+        data={terms}
+        columns={[
+          {
+            key: "name",
+            label: "Term",
+            sortable: true,
+            render: (v: any, row: any) => (
+              <div>
+                <button onClick={() => setExpanded(expanded === row.term_id ? null : row.term_id)} className="flex items-center gap-2 text-left hover:underline">
+                  {expanded === row.term_id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <span className="font-medium">{v}</span>
+                  {row.abbreviation && <Badge variant="outline" className="text-xs">{row.abbreviation}</Badge>}
+                </button>
+                {expanded === row.term_id && (
+                  <div className="mt-2 pl-6 space-y-2">
+                    <p className="text-sm text-foreground">{row.definition}</p>
+                    {row.tags?.length > 0 && <div className="flex gap-1">{row.tags.map((tag: string) => <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>)}</div>}
+                    {row.linked_columns?.length > 0 && (
+                      <div><p className="text-xs font-medium text-muted-foreground mb-1">Linked Columns:</p>
+                        {row.linked_columns.map((c: string) => <Badge key={c} variant="outline" className="text-xs font-mono mr-1">{c}</Badge>)}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <Button variant="ghost" size="sm" onClick={() => deleteTerm(row.term_id)}><Trash2 className="h-3.5 w-3.5 mr-1 text-red-500" />Delete</Button>
                     </div>
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <Button variant="ghost" size="sm" onClick={() => deleteTerm(t.term_id)}><Trash2 className="h-3.5 w-3.5 mr-1 text-red-500" />Delete</Button>
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </CardContent></Card>
+                )}
+              </div>
+            ),
+          },
+          {
+            key: "status",
+            label: "Status",
+            sortable: true,
+            render: (v: any) => <Badge className={v === "approved" ? "bg-muted/40 text-foreground" : v === "deprecated" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}>{v}</Badge>,
+          },
+          { key: "domain", label: "Domain", sortable: true, render: (v: any) => <Badge variant="outline" className="text-xs">{v}</Badge> },
+          { key: "owner", label: "Owner", sortable: true, render: (v: any) => <span className="text-xs text-muted-foreground">{v}</span> },
+        ] as Column[]}
+        searchable
+        searchKeys={["name", "definition", "domain", "owner", "abbreviation"]}
+        pageSize={25}
+        compact
+        tableId="dictionary-terms"
+        emptyMessage='No terms found. Click "Add Term" to create your first business term.'
+      />
     </div>
   );
 }

@@ -29,7 +29,12 @@ STATUS_TRANSITIONS = {
 class DSARStore:
     """Delta table store for DSAR request lifecycle, actions, and exports."""
 
-    def __init__(self, client, warehouse_id: str, state_catalog: str = "clone_audit", state_schema: str = "dsar"):
+    def __init__(self, client, warehouse_id: str, state_catalog: str | None = None, state_schema: str | None = None, config: dict | None = None):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "dsar")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.state_catalog = state_catalog
@@ -39,71 +44,81 @@ class DSARStore:
         self._exports_table = f"{state_catalog}.{state_schema}.dsar_exports"
 
     def init_tables(self) -> None:
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE SCHEMA IF NOT EXISTS {self.state_catalog}.{self.state_schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._requests_table} (
-                request_id STRING NOT NULL,
-                subject_type STRING NOT NULL,
-                subject_value_hash STRING NOT NULL,
-                subject_column STRING,
-                requester_email STRING,
-                requester_name STRING,
-                legal_basis STRING,
-                export_format STRING,
-                scope_catalogs STRING,
-                status STRING,
-                deadline TIMESTAMP NOT NULL,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                created_by STRING,
-                discovery_json STRING,
-                affected_tables INT,
-                affected_rows BIGINT,
-                notes STRING,
-                error_message STRING
-            ) USING DELTA
-            COMMENT 'DSAR / GDPR Article 15 access request lifecycle'
-            TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._requests_table} (
+                    request_id STRING NOT NULL,
+                    subject_type STRING NOT NULL,
+                    subject_value_hash STRING NOT NULL,
+                    subject_column STRING,
+                    requester_email STRING,
+                    requester_name STRING,
+                    legal_basis STRING,
+                    export_format STRING,
+                    scope_catalogs STRING,
+                    status STRING,
+                    deadline TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    created_by STRING,
+                    discovery_json STRING,
+                    affected_tables INT,
+                    affected_rows BIGINT,
+                    notes STRING,
+                    error_message STRING
+                ) USING DELTA
+                COMMENT 'DSAR / GDPR Article 15 access request lifecycle'
+                TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._requests_table}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._actions_table} (
-                action_id STRING NOT NULL,
-                request_id STRING NOT NULL,
-                action_type STRING NOT NULL,
-                catalog STRING,
-                schema_name STRING,
-                table_name STRING,
-                column_name STRING,
-                rows_found BIGINT,
-                status STRING,
-                executed_at TIMESTAMP,
-                duration_seconds DOUBLE,
-                error_message STRING
-            ) USING DELTA
-            COMMENT 'DSAR per-table discovery and export actions'
-            TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._actions_table} (
+                    action_id STRING NOT NULL,
+                    request_id STRING NOT NULL,
+                    action_type STRING NOT NULL,
+                    catalog STRING,
+                    schema_name STRING,
+                    table_name STRING,
+                    column_name STRING,
+                    rows_found BIGINT,
+                    status STRING,
+                    executed_at TIMESTAMP,
+                    duration_seconds DOUBLE,
+                    error_message STRING
+                ) USING DELTA
+                COMMENT 'DSAR per-table discovery and export actions'
+                TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._actions_table}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._exports_table} (
-                export_id STRING NOT NULL,
-                request_id STRING NOT NULL,
-                format STRING,
-                file_path STRING,
-                file_size_bytes BIGINT,
-                total_rows BIGINT,
-                total_tables INT,
-                generated_at TIMESTAMP,
-                generated_by STRING
-            ) USING DELTA
-            COMMENT 'DSAR exported data files'
-            TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-        """)
-        logger.info(f"DSAR store tables ready in {self.state_catalog}.{self.state_schema}")
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._exports_table} (
+                    export_id STRING NOT NULL,
+                    request_id STRING NOT NULL,
+                    format STRING,
+                    file_path STRING,
+                    file_size_bytes BIGINT,
+                    total_rows BIGINT,
+                    total_tables INT,
+                    generated_at TIMESTAMP,
+                    generated_by STRING
+                ) USING DELTA
+                COMMENT 'DSAR exported data files'
+                TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._exports_table}: {e}")
+
+        logger.info(f"DSAR store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def save_request(self, **kwargs) -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

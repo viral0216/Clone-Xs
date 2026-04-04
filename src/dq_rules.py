@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_dq_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.governance"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "governance")
 
 
 def ensure_dq_tables(client, warehouse_id, config):
@@ -146,26 +145,32 @@ def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog:
         f"SELECT * FROM {schema}.dq_rules WHERE {' AND '.join(where_parts)} ORDER BY table_fqn")
 
     results = []
+    value_rows = []
+    now = datetime.now(timezone.utc).isoformat()
     for rule in rules:
         result = _execute_single_rule(client, warehouse_id, rule)
         results.append(result)
+        result_id = str(uuid.uuid4())[:8]
+        value_rows.append(
+            f"('{result_id}', '{rule['rule_id']}', '{_esc(rule['name'])}', "
+            f"'{_esc(rule['table_fqn'])}', '{_esc(rule.get('column_name', ''))}', "
+            f"'{rule['rule_type']}', '{rule.get('severity', 'warning')}', "
+            f"{result['total_rows']}, {result['failed_rows']}, "
+            f"{result['failure_rate']}, {str(result['passed']).lower()}, "
+            f"{rule.get('threshold', 0.0)}, '{now}', "
+            f"{result['execution_time_ms']}, '{_esc(result.get('error', ''))}')"
+        )
 
-        # Store result
+    # Batch insert results
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(value_rows), batch_size):
+        batch = value_rows[i:i + batch_size]
         try:
-            result_id = str(uuid.uuid4())[:8]
-            now = datetime.now(timezone.utc).isoformat()
-            execute_sql(client, warehouse_id, f"""
-                INSERT INTO {schema}.dq_results
-                VALUES ('{result_id}', '{rule["rule_id"]}', '{_esc(rule["name"])}',
-                        '{_esc(rule["table_fqn"])}', '{_esc(rule.get("column_name", ""))}',
-                        '{rule["rule_type"]}', '{rule.get("severity", "warning")}',
-                        {result["total_rows"]}, {result["failed_rows"]},
-                        {result["failure_rate"]}, {str(result["passed"]).lower()},
-                        {rule.get("threshold", 0.0)}, '{now}',
-                        {result["execution_time_ms"]}, '{_esc(result.get("error", ""))}')
-            """)
+            execute_sql(client, warehouse_id,
+                        f"INSERT INTO {schema}.dq_results VALUES {', '.join(batch)}")
         except Exception as e:
-            logger.warning(f"Could not store DQ result: {e}")
+            logger.warning(f"Could not store DQ results batch: {e}")
 
     logger.info(f"Executed {len(results)} DQ rules: {sum(1 for r in results if r['passed'])} passed, {sum(1 for r in results if not r['passed'])} failed")
     return results
@@ -297,10 +302,7 @@ def get_dq_history(client, warehouse_id, config, rule_id: str = "", days: int = 
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("'", "\\'").replace("\\", "\\\\")
+from src.client import sql_escape as _esc  # noqa: E402
 
 
 def _parse_val(v):

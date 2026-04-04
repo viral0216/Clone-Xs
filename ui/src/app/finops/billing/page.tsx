@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import CatalogPicker from "@/components/CatalogPicker";
 import { toast } from "sonner";
 import { useBillingCost, useAzureCosts } from "@/hooks/useApi";
@@ -210,28 +211,26 @@ export default function BillingPage() {
                 <CardTitle className="text-base">SKU Breakdown</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="py-2 pr-4">SKU</th>
-                        <th className="py-2 pr-4 text-right">Usage (DBUs)</th>
-                        <th className="py-2 text-right">% of Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {skuBreakdown.map((row, i) => (
-                        <tr key={i} className="border-b border-border/50">
-                          <td className="py-2 pr-4 font-medium">{row.sku}</td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatNumber(row.quantity)}</td>
-                          <td className="py-2 text-right font-mono">
-                            {totalDBUs > 0 ? ((row.quantity / totalDBUs) * 100).toFixed(1) : 0}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  data={skuBreakdown.map(s => ({ ...s, pct: totalDBUs > 0 ? (s.quantity / totalDBUs) * 100 : 0 }))}
+                  columns={[
+                    { key: "sku", label: "SKU", sortable: true, render: (v: string) => <span className="font-medium">{v}</span> },
+                    { key: "quantity", label: "Usage (DBUs)", sortable: true, align: "right", render: (v: number) => <span className="font-mono">{formatNumber(v)}</span> },
+                    {
+                      key: "pct",
+                      label: "% of Total",
+                      sortable: true,
+                      align: "right",
+                      render: (v: number) => <span className="font-mono">{v.toFixed(1)}%</span>,
+                    },
+                  ] as Column[]}
+                  searchable
+                  searchKeys={["sku"]}
+                  pageSize={25}
+                  compact
+                  tableId="billing-sku-breakdown"
+                  emptyMessage="No SKU data available."
+                />
               </CardContent>
             </Card>
           )}

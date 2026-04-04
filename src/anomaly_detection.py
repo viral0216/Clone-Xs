@@ -34,61 +34,11 @@ def _get_thresholds(config: dict | None = None) -> tuple[int, float, float]:
 # ---------------------------------------------------------------------------
 
 def _get_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.data_quality"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "data_quality")
 
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
-
-
-def _get_spark():
-    """Try to get a Spark session; return None if unavailable."""
-    try:
-        from src.spark_session import get_spark_safe
-        return get_spark_safe()
-    except Exception:
-        return None
-
-
-def _run_sql(sql: str, client=None, warehouse_id: str = ""):
-    """Execute SQL via Spark (preferred) or SQL warehouse (fallback)."""
-    spark = _get_spark()
-    if spark:
-        spark.sql(sql)
-        return
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        execute_sql(client, warehouse_id, sql)
-        return
-
-    raise RuntimeError("No Spark session or SQL warehouse available for storage")
-
-
-def _query_sql(sql: str, limit: int = 100, client=None, warehouse_id: str = "") -> list[dict]:
-    """Execute a SELECT query and return rows as list of dicts."""
-    spark = _get_spark()
-    if spark:
-        rows = spark.sql(sql).limit(limit).collect()
-        result = []
-        for row in rows:
-            d = row.asDict()
-            for k, v in d.items():
-                if v is not None and not isinstance(v, (str, int, float, bool)):
-                    d[k] = str(v)
-            result.append(d)
-        return result
-
-    if client and warehouse_id:
-        from src.client import execute_sql
-        rows = execute_sql(client, warehouse_id, sql)
-        return (rows or [])[:limit]
-
-    raise RuntimeError("No Spark session or SQL warehouse available for querying")
+from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _run_sql  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +185,89 @@ def record_metric(
     }
     logger.info(f"Recorded metric {metric_name} for {table_fqn}: value={value}, z={z_score:.2f}, severity={severity}")
     return record
+
+
+def record_metrics_batch(
+    metrics: list[dict],
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+) -> list[dict]:
+    """Batch-insert multiple metrics in a single SQL statement.
+
+    Each item in *metrics* must have: table_fqn, column_name, metric_name, value.
+    Baseline z-score computation uses the existing per-metric history.
+    """
+    if not metrics:
+        return []
+
+    config = config or {}
+    schema = _get_schema(config)
+    ensure_tables(client, warehouse_id, config)
+    baseline_window, warning_threshold, critical_threshold = _get_thresholds(config)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    records = []
+    value_rows = []
+
+    for m in metrics:
+        table_fqn = m["table_fqn"]
+        column_name = m["column_name"]
+        metric_name = m["metric_name"]
+        value = m["value"]
+        metric_id = str(uuid.uuid4())[:12]
+
+        # Fetch baseline (still per-metric, but INSERT is batched)
+        try:
+            recent = _query_sql(
+                f"SELECT value FROM {schema}.metric_baselines "
+                f"WHERE table_fqn = '{_esc(table_fqn)}' "
+                f"AND column_name = '{_esc(column_name)}' "
+                f"AND metric_name = '{_esc(metric_name)}' "
+                f"ORDER BY measured_at DESC",
+                limit=baseline_window, client=client, warehouse_id=warehouse_id,
+            )
+        except Exception:
+            recent = []
+
+        vals = [float(r["value"]) for r in recent if r.get("value") is not None]
+        if len(vals) >= 3:
+            mean = sum(vals) / len(vals)
+            variance = sum((v - mean) ** 2 for v in vals) / len(vals)
+            stddev = math.sqrt(variance) if variance > 0 else 0.0
+        else:
+            mean = value
+            stddev = 0.0
+
+        z_score = abs(value - mean) / stddev if stddev > 0 else 0.0
+        is_anomaly = z_score > warning_threshold
+        severity = "critical" if z_score > critical_threshold else ("warning" if is_anomaly else "normal")
+
+        value_rows.append(
+            f"('{metric_id}', '{_esc(table_fqn)}', '{_esc(column_name)}', "
+            f"'{_esc(metric_name)}', {value}, '{now}', {mean}, {stddev}, "
+            f"{z_score}, {str(is_anomaly).lower()}, '{severity}')"
+        )
+        records.append({
+            "id": metric_id, "table_fqn": table_fqn, "value": value,
+            "z_score": round(z_score, 4), "severity": severity,
+        })
+
+    # Batch insert
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(value_rows), batch_size):
+        batch = value_rows[i:i + batch_size]
+        try:
+            _run_sql(
+                f"INSERT INTO {schema}.metric_baselines VALUES {', '.join(batch)}",
+                client, warehouse_id,
+            )
+        except Exception as e:
+            logger.warning(f"Could not batch-insert metrics: {e}")
+
+    logger.info(f"Batch-recorded {len(records)} metrics")
+    return records
 
 
 def get_anomalies(

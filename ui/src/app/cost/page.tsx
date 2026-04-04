@@ -8,6 +8,7 @@ import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import { Loader2, XCircle, DollarSign, HardDrive, Cpu, Calculator } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import { useCurrency } from "@/hooks/useSettings";
 
 export default function CostPage() {
@@ -123,40 +124,40 @@ export default function CostPage() {
             <CardTitle className="text-lg">Top {topTables.length} Largest Tables</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto border border-border rounded">
-              <table className="w-full text-sm">
-                <thead className="bg-background">
-                  <tr className="border-b border-border">
-                    <th className="text-left py-2 px-3 font-medium text-foreground">#</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Schema</th>
-                    <th className="text-left py-2 px-3 font-medium text-foreground">Table</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">Size (GB)</th>
-                    <th className="text-right py-2 px-3 font-medium text-foreground">% of Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topTables.map((row: any, i: number) => {
-                    const pct = results.total_gb > 0 ? ((row.size_gb / results.total_gb) * 100).toFixed(1) : 0;
+            <DataTable
+              data={topTables.map((row: any) => ({
+                ...row,
+                pct: results.total_gb > 0 ? (row.size_gb / results.total_gb) * 100 : 0,
+              }))}
+              columns={[
+                { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-muted-foreground">{v}</span> },
+                { key: "table", label: "Table", sortable: true, render: (v: string) => <span className="font-medium text-foreground">{v}</span> },
+                { key: "size_gb", label: "Size (GB)", sortable: true, align: "right", render: (v: number) => <span className="text-foreground">{v?.toFixed(2)}</span> },
+                {
+                  key: "pct",
+                  label: "% of Total",
+                  sortable: true,
+                  align: "right",
+                  render: (v: number) => {
+                    const pctStr = v.toFixed(1);
                     return (
-                      <tr key={i} className="border-b border-border">
-                        <td className="py-2 px-3 text-muted-foreground">{i + 1}</td>
-                        <td className="py-2 px-3 text-muted-foreground">{row.schema}</td>
-                        <td className="py-2 px-3 font-medium text-foreground">{row.table}</td>
-                        <td className="py-2 px-3 text-right text-foreground">{row.size_gb?.toFixed(2)}</td>
-                        <td className="py-2 px-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
-                          </div>
-                        </td>
-                      </tr>
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${pctStr}%` }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-10 text-right">{pctStr}%</span>
+                      </div>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  },
+                },
+              ] as Column[]}
+              searchable
+              searchKeys={["schema", "table"]}
+              pageSize={25}
+              compact
+              tableId="cost-top-tables"
+              emptyMessage="No table data available."
+            />
           </CardContent>
         </Card>
       )}

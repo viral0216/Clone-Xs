@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import CatalogPicker from "@/components/CatalogPicker";
 import {
   AlertTriangle, Loader2, XCircle, AlertCircle, Info, RefreshCw, X,
@@ -284,47 +285,32 @@ export default function AnomaliesPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-2 px-3 text-left font-medium">Table</th>
-                    <th className="py-2 px-3 text-left font-medium">Column</th>
-                    <th className="py-2 px-3 text-left font-medium">Metric</th>
-                    <th className="py-2 px-3 text-right font-medium">Value</th>
-                    <th className="py-2 px-3 text-right font-medium">Baseline</th>
-                    <th className="py-2 px-3 text-right font-medium">Z-Score</th>
-                    <th className="py-2 px-3 text-center font-medium">Severity</th>
-                    <th className="py-2 px-3 text-left font-medium">Detected At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {anomalies.map((a, i) => (
-                    <tr
-                      key={a.id || i}
-                      className={`border-b border-border/50 hover:bg-muted/30 cursor-pointer ${selectedAnomaly?.id === a.id && selectedAnomaly?.table_fqn === a.table_fqn ? "bg-[#E8453C]/5" : ""}`}
-                      onClick={() => viewHistory(a)}
-                    >
-                      <td className="py-1.5 px-3 font-mono text-xs">{a.table_fqn}</td>
-                      <td className="py-1.5 px-3 text-xs">{a.column_name}</td>
-                      <td className="py-1.5 px-3 text-xs">{a.metric_name}</td>
-                      <td className="py-1.5 px-3 text-right tabular-nums">{a.value?.toFixed(2)}</td>
-                      <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">{a.baseline_mean?.toFixed(2)}</td>
-                      <td className="py-1.5 px-3 text-right tabular-nums font-medium">{a.z_score?.toFixed(2)}</td>
-                      <td className="py-1.5 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <SeverityIcon severity={a.severity} />
-                          <Badge variant="outline" className={`text-[10px] ${severityColor(a.severity)}`}>
-                            {a.severity}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="py-1.5 px-3 text-xs">{String(a.measured_at || "").slice(0, 19)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              data={anomalies}
+              columns={[
+                { key: "table_fqn", label: "Table", sortable: true, render: (v) => <span className="font-mono text-xs">{v}</span> },
+                { key: "column_name", label: "Column", sortable: true, render: (v) => <span className="text-xs">{v}</span> },
+                { key: "metric_name", label: "Metric", sortable: true, render: (v) => <span className="text-xs">{v}</span> },
+                { key: "value", label: "Value", sortable: true, align: "right", render: (v) => <span className="tabular-nums">{v?.toFixed(2)}</span> },
+                { key: "baseline_mean", label: "Baseline", sortable: true, align: "right", render: (v) => <span className="tabular-nums text-muted-foreground">{v?.toFixed(2)}</span> },
+                { key: "z_score", label: "Z-Score", sortable: true, align: "right", render: (v) => <span className="tabular-nums font-medium">{v?.toFixed(2)}</span> },
+                { key: "severity", label: "Severity", sortable: true, align: "center", render: (v) => (
+                  <div className="flex items-center justify-center gap-1">
+                    <SeverityIcon severity={v} />
+                    <Badge variant="outline" className={`text-[10px] ${severityColor(v)}`}>{v}</Badge>
+                  </div>
+                ) },
+                { key: "measured_at", label: "Detected At", sortable: true, render: (v) => <span className="text-xs">{String(v || "").slice(0, 19)}</span> },
+              ] as Column[]}
+              searchable
+              searchKeys={["table_fqn", "column_name", "metric_name", "severity"]}
+              pageSize={25}
+              compact
+              tableId="anomalies-table"
+              onRowClick={(row) => viewHistory(row)}
+              rowClassName={(row) => selectedAnomaly?.id === row.id && selectedAnomaly?.table_fqn === row.table_fqn ? "bg-[#E8453C]/5" : ""}
+              emptyMessage="No anomalies detected."
+            />
           )}
         </CardContent>
       </Card>
@@ -354,40 +340,31 @@ export default function AnomaliesPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-1.5 px-2 text-left font-medium">Table</th>
-                    <th className="py-1.5 px-2 text-left font-medium">Metric</th>
-                    <th className="py-1.5 px-2 text-right font-medium">Value</th>
-                    <th className="py-1.5 px-2 text-right font-medium">Baseline</th>
-                    <th className="py-1.5 px-2 text-right font-medium">Z-Score</th>
-                    <th className="py-1.5 px-2 text-center font-medium">Status</th>
-                    <th className="py-1.5 px-2 text-left font-medium">Measured At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allMetrics.map((m, i) => (
-                    <tr key={m.id || i} className={`border-b border-border/30 ${m.is_anomaly === true || m.is_anomaly === "true" ? "bg-red-500/5" : ""}`}>
-                      <td className="py-1 px-2 font-mono">{m.table_fqn}</td>
-                      <td className="py-1 px-2">{m.metric_name}</td>
-                      <td className="py-1 px-2 text-right tabular-nums">{Number(m.value || 0).toLocaleString()}</td>
-                      <td className="py-1 px-2 text-right tabular-nums text-muted-foreground">{Number(m.baseline_mean || 0).toFixed(1)}</td>
-                      <td className="py-1 px-2 text-right tabular-nums">{Number(m.z_score || 0).toFixed(2)}</td>
-                      <td className="py-1 px-2 text-center">
-                        {m.is_anomaly === true || m.is_anomaly === "true" ? (
-                          <Badge variant="outline" className={`text-[9px] ${severityColor(m.severity)}`}>{m.severity}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">normal</span>
-                        )}
-                      </td>
-                      <td className="py-1 px-2">{String(m.measured_at || "").slice(0, 19)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              data={allMetrics}
+              columns={[
+                { key: "table_fqn", label: "Table", sortable: true, render: (v) => <span className="font-mono">{v}</span> },
+                { key: "metric_name", label: "Metric", sortable: true },
+                { key: "value", label: "Value", sortable: true, align: "right", render: (v) => <span className="tabular-nums">{Number(v || 0).toLocaleString()}</span> },
+                { key: "baseline_mean", label: "Baseline", sortable: true, align: "right", render: (v) => <span className="tabular-nums text-muted-foreground">{Number(v || 0).toFixed(1)}</span> },
+                { key: "z_score", label: "Z-Score", sortable: true, align: "right", render: (v) => <span className="tabular-nums">{Number(v || 0).toFixed(2)}</span> },
+                { key: "is_anomaly", label: "Status", sortable: true, align: "center", render: (v, row) =>
+                  v === true || v === "true" ? (
+                    <Badge variant="outline" className={`text-[9px] ${severityColor(row.severity)}`}>{row.severity}</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">normal</span>
+                  )
+                },
+                { key: "measured_at", label: "Measured At", sortable: true, render: (v) => String(v || "").slice(0, 19) },
+              ] as Column[]}
+              searchable
+              searchKeys={["table_fqn", "metric_name"]}
+              pageSize={25}
+              compact
+              tableId="recent-measurements-table"
+              rowClassName={(row) => row.is_anomaly === true || row.is_anomaly === "true" ? "bg-red-500/5" : ""}
+              emptyMessage="No measurements recorded yet."
+            />
           )}
         </CardContent>
       </Card>

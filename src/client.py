@@ -4,15 +4,84 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 from databricks.sdk import WorkspaceClient
 from dotenv import load_dotenv
 
 from src.metadata_cache import MISSING as _MISSING, metadata_cache as _cache
+from src.retry import RetryPolicy
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Shared helpers
+# ──────────────────────────────────────────────────────────────────
+
+
+def sql_escape(s: object) -> str:
+    """Escape a string for Databricks SQL by doubling single quotes."""
+    if not s:
+        return ""
+    return str(s).replace("'", "''")
+
+
+def utc_now() -> str:
+    """Return current UTC time as ISO 8601 string (no offset suffix)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _get_spark_safe():
+    """Try to get a Spark session; return None if unavailable."""
+    try:
+        from src.spark_session import get_spark_safe
+        return get_spark_safe()
+    except Exception:
+        return None
+
+
+def _row_to_dict(row) -> dict:
+    """Convert a Spark Row to a dict, stringifying non-primitive values."""
+    d = row.asDict()
+    for k, v in d.items():
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            d[k] = str(v)
+    return d
+
+
+def query_sql(sql: str, limit: int = 1000, client: WorkspaceClient | None = None, warehouse_id: str = "") -> list[dict]:
+    """Execute a SELECT query via Spark (preferred) or SQL warehouse (fallback).
+
+    Returns rows as a list of dicts, truncated to *limit*.
+    """
+    spark = _get_spark_safe()
+    if spark:
+        rows = spark.sql(sql).limit(limit).collect()
+        return [_row_to_dict(r) for r in rows]
+
+    if client and warehouse_id:
+        rows = execute_sql(client, warehouse_id, sql)
+        return (rows or [])[:limit]
+
+    raise RuntimeError("No Spark session or SQL warehouse available for querying")
+
+
+def run_sql(sql: str, client: WorkspaceClient | None = None, warehouse_id: str = "") -> None:
+    """Execute DDL/DML via Spark (preferred) or SQL warehouse (fallback)."""
+    spark = _get_spark_safe()
+    if spark:
+        spark.sql(sql)
+        return
+
+    if client and warehouse_id:
+        execute_sql(client, warehouse_id, sql)
+        return
+
+    raise RuntimeError("No Spark session or SQL warehouse available")
+
 
 # ──────────────────────────────────────────────────────────────────
 # REST API fallback decorator
@@ -68,10 +137,8 @@ def with_rest_fallback(rest_method_name: str):
         return wrapper
     return decorator
 
-# Retry settings
-MAX_RETRIES = 3
-RETRY_BASE_DELAY = 2  # seconds
-RETRY_BACKOFF_FACTOR = 2
+# Default retry policy (3 retries, exponential backoff starting at 2s, factor 2x)
+_default_retry = RetryPolicy(max_retries=3, base_delay=2.0, backoff_factor=2.0)
 
 
 class RateLimiter:
@@ -143,6 +210,15 @@ def set_sql_executor(executor) -> None:
     global _sql_executor
     _sql_executor = executor
     logger.info("Custom SQL executor configured (spark.sql mode)")
+    logger.info("All execute_sql() calls will now bypass the SQL warehouse API")
+
+
+def get_executor_info() -> dict:
+    """Return diagnostic info about the current SQL execution mode."""
+    return {
+        "executor_set": _sql_executor is not None,
+        "mode": "spark_sql" if _sql_executor else "warehouse_api",
+    }
 
 
 # Lock for thread-safe executor swapping in spark_connect_executor()
@@ -201,14 +277,22 @@ def get_workspace_client(
 ) -> WorkspaceClient:
     """Return an initialized Databricks WorkspaceClient.
 
-    Delegates to src.auth.get_client() which handles multiple auth methods
-    with caching. See src/auth.py for the full auth method priority chain.
+    When *host* or *token* are not supplied they are filled from the
+    environment via ``src.env`` before delegating to ``src.auth.get_client()``
+    which handles multiple auth methods with caching.  See ``src/auth.py``
+    for the full auth method priority chain.
 
     Args:
-        host: Workspace URL (optional, auto-detected from env/profile).
-        token: Personal access token (optional, auto-detected from env/profile).
+        host: Workspace URL (defaults to DATABRICKS_HOST env var).
+        token: Personal access token (defaults to DATABRICKS_TOKEN env var).
         profile: Databricks CLI profile name (optional).
+
+    Returns:
+        Configured WorkspaceClient instance.
     """
+    from src.env import get_databricks_host, get_databricks_token
+    host = host or get_databricks_host() or None
+    token = token or get_databricks_token() or None
     from src.auth import get_client
     return get_client(host, token, profile)
 
@@ -217,7 +301,7 @@ def execute_sql(
     client: WorkspaceClient,
     warehouse_id: str,
     sql: str,
-    max_retries: int = MAX_RETRIES,
+    max_retries: int = _default_retry.max_retries,
     dry_run: bool = False,
 ) -> list[dict]:
     """Execute a SQL statement via SQL warehouse or serverless compute.
@@ -242,9 +326,11 @@ def execute_sql(
 
     # Route through pluggable executor (spark.sql in serverless jobs — no warehouse needed)
     if _sql_executor is not None:
+        logger.debug("SQL via spark executor (not warehouse): %s", sql[:120])
         return _sql_executor(sql)
 
     # Guard: fail fast if no warehouse is configured (only when using warehouse-based execution)
+    logger.debug("SQL via warehouse API (warehouse_id=%s): %s", warehouse_id, sql[:120])
     if not warehouse_id or not warehouse_id.strip():
         raise ValueError(
             "No SQL warehouse selected. Go to Settings → SQL Warehouses and select a running warehouse."
@@ -271,10 +357,10 @@ def execute_sql(
                 raise
             last_exception = e
             if attempt < max_retries:
-                delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
+                delay = _default_retry.calculate_delay(attempt)
                 logger.warning(
                     f"SQL execution attempt {attempt}/{max_retries} failed: {e}. "
-                    f"Retrying in {delay}s..."
+                    f"Retrying in {delay:.1f}s..."
                 )
                 time.sleep(delay)
             else:
@@ -395,6 +481,7 @@ def list_schemas_sdk(client: WorkspaceClient, catalog: str, exclude: list[str] |
 
     Falls back to REST API if the SDK call fails.
     """
+    logger.debug("SDK REST API call: list_schemas(%s) — not a warehouse query", catalog)
     key = ("schemas", catalog, frozenset(exclude or []))
     cached = _cache.get(key)
     if cached is not _MISSING:
@@ -434,6 +521,7 @@ def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[
     Returns list of dicts with: table_name, table_type, data_source_format.
     Falls back to REST API if the SDK call fails.
     """
+    logger.debug("SDK REST API call: list_tables(%s.%s) — not a warehouse query", catalog, schema)
     key = ("tables", catalog, schema)
     cached = _cache.get(key)
     if cached is not _MISSING:
@@ -484,6 +572,7 @@ def list_views_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[d
 
     Returns list of dicts with: table_name, view_definition.
     """
+    logger.debug("SDK REST API call: list_views(%s.%s) — not a warehouse query", catalog, schema)
     key = ("views", catalog, schema)
     cached = _cache.get(key)
     if cached is not _MISSING:
@@ -509,6 +598,7 @@ def list_functions_sdk(client: WorkspaceClient, catalog: str, schema: str) -> li
 
     Returns list of dicts with: function_name, full_name, data_type.
     """
+    logger.debug("SDK REST API call: list_functions(%s.%s) — not a warehouse query", catalog, schema)
     key = ("functions", catalog, schema)
     cached = _cache.get(key)
     if cached is not _MISSING:

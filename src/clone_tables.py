@@ -8,6 +8,10 @@ from databricks.sdk.service.catalog import SecurableType
 from src.client import execute_sql, list_tables_sdk
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
+from src.log_formatter import (
+    bold, bold_green, bold_red, bold_yellow, green, red, yellow, dim,
+    OK, FAIL, SKIP, WARN, ARROW,
+)
 from src.permissions import copy_table_permissions, update_ownership
 from src.rollback import record_object, get_table_version, record_table_version
 from src.security import copy_table_security
@@ -101,19 +105,19 @@ def clone_table(
     if force_reclone:
         try:
             execute_sql(client, warehouse_id, f"DROP TABLE IF EXISTS {dest}", dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}Dropped table for re-clone: {dest}")
+            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{WARN} Dropped table for re-clone: {dest}")
         except Exception as e:
-            logger.warning(f"Failed to drop table {dest} for re-clone: {e}")
+            logger.warning(f"{WARN} Failed to drop table {dest} for re-clone: {e}")
 
     # Schema-only mode: create empty table with same structure (no data)
     if schema_only:
         sql = f"CREATE TABLE IF NOT EXISTS {dest} LIKE {source}"
         try:
             execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}Created empty table: {source} -> {dest} (schema-only)")
+            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}")
             return True
         except Exception as e:
-            logger.error(f"Failed to create empty table {dest}: {e}")
+            logger.error(f"{FAIL} Failed to create empty table {dest}: {e}")
             return False
 
     # If where_clause is provided and clone_type is DEEP, use CTAS
@@ -152,13 +156,13 @@ def clone_table(
                 time_travel = f" VERSION AS OF {as_of_version}"
             tt_info = f", {time_travel.strip()}" if time_travel else ""
         filter_info = f", WHERE {where_clause}" if (where_clause and clone_type == "DEEP") else ""
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Cloned table: {source} -> {dest} ({clone_type}{tt_info}{filter_info})")
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}")
         return True
     except Exception as e:
         if "No pipeline was present" in str(e):
-            logger.info(f"Skipping DLT pipeline table {source}: {e}")
+            logger.info(f"{SKIP} Skipping DLT pipeline table {source}: {e}")
             return False
-        logger.error(f"Failed to clone table {source}: {e}")
+        logger.error(f"{FAIL} Failed to clone table {source}: {e}")
         return False
 
 
@@ -305,27 +309,27 @@ def clone_tables_in_schema(
         table_name = table_row["table_name"]
 
         if table_name in exclude_tables:
-            logger.info(f"Skipping excluded table: {schema}.{table_name}")
+            logger.info(f"  {SKIP} Skipping excluded table: {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
             continue
 
         if table_name.startswith("event_log_") or table_name.startswith("__materialization_"):
-            logger.info(f"Skipping DLT pipeline table {table_name}")
+            logger.info(f"  {SKIP} Skipping DLT pipeline table: {dim(table_name)}")
             results["skipped"] += 1
             continue
 
         if not _matches_regex(table_name, include_tables_regex, exclude_tables_regex):
-            logger.info(f"Skipping table (regex filter): {schema}.{table_name}")
+            logger.info(f"  {SKIP} Skipping table (regex filter): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
             continue
 
         if load_type == "INCREMENTAL" and table_name in existing:
-            logger.info(f"Skipping existing table (incremental): {schema}.{table_name}")
+            logger.info(f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
             continue
 
         if resumed_tables and table_name in resumed_tables:
-            logger.info(f"Skipping already cloned table (resume): {schema}.{table_name}")
+            logger.info(f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
             continue
 

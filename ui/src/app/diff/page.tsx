@@ -12,6 +12,7 @@ import {
   Plus, Minus, Equal, ArrowRight,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 
 function DiffSection({ title, data }: { title: string; data: any }) {
   if (!data) return null;
@@ -283,34 +284,38 @@ export default function DiffPage() {
             {valData.mismatched_tables && valData.mismatched_tables.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-red-700 mb-2">Mismatched Tables</p>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-red-50">
-                      <th className="text-left py-2 px-3 font-medium">Schema</th>
-                      <th className="text-left py-2 px-3 font-medium">Table</th>
-                      <th className="text-right py-2 px-3 font-medium">Source Rows</th>
-                      <th className="text-right py-2 px-3 font-medium">Dest Rows</th>
-                      <th className="text-right py-2 px-3 font-medium">Diff</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {valData.mismatched_tables.map((m: any, i: number) => (
-                      <tr key={i} className="border-b bg-red-50/50">
-                        <td className="py-2 px-3 text-gray-600">{m.schema}</td>
-                        <td className="py-2 px-3 font-medium">{m.table}</td>
-                        <td className="py-2 px-3 text-right">{m.source_count?.toLocaleString() ?? "—"}</td>
-                        <td className="py-2 px-3 text-right">{m.dest_count?.toLocaleString() ?? "—"}</td>
-                        <td className="py-2 px-3 text-right">
-                          <Badge variant="destructive">
-                            {m.source_count != null && m.dest_count != null
-                              ? (m.source_count - m.dest_count).toLocaleString()
-                              : "—"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable
+                  data={valData.mismatched_tables}
+                  columns={[
+                    { key: "schema", label: "Schema", sortable: true, className: "text-gray-600" },
+                    { key: "table", label: "Table", sortable: true, className: "font-medium" },
+                    {
+                      key: "source_count", label: "Source Rows", sortable: true, align: "right",
+                      render: (v) => v?.toLocaleString() ?? "\u2014",
+                    },
+                    {
+                      key: "dest_count", label: "Dest Rows", sortable: true, align: "right",
+                      render: (v) => v?.toLocaleString() ?? "\u2014",
+                    },
+                    {
+                      key: "_diff", label: "Diff", align: "right",
+                      render: (_, row) => (
+                        <Badge variant="destructive">
+                          {row.source_count != null && row.dest_count != null
+                            ? (row.source_count - row.dest_count).toLocaleString()
+                            : "\u2014"}
+                        </Badge>
+                      ),
+                    },
+                  ] as Column[]}
+                  searchable
+                  searchKeys={["schema", "table"]}
+                  pageSize={25}
+                  compact
+                  tableId="diff-mismatched-tables"
+                  rowClassName={() => "bg-red-50/50"}
+                  emptyMessage="No mismatched tables."
+                />
               </div>
             )}
 

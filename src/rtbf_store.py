@@ -8,9 +8,6 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE_CATALOG = "clone_audit"
-DEFAULT_RTBF_SCHEMA = "rtbf"
-
 # Valid RTBF request statuses and their allowed transitions
 RTBF_STATUSES = [
     "received",
@@ -52,9 +49,15 @@ class RTBFStore:
         self,
         client,
         warehouse_id: str,
-        state_catalog: str = DEFAULT_STATE_CATALOG,
-        state_schema: str = DEFAULT_RTBF_SCHEMA,
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
     ):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "rtbf")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.state_catalog = state_catalog
@@ -64,103 +67,106 @@ class RTBFStore:
         self._certificates_table = f"{state_catalog}.{state_schema}.rtbf_certificates"
 
     def init_tables(self) -> None:
-        """Create the RTBF Delta tables if they don't exist.
-
-        The catalog must already exist (configured via Settings > Audit Catalog).
-        Only creates the schema and tables within it.
-        """
-        execute_sql(
-            self.client, self.warehouse_id,
-            f"CREATE SCHEMA IF NOT EXISTS {self.state_catalog}.{self.state_schema}",
-        )
+        """Create the RTBF Delta tables if they don't exist."""
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
 
         # RTBF requests — tracks the full lifecycle of each erasure request
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._requests_table} (
-                request_id STRING NOT NULL,
-                subject_type STRING NOT NULL,
-                subject_value_hash STRING NOT NULL,
-                subject_column STRING,
-                requester_email STRING,
-                requester_name STRING,
-                legal_basis STRING,
-                strategy STRING,
-                scope_catalogs STRING,
-                status STRING,
-                grace_period_days INT,
-                grace_period_ends TIMESTAMP,
-                deadline TIMESTAMP NOT NULL,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                created_by STRING,
-                discovery_json STRING,
-                affected_tables INT,
-                affected_rows BIGINT,
-                notes STRING,
-                error_message STRING
-            )
-            USING DELTA
-            COMMENT 'RTBF / GDPR Article 17 erasure request lifecycle'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._requests_table} (
+                    request_id STRING NOT NULL,
+                    subject_type STRING NOT NULL,
+                    subject_value_hash STRING NOT NULL,
+                    subject_column STRING,
+                    requester_email STRING,
+                    requester_name STRING,
+                    legal_basis STRING,
+                    strategy STRING,
+                    scope_catalogs STRING,
+                    status STRING,
+                    grace_period_days INT,
+                    grace_period_ends TIMESTAMP,
+                    deadline TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    created_by STRING,
+                    discovery_json STRING,
+                    affected_tables INT,
+                    affected_rows BIGINT,
+                    notes STRING,
+                    error_message STRING
+                )
+                USING DELTA
+                COMMENT 'RTBF / GDPR Article 17 erasure request lifecycle'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._requests_table}: {e}")
 
         # RTBF actions — per-table actions (discover, delete, vacuum, verify)
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._actions_table} (
-                action_id STRING NOT NULL,
-                request_id STRING NOT NULL,
-                action_type STRING NOT NULL,
-                catalog STRING,
-                schema_name STRING,
-                table_name STRING,
-                column_name STRING,
-                rows_before BIGINT,
-                rows_affected BIGINT,
-                rows_after BIGINT,
-                sql_executed STRING,
-                status STRING,
-                executed_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                duration_seconds DOUBLE,
-                executed_by STRING,
-                error_message STRING
-            )
-            USING DELTA
-            COMMENT 'RTBF per-table actions and execution log'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._actions_table} (
+                    action_id STRING NOT NULL,
+                    request_id STRING NOT NULL,
+                    action_type STRING NOT NULL,
+                    catalog STRING,
+                    schema_name STRING,
+                    table_name STRING,
+                    column_name STRING,
+                    rows_before BIGINT,
+                    rows_affected BIGINT,
+                    rows_after BIGINT,
+                    sql_executed STRING,
+                    status STRING,
+                    executed_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    duration_seconds DOUBLE,
+                    executed_by STRING,
+                    error_message STRING
+                )
+                USING DELTA
+                COMMENT 'RTBF per-table actions and execution log'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._actions_table}: {e}")
 
         # RTBF certificates — deletion evidence for compliance/legal
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._certificates_table} (
-                certificate_id STRING NOT NULL,
-                request_id STRING NOT NULL,
-                generated_at TIMESTAMP,
-                generated_by STRING,
-                certificate_type STRING,
-                summary_json STRING,
-                tables_processed INT,
-                rows_deleted BIGINT,
-                verification_passed BOOLEAN,
-                html_report STRING,
-                json_report STRING
-            )
-            USING DELTA
-            COMMENT 'RTBF deletion certificates and compliance evidence'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._certificates_table} (
+                    certificate_id STRING NOT NULL,
+                    request_id STRING NOT NULL,
+                    generated_at TIMESTAMP,
+                    generated_by STRING,
+                    certificate_type STRING,
+                    summary_json STRING,
+                    tables_processed INT,
+                    rows_deleted BIGINT,
+                    verification_passed BOOLEAN,
+                    html_report STRING,
+                    json_report STRING
+                )
+                USING DELTA
+                COMMENT 'RTBF deletion certificates and compliance evidence'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._certificates_table}: {e}")
 
-        logger.info(f"RTBF store tables ready in {self.state_catalog}.{self.state_schema}")
+        logger.info(f"RTBF store tables ready: {self.state_catalog}.{self.state_schema}")
 
     # ── Request CRUD ──────────────────────────────────────────────────────
 

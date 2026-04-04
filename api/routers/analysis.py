@@ -4,6 +4,7 @@ storage metrics, optimize, vacuum, export, snapshot."""
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config
+from api.routers.deps import get_warehouse_id
 from api.models.analysis import (
     CatalogPairRequest,
     CatalogRequest,
@@ -31,7 +32,7 @@ async def catalog_diff(req: CatalogPairRequest, client=Depends(get_db_client)):
     """
     from src.diff import compare_catalogs
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = compare_catalogs(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
     return result
 
@@ -45,7 +46,7 @@ async def deep_compare(req: CatalogPairRequest, client=Depends(get_db_client)):
     """
     from src.compare import compare_catalogs_deep
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = compare_catalogs_deep(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
     return result
 
@@ -59,7 +60,7 @@ async def validate_clone(req: ValidateRequest, client=Depends(get_db_client)):
     """
     from src.validation import validate_catalog
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = validate_catalog(
         client, wid, req.source_catalog, req.destination_catalog,
         req.exclude_schemas, req.max_workers, use_checksum=req.use_checksum,
@@ -76,7 +77,7 @@ async def schema_drift(req: CatalogPairRequest, client=Depends(get_db_client)):
     """
     from src.schema_drift import detect_schema_drift
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = detect_schema_drift(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
     return result
 
@@ -90,7 +91,7 @@ async def catalog_stats(req: CatalogRequest, client=Depends(get_db_client)):
     """
     from src.stats import catalog_stats
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
     return result
 
@@ -104,7 +105,7 @@ async def search_catalog(req: SearchRequest, client=Depends(get_db_client)):
     """
     from src.search import search_tables
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = search_tables(
         client, wid, req.source_catalog, req.pattern,
         req.exclude_schemas, search_columns=req.search_columns,
@@ -121,7 +122,7 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
     """
     from src.profiling import profile_catalog
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = profile_catalog(
         client, wid, req.source_catalog, req.exclude_schemas,
         max_workers=req.max_workers, output_path=req.output_path,
@@ -139,7 +140,7 @@ async def profile_table_deep(req: TableProfileRequest, client=Depends(get_db_cli
     """
     from src.profiling_deep import deep_profile_table
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     return deep_profile_table(
         client, wid, req.table_fqn,
         top_n=req.top_n, histogram_bins=req.histogram_bins,
@@ -156,7 +157,7 @@ async def profile_results(req: ResultsProfileRequest, client=Depends(get_db_clie
     """
     from src.profiling_deep import deep_profile_sql
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     return deep_profile_sql(
         client, wid, req.sql,
         top_n=req.top_n, histogram_bins=req.histogram_bins,
@@ -172,7 +173,7 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     """
     from src.cost_estimation import estimate_clone_cost
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = estimate_clone_cost(
         client, wid, req.source_catalog, req.exclude_schemas,
         include_schemas=req.include_schemas, price_per_gb=req.price_per_gb,
@@ -190,7 +191,7 @@ async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_clie
     """
     from src.storage_metrics import catalog_storage_metrics
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     max_workers = int(config.get("max_parallel_queries", 10))
     result = catalog_storage_metrics(
         client, wid, req.source_catalog, req.exclude_schemas,
@@ -212,7 +213,7 @@ async def optimize_tables(req: TableMaintenanceRequest, client=Depends(get_db_cl
     """
     from src.table_maintenance import run_optimize, _enumerate_tables
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     if req.tables:
         tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
     else:
@@ -233,7 +234,7 @@ async def vacuum_tables(req: TableMaintenanceRequest, client=Depends(get_db_clie
     """
     from src.table_maintenance import run_vacuum, _enumerate_tables
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     if req.tables:
         tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
     else:
@@ -253,7 +254,7 @@ async def check_predictive_opt(req: CatalogRequest, client=Depends(get_db_client
     """
     from src.table_maintenance import check_predictive_optimization
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     return check_predictive_optimization(client, wid, req.source_catalog, req.exclude_schemas)
 
 
@@ -266,7 +267,7 @@ async def export_metadata(req: ExportRequest, client=Depends(get_db_client)):
     """
     from src.export import export_catalog_metadata
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     output = export_catalog_metadata(
         client, wid, req.source_catalog, req.exclude_schemas,
         output_format=req.format, output_path=req.output_path,
@@ -283,7 +284,7 @@ async def create_snapshot(req: SnapshotRequest, client=Depends(get_db_client)):
     """
     from src.snapshot import create_snapshot
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     output = create_snapshot(client, wid, req.source_catalog, req.exclude_schemas, output_path=req.output_path)
     return {"output_path": output}
 

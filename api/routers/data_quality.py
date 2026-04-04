@@ -281,7 +281,6 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
     wid = config.get("sql_warehouse_id", "")
 
     from src.data_freshness import _query_sql, _esc
-    from src.anomaly_detection import record_metric as _record
 
     schema_filter = ""
     if req.schema_name:
@@ -603,7 +602,6 @@ async def get_anomaly_settings():
 @router.put("/anomaly-settings", summary="Update anomaly detection thresholds")
 async def update_anomaly_settings(req: dict):
     """Update anomaly detection thresholds in the config file."""
-    from src.config import load_config
     import yaml
 
     config_path = "config/clone_config.yaml"

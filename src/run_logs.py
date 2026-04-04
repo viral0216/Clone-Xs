@@ -14,7 +14,7 @@ import os
 from datetime import datetime, timezone
 
 from src.client import execute_sql
-from src.table_registry import get_catalog, get_schema_fqn, get_table_fqn
+from src.table_registry import get_table_fqn
 
 logger = logging.getLogger(__name__)
 

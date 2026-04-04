@@ -2,7 +2,6 @@
 
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
-import pytest
 
 
 @patch("src.data_freshness._get_schema_prefix", return_value="clone_audit.data_quality")

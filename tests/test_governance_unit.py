@@ -1,7 +1,6 @@
 """Unit tests for src/governance.py — governance metadata operations."""
 
-from unittest.mock import patch, MagicMock, call
-import pytest
+from unittest.mock import patch, MagicMock
 
 
 @patch("src.governance._get_governance_schema", return_value="clone_audit.governance")

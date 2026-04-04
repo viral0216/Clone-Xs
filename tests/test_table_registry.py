@@ -1,6 +1,5 @@
 """Tests for src.table_registry — catalog, schema, and table FQN resolution."""
 
-import pytest
 
 from src.table_registry import (
     get_catalog,

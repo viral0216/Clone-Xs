@@ -1,7 +1,6 @@
 """Unit tests for src/anomaly_detection.py — metric recording and anomaly detection."""
 
 from unittest.mock import patch, MagicMock
-import pytest
 
 
 SCHEMA_PATCH = patch(

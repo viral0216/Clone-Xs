@@ -169,7 +169,11 @@ def store_reconciliation_result(
             except Exception as e:
                 logger.warning(f"Could not store reconciliation details batch: {e}")
 
-    storage_mode = "Spark" if _get_spark() else "SQL Warehouse"
+    try:
+        from src.spark_session import get_spark
+        storage_mode = "Spark" if get_spark() else "SQL Warehouse"
+    except Exception:
+        storage_mode = "SQL Warehouse"
     logger.info(f"Stored reconciliation run {run_id} via {storage_mode}: {len(details)} table results")
     return run_id
 

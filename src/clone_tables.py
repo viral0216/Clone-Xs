@@ -9,7 +9,7 @@ from src.client import execute_sql, list_tables_sdk
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.log_formatter import (
-    bold, bold_green, bold_red, bold_yellow, green, red, yellow, dim,
+    dim,
     OK, FAIL, SKIP, WARN, ARROW,
 )
 from src.permissions import copy_table_permissions, update_ownership

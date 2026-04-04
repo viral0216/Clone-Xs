@@ -6,7 +6,7 @@ from databricks.sdk import WorkspaceClient
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
 from src.log_formatter import (
     header, divider, kv, bold, bold_green, bold_red, bold_yellow,
-    green, red, yellow, OK, FAIL, WARN, ARROW,
+    OK, FAIL, WARN, ARROW,
 )
 from src.progress import ProgressTracker
 

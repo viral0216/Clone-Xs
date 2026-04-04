@@ -10,7 +10,7 @@ from databricks.sdk.service.catalog import SecurableType
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, set_rate_limit
 from src.log_formatter import (
     header, divider, stat_line, kv, bold, bold_green, bold_red, bold_yellow,
-    green, red, yellow, cyan, dim, OK, FAIL, WARN, ARROW, SCHEMA, CATALOG, CLOCK,
+    cyan, OK, FAIL, WARN, ARROW, SCHEMA, CATALOG, CLOCK,
 )
 from src.clone_functions import clone_functions_in_schema
 from src.clone_tables import clone_tables_in_schema

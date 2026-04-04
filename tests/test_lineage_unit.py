@@ -1,7 +1,6 @@
 """Unit tests for src/lineage.py — lineage recording and querying."""
 
 from unittest.mock import patch, MagicMock
-import pytest
 
 
 MOCK_ENTRIES = [

@@ -31,6 +31,7 @@ class SearchRequest(CatalogRequest):
 
 
 class ProfileRequest(CatalogRequest):
+    schema: str | None = None
     max_workers: int = 4
     output_path: str | None = None
 

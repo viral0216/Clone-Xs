@@ -18,11 +18,6 @@ def _get_schema_prefix(config: dict) -> str:
     return get_schema_fqn(config, "data_quality")
 
 
-        return
-
-    raise RuntimeError("No Spark session or SQL warehouse available for storage")
-
-
 # ---------------------------------------------------------------------------
 # DDL for freshness history
 # ---------------------------------------------------------------------------

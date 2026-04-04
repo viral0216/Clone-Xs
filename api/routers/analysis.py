@@ -123,9 +123,11 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
     from src.profiling import profile_catalog
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
+    include_schemas = [req.schema] if req.schema else None
     result = profile_catalog(
         client, wid, req.source_catalog, req.exclude_schemas,
-        max_workers=req.max_workers, output_path=req.output_path,
+        max_workers=req.max_workers, include_schemas=include_schemas,
+        output_path=req.output_path,
     )
     return result
 

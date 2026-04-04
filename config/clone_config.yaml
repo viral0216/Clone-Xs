@@ -178,6 +178,6 @@ observability:
   issue_lookback_hours: 24
   trend_days: 30
 azure:
-  subscription_id: ''
+  subscription_id: sub-123
   resource_group: ''
   tenant_id: ''

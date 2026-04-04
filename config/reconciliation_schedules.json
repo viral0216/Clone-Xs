@@ -1,0 +1,62 @@
+[
+  {
+    "id": "3bf8a4d1",
+    "name": "nightly-recon",
+    "source_catalog": "src_cat",
+    "destination_catalog": "dest_cat",
+    "schema_name": "",
+    "table_name": "",
+    "key_columns": [],
+    "comparison_options": {},
+    "cron": "0 0 * * *",
+    "status": "active",
+    "created_at": "2026-04-04 13:52:16",
+    "last_run_at": null,
+    "next_run": "2026-04-04 23:59:59"
+  },
+  {
+    "id": "e2c2de93",
+    "name": "nightly-recon",
+    "source_catalog": "src_cat",
+    "destination_catalog": "dest_cat",
+    "schema_name": "",
+    "table_name": "",
+    "key_columns": [],
+    "comparison_options": {},
+    "cron": "0 0 * * *",
+    "status": "active",
+    "created_at": "2026-04-04 13:56:31",
+    "last_run_at": null,
+    "next_run": "2026-04-04 23:59:59"
+  },
+  {
+    "id": "f0db9509",
+    "name": "nightly-recon",
+    "source_catalog": "src_cat",
+    "destination_catalog": "dest_cat",
+    "schema_name": "",
+    "table_name": "",
+    "key_columns": [],
+    "comparison_options": {},
+    "cron": "0 0 * * *",
+    "status": "active",
+    "created_at": "2026-04-04 14:03:46",
+    "last_run_at": null,
+    "next_run": "2026-04-04 23:59:59"
+  },
+  {
+    "id": "bef82946",
+    "name": "nightly-recon",
+    "source_catalog": "src_cat",
+    "destination_catalog": "dest_cat",
+    "schema_name": "",
+    "table_name": "",
+    "key_columns": [],
+    "comparison_options": {},
+    "cron": "0 0 * * *",
+    "status": "active",
+    "created_at": "2026-04-04 14:05:33",
+    "last_run_at": null,
+    "next_run": "2026-04-04 23:59:59"
+  }
+]

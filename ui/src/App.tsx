@@ -104,6 +104,7 @@ const DQAlerts = lazy(() => import("@/app/data-quality/alerts/page"));
 const DQLineage = lazy(() => import("@/app/data-quality/lineage/page"));
 const DQTrends = lazy(() => import("@/app/data-quality/trends/page"));
 const DQReconSchedules = lazy(() => import("@/app/data-quality/recon-schedules/page"));
+const DQActiveJobs = lazy(() => import("@/app/data-quality/jobs/page"));
 const DQRemediation = lazy(() => import("@/app/data-quality/remediation/page"));
 const DQCatalogBrowser = lazy(() => import("@/app/data-quality/catalog-browser/page"));
 const DQReports = lazy(() => import("@/app/data-quality/reports/page"));
@@ -389,6 +390,7 @@ export default function App() {
               <Route path="/data-quality/search" element={<Suspense fallback={<PageFallback />}><GovSearch /></Suspense>} />
               <Route path="/data-quality/lineage" element={<Suspense fallback={<PageFallback />}><DQLineage /></Suspense>} />
               <Route path="/data-quality/trends" element={<Suspense fallback={<PageFallback />}><DQTrends /></Suspense>} />
+              <Route path="/data-quality/jobs" element={<Suspense fallback={<PageFallback />}><DQActiveJobs /></Suspense>} />
               <Route path="/data-quality/recon-schedules" element={<Suspense fallback={<PageFallback />}><DQReconSchedules /></Suspense>} />
               <Route path="/data-quality/remediation" element={<Suspense fallback={<PageFallback />}><DQRemediation /></Suspense>} />
               <Route path="/data-quality/catalog-browser" element={<Suspense fallback={<PageFallback />}><DQCatalogBrowser /></Suspense>} />

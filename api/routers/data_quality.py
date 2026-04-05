@@ -1216,6 +1216,19 @@ async def bulk_add_monitoring(req: BulkMonitorRequest, client=Depends(get_db_cli
     return {"added": len(results), "configs": results}
 
 
+@router.post("/monitoring/bulk-delete", summary="Delete multiple monitoring configs")
+async def bulk_delete_monitoring(req: dict, client=Depends(get_db_client)):
+    """Delete multiple monitoring configs in a single operation."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    config_ids = req.get("config_ids", [])
+    if not config_ids:
+        raise HTTPException(status_code=400, detail="config_ids is required")
+    from src.monitoring_config import delete_monitoring_configs_bulk
+    deleted = delete_monitoring_configs_bulk(client, wid, config, config_ids)
+    return {"deleted": deleted}
+
+
 @router.get("/monitoring/discover/{catalog}", summary="Discover tables available for monitoring")
 async def discover_tables(
     catalog: str,
@@ -1236,7 +1249,7 @@ async def run_monitoring(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import run_monitoring as _run
-    return _run(client=client, warehouse_id=wid, config=config)
+    return _run(client=client, warehouse_id=wid, config=config, force=True)
 
 
 # ── Monitoring Scheduler ──────────────────────────────────────────────────────

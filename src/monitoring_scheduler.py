@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 # Module-level state — runtime-only fields stay here; enabled/frequency
 # are persisted to the Delta table.
 _task: asyncio.Task | None = None
+_MAX_HISTORY = 50  # Keep last 50 runs
+
 _state: dict = {
     "enabled": False,
     "frequency_minutes": 60,
@@ -23,6 +25,7 @@ _state: dict = {
     "last_run_result": None,
     "next_run_at": None,
     "running": False,
+    "run_history": [],  # [{timestamp, tables_processed, metrics_recorded, anomalies_found, errors, error?}]
 }
 
 # Cached client/config from the last authenticated API request
@@ -117,7 +120,7 @@ def _save_state(client, warehouse_id, config):
 # ---------------------------------------------------------------------------
 
 def get_scheduler_status() -> dict:
-    """Return current scheduler status."""
+    """Return current scheduler status including run history."""
     return {
         "enabled": _state["enabled"],
         "frequency_minutes": _state["frequency_minutes"],
@@ -125,6 +128,7 @@ def get_scheduler_status() -> dict:
         "last_run_result": _state["last_run_result"],
         "next_run_at": _state["next_run_at"],
         "running": _state["running"],
+        "run_history": _state.get("run_history", []),
     }
 
 
@@ -161,7 +165,69 @@ def _get_client():
     return get_workspace_client()
 
 
-async def _run_monitoring_cycle(app):
+async def _run_due_recon_schedules(client, warehouse_id, config, app) -> int:
+    """Check reconciliation schedules and submit due ones to the job manager."""
+    ran = 0
+    try:
+        from src.reconciliation_schedule import list_recon_schedules, update_last_run
+
+        schedules = list_recon_schedules(client, warehouse_id, config)
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+        for sched in schedules:
+            if sched.get("status") != "active":
+                continue
+            next_run = sched.get("next_run")
+            if not next_run or next_run > now:
+                continue
+
+            try:
+                mgr = getattr(app, "state", None) and getattr(app.state, "job_manager", None)
+                if not mgr:
+                    logger.warning("Job manager not available, skipping scheduled recon")
+                    break
+
+                # Skip if a recon job for this catalog pair is already running/queued
+                src_cat = sched["source_catalog"]
+                dst_cat = sched["destination_catalog"]
+                already_running = any(
+                    j.get("job_type", "").startswith("reconciliation")
+                    and j.get("status") in ("queued", "running")
+                    and j.get("source_catalog") == src_cat
+                    and j.get("destination_catalog") == dst_cat
+                    for j in mgr.jobs.values()
+                )
+                if already_running:
+                    logger.info(f"Skipping recon '{sched.get('name', sched['id'])}' — previous run still in progress")
+                    continue
+
+                job_config = {
+                    **config,
+                    "source_catalog": sched["source_catalog"],
+                    "destination_catalog": sched["destination_catalog"],
+                    "sql_warehouse_id": warehouse_id,
+                }
+                if sched.get("schema_name"):
+                    job_config["include_schemas"] = [sched["schema_name"]]
+                if sched.get("table_name"):
+                    job_config["include_tables"] = [sched["table_name"]]
+                if sched.get("key_columns"):
+                    job_config["key_columns"] = sched["key_columns"]
+                if sched.get("comparison_options"):
+                    job_config.update(sched["comparison_options"])
+
+                await mgr.submit_job("reconciliation-batch", job_config, client)
+                update_last_run(client, warehouse_id, config, sched["id"])
+                ran += 1
+                logger.info(f"Scheduled recon '{sched.get('name', sched['id'])}' submitted")
+            except Exception as e:
+                logger.warning(f"Failed to run scheduled recon {sched['id']}: {e}")
+    except Exception as e:
+        logger.warning(f"Could not check reconciliation schedules: {e}")
+    return ran
+
+
+async def _run_monitoring_cycle(app, force: bool = False):
     """Single monitoring execution cycle."""
     _state["running"] = True
     try:
@@ -171,23 +237,37 @@ async def _run_monitoring_cycle(app):
         config = _cached_config if _cached_config else load_config_cached()
         wid = _cached_wid or config.get("sql_warehouse_id", "")
         client = _get_client()
-        result = run_monitoring(client=client, warehouse_id=wid, config=config)
+        result = run_monitoring(client=client, warehouse_id=wid, config=config, force=force)
 
-        _state["last_run_at"] = datetime.now(timezone.utc).isoformat()
-        _state["last_run_result"] = {
+        now = datetime.now(timezone.utc).isoformat()
+        run_entry = {
+            "timestamp": now,
             "tables_processed": result.get("tables_processed", 0),
             "metrics_recorded": result.get("metrics_recorded", 0),
             "anomalies_found": result.get("anomalies_found", 0),
             "errors": result.get("errors", 0),
+            "status": "success",
         }
+        _state["last_run_at"] = now
+        _state["last_run_result"] = run_entry
+        _state["run_history"].insert(0, run_entry)
+        _state["run_history"] = _state["run_history"][:_MAX_HISTORY]
+
         logger.info(
             f"Scheduler run complete: {result.get('tables_processed', 0)} tables, "
             f"{result.get('metrics_recorded', 0)} metrics, "
             f"{result.get('anomalies_found', 0)} anomalies"
         )
+
+        # Run due reconciliation schedules
+        await _run_due_recon_schedules(client, wid, config, app)
     except Exception as e:
-        _state["last_run_at"] = datetime.now(timezone.utc).isoformat()
-        _state["last_run_result"] = {"error": str(e)}
+        now = datetime.now(timezone.utc).isoformat()
+        run_entry = {"timestamp": now, "error": str(e), "status": "error"}
+        _state["last_run_at"] = now
+        _state["last_run_result"] = run_entry
+        _state["run_history"].insert(0, run_entry)
+        _state["run_history"] = _state["run_history"][:_MAX_HISTORY]
         logger.error(f"Scheduler run failed: {e}")
     finally:
         _state["running"] = False
@@ -195,18 +275,32 @@ async def _run_monitoring_cycle(app):
 
 async def _scheduler_loop(app):
     """Background loop that runs monitoring at the configured interval."""
-    logger.info(f"Monitoring scheduler started (every {_state['frequency_minutes']} min)")
-    while True:
-        freq = _state["frequency_minutes"]
-        next_run = datetime.now(timezone.utc).isoformat()
-        _state["next_run_at"] = next_run
+    freq = _state["frequency_minutes"]
+    logger.info(f"Monitoring scheduler loop started (every {freq} min)")
 
-        await asyncio.sleep(freq * 60)
+    # Wait for the first interval before running (don't run immediately on enable —
+    # user can click "Run Now" for that)
+    while _state["enabled"]:
+        freq = _state["frequency_minutes"]
+        from datetime import timedelta
+        next_time = datetime.now(timezone.utc) + timedelta(minutes=freq)
+        _state["next_run_at"] = next_time.isoformat()
+        logger.info(f"Next scheduled run at {_state['next_run_at']}")
+
+        # Sleep in short increments so we can respond to disable/frequency changes
+        remaining = freq * 60
+        while remaining > 0 and _state["enabled"]:
+            sleep_chunk = min(remaining, 10)  # check every 10 seconds
+            await asyncio.sleep(sleep_chunk)
+            remaining -= sleep_chunk
 
         if not _state["enabled"]:
             break
 
         await _run_monitoring_cycle(app)
+
+    _state["next_run_at"] = None
+    logger.info("Monitoring scheduler loop stopped")
 
 
 def start_scheduler(app=None):
@@ -231,9 +325,12 @@ def start_scheduler(app=None):
     if _task and not _task.done():
         return  # Already running
 
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
     _task = loop.create_task(_scheduler_loop(app))
-    logger.info("Monitoring scheduler started")
+    logger.info(f"Monitoring scheduler background task started (every {_state['frequency_minutes']} min)")
 
 
 def stop_scheduler():
@@ -296,5 +393,6 @@ def update_frequency(frequency_minutes: int, app=None):
 
 
 async def trigger_run_now(app=None):
-    """Trigger an immediate monitoring run (does not affect schedule)."""
-    await _run_monitoring_cycle(app)
+    """Trigger an immediate monitoring run (does not affect schedule).
+    Uses force=True to bypass per-table frequency checks."""
+    await _run_monitoring_cycle(app, force=True)

@@ -5,7 +5,7 @@ clone_type: DEEP
 load_type: FULL
 catalog_location: ''
 max_workers: 10
-max_parallel_queries: 50
+max_parallel_queries: 150
 parallel_tables: 10
 batch_insert_size: 50
 include_schemas: []

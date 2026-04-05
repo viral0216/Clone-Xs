@@ -92,6 +92,7 @@ const NAV_SECTIONS = [
   {
     title: "Automation",
     items: [
+      { href: "/data-quality/jobs", label: "Active Jobs", icon: Activity },
       { href: "/data-quality/recon-schedules", label: "Recon Schedules", icon: CalendarClock },
       { href: "/data-quality/remediation", label: "Auto-Remediation", icon: Wrench },
     ],

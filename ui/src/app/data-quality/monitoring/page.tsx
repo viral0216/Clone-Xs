@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,7 @@ import { toast } from "sonner";
 import {
   Settings, Loader2, Search, Trash2, RefreshCw, Play, Plus,
   Eye, EyeOff, Clock, Activity, Pause, CheckCircle,
-  Timer, Power, PowerOff, Zap,
+  Timer, Power, PowerOff, Zap, History,
 } from "lucide-react";
 
 interface MonitoringConfig {
@@ -38,7 +39,15 @@ const METRIC_LABELS: Record<string, string> = {
   mean: "Mean",
 };
 
-const FREQUENCY_OPTIONS = ["hourly", "daily", "weekly"];
+const FREQUENCY_OPTIONS = [
+  { value: "5min", label: "Every 5 min" },
+  { value: "15min", label: "Every 15 min" },
+  { value: "30min", label: "Every 30 min" },
+  { value: "hourly", label: "Hourly" },
+  { value: "4hours", label: "Every 4 hours" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+];
 
 export default function MonitoringConfigPage() {
   const [configs, setConfigs] = useState<MonitoringConfig[]>([]);
@@ -54,6 +63,10 @@ export default function MonitoringConfigPage() {
   const [bulkMetrics, setBulkMetrics] = useState<Set<string>>(new Set(["row_count", "null_rate", "distinct_count"]));
   const [bulkFrequency, setBulkFrequency] = useState("daily");
   const [adding, setAdding] = useState(false);
+
+  // Bulk delete state
+  const [selectedConfigs, setSelectedConfigs] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Run monitoring
   const [running, setRunning] = useState(false);
@@ -199,6 +212,37 @@ export default function MonitoringConfigPage() {
       toast.success("Monitoring config removed.");
     } catch (e: any) {
       toast.error(e?.message || "Delete failed.");
+    }
+  }
+
+  async function bulkDeleteConfigs() {
+    if (selectedConfigs.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const result = await api.post("/data-quality/monitoring/bulk-delete", {
+        config_ids: [...selectedConfigs],
+      });
+      setConfigs(prev => prev.filter(c => !selectedConfigs.has(c.config_id)));
+      setSelectedConfigs(new Set());
+      toast.success(`Deleted ${result.deleted} monitoring config(s).`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete configs.");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  function toggleSelectConfig(configId: string) {
+    const next = new Set(selectedConfigs);
+    next.has(configId) ? next.delete(configId) : next.add(configId);
+    setSelectedConfigs(next);
+  }
+
+  function toggleSelectAll() {
+    if (selectedConfigs.size === filtered.length) {
+      setSelectedConfigs(new Set());
+    } else {
+      setSelectedConfigs(new Set(filtered.map(c => c.config_id)));
     }
   }
 
@@ -376,14 +420,14 @@ export default function MonitoringConfigPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[200px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Catalog</label>
-              <CatalogPicker value={catalog} onChange={setCatalog} placeholder="Select catalog..." />
-            </div>
-            <div className="min-w-[160px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Schema (optional)</label>
-              <Input value={schema} onChange={e => setSchema(e.target.value)} placeholder="e.g. gold" />
-            </div>
+            <CatalogPicker
+              catalog={catalog}
+              schema={schema}
+              onCatalogChange={(v) => { setCatalog(v); setSchema(""); }}
+              onSchemaChange={setSchema}
+              showTable={false}
+              schemaLabel="Schema (optional)"
+            />
             <Button onClick={discoverTables} disabled={discovering || !catalog}>
               {discovering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
               Discover Tables
@@ -404,11 +448,108 @@ export default function MonitoringConfigPage() {
       {runResult && (
         <Card className="border-green-500/30">
           <CardContent className="pt-6">
-            <div className="flex items-center gap-6 text-sm">
-              <div><span className="text-muted-foreground">Tables processed:</span> <strong>{runResult.tables_processed}</strong></div>
-              <div><span className="text-muted-foreground">Metrics recorded:</span> <strong>{runResult.metrics_recorded}</strong></div>
-              <div><span className="text-muted-foreground">Anomalies found:</span> <strong className={runResult.anomalies_found > 0 ? "text-red-500" : "text-green-500"}>{runResult.anomalies_found}</strong></div>
-              <div><span className="text-muted-foreground">Errors:</span> <strong className={runResult.errors > 0 ? "text-red-500" : ""}>{runResult.errors}</strong></div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6 text-sm">
+                <div><span className="text-muted-foreground">Tables processed:</span> <strong>{runResult.tables_processed}</strong></div>
+                <div><span className="text-muted-foreground">Metrics recorded:</span> <strong>{runResult.metrics_recorded}</strong></div>
+                <div><span className="text-muted-foreground">Anomalies found:</span> <strong className={runResult.anomalies_found > 0 ? "text-red-500" : "text-green-500"}>{runResult.anomalies_found}</strong></div>
+                <div><span className="text-muted-foreground">Errors:</span> <strong className={runResult.errors > 0 ? "text-red-500" : ""}>{runResult.errors}</strong></div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link to="/data-quality/anomalies">
+                  <Button variant="outline" size="sm">
+                    <Activity className="h-3 w-3 mr-1" /> View Anomalies
+                  </Button>
+                </Link>
+                <Link to="/data-quality/volume">
+                  <Button variant="outline" size="sm">
+                    <Search className="h-3 w-3 mr-1" /> View Volume
+                  </Button>
+                </Link>
+                <Link to="/data-quality/dashboard">
+                  <Button variant="outline" size="sm">
+                    <CheckCircle className="h-3 w-3 mr-1" /> DQ Dashboard
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Run History */}
+      {scheduler?.run_history?.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-4 w-4" /> Run History ({scheduler.run_history.length})
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Link to="/data-quality/anomalies">
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                    <Activity className="h-3 w-3" /> Anomalies
+                  </Button>
+                </Link>
+                <Link to="/data-quality/trends">
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                    <Clock className="h-3 w-3" /> Trends
+                  </Button>
+                </Link>
+                <Link to="/data-quality/incidents">
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                    <Eye className="h-3 w-3" /> Incidents
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto max-h-64 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="py-2 px-3 text-left font-medium">Status</th>
+                    <th className="py-2 px-3 text-left font-medium">Timestamp</th>
+                    <th className="py-2 px-3 text-right font-medium">Tables</th>
+                    <th className="py-2 px-3 text-right font-medium">Metrics</th>
+                    <th className="py-2 px-3 text-right font-medium">Anomalies</th>
+                    <th className="py-2 px-3 text-right font-medium">Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduler.run_history.map((run: any, i: number) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
+                      <td className="py-1.5 px-3">
+                        {run.status === "error" ? (
+                          <Badge variant="outline" className="text-[10px] text-red-500 border-red-500/30">Failed</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30">
+                            <CheckCircle className="h-2.5 w-2.5 mr-0.5" /> OK
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</td>
+                      <td className="py-1.5 px-3 text-right text-xs">{run.tables_processed ?? "—"}</td>
+                      <td className="py-1.5 px-3 text-right text-xs">{run.metrics_recorded ?? "—"}</td>
+                      <td className="py-1.5 px-3 text-right text-xs">
+                        {(run.anomalies_found ?? 0) > 0 ? (
+                          <Link to="/data-quality/anomalies" className="text-red-500 font-medium hover:underline">{run.anomalies_found}</Link>
+                        ) : (
+                          <span>{run.anomalies_found ?? "—"}</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 text-right text-xs">
+                        {run.error ? (
+                          <span className="text-red-500 truncate max-w-[200px] inline-block" title={run.error}>{run.error}</span>
+                        ) : (
+                          <span className={run.errors > 0 ? "text-red-500" : ""}>{run.errors ?? 0}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
@@ -444,7 +585,7 @@ export default function MonitoringConfigPage() {
               <span className="text-xs text-muted-foreground font-medium ml-2">Frequency:</span>
               <select value={bulkFrequency} onChange={e => setBulkFrequency(e.target.value)}
                 className="h-7 rounded border border-input bg-background px-2 text-xs">
-                {FREQUENCY_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                {FREQUENCY_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </div>
 
@@ -474,7 +615,15 @@ export default function MonitoringConfigPage() {
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Monitored Tables ({configs.length})</CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-base">Monitored Tables ({configs.length})</CardTitle>
+              {selectedConfigs.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={bulkDeleteConfigs} disabled={bulkDeleting}>
+                  {bulkDeleting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Trash2 className="h-3 w-3 mr-1" />}
+                  Delete {selectedConfigs.size} Selected
+                </Button>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
               <Input placeholder="Filter tables..." className="pl-8 h-8 w-56 text-xs"
@@ -498,6 +647,12 @@ export default function MonitoringConfigPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-muted-foreground">
+                    <th className="py-2 px-2 w-8">
+                      <input type="checkbox"
+                        checked={selectedConfigs.size === filtered.length && filtered.length > 0}
+                        onChange={toggleSelectAll}
+                        className="h-3.5 w-3.5 rounded border-border cursor-pointer" />
+                    </th>
                     <th className="py-2 px-3 text-left font-medium">Table</th>
                     <th className="py-2 px-3 text-left font-medium">Metrics</th>
                     <th className="py-2 px-3 text-center font-medium">Frequency</th>
@@ -508,7 +663,13 @@ export default function MonitoringConfigPage() {
                 </thead>
                 <tbody>
                   {filtered.map(c => (
-                    <tr key={c.config_id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${!c.enabled ? "opacity-50" : ""}`}>
+                    <tr key={c.config_id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${!c.enabled ? "opacity-50" : ""} ${selectedConfigs.has(c.config_id) ? "bg-[#E8453C]/5" : ""}`}>
+                      <td className="py-1.5 px-2">
+                        <input type="checkbox"
+                          checked={selectedConfigs.has(c.config_id)}
+                          onChange={() => toggleSelectConfig(c.config_id)}
+                          className="h-3.5 w-3.5 rounded border-border cursor-pointer" />
+                      </td>
                       <td className="py-1.5 px-3 font-mono text-xs">{c.table_fqn}</td>
                       <td className="py-1.5 px-3">
                         <div className="flex flex-wrap gap-1">
@@ -520,10 +681,23 @@ export default function MonitoringConfigPage() {
                         </div>
                       </td>
                       <td className="py-1.5 px-3 text-center">
-                        <Badge variant="outline" className="text-[10px]">
-                          <Clock className="h-2.5 w-2.5 mr-1" />
-                          {c.frequency}
-                        </Badge>
+                        <select
+                          value={c.frequency}
+                          onChange={async (e) => {
+                            const newFreq = e.target.value;
+                            try {
+                              await api.put(`/data-quality/monitoring/configs/${c.config_id}`, {
+                                ...c,
+                                frequency: newFreq,
+                              });
+                              setConfigs(prev => prev.map(x => x.config_id === c.config_id ? { ...x, frequency: newFreq } : x));
+                              toast.success(`Frequency updated to ${newFreq}`);
+                            } catch (err: any) { toast.error(err.message || "Failed to update"); }
+                          }}
+                          className="h-7 rounded border border-input bg-background px-2 text-[10px] cursor-pointer"
+                        >
+                          {FREQUENCY_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
                       </td>
                       <td className="py-1.5 px-3 text-center">
                         {c.baseline_status === "ready" ? (

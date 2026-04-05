@@ -226,10 +226,6 @@ def delete_monitoring_config(client, warehouse_id: str, config: dict, config_id:
     """Delete a monitoring config by ID."""
     fqn = _get_fqn(config)
     try:
-        # Check existence first
-        existing = get_monitoring_config(client, warehouse_id, config, config_id)
-        if not existing:
-            return False
         execute_sql(client, warehouse_id,
             f"DELETE FROM {fqn} WHERE config_id = '{sql_escape(config_id)}'"
         )
@@ -238,6 +234,23 @@ def delete_monitoring_config(client, warehouse_id: str, config: dict, config_id:
     except Exception as e:
         logger.warning(f"Could not delete monitoring config {config_id}: {e}")
         return False
+
+
+def delete_monitoring_configs_bulk(client, warehouse_id: str, config: dict, config_ids: list[str]) -> int:
+    """Delete multiple monitoring configs in a single SQL statement."""
+    if not config_ids:
+        return 0
+    fqn = _get_fqn(config)
+    escaped = ", ".join(f"'{sql_escape(cid)}'" for cid in config_ids)
+    try:
+        execute_sql(client, warehouse_id,
+            f"DELETE FROM {fqn} WHERE config_id IN ({escaped})"
+        )
+        logger.info(f"Bulk-deleted {len(config_ids)} monitoring configs")
+        return len(config_ids)
+    except Exception as e:
+        logger.warning(f"Could not bulk-delete monitoring configs: {e}")
+        return 0
 
 
 def toggle_monitoring_config(client, warehouse_id: str, config: dict, config_id: str) -> dict | None:
@@ -353,11 +366,14 @@ def discover_tables(
 # Run monitoring (collect metrics for all enabled configs)
 # ---------------------------------------------------------------------------
 
-def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, force: bool = False) -> dict:
     """Execute monitoring for all enabled configs — collect metrics and detect anomalies.
 
     Collects metrics in parallel across tables and metrics using a thread pool,
     then batch-inserts all results via anomaly_detection.record_metrics_batch().
+
+    Args:
+        force: If True, ignore per-table frequency and collect all metrics (used by Run Now).
 
     Returns:
         Summary with tables processed, metrics recorded, anomalies detected.
@@ -369,7 +385,39 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> 
     wid = warehouse_id or config.get("sql_warehouse_id", "")
     max_workers = int(config.get("max_parallel_queries", 100))
 
-    configs = [c for c in list_monitoring_configs(client, wid, config) if c.get("enabled", True)]
+    all_configs = [c for c in list_monitoring_configs(client, wid, config) if c.get("enabled", True)]
+
+    # Filter configs by their per-table frequency — only collect if enough time has passed
+    # Skip filtering when force=True (manual "Run Now" or "Run Monitoring" button)
+    from datetime import datetime, timezone, timedelta
+    FREQ_MINUTES = {
+        "5min": 5, "15min": 15, "30min": 30,
+        "hourly": 60, "4hours": 240,
+        "daily": 1440, "weekly": 10080,
+    }
+    now = datetime.now(timezone.utc)
+    configs = []
+    for mc in all_configs:
+        if force:
+            configs.append(mc)
+            continue
+        freq_name = mc.get("frequency", "daily")
+        freq_mins = FREQ_MINUTES.get(freq_name, 1440)
+        # Check last metric timestamp for this table
+        try:
+            audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+            rows = execute_sql(client, wid,
+                f"SELECT MAX(measured_at) AS last_ts FROM {audit}.data_quality.metric_baselines "
+                f"WHERE table_fqn = '{sql_escape(mc['table_fqn'])}'")
+            last_ts = rows[0].get("last_ts") if rows else None
+            if last_ts:
+                if isinstance(last_ts, str):
+                    last_ts = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                if (now - last_ts) < timedelta(minutes=freq_mins * 0.9):  # 90% threshold to avoid drift
+                    continue  # Not due yet
+        except Exception:
+            pass  # If we can't check, run it
+        configs.append(mc)
 
     # Build a flat list of (table_fqn, metric_name) tasks
     tasks = []
@@ -408,14 +456,45 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None) -> 
     records = record_metrics_batch(all_metrics, client=client, warehouse_id=wid, config=config)
     anomalies_found = sum(1 for r in records if r.get("severity") != "normal")
 
+    # Update baseline_status from "pending" to "ready" for tables with enough data
+    _update_baseline_status(client, wid, config, configs)
+
     return {
         "status": "completed",
         "tables_processed": len(tables_seen),
         "metrics_recorded": len(records),
         "anomalies_found": anomalies_found,
         "errors": errors,
-        "total_configs": len(configs),
+        "total_configs": len(all_configs),
+        "skipped_not_due": len(all_configs) - len(configs),
     }
+
+
+def _update_baseline_status(client, warehouse_id: str, config: dict, configs: list[dict]):
+    """Update baseline_status from 'pending' to 'ready' for tables with ≥3 measurements."""
+    pending = [c for c in configs if c.get("baseline_status") == "pending"]
+    if not pending:
+        return
+
+    fqn = _get_fqn(config)
+    audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+    baselines_table = f"{audit}.data_quality.metric_baselines"
+
+    for mc in pending:
+        table_fqn = mc["table_fqn"]
+        try:
+            rows = execute_sql(client, warehouse_id,
+                f"SELECT COUNT(*) AS cnt FROM {baselines_table} "
+                f"WHERE table_fqn = '{sql_escape(table_fqn)}'")
+            count = int(rows[0]["cnt"]) if rows else 0
+            if count >= 3:
+                execute_sql(client, warehouse_id,
+                    f"UPDATE {fqn} SET baseline_status = 'ready', "
+                    f"updated_at = '{utc_now()}' "
+                    f"WHERE config_id = '{sql_escape(mc['config_id'])}'")
+                logger.info(f"Baseline ready for {table_fqn} ({count} measurements)")
+        except Exception as e:
+            logger.debug(f"Could not update baseline status for {table_fqn}: {e}")
 
 
 def _collect_metric(client, warehouse_id: str, table_fqn: str, metric_name: str) -> float | None:

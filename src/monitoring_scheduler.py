@@ -247,6 +247,7 @@ async def _run_monitoring_cycle(app, force: bool = False):
             "anomalies_found": result.get("anomalies_found", 0),
             "errors": result.get("errors", 0),
             "status": "success",
+            "details": result.get("details", []),
         }
         _state["last_run_at"] = now
         _state["last_run_result"] = run_entry

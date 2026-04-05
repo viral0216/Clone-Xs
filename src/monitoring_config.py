@@ -459,6 +459,23 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
     # Update baseline_status from "pending" to "ready" for tables with enough data
     _update_baseline_status(client, wid, config, configs)
 
+    # Build per-table detail for run history
+    table_details = {}
+    for m in all_metrics:
+        fqn = m["table_fqn"]
+        if fqn not in table_details:
+            table_details[fqn] = {"table_fqn": fqn, "metrics": {}}
+        table_details[fqn]["metrics"][m["metric_name"]] = round(m["value"], 2)
+    for r in records:
+        fqn = r.get("table_fqn", "")
+        if fqn in table_details:
+            if r.get("severity") != "normal":
+                table_details[fqn].setdefault("anomalies", []).append({
+                    "metric": r.get("metric_name", ""),
+                    "severity": r.get("severity", ""),
+                    "z_score": r.get("z_score", 0),
+                })
+
     return {
         "status": "completed",
         "tables_processed": len(tables_seen),
@@ -467,6 +484,7 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
         "errors": errors,
         "total_configs": len(all_configs),
         "skipped_not_due": len(all_configs) - len(configs),
+        "details": list(table_details.values()),
     }
 
 

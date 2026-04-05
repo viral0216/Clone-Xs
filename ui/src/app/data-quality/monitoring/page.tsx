@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import {
   Settings, Loader2, Search, Trash2, RefreshCw, Play, Plus,
   Eye, EyeOff, Clock, Activity, Pause, CheckCircle,
-  Timer, Power, PowerOff, Zap, History,
+  Timer, Power, PowerOff, Zap, History, ChevronLeft, ChevronRight, ChevronDown,
 } from "lucide-react";
 
 interface MonitoringConfig {
@@ -75,15 +75,23 @@ export default function MonitoringConfigPage() {
   // Scheduler state
   const [scheduler, setScheduler] = useState<any>(null);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
-  const [freqInput, setFreqInput] = useState(60);
+  const [expandedRun, setExpandedRun] = useState<number | null>(null);
+  const [historyPage, setHistoryPage] = useState(0);
+  const HISTORY_PAGE_SIZE = 10;
 
   useEffect(() => { loadConfigs(); loadScheduler(); }, []);
+
+  // Auto-refresh scheduler status every 30 seconds when enabled
+  useEffect(() => {
+    if (!scheduler?.enabled) return;
+    const interval = setInterval(loadScheduler, 30_000);
+    return () => clearInterval(interval);
+  }, [scheduler?.enabled]);
 
   async function loadScheduler() {
     try {
       const data = await api.get("/data-quality/monitoring/scheduler");
       setScheduler(data);
-      setFreqInput(data.frequency_minutes || 60);
     } catch { /* scheduler not available */ }
   }
 
@@ -93,26 +101,17 @@ export default function MonitoringConfigPage() {
       if (scheduler?.enabled) {
         const data = await api.post("/data-quality/monitoring/scheduler/disable", {});
         setScheduler(data);
-        toast.success("Scheduler disabled.");
+        toast.success("Auto-monitoring disabled.");
       } else {
-        const data = await api.post(`/data-quality/monitoring/scheduler/enable?frequency_minutes=${freqInput}`, {});
+        // Always use 1-minute heartbeat — per-table frequency controls actual collection
+        const data = await api.post("/data-quality/monitoring/scheduler/enable?frequency_minutes=1", {});
         setScheduler(data);
-        toast.success(`Scheduler enabled — running every ${freqInput} minutes.`);
+        toast.success("Auto-monitoring enabled. Tables will be checked based on their individual frequency.");
       }
     } catch (e: any) {
-      toast.error(e?.message || "Failed to toggle scheduler.");
+      toast.error(e?.message || "Failed to toggle auto-monitoring.");
     } finally {
       setSchedulerLoading(false);
-    }
-  }
-
-  async function updateFrequency() {
-    try {
-      const data = await api.put(`/data-quality/monitoring/scheduler/frequency?frequency_minutes=${freqInput}`, {});
-      setScheduler(data);
-      toast.success(`Frequency updated to every ${freqInput} minutes.`);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to update frequency.");
     }
   }
 
@@ -310,106 +309,64 @@ export default function MonitoringConfigPage() {
         </Card>
       </div>
 
-      {/* Scheduler Controls */}
+      {/* Auto-Monitoring Toggle */}
       <Card className="bg-card border-border">
-        <CardHeader className="pb-2">
+        <CardContent className="py-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Timer className="h-4 w-4" /> Auto-Scheduler
-            </CardTitle>
-            {scheduler && (
-              <Badge variant="outline" className={`text-[10px] ${scheduler.enabled ? "text-green-500 border-green-500/30" : "text-muted-foreground"}`}>
-                {scheduler.enabled ? "Enabled" : "Disabled"}
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
-            {/* Frequency input */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Frequency (minutes)</label>
-              <div className="flex items-center gap-2">
-                <select
-                  value={freqInput}
-                  onChange={e => setFreqInput(Number(e.target.value))}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm w-36"
-                >
-                  <option value={15}>Every 15 min</option>
-                  <option value={30}>Every 30 min</option>
-                  <option value={60}>Every 1 hour</option>
-                  <option value={120}>Every 2 hours</option>
-                  <option value={360}>Every 6 hours</option>
-                  <option value={720}>Every 12 hours</option>
-                  <option value={1440}>Every 24 hours</option>
-                </select>
-                {scheduler?.enabled && freqInput !== scheduler?.frequency_minutes && (
-                  <Button variant="outline" size="sm" onClick={updateFrequency} className="h-9 text-xs">
-                    Update
-                  </Button>
-                )}
+            <div className="flex items-center gap-3">
+              <Timer className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Auto-Monitoring</p>
+                <p className="text-xs text-muted-foreground">
+                  {scheduler?.enabled
+                    ? "Scheduler checks every minute and collects metrics based on each table's frequency."
+                    : "Enable to automatically collect metrics based on each table's frequency setting."}
+                </p>
               </div>
             </div>
-
-            {/* Enable/Disable toggle */}
-            <Button
-              variant={scheduler?.enabled ? "destructive" : "default"}
-              onClick={toggleScheduler}
-              disabled={schedulerLoading}
-              className="gap-1.5"
-            >
-              {schedulerLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : scheduler?.enabled ? (
-                <PowerOff className="h-4 w-4" />
-              ) : (
-                <Power className="h-4 w-4" />
+            <div className="flex items-center gap-3">
+              {scheduler?.enabled && (
+                <>
+                  {scheduler.running ? (
+                    <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30 gap-1">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" /> Running...
+                    </Badge>
+                  ) : (() => {
+                    const lastMeaningful = (scheduler.run_history || []).find((r: any) => (r.tables_processed ?? 0) > 0 || r.status === "error");
+                    return lastMeaningful ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        Last collection: <span className="text-foreground font-medium">{new Date(lastMeaningful.timestamp).toLocaleTimeString()}</span>
+                        <span className="text-green-500 ml-1">
+                          ({lastMeaningful.tables_processed}t / {lastMeaningful.metrics_recorded}m / {lastMeaningful.anomalies_found}a)
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Waiting for first collection...</span>
+                    );
+                  })()}
+                  <Button variant="outline" size="sm" onClick={triggerNow} disabled={schedulerLoading || scheduler?.running} className="h-8 text-xs gap-1">
+                    <Zap className="h-3 w-3" /> Run Now
+                  </Button>
+                </>
               )}
-              {scheduler?.enabled ? "Disable Scheduler" : "Enable Scheduler"}
-            </Button>
-
-            {/* Run Now button */}
-            {scheduler?.enabled && (
-              <Button variant="outline" onClick={triggerNow} disabled={schedulerLoading || scheduler?.running} className="gap-1.5">
-                <Zap className="h-4 w-4" />
-                {scheduler?.running ? "Running..." : "Run Now"}
+              <Button
+                variant={scheduler?.enabled ? "destructive" : "default"}
+                size="sm"
+                onClick={toggleScheduler}
+                disabled={schedulerLoading}
+                className="h-8 gap-1.5"
+              >
+                {schedulerLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : scheduler?.enabled ? (
+                  <PowerOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Power className="h-3.5 w-3.5" />
+                )}
+                {scheduler?.enabled ? "Disable" : "Enable"}
               </Button>
-            )}
-          </div>
-
-          {/* Scheduler info bar — always visible when enabled */}
-          {scheduler?.enabled && (
-            <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground">
-              <span>
-                <Clock className="h-3 w-3 inline mr-1" />
-                Runs every <span className="text-foreground font-medium">{scheduler.frequency_minutes} min</span>
-              </span>
-              {scheduler.running ? (
-                <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30 gap-1">
-                  <Loader2 className="h-2.5 w-2.5 animate-spin" /> Running now...
-                </Badge>
-              ) : scheduler.last_run_at ? (
-                <span>
-                  Last run: <span className="text-foreground font-medium">{new Date(scheduler.last_run_at).toLocaleString()}</span>
-                </span>
-              ) : (
-                <span>Next run in ~{scheduler.frequency_minutes} min (first run pending)</span>
-              )}
-              {scheduler.last_run_result && !scheduler.last_run_result.error && (
-                <span className="text-green-500">
-                  {scheduler.last_run_result.tables_processed} tables, {scheduler.last_run_result.metrics_recorded} metrics, {scheduler.last_run_result.anomalies_found} anomalies
-                </span>
-              )}
-              {scheduler.last_run_result?.error && (
-                <span className="text-red-500">Error: {scheduler.last_run_result.error}</span>
-              )}
             </div>
-          )}
-          {scheduler && !scheduler.enabled && (
-            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
-              Enable the scheduler to automatically collect metrics and detect anomalies on a recurring interval.
-            </p>
-          )}
+          </div>
         </CardContent>
       </Card>
 
@@ -477,13 +434,13 @@ export default function MonitoringConfigPage() {
         </Card>
       )}
 
-      {/* Run History */}
-      {scheduler?.run_history?.length > 0 && (
+      {/* Run History — only show runs that actually processed tables */}
+      {scheduler?.run_history?.some((r: any) => (r.tables_processed ?? 0) > 0 || r.status === "error") && (
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
-                <History className="h-4 w-4" /> Run History ({scheduler.run_history.length})
+                <History className="h-4 w-4" /> Run History ({scheduler.run_history.filter((r: any) => (r.tables_processed ?? 0) > 0 || r.status === "error").length})
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Link to="/data-quality/anomalies">
@@ -505,52 +462,140 @@ export default function MonitoringConfigPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto max-h-64 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-background">
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-2 px-3 text-left font-medium">Status</th>
-                    <th className="py-2 px-3 text-left font-medium">Timestamp</th>
-                    <th className="py-2 px-3 text-right font-medium">Tables</th>
-                    <th className="py-2 px-3 text-right font-medium">Metrics</th>
-                    <th className="py-2 px-3 text-right font-medium">Anomalies</th>
-                    <th className="py-2 px-3 text-right font-medium">Errors</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scheduler.run_history.map((run: any, i: number) => (
-                    <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
-                      <td className="py-1.5 px-3">
-                        {run.status === "error" ? (
-                          <Badge variant="outline" className="text-[10px] text-red-500 border-red-500/30">Failed</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30">
-                            <CheckCircle className="h-2.5 w-2.5 mr-0.5" /> OK
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-3 text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</td>
-                      <td className="py-1.5 px-3 text-right text-xs">{run.tables_processed ?? "—"}</td>
-                      <td className="py-1.5 px-3 text-right text-xs">{run.metrics_recorded ?? "—"}</td>
-                      <td className="py-1.5 px-3 text-right text-xs">
-                        {(run.anomalies_found ?? 0) > 0 ? (
-                          <Link to="/data-quality/anomalies" className="text-red-500 font-medium hover:underline">{run.anomalies_found}</Link>
-                        ) : (
-                          <span>{run.anomalies_found ?? "—"}</span>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-3 text-right text-xs">
-                        {run.error ? (
-                          <span className="text-red-500 truncate max-w-[200px] inline-block" title={run.error}>{run.error}</span>
-                        ) : (
-                          <span className={run.errors > 0 ? "text-red-500" : ""}>{run.errors ?? 0}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {(() => {
+              const allRuns = scheduler.run_history.filter((r: any) => (r.tables_processed ?? 0) > 0 || r.status === "error");
+              const totalPages = Math.ceil(allRuns.length / HISTORY_PAGE_SIZE);
+              const pageRuns = allRuns.slice(historyPage * HISTORY_PAGE_SIZE, (historyPage + 1) * HISTORY_PAGE_SIZE);
+              return (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground">
+                          <th className="py-2 px-3 text-left font-medium">Status</th>
+                          <th className="py-2 px-3 text-left font-medium">Timestamp</th>
+                          <th className="py-2 px-3 text-right font-medium">Tables</th>
+                          <th className="py-2 px-3 text-right font-medium">Metrics</th>
+                          <th className="py-2 px-3 text-right font-medium">Anomalies</th>
+                          <th className="py-2 px-3 text-right font-medium">Errors</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageRuns.map((run: any, i: number) => {
+                          const globalIdx = historyPage * HISTORY_PAGE_SIZE + i;
+                          const isExpanded = expandedRun === globalIdx;
+                          const details = run.details || [];
+                          return (
+                            <React.Fragment key={i}>
+                              <tr
+                                className={`border-b border-border/50 hover:bg-muted/30 cursor-pointer ${isExpanded ? "bg-muted/20" : ""}`}
+                                onClick={() => setExpandedRun(isExpanded ? null : globalIdx)}
+                              >
+                                <td className="py-1.5 px-3">
+                                  <div className="flex items-center gap-1">
+                                    {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                                    {run.status === "error" ? (
+                                      <Badge variant="outline" className="text-[10px] text-red-500 border-red-500/30">Failed</Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30">
+                                        <CheckCircle className="h-2.5 w-2.5 mr-0.5" /> OK
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-1.5 px-3 text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</td>
+                                <td className="py-1.5 px-3 text-right text-xs">{run.tables_processed ?? "—"}</td>
+                                <td className="py-1.5 px-3 text-right text-xs">{run.metrics_recorded ?? "—"}</td>
+                                <td className="py-1.5 px-3 text-right text-xs">
+                                  {(run.anomalies_found ?? 0) > 0 ? (
+                                    <Link to="/data-quality/anomalies" className="text-red-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{run.anomalies_found}</Link>
+                                  ) : (
+                                    <span>{run.anomalies_found ?? "—"}</span>
+                                  )}
+                                </td>
+                                <td className="py-1.5 px-3 text-right text-xs">
+                                  {run.error ? (
+                                    <span className="text-red-500 truncate max-w-[200px] inline-block" title={run.error}>{run.error}</span>
+                                  ) : (
+                                    <span className={run.errors > 0 ? "text-red-500" : ""}>{run.errors ?? 0}</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {isExpanded && details.length > 0 && (
+                                <tr>
+                                  <td colSpan={6} className="p-0">
+                                    <div className="bg-muted/10 border-b border-border px-6 py-3">
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Tables Collected</p>
+                                      <div className="grid gap-2">
+                                        {details.map((d: any) => (
+                                          <div key={d.table_fqn} className="flex items-center gap-4 text-xs bg-background rounded-md px-3 py-2 border border-border/50">
+                                            <span className="font-mono font-medium text-foreground min-w-[250px] truncate" title={d.table_fqn}>{d.table_fqn}</span>
+                                            <div className="flex flex-wrap gap-2">
+                                              {Object.entries(d.metrics || {}).map(([metric, value]: [string, any]) => (
+                                                <span key={metric} className="inline-flex items-center gap-1">
+                                                  <span className="text-muted-foreground">{metric}:</span>
+                                                  <span className="font-mono font-medium">{typeof value === "number" ? value.toLocaleString() : value}</span>
+                                                </span>
+                                              ))}
+                                            </div>
+                                            {(d.anomalies || []).length > 0 && (
+                                              <div className="flex gap-1 ml-auto">
+                                                {d.anomalies.map((a: any, ai: number) => (
+                                                  <Badge key={ai} variant="outline" className={`text-[9px] ${a.severity === "critical" ? "text-red-500 border-red-500/30" : "text-amber-500 border-amber-500/30"}`}>
+                                                    {a.metric} z={a.z_score}
+                                                  </Badge>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {isExpanded && details.length === 0 && run.status !== "error" && (
+                                <tr>
+                                  <td colSpan={6} className="px-6 py-3 text-xs text-muted-foreground bg-muted/10 border-b border-border">
+                                    No per-table details available for this run.
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
+                      <span className="text-xs text-muted-foreground">
+                        Showing {historyPage * HISTORY_PAGE_SIZE + 1}–{Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, allRuns.length)} of {allRuns.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button variant="outline" size="sm" className="h-7 w-7 p-0"
+                          disabled={historyPage === 0}
+                          onClick={() => setHistoryPage(p => p - 1)}>
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        {Array.from({ length: totalPages }, (_, i) => (
+                          <Button key={i} variant={historyPage === i ? "default" : "outline"} size="sm"
+                            className="h-7 w-7 p-0 text-xs"
+                            onClick={() => setHistoryPage(i)}>
+                            {i + 1}
+                          </Button>
+                        ))}
+                        <Button variant="outline" size="sm" className="h-7 w-7 p-0"
+                          disabled={historyPage >= totalPages - 1}
+                          onClick={() => setHistoryPage(p => p + 1)}>
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
       )}
@@ -584,7 +629,7 @@ export default function MonitoringConfigPage() {
               ))}
               <span className="text-xs text-muted-foreground font-medium ml-2">Frequency:</span>
               <select value={bulkFrequency} onChange={e => setBulkFrequency(e.target.value)}
-                className="h-7 rounded border border-input bg-background px-2 text-xs">
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium min-w-[130px]">
                 {FREQUENCY_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </div>
@@ -694,7 +739,7 @@ export default function MonitoringConfigPage() {
                               toast.success(`Frequency updated to ${newFreq}`);
                             } catch (err: any) { toast.error(err.message || "Failed to update"); }
                           }}
-                          className="h-7 rounded border border-input bg-background px-2 text-[10px] cursor-pointer"
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium cursor-pointer min-w-[130px]"
                         >
                           {FREQUENCY_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                         </select>

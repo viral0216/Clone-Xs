@@ -1017,6 +1017,114 @@ async def sla_compliance_trend(
     return get_sla_compliance_trend(client, wid, config, days)
 
 
+# ── DQ Scorecard ──────────────────────────────────────────────────────────────
+
+@router.get("/scorecard/{table_fqn:path}", summary="Per-table DQ scorecard")
+async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
+    """Compute a per-table quality scorecard aggregating all DQ signals.
+
+    Returns an overall score (0-100) with dimensional breakdown:
+    completeness, freshness, schema stability, SLA compliance, and anomalies.
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    dimensions = {}
+    scores = []
+
+    # 1. Freshness
+    try:
+        from src.client import execute_sql as _sql
+        rows = _sql(client, wid, f"DESCRIBE DETAIL {table_fqn}")
+        if rows:
+            from datetime import datetime, timezone
+            last_mod = rows[0].get("lastModified") or rows[0].get("last_modified")
+            if last_mod:
+                if isinstance(last_mod, str):
+                    last_mod = datetime.fromisoformat(last_mod.replace("Z", "+00:00"))
+                hours_ago = (datetime.now(timezone.utc) - last_mod).total_seconds() / 3600
+                freshness_score = max(0, min(100, 100 - (hours_ago - 1) * 4))  # 100 at ≤1h, 0 at ≥26h
+                dimensions["freshness"] = {"score": round(freshness_score), "hours_since_update": round(hours_ago, 1)}
+                scores.append(freshness_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard freshness failed for {table_fqn}: {e}")
+
+    # 2. Completeness (null rate from recent metrics)
+    try:
+        audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+        from src.client import execute_sql as _sql
+        null_rows = _sql(client, wid,
+            f"SELECT value FROM {audit}.data_quality.metric_baselines "
+            f"WHERE table_fqn = '{table_fqn}' AND metric_name = 'null_rate' "
+            f"ORDER BY measured_at DESC LIMIT 1")
+        if null_rows:
+            null_pct = float(null_rows[0].get("value", 0))
+            comp_score = max(0, 100 - null_pct)
+            dimensions["completeness"] = {"score": round(comp_score), "null_rate_pct": round(null_pct, 1)}
+            scores.append(comp_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard completeness failed: {e}")
+
+    # 3. SLA Compliance
+    try:
+        from src.sla_monitor import list_sla_rules
+        all_rules = list_sla_rules(client, wid, config)
+        table_rules = [r for r in all_rules if r.get("table_fqn") == table_fqn and r.get("enabled", True)]
+        if table_rules:
+            # Check the latest SLA check results for this table
+            audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+            gov_schema = f"{audit}.governance"
+            from src.client import execute_sql as _sql
+            sla_checks = _sql(client, wid,
+                f"SELECT passed FROM {gov_schema}.sla_checks "
+                f"WHERE table_fqn = '{table_fqn}' "
+                f"ORDER BY checked_at DESC LIMIT {len(table_rules)}")
+            passed = sum(1 for r in (sla_checks or []) if r.get("passed"))
+            total = len(sla_checks or table_rules)
+            sla_score = (passed / total) * 100 if total else 100
+            dimensions["sla_compliance"] = {"score": round(sla_score), "rules": len(table_rules), "passing": passed}
+            scores.append(sla_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard SLA failed: {e}")
+
+    # 4. Anomaly score (recent anomalies = lower score)
+    try:
+        audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+        from src.client import execute_sql as _sql
+        anom_rows = _sql(client, wid,
+            f"SELECT COUNT(*) AS cnt FROM {audit}.data_quality.metric_baselines "
+            f"WHERE table_fqn = '{table_fqn}' AND is_anomaly = true "
+            f"AND measured_at >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())")
+        anomaly_count = int(anom_rows[0].get("cnt", 0)) if anom_rows else 0
+        anomaly_score = max(0, 100 - anomaly_count * 15)
+        dimensions["anomaly_free"] = {"score": round(anomaly_score), "recent_anomalies": anomaly_count}
+        scores.append(anomaly_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard anomaly failed: {e}")
+
+    # 5. Schema stability
+    try:
+        from src.client import execute_sql as _sql
+        hist = _sql(client, wid, f"DESCRIBE HISTORY {table_fqn} LIMIT 10")
+        schema_changes = sum(1 for h in (hist or []) if "CHANGE" in str(h.get("operation", "")).upper() or "ALTER" in str(h.get("operation", "")).upper())
+        schema_score = 100 if schema_changes == 0 else max(0, 100 - schema_changes * 20)
+        dimensions["schema_stability"] = {"score": round(schema_score), "recent_changes": schema_changes}
+        scores.append(schema_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard schema stability failed: {e}")
+
+    overall = round(sum(scores) / len(scores)) if scores else 0
+
+    return {
+        "table_fqn": table_fqn,
+        "overall_score": overall,
+        "dimensions": dimensions,
+        "dimension_count": len(dimensions),
+    }
+
+
 # ── Monitoring Configuration ─────────────────────────────────────────────────
 
 class MonitoringConfigRequest(BaseModel):

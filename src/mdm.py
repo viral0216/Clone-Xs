@@ -140,7 +140,7 @@ class MDMManager:
         self.warehouse_id = warehouse_id
         self.config = config
         catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
-        self.store = MDMStore(client, warehouse_id, state_catalog=catalog, state_schema="mdm")
+        self.store = MDMStore(client, warehouse_id, state_catalog=catalog, state_schema="mdm", config=self.config)
 
     def init_tables(self) -> dict:
         self.store.init_tables()

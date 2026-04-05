@@ -6,6 +6,9 @@ import {
   Fingerprint, CheckSquare, Search, SearchCode, History,
   Clock, Database, AlertTriangle, Bell, ClipboardList, Settings,
   DollarSign, PanelLeftClose, PanelLeftOpen, UserX,
+  FileCode, BookOpen, Award, Target, BellRing,
+  FileClock, SearchSlash, Network, TrendingUp, CalendarClock,
+  Wrench, FolderTree, FileSpreadsheet, Users,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -32,6 +35,7 @@ const NAV_SECTIONS = [
       { href: "/data-quality/rules", label: "Rules Engine", icon: ShieldCheck },
       { href: "/data-quality/dashboard", label: "DQ Dashboard", icon: BarChart3 },
       { href: "/data-quality/results", label: "Results", icon: ClipboardCheck },
+      { href: "/data-quality/scorecard", label: "DQ Scorecard", icon: Target },
     ],
   },
   {
@@ -66,9 +70,38 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "Governance",
+    items: [
+      { href: "/data-quality/sla", label: "SLA Management", icon: Clock },
+      { href: "/data-quality/contracts", label: "Data Contracts", icon: FileCode },
+      { href: "/data-quality/dictionary", label: "Data Dictionary", icon: BookOpen },
+      { href: "/data-quality/certifications", label: "Certifications", icon: Award },
+      { href: "/data-quality/changes", label: "Change History", icon: FileClock },
+      { href: "/data-quality/search", label: "Metadata Search", icon: SearchSlash },
+    ],
+  },
+  {
     title: "Observability",
     items: [
       { href: "/data-quality/observability", label: "Health Dashboard", icon: Activity },
+      { href: "/data-quality/alerts", label: "Alert Rules", icon: BellRing },
+      { href: "/data-quality/trends", label: "DQ Trends", icon: TrendingUp },
+      { href: "/data-quality/lineage", label: "Data Lineage", icon: Network },
+    ],
+  },
+  {
+    title: "Automation",
+    items: [
+      { href: "/data-quality/recon-schedules", label: "Recon Schedules", icon: CalendarClock },
+      { href: "/data-quality/remediation", label: "Auto-Remediation", icon: Wrench },
+    ],
+  },
+  {
+    title: "Discovery",
+    items: [
+      { href: "/data-quality/catalog-browser", label: "Catalog Browser", icon: FolderTree },
+      { href: "/data-quality/reports", label: "DQ Reports", icon: FileSpreadsheet },
+      { href: "/data-quality/ownership", label: "Team Ownership", icon: Users },
     ],
   },
   {

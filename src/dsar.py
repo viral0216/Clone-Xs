@@ -30,7 +30,7 @@ class DSARManager:
         dsar_config = self.config.get("dsar", {})
         catalog = self.config.get("audit_trail", {}).get("catalog", "clone_audit")
 
-        self.store = DSARStore(client, warehouse_id, catalog, "dsar")
+        self.store = DSARStore(client, warehouse_id, catalog, "dsar", config=self.config)
         self.deadline_days = dsar_config.get("deadline_days", 30)
         self.default_format = dsar_config.get("default_export_format", "csv")
         self.export_dir = dsar_config.get("export_output_dir", "reports/dsar")

@@ -96,6 +96,18 @@ const DQAnomalies = lazy(() => import("@/app/data-quality/anomalies/page"));
 const DQIncidents = lazy(() => import("@/app/data-quality/incidents/page"));
 const DQExpectations = lazy(() => import("@/app/data-quality/expectations/page"));
 const DQMonitoring = lazy(() => import("@/app/data-quality/monitoring/page"));
+const DQSLA = lazy(() => import("@/app/data-quality/sla/page"));
+const DQScorecard = lazy(() => import("@/app/data-quality/scorecard/page"));
+const DQDictionary = lazy(() => import("@/app/data-quality/dictionary/page"));
+const DQCertifications = lazy(() => import("@/app/data-quality/certifications/page"));
+const DQAlerts = lazy(() => import("@/app/data-quality/alerts/page"));
+const DQLineage = lazy(() => import("@/app/data-quality/lineage/page"));
+const DQTrends = lazy(() => import("@/app/data-quality/trends/page"));
+const DQReconSchedules = lazy(() => import("@/app/data-quality/recon-schedules/page"));
+const DQRemediation = lazy(() => import("@/app/data-quality/remediation/page"));
+const DQCatalogBrowser = lazy(() => import("@/app/data-quality/catalog-browser/page"));
+const DQReports = lazy(() => import("@/app/data-quality/reports/page"));
+const DQOwnership = lazy(() => import("@/app/data-quality/ownership/page"));
 
 // FinOps portal pages
 const FinOpsDashboard = lazy(() => import("@/app/finops/page"));
@@ -364,6 +376,24 @@ export default function App() {
 
               {/* Portal aliases for moved pages */}
               <Route path="/data-quality/observability" element={<ObservabilityPage />} />
+              <Route path="/data-quality/sla" element={<Suspense fallback={<PageFallback />}><DQSLA /></Suspense>} />
+              <Route path="/data-quality/contracts" element={<Suspense fallback={<PageFallback />}><GovODCS /></Suspense>} />
+              <Route path="/data-quality/contracts/new" element={<Suspense fallback={<PageFallback />}><GovODCSDetail /></Suspense>} />
+              <Route path="/data-quality/contracts/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSDetail /></Suspense>} />
+              <Route path="/data-quality/contracts/validate/:contractId" element={<Suspense fallback={<PageFallback />}><GovODCSValidate /></Suspense>} />
+              <Route path="/data-quality/dictionary" element={<Suspense fallback={<PageFallback />}><DQDictionary /></Suspense>} />
+              <Route path="/data-quality/certifications" element={<Suspense fallback={<PageFallback />}><DQCertifications /></Suspense>} />
+              <Route path="/data-quality/scorecard" element={<Suspense fallback={<PageFallback />}><DQScorecard /></Suspense>} />
+              <Route path="/data-quality/alerts" element={<Suspense fallback={<PageFallback />}><DQAlerts /></Suspense>} />
+              <Route path="/data-quality/changes" element={<Suspense fallback={<PageFallback />}><GovChanges /></Suspense>} />
+              <Route path="/data-quality/search" element={<Suspense fallback={<PageFallback />}><GovSearch /></Suspense>} />
+              <Route path="/data-quality/lineage" element={<Suspense fallback={<PageFallback />}><DQLineage /></Suspense>} />
+              <Route path="/data-quality/trends" element={<Suspense fallback={<PageFallback />}><DQTrends /></Suspense>} />
+              <Route path="/data-quality/recon-schedules" element={<Suspense fallback={<PageFallback />}><DQReconSchedules /></Suspense>} />
+              <Route path="/data-quality/remediation" element={<Suspense fallback={<PageFallback />}><DQRemediation /></Suspense>} />
+              <Route path="/data-quality/catalog-browser" element={<Suspense fallback={<PageFallback />}><DQCatalogBrowser /></Suspense>} />
+              <Route path="/data-quality/reports" element={<Suspense fallback={<PageFallback />}><DQReports /></Suspense>} />
+              <Route path="/data-quality/ownership" element={<Suspense fallback={<PageFallback />}><DQOwnership /></Suspense>} />
               <Route path="/governance/rbac" element={<RbacPage />} />
 
               {/* Security Portal */}

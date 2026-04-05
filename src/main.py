@@ -1461,7 +1461,7 @@ def cmd_state(args):
     _resolve_warehouse_id(args, config)
 
     client = _get_auth_client(args)
-    store = StateStore(client, config["sql_warehouse_id"])
+    store = StateStore(client, config["sql_warehouse_id"], config=config)
 
     if args.action == "init":
         store.init_tables()

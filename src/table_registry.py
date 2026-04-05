@@ -199,7 +199,7 @@ TABLE_SECTIONS = [
         "title": "State & Scheduler",
         "subtitle": "Clone state tracking, TTL policies, and scheduler configuration",
         "schema": "state",
-        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state"],
+        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state", "scheduler_run_history"],
     },
 ]
 

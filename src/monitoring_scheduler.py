@@ -1,17 +1,23 @@
 """Background monitoring scheduler — runs monitoring on a configurable interval.
 
-Persists scheduler state (enabled, frequency) to a Delta table so it survives
-app restarts. Uses asyncio background tasks within the FastAPI event loop.
+Persists scheduler state (enabled, frequency) to a local JSON file so it
+survives app restarts without needing a database connection. Also persists
+to Delta table when a client is available.
 """
 
 import asyncio
+import json
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from src.client import execute_sql
 from src.table_registry import get_table_fqn
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_STATE_PATH = Path(__file__).resolve().parent.parent / "config" / "scheduler_state.json"
 
 # Module-level state — runtime-only fields stay here; enabled/frequency
 # are persisted to the Delta table.
@@ -43,6 +49,37 @@ def set_client(client, warehouse_id: str, config: dict):
     _cached_client = client
     _cached_wid = warehouse_id
     _cached_config = config
+
+
+# ---------------------------------------------------------------------------
+# Local file persistence (survives restarts without DB)
+# ---------------------------------------------------------------------------
+
+def _load_local_state():
+    """Load enabled/frequency from local JSON file."""
+    global _state
+    if _LOCAL_STATE_PATH.exists():
+        try:
+            with open(_LOCAL_STATE_PATH) as f:
+                saved = json.load(f)
+            _state["enabled"] = bool(saved.get("enabled", False))
+            _state["frequency_minutes"] = int(saved.get("frequency_minutes", 1))
+            logger.info(f"Loaded scheduler state from file: enabled={_state['enabled']}, freq={_state['frequency_minutes']}")
+        except Exception as e:
+            logger.warning(f"Could not load local scheduler state: {e}")
+
+
+def _save_local_state():
+    """Persist enabled/frequency to local JSON file."""
+    try:
+        os.makedirs(_LOCAL_STATE_PATH.parent, exist_ok=True)
+        with open(_LOCAL_STATE_PATH, "w") as f:
+            json.dump({
+                "enabled": _state["enabled"],
+                "frequency_minutes": _state["frequency_minutes"],
+            }, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not save local scheduler state: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +152,112 @@ def _save_state(client, warehouse_id, config):
         logger.warning(f"Could not save scheduler state to Delta: {e}")
 
 
+def _get_history_fqn(config: dict) -> str:
+    return get_table_fqn(config, "state", "scheduler_run_history")
+
+
+def _ensure_history_table(client, warehouse_id, config):
+    """Create the run history Delta table if it does not exist."""
+    fqn = _get_history_fqn(config)
+    try:
+        execute_sql(client, warehouse_id, f"""
+            CREATE TABLE IF NOT EXISTS {fqn} (
+                run_id STRING,
+                timestamp STRING,
+                tables_processed INT,
+                metrics_recorded INT,
+                anomalies_found INT,
+                errors INT,
+                status STRING,
+                details STRING
+            ) USING DELTA
+        """)
+    except Exception:
+        pass
+    return fqn
+
+
+def _store_run_history(client, warehouse_id, config, run_entry: dict):
+    """Store a single run entry to the Delta history table."""
+    fqn = _get_history_fqn(config)
+    try:
+        _ensure_history_table(client, warehouse_id, config)
+        import uuid
+        run_id = str(uuid.uuid4())[:12]
+        details_json = json.dumps(run_entry.get("details", []))
+        from src.client import sql_escape
+        execute_sql(client, warehouse_id, f"""
+            INSERT INTO {fqn} VALUES (
+                '{sql_escape(run_id)}',
+                '{sql_escape(run_entry.get("timestamp", ""))}',
+                {run_entry.get("tables_processed", 0)},
+                {run_entry.get("metrics_recorded", 0)},
+                {run_entry.get("anomalies_found", 0)},
+                {run_entry.get("errors", 0)},
+                '{sql_escape(run_entry.get("status", "success"))}',
+                '{sql_escape(details_json)}'
+            )
+        """)
+    except Exception as e:
+        logger.debug(f"Could not store run history to Delta: {e}")
+
+
+def _load_run_history(client, warehouse_id, config, limit: int = 50) -> list[dict]:
+    """Load recent run history from Delta table."""
+    fqn = _get_history_fqn(config)
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT * FROM {fqn} WHERE tables_processed > 0 OR status = 'error' "
+            f"ORDER BY timestamp DESC LIMIT {limit}")
+        history = []
+        for r in (rows or []):
+            entry = {
+                "timestamp": r.get("timestamp", ""),
+                "tables_processed": int(r.get("tables_processed", 0)),
+                "metrics_recorded": int(r.get("metrics_recorded", 0)),
+                "anomalies_found": int(r.get("anomalies_found", 0)),
+                "errors": int(r.get("errors", 0)),
+                "status": r.get("status", "success"),
+            }
+            try:
+                entry["details"] = json.loads(r.get("details", "[]"))
+            except Exception:
+                entry["details"] = []
+            history.append(entry)
+        return history
+    except Exception as e:
+        logger.debug(f"Could not load run history from Delta: {e}")
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def get_scheduler_status() -> dict:
-    """Return current scheduler status including run history."""
+    """Return current scheduler status including run history from Delta + in-memory."""
+    # Merge: in-memory runs (current session) + Delta runs (persisted from past sessions)
+    in_memory = _state.get("run_history", [])
+    delta_history = []
+    try:
+        if _cached_client:
+            from src.config import load_config_cached
+            config = _cached_config if _cached_config else load_config_cached()
+            wid = _cached_wid or config.get("sql_warehouse_id", "")
+            delta_history = _load_run_history(_cached_client, wid, config)
+    except Exception:
+        pass
+
+    # Combine: in-memory first (most recent), then Delta entries not already present
+    in_memory_ts = {r.get("timestamp") for r in in_memory}
+    combined = list(in_memory)
+    for r in delta_history:
+        if r.get("timestamp") not in in_memory_ts:
+            combined.append(r)
+    # Sort by timestamp descending, limit to 50
+    combined.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    combined = combined[:_MAX_HISTORY]
+
     return {
         "enabled": _state["enabled"],
         "frequency_minutes": _state["frequency_minutes"],
@@ -128,7 +265,7 @@ def get_scheduler_status() -> dict:
         "last_run_result": _state["last_run_result"],
         "next_run_at": _state["next_run_at"],
         "running": _state["running"],
-        "run_history": _state.get("run_history", []),
+        "run_history": combined,
     }
 
 
@@ -254,6 +391,9 @@ async def _run_monitoring_cycle(app, force: bool = False):
         _state["run_history"].insert(0, run_entry)
         _state["run_history"] = _state["run_history"][:_MAX_HISTORY]
 
+        # Persist run to Delta table
+        _store_run_history(client, wid, config, run_entry)
+
         logger.info(
             f"Scheduler run complete: {result.get('tables_processed', 0)} tables, "
             f"{result.get('metrics_recorded', 0)} metrics, "
@@ -269,6 +409,13 @@ async def _run_monitoring_cycle(app, force: bool = False):
         _state["last_run_result"] = run_entry
         _state["run_history"].insert(0, run_entry)
         _state["run_history"] = _state["run_history"][:_MAX_HISTORY]
+
+        # Persist error run to Delta
+        try:
+            _store_run_history(_get_client(), _cached_wid, _cached_config, run_entry)
+        except Exception:
+            pass
+
         logger.error(f"Scheduler run failed: {e}")
     finally:
         _state["running"] = False
@@ -307,19 +454,22 @@ async def _scheduler_loop(app):
 def start_scheduler(app=None):
     """Start the background scheduler if enabled.
 
-    Loads persisted state from Delta (requires client/warehouse/config
-    to be available via the standard resolution chain).
+    Loads state from local JSON file first (no DB needed), then tries Delta.
     """
     global _task
-    # Load state from Delta using the same resolution as _run_monitoring_cycle
+
+    # 1. Always load from local file (works without auth)
+    _load_local_state()
+
+    # 2. Optionally also load from Delta (may have newer state)
     try:
         from src.config import load_config_cached
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
         _load_state(client, wid, config)
-    except Exception as e:
-        logger.warning(f"Could not load scheduler state on start: {e}")
+    except Exception:
+        pass  # Local file state is sufficient
 
     if not _state["enabled"]:
         return
@@ -331,7 +481,7 @@ def start_scheduler(app=None):
     except RuntimeError:
         loop = asyncio.get_event_loop()
     _task = loop.create_task(_scheduler_loop(app))
-    logger.info(f"Monitoring scheduler background task started (every {_state['frequency_minutes']} min)")
+    logger.info(f"Monitoring scheduler auto-started (every {_state['frequency_minutes']} min)")
 
 
 def stop_scheduler():
@@ -349,45 +499,53 @@ def enable_scheduler(frequency_minutes: int | None = None, app=None):
     if frequency_minutes is not None:
         _state["frequency_minutes"] = max(1, frequency_minutes)
     _state["enabled"] = True
-    # Persist to Delta
+
+    # Always save to local file (primary persistence)
+    _save_local_state()
+
+    # Also save to Delta if possible
     try:
         from src.config import load_config_cached
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
         _save_state(client, wid, config)
-    except Exception as e:
-        logger.warning(f"Could not persist scheduler state: {e}")
+    except Exception:
+        pass
     start_scheduler(app)
 
 
 def disable_scheduler():
     """Disable the scheduler and stop it."""
     _state["enabled"] = False
-    # Persist to Delta
+
+    # Always save to local file
+    _save_local_state()
+
+    # Also save to Delta if possible
     try:
         from src.config import load_config_cached
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
         _save_state(client, wid, config)
-    except Exception as e:
-        logger.warning(f"Could not persist scheduler state: {e}")
+    except Exception:
+        pass
     stop_scheduler()
 
 
 def update_frequency(frequency_minutes: int, app=None):
     """Update the scheduler frequency. Restarts if currently running."""
     _state["frequency_minutes"] = max(1, frequency_minutes)
-    # Persist to Delta
+    _save_local_state()
     try:
         from src.config import load_config_cached
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
         _save_state(client, wid, config)
-    except Exception as e:
-        logger.warning(f"Could not persist scheduler state: {e}")
+    except Exception:
+        pass
     if _state["enabled"]:
         stop_scheduler()
         start_scheduler(app)

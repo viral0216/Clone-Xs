@@ -6,6 +6,7 @@ referential) and custom SQL expressions. Results stored in Delta tables.
 
 import json
 import logging
+import re as _re
 import uuid
 from datetime import datetime, timezone
 
@@ -316,8 +317,6 @@ def _parse_val(v):
 # ---------------------------------------------------------------------------
 # Cross-Table Consistency Checks
 # ---------------------------------------------------------------------------
-
-import re as _re
 
 _IDENTIFIER_RE = _re.compile(r"^[a-zA-Z0-9_`.*]+$")
 

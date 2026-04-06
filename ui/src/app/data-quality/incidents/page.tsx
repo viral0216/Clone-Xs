@@ -48,8 +48,13 @@ const SOURCE_LINKS: Record<string, string> = {
   reconciliation: "/data-quality/reconciliation/row-level",
   reconciliation_mismatch: "/data-quality/reconciliation/row-level",
   pii: "/data-quality/pii",
-  sla: "/data-quality/configuration",
+  sla: "/data-quality/sla",
 };
+
+function getIncidentLink(inc: Incident): string {
+  if (inc.related_link) return inc.related_link;
+  return SOURCE_LINKS[inc.source] || "/data-quality";
+}
 
 const SOURCE_ICONS: Record<string, any> = {
   dq_rule: ShieldAlert,
@@ -352,11 +357,19 @@ export default function IncidentsPage() {
                                 {String(inc.detected_at || "").slice(11, 19)}
                               </span>
                               <Link
-                                to={inc.related_link || SOURCE_LINKS[inc.source] || "/data-quality"}
+                                to={getIncidentLink(inc)}
                                 className="text-[10px] text-[#E8453C] hover:underline inline-flex items-center gap-0.5"
                               >
                                 <ExternalLink className="h-2.5 w-2.5" /> View Source
                               </Link>
+                              {inc.source === "freshness" && (
+                                <Link
+                                  to="/data-quality/freshness"
+                                  className="text-[10px] text-muted-foreground hover:underline inline-flex items-center gap-0.5"
+                                >
+                                  Check Freshness
+                                </Link>
+                              )}
                             </div>
                           </div>
                         </div>

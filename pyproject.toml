@@ -45,6 +45,13 @@ nlp = [
     "presidio-analyzer>=2.2.0",
     "presidio-anonymizer>=2.2.0",
 ]
+spark = [
+    "databricks-connect>=14.0.0",
+    "databricks-labs-dqx>=0.4.0",
+]
+all = [
+    "clone-xs[web,nlp,spark,dev]",
+]
 
 [project.urls]
 Homepage = "https://github.com/viral0216/clone-xs"

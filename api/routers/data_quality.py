@@ -636,6 +636,42 @@ async def update_anomaly_settings(req: dict):
     return {**raw.get("anomaly_detection", {}), "max_parallel_queries": raw.get("max_parallel_queries", 10)}
 
 
+@router.get("/dqx-settings", summary="Get DQX Engine settings")
+async def get_dqx_settings():
+    """Get current DQX configuration — auto-save, default target table."""
+    config = await get_app_config()
+    dqx = config.get("dqx", {})
+    return {
+        "auto_save_to_delta": bool(dqx.get("auto_save_to_delta", False)),
+        "default_target_table": dqx.get("default_target_table", ""),
+    }
+
+
+@router.put("/dqx-settings", summary="Update DQX Engine settings")
+async def update_dqx_settings(req: dict):
+    """Update DQX configuration — auto-save, default target table."""
+    import yaml
+    config_path = "config/clone_config.yaml"
+    try:
+        with open(config_path, "r") as f:
+            raw = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raw = {}
+
+    if "dqx" not in raw:
+        raw["dqx"] = {}
+
+    if "auto_save_to_delta" in req:
+        raw["dqx"]["auto_save_to_delta"] = bool(req["auto_save_to_delta"])
+    if "default_target_table" in req:
+        raw["dqx"]["default_target_table"] = str(req["default_target_table"])
+
+    with open(config_path, "w") as f:
+        yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+
+    return raw.get("dqx", {})
+
+
 @router.get("/anomalies/system-tables", summary="Detect anomalies from Databricks system tables")
 async def system_table_anomalies(
     days: int = Query(default=7, ge=1, le=90),
@@ -1255,9 +1291,12 @@ async def run_monitoring(client=Depends(get_db_client)):
 # ── Monitoring Scheduler ──────────────────────────────────────────────────────
 
 @router.get("/monitoring/scheduler", summary="Get scheduler status")
-async def scheduler_status():
+async def scheduler_status(client=Depends(get_db_client)):
     """Get the current monitoring scheduler status — enabled, frequency, last/next run."""
-    from src.monitoring_scheduler import get_scheduler_status
+    from src.monitoring_scheduler import get_scheduler_status, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
     return get_scheduler_status()
 
 

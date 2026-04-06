@@ -836,6 +836,9 @@ export default function SettingsPage() {
           {/* ─── Anomaly Detection ─── */}
           {activeSection === "anomaly" && <section id="anomaly">
             <AnomalyDetectionSettings />
+            <div className="mt-6 pt-6 border-t border-border">
+              <DQXSettings />
+            </div>
           </section>}
 
           {/* ─── Audit & Logs ─── */}
@@ -1180,6 +1183,62 @@ function AnomalyDetectionSettings() {
             </Button>
             <p className="text-[10px] text-muted-foreground">Lower thresholds = more sensitive. Defaults: window=30, warning=2.0, critical=3.0</p>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function DQXSettings() {
+  const [autoSave, setAutoSave] = useState(false);
+  const [targetTable, setTargetTable] = useState("clone_audit.governance.dqx_exported_checks");
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get("/data-quality/dqx-settings").then((data: any) => {
+      setAutoSave(data.auto_save_to_delta ?? false);
+      setTargetTable(data.default_target_table ?? "");
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    try {
+      await api.put("/data-quality/dqx-settings", {
+        auto_save_to_delta: autoSave,
+        default_target_table: targetTable,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold">DQX Engine</p>
+        <p className="text-[11px] text-muted-foreground">Configure DQX auto-save and default target table for check exports.</p>
+      </div>
+      {loading ? <p className="text-xs text-muted-foreground">Loading...</p> : (
+        <div className="space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} className="rounded" />
+            <div>
+              <p className="text-sm font-medium">Auto-save checks to Delta</p>
+              <p className="text-[11px] text-muted-foreground">Automatically save DQX checks to a Delta table after profiling and generation.</p>
+            </div>
+          </label>
+          {autoSave && (
+            <div>
+              <label className="text-[11px] text-muted-foreground font-medium block mb-1">Default Target Table (optional)</label>
+              <Input value={targetTable} onChange={(e) => setTargetTable(e.target.value)} placeholder="e.g. clone_audit.governance.dqx_exported_checks" className="h-8 text-xs max-w-md" />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Leave empty to use audit_catalog.governance.dqx_exported_checks</p>
+            </div>
+          )}
+          <Button size="sm" onClick={save}>
+            {saved ? <><Check className="h-3.5 w-3.5 mr-1" /> Saved</> : "Save"}
+          </Button>
         </div>
       )}
     </div>

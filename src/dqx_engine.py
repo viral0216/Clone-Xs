@@ -329,6 +329,19 @@ def generate_checks_from_profiles(client, warehouse_id, config, table_fqn: str, 
                     except Exception:
                         pass
 
+        # Auto-save to Delta if configured
+        dqx_config = config.get("dqx", {})
+        if dqx_config.get("auto_save_to_delta", False) and checks:
+            target = dqx_config.get("default_target_table", "")
+            if not target:
+                audit_cat = config.get("audit_trail", {}).get("catalog", "clone_audit")
+                target = f"{audit_cat}.governance.dqx_exported_checks"
+            try:
+                save_checks_to_delta(client, warehouse_id, config, target_table=target, table_fqn=table_fqn, user=user)
+                logger.info(f"Auto-saved {len(checks)} DQX checks to {target}")
+            except Exception as e:
+                logger.warning(f"Auto-save to Delta failed: {e}")
+
         return {"table_fqn": table_fqn, "checks": checks, "count": len(checks)}
 
     except Exception as e:

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from databricks.sdk import WorkspaceClient
 
@@ -15,6 +15,10 @@ def ensure_audit_table(
 ) -> str:
     """Create the audit log table if it doesn't exist. Returns full table name."""
     full_name = f"`{audit_catalog}`.`{audit_schema}`.`{audit_table}`"
+
+    execute_sql(client, warehouse_id,
+                f"CREATE SCHEMA IF NOT EXISTS `{audit_catalog}`.`{audit_schema}`",
+                dry_run=dry_run)
 
     sql = f"""
         CREATE TABLE IF NOT EXISTS {full_name} (
@@ -57,8 +61,9 @@ def write_audit_log(
     dry_run: bool = False,
 ) -> None:
     """Write a clone operation record to the audit log table."""
-    now = datetime.now().isoformat()
-    clone_id = f"clone_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    from src.client import utc_now
+    now = utc_now()
+    clone_id = f"clone_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
     total_errors = len(summary.get("errors", []))
     error_details = "; ".join(summary.get("errors", []))[:4000]  # Truncate for column

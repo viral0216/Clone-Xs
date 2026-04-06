@@ -22,6 +22,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_PID=""
 UI_PID=""
 
+# ── Activate venv if available ──────────────────────────────
+if [[ -f "$ROOT/.venv/bin/activate" ]]; then
+    source "$ROOT/.venv/bin/activate"
+fi
+
 cleanup() {
     echo ""
     echo -e "${YELLOW}Shutting down...${NC}"
@@ -51,8 +56,18 @@ done
 echo -e "${BLUE}Checking dependencies...${NC}"
 
 if ! python3 -c "import fastapi" 2>/dev/null; then
-    echo -e "${YELLOW}Installing FastAPI...${NC}"
+    echo -e "${YELLOW}Installing web dependencies...${NC}"
     pip install fastapi uvicorn websockets python-multipart 2>&1 | tail -1
+fi
+
+if ! python3 -c "import databricks.connect" 2>/dev/null; then
+    echo -e "${YELLOW}Installing databricks-connect (for Spark Connect)...${NC}"
+    pip install "databricks-connect>=14.0.0" 2>&1 | tail -1
+fi
+
+if ! python3 -c "import databricks.labs.dqx" 2>/dev/null; then
+    echo -e "${YELLOW}Installing databricks-labs-dqx (for DQX Engine)...${NC}"
+    pip install "databricks-labs-dqx>=0.4.0" 2>&1 | tail -1
 fi
 
 if [[ ! -d "$ROOT/ui/node_modules" ]]; then

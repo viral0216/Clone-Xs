@@ -6,6 +6,7 @@ referential) and custom SQL expressions. Results stored in Delta tables.
 
 import json
 import logging
+import re as _re
 import uuid
 from datetime import datetime, timezone
 
@@ -16,9 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_dq_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.governance"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "governance")
 
 
 def ensure_dq_tables(client, warehouse_id, config):
@@ -146,26 +146,32 @@ def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog:
         f"SELECT * FROM {schema}.dq_rules WHERE {' AND '.join(where_parts)} ORDER BY table_fqn")
 
     results = []
+    value_rows = []
+    now = datetime.now(timezone.utc).isoformat()
     for rule in rules:
         result = _execute_single_rule(client, warehouse_id, rule)
         results.append(result)
+        result_id = str(uuid.uuid4())[:8]
+        value_rows.append(
+            f"('{result_id}', '{rule['rule_id']}', '{_esc(rule['name'])}', "
+            f"'{_esc(rule['table_fqn'])}', '{_esc(rule.get('column_name', ''))}', "
+            f"'{rule['rule_type']}', '{rule.get('severity', 'warning')}', "
+            f"{result['total_rows']}, {result['failed_rows']}, "
+            f"{result['failure_rate']}, {str(result['passed']).lower()}, "
+            f"{rule.get('threshold', 0.0)}, '{now}', "
+            f"{result['execution_time_ms']}, '{_esc(result.get('error', ''))}')"
+        )
 
-        # Store result
+    # Batch insert results
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(value_rows), batch_size):
+        batch = value_rows[i:i + batch_size]
         try:
-            result_id = str(uuid.uuid4())[:8]
-            now = datetime.now(timezone.utc).isoformat()
-            execute_sql(client, warehouse_id, f"""
-                INSERT INTO {schema}.dq_results
-                VALUES ('{result_id}', '{rule["rule_id"]}', '{_esc(rule["name"])}',
-                        '{_esc(rule["table_fqn"])}', '{_esc(rule.get("column_name", ""))}',
-                        '{rule["rule_type"]}', '{rule.get("severity", "warning")}',
-                        {result["total_rows"]}, {result["failed_rows"]},
-                        {result["failure_rate"]}, {str(result["passed"]).lower()},
-                        {rule.get("threshold", 0.0)}, '{now}',
-                        {result["execution_time_ms"]}, '{_esc(result.get("error", ""))}')
-            """)
+            execute_sql(client, warehouse_id,
+                        f"INSERT INTO {schema}.dq_results VALUES {', '.join(batch)}")
         except Exception as e:
-            logger.warning(f"Could not store DQ result: {e}")
+            logger.warning(f"Could not store DQ results batch: {e}")
 
     logger.info(f"Executed {len(results)} DQ rules: {sum(1 for r in results if r['passed'])} passed, {sum(1 for r in results if not r['passed'])} failed")
     return results
@@ -297,10 +303,7 @@ def get_dq_history(client, warehouse_id, config, rule_id: str = "", days: int = 
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("'", "\\'").replace("\\", "\\\\")
+from src.client import sql_escape as _esc  # noqa: E402
 
 
 def _parse_val(v):
@@ -309,3 +312,140 @@ def _parse_val(v):
     if isinstance(v, bool):
         return v
     return str(v) if not isinstance(v, (int, float)) else v
+
+
+# ---------------------------------------------------------------------------
+# Cross-Table Consistency Checks
+# ---------------------------------------------------------------------------
+
+_IDENTIFIER_RE = _re.compile(r"^[a-zA-Z0-9_`.*]+$")
+
+
+def _validate_identifier(name: str, label: str) -> str:
+    """Validate and quote a SQL identifier to prevent injection."""
+    if not name or not _IDENTIFIER_RE.match(name.replace(".", "").replace("`", "")):
+        raise ValueError(f"Invalid {label}: {name!r}")
+    # Quote each part with backticks if not already quoted
+    parts = name.split(".")
+    quoted = ".".join(f"`{p.strip('`')}`" for p in parts)
+    return quoted
+
+
+def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
+    """Run a cross-table consistency check.
+
+    Supported check_type values:
+    - 'aggregate_match': Compare an aggregate expression across two tables.
+      Params: source_table, dest_table, source_expr, dest_expr, group_by (optional)
+    - 'referential_integrity': All values in child column exist in parent table.
+      Params: child_table, child_column, parent_table, parent_column
+    - 'row_count_match': Row counts of two tables must match within tolerance.
+      Params: source_table, dest_table, tolerance_pct (default 0)
+    - 'custom_sql': Arbitrary SQL that returns 'passed' (boolean) and 'message'.
+      Params: sql
+    """
+    import time
+    start = time.time()
+    check_type = check.get("check_type", "")
+    params = check.get("params", {})
+
+    try:
+        if check_type == "aggregate_match":
+            src_table = _validate_identifier(params["source_table"], "source_table")
+            dst_table = _validate_identifier(params["dest_table"], "dest_table")
+            src_expr = params["source_expr"]
+            dst_expr = params.get("dest_expr", src_expr)
+            group_by = params.get("group_by", "")
+
+            if group_by:
+                sql = f"""
+                    SELECT s.{group_by}, s.src_val, d.dst_val,
+                           CASE WHEN s.src_val = d.dst_val THEN true ELSE false END AS matched
+                    FROM (SELECT {group_by}, {src_expr} AS src_val FROM {src_table} GROUP BY {group_by}) s
+                    FULL OUTER JOIN (SELECT {group_by}, {dst_expr} AS dst_val FROM {dst_table} GROUP BY {group_by}) d
+                    ON s.{group_by} = d.{group_by}
+                """
+            else:
+                sql = f"""
+                    SELECT
+                        (SELECT {src_expr} FROM {src_table}) AS src_val,
+                        (SELECT {dst_expr} FROM {dst_table}) AS dst_val
+                """
+            rows = execute_sql(client, warehouse_id, sql)
+
+            if group_by:
+                total = len(rows)
+                mismatches = [r for r in rows if not r.get("matched")]
+                passed = len(mismatches) == 0
+                detail = {"total_groups": total, "mismatched_groups": len(mismatches),
+                          "mismatches": mismatches[:10]}
+            else:
+                r = rows[0] if rows else {}
+                passed = str(r.get("src_val")) == str(r.get("dst_val"))
+                detail = {"source_value": r.get("src_val"), "dest_value": r.get("dst_val")}
+
+        elif check_type == "referential_integrity":
+            child_table = _validate_identifier(params["child_table"], "child_table")
+            child_column = _validate_identifier(params["child_column"], "child_column")
+            parent_table = _validate_identifier(params["parent_table"], "parent_table")
+            parent_column = _validate_identifier(params.get("parent_column", params["child_column"]), "parent_column")
+
+            sql = f"""
+                SELECT count(*) AS total,
+                       sum(CASE WHEN c.{child_column} NOT IN (SELECT {parent_column} FROM {parent_table}) THEN 1 ELSE 0 END) AS orphans
+                FROM {child_table} c
+                WHERE c.{child_column} IS NOT NULL
+            """
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {"total": 0, "orphans": 0}
+            total = int(r.get("total", 0))
+            orphans = int(r.get("orphans", 0))
+            passed = orphans == 0
+            detail = {"total_rows": total, "orphan_rows": orphans,
+                      "child_table": child_table, "parent_table": parent_table}
+
+        elif check_type == "row_count_match":
+            src_table = _validate_identifier(params["source_table"], "source_table")
+            dst_table = _validate_identifier(params["dest_table"], "dest_table")
+            tolerance_pct = float(params.get("tolerance_pct", 0))
+
+            sql = f"""
+                SELECT
+                    (SELECT count(*) FROM {src_table}) AS src_count,
+                    (SELECT count(*) FROM {dst_table}) AS dst_count
+            """
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {"src_count": 0, "dst_count": 0}
+            src_count = int(r.get("src_count", 0))
+            dst_count = int(r.get("dst_count", 0))
+            diff_pct = abs(src_count - dst_count) / max(src_count, 1) * 100
+            passed = diff_pct <= tolerance_pct
+            detail = {"source_count": src_count, "dest_count": dst_count,
+                      "diff_pct": round(diff_pct, 2), "tolerance_pct": tolerance_pct}
+
+        elif check_type == "custom_sql":
+            sql = params.get("sql", "SELECT true AS passed, 'ok' AS message")
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {}
+            passed = bool(r.get("passed", False))
+            detail = {"message": r.get("message", ""), "raw": r}
+
+        else:
+            return {"error": f"Unknown cross-table check type: {check_type}"}
+
+        elapsed_ms = int((time.time() - start) * 1000)
+        return {
+            "check_type": check_type,
+            "passed": passed,
+            "execution_time_ms": elapsed_ms,
+            "details": detail,
+        }
+
+    except Exception as e:
+        elapsed_ms = int((time.time() - start) * 1000)
+        return {
+            "check_type": check_type,
+            "passed": False,
+            "execution_time_ms": elapsed_ms,
+            "error": str(e),
+        }

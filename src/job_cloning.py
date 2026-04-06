@@ -119,7 +119,7 @@ class JobCloneManager:
     def clone_job_cross_workspace(self, job_id: int, dest_host: str, dest_token: str, new_name: str = "") -> dict:
         """Clone a job to a different Databricks workspace."""
         try:
-            from databricks.sdk import WorkspaceClient
+            from src.client import get_workspace_client
 
             # Get source job
             source = self.client.jobs.get(job_id)
@@ -144,7 +144,7 @@ class JobCloneManager:
                         warnings.append(f"Task '{task.get('task_key', '?')}' uses existing_cluster_id — may not exist in destination")
 
             # Create destination client
-            dest_client = WorkspaceClient(host=dest_host, token=dest_token)
+            dest_client = get_workspace_client(host=dest_host, token=dest_token)
             result = dest_client.jobs.create(**settings)
 
             return {

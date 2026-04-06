@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useCurrency } from "@/hooks/useSettings";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
@@ -154,56 +155,48 @@ export default function ReportsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {!jobs.data?.length ? (
-            <p className="text-gray-400">No clone jobs recorded.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-2 px-3 font-medium">Status</th>
-                    <th className="text-left py-2 px-3 font-medium">Source</th>
-                    <th className="text-left py-2 px-3 font-medium">Destination</th>
-                    <th className="text-left py-2 px-3 font-medium">Type</th>
-                    <th className="text-left py-2 px-3 font-medium">Started</th>
-                    <th className="text-left py-2 px-3 font-medium">Duration</th>
-                    <th className="text-left py-2 px-3 font-medium">Job ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.data.map((job) => {
-                    const duration = job.started_at && job.completed_at
-                      ? Math.round((new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000)
-                      : null;
-                    return (
-                      <tr key={job.job_id} className="border-b hover:bg-gray-50">
-                        <td className="py-2 px-3">
-                          <Badge
-                            variant={job.status === "completed" ? "default" : job.status === "failed" ? "destructive" : "secondary"}
-                            className={job.status === "completed" ? "bg-foreground" : job.status === "running" ? "bg-[#E8453C]" : ""}
-                          >
-                            {job.status}
-                          </Badge>
-                        </td>
-                        <td className="py-2 px-3 font-medium">{job.source_catalog}</td>
-                        <td className="py-2 px-3">{job.destination_catalog}</td>
-                        <td className="py-2 px-3">
-                          <Badge variant="outline" className="text-xs">{job.clone_type}</Badge>
-                        </td>
-                        <td className="py-2 px-3 text-gray-500 text-xs">
-                          {job.created_at ? new Date(job.created_at).toLocaleString() : "\u2014"}
-                        </td>
-                        <td className="py-2 px-3 text-gray-500 text-xs">
-                          {duration != null ? `${duration}s` : job.status === "running" ? "..." : "\u2014"}
-                        </td>
-                        <td className="py-2 px-3 text-gray-400 font-mono text-xs">{job.job_id}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            data={jobs.data || []}
+            columns={[
+              {
+                key: "status", label: "Status", sortable: true,
+                render: (v, row) => (
+                  <Badge
+                    variant={row.status === "completed" ? "default" : row.status === "failed" ? "destructive" : "secondary"}
+                    className={row.status === "completed" ? "bg-foreground" : row.status === "running" ? "bg-[#E8453C]" : ""}
+                  >
+                    {row.status}
+                  </Badge>
+                ),
+              },
+              { key: "source_catalog", label: "Source", sortable: true, className: "font-medium" },
+              { key: "destination_catalog", label: "Destination", sortable: true },
+              {
+                key: "clone_type", label: "Type", sortable: true,
+                render: (v) => <Badge variant="outline" className="text-xs">{v}</Badge>,
+              },
+              {
+                key: "created_at", label: "Started", sortable: true,
+                render: (v) => <span className="text-gray-500 text-xs">{v ? new Date(v).toLocaleString() : "\u2014"}</span>,
+              },
+              {
+                key: "_duration", label: "Duration", sortable: false,
+                render: (_, row) => {
+                  const duration = row.started_at && row.completed_at
+                    ? Math.round((new Date(row.completed_at).getTime() - new Date(row.started_at).getTime()) / 1000)
+                    : null;
+                  return <span className="text-gray-500 text-xs">{duration != null ? `${duration}s` : row.status === "running" ? "..." : "\u2014"}</span>;
+                },
+              },
+              { key: "job_id", label: "Job ID", className: "text-gray-400 font-mono text-xs" },
+            ] as Column[]}
+            searchable
+            searchKeys={["status", "source_catalog", "destination_catalog", "clone_type", "job_id"]}
+            pageSize={25}
+            compact
+            tableId="reports-clone-history"
+            emptyMessage="No clone jobs recorded."
+          />
         </CardContent>
       </Card>
 
@@ -276,45 +269,42 @@ export default function ReportsPage() {
               {costResult.top_tables && costResult.top_tables.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">Top Tables by Size</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="text-left py-2 px-3 font-medium">#</th>
-                          <th className="text-left py-2 px-3 font-medium">Schema</th>
-                          <th className="text-left py-2 px-3 font-medium">Table</th>
-                          <th className="text-right py-2 px-3 font-medium">Size</th>
-                          <th className="text-right py-2 px-3 font-medium">% of Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {costResult.top_tables.map((t: any, i: number) => {
+                  <DataTable
+                    data={costResult.top_tables}
+                    columns={[
+                      { key: "schema", label: "Schema", sortable: true },
+                      { key: "table", label: "Table", sortable: true, className: "font-medium" },
+                      {
+                        key: "size_bytes", label: "Size", sortable: true, align: "right",
+                        render: (v) => formatBytes(v),
+                      },
+                      {
+                        key: "_pct", label: "% of Total", sortable: false, align: "right",
+                        render: (_, row) => {
                           const pct = costResult.total_bytes > 0
-                            ? ((t.size_bytes / costResult.total_bytes) * 100).toFixed(1)
+                            ? ((row.size_bytes / costResult.total_bytes) * 100).toFixed(1)
                             : "0";
                           return (
-                            <tr key={i} className="border-b hover:bg-gray-50">
-                              <td className="py-2 px-3 text-gray-400">{i + 1}</td>
-                              <td className="py-2 px-3 text-gray-600">{t.schema}</td>
-                              <td className="py-2 px-3 font-medium">{t.table}</td>
-                              <td className="py-2 px-3 text-right">{formatBytes(t.size_bytes)}</td>
-                              <td className="py-2 px-3 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <div className="w-16 bg-gray-200 rounded-full h-2">
-                                    <div
-                                      className="bg-[#E8453C] h-2 rounded-full"
-                                      style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs text-gray-500 w-10 text-right">{pct}%</span>
-                                </div>
-                              </td>
-                            </tr>
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-16 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-[#E8453C] h-2 rounded-full"
+                                  style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-500 w-10 text-right">{pct}%</span>
+                            </div>
                           );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                        },
+                      },
+                    ] as Column[]}
+                    searchable
+                    searchKeys={["schema", "table"]}
+                    pageSize={25}
+                    compact
+                    tableId="reports-top-tables"
+                    emptyMessage="No tables found."
+                  />
                 </div>
               )}
             </>
@@ -338,46 +328,47 @@ export default function ReportsPage() {
           {rollbackLogs.length === 0 ? (
             <p className="text-gray-400 text-sm">Click Load to fetch rollback logs.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-2 px-3 font-medium">Destination</th>
-                    <th className="text-left py-2 px-3 font-medium">Timestamp</th>
-                    <th className="text-left py-2 px-3 font-medium">Objects</th>
-                    <th className="text-left py-2 px-3 font-medium">File</th>
-                    <th className="text-left py-2 px-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rollbackLogs.map((log: any, i: number) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
-                      <td className="py-2 px-3 font-medium">{log.destination_catalog || "\u2014"}</td>
-                      <td className="py-2 px-3 text-gray-500 text-xs">
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : "\u2014"}
-                        </div>
-                      </td>
-                      <td className="py-2 px-3">
-                        <Badge variant="outline" className="text-xs">{log.total_objects ?? 0} objects</Badge>
-                      </td>
-                      <td className="py-2 px-3 text-gray-400 font-mono text-xs">{log.file}</td>
-                      <td className="py-2 px-3">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => openRollbackDialog(log)}
-                        >
-                          <Undo2 className="h-3 w-3 mr-1" />
-                          Rollback
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              data={rollbackLogs}
+              columns={[
+                { key: "destination_catalog", label: "Destination", sortable: true, className: "font-medium",
+                  render: (v) => v || "\u2014",
+                },
+                {
+                  key: "timestamp", label: "Timestamp", sortable: true,
+                  render: (v) => (
+                    <div className="flex items-center gap-1 text-gray-500 text-xs">
+                      <Clock className="h-3 w-3" />
+                      {v ? new Date(v).toLocaleString() : "\u2014"}
+                    </div>
+                  ),
+                },
+                {
+                  key: "total_objects", label: "Objects", sortable: true,
+                  render: (v) => <Badge variant="outline" className="text-xs">{v ?? 0} objects</Badge>,
+                },
+                { key: "file", label: "File", className: "text-gray-400 font-mono text-xs" },
+                {
+                  key: "_actions", label: "Actions",
+                  render: (_, row) => (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); openRollbackDialog(row); }}
+                    >
+                      <Undo2 className="h-3 w-3 mr-1" />
+                      Rollback
+                    </Button>
+                  ),
+                },
+              ] as Column[]}
+              searchable
+              searchKeys={["destination_catalog", "file"]}
+              pageSize={25}
+              compact
+              tableId="reports-rollback-logs"
+              emptyMessage="No rollback logs found."
+            />
           )}
         </CardContent>
       </Card>

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +44,8 @@ export default function RowLevelReconciliationPage() {
   const [useChecksum, setUseChecksum] = useState(false);
   const [maxWorkers, setMaxWorkers] = useState(4);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [results, setResults] = usePersistedState<any>("gov-recon-row-results", null);
+  const [logs, setLogs] = usePersistedState<string[]>("gov-recon-row-logs", []);
 
   // Table listing for preview
   const [sourceTables, setSourceTables] = useState<string[]>([]);

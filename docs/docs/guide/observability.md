@@ -66,5 +66,5 @@ observability:
 
 ## Next steps
 
-- [Data Quality portal](../reference/faq.md) — configure DQ rules and freshness monitoring
-- [Governance](governance.md) — SLA rules and compliance checks
+- [Data Quality (DQX)](data-quality.md) — profiling, checks, coverage reports, scheduling, quality gates, and more
+- [Governance](governance.md) — SLA rules, data contracts, and compliance checks

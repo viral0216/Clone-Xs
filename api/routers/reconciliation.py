@@ -624,17 +624,20 @@ async def remediate(req: dict):
 # ── Scheduling ───────────────────────────────────────────────────────────────
 
 @router.get("/schedules", summary="List reconciliation schedules")
-async def list_schedules():
+async def list_schedules(client=Depends(get_db_client), app_config=Depends(get_app_config)):
     """List all scheduled reconciliation jobs."""
     from src.reconciliation_schedule import list_recon_schedules
-    return list_recon_schedules()
+    wid = app_config.get("sql_warehouse_id", "")
+    return list_recon_schedules(client, wid, app_config)
 
 
 @router.post("/schedules", summary="Create reconciliation schedule")
-async def create_schedule(req: dict):
+async def create_schedule(req: dict, client=Depends(get_db_client), app_config=Depends(get_app_config)):
     """Create a new scheduled reconciliation job."""
     from src.reconciliation_schedule import create_recon_schedule
+    wid = app_config.get("sql_warehouse_id", "")
     return create_recon_schedule(
+        client, wid, app_config,
         name=req.get("name", ""),
         source_catalog=req.get("source_catalog", ""),
         destination_catalog=req.get("destination_catalog", ""),
@@ -647,10 +650,11 @@ async def create_schedule(req: dict):
 
 
 @router.delete("/schedules/{schedule_id}")
-async def delete_schedule(schedule_id: str):
+async def delete_schedule(schedule_id: str, client=Depends(get_db_client), app_config=Depends(get_app_config)):
     """Delete a reconciliation schedule."""
     from src.reconciliation_schedule import delete_recon_schedule
-    deleted = delete_recon_schedule(schedule_id)
+    wid = app_config.get("sql_warehouse_id", "")
+    deleted = delete_recon_schedule(client, wid, app_config, schedule_id)
     if not deleted:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
@@ -658,10 +662,11 @@ async def delete_schedule(schedule_id: str):
 
 
 @router.post("/schedules/{schedule_id}/pause")
-async def pause_schedule(schedule_id: str):
+async def pause_schedule(schedule_id: str, client=Depends(get_db_client), app_config=Depends(get_app_config)):
     """Pause a reconciliation schedule."""
     from src.reconciliation_schedule import pause_recon_schedule
-    result = pause_recon_schedule(schedule_id)
+    wid = app_config.get("sql_warehouse_id", "")
+    result = pause_recon_schedule(client, wid, app_config, schedule_id)
     if result is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
@@ -669,10 +674,11 @@ async def pause_schedule(schedule_id: str):
 
 
 @router.post("/schedules/{schedule_id}/resume")
-async def resume_schedule(schedule_id: str):
+async def resume_schedule(schedule_id: str, client=Depends(get_db_client), app_config=Depends(get_app_config)):
     """Resume a paused reconciliation schedule."""
     from src.reconciliation_schedule import resume_recon_schedule
-    result = resume_recon_schedule(schedule_id)
+    wid = app_config.get("sql_warehouse_id", "")
+    result = resume_recon_schedule(client, wid, app_config, schedule_id)
     if result is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")

@@ -15,14 +15,20 @@ def ensure_lineage_table(client, warehouse_id: str, lineage_catalog: str = "clon
     Returns:
         Fully qualified table name.
     """
+    from src.table_registry import get_catalog, get_schema_fqn, get_table_fqn
+    cfg = config or {}
     if config:
-        lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
-    schema = "lineage"
-    table = "clone_lineage"
-    fqn = f"{lineage_catalog}.{schema}.{table}"
+        catalog = get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "lineage")
+        schema = schema_fqn.split(".", 1)[1] if "." in schema_fqn else "lineage"
+        fqn = get_table_fqn(cfg, "lineage", "clone_lineage")
+    else:
+        catalog = lineage_catalog
+        schema = "lineage"
+        fqn = f"{catalog}.{schema}.clone_lineage"
 
     from src.catalog_utils import ensure_catalog_and_schema
-    ensure_catalog_and_schema(client, warehouse_id, lineage_catalog, schema)
+    ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {fqn} (

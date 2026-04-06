@@ -8,9 +8,6 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE_CATALOG = "clone_audit"
-DEFAULT_PII_SCHEMA = "pii"
-
 
 class PIIScanStore:
     """Delta table-based store for PII scan history, detections, and remediation."""
@@ -19,9 +16,15 @@ class PIIScanStore:
         self,
         client,
         warehouse_id: str,
-        state_catalog: str = DEFAULT_STATE_CATALOG,
-        state_schema: str = DEFAULT_PII_SCHEMA,
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
     ):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "pii")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.state_catalog = state_catalog
@@ -31,82 +34,87 @@ class PIIScanStore:
         self._remediation_table = f"{state_catalog}.{state_schema}.pii_remediation"
 
     def init_tables(self) -> None:
-        """Create the PII tracking Delta tables if they don't exist.
+        """Create the PII tracking Delta tables if they don't exist."""
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
 
-        The catalog must already exist (configured via Settings > Audit Catalog).
-        Only creates the schema and tables within it.
-        """
-        execute_sql(self.client, self.warehouse_id,
-                    f"CREATE SCHEMA IF NOT EXISTS {self.state_catalog}.{self.state_schema}")
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._scans_table} (
+                    scan_id STRING NOT NULL,
+                    catalog STRING NOT NULL,
+                    scanned_at TIMESTAMP,
+                    scan_type STRING,
+                    total_columns_scanned INT,
+                    pii_columns_found INT,
+                    risk_level STRING,
+                    duration_seconds DOUBLE,
+                    config_json STRING,
+                    summary_json STRING
+                )
+                USING DELTA
+                COMMENT 'PII scan history'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._scans_table}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._scans_table} (
-                scan_id STRING NOT NULL,
-                catalog STRING NOT NULL,
-                scanned_at TIMESTAMP,
-                scan_type STRING,
-                total_columns_scanned INT,
-                pii_columns_found INT,
-                risk_level STRING,
-                duration_seconds DOUBLE,
-                config_json STRING,
-                summary_json STRING
-            )
-            USING DELTA
-            COMMENT 'PII scan history'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._detections_table} (
+                    scan_id STRING NOT NULL,
+                    catalog STRING NOT NULL,
+                    schema_name STRING,
+                    table_name STRING,
+                    column_name STRING,
+                    data_type STRING,
+                    pii_type STRING,
+                    detection_method STRING,
+                    confidence STRING,
+                    confidence_score DOUBLE,
+                    match_rate DOUBLE,
+                    suggested_masking STRING,
+                    correlation_flags STRING,
+                    detected_at TIMESTAMP
+                )
+                USING DELTA
+                COMMENT 'PII detection results'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._detections_table}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._detections_table} (
-                scan_id STRING NOT NULL,
-                catalog STRING NOT NULL,
-                schema_name STRING,
-                table_name STRING,
-                column_name STRING,
-                data_type STRING,
-                pii_type STRING,
-                detection_method STRING,
-                confidence STRING,
-                confidence_score DOUBLE,
-                match_rate DOUBLE,
-                suggested_masking STRING,
-                correlation_flags STRING,
-                detected_at TIMESTAMP
-            )
-            USING DELTA
-            COMMENT 'PII detection results'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._remediation_table} (
+                    catalog STRING,
+                    schema_name STRING,
+                    table_name STRING,
+                    column_name STRING,
+                    pii_type STRING,
+                    status STRING,
+                    reviewed_by STRING,
+                    reviewed_at TIMESTAMP,
+                    masking_applied STRING,
+                    notes STRING
+                )
+                USING DELTA
+                COMMENT 'PII remediation tracking'
+                TBLPROPERTIES (
+                    'delta.enableChangeDataFeed' = 'true',
+                    'delta.autoOptimize.optimizeWrite' = 'true'
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._remediation_table}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._remediation_table} (
-                catalog STRING,
-                schema_name STRING,
-                table_name STRING,
-                column_name STRING,
-                pii_type STRING,
-                status STRING,
-                reviewed_by STRING,
-                reviewed_at TIMESTAMP,
-                masking_applied STRING,
-                notes STRING
-            )
-            USING DELTA
-            COMMENT 'PII remediation tracking'
-            TBLPROPERTIES (
-                'delta.enableChangeDataFeed' = 'true',
-                'delta.autoOptimize.optimizeWrite' = 'true'
-            )
-        """)
-
-        logger.info(f"PII scan store tables ready in {self.state_catalog}.{self.state_schema}")
+        logger.info(f"PII scan store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def save_scan(
         self,

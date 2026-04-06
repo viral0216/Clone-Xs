@@ -64,7 +64,7 @@ class PipelineEngine:
         self.warehouse_id = warehouse_id
         self.config = config or {}
         catalog = self.config.get("audit_trail", {}).get("catalog", "clone_audit")
-        self.store = PipelineStore(client, warehouse_id, catalog)
+        self.store = PipelineStore(client, warehouse_id, catalog, config=self.config)
 
         pipe_config = self.config.get("pipelines", {})
         self.default_on_failure = pipe_config.get("default_on_failure", "abort")

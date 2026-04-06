@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 def _get_governance_schema(config: dict) -> str:
     """Get the governance schema FQN from config."""
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.governance"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "governance")
 
 
 def ensure_governance_tables(client, warehouse_id, config):
@@ -129,16 +128,23 @@ def delete_glossary_term(client, warehouse_id, config, term_id: str, user: str =
 def link_term_to_columns(client, warehouse_id, config, term_id: str, column_fqns: list[str], user: str = ""):
     """Link a glossary term to one or more columns."""
     schema = _get_governance_schema(config)
+    now = datetime.now(timezone.utc).isoformat()
+    value_rows = []
     for fqn in column_fqns:
         link_id = str(uuid.uuid4())[:8]
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            execute_sql(client, warehouse_id, f"""
-                INSERT INTO {schema}.glossary_links
-                VALUES ('{link_id}', '{_esc(term_id)}', '{_esc(fqn)}', '{_esc(user)}', '{now}')
-            """)
-        except Exception:
-            pass  # May already exist
+        value_rows.append(
+            f"('{link_id}', '{_esc(term_id)}', '{_esc(fqn)}', '{_esc(user)}', '{now}')"
+        )
+    if value_rows:
+        from src.table_registry import get_batch_insert_size
+        batch_size = get_batch_insert_size(config or {})
+        for i in range(0, len(value_rows), batch_size):
+            batch = value_rows[i:i + batch_size]
+            try:
+                execute_sql(client, warehouse_id,
+                            f"INSERT INTO {schema}.glossary_links VALUES {', '.join(batch)}")
+            except Exception:
+                pass  # May already exist
     _track_change(client, warehouse_id, config, "glossary", term_id, "updated",
                   {"linked_columns": column_fqns}, user)
 
@@ -318,11 +324,7 @@ def get_change_history(client, warehouse_id, config, entity_type: str = "", limi
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _esc(s: str) -> str:
-    """Escape single quotes for SQL."""
-    if not s:
-        return ""
-    return str(s).replace("'", "\\'").replace("\\", "\\\\")
+from src.client import sql_escape as _esc  # noqa: E402
 
 
 def _parse_glossary_row(r: dict) -> dict:

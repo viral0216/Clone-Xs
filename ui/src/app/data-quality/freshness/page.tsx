@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +12,10 @@ import CatalogPicker from "@/components/CatalogPicker";
 import {
   Clock, Loader2, CheckCircle, XCircle, AlertTriangle, HelpCircle, RefreshCw,
 } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
 
 interface FreshnessRow {
-  table_name: string;
+  table_fqn: string;
   last_modified: string | null;
   hours_since_update: number | null;
   status: "fresh" | "stale" | "unknown";
@@ -40,10 +42,12 @@ function StatusIcon({ status }: { status: string }) {
 
 export default function DataFreshnessPage() {
   const [catalog, setCatalog] = useState("");
+  const [schema, setSchema] = useState("");
+  const [table, setTable] = useState("");
   const [maxStaleHours, setMaxStaleHours] = useState(24);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<FreshnessRow[]>([]);
-  const [hasRun, setHasRun] = useState(false);
+  const [results, setResults] = usePersistedState<FreshnessRow[]>("dq-freshness-results", []);
+  const [hasRun, setHasRun] = usePersistedState("dq-freshness-hasRun", false);
 
   async function checkFreshness() {
     if (!catalog) {
@@ -52,9 +56,16 @@ export default function DataFreshnessPage() {
     }
     setLoading(true);
     try {
-      const data = await api.get(`/data-quality/freshness/${encodeURIComponent(catalog)}?max_stale_hours=${maxStaleHours}`);
-      setResults(Array.isArray(data) ? data : []);
+      const params = new URLSearchParams({ max_stale_hours: String(maxStaleHours) });
+      if (schema) params.set("schema", schema);
+      if (table) params.set("table", table);
+      const data = await api.get(`/data-quality/freshness/${encodeURIComponent(catalog)}?${params}`);
+      const tables = Array.isArray(data) ? data : (data?.tables ?? []);
+      setResults(tables);
       setHasRun(true);
+      if (data?.error) {
+        toast.error(data.error);
+      }
     } catch (err: any) {
       toast.error(err?.message || "Failed to check freshness.");
       setResults([]);
@@ -82,7 +93,14 @@ export default function DataFreshnessPage() {
           <div className="flex flex-wrap items-end gap-4">
             <div className="min-w-[240px]">
               <label className="text-xs text-muted-foreground mb-1 block">Catalog</label>
-              <CatalogPicker value={catalog} onChange={setCatalog} placeholder="Select catalog..." />
+              <CatalogPicker
+                catalog={catalog}
+                schema={schema}
+                table={table}
+                onCatalogChange={setCatalog}
+                onSchemaChange={setSchema}
+                onTableChange={setTable}
+              />
             </div>
             <div className="w-36">
               <label className="text-xs text-muted-foreground mb-1 block">Max Stale Hours</label>
@@ -139,46 +157,35 @@ export default function DataFreshnessPage() {
             <CardTitle className="text-base">Freshness Results ({results.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {loading && results.length === 0 ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="h-4 w-4 animate-spin" /> Checking freshness...
               </div>
             ) : results.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No tables found in this catalog.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="py-2 px-3 text-left font-medium">Table Name</th>
-                      <th className="py-2 px-3 text-left font-medium">Last Modified</th>
-                      <th className="py-2 px-3 text-right font-medium">Hours Since Update</th>
-                      <th className="py-2 px-3 text-center font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {results.map((r) => (
-                      <tr key={r.table_name} className="border-b border-border/50 hover:bg-muted/30">
-                        <td className="py-1.5 px-3 font-mono text-xs">{r.table_name}</td>
-                        <td className="py-1.5 px-3 text-xs">
-                          {r.last_modified ? String(r.last_modified).slice(0, 19) : "—"}
-                        </td>
-                        <td className={`py-1.5 px-3 text-right tabular-nums ${hoursColor(r.hours_since_update)}`}>
-                          {r.hours_since_update != null ? `${r.hours_since_update.toFixed(1)}h` : "—"}
-                        </td>
-                        <td className="py-1.5 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <StatusIcon status={r.status} />
-                            <Badge variant="outline" className={`text-[10px] ${statusColor(r.status)}`}>
-                              {r.status}
-                            </Badge>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                data={results}
+                columns={[
+                  { key: "table_fqn", label: "Table Name", sortable: true, className: "font-mono text-xs" },
+                  { key: "last_modified", label: "Last Modified", sortable: true, render: (v) => v ? String(v).slice(0, 19) : "—" },
+                  { key: "hours_since_update", label: "Hours Since Update", sortable: true, align: "right",
+                    render: (v) => v != null ? <span className={`tabular-nums ${hoursColor(v)}`}>{v.toFixed(1)}h</span> : "—" },
+                  { key: "status", label: "Status", sortable: true, align: "center",
+                    render: (v) => (
+                      <div className="flex items-center justify-center gap-1.5">
+                        <StatusIcon status={v} />
+                        <Badge variant="outline" className={`text-[10px] ${statusColor(v)}`}>{v}</Badge>
+                      </div>
+                    ) },
+                ] as Column[]}
+                searchable
+                searchKeys={["table_fqn", "status"]}
+                pageSize={25}
+                compact
+                tableId="freshness-results"
+                emptyMessage="No tables found."
+              />
             )}
           </CardContent>
         </Card>

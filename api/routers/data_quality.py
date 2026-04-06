@@ -281,7 +281,6 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
     wid = config.get("sql_warehouse_id", "")
 
     from src.data_freshness import _query_sql, _esc
-    from src.anomaly_detection import record_metric as _record
 
     schema_filter = ""
     if req.schema_name:
@@ -303,7 +302,9 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
-    def _count_and_record(tbl):
+    from src.anomaly_detection import record_metrics_batch
+
+    def _count_row(tbl):
         table_fqn = f"{tbl['table_catalog']}.{tbl['table_schema']}.{tbl['table_name']}"
         try:
             count_rows = _query_sql(
@@ -311,23 +312,22 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
                 limit=1, client=client, warehouse_id=wid,
             )
             row_count = int(count_rows[0]["row_count"]) if count_rows else 0
-            _record(
-                table_fqn=table_fqn, column_name="*",
-                metric_name="row_count", value=float(row_count),
-                client=client, warehouse_id=wid, config=config,
-            )
-            return True
+            return {"table_fqn": table_fqn, "column_name": "*",
+                    "metric_name": "row_count", "value": float(row_count)}
         except Exception:
-            return False
+            return None
 
     max_workers = min(len(tables), config.get("max_parallel_queries", 10))
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [loop.run_in_executor(pool, _count_and_record, tbl) for tbl in tables]
+        futures = [loop.run_in_executor(pool, _count_row, tbl) for tbl in tables]
         results = await asyncio.gather(*futures)
 
-    recorded = sum(1 for r in results if r)
-    errors = sum(1 for r in results if not r)
+    metrics = [m for m in results if m is not None]
+    errors = sum(1 for r in results if r is None)
+
+    record_metrics_batch(metrics, client=client, warehouse_id=wid, config=config)
+    recorded = len(metrics)
 
     return {
         "catalog": req.catalog,
@@ -415,34 +415,42 @@ async def volume_history(
 # ── Suites ───────────────────────────────────────────────────────────────────
 
 @router.get("/suites", summary="List expectation suites")
-async def list_suites():
+async def list_suites(client=Depends(get_db_client)):
     """List all expectation suites."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import list_suites as _list
-    return {"suites": _list()}
+    return {"suites": _list(client, wid, config)}
 
 
 @router.post("/suites", summary="Create an expectation suite")
-async def create_suite(req: CreateSuiteRequest):
+async def create_suite(req: CreateSuiteRequest, client=Depends(get_db_client)):
     """Create a new expectation suite with grouped DQ checks."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import create_suite as _create
-    return _create(name=req.name, description=req.description, checks=req.checks)
+    return _create(client, wid, config, name=req.name, description=req.description, checks=req.checks)
 
 
 @router.get("/suites/{suite_id}", summary="Get expectation suite details")
-async def get_suite(suite_id: str):
+async def get_suite(suite_id: str, client=Depends(get_db_client)):
     """Get a single expectation suite by ID."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import get_suite as _get
-    suite = _get(suite_id)
+    suite = _get(client, wid, config, suite_id)
     if not suite:
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
     return suite
 
 
 @router.delete("/suites/{suite_id}", summary="Delete an expectation suite")
-async def delete_suite(suite_id: str):
+async def delete_suite(suite_id: str, client=Depends(get_db_client)):
     """Delete an expectation suite by ID."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import delete_suite as _delete
-    if not _delete(suite_id):
+    if not _delete(client, wid, config, suite_id):
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
     return {"status": "deleted", "suite_id": suite_id}
 
@@ -454,7 +462,7 @@ async def run_suite(suite_id: str, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
 
     from src.expectation_suites import run_suite as _run
-    result = _run(suite_id, client=client, warehouse_id=wid, config=config)
+    result = _run(client, wid, config, suite_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
@@ -515,6 +523,50 @@ async def incidents(
         import logging
         logging.getLogger(__name__).debug(f"Could not load reconciliation incidents: {e}")
 
+    # 3. DQ rule failures
+    try:
+        from src.dq_rules import get_latest_results
+        results = get_latest_results(client, wid, config, limit=limit)
+        for r in results:
+            if not r.get("passed", True):
+                rate = r.get("failure_rate", 0) or 0
+                incidents_list.append({
+                    "type": "dq_rule",
+                    "severity": "critical" if rate > 0.1 else "warning",
+                    "title": f"DQ rule failed: {r.get('rule_name', 'unknown')} on {r.get('table_fqn', 'unknown')}",
+                    "description": f"{r.get('failed_rows', 0)} failed rows ({rate * 100:.1f}% failure rate)",
+                    "table_fqn": r.get("table_fqn"),
+                    "timestamp": r.get("executed_at"),
+                    "details": r,
+                })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"Could not load DQ rule incidents: {e}")
+
+    # 4. Freshness + SLA + DQ from observability service
+    try:
+        from src.observability import ObservabilityService
+        obs = ObservabilityService(client, wid, config)
+        issues = obs.get_top_issues(limit=limit)
+        # Deduplicate by (type, table_fqn) — direct sources above take priority
+        seen = {(i["type"], i.get("table_fqn")) for i in incidents_list}
+        for issue in issues:
+            key = (issue.get("category", "unknown"), issue.get("table"))
+            if key not in seen:
+                seen.add(key)
+                incidents_list.append({
+                    "type": issue.get("category", "unknown"),
+                    "severity": issue.get("severity", "warning"),
+                    "title": issue.get("message", "Unknown issue"),
+                    "description": f"Table: {issue.get('table', 'unknown')}",
+                    "table_fqn": issue.get("table"),
+                    "timestamp": issue.get("time"),
+                    "details": issue,
+                })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"Could not load observability incidents: {e}")
+
     # Sort by timestamp descending (most recent first)
     incidents_list.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
     incidents_list = incidents_list[:limit]
@@ -550,7 +602,6 @@ async def get_anomaly_settings():
 @router.put("/anomaly-settings", summary="Update anomaly detection thresholds")
 async def update_anomaly_settings(req: dict):
     """Update anomaly detection thresholds in the config file."""
-    from src.config import load_config
     import yaml
 
     config_path = "config/clone_config.yaml"
@@ -583,6 +634,42 @@ async def update_anomaly_settings(req: dict):
         yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
 
     return {**raw.get("anomaly_detection", {}), "max_parallel_queries": raw.get("max_parallel_queries", 10)}
+
+
+@router.get("/dqx-settings", summary="Get DQX Engine settings")
+async def get_dqx_settings():
+    """Get current DQX configuration — auto-save, default target table."""
+    config = await get_app_config()
+    dqx = config.get("dqx", {})
+    return {
+        "auto_save_to_delta": bool(dqx.get("auto_save_to_delta", False)),
+        "default_target_table": dqx.get("default_target_table", ""),
+    }
+
+
+@router.put("/dqx-settings", summary="Update DQX Engine settings")
+async def update_dqx_settings(req: dict):
+    """Update DQX configuration — auto-save, default target table."""
+    import yaml
+    config_path = "config/clone_config.yaml"
+    try:
+        with open(config_path, "r") as f:
+            raw = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raw = {}
+
+    if "dqx" not in raw:
+        raw["dqx"] = {}
+
+    if "auto_save_to_delta" in req:
+        raw["dqx"]["auto_save_to_delta"] = bool(req["auto_save_to_delta"])
+    if "default_target_table" in req:
+        raw["dqx"]["default_target_table"] = str(req["default_target_table"])
+
+    with open(config_path, "w") as f:
+        yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+
+    return raw.get("dqx", {})
 
 
 @router.get("/anomalies/system-tables", summary="Detect anomalies from Databricks system tables")
@@ -779,6 +866,218 @@ async def system_table_anomalies(
 
 # ── Health Score ─────────────────────────────────────────────────────────────
 
+@router.get("/root-cause/{table_fqn:path}", summary="Correlation-based root cause suggestion")
+async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=1),
+                              client=Depends(get_db_client)):
+    """When an anomaly occurs, find correlated events that may explain it.
+
+    Checks for co-occurring anomalies on the same/upstream tables, schema changes,
+    freshness gaps, and volume drops within the given time window.
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.client import execute_sql as _exec
+
+    probable_causes = []
+
+    # 1. Co-occurring anomalies on the same table
+    try:
+        from src.anomaly_detection import get_anomalies
+        anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=100)
+        same_table = [a for a in anomalies
+                      if a.get("table_fqn") == table_fqn
+                      and a.get("metric_name") != ""]
+        if len(same_table) > 1:
+            metrics = [a.get("metric_name") for a in same_table]
+            probable_causes.append({
+                "type": "correlated_anomalies",
+                "confidence": "high",
+                "description": f"Multiple metrics anomalous on the same table: {', '.join(set(metrics))}",
+                "details": same_table[:5],
+            })
+    except Exception:
+        pass
+
+    # 2. Anomalies on upstream tables (via lineage)
+    try:
+        upstream_tables = []
+        try:
+            rows = _exec(client, wid, f"""
+                SELECT DISTINCT source_table_full_name
+                FROM system.access.table_lineage
+                WHERE target_table_full_name = '{table_fqn}'
+                LIMIT 20
+            """)
+            upstream_tables = [r.get("source_table_full_name", "") for r in rows if r.get("source_table_full_name")]
+        except Exception:
+            pass
+
+        if upstream_tables:
+            from src.anomaly_detection import get_anomalies
+            all_anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=200)
+            upstream_anomalies = [a for a in all_anomalies if a.get("table_fqn") in upstream_tables]
+            if upstream_anomalies:
+                probable_causes.append({
+                    "type": "upstream_anomaly",
+                    "confidence": "high",
+                    "description": f"Anomalies detected on {len(set(a.get('table_fqn') for a in upstream_anomalies))} upstream table(s)",
+                    "details": upstream_anomalies[:5],
+                })
+    except Exception:
+        pass
+
+    # 3. Freshness gap (table went stale recently)
+    try:
+        parts = table_fqn.split(".")
+        if len(parts) >= 3:
+            from src.data_freshness import check_freshness
+            freshness = check_freshness(
+                client, parts[0], schema=parts[1],
+                max_stale_hours=hours, warehouse_id=wid, config=config,
+            )
+            tables = freshness.get("tables", []) if isinstance(freshness, dict) else []
+            stale = [t for t in tables if t.get("table_fqn", "").endswith(parts[2]) and t.get("status") == "stale"]
+            if stale:
+                probable_causes.append({
+                    "type": "freshness_gap",
+                    "confidence": "medium",
+                    "description": f"Table is stale — last updated {stale[0].get('hours_since_update', '?')}h ago",
+                    "details": stale[0],
+                })
+    except Exception:
+        pass
+
+    # 4. Recent schema changes
+    try:
+        from src.governance import get_change_history
+        changes = get_change_history(client, wid, config, entity_type="", limit=50)
+        related = [c for c in changes if table_fqn in c.get("entity_id", "")]
+        if related:
+            probable_causes.append({
+                "type": "schema_change",
+                "confidence": "medium",
+                "description": f"{len(related)} recent schema/metadata change(s) on this table",
+                "details": related[:5],
+            })
+    except Exception:
+        pass
+
+    # Sort by confidence
+    confidence_order = {"high": 0, "medium": 1, "low": 2}
+    probable_causes.sort(key=lambda x: confidence_order.get(x.get("confidence", "low"), 2))
+
+    return {
+        "table_fqn": table_fqn,
+        "time_window_hours": hours,
+        "probable_causes": probable_causes,
+        "total_causes_found": len(probable_causes),
+    }
+
+
+@router.get("/impact/{table_fqn:path}", summary="DQ failure impact analysis")
+async def dq_impact_analysis(table_fqn: str, client=Depends(get_db_client)):
+    """When a DQ check fails on a table, show downstream tables/views/jobs affected.
+
+    Combines lineage data with impact analysis to answer: 'who is affected by bad data here?'
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    result = {"table_fqn": table_fqn, "downstream_tables": [], "downstream_views": [],
+              "referencing_jobs": [], "total_affected": 0}
+
+    # Get lineage-based downstream tables
+    try:
+        parts = table_fqn.split(".")
+        if len(parts) >= 2:
+            catalog = parts[0]
+            from src.impact_analysis import analyze_impact
+            impact = analyze_impact(client, wid, catalog, {
+                "schema": parts[1] if len(parts) >= 2 else None,
+                "table": parts[2] if len(parts) >= 3 else None,
+            })
+            result["downstream_views"] = impact.get("dependent_views", [])
+            result["referencing_jobs"] = impact.get("referencing_jobs", [])
+            result["risk_level"] = impact.get("risk_level", "low")
+    except Exception:
+        pass
+
+    # Get lineage-based downstream tables from system.access.table_lineage
+    try:
+        from src.client import execute_sql as _exec
+        rows = _exec(client, wid, f"""
+            SELECT DISTINCT target_table_full_name
+            FROM system.access.table_lineage
+            WHERE source_table_full_name = '{table_fqn}'
+            LIMIT 50
+        """)
+        result["downstream_tables"] = [r.get("target_table_full_name", "") for r in rows if r.get("target_table_full_name")]
+    except Exception:
+        pass
+
+    result["total_affected"] = (len(result["downstream_tables"]) +
+                                len(result["downstream_views"]) +
+                                len(result["referencing_jobs"]))
+    return result
+
+
+@router.post("/gate/evaluate", summary="Evaluate a DQ gate")
+async def evaluate_gate(req: dict, client=Depends(get_db_client)):
+    """Evaluate a DQ quality gate — check if data meets quality threshold before clone/sync."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_gate import evaluate_dq_gate
+    return evaluate_dq_gate(
+        client, wid, config,
+        table_fqn=req.get("table_fqn", ""),
+        suite_id=req.get("suite_id", ""),
+        min_pass_rate=float(req.get("min_pass_rate", 95.0)),
+    )
+
+
+@router.post("/segmented-run", summary="Run DQ checks segmented by a dimension column")
+async def segmented_run(req: dict, client=Depends(get_db_client)):
+    """Run DQ checks per segment (e.g., per region, per date) to catch localized quality issues."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import run_checks_segmented
+    return run_checks_segmented(
+        client, wid, config,
+        table_fqn=req.get("table_fqn", ""),
+        segment_column=req.get("segment_column", ""),
+        check_ids=req.get("check_ids"),
+    )
+
+
+@router.get("/segment-results", summary="Get segmented DQ check results")
+async def segment_results(run_id: str = "", table_fqn: str = "",
+                          limit: int = 200, client=Depends(get_db_client)):
+    """Get per-segment DQ results for drill-down analysis."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_segment_results
+    return get_segment_results(client, wid, config, run_id, table_fqn, limit)
+
+
+@router.get("/failure-samples", summary="Get failure sample rows from DQX runs")
+async def failure_samples(run_id: str = "", table_fqn: str = "",
+                          limit: int = 50, client=Depends(get_db_client)):
+    """Get sample failing rows for a DQX run or table — shows concrete examples of failures."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_failure_samples
+    return get_failure_samples(client, wid, config, run_id, table_fqn, limit)
+
+
+@router.get("/coverage/{catalog}", summary="DQ coverage report for a catalog")
+async def coverage_report(catalog: str, client=Depends(get_db_client)):
+    """Show which tables have DQ checks vs. which don't, with coverage percentage."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_coverage_report
+    return get_coverage_report(client, wid, config, catalog)
+
+
 @router.get("/health-score/{catalog}", summary="Compute aggregate DQ health score")
 async def health_score(
     catalog: str,
@@ -966,6 +1265,114 @@ async def sla_compliance_trend(
     return get_sla_compliance_trend(client, wid, config, days)
 
 
+# ── DQ Scorecard ──────────────────────────────────────────────────────────────
+
+@router.get("/scorecard/{table_fqn:path}", summary="Per-table DQ scorecard")
+async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
+    """Compute a per-table quality scorecard aggregating all DQ signals.
+
+    Returns an overall score (0-100) with dimensional breakdown:
+    completeness, freshness, schema stability, SLA compliance, and anomalies.
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    dimensions = {}
+    scores = []
+
+    # 1. Freshness
+    try:
+        from src.client import execute_sql as _sql
+        rows = _sql(client, wid, f"DESCRIBE DETAIL {table_fqn}")
+        if rows:
+            from datetime import datetime, timezone
+            last_mod = rows[0].get("lastModified") or rows[0].get("last_modified")
+            if last_mod:
+                if isinstance(last_mod, str):
+                    last_mod = datetime.fromisoformat(last_mod.replace("Z", "+00:00"))
+                hours_ago = (datetime.now(timezone.utc) - last_mod).total_seconds() / 3600
+                freshness_score = max(0, min(100, 100 - (hours_ago - 1) * 4))  # 100 at ≤1h, 0 at ≥26h
+                dimensions["freshness"] = {"score": round(freshness_score), "hours_since_update": round(hours_ago, 1)}
+                scores.append(freshness_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard freshness failed for {table_fqn}: {e}")
+
+    # 2. Completeness (null rate from recent metrics)
+    try:
+        audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+        from src.client import execute_sql as _sql
+        null_rows = _sql(client, wid,
+            f"SELECT value FROM {audit}.data_quality.metric_baselines "
+            f"WHERE table_fqn = '{table_fqn}' AND metric_name = 'null_rate' "
+            f"ORDER BY measured_at DESC LIMIT 1")
+        if null_rows:
+            null_pct = float(null_rows[0].get("value", 0))
+            comp_score = max(0, 100 - null_pct)
+            dimensions["completeness"] = {"score": round(comp_score), "null_rate_pct": round(null_pct, 1)}
+            scores.append(comp_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard completeness failed: {e}")
+
+    # 3. SLA Compliance
+    try:
+        from src.sla_monitor import list_sla_rules
+        all_rules = list_sla_rules(client, wid, config)
+        table_rules = [r for r in all_rules if r.get("table_fqn") == table_fqn and r.get("enabled", True)]
+        if table_rules:
+            # Check the latest SLA check results for this table
+            audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+            gov_schema = f"{audit}.governance"
+            from src.client import execute_sql as _sql
+            sla_checks = _sql(client, wid,
+                f"SELECT passed FROM {gov_schema}.sla_checks "
+                f"WHERE table_fqn = '{table_fqn}' "
+                f"ORDER BY checked_at DESC LIMIT {len(table_rules)}")
+            passed = sum(1 for r in (sla_checks or []) if r.get("passed"))
+            total = len(sla_checks or table_rules)
+            sla_score = (passed / total) * 100 if total else 100
+            dimensions["sla_compliance"] = {"score": round(sla_score), "rules": len(table_rules), "passing": passed}
+            scores.append(sla_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard SLA failed: {e}")
+
+    # 4. Anomaly score (recent anomalies = lower score)
+    try:
+        audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
+        from src.client import execute_sql as _sql
+        anom_rows = _sql(client, wid,
+            f"SELECT COUNT(*) AS cnt FROM {audit}.data_quality.metric_baselines "
+            f"WHERE table_fqn = '{table_fqn}' AND is_anomaly = true "
+            f"AND measured_at >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())")
+        anomaly_count = int(anom_rows[0].get("cnt", 0)) if anom_rows else 0
+        anomaly_score = max(0, 100 - anomaly_count * 15)
+        dimensions["anomaly_free"] = {"score": round(anomaly_score), "recent_anomalies": anomaly_count}
+        scores.append(anomaly_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard anomaly failed: {e}")
+
+    # 5. Schema stability
+    try:
+        from src.client import execute_sql as _sql
+        hist = _sql(client, wid, f"DESCRIBE HISTORY {table_fqn} LIMIT 10")
+        schema_changes = sum(1 for h in (hist or []) if "CHANGE" in str(h.get("operation", "")).upper() or "ALTER" in str(h.get("operation", "")).upper())
+        schema_score = 100 if schema_changes == 0 else max(0, 100 - schema_changes * 20)
+        dimensions["schema_stability"] = {"score": round(schema_score), "recent_changes": schema_changes}
+        scores.append(schema_score)
+    except Exception as e:
+        _logger.debug(f"Scorecard schema stability failed: {e}")
+
+    overall = round(sum(scores) / len(scores)) if scores else 0
+
+    return {
+        "table_fqn": table_fqn,
+        "overall_score": overall,
+        "dimensions": dimensions,
+        "dimension_count": len(dimensions),
+    }
+
+
 # ── Monitoring Configuration ─────────────────────────────────────────────────
 
 class MonitoringConfigRequest(BaseModel):
@@ -984,18 +1391,23 @@ class BulkMonitorRequest(BaseModel):
 
 
 @router.get("/monitoring/configs", summary="List all monitoring configurations")
-async def list_monitoring_configs():
+async def list_monitoring_configs(client=Depends(get_db_client)):
     """List all table monitoring configurations."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import list_monitoring_configs as _list
-    configs = _list()
+    configs = _list(client, wid, config)
     return {"configs": configs, "total": len(configs)}
 
 
 @router.post("/monitoring/configs", summary="Create or update a monitoring configuration")
-async def create_monitoring_config(req: MonitoringConfigRequest):
+async def create_monitoring_config(req: MonitoringConfigRequest, client=Depends(get_db_client)):
     """Create or update monitoring config for a table."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import create_monitoring_config as _create
     return _create(
+        client, wid, config,
         table_fqn=req.table_fqn, metrics=req.metrics,
         frequency=req.frequency, auto_baseline=req.auto_baseline,
         baseline_days=req.baseline_days, enabled=req.enabled,
@@ -1003,11 +1415,14 @@ async def create_monitoring_config(req: MonitoringConfigRequest):
 
 
 @router.put("/monitoring/configs/{config_id}", summary="Update monitoring configuration")
-async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest):
+async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest, client=Depends(get_db_client)):
     """Update an existing monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import update_monitoring_config as _update
     result = _update(
-        config_id, metrics=req.metrics, frequency=req.frequency,
+        client, wid, config, config_id,
+        metrics=req.metrics, frequency=req.frequency,
         auto_baseline=req.auto_baseline, baseline_days=req.baseline_days,
         enabled=req.enabled,
     )
@@ -1017,30 +1432,49 @@ async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest)
 
 
 @router.delete("/monitoring/configs/{config_id}", summary="Delete monitoring configuration")
-async def delete_monitoring_config(config_id: str):
+async def delete_monitoring_config(config_id: str, client=Depends(get_db_client)):
     """Delete a monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import delete_monitoring_config as _delete
-    if not _delete(config_id):
+    if not _delete(client, wid, config, config_id):
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
     return {"status": "deleted", "config_id": config_id}
 
 
 @router.post("/monitoring/configs/{config_id}/toggle", summary="Toggle monitoring on/off")
-async def toggle_monitoring_config(config_id: str):
+async def toggle_monitoring_config(config_id: str, client=Depends(get_db_client)):
     """Toggle enabled/disabled for a monitoring configuration."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import toggle_monitoring_config as _toggle
-    result = _toggle(config_id)
+    result = _toggle(client, wid, config, config_id)
     if not result:
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
     return result
 
 
 @router.post("/monitoring/bulk-add", summary="Add multiple tables for monitoring")
-async def bulk_add_monitoring(req: BulkMonitorRequest):
+async def bulk_add_monitoring(req: BulkMonitorRequest, client=Depends(get_db_client)):
     """Add multiple tables for monitoring at once."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import add_tables_bulk
-    results = add_tables_bulk(req.table_fqns, req.metrics, req.frequency)
+    results = add_tables_bulk(client, wid, config, req.table_fqns, req.metrics, req.frequency)
     return {"added": len(results), "configs": results}
+
+
+@router.post("/monitoring/bulk-delete", summary="Delete multiple monitoring configs")
+async def bulk_delete_monitoring(req: dict, client=Depends(get_db_client)):
+    """Delete multiple monitoring configs in a single operation."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    config_ids = req.get("config_ids", [])
+    if not config_ids:
+        raise HTTPException(status_code=400, detail="config_ids is required")
+    from src.monitoring_config import delete_monitoring_configs_bulk
+    deleted = delete_monitoring_configs_bulk(client, wid, config, config_ids)
+    return {"deleted": deleted}
 
 
 @router.get("/monitoring/discover/{catalog}", summary="Discover tables available for monitoring")
@@ -1063,4 +1497,136 @@ async def run_monitoring(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import run_monitoring as _run
-    return _run(client=client, warehouse_id=wid, config=config)
+    return _run(client=client, warehouse_id=wid, config=config, force=True)
+
+
+# ── Monitoring Scheduler ──────────────────────────────────────────────────────
+
+@router.get("/monitoring/scheduler", summary="Get scheduler status")
+async def scheduler_status(client=Depends(get_db_client)):
+    """Get the current monitoring scheduler status — enabled, frequency, last/next run."""
+    from src.monitoring_scheduler import get_scheduler_status, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/enable", summary="Enable monitoring scheduler")
+async def scheduler_enable(
+    frequency_minutes: int = Query(default=60, ge=1, le=1440),
+    client=Depends(get_db_client),
+):
+    """Enable the background monitoring scheduler with the given frequency (in minutes)."""
+    from src.monitoring_scheduler import enable_scheduler, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    enable_scheduler(frequency_minutes)
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/disable", summary="Disable monitoring scheduler")
+async def scheduler_disable(client=Depends(get_db_client)):
+    """Disable the background monitoring scheduler."""
+    from src.monitoring_scheduler import disable_scheduler, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    disable_scheduler()
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.put("/monitoring/scheduler/frequency", summary="Update scheduler frequency")
+async def scheduler_update_frequency(
+    frequency_minutes: int = Query(ge=1, le=1440),
+    client=Depends(get_db_client),
+):
+    """Update the scheduler frequency (in minutes). Restarts the scheduler if running."""
+    from src.monitoring_scheduler import update_frequency, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    update_frequency(frequency_minutes)
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+@router.post("/monitoring/scheduler/run-now", summary="Trigger immediate monitoring run")
+async def scheduler_run_now(client=Depends(get_db_client)):
+    """Trigger an immediate monitoring run without waiting for the next scheduled cycle."""
+    from src.monitoring_scheduler import trigger_run_now, set_client
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    set_client(client, wid, config)
+    await trigger_run_now()
+    from src.monitoring_scheduler import get_scheduler_status
+    return get_scheduler_status()
+
+
+# ── DQ Check Schedules (Cron-based DQ runs) ────────────────────────────────
+
+@router.get("/schedules", summary="List DQ check schedules")
+async def list_dq_schedules_endpoint(client=Depends(get_db_client)):
+    """List all scheduled DQ check runs."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import list_dq_schedules
+    return list_dq_schedules(client, wid, config)
+
+
+@router.post("/schedules", summary="Create a DQ check schedule")
+async def create_dq_schedule_endpoint(req: dict, client=Depends(get_db_client)):
+    """Create a scheduled DQ check run with cron expression."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import create_dq_schedule, ensure_dq_schedules_table
+    ensure_dq_schedules_table(client, wid, config)
+    return create_dq_schedule(
+        client, wid, config,
+        name=req.get("name", ""),
+        cron=req.get("cron", "0 * * * *"),
+        schedule_type=req.get("schedule_type", "table"),
+        table_fqn=req.get("table_fqn", ""),
+        suite_id=req.get("suite_id", ""),
+        check_ids=req.get("check_ids"),
+        user=req.get("user", ""),
+    )
+
+
+@router.delete("/schedules/{schedule_id}", summary="Delete a DQ check schedule")
+async def delete_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Delete a DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import delete_dq_schedule
+    return delete_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/pause", summary="Pause a DQ check schedule")
+async def pause_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Pause a DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import pause_dq_schedule
+    return pause_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/resume", summary="Resume a DQ check schedule")
+async def resume_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Resume a paused DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import resume_dq_schedule
+    return resume_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/run", summary="Run a DQ check schedule now")
+async def run_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Execute a DQ check schedule immediately."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import run_dq_schedule
+    return run_dq_schedule(client, wid, config, schedule_id)

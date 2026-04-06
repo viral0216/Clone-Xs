@@ -7,9 +7,6 @@ from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE_CATALOG = "clone_audit"
-DEFAULT_MDM_SCHEMA = "mdm"
-
 
 def _safe_query(client, warehouse_id, sql, default=None):
     """Execute SQL and return default on any failure (e.g., table not found)."""
@@ -23,7 +20,12 @@ def _safe_query(client, warehouse_id, sql, default=None):
 class MDMStore:
     """Delta table-based store for MDM entities, matching, stewardship, and hierarchies."""
 
-    def __init__(self, client, warehouse_id: str, state_catalog: str = DEFAULT_STATE_CATALOG, state_schema: str = DEFAULT_MDM_SCHEMA):
+    def __init__(self, client, warehouse_id: str, state_catalog: str | None = None, state_schema: str | None = None, config: dict | None = None):
+        from src.table_registry import get_catalog, get_schema_fqn
+        cfg = config or {}
+        state_catalog = state_catalog or get_catalog(cfg)
+        schema_fqn = get_schema_fqn(cfg, "mdm")
+        state_schema = state_schema or schema_fqn.split(".", 1)[1]
         self.client = client
         self.warehouse_id = warehouse_id
         self.catalog = state_catalog
@@ -37,102 +39,122 @@ class MDMStore:
 
     def init_tables(self) -> None:
         """Create all MDM Delta tables if they don't exist."""
-        execute_sql(self.client, self.warehouse_id, f"CREATE SCHEMA IF NOT EXISTS {self.catalog}.{self.schema}")
+        from src.catalog_utils import ensure_catalog_and_schema
+        ensure_catalog_and_schema(self.client, self.warehouse_id, self.catalog, self.schema)
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._entities} (
-                entity_id STRING NOT NULL,
-                entity_type STRING NOT NULL,
-                display_name STRING,
-                attributes MAP<STRING, STRING>,
-                source_count INT DEFAULT 0,
-                confidence_score DOUBLE DEFAULT 0.0,
-                status STRING DEFAULT 'active',
-                created_by STRING,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            ) USING DELTA
-            TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._entities} (
+                    entity_id STRING NOT NULL,
+                    entity_type STRING NOT NULL,
+                    display_name STRING,
+                    attributes MAP<STRING, STRING>,
+                    source_count INT,
+                    confidence_score DOUBLE,
+                    status STRING,
+                    created_by STRING,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                ) USING DELTA
+                TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._entities}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._source_records} (
-                source_record_id STRING NOT NULL,
-                entity_id STRING,
-                entity_type STRING NOT NULL,
-                source_system STRING NOT NULL,
-                source_table STRING,
-                source_key STRING,
-                attributes MAP<STRING, STRING>,
-                trust_score DOUBLE DEFAULT 1.0,
-                ingested_at TIMESTAMP
-            ) USING DELTA
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._source_records} (
+                    source_record_id STRING NOT NULL,
+                    entity_id STRING,
+                    entity_type STRING NOT NULL,
+                    source_system STRING NOT NULL,
+                    source_table STRING,
+                    source_key STRING,
+                    attributes MAP<STRING, STRING>,
+                    trust_score DOUBLE,
+                    ingested_at TIMESTAMP
+                ) USING DELTA
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._source_records}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._match_pairs} (
-                pair_id STRING NOT NULL,
-                entity_type STRING NOT NULL,
-                record_a_id STRING NOT NULL,
-                record_b_id STRING NOT NULL,
-                record_a_name STRING,
-                record_b_name STRING,
-                match_score DOUBLE NOT NULL,
-                matched_rules STRING,
-                status STRING DEFAULT 'pending',
-                reviewed_by STRING,
-                reviewed_at TIMESTAMP,
-                created_at TIMESTAMP
-            ) USING DELTA
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._match_pairs} (
+                    pair_id STRING NOT NULL,
+                    entity_type STRING NOT NULL,
+                    record_a_id STRING NOT NULL,
+                    record_b_id STRING NOT NULL,
+                    record_a_name STRING,
+                    record_b_name STRING,
+                    match_score DOUBLE NOT NULL,
+                    matched_rules STRING,
+                    status STRING,
+                    reviewed_by STRING,
+                    reviewed_at TIMESTAMP,
+                    created_at TIMESTAMP
+                ) USING DELTA
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._match_pairs}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._matching_rules} (
-                rule_id STRING NOT NULL,
-                entity_type STRING NOT NULL,
-                name STRING NOT NULL,
-                field STRING NOT NULL,
-                match_type STRING NOT NULL,
-                weight DOUBLE DEFAULT 1.0,
-                threshold DOUBLE DEFAULT 0.8,
-                enabled BOOLEAN DEFAULT true,
-                created_at TIMESTAMP
-            ) USING DELTA
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._matching_rules} (
+                    rule_id STRING NOT NULL,
+                    entity_type STRING NOT NULL,
+                    name STRING NOT NULL,
+                    field STRING NOT NULL,
+                    match_type STRING NOT NULL,
+                    weight DOUBLE,
+                    threshold DOUBLE,
+                    enabled BOOLEAN,
+                    created_at TIMESTAMP
+                ) USING DELTA
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._matching_rules}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._stewardship} (
-                task_id STRING NOT NULL,
-                task_type STRING NOT NULL,
-                entity_type STRING,
-                description STRING,
-                priority STRING DEFAULT 'medium',
-                assignee STRING,
-                related_entity_id STRING,
-                related_pair_id STRING,
-                status STRING DEFAULT 'open',
-                resolution STRING,
-                created_at TIMESTAMP,
-                resolved_at TIMESTAMP,
-                resolved_by STRING
-            ) USING DELTA
-        """)
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._stewardship} (
+                    task_id STRING NOT NULL,
+                    task_type STRING NOT NULL,
+                    entity_type STRING,
+                    description STRING,
+                    priority STRING,
+                    assignee STRING,
+                    related_entity_id STRING,
+                    related_pair_id STRING,
+                    status STRING,
+                    resolution STRING,
+                    created_at TIMESTAMP,
+                    resolved_at TIMESTAMP,
+                    resolved_by STRING
+                ) USING DELTA
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._stewardship}: {e}")
 
-        execute_sql(self.client, self.warehouse_id, f"""
-            CREATE TABLE IF NOT EXISTS {self._hierarchies} (
-                hierarchy_id STRING NOT NULL,
-                name STRING,
-                entity_type STRING,
-                node_id STRING NOT NULL,
-                parent_node_id STRING,
-                entity_id STRING,
-                label STRING,
-                level INT DEFAULT 0,
-                path STRING,
-                created_at TIMESTAMP
-            ) USING DELTA
-        """)
-        logger.info("MDM tables initialized")
+        try:
+            execute_sql(self.client, self.warehouse_id, f"""
+                CREATE TABLE IF NOT EXISTS {self._hierarchies} (
+                    hierarchy_id STRING NOT NULL,
+                    name STRING,
+                    entity_type STRING,
+                    node_id STRING NOT NULL,
+                    parent_node_id STRING,
+                    entity_id STRING,
+                    label STRING,
+                    level INT,
+                    path STRING,
+                    created_at TIMESTAMP
+                ) USING DELTA
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create table {self._hierarchies}: {e}")
+
+        logger.info(f"MDM store tables ready: {self.catalog}.{self.schema}")
 
     # ---- Entities (Golden Records) ----
 

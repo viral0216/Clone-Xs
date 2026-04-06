@@ -12,6 +12,8 @@ import {
   ClipboardCheck, Loader2, XCircle, CheckCircle, AlertTriangle, ArrowRight,
   Shield, Copy,
 } from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
+import ErrorCard from "@/components/ErrorCard";
 
 function statusIcon(status: string) {
   switch (status?.toUpperCase()) {
@@ -23,12 +25,10 @@ function statusIcon(status: string) {
 }
 
 function statusBadge(status: string) {
-  switch (status?.toUpperCase()) {
-    case "PASS": case "OK": return <Badge className="bg-muted/40 text-foreground text-xs">{status}</Badge>;
-    case "WARN": return <Badge className="bg-muted/40 text-foreground text-xs">WARN</Badge>;
-    case "FAIL": return <Badge variant="destructive" className="text-xs">FAIL</Badge>;
-    default: return <Badge variant="outline" className="text-xs">{status}</Badge>;
-  }
+  const mapping: Record<string, string> = {
+    PASS: "passed", OK: "passed", WARN: "warning", FAIL: "failed",
+  };
+  return <StatusBadge status={mapping[status?.toUpperCase()] || "unknown"} label={status} />;
 }
 
 export default function PreflightPage() {
@@ -192,12 +192,7 @@ export default function PreflightPage() {
 
       {/* Error */}
       {job?.status === "error" && (
-        <Card className="border-red-200">
-          <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5" />
-            {job.error}
-          </CardContent>
-        </Card>
+        <ErrorCard error={job.error} />
       )}
     </div>
   );

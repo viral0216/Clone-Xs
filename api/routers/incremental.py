@@ -5,6 +5,7 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
+from api.routers.deps import get_warehouse_id
 from api.queue.job_manager import JobManager
 from pydantic import BaseModel
 
@@ -49,7 +50,7 @@ async def check_changes(req: IncrementalSyncRequest, client=Depends(get_db_clien
         )
     else:
         config = await get_app_config()
-        wid = req.warehouse_id or config["sql_warehouse_id"]
+        wid = req.warehouse_id or get_warehouse_id(config)
         tables = get_tables_needing_sync(
             client, wid, req.source_catalog, req.destination_catalog, req.schema_name,
         )
@@ -69,7 +70,7 @@ async def start_incremental_sync(
         "source_catalog": req.source_catalog,
         "destination_catalog": req.destination_catalog,
         "schema_name": req.schema_name,
-        "sql_warehouse_id": req.warehouse_id or config["sql_warehouse_id"],
+        "sql_warehouse_id": req.warehouse_id or get_warehouse_id(config),
         "clone_type": req.clone_type,
         "dry_run": req.dry_run,
         "serverless": req.serverless,
@@ -93,7 +94,7 @@ async def check_cdf_status(req: CdfCheckRequest, client=Depends(get_db_client)):
     """Check if CDF is enabled on a table and get a change summary."""
     from src.incremental_sync import check_cdf_enabled, get_cdf_change_summary, get_last_sync_version
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
 
     cdf_enabled = check_cdf_enabled(client, wid, req.source_catalog, req.schema_name, req.table_name)
 

@@ -4,14 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PageHeader from "@/components/PageHeader";
-import { FileText, Search, Filter, Download } from "lucide-react";
+import DataTable, { Column } from "@/components/DataTable";
+import { FileText, Filter, Download } from "lucide-react";
 import { useMdmPairs, useMdmStewardship, useMdmEntities } from "@/hooks/useMdm";
 
 export default function AuditLogPage() {
   const { data: pairs } = useMdmPairs();
   const { data: tasks } = useMdmStewardship();
   const { data: entities } = useMdmEntities();
-  const [search, setSearch] = useState("");
   const [filterAction, setFilterAction] = useState("all");
 
   // Combine all actions into a unified audit log
@@ -49,7 +49,6 @@ export default function AuditLogPage() {
   const actions = [...new Set(log.map(l => l.action))];
   const filtered = log.filter(l => {
     if (filterAction !== "all" && l.action !== filterAction) return false;
-    if (search && !l.detail.toLowerCase().includes(search.toLowerCase()) && !l.user.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
@@ -78,10 +77,6 @@ export default function AuditLogPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">Event Log ({filtered.length} events)</CardTitle>
             <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <input className="pl-8 pr-3 py-1.5 text-sm bg-muted border border-border rounded-md w-48" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
               <select className="px-2 py-1.5 text-xs bg-muted border border-border rounded-md" value={filterAction} onChange={e => setFilterAction(e.target.value)}>
                 <option value="all">All Actions</option>
                 {actions.map(a => <option key={a} value={a}>{a}</option>)}
@@ -91,29 +86,38 @@ export default function AuditLogPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {filtered.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">No audit events yet</div>
-          ) : (
-            <div className="space-y-1">
-              {filtered.slice(0, 100).map((event, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-muted/20 transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Badge variant="outline" className={`text-[10px] min-w-[90px] justify-center ${
-                      event.action.includes("merge") ? "text-[#E8453C] border-[#E8453C]/30" :
-                      event.action.includes("created") ? "text-foreground" :
-                      event.action.includes("resolved") ? "text-foreground" :
-                      "text-muted-foreground"
-                    }`}>{event.action}</Badge>
-                    <span className="text-sm truncate">{event.detail}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-3">
-                    <span className="text-xs text-muted-foreground">{event.user}</span>
-                    <span className="text-xs text-muted-foreground">{event.timestamp?.slice(0, 19) || ""}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            data={filtered}
+            columns={[
+              {
+                key: "action",
+                label: "Action",
+                sortable: true,
+                render: (v: string) => (
+                  <Badge variant="outline" className={`text-[10px] min-w-[90px] justify-center ${
+                    v.includes("merge") ? "text-[#E8453C] border-[#E8453C]/30" :
+                    v.includes("created") ? "text-foreground" :
+                    v.includes("resolved") ? "text-foreground" :
+                    "text-muted-foreground"
+                  }`}>{v}</Badge>
+                ),
+              },
+              { key: "detail", label: "Detail", sortable: true },
+              { key: "user", label: "User", sortable: true },
+              {
+                key: "timestamp",
+                label: "Timestamp",
+                sortable: true,
+                render: (v: string) => <span className="text-xs text-muted-foreground">{v?.slice(0, 19) || ""}</span>,
+              },
+            ] as Column[]}
+            searchable
+            searchKeys={["detail", "user", "action"]}
+            pageSize={25}
+            compact
+            tableId="mdm-audit-log"
+            emptyMessage="No audit events yet."
+          />
         </CardContent>
       </Card>
     </div>

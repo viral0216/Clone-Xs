@@ -68,6 +68,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
       }
       break;
     } catch (networkErr: any) {
+      if (networkErr.name === "AbortError") throw networkErr; // Don't retry aborted requests
       lastError = networkErr;
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, 1000 * attempt));
@@ -110,11 +111,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 }
 
 export const api = {
-  get: <T>(path: string, params?: Record<string, string>) =>
-    apiFetch<T>(path, { method: "GET", params }),
+  get: <T>(path: string, opts?: Record<string, string> | { params?: Record<string, string>; signal?: AbortSignal }) => {
+    if (opts && "signal" in opts) {
+      const { params, signal } = opts as { params?: Record<string, string>; signal?: AbortSignal };
+      return apiFetch<T>(path, { method: "GET", params, signal });
+    }
+    return apiFetch<T>(path, { method: "GET", params: opts as Record<string, string> });
+  },
 
-  post: <T>(path: string, body?: unknown) =>
-    apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(path: string, body?: unknown, opts?: { signal?: AbortSignal }) =>
+    apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined, signal: opts?.signal }),
 
   put: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),

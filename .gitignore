@@ -63,6 +63,12 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Runtime state files (generated at runtime, not config)
+config/scheduler_state.json
+config/monitoring_config.json
+config/reconciliation_schedules.json
+config/expectation_suites.json
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*

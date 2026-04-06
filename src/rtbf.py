@@ -57,7 +57,7 @@ class RTBFManager:
         rtbf_config = self.config.get("rtbf", {})
         catalog = self.config.get("audit_trail", {}).get("catalog", state_catalog)
 
-        self.store = RTBFStore(client, warehouse_id, catalog, state_schema)
+        self.store = RTBFStore(client, warehouse_id, catalog, state_schema, config=self.config)
         self.deadline_days = rtbf_config.get("deadline_days", DEFAULT_DEADLINE_DAYS)
         self.default_strategy = rtbf_config.get("default_strategy", DEFAULT_STRATEGY)
         self.auto_vacuum = rtbf_config.get("auto_vacuum", True)

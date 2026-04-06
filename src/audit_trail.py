@@ -6,21 +6,16 @@ import os
 from datetime import datetime, timezone
 
 from src.client import execute_sql
+from src.table_registry import get_catalog, get_schema_fqn, get_table_fqn
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_AUDIT_CATALOG = "clone_audit"
-DEFAULT_AUDIT_SCHEMA = "logs"
-DEFAULT_AUDIT_TABLE = "clone_operations"
 
 
 def get_audit_table_fqn(config: dict) -> str:
     """Get fully qualified name for the audit table."""
     audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", DEFAULT_AUDIT_CATALOG)
-    schema = audit.get("schema", DEFAULT_AUDIT_SCHEMA)
-    table = audit.get("table", DEFAULT_AUDIT_TABLE)
-    return f"{catalog}.{schema}.{table}"
+    table = audit.get("table", "clone_operations")
+    return get_table_fqn(config, "logs", table)
 
 
 def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
@@ -29,11 +24,10 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     Returns:
         Fully qualified table name.
     """
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", DEFAULT_AUDIT_CATALOG)
-    schema = audit.get("schema", DEFAULT_AUDIT_SCHEMA)
-    table = audit.get("table", DEFAULT_AUDIT_TABLE)
-    fqn = f"{catalog}.{schema}.{table}"
+    fqn = get_audit_table_fqn(config)
+    catalog = get_catalog(config)
+    schema_fqn = get_schema_fqn(config, "logs")
+    schema = schema_fqn.split(".", 1)[1]
 
     from src.catalog_utils import ensure_catalog_and_schema
     ensure_catalog_and_schema(client, warehouse_id, catalog, schema)

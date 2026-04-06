@@ -836,6 +836,9 @@ export default function SettingsPage() {
           {/* ─── Anomaly Detection ─── */}
           {activeSection === "anomaly" && <section id="anomaly">
             <AnomalyDetectionSettings />
+            <div className="mt-6 pt-6 border-t border-border">
+              <DQXSettings />
+            </div>
           </section>}
 
           {/* ─── Audit & Logs ─── */}
@@ -1070,7 +1073,7 @@ function AnomalyDetectionSettings() {
   const [adLoading, setAdLoading] = useState(true);
   const [adSaved, setAdSaved] = useState(false);
   const [sources, setSources] = useState({ billing: false, compute: false, query_history: false, storage: false });
-  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(100);
 
   useEffect(() => {
     api.get("/data-quality/anomaly-settings").then((data: any) => {
@@ -1136,7 +1139,7 @@ function AnomalyDetectionSettings() {
               </div>
               <div>
                 <label className="text-[11px] text-muted-foreground font-medium block mb-1">Max Parallel Queries</label>
-                <Input type="number" min={1} max={50} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(Number(e.target.value))} className="h-8 text-xs" />
+                <Input type="number" min={1} max={200} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(Number(e.target.value))} className="h-8 text-xs" />
                 <p className="text-[10px] text-muted-foreground mt-0.5">Concurrent queries for volume counting</p>
               </div>
             </div>
@@ -1187,10 +1190,66 @@ function AnomalyDetectionSettings() {
 }
 
 
+function DQXSettings() {
+  const [autoSave, setAutoSave] = useState(false);
+  const [targetTable, setTargetTable] = useState("clone_audit.governance.dqx_exported_checks");
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get("/data-quality/dqx-settings").then((data: any) => {
+      setAutoSave(data.auto_save_to_delta ?? false);
+      setTargetTable(data.default_target_table ?? "");
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    try {
+      await api.put("/data-quality/dqx-settings", {
+        auto_save_to_delta: autoSave,
+        default_target_table: targetTable,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold">DQX Engine</p>
+        <p className="text-[11px] text-muted-foreground">Configure DQX auto-save and default target table for check exports.</p>
+      </div>
+      {loading ? <p className="text-xs text-muted-foreground">Loading...</p> : (
+        <div className="space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} className="rounded" />
+            <div>
+              <p className="text-sm font-medium">Auto-save checks to Delta</p>
+              <p className="text-[11px] text-muted-foreground">Automatically save DQX checks to a Delta table after profiling and generation.</p>
+            </div>
+          </label>
+          {autoSave && (
+            <div>
+              <label className="text-[11px] text-muted-foreground font-medium block mb-1">Default Target Table (optional)</label>
+              <Input value={targetTable} onChange={(e) => setTargetTable(e.target.value)} placeholder="e.g. clone_audit.governance.dqx_exported_checks" className="h-8 text-xs max-w-md" />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Leave empty to use audit_catalog.governance.dqx_exported_checks</p>
+            </div>
+          )}
+          <Button size="sm" onClick={save}>
+            {saved ? <><Check className="h-3.5 w-3.5 mr-1" /> Saved</> : "Save"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function PerformanceSettings() {
   const [maxWorkers, setMaxWorkers] = useState(10);
   const [parallelTables, setParallelTables] = useState(10);
-  const [maxParallelQueries, setMaxParallelQueries] = useState(10);
+  const [maxParallelQueries, setMaxParallelQueries] = useState(100);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -1229,7 +1288,7 @@ function PerformanceSettings() {
           <p className="text-[11px] text-muted-foreground">Tables cloned concurrently per schema</p>
         </FieldGroup>
         <FieldGroup label="Max Parallel Queries">
-          <Input type="number" min={1} max={64} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 1)} />
+          <Input type="number" min={1} max={200} value={maxParallelQueries} onChange={(e) => setMaxParallelQueries(parseInt(e.target.value) || 1)} />
           <p className="text-[11px] text-muted-foreground">SQL warehouse concurrent query limit</p>
         </FieldGroup>
       </div>

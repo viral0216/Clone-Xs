@@ -10,11 +10,14 @@ import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useActiveJobs } from "@/contexts/ActiveJobsContext";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
   Star, Plus, X,
 } from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
+import LoadingState from "@/components/LoadingState";
 
 type Step = "source" | "options" | "preview" | "execute";
 
@@ -261,45 +264,40 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
 }
 
 function JobProgress({ jobId }: { jobId: string }) {
+  const { getJob } = useActiveJobs();
   const [job, setJob] = useState<any>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Poll job status
+  // Use global context data as baseline, poll faster (2s) for active view
   useEffect(() => {
+    const contextJob = getJob(jobId);
+    if (contextJob) setJob(contextJob);
+  }, [getJob, jobId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const poll = async () => {
       try {
-        const data = await api.get(`/clone/${jobId}`);
+        const data = await api.get(`/clone/${jobId}`, { signal: controller.signal });
         setJob(data);
         if (data.status === "completed" || data.status === "failed") {
           if (pollRef.current) clearInterval(pollRef.current);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e: any) {
+        if (e?.name === "AbortError") return; // Expected on unmount
+        console.warn("Job poll failed:", e?.message);
+      }
     };
 
     poll();
     pollRef.current = setInterval(poll, 2000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => { controller.abort(); if (pollRef.current) clearInterval(pollRef.current); };
   }, [jobId]);
-
-  // Polling handles progress updates (every 2s via the effect above)
 
 
   if (!job) {
-    return (
-      <div className="flex items-center gap-2 text-gray-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading job status...
-      </div>
-    );
+    return <LoadingState message="Loading job status..." />;
   }
-
-  const statusColor = {
-    queued: "bg-muted/40 text-foreground",
-    running: "bg-muted/50 text-foreground",
-    completed: "bg-muted/40 text-foreground",
-    failed: "bg-red-100 text-red-800",
-    cancelled: "bg-gray-100 text-gray-800",
-  }[job.status] || "bg-gray-100 text-gray-800";
 
   const statusIcon = {
     queued: <Clock className="h-5 w-5 text-muted-foreground" />,
@@ -356,9 +354,7 @@ function JobProgress({ jobId }: { jobId: string }) {
               </Button>
             </>
           )}
-          <Badge className={statusColor}>
-            {job.status.toUpperCase()}
-          </Badge>
+          <StatusBadge status={job.status ?? "unknown"} />
         </div>
       </div>
 
@@ -584,9 +580,7 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
     <div>
       <label className="text-sm font-medium">Destination Catalog</label>
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading catalogs...
-        </div>
+        <LoadingState message="Loading catalogs..." className="py-2" />
       ) : isNew ? (
         <div className="space-y-2">
           <div className="flex gap-2">
@@ -649,7 +643,7 @@ export default function ClonePage() {
     dry_run: false,
     max_workers: 4,
     parallel_tables: 1,
-    max_parallel_queries: 10,
+    max_parallel_queries: 100,
     max_rps: 0,
     // Copy options
     copy_permissions: true,
@@ -1014,8 +1008,8 @@ export default function ClonePage() {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Max Parallel Queries</label>
-                  <Input type="number" min={1} max={50} value={config.max_parallel_queries}
-                    onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 10 })} />
+                  <Input type="number" min={1} max={200} value={config.max_parallel_queries}
+                    onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 100 })} />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Max RPS (0=unlimited)</label>
@@ -1308,7 +1302,7 @@ export default function ClonePage() {
                 Back to Preview
               </Button>
               <a
-                href={`/preview?source=${encodeURIComponent(sourceCatalog)}&dest=${encodeURIComponent(destCatalog)}`}
+                href={`/preview?source=${encodeURIComponent(config.source_catalog)}&dest=${encodeURIComponent(config.destination_catalog)}`}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border text-[#E8453C] hover:bg-muted/30 dark:hover:bg-white/5 text-sm font-medium"
               >
                 Compare Data →

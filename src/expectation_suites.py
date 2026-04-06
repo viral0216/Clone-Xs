@@ -1,6 +1,6 @@
 """Expectation suites -- group DQ checks into named, reusable suites.
 
-Suites are persisted as JSON at config/expectation_suites.json.
+Suites are persisted in a Delta table managed via the table registry.
 Each suite contains a list of checks that can reference DQ rules,
 DQX checks, or reconciliation tasks. The run_suite function
 executes all checks in a suite and returns combined results.
@@ -8,48 +8,53 @@ executes all checks in a suite and returns combined results.
 
 import json
 import logging
-import os
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
+
+from src.client import execute_sql, sql_escape, utc_now
+from src.table_registry import get_table_fqn
 
 logger = logging.getLogger(__name__)
 
-_SUITES_FILE = str(Path(__file__).resolve().parent.parent / "config" / "expectation_suites.json")
-
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Table setup
 # ---------------------------------------------------------------------------
 
-def _load_suites() -> list[dict]:
-    """Load all suites from the JSON file."""
-    if not os.path.exists(_SUITES_FILE):
-        return []
-    try:
-        with open(_SUITES_FILE, "r") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Could not load suites file: {e}")
-        return []
+def _get_fqn(config: dict) -> str:
+    return get_table_fqn(config, "data_quality", "expectation_suites")
 
 
-def _save_suites(suites: list[dict]):
-    """Write suites back to the JSON file."""
-    os.makedirs(os.path.dirname(_SUITES_FILE), exist_ok=True)
-    with open(_SUITES_FILE, "w") as f:
-        json.dump(suites, f, indent=2, default=str)
+def ensure_expectation_suites_table(client, warehouse_id: str, config: dict) -> str:
+    """Create the expectation_suites Delta table if it doesn't exist."""
+    fqn = _get_fqn(config)
+    from src.catalog_utils import safe_ensure_schema_from_fqn
+    schema_fqn = fqn.rsplit(".", 1)[0]
+    safe_ensure_schema_from_fqn(schema_fqn, client, warehouse_id, config)
+    execute_sql(client, warehouse_id, f"""
+        CREATE TABLE IF NOT EXISTS {fqn} (
+            suite_id STRING,
+            name STRING,
+            description STRING,
+            checks STRING,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        ) USING DELTA
+    """)
+    return fqn
 
 
 # ---------------------------------------------------------------------------
 # CRUD operations
 # ---------------------------------------------------------------------------
 
-def create_suite(name: str, description: str = "", checks: list[dict] = None) -> dict:
+def create_suite(client, warehouse_id: str, config: dict,
+                 name: str, description: str = "", checks: list[dict] = None) -> dict:
     """Create a new expectation suite.
 
     Args:
+        client: Databricks WorkspaceClient.
+        warehouse_id: SQL warehouse ID.
+        config: Application config dict.
         name: Human-readable suite name.
         description: Optional description.
         checks: List of check definitions, each with:
@@ -61,92 +66,143 @@ def create_suite(name: str, description: str = "", checks: list[dict] = None) ->
         The created suite dict with a generated suite_id.
     """
     checks = checks or []
-    suites = _load_suites()
+    fqn = _get_fqn(config)
+    suite_id = str(uuid.uuid4())[:12]
+    now = utc_now()
+    checks_json = sql_escape(json.dumps(checks))
+
+    execute_sql(client, warehouse_id, f"""
+        INSERT INTO {fqn} (suite_id, name, description, checks, created_at, updated_at)
+        VALUES (
+            '{sql_escape(suite_id)}',
+            '{sql_escape(name)}',
+            '{sql_escape(description)}',
+            '{checks_json}',
+            '{now}',
+            '{now}'
+        )
+    """)
 
     suite = {
-        "suite_id": str(uuid.uuid4())[:12],
+        "suite_id": suite_id,
         "name": name,
         "description": description,
         "checks": checks,
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        "created_at": now,
+        "updated_at": now,
     }
-
-    suites.append(suite)
-    _save_suites(suites)
-    logger.info(f"Created expectation suite '{name}' ({suite['suite_id']}) with {len(checks)} checks")
+    logger.info(f"Created expectation suite '{name}' ({suite_id}) with {len(checks)} checks")
     return suite
 
 
-def list_suites() -> list[dict]:
+def list_suites(client, warehouse_id: str, config: dict) -> list[dict]:
     """List all expectation suites.
 
     Returns:
-        List of suite dicts (without full check details for brevity).
+        List of suite summary dicts.
     """
-    suites = _load_suites()
-    return [
-        {
-            "suite_id": s["suite_id"],
-            "name": s["name"],
-            "description": s.get("description", ""),
-            "check_count": len(s.get("checks", [])),
-            "created_at": s.get("created_at"),
-            "updated_at": s.get("updated_at"),
-        }
-        for s in suites
-    ]
+    fqn = _get_fqn(config)
+    try:
+        rows = execute_sql(client, warehouse_id,
+                           f"SELECT suite_id, name, description, checks, created_at, updated_at FROM {fqn}")
+    except Exception:
+        return []
+
+    result = []
+    for row in rows:
+        checks = json.loads(row.get("checks", "[]"))
+        result.append({
+            "suite_id": row.get("suite_id", ""),
+            "name": row.get("name", ""),
+            "description": row.get("description", ""),
+            "check_count": len(checks),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        })
+    return result
 
 
-def get_suite(suite_id: str) -> dict | None:
+def get_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict | None:
     """Get a single expectation suite by ID.
 
     Returns:
         The suite dict, or None if not found.
     """
-    suites = _load_suites()
-    for s in suites:
-        if s["suite_id"] == suite_id:
-            return s
-    return None
+    fqn = _get_fqn(config)
+    try:
+        rows = execute_sql(client, warehouse_id,
+                           f"SELECT suite_id, name, description, checks, created_at, updated_at "
+                           f"FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'")
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    row = rows[0]
+    return {
+        "suite_id": row.get("suite_id", ""),
+        "name": row.get("name", ""),
+        "description": row.get("description", ""),
+        "checks": json.loads(row.get("checks", "[]")),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
 
 
-def update_suite(suite_id: str, name: str = None, description: str = None, checks: list[dict] = None) -> dict | None:
+def update_suite(client, warehouse_id: str, config: dict,
+                 suite_id: str, name: str = None, description: str = None,
+                 checks: list[dict] = None) -> dict | None:
     """Update an existing suite.
 
     Returns:
         The updated suite dict, or None if not found.
     """
-    suites = _load_suites()
-    for s in suites:
-        if s["suite_id"] == suite_id:
-            if name is not None:
-                s["name"] = name
-            if description is not None:
-                s["description"] = description
-            if checks is not None:
-                s["checks"] = checks
-            s["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-            _save_suites(suites)
-            logger.info(f"Updated expectation suite {suite_id}")
-            return s
-    return None
+    existing = get_suite(client, warehouse_id, config, suite_id)
+    if not existing:
+        return None
+
+    new_name = name if name is not None else existing["name"]
+    new_description = description if description is not None else existing["description"]
+    new_checks = checks if checks is not None else existing["checks"]
+    now = utc_now()
+
+    fqn = _get_fqn(config)
+    checks_json = sql_escape(json.dumps(new_checks))
+
+    execute_sql(client, warehouse_id, f"""
+        UPDATE {fqn}
+        SET name = '{sql_escape(new_name)}',
+            description = '{sql_escape(new_description)}',
+            checks = '{checks_json}',
+            updated_at = '{now}'
+        WHERE suite_id = '{sql_escape(suite_id)}'
+    """)
+
+    logger.info(f"Updated expectation suite {suite_id}")
+    return {
+        "suite_id": suite_id,
+        "name": new_name,
+        "description": new_description,
+        "checks": new_checks,
+        "created_at": existing["created_at"],
+        "updated_at": now,
+    }
 
 
-def delete_suite(suite_id: str) -> bool:
+def delete_suite(client, warehouse_id: str, config: dict, suite_id: str) -> bool:
     """Delete an expectation suite by ID.
 
     Returns:
         True if deleted, False if not found.
     """
-    suites = _load_suites()
-    original_len = len(suites)
-    suites = [s for s in suites if s["suite_id"] != suite_id]
-
-    if len(suites) == original_len:
+    existing = get_suite(client, warehouse_id, config, suite_id)
+    if not existing:
         return False
 
-    _save_suites(suites)
+    fqn = _get_fqn(config)
+    execute_sql(client, warehouse_id,
+                f"DELETE FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'")
     logger.info(f"Deleted expectation suite {suite_id}")
     return True
 
@@ -155,7 +211,7 @@ def delete_suite(suite_id: str) -> bool:
 # Suite execution
 # ---------------------------------------------------------------------------
 
-def run_suite(suite_id: str, client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
     """Execute all checks in a suite and return combined results.
 
     Iterates through each check in the suite, dispatches to the appropriate
@@ -165,7 +221,7 @@ def run_suite(suite_id: str, client=None, warehouse_id: str = "", config: dict =
     Returns:
         Dict with suite metadata, overall pass/fail, and per-check results.
     """
-    suite = get_suite(suite_id)
+    suite = get_suite(client, warehouse_id, config, suite_id)
     if not suite:
         return {"error": f"Suite {suite_id} not found"}
 
@@ -259,7 +315,7 @@ def run_suite(suite_id: str, client=None, warehouse_id: str = "", config: dict =
     return {
         "suite_id": suite["suite_id"],
         "suite_name": suite["name"],
-        "executed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        "executed_at": utc_now(),
         "overall_status": overall,
         "total_checks": len(results),
         "passed": passed,

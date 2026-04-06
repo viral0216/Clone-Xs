@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import { Shuffle, Play, Loader2 } from "lucide-react";
 import { useMdmEntities } from "@/hooks/useMdm";
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 export default function CrossDomainPage() {
   const { data: entities } = useMdmEntities();
@@ -14,7 +15,7 @@ export default function CrossDomainPage() {
   const [sourceType, setSourceType] = useState(types[0] || "Customer");
   const [targetType, setTargetType] = useState(types[1] || "Supplier");
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = usePersistedState<any[]>("mdm-cross-domain-results", []);
 
   const runCrossDomain = () => {
     setRunning(true);

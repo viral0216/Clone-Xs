@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import DataTable, { Column } from "@/components/DataTable";
 import { toast } from "sonner";
 import { ShieldCheck, Plus, Play, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
@@ -32,6 +33,21 @@ export default function DQRulesPage() {
   async function runOne(id: string) { try { const r = await api.post("/governance/dq/run", { rule_ids: [id] }); if (r[0]) { toast[r[0].passed ? "success" : "error"](`${r[0].rule_name}: ${r[0].passed ? "PASSED" : "FAILED"} (${r[0].failure_rate * 100}%)`); } } catch (e: any) { toast.error(e.message); } }
 
   const sevColor = (s: string) => s === "critical" ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400" : s === "warning" ? "bg-muted/40 text-foreground dark:bg-white/5 dark:text-gray-400" : "bg-muted/50 text-foreground";
+
+  const rulesColumns: Column[] = [
+    { key: "name", label: "Name", sortable: true, render: (v) => <span className="font-medium">{v}</span> },
+    { key: "table_fqn", label: "Table", sortable: true, render: (v) => <span className="font-mono text-xs">{v}</span> },
+    { key: "column_name", label: "Column", sortable: true, render: (v) => <span className="font-mono text-xs">{v || "—"}</span> },
+    { key: "rule_type", label: "Type", sortable: true, render: (v) => <Badge variant="outline">{v}</Badge> },
+    { key: "severity", label: "Severity", sortable: true, render: (v) => <Badge className={sevColor(v)}>{v}</Badge> },
+    { key: "schedule", label: "Schedule", sortable: true, render: (v) => <span className="text-xs">{v}</span> },
+    { key: "rule_id", label: "Actions", align: "right", render: (v, r) => (
+      <>
+        <Button variant="ghost" size="sm" onClick={() => runOne(r.rule_id)}><Play className="h-3.5 w-3.5" /></Button>
+        <Button variant="ghost" size="sm" onClick={() => deleteRule(r.rule_id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
+      </>
+    )},
+  ];
 
   return (
     <div className="space-y-4">
@@ -70,36 +86,16 @@ export default function DQRulesPage() {
       )}
 
       <Card><CardContent className="pt-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-border">
-              <th className="text-left py-2 px-3 font-medium">Name</th>
-              <th className="text-left py-2 px-3 font-medium">Table</th>
-              <th className="text-left py-2 px-3 font-medium">Column</th>
-              <th className="text-left py-2 px-3 font-medium">Type</th>
-              <th className="text-left py-2 px-3 font-medium">Severity</th>
-              <th className="text-left py-2 px-3 font-medium">Schedule</th>
-              <th className="text-right py-2 px-3 font-medium">Actions</th>
-            </tr></thead>
-            <tbody>
-              {rules.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No rules defined. Click "Add Rule" to create your first DQ rule.</td></tr>}
-              {rules.map(r => (
-                <tr key={r.rule_id} className="border-b border-border hover:bg-accent/30">
-                  <td className="py-2 px-3 font-medium">{r.name}</td>
-                  <td className="py-2 px-3 font-mono text-xs">{r.table_fqn}</td>
-                  <td className="py-2 px-3 font-mono text-xs">{r.column_name || "—"}</td>
-                  <td className="py-2 px-3"><Badge variant="outline">{r.rule_type}</Badge></td>
-                  <td className="py-2 px-3"><Badge className={sevColor(r.severity)}>{r.severity}</Badge></td>
-                  <td className="py-2 px-3 text-xs">{r.schedule}</td>
-                  <td className="py-2 px-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => runOne(r.rule_id)}><Play className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => deleteRule(r.rule_id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          data={rules}
+          columns={rulesColumns}
+          searchable
+          searchKeys={["name", "table_fqn", "column_name", "rule_type", "severity"]}
+          pageSize={25}
+          compact
+          tableId="dq-rules-table"
+          emptyMessage='No rules defined. Click "Add Rule" to create your first DQ rule.'
+        />
       </CardContent></Card>
 
       {runResults.length > 0 && (

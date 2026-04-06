@@ -5,8 +5,9 @@ clone_type: DEEP
 load_type: FULL
 catalog_location: ''
 max_workers: 10
-max_parallel_queries: 50
+max_parallel_queries: 150
 parallel_tables: 10
+batch_insert_size: 50
 include_schemas: []
 exclude_schemas:
 - information_schema
@@ -118,6 +119,25 @@ audit_trail:
   catalog: edp_dev
   schema: logs
   table: clone_operations
+tables:
+  catalog: edp_dev
+  schemas:
+    logs: logs
+    metrics: metrics
+    governance: governance
+    reconciliation: reconciliation
+    data_quality: data_quality
+    lineage: lineage
+    pii: pii
+    rtbf: rtbf
+    dsar: dsar
+    mdm: mdm
+    pipelines: pipelines
+    data_contracts: data_contracts
+    state: state
+dqx:
+  auto_save_to_delta: true
+  default_target_table: ''
 anomaly_detection:
   baseline_window: 30
   warning_threshold: 2.0
@@ -161,6 +181,6 @@ observability:
   issue_lookback_hours: 24
   trend_days: 30
 azure:
-  subscription_id: ''
+  subscription_id: sub-123
   resource_group: ''
   tenant_id: ''

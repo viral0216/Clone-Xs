@@ -254,7 +254,7 @@ async def get_certificate(request_id: str, client=Depends(get_db_client)):
 @router.get("/requests/{request_id}/certificate/download")
 async def download_certificate(
     request_id: str,
-    format: str = Query("html", regex="^(html|json)$"),
+    format: str = Query("html", pattern="^(html|json)$"),
     client=Depends(get_db_client),
 ):
     """Download deletion certificate as a file."""

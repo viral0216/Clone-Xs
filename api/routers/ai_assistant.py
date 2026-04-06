@@ -3,7 +3,7 @@
 import json
 import logging
 import requests as req
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
@@ -144,7 +144,7 @@ async def execute_natural_language(
     wid = config.get("sql_warehouse_id", "")
 
     if not svc.is_available(x_databricks_model):
-        return {"error": "No AI backend configured"}
+        raise HTTPException(status_code=400, detail="No AI backend configured")
 
     # Step 1: Generate SQL — reuse the same prompt as nl-to-sql
     system_prompt = _build_sql_prompt()
@@ -209,7 +209,7 @@ async def genie_query(
             timeout=30,
         )
         if r.status_code != 200:
-            return {"error": f"Genie API error: {r.status_code} — {r.text[:200]}"}
+            raise HTTPException(status_code=502, detail=f"Genie API error: {r.status_code} — {r.text[:200]}")
 
         data = r.json()
         conversation_id = data.get("conversation_id", "")
@@ -245,7 +245,7 @@ async def genie_query(
         return {"error": "Genie query timed out", "question": request.question}
     except Exception as e:
         logger.exception("Genie query failed")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/chat")

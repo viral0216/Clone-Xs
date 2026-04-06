@@ -46,7 +46,7 @@ def detect_key_columns(client, catalog: str, schema: str, table_name: str) -> li
                 if candidates:
                     return candidates[:3]
         except Exception as e:
-            logger.debug(f"SDK key detection failed for {catalog}.{schema}.{table_name}: {e}")
+            logger.warning(f"SDK key detection failed for {catalog}.{schema}.{table_name}: {e}")
 
     # Fallback: use Spark schema for heuristic
     try:
@@ -58,7 +58,7 @@ def detect_key_columns(client, catalog: str, schema: str, table_name: str) -> li
         if candidates:
             return candidates[:3]
     except Exception as e:
-        logger.debug(f"Spark key detection failed: {e}")
+        logger.warning(f"Spark key detection failed: {e}")
 
     return []
 
@@ -370,7 +370,7 @@ def deep_reconcile_table(
                     result["dest_checksum"] = dst_hash
                     result["checksum_match"] = src_hash == dst_hash
             except Exception as ck_err:
-                logger.debug(f"Checksum computation failed for {schema}.{table_name}: {ck_err}")
+                logger.warning(f"Checksum computation failed for {schema}.{table_name}: {ck_err}")
 
     except Exception as e:
         result["error"] = str(e)
@@ -424,7 +424,7 @@ def _collect_modified_diffs(
 
             samples.append({"key": key_vals, "diffs": diffs})
     except Exception as e:
-        logger.debug(f"Could not collect modified diffs: {e}")
+        logger.warning(f"Could not collect modified diffs: {e}")
 
     return {"samples": samples, "column_impact": column_impact}
 

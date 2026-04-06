@@ -356,7 +356,7 @@ def query_expectation_results(
     try:
         return execute_sql(client, warehouse_id, sql)
     except Exception as e:
-        logger.debug(f"DLT expectation query failed (system table may not be available): {e}")
+        logger.warning(f"DLT expectation query failed (system table may not be available): {e}")
         return []
 
 

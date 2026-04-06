@@ -59,7 +59,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Startup config check failed: {e}")
 
+    # Start monitoring scheduler if previously enabled
+    try:
+        from src.monitoring_scheduler import start_scheduler
+        start_scheduler(app)
+    except Exception as e:
+        logger.warning(f"Could not start monitoring scheduler: {e}")
+
     yield
+
+    # Stop monitoring scheduler on shutdown
+    try:
+        from src.monitoring_scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
     await app.state.job_manager.shutdown()
 
 

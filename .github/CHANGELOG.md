@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-04-06
+
+### Added
+- **DQ Check Versioning & Audit Log** — every check modification (create, update, enable/disable, delete) is tracked in `dqx_check_audit_log` Delta table. New `GET /governance/dqx/checks/audit-log` endpoint
+- **DQ Coverage Report** — shows which tables have DQ checks vs. which are uncovered, with coverage percentage. New `GET /data-quality/coverage/{catalog}` endpoint
+- **Failed Row Sampling** — when DQ checks fail, up to 10 sample failing rows are persisted in `dqx_failure_samples` for drill-down analysis. New `GET /data-quality/failure-samples` endpoint
+- **Scheduled DQ Check Runs** — cron-based recurring DQ check execution via new `src/dq_scheduler.py` module. Supports 4 schedule types: table, suite, specific checks, or all. 6 new `/data-quality/schedules` endpoints (CRUD + pause/resume + run-now)
+- **Segmented DQ Checks** — run DQ checks segmented by a dimension column (e.g., region, date) to catch localized quality problems masked by aggregate metrics. Results stored in `dqx_segment_results` Delta table. New `POST /data-quality/segmented-run` and `GET /data-quality/segment-results` endpoints
+- **DQ Gate for Clone/Sync** — pre-condition that blocks clone operations when DQ checks fall below a configurable threshold. New `src/dq_gate.py` module integrated into `clone_catalog()` pre-checks. New `POST /data-quality/gate/evaluate` endpoint. Configure via `dq_gate` key in `clone_config.yaml`
+- **DQ Impact Analysis** — when a DQ check fails, shows downstream tables, views, and jobs affected via lineage. New `GET /data-quality/impact/{table_fqn}` endpoint
+- **Cross-Table Consistency Checks** — 4 check types spanning multiple tables: aggregate match, referential integrity, row count match, and custom SQL. New `POST /governance/dq/cross-table-check` endpoint
+- **Root Cause Correlation** — when an anomaly is detected, auto-correlates with co-occurring anomalies on the same/upstream tables, freshness gaps, and schema changes. New `GET /data-quality/root-cause/{table_fqn}` endpoint
+- **Profile Drift Recommendations** — re-profiles a table, compares against stored profiles and existing checks, and suggests new/updated/removed checks. New `POST /governance/dqx/profile-drift` endpoint
+- **Databricks Session Recovery** — automatic session refresh on `INACTIVITY_TIMEOUT` errors. Detects stale sessions, clears cached client, and retries with a fresh connection
+- **Data Quality Guide** — new `docs/docs/guide/data-quality.md` Docusaurus guide page covering all DQX features with API examples
+
+### Fixed
+- **TypeScript build error** — fixed `TS2322` in `api-client.ts` where union type narrowing produced incorrect types for `params` and `signal`
+- **Missing leaflet dependency** — installed `leaflet` and `@types/leaflet` to fix Vite build failure
+- **Freshness page schema picker** — wired up `schema`/`table` state to `CatalogPicker` (previously showed non-functional dropdowns)
+
 ## [0.6.1] - 2026-03-25
 
 ### Added

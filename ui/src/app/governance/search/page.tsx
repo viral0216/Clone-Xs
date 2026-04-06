@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,7 @@ import { Search, Table2, Columns, BookOpen, Tag, Loader2 } from "lucide-react";
 
 export default function MetadataSearchPage() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = usePersistedState<any>("gov-search-results", null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("all");
 

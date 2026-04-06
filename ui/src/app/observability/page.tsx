@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,7 @@ function CategoryBar({ label, rate, weight }: { label: string; rate: number; wei
 }
 
 export default function ObservabilityPage() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = usePersistedState<any>("observability-data", null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { load(); }, []);

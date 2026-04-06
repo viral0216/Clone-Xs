@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from api.dependencies import get_db_client, get_app_config
+from api.routers.deps import get_warehouse_id
 
 router = APIRouter()
 
@@ -25,7 +26,7 @@ async def monitor_once(
     """Run a single monitoring check."""
     from src.monitor import monitor_once
     config = await get_app_config()
-    wid = req.warehouse_id or config["sql_warehouse_id"]
+    wid = req.warehouse_id or get_warehouse_id(config)
     result = monitor_once(
         client, wid, req.source_catalog, req.destination_catalog,
         config.get("exclude_schemas", req.exclude_schemas),

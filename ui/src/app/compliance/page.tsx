@@ -15,22 +15,21 @@ import {
   AlertTriangle, Shield, Lock, Tag, Users, ChevronDown, ChevronUp,
   ClipboardCheck, BarChart3,
 } from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
+import ErrorCard from "@/components/ErrorCard";
 
 /* ── helpers ─────────────────────────────────────────────── */
 
 function statusBadge(status: string) {
-  switch (status?.toUpperCase()) {
-    case "COMPLIANT":
-      return <Badge className="bg-foreground text-white">{status}</Badge>;
-    case "NON_COMPLIANT": case "NON-COMPLIANT":
-      return <Badge variant="destructive">NON COMPLIANT</Badge>;
-    case "WARNING":
-      return <Badge className="bg-muted/200 text-white">{status}</Badge>;
-    case "ERROR":
-      return <Badge variant="destructive">ERROR</Badge>;
-    default:
-      return <Badge variant="outline">{status || "Unknown"}</Badge>;
-  }
+  const s = status?.toUpperCase();
+  const mapping: Record<string, string> = {
+    COMPLIANT: "success",
+    NON_COMPLIANT: "failed",
+    "NON-COMPLIANT": "failed",
+    WARNING: "warning",
+    ERROR: "error",
+  };
+  return <StatusBadge status={mapping[s] || "unknown"} label={status || "Unknown"} />;
 }
 
 function scoreColor(score: number) {
@@ -339,12 +338,7 @@ export default function CompliancePage() {
 
       {/* Error */}
       {(job?.status === "error" || results?.error) && (
-        <Card className="border-red-200 bg-card">
-          <CardContent className="pt-6 flex items-center gap-2 text-red-600">
-            <XCircle className="h-5 w-5 shrink-0" />
-            <span className="text-sm">{results?.error || job?.error}</span>
-          </CardContent>
-        </Card>
+        <ErrorCard error={results?.error || job?.error} />
       )}
     </div>
   );

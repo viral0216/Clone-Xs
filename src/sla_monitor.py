@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_sla_schema(config: dict) -> str:
-    audit = config.get("audit_trail", {})
-    catalog = audit.get("catalog", "clone_audit")
-    return f"{catalog}.governance"
+    from src.table_registry import get_schema_fqn
+    return get_schema_fqn(config, "governance")
 
 
 def ensure_sla_tables(client, warehouse_id, config):
@@ -101,6 +100,8 @@ def check_sla(client, warehouse_id, config) -> list[dict]:
     schema = _get_sla_schema(config)
     rules = list_sla_rules(client, warehouse_id, config)
     results = []
+    value_rows = []
+    now = datetime.now(timezone.utc).isoformat()
 
     for rule in rules:
         if not rule.get("enabled", True):
@@ -108,20 +109,24 @@ def check_sla(client, warehouse_id, config) -> list[dict]:
 
         check = _check_single_sla(client, warehouse_id, rule)
         results.append(check)
+        check_id = str(uuid.uuid4())[:8]
+        value_rows.append(
+            f"('{check_id}', '{rule['sla_id']}', '{_esc(rule['table_fqn'])}', "
+            f"'{rule['metric']}', {check['current_value']}, {check['threshold']}, "
+            f"{str(check['passed']).lower()}, '{rule.get('severity', 'warning')}', "
+            f"'{now}', '{_esc(json.dumps(check.get('details', {})))}')"
+        )
 
-        # Store check result
+    # Batch insert check results
+    from src.table_registry import get_batch_insert_size
+    batch_size = get_batch_insert_size(config or {})
+    for i in range(0, len(value_rows), batch_size):
+        batch = value_rows[i:i + batch_size]
         try:
-            check_id = str(uuid.uuid4())[:8]
-            now = datetime.now(timezone.utc).isoformat()
-            execute_sql(client, warehouse_id, f"""
-                INSERT INTO {schema}.sla_checks
-                VALUES ('{check_id}', '{rule["sla_id"]}', '{_esc(rule["table_fqn"])}',
-                        '{rule["metric"]}', {check["current_value"]}, {check["threshold"]},
-                        {str(check["passed"]).lower()}, '{rule.get("severity", "warning")}',
-                        '{now}', '{_esc(json.dumps(check.get("details", {})))}')
-            """)
+            execute_sql(client, warehouse_id,
+                        f"INSERT INTO {schema}.sla_checks VALUES {', '.join(batch)}")
         except Exception as e:
-            logger.warning(f"Could not store SLA check: {e}")
+            logger.warning(f"Could not store SLA checks batch: {e}")
 
     passed = sum(1 for r in results if r["passed"])
     failed = len(results) - passed
@@ -205,9 +210,10 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
             # Check null rate across all columns — SLA threshold is max allowed null %
             threshold_pct = float(rule.get("threshold_value", 5.0))
             try:
+                catalog = table_fqn.split('.')[0]
                 cols_result = execute_sql(client, warehouse_id,
-                    f"SELECT column_name FROM {table_fqn.rsplit('.', 1)[0]}.information_schema.columns "
-                    f"WHERE table_catalog = '{table_fqn.split('.')[0]}' "
+                    f"SELECT column_name FROM {catalog}.information_schema.columns "
+                    f"WHERE table_catalog = '{catalog}' "
                     f"AND table_schema = '{table_fqn.split('.')[1]}' "
                     f"AND table_name = '{table_fqn.split('.')[2]}'")
                 columns = [c["column_name"] for c in cols_result] if cols_result else []
@@ -404,9 +410,12 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
         try:
             expected = json.loads(contract.get("expected_columns", "[]"))
             if expected:
+                cat = table_fqn.split('.')[0]
                 actual_cols = execute_sql(client, warehouse_id,
-                    f"SELECT column_name, data_type FROM {table_fqn.rsplit('.', 1)[0]}.information_schema.columns "
-                    f"WHERE table_name = '{table_fqn.rsplit('.', 1)[1]}'")
+                    f"SELECT column_name, data_type FROM {cat}.information_schema.columns "
+                    f"WHERE table_catalog = '{cat}' "
+                    f"AND table_schema = '{table_fqn.split('.')[1]}' "
+                    f"AND table_name = '{table_fqn.split('.')[2]}'")
                 actual_names = {c["column_name"] for c in actual_cols}
                 for exp_col in expected:
                     if exp_col.get("name") not in actual_names:
@@ -509,10 +518,7 @@ def delete_sla_rule(client, warehouse_id, config, sla_id: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _esc(s) -> str:
-    if not s:
-        return ""
-    return str(s).replace("'", "\\'").replace("\\", "\\\\")
+from src.client import sql_escape as _esc  # noqa: E402
 
 
 def _parse_val(v):

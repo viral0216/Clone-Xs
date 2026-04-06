@@ -1,47 +1,49 @@
-"""Scheduled reconciliation runs — CRUD with JSON file storage.
+"""Scheduled reconciliation runs — CRUD backed by a Delta table.
 
-Follows the same pattern as src/scheduler.py for schedule persistence.
-Stores schedule definitions in config/reconciliation_schedules.json.
+Stores schedule definitions in the ``reconciliation.reconciliation_schedules``
+Delta table (catalog driven by config).
 """
 
 import json
 import logging
-import os
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
+
+from src.client import execute_sql, sql_escape, utc_now
+from src.table_registry import get_table_fqn
 
 logger = logging.getLogger(__name__)
 
-SCHEDULES_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "config",
-    "reconciliation_schedules.json",
-)
+
+# ---------------------------------------------------------------------------
+# Table helpers
+# ---------------------------------------------------------------------------
+
+def _get_fqn(config: dict) -> str:
+    return get_table_fqn(config, "reconciliation", "reconciliation_schedules")
+
+
+def ensure_reconciliation_schedules_table(client, warehouse_id, config):
+    """Create the reconciliation_schedules Delta table if it does not exist."""
+    fqn = _get_fqn(config)
+    from src.catalog_utils import safe_ensure_schema_from_fqn
+    safe_ensure_schema_from_fqn(fqn.rsplit(".", 1)[0], client, warehouse_id, config)
+    execute_sql(client, warehouse_id, f"""
+        CREATE TABLE IF NOT EXISTS {fqn} (
+            id STRING, name STRING, source_catalog STRING,
+            destination_catalog STRING, schema_name STRING, table_name STRING,
+            key_columns STRING, comparison_options STRING,
+            cron STRING, status STRING,
+            created_at STRING, last_run_at STRING, next_run STRING
+        ) USING DELTA
+    """)
+    return fqn
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _load_schedules() -> list[dict]:
-    """Load reconciliation schedules from JSON file."""
-    if not os.path.exists(SCHEDULES_FILE):
-        return []
-    try:
-        with open(SCHEDULES_FILE) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return []
-
-
-def _save_schedules(schedules: list[dict]) -> None:
-    """Persist reconciliation schedules to JSON file."""
-    Path(os.path.dirname(SCHEDULES_FILE)).mkdir(parents=True, exist_ok=True)
-    with open(SCHEDULES_FILE, "w") as f:
-        json.dump(schedules, f, indent=2, default=str)
-
 
 def _compute_next_run(cron_expr: str) -> Optional[str]:
     """Compute approximate next run time from a cron expression."""
@@ -53,13 +55,48 @@ def _compute_next_run(cron_expr: str) -> Optional[str]:
         return None
 
 
+def _row_to_schedule(row: dict) -> dict:
+    """Convert a raw SQL row into the schedule dict returned by the API.
+
+    Parses ``key_columns`` and ``comparison_options`` from their JSON-string
+    representation back into native Python types.
+    """
+    schedule = dict(row)
+    # Parse key_columns JSON string -> list
+    kc = schedule.get("key_columns")
+    if isinstance(kc, str) and kc:
+        try:
+            schedule["key_columns"] = json.loads(kc)
+        except (json.JSONDecodeError, ValueError):
+            schedule["key_columns"] = []
+    else:
+        schedule["key_columns"] = []
+
+    # Parse comparison_options JSON string -> dict
+    co = schedule.get("comparison_options")
+    if isinstance(co, str) and co:
+        try:
+            schedule["comparison_options"] = json.loads(co)
+        except (json.JSONDecodeError, ValueError):
+            schedule["comparison_options"] = {}
+    else:
+        schedule["comparison_options"] = {}
+
+    return schedule
+
+
 # ---------------------------------------------------------------------------
 # CRUD operations
 # ---------------------------------------------------------------------------
 
-def list_recon_schedules() -> list[dict]:
+def list_recon_schedules(client, warehouse_id, config) -> list[dict]:
     """List all reconciliation schedules with computed next_run times."""
-    schedules = _load_schedules()
+    fqn = _get_fqn(config)
+    try:
+        rows = execute_sql(client, warehouse_id, f"SELECT * FROM {fqn}")
+    except Exception:
+        return []
+    schedules = [_row_to_schedule(r) for r in rows]
     for s in schedules:
         if s.get("status") == "active" and s.get("cron"):
             s["next_run"] = _compute_next_run(s["cron"])
@@ -67,6 +104,9 @@ def list_recon_schedules() -> list[dict]:
 
 
 def create_recon_schedule(
+    client,
+    warehouse_id,
+    config,
     name: str,
     source_catalog: str,
     destination_catalog: str,
@@ -79,6 +119,9 @@ def create_recon_schedule(
     """Create a new reconciliation schedule.
 
     Args:
+        client: Databricks WorkspaceClient.
+        warehouse_id: SQL warehouse ID.
+        config: Application config dict.
         name: Human-readable schedule name.
         source_catalog: Source Unity Catalog name.
         destination_catalog: Destination Unity Catalog name.
@@ -92,8 +135,27 @@ def create_recon_schedule(
     Returns:
         The newly created schedule dict.
     """
+    fqn = _get_fqn(config)
     schedule_id = str(uuid.uuid4())[:8]
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = utc_now()
+    next_run = _compute_next_run(cron)
+
+    kc_json = json.dumps(key_columns or [])
+    co_json = json.dumps(comparison_options or {})
+
+    execute_sql(client, warehouse_id, f"""
+        INSERT INTO {fqn}
+        (id, name, source_catalog, destination_catalog, schema_name, table_name,
+         key_columns, comparison_options, cron, status, created_at, last_run_at, next_run)
+        VALUES (
+            '{sql_escape(schedule_id)}', '{sql_escape(name)}',
+            '{sql_escape(source_catalog)}', '{sql_escape(destination_catalog)}',
+            '{sql_escape(schema_name)}', '{sql_escape(table_name)}',
+            '{sql_escape(kc_json)}', '{sql_escape(co_json)}',
+            '{sql_escape(cron)}', 'active',
+            '{sql_escape(now)}', NULL, '{sql_escape(next_run or "")}'
+        )
+    """)
 
     schedule = {
         "id": schedule_id,
@@ -108,76 +170,94 @@ def create_recon_schedule(
         "status": "active",
         "created_at": now,
         "last_run_at": None,
-        "next_run": _compute_next_run(cron),
+        "next_run": next_run,
     }
-
-    schedules = _load_schedules()
-    schedules.append(schedule)
-    _save_schedules(schedules)
 
     logger.info(f"Reconciliation schedule '{name}' created (id={schedule_id})")
     return schedule
 
 
-def get_recon_schedule(schedule_id: str) -> Optional[dict]:
+def get_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Optional[dict]:
     """Retrieve a single reconciliation schedule by ID."""
-    for s in _load_schedules():
-        if s["id"] == schedule_id:
-            if s.get("status") == "active" and s.get("cron"):
-                s["next_run"] = _compute_next_run(s["cron"])
-            return s
-    return None
+    fqn = _get_fqn(config)
+    try:
+        rows = execute_sql(
+            client, warehouse_id,
+            f"SELECT * FROM {fqn} WHERE id = '{sql_escape(schedule_id)}'",
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+    s = _row_to_schedule(rows[0])
+    if s.get("status") == "active" and s.get("cron"):
+        s["next_run"] = _compute_next_run(s["cron"])
+    return s
 
 
-def pause_recon_schedule(schedule_id: str) -> Optional[dict]:
+def pause_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Optional[dict]:
     """Pause a reconciliation schedule."""
-    schedules = _load_schedules()
-    for s in schedules:
-        if s["id"] == schedule_id:
-            s["status"] = "paused"
-            s["next_run"] = None
-            _save_schedules(schedules)
-            logger.info(f"Reconciliation schedule '{s['name']}' paused")
-            return s
-    return None
+    fqn = _get_fqn(config)
+    execute_sql(
+        client, warehouse_id,
+        f"UPDATE {fqn} SET status = 'paused', next_run = NULL "
+        f"WHERE id = '{sql_escape(schedule_id)}'",
+    )
+    return get_recon_schedule(client, warehouse_id, config, schedule_id)
 
 
-def resume_recon_schedule(schedule_id: str) -> Optional[dict]:
+def resume_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Optional[dict]:
     """Resume a paused reconciliation schedule."""
-    schedules = _load_schedules()
-    for s in schedules:
-        if s["id"] == schedule_id:
-            s["status"] = "active"
-            if s.get("cron"):
-                s["next_run"] = _compute_next_run(s["cron"])
-            _save_schedules(schedules)
-            logger.info(f"Reconciliation schedule '{s['name']}' resumed")
-            return s
-    return None
+    fqn = _get_fqn(config)
+    # Fetch first to get the cron value for computing next_run
+    s = get_recon_schedule(client, warehouse_id, config, schedule_id)
+    if s is None:
+        return None
+    next_run = _compute_next_run(s.get("cron", "")) if s.get("cron") else None
+    execute_sql(
+        client, warehouse_id,
+        f"UPDATE {fqn} SET status = 'active', "
+        f"next_run = '{sql_escape(next_run or '')}' "
+        f"WHERE id = '{sql_escape(schedule_id)}'",
+    )
+    s["status"] = "active"
+    s["next_run"] = next_run
+    logger.info(f"Reconciliation schedule '{s.get('name', schedule_id)}' resumed")
+    return s
 
 
-def delete_recon_schedule(schedule_id: str) -> bool:
+def delete_recon_schedule(client, warehouse_id, config, schedule_id: str) -> bool:
     """Delete a reconciliation schedule by ID.
 
     Returns True if deleted, False if not found.
     """
-    schedules = _load_schedules()
-    original_len = len(schedules)
-    schedules = [s for s in schedules if s["id"] != schedule_id]
-    if len(schedules) < original_len:
-        _save_schedules(schedules)
-        logger.info(f"Reconciliation schedule {schedule_id} deleted")
-        return True
-    return False
+    fqn = _get_fqn(config)
+    # Check existence first
+    existing = get_recon_schedule(client, warehouse_id, config, schedule_id)
+    if existing is None:
+        return False
+    execute_sql(
+        client, warehouse_id,
+        f"DELETE FROM {fqn} WHERE id = '{sql_escape(schedule_id)}'",
+    )
+    logger.info(f"Reconciliation schedule {schedule_id} deleted")
+    return True
 
 
-def update_last_run(schedule_id: str) -> None:
+def update_last_run(client, warehouse_id, config, schedule_id: str) -> None:
     """Update the last_run_at timestamp for a schedule after execution."""
-    schedules = _load_schedules()
-    for s in schedules:
-        if s["id"] == schedule_id:
-            s["last_run_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if s.get("status") == "active" and s.get("cron"):
-                s["next_run"] = _compute_next_run(s["cron"])
-            _save_schedules(schedules)
-            return
+    fqn = _get_fqn(config)
+    now = utc_now()
+
+    # Fetch current schedule to compute next_run
+    s = get_recon_schedule(client, warehouse_id, config, schedule_id)
+    next_run = ""
+    if s and s.get("status") == "active" and s.get("cron"):
+        next_run = _compute_next_run(s["cron"]) or ""
+
+    execute_sql(
+        client, warehouse_id,
+        f"UPDATE {fqn} SET last_run_at = '{sql_escape(now)}', "
+        f"next_run = '{sql_escape(next_run)}' "
+        f"WHERE id = '{sql_escape(schedule_id)}'",
+    )

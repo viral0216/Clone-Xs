@@ -311,3 +311,127 @@ def _parse_val(v):
     if isinstance(v, bool):
         return v
     return str(v) if not isinstance(v, (int, float)) else v
+
+
+# ---------------------------------------------------------------------------
+# Cross-Table Consistency Checks
+# ---------------------------------------------------------------------------
+
+def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
+    """Run a cross-table consistency check.
+
+    Supported check_type values:
+    - 'aggregate_match': Compare an aggregate expression across two tables.
+      Params: source_table, dest_table, source_expr, dest_expr, group_by (optional)
+    - 'referential_integrity': All values in child column exist in parent table.
+      Params: child_table, child_column, parent_table, parent_column
+    - 'row_count_match': Row counts of two tables must match within tolerance.
+      Params: source_table, dest_table, tolerance_pct (default 0)
+    - 'custom_sql': Arbitrary SQL that returns 'passed' (boolean) and 'message'.
+      Params: sql
+    """
+    import time
+    start = time.time()
+    check_type = check.get("check_type", "")
+    params = check.get("params", {})
+
+    try:
+        if check_type == "aggregate_match":
+            src_table = params["source_table"]
+            dst_table = params["dest_table"]
+            src_expr = params["source_expr"]
+            dst_expr = params.get("dest_expr", src_expr)
+            group_by = params.get("group_by", "")
+
+            if group_by:
+                sql = f"""
+                    SELECT s.{group_by}, s.src_val, d.dst_val,
+                           CASE WHEN s.src_val = d.dst_val THEN true ELSE false END AS matched
+                    FROM (SELECT {group_by}, {src_expr} AS src_val FROM {src_table} GROUP BY {group_by}) s
+                    FULL OUTER JOIN (SELECT {group_by}, {dst_expr} AS dst_val FROM {dst_table} GROUP BY {group_by}) d
+                    ON s.{group_by} = d.{group_by}
+                """
+            else:
+                sql = f"""
+                    SELECT
+                        (SELECT {src_expr} FROM {src_table}) AS src_val,
+                        (SELECT {dst_expr} FROM {dst_table}) AS dst_val
+                """
+            rows = execute_sql(client, warehouse_id, sql)
+
+            if group_by:
+                total = len(rows)
+                mismatches = [r for r in rows if not r.get("matched")]
+                passed = len(mismatches) == 0
+                detail = {"total_groups": total, "mismatched_groups": len(mismatches),
+                          "mismatches": mismatches[:10]}
+            else:
+                r = rows[0] if rows else {}
+                passed = str(r.get("src_val")) == str(r.get("dst_val"))
+                detail = {"source_value": r.get("src_val"), "dest_value": r.get("dst_val")}
+
+        elif check_type == "referential_integrity":
+            child_table = params["child_table"]
+            child_column = params["child_column"]
+            parent_table = params["parent_table"]
+            parent_column = params.get("parent_column", child_column)
+
+            sql = f"""
+                SELECT count(*) AS total,
+                       sum(CASE WHEN c.{child_column} NOT IN (SELECT {parent_column} FROM {parent_table}) THEN 1 ELSE 0 END) AS orphans
+                FROM {child_table} c
+                WHERE c.{child_column} IS NOT NULL
+            """
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {"total": 0, "orphans": 0}
+            total = int(r.get("total", 0))
+            orphans = int(r.get("orphans", 0))
+            passed = orphans == 0
+            detail = {"total_rows": total, "orphan_rows": orphans,
+                      "child_table": child_table, "parent_table": parent_table}
+
+        elif check_type == "row_count_match":
+            src_table = params["source_table"]
+            dst_table = params["dest_table"]
+            tolerance_pct = float(params.get("tolerance_pct", 0))
+
+            sql = f"""
+                SELECT
+                    (SELECT count(*) FROM {src_table}) AS src_count,
+                    (SELECT count(*) FROM {dst_table}) AS dst_count
+            """
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {"src_count": 0, "dst_count": 0}
+            src_count = int(r.get("src_count", 0))
+            dst_count = int(r.get("dst_count", 0))
+            diff_pct = abs(src_count - dst_count) / max(src_count, 1) * 100
+            passed = diff_pct <= tolerance_pct
+            detail = {"source_count": src_count, "dest_count": dst_count,
+                      "diff_pct": round(diff_pct, 2), "tolerance_pct": tolerance_pct}
+
+        elif check_type == "custom_sql":
+            sql = params.get("sql", "SELECT true AS passed, 'ok' AS message")
+            rows = execute_sql(client, warehouse_id, sql)
+            r = rows[0] if rows else {}
+            passed = bool(r.get("passed", False))
+            detail = {"message": r.get("message", ""), "raw": r}
+
+        else:
+            return {"error": f"Unknown cross-table check type: {check_type}"}
+
+        elapsed_ms = int((time.time() - start) * 1000)
+        return {
+            "check_type": check_type,
+            "passed": passed,
+            "execution_time_ms": elapsed_ms,
+            "details": detail,
+        }
+
+    except Exception as e:
+        elapsed_ms = int((time.time() - start) * 1000)
+        return {
+            "check_type": check_type,
+            "passed": False,
+            "execution_time_ms": elapsed_ms,
+            "error": str(e),
+        }

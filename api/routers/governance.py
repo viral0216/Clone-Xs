@@ -198,6 +198,15 @@ async def delete_dq_rule(rule_id: str, client=Depends(get_db_client)):
     return {"status": "deleted"}
 
 
+@router.post("/dq/cross-table-check")
+async def run_cross_table_check_endpoint(req: dict, client=Depends(get_db_client)):
+    """Run a cross-table consistency check (aggregate match, referential integrity, row count match, or custom SQL)."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_rules import run_cross_table_check
+    return run_cross_table_check(client, wid, config, req)
+
+
 @router.post("/dq/run")
 async def run_dq(req: DQRunRequest, client=Depends(get_db_client)):
     config = await get_app_config()
@@ -794,6 +803,16 @@ async def dqx_save_checks_to_delta_endpoint(req: dict, client=Depends(get_db_cli
     )
 
 
+@router.get("/dqx/checks/audit-log")
+async def dqx_check_audit_log_endpoint(check_id: str = "", table_fqn: str = "",
+                                       limit: int = 100, client=Depends(get_db_client)):
+    """Get DQX check audit log — track all changes to checks."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_check_audit_log
+    return get_check_audit_log(client, wid, config, check_id, table_fqn, limit)
+
+
 @router.get("/dqx/profiles")
 async def dqx_profiles_endpoint(table_fqn: str = "", client=Depends(get_db_client)):
     """List DQX profiles."""
@@ -801,6 +820,20 @@ async def dqx_profiles_endpoint(table_fqn: str = "", client=Depends(get_db_clien
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import list_profiles
     return list_profiles(client, wid, config, table_fqn)
+
+
+@router.post("/dqx/profile-drift")
+async def dqx_profile_drift_endpoint(req: dict, client=Depends(get_db_client), creds: tuple = Depends(get_credentials)):
+    """Detect profile drift and recommend new/updated DQ checks.
+
+    Re-profiles a table, compares against stored profiles, and returns
+    recommendations for new columns, removed columns, changed patterns, and uncovered columns.
+    """
+    _ensure_spark(creds[0], creds[1], client)
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import detect_profile_drift
+    return detect_profile_drift(client, wid, config, req.get("table_fqn", ""))
 
 
 # ---------------------------------------------------------------------------

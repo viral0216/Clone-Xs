@@ -866,6 +866,218 @@ async def system_table_anomalies(
 
 # ── Health Score ─────────────────────────────────────────────────────────────
 
+@router.get("/root-cause/{table_fqn:path}", summary="Correlation-based root cause suggestion")
+async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=1),
+                              client=Depends(get_db_client)):
+    """When an anomaly occurs, find correlated events that may explain it.
+
+    Checks for co-occurring anomalies on the same/upstream tables, schema changes,
+    freshness gaps, and volume drops within the given time window.
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.client import execute_sql as _exec
+
+    probable_causes = []
+
+    # 1. Co-occurring anomalies on the same table
+    try:
+        from src.anomaly_detection import get_anomalies
+        anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=100)
+        same_table = [a for a in anomalies
+                      if a.get("table_fqn") == table_fqn
+                      and a.get("metric_name") != ""]
+        if len(same_table) > 1:
+            metrics = [a.get("metric_name") for a in same_table]
+            probable_causes.append({
+                "type": "correlated_anomalies",
+                "confidence": "high",
+                "description": f"Multiple metrics anomalous on the same table: {', '.join(set(metrics))}",
+                "details": same_table[:5],
+            })
+    except Exception:
+        pass
+
+    # 2. Anomalies on upstream tables (via lineage)
+    try:
+        upstream_tables = []
+        try:
+            rows = _exec(client, wid, f"""
+                SELECT DISTINCT source_table_full_name
+                FROM system.access.table_lineage
+                WHERE target_table_full_name = '{table_fqn}'
+                LIMIT 20
+            """)
+            upstream_tables = [r.get("source_table_full_name", "") for r in rows if r.get("source_table_full_name")]
+        except Exception:
+            pass
+
+        if upstream_tables:
+            from src.anomaly_detection import get_anomalies
+            all_anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=200)
+            upstream_anomalies = [a for a in all_anomalies if a.get("table_fqn") in upstream_tables]
+            if upstream_anomalies:
+                probable_causes.append({
+                    "type": "upstream_anomaly",
+                    "confidence": "high",
+                    "description": f"Anomalies detected on {len(set(a.get('table_fqn') for a in upstream_anomalies))} upstream table(s)",
+                    "details": upstream_anomalies[:5],
+                })
+    except Exception:
+        pass
+
+    # 3. Freshness gap (table went stale recently)
+    try:
+        parts = table_fqn.split(".")
+        if len(parts) >= 3:
+            from src.data_freshness import check_freshness
+            freshness = check_freshness(
+                client, parts[0], schema=parts[1],
+                max_stale_hours=hours, warehouse_id=wid, config=config,
+            )
+            tables = freshness.get("tables", []) if isinstance(freshness, dict) else []
+            stale = [t for t in tables if t.get("table_fqn", "").endswith(parts[2]) and t.get("status") == "stale"]
+            if stale:
+                probable_causes.append({
+                    "type": "freshness_gap",
+                    "confidence": "medium",
+                    "description": f"Table is stale — last updated {stale[0].get('hours_since_update', '?')}h ago",
+                    "details": stale[0],
+                })
+    except Exception:
+        pass
+
+    # 4. Recent schema changes
+    try:
+        from src.governance import get_change_history
+        changes = get_change_history(client, wid, config, entity_type="", limit=50)
+        related = [c for c in changes if table_fqn in c.get("entity_id", "")]
+        if related:
+            probable_causes.append({
+                "type": "schema_change",
+                "confidence": "medium",
+                "description": f"{len(related)} recent schema/metadata change(s) on this table",
+                "details": related[:5],
+            })
+    except Exception:
+        pass
+
+    # Sort by confidence
+    confidence_order = {"high": 0, "medium": 1, "low": 2}
+    probable_causes.sort(key=lambda x: confidence_order.get(x.get("confidence", "low"), 2))
+
+    return {
+        "table_fqn": table_fqn,
+        "time_window_hours": hours,
+        "probable_causes": probable_causes,
+        "total_causes_found": len(probable_causes),
+    }
+
+
+@router.get("/impact/{table_fqn:path}", summary="DQ failure impact analysis")
+async def dq_impact_analysis(table_fqn: str, client=Depends(get_db_client)):
+    """When a DQ check fails on a table, show downstream tables/views/jobs affected.
+
+    Combines lineage data with impact analysis to answer: 'who is affected by bad data here?'
+    """
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    result = {"table_fqn": table_fqn, "downstream_tables": [], "downstream_views": [],
+              "referencing_jobs": [], "total_affected": 0}
+
+    # Get lineage-based downstream tables
+    try:
+        parts = table_fqn.split(".")
+        if len(parts) >= 2:
+            catalog = parts[0]
+            from src.impact_analysis import analyze_impact
+            impact = analyze_impact(client, wid, catalog, {
+                "schema": parts[1] if len(parts) >= 2 else None,
+                "table": parts[2] if len(parts) >= 3 else None,
+            })
+            result["downstream_views"] = impact.get("dependent_views", [])
+            result["referencing_jobs"] = impact.get("referencing_jobs", [])
+            result["risk_level"] = impact.get("risk_level", "low")
+    except Exception:
+        pass
+
+    # Get lineage-based downstream tables from system.access.table_lineage
+    try:
+        from src.client import execute_sql as _exec
+        rows = _exec(client, wid, f"""
+            SELECT DISTINCT target_table_full_name
+            FROM system.access.table_lineage
+            WHERE source_table_full_name = '{table_fqn}'
+            LIMIT 50
+        """)
+        result["downstream_tables"] = [r.get("target_table_full_name", "") for r in rows if r.get("target_table_full_name")]
+    except Exception:
+        pass
+
+    result["total_affected"] = (len(result["downstream_tables"]) +
+                                len(result["downstream_views"]) +
+                                len(result["referencing_jobs"]))
+    return result
+
+
+@router.post("/gate/evaluate", summary="Evaluate a DQ gate")
+async def evaluate_gate(req: dict, client=Depends(get_db_client)):
+    """Evaluate a DQ quality gate — check if data meets quality threshold before clone/sync."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_gate import evaluate_dq_gate
+    return evaluate_dq_gate(
+        client, wid, config,
+        table_fqn=req.get("table_fqn", ""),
+        suite_id=req.get("suite_id", ""),
+        min_pass_rate=float(req.get("min_pass_rate", 95.0)),
+    )
+
+
+@router.post("/segmented-run", summary="Run DQ checks segmented by a dimension column")
+async def segmented_run(req: dict, client=Depends(get_db_client)):
+    """Run DQ checks per segment (e.g., per region, per date) to catch localized quality issues."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import run_checks_segmented
+    return run_checks_segmented(
+        client, wid, config,
+        table_fqn=req.get("table_fqn", ""),
+        segment_column=req.get("segment_column", ""),
+        check_ids=req.get("check_ids"),
+    )
+
+
+@router.get("/segment-results", summary="Get segmented DQ check results")
+async def segment_results(run_id: str = "", table_fqn: str = "",
+                          limit: int = 200, client=Depends(get_db_client)):
+    """Get per-segment DQ results for drill-down analysis."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_segment_results
+    return get_segment_results(client, wid, config, run_id, table_fqn, limit)
+
+
+@router.get("/failure-samples", summary="Get failure sample rows from DQX runs")
+async def failure_samples(run_id: str = "", table_fqn: str = "",
+                          limit: int = 50, client=Depends(get_db_client)):
+    """Get sample failing rows for a DQX run or table — shows concrete examples of failures."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_failure_samples
+    return get_failure_samples(client, wid, config, run_id, table_fqn, limit)
+
+
+@router.get("/coverage/{catalog}", summary="DQ coverage report for a catalog")
+async def coverage_report(catalog: str, client=Depends(get_db_client)):
+    """Show which tables have DQ checks vs. which don't, with coverage percentage."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dqx_engine import get_coverage_report
+    return get_coverage_report(client, wid, config, catalog)
+
+
 @router.get("/health-score/{catalog}", summary="Compute aggregate DQ health score")
 async def health_score(
     catalog: str,
@@ -1352,3 +1564,69 @@ async def scheduler_run_now(client=Depends(get_db_client)):
     await trigger_run_now()
     from src.monitoring_scheduler import get_scheduler_status
     return get_scheduler_status()
+
+
+# ── DQ Check Schedules (Cron-based DQ runs) ────────────────────────────────
+
+@router.get("/schedules", summary="List DQ check schedules")
+async def list_dq_schedules_endpoint(client=Depends(get_db_client)):
+    """List all scheduled DQ check runs."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import list_dq_schedules
+    return list_dq_schedules(client, wid, config)
+
+
+@router.post("/schedules", summary="Create a DQ check schedule")
+async def create_dq_schedule_endpoint(req: dict, client=Depends(get_db_client)):
+    """Create a scheduled DQ check run with cron expression."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import create_dq_schedule, ensure_dq_schedules_table
+    ensure_dq_schedules_table(client, wid, config)
+    return create_dq_schedule(
+        client, wid, config,
+        name=req.get("name", ""),
+        cron=req.get("cron", "0 * * * *"),
+        schedule_type=req.get("schedule_type", "table"),
+        table_fqn=req.get("table_fqn", ""),
+        suite_id=req.get("suite_id", ""),
+        check_ids=req.get("check_ids"),
+        user=req.get("user", ""),
+    )
+
+
+@router.delete("/schedules/{schedule_id}", summary="Delete a DQ check schedule")
+async def delete_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Delete a DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import delete_dq_schedule
+    return delete_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/pause", summary="Pause a DQ check schedule")
+async def pause_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Pause a DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import pause_dq_schedule
+    return pause_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/resume", summary="Resume a DQ check schedule")
+async def resume_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Resume a paused DQ check schedule."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import resume_dq_schedule
+    return resume_dq_schedule(client, wid, config, schedule_id)
+
+
+@router.post("/schedules/{schedule_id}/run", summary="Run a DQ check schedule now")
+async def run_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_client)):
+    """Execute a DQ check schedule immediately."""
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+    from src.dq_scheduler import run_dq_schedule
+    return run_dq_schedule(client, wid, config, schedule_id)

@@ -462,3 +462,17 @@ DSAR reuses the same subject discovery engine as RTBF — the same PII column pa
 Both RTBF and DSAR are accessible from the **Governance portal** under the **Compliance** section in the Governance sidebar.
 
 For full documentation, see the dedicated [DSAR guide](dsar.md).
+
+---
+
+## Data Quality (DQX)
+
+Clone-Xs includes a comprehensive data quality engine with 57+ check functions, table profiling, anomaly detection, and more. Key governance-related DQ capabilities:
+
+- **DQ Gate** — block clone/sync operations when data quality falls below a threshold
+- **Check Audit Log** — track who changed what check and when (required for regulated environments)
+- **DQ Coverage Report** — measure what percentage of your data estate has quality checks
+- **Cross-Table Consistency Checks** — referential integrity, aggregate matching, row count comparison
+- **Scheduled DQ Runs** — cron-based recurring quality check execution
+
+For full documentation, see the dedicated [Data Quality (DQX) guide](data-quality.md).

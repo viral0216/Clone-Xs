@@ -125,6 +125,35 @@ def ensure_dqx_tables(client, warehouse_id, config):
             created_by STRING,
             created_at TIMESTAMP
         """,
+        "dqx_check_audit_log": """
+            audit_id STRING,
+            check_id STRING,
+            table_fqn STRING,
+            action STRING,
+            changes STRING,
+            performed_by STRING,
+            performed_at TIMESTAMP
+        """,
+        "dqx_failure_samples": """
+            run_id STRING,
+            table_fqn STRING,
+            sample_index INT,
+            row_data STRING,
+            failed_checks STRING,
+            sampled_at TIMESTAMP
+        """,
+        "dqx_segment_results": """
+            run_id STRING,
+            table_fqn STRING,
+            segment_column STRING,
+            segment_value STRING,
+            total_rows BIGINT,
+            valid_rows BIGINT,
+            invalid_rows BIGINT,
+            pass_rate DOUBLE,
+            checks_applied INT,
+            executed_at TIMESTAMP
+        """,
     }
 
     for table_name, cols in tables.items():
@@ -501,6 +530,23 @@ def run_checks(client, warehouse_id, config, table_fqn: str, check_ids: list[str
         except Exception as e:
             logger.debug(f"Could not store run result: {e}")
 
+        # Store failure samples (up to 10 rows) for drill-down
+        if invalid_count > 0:
+            try:
+                sample_rows = invalid_df.limit(10).toPandas().to_dict(orient="records")
+                for idx, row_data in enumerate(sample_rows):
+                    # Extract DQX status columns (prefixed with _) as failed check info
+                    failed = {k: str(v) for k, v in row_data.items() if k.startswith("_") and v}
+                    data = {k: str(v) for k, v in row_data.items() if not k.startswith("_")}
+                    execute_sql(client, warehouse_id, f"""
+                        INSERT INTO {schema}.dqx_failure_samples
+                        VALUES ('{run_id}', '{_esc(table_fqn)}', {idx},
+                                '{_esc(_json_dumps(data))}',
+                                '{_esc(_json_dumps(failed))}', '{now}')
+                    """)
+            except Exception as e:
+                logger.debug(f"Could not store failure samples: {e}")
+
         return {
             "run_id": run_id,
             "table_fqn": table_fqn,
@@ -515,6 +561,137 @@ def run_checks(client, warehouse_id, config, table_fqn: str, check_ids: list[str
 
     except Exception as e:
         return {"table_fqn": table_fqn, "error": str(e), "status": "failed"}
+
+
+# ---------------------------------------------------------------------------
+# Segmented (partitioned) DQ checks
+# ---------------------------------------------------------------------------
+
+def run_checks_segmented(client, warehouse_id, config, table_fqn: str,
+                         segment_column: str, check_ids: list[str] | None = None,
+                         user: str = "") -> dict:
+    """Run DQ checks segmented by a dimension column.
+
+    Produces per-segment pass rates (e.g., per region, per date) to catch
+    localized quality problems that aggregate metrics mask.
+    """
+    if not _dqx_available():
+        return {"error": "DQX not available. Requires Databricks Runtime with PySpark."}
+
+    import time
+    from databricks.labs.dqx.engine import DQEngine
+
+    schema = _get_schema(config)
+
+    # Load checks
+    where = f"table_fqn = '{_esc(table_fqn)}' AND enabled = true"
+    if check_ids:
+        ids_str = ",".join(f"'{_esc(c)}'" for c in check_ids)
+        where += f" AND check_id IN ({ids_str})"
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT * FROM {schema}.dqx_checks WHERE {where} ORDER BY name")
+    except Exception:
+        rows = []
+
+    if not rows:
+        return {"table_fqn": table_fqn, "error": "No checks found for this table"}
+
+    # Convert to DQX metadata format
+    checks_meta = []
+    for row in rows:
+        try:
+            args = json.loads(row.get("arguments", "{}"))
+        except Exception:
+            args = {}
+        check_meta = {
+            "criticality": row.get("criticality", "error"),
+            "check": {"function": row.get("check_function", ""), "arguments": args},
+        }
+        if row.get("filter_expr"):
+            check_meta["filter"] = row["filter_expr"]
+        checks_meta.append(check_meta)
+
+    try:
+        from src.spark_session import get_spark
+        spark = get_spark()
+        dq_engine = DQEngine(client, spark=spark)
+        df = spark.table(table_fqn)
+
+        # Get distinct segment values
+        segment_values = [r[segment_column] for r in
+                          df.select(segment_column).distinct().limit(100).collect()
+                          if r[segment_column] is not None]
+
+        run_id = str(uuid.uuid4())[:8]
+        now = _now_iso()
+        start = time.time()
+        segment_results = []
+
+        for seg_val in segment_values:
+            seg_df = df.filter(f"{segment_column} = '{seg_val}'")
+            valid_df, invalid_df = dq_engine.apply_checks_by_metadata_and_split(
+                df=seg_df, checks=checks_meta
+            )
+            valid_count = valid_df.count()
+            invalid_count = invalid_df.count()
+            total = valid_count + invalid_count
+            pass_rate = round(valid_count / max(total, 1) * 100, 2)
+
+            seg_result = {
+                "segment_value": str(seg_val),
+                "total_rows": total,
+                "valid_rows": valid_count,
+                "invalid_rows": invalid_count,
+                "pass_rate": pass_rate,
+            }
+            segment_results.append(seg_result)
+
+            # Store to Delta
+            try:
+                execute_sql(client, warehouse_id, f"""
+                    INSERT INTO {schema}.dqx_segment_results
+                    VALUES ('{run_id}', '{_esc(table_fqn)}', '{_esc(segment_column)}',
+                            '{_esc(str(seg_val))}', {total}, {valid_count},
+                            {invalid_count}, {pass_rate}, {len(checks_meta)}, '{now}')
+                """)
+            except Exception as e:
+                logger.debug(f"Could not store segment result: {e}")
+
+        elapsed_ms = int((time.time() - start) * 1000)
+        segment_results.sort(key=lambda x: x["pass_rate"])
+
+        return {
+            "run_id": run_id,
+            "table_fqn": table_fqn,
+            "segment_column": segment_column,
+            "segments": len(segment_results),
+            "results": segment_results,
+            "checks_applied": len(checks_meta),
+            "execution_time_ms": elapsed_ms,
+            "status": "completed",
+        }
+
+    except Exception as e:
+        return {"table_fqn": table_fqn, "error": str(e), "status": "failed"}
+
+
+def get_segment_results(client, warehouse_id, config, run_id: str = "",
+                        table_fqn: str = "", limit: int = 200) -> list[dict]:
+    """Get segmented DQ check results."""
+    schema = _get_schema(config)
+    conditions = []
+    if run_id:
+        conditions.append(f"run_id = '{_esc(run_id)}'")
+    if table_fqn:
+        conditions.append(f"table_fqn = '{_esc(table_fqn)}'")
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT * FROM {schema}.dqx_segment_results {where} ORDER BY executed_at DESC, pass_rate ASC LIMIT {limit}")
+        return [{k: (str(v) if v is not None and not isinstance(v, (int, float, bool)) else v) for k, v in r.items()} for r in rows]
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -541,11 +718,55 @@ def list_checks(client, warehouse_id, config, table_fqn: str = "") -> list[dict]
         return []
 
 
-def delete_check(client, warehouse_id, config, check_id: str):
+def _track_check_change(client, warehouse_id, config, check_id: str, table_fqn: str,
+                        action: str, changes: dict | None = None, user: str = ""):
+    """Record a DQX check change in the audit log."""
+    schema = _get_schema(config)
+    audit_id = str(uuid.uuid4())[:8]
+    now = _now_iso()
+    changes_json = _json_dumps(changes) if changes else "{}"
+    try:
+        execute_sql(client, warehouse_id, f"""
+            INSERT INTO {schema}.dqx_check_audit_log
+            VALUES ('{audit_id}', '{_esc(check_id)}', '{_esc(table_fqn)}',
+                    '{_esc(action)}', '{_esc(changes_json)}',
+                    '{_esc(user)}', '{now}')
+        """)
+    except Exception as e:
+        logger.warning(f"Could not track check change: {e}")
+
+
+def get_check_audit_log(client, warehouse_id, config, check_id: str = "",
+                        table_fqn: str = "", limit: int = 100) -> list[dict]:
+    """Get DQX check audit log, optionally filtered by check_id or table."""
+    schema = _get_schema(config)
+    conditions = []
+    if check_id:
+        conditions.append(f"check_id = '{_esc(check_id)}'")
+    if table_fqn:
+        conditions.append(f"table_fqn = '{_esc(table_fqn)}'")
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT * FROM {schema}.dqx_check_audit_log {where} ORDER BY performed_at DESC LIMIT {limit}")
+        return [{k: str(v) if v is not None else "" for k, v in r.items()} for r in rows]
+    except Exception:
+        return []
+
+
+def delete_check(client, warehouse_id, config, check_id: str, user: str = ""):
     """Delete a DQX check."""
     schema = _get_schema(config)
+    # Capture table_fqn before deletion for audit
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT table_fqn FROM {schema}.dqx_checks WHERE check_id = '{_esc(check_id)}'")
+        table_fqn = rows[0]["table_fqn"] if rows else ""
+    except Exception:
+        table_fqn = ""
     execute_sql(client, warehouse_id,
         f"DELETE FROM {schema}.dqx_checks WHERE check_id = '{_esc(check_id)}'")
+    _track_check_change(client, warehouse_id, config, check_id, table_fqn, "delete", user=user)
 
 
 def clear_all_dqx_data(client, warehouse_id, config) -> dict:
@@ -563,53 +784,78 @@ def clear_all_dqx_data(client, warehouse_id, config) -> dict:
     return {"cleared": cleared, "errors": errors}
 
 
-def delete_checks_bulk(client, warehouse_id, config, check_ids: list[str] = None, table_fqn: str = "", delete_all: bool = False) -> dict:
+def delete_checks_bulk(client, warehouse_id, config, check_ids: list[str] = None,
+                       table_fqn: str = "", delete_all: bool = False, user: str = "") -> dict:
     """Delete multiple DQX checks."""
     schema = _get_schema(config)
     try:
         if delete_all:
             if table_fqn:
                 execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE table_fqn = '{_esc(table_fqn)}'")
+                _track_check_change(client, warehouse_id, config, "bulk", table_fqn,
+                                    "bulk_delete", {"scope": "table", "table_fqn": table_fqn}, user)
                 return {"deleted": "all", "table_fqn": table_fqn}
             else:
                 execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE 1=1")
+                _track_check_change(client, warehouse_id, config, "bulk", "",
+                                    "bulk_delete", {"scope": "all"}, user)
                 return {"deleted": "all"}
         elif check_ids:
             ids_str = ",".join(f"'{_esc(c)}'" for c in check_ids)
             execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dqx_checks WHERE check_id IN ({ids_str})")
+            for cid in check_ids:
+                _track_check_change(client, warehouse_id, config, cid, "", "delete", user=user)
             return {"deleted": len(check_ids)}
         return {"deleted": 0}
     except Exception as e:
         return {"error": str(e)}
 
 
-def update_check(client, warehouse_id, config, check_id: str, updates: dict) -> dict:
+def update_check(client, warehouse_id, config, check_id: str, updates: dict, user: str = "") -> dict:
     """Update a DQX check's name, criticality, arguments, or filter."""
     schema = _get_schema(config)
     now = _now_iso()
     set_parts = [f"updated_at = '{now}'"]
+    changed_fields = {}
     for key in ["name", "criticality", "check_function", "filter_expr"]:
         if key in updates and updates[key] is not None:
             set_parts.append(f"{key} = '{_esc(str(updates[key]))}'")
+            changed_fields[key] = updates[key]
     if "arguments" in updates:
         set_parts.append(f"arguments = '{_esc(_json_dumps(updates['arguments']))}'")
+        changed_fields["arguments"] = updates["arguments"]
     try:
+        # Get table_fqn for audit
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT table_fqn FROM {schema}.dqx_checks WHERE check_id = '{_esc(check_id)}'")
+        table_fqn = rows[0]["table_fqn"] if rows else ""
         execute_sql(client, warehouse_id,
             f"UPDATE {schema}.dqx_checks SET {', '.join(set_parts)} WHERE check_id = '{_esc(check_id)}'")
+        _track_check_change(client, warehouse_id, config, check_id, table_fqn,
+                            "update", changed_fields, user)
         return {"status": "updated", "check_id": check_id}
     except Exception as e:
         return {"error": str(e)}
 
 
-def toggle_check(client, warehouse_id, config, check_id: str, enabled: bool):
+def toggle_check(client, warehouse_id, config, check_id: str, enabled: bool, user: str = ""):
     """Enable or disable a DQX check."""
     schema = _get_schema(config)
     now = _now_iso()
+    # Get table_fqn for audit
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT table_fqn FROM {schema}.dqx_checks WHERE check_id = '{_esc(check_id)}'")
+        table_fqn = rows[0]["table_fqn"] if rows else ""
+    except Exception:
+        table_fqn = ""
     execute_sql(client, warehouse_id, f"""
         UPDATE {schema}.dqx_checks
         SET enabled = {str(enabled).lower()}, updated_at = '{now}'
         WHERE check_id = '{_esc(check_id)}'
     """)
+    _track_check_change(client, warehouse_id, config, check_id, table_fqn,
+                        "enable" if enabled else "disable", {"enabled": enabled}, user)
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +945,8 @@ def create_check(client, warehouse_id, config, check: dict, user: str = "") -> d
                 '{_esc(check.get("filter_expr", ""))}',
                 true, '{_esc(user)}', '{now}', '{now}')
     """)
+    _track_check_change(client, warehouse_id, config, check_id, check["table_fqn"],
+                        "create", {"name": check.get("name", ""), "check_function": check.get("check_function", "")}, user)
     return {"check_id": check_id, "name": check.get("name", ""), "status": "created"}
 
 
@@ -982,3 +1230,255 @@ def list_profiles(client, warehouse_id, config, table_fqn: str = "") -> list[dic
         return [{k: (str(v) if v is not None and not isinstance(v, (int, float, bool)) else v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Profile Drift Detection & Recommendations
+# ---------------------------------------------------------------------------
+
+def detect_profile_drift(client, warehouse_id, config, table_fqn: str,
+                         user: str = "") -> dict:
+    """Compare current table profile against stored profiles and existing checks.
+
+    Returns drift analysis with recommendations for new/updated/removed checks.
+    Requires DQX runtime (PySpark).
+    """
+    schema = _get_schema(config)
+
+    # 1. Get existing profiles for this table
+    old_profiles = list_profiles(client, warehouse_id, config, table_fqn)
+    old_columns = {p.get("column_name", ""): p for p in old_profiles}
+
+    # 2. Get existing checks for this table
+    existing_checks = list_checks(client, warehouse_id, config, table_fqn)
+    checked_columns = {c.get("check_function", "") + ":" + _json_dumps(c.get("arguments", {}))
+                       for c in existing_checks}
+
+    # 3. Re-profile the table
+    new_profile_result = profile_table(client, warehouse_id, config, table_fqn, user=user)
+    if new_profile_result.get("error"):
+        return new_profile_result
+
+    new_profiles = new_profile_result.get("profiles", [])
+    new_columns = {p.get("column", ""): p for p in new_profiles}
+
+    # 4. Compute drift
+    recommendations = []
+
+    # New columns — columns in new profile that weren't in old profile
+    new_column_names = set(new_columns.keys()) - set(old_columns.keys())
+    for col in new_column_names:
+        p = new_columns[col]
+        recommendations.append({
+            "type": "new_column",
+            "severity": "info",
+            "column": col,
+            "rule_type": p.get("rule_type", ""),
+            "description": f"New column '{col}' detected — consider adding check: {p.get('rule_type', '')}",
+            "suggested_check": {
+                "name": f"Auto: {p.get('rule_type', '')} on {col}",
+                "table_fqn": table_fqn,
+                "check_function": p.get("rule_type", ""),
+                "arguments": json.loads(p.get("parameters", "{}")) if isinstance(p.get("parameters"), str) else p.get("parameters", {}),
+            },
+        })
+
+    # Removed columns — columns in old profile that aren't in new profile
+    removed_columns = set(old_columns.keys()) - set(new_columns.keys())
+    for col in removed_columns:
+        if col:  # skip empty column names
+            orphan_checks = [c for c in existing_checks
+                             if c.get("arguments", {}).get("column") == col]
+            if orphan_checks:
+                recommendations.append({
+                    "type": "removed_column",
+                    "severity": "warning",
+                    "column": col,
+                    "description": f"Column '{col}' no longer exists but has {len(orphan_checks)} active check(s) — consider removing",
+                    "orphan_check_ids": [c.get("check_id") for c in orphan_checks],
+                })
+
+    # Changed profiles — same column but different rule_type or parameters
+    common_columns = set(new_columns.keys()) & set(old_columns.keys())
+    for col in common_columns:
+        old_p = old_columns[col]
+        new_p = new_columns[col]
+        if old_p.get("rule_type") != new_p.get("rule_type"):
+            recommendations.append({
+                "type": "changed_pattern",
+                "severity": "info",
+                "column": col,
+                "description": f"Column '{col}' profile changed: {old_p.get('rule_type')} -> {new_p.get('rule_type')}",
+                "old_rule_type": old_p.get("rule_type"),
+                "new_rule_type": new_p.get("rule_type"),
+                "suggested_check": {
+                    "name": f"Auto: {new_p.get('rule_type', '')} on {col}",
+                    "table_fqn": table_fqn,
+                    "check_function": new_p.get("rule_type", ""),
+                    "arguments": json.loads(new_p.get("parameters", "{}")) if isinstance(new_p.get("parameters"), str) else new_p.get("parameters", {}),
+                },
+            })
+
+    # Uncovered columns — columns with profiles but no corresponding check
+    for col, p in new_columns.items():
+        if not col:
+            continue
+        check_key = p.get("rule_type", "") + ":" + (p.get("parameters", "{}"))
+        has_check = any(
+            c.get("check_function") == p.get("rule_type") and
+            c.get("arguments", {}).get("column") == col
+            for c in existing_checks
+        )
+        if not has_check:
+            recommendations.append({
+                "type": "uncovered",
+                "severity": "info",
+                "column": col,
+                "description": f"Column '{col}' has profile but no matching check",
+                "suggested_check": {
+                    "name": f"Auto: {p.get('rule_type', '')} on {col}",
+                    "table_fqn": table_fqn,
+                    "check_function": p.get("rule_type", ""),
+                    "arguments": json.loads(p.get("parameters", "{}")) if isinstance(p.get("parameters"), str) else p.get("parameters", {}),
+                },
+            })
+
+    # Sort: warnings first, then info
+    severity_order = {"warning": 0, "info": 1}
+    recommendations.sort(key=lambda x: severity_order.get(x.get("severity", "info"), 1))
+
+    return {
+        "table_fqn": table_fqn,
+        "old_profile_count": len(old_profiles),
+        "new_profile_count": len(new_profiles),
+        "existing_checks": len(existing_checks),
+        "new_columns": list(new_column_names),
+        "removed_columns": list(removed_columns),
+        "recommendations": recommendations,
+        "total_recommendations": len(recommendations),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Failure Samples
+# ---------------------------------------------------------------------------
+
+def get_failure_samples(client, warehouse_id, config, run_id: str = "",
+                        table_fqn: str = "", limit: int = 50) -> list[dict]:
+    """Get failure sample rows for a DQX run or table."""
+    schema = _get_schema(config)
+    conditions = []
+    if run_id:
+        conditions.append(f"run_id = '{_esc(run_id)}'")
+    if table_fqn:
+        conditions.append(f"table_fqn = '{_esc(table_fqn)}'")
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    try:
+        rows = execute_sql(client, warehouse_id,
+            f"SELECT * FROM {schema}.dqx_failure_samples {where} ORDER BY sampled_at DESC, sample_index LIMIT {limit}")
+        results = []
+        for r in rows:
+            item = {k: str(v) if v is not None else "" for k, v in r.items()}
+            try:
+                item["row_data"] = json.loads(item.get("row_data", "{}"))
+            except Exception:
+                pass
+            try:
+                item["failed_checks"] = json.loads(item.get("failed_checks", "{}"))
+            except Exception:
+                pass
+            results.append(item)
+        return results
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# DQ Coverage Report
+# ---------------------------------------------------------------------------
+
+def get_coverage_report(client, warehouse_id, config, catalog: str) -> dict:
+    """Compute DQ coverage for a catalog — which tables have checks vs. which don't.
+
+    Returns coverage percentage, covered/uncovered table lists, and per-table check counts.
+    """
+    from src.client import list_schemas_sdk, list_tables_sdk
+
+    schema = _get_schema(config)
+
+    # 1. Enumerate all tables in the catalog
+    all_tables = []
+    try:
+        schemas = list_schemas_sdk(client, catalog, exclude=["information_schema"])
+        for s in schemas:
+            tables = list_tables_sdk(client, catalog, s)
+            for t in tables:
+                fqn = f"{catalog}.{s}.{t['table_name']}"
+                all_tables.append(fqn)
+    except Exception as e:
+        return {"error": f"Could not enumerate tables: {e}"}
+
+    if not all_tables:
+        return {"catalog": catalog, "total_tables": 0, "covered": 0, "uncovered": 0,
+                "coverage_pct": 0, "covered_tables": [], "uncovered_tables": []}
+
+    # 2. Get tables that have DQX checks
+    try:
+        rows = execute_sql(client, warehouse_id, f"""
+            SELECT table_fqn, count(*) AS check_count,
+                   sum(CASE WHEN enabled THEN 1 ELSE 0 END) AS enabled_count
+            FROM {schema}.dqx_checks
+            WHERE lower(table_fqn) LIKE '{catalog.lower()}.%'
+            GROUP BY table_fqn
+        """)
+        checks_by_table = {r["table_fqn"]: {
+            "check_count": int(r["check_count"]),
+            "enabled_count": int(r["enabled_count"]),
+        } for r in rows}
+    except Exception:
+        checks_by_table = {}
+
+    # 3. Also check DQ rules
+    try:
+        from src.dq_rules import list_rules
+        dq_rules = list_rules(client, warehouse_id, config)
+        for rule in dq_rules:
+            fqn = rule.get("table_fqn", "")
+            if fqn.lower().startswith(f"{catalog.lower()}."):
+                if fqn not in checks_by_table:
+                    checks_by_table[fqn] = {"check_count": 0, "enabled_count": 0}
+                checks_by_table[fqn]["check_count"] += 1
+                checks_by_table[fqn]["enabled_count"] += 1
+    except Exception:
+        pass
+
+    # 4. Build coverage results
+    covered_tables = []
+    uncovered_tables = []
+    all_tables_lower = {t.lower(): t for t in all_tables}
+    checks_lower = {k.lower(): v for k, v in checks_by_table.items()}
+
+    for fqn in all_tables:
+        info = checks_lower.get(fqn.lower())
+        if info and info["check_count"] > 0:
+            covered_tables.append({
+                "table_fqn": fqn,
+                "check_count": info["check_count"],
+                "enabled_count": info["enabled_count"],
+            })
+        else:
+            uncovered_tables.append({"table_fqn": fqn})
+
+    total = len(all_tables)
+    covered = len(covered_tables)
+    coverage_pct = round(covered / max(total, 1) * 100, 1)
+
+    return {
+        "catalog": catalog,
+        "total_tables": total,
+        "covered": covered,
+        "uncovered": total - covered,
+        "coverage_pct": coverage_pct,
+        "covered_tables": sorted(covered_tables, key=lambda x: x["table_fqn"]),
+        "uncovered_tables": sorted(uncovered_tables, key=lambda x: x["table_fqn"]),
+    }

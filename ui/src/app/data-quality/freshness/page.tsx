@@ -42,6 +42,8 @@ function StatusIcon({ status }: { status: string }) {
 
 export default function DataFreshnessPage() {
   const [catalog, setCatalog] = useState("");
+  const [schema, setSchema] = useState("");
+  const [table, setTable] = useState("");
   const [maxStaleHours, setMaxStaleHours] = useState(24);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = usePersistedState<FreshnessRow[]>("dq-freshness-results", []);
@@ -54,7 +56,10 @@ export default function DataFreshnessPage() {
     }
     setLoading(true);
     try {
-      const data = await api.get(`/data-quality/freshness/${encodeURIComponent(catalog)}?max_stale_hours=${maxStaleHours}`);
+      const params = new URLSearchParams({ max_stale_hours: String(maxStaleHours) });
+      if (schema) params.set("schema", schema);
+      if (table) params.set("table", table);
+      const data = await api.get(`/data-quality/freshness/${encodeURIComponent(catalog)}?${params}`);
       const tables = Array.isArray(data) ? data : (data?.tables ?? []);
       setResults(tables);
       setHasRun(true);
@@ -88,7 +93,14 @@ export default function DataFreshnessPage() {
           <div className="flex flex-wrap items-end gap-4">
             <div className="min-w-[240px]">
               <label className="text-xs text-muted-foreground mb-1 block">Catalog</label>
-              <CatalogPicker value={catalog} onChange={setCatalog} placeholder="Select catalog..." />
+              <CatalogPicker
+                catalog={catalog}
+                schema={schema}
+                table={table}
+                onCatalogChange={setCatalog}
+                onSchemaChange={setSchema}
+                onTableChange={setTable}
+              />
             </div>
             <div className="w-36">
               <label className="text-xs text-muted-foreground mb-1 block">Max Stale Hours</label>

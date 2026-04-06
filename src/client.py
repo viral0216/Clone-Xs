@@ -355,6 +355,15 @@ def execute_sql(
             ]):
                 logger.error(f"SQL execution failed (non-retryable): {e}")
                 raise
+            # Session expired — clear cached client so next retry creates a fresh session
+            if "session_id is no longer usable" in err_msg or "inactivity_timeout" in err_msg:
+                logger.warning("Databricks session expired (inactivity timeout), refreshing client...")
+                try:
+                    from src.auth import clear_cache, get_client
+                    clear_cache()
+                    client = get_client(host=client.config.host)
+                except Exception:
+                    pass
             last_exception = e
             if attempt < max_retries:
                 delay = _default_retry.calculate_delay(attempt)

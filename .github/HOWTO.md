@@ -3148,3 +3148,83 @@ curl -X PATCH http://localhost:8080/config/warehouse \
 # Read current config (includes active warehouse)
 curl http://localhost:8080/config
 ```
+
+---
+
+## 48. DQX Quality Engine
+
+> **Docs:** [databricks-labs-dqx](https://github.com/databrickslabs/dqx)
+
+### When to use
+You want comprehensive data quality management — automated checks, coverage reports, failure analysis, quality gates, and scheduled validation across your data estate.
+
+### Real-world scenario
+Your team clones production data to staging nightly. You need to ensure data quality before and after the clone: verify no null rate spikes, catch orphaned foreign keys, block the clone if quality drops below 95%, and track who changed DQ rules over time.
+
+### Key features
+
+**Run DQ checks on a table:**
+
+```bash
+curl -X POST http://localhost:8080/api/governance/dqx/run \
+  -d '{"table_fqn": "catalog.schema.orders"}'
+# Returns: pass_rate, total_rows, valid_rows, invalid_rows, failed row samples
+```
+
+**Check DQ coverage across a catalog:**
+
+```bash
+curl http://localhost:8080/api/data-quality/coverage/my_catalog
+# Returns: 34 of 92 tables covered (37.0%)
+```
+
+**Run segmented checks (per-region quality):**
+
+```bash
+curl -X POST http://localhost:8080/api/data-quality/segmented-run \
+  -d '{"table_fqn": "catalog.schema.orders", "segment_column": "region"}'
+# Returns: per-region pass rates (catches localized issues hidden by aggregates)
+```
+
+**Schedule recurring DQ runs:**
+
+```bash
+curl -X POST http://localhost:8080/api/data-quality/schedules \
+  -d '{"name": "Hourly orders check", "schedule_type": "table", "table_fqn": "catalog.schema.orders", "cron": "0 * * * *"}'
+```
+
+**Block clone if quality fails (DQ gate):**
+
+```yaml
+# clone_config.yaml
+dq_gate:
+  enabled: true
+  table_fqn: "production.sales.orders"
+  min_pass_rate: 95.0
+```
+
+**Cross-table consistency check:**
+
+```bash
+curl -X POST http://localhost:8080/api/governance/dq/cross-table-check \
+  -d '{"check_type": "referential_integrity", "params": {"child_table": "orders", "child_column": "customer_id", "parent_table": "customers", "parent_column": "id"}}'
+```
+
+**Root cause analysis:**
+
+```bash
+curl http://localhost:8080/api/data-quality/root-cause/catalog.schema.orders?hours=24
+# Returns: correlated anomalies, upstream issues, freshness gaps, schema changes
+```
+
+**Detect profile drift:**
+
+```bash
+curl -X POST http://localhost:8080/api/governance/dqx/profile-drift \
+  -d '{"table_fqn": "catalog.schema.orders"}'
+# Returns: new columns, removed columns, changed patterns, suggested checks
+```
+
+### Full documentation
+
+See the [Data Quality (DQX) guide](../docs/guide/data-quality.md) for complete API reference, configuration, and examples.

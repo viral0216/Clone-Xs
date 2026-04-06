@@ -364,6 +364,15 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 f"Proceeding with caution."
             )
 
+    # DQ Gate — block clone if data quality checks fail
+    if config.get("dq_gate", {}).get("enabled") and not dry_run:
+        from src.dq_gate import check_clone_dq_gate
+        gate_result = check_clone_dq_gate(client, warehouse_id, config)
+        if not gate_result.get("passed"):
+            raise RuntimeError(f"Clone blocked by DQ gate: {gate_result.get('reason')}")
+        elif gate_result.get("warning"):
+            logger.warning(f"DQ gate warning: {gate_result.get('reason')}")
+
     # Config lint (#12)
     if config.get("auto_lint"):
         from src.config_lint import lint_config, lint_has_errors, format_lint_results

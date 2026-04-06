@@ -15,8 +15,14 @@ async function main() {
     process.exit(1);
   }
 
+  const fs = require("fs");
   const svgPath = path.join(__dirname, "../../ui/public/favicon.svg");
   const buildDir = path.join(__dirname, "../build");
+
+  // Ensure build directory exists
+  if (!fs.existsSync(buildDir)) {
+    fs.mkdirSync(buildDir, { recursive: true });
+  }
 
   // Generate 512x512 PNG (electron-builder auto-generates .ico and .icns from this)
   await sharp(svgPath)

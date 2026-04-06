@@ -317,6 +317,21 @@ def _parse_val(v):
 # Cross-Table Consistency Checks
 # ---------------------------------------------------------------------------
 
+import re as _re
+
+_IDENTIFIER_RE = _re.compile(r"^[a-zA-Z0-9_`.*]+$")
+
+
+def _validate_identifier(name: str, label: str) -> str:
+    """Validate and quote a SQL identifier to prevent injection."""
+    if not name or not _IDENTIFIER_RE.match(name.replace(".", "").replace("`", "")):
+        raise ValueError(f"Invalid {label}: {name!r}")
+    # Quote each part with backticks if not already quoted
+    parts = name.split(".")
+    quoted = ".".join(f"`{p.strip('`')}`" for p in parts)
+    return quoted
+
+
 def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
     """Run a cross-table consistency check.
 
@@ -337,8 +352,8 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
 
     try:
         if check_type == "aggregate_match":
-            src_table = params["source_table"]
-            dst_table = params["dest_table"]
+            src_table = _validate_identifier(params["source_table"], "source_table")
+            dst_table = _validate_identifier(params["dest_table"], "dest_table")
             src_expr = params["source_expr"]
             dst_expr = params.get("dest_expr", src_expr)
             group_by = params.get("group_by", "")
@@ -371,10 +386,10 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
                 detail = {"source_value": r.get("src_val"), "dest_value": r.get("dst_val")}
 
         elif check_type == "referential_integrity":
-            child_table = params["child_table"]
-            child_column = params["child_column"]
-            parent_table = params["parent_table"]
-            parent_column = params.get("parent_column", child_column)
+            child_table = _validate_identifier(params["child_table"], "child_table")
+            child_column = _validate_identifier(params["child_column"], "child_column")
+            parent_table = _validate_identifier(params["parent_table"], "parent_table")
+            parent_column = _validate_identifier(params.get("parent_column", params["child_column"]), "parent_column")
 
             sql = f"""
                 SELECT count(*) AS total,
@@ -391,8 +406,8 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
                       "child_table": child_table, "parent_table": parent_table}
 
         elif check_type == "row_count_match":
-            src_table = params["source_table"]
-            dst_table = params["dest_table"]
+            src_table = _validate_identifier(params["source_table"], "source_table")
+            dst_table = _validate_identifier(params["dest_table"], "dest_table")
             tolerance_pct = float(params.get("tolerance_pct", 0))
 
             sql = f"""

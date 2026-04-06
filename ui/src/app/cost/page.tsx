@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -125,10 +125,10 @@ export default function CostPage() {
           </CardHeader>
           <CardContent>
             <DataTable
-              data={topTables.map((row: any) => ({
+              data={useMemo(() => topTables.map((row: any) => ({
                 ...row,
                 pct: results.total_gb > 0 ? (row.size_gb / results.total_gb) * 100 : 0,
-              }))}
+              })), [topTables, results.total_gb])}
               columns={[
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-muted-foreground">{v}</span> },
                 { key: "table", label: "Table", sortable: true, render: (v: string) => <span className="font-medium text-foreground">{v}</span> },

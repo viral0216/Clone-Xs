@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 
-from src.log_formatter import _IS_TTY
+from src.log_formatter import IS_TTY as _IS_TTY
 
 logger = logging.getLogger(__name__)
 

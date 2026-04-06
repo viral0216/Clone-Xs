@@ -1,4 +1,8 @@
-"""Smoke tests for the RTBF router."""
+"""Smoke tests for the RTBF router.
+
+Note: 500 is accepted because the mocked backend may not have all services
+available. These tests verify endpoints are routable and return valid HTTP.
+"""
 import pytest
 
 pytest.importorskip("fastapi")

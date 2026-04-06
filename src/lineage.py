@@ -108,15 +108,15 @@ def record_lineage_batch(
     """
     execute_sql(client, warehouse_id, create_sql, dry_run=dry_run)
 
-    from src.client import utc_now
+    from src.client import utc_now, sql_escape
     now = utc_now()
     value_rows = []
     for e in entries:
-        src_fqn = f"{e['source']}.{e['schema']}.{e['object_name']}"
-        dst_fqn = f"{e['dest']}.{e['schema']}.{e['object_name']}"
+        src_fqn = sql_escape(f"{e['source']}.{e['schema']}.{e['object_name']}")
+        dst_fqn = sql_escape(f"{e['dest']}.{e['schema']}.{e['object_name']}")
         value_rows.append(
-            f"('{src_fqn}', '{dst_fqn}', '{e['object_type']}', "
-            f"'{e['clone_type']}', TIMESTAMP '{now}')"
+            f"('{src_fqn}', '{dst_fqn}', '{sql_escape(e['object_type'])}', "
+            f"'{sql_escape(e['clone_type'])}', TIMESTAMP '{now}')"
         )
 
     from src.table_registry import get_batch_insert_size

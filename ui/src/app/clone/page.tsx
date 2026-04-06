@@ -283,7 +283,10 @@ function JobProgress({ jobId }: { jobId: string }) {
         if (data.status === "completed" || data.status === "failed") {
           if (pollRef.current) clearInterval(pollRef.current);
         }
-      } catch { /* ignore aborted */ }
+      } catch (e: any) {
+        if (e?.name === "AbortError") return; // Expected on unmount
+        console.warn("Job poll failed:", e?.message);
+      }
     };
 
     poll();

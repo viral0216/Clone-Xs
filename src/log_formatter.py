@@ -10,6 +10,7 @@ import sys
 
 # ── ANSI escape codes ─────────────────────────────────────────────
 _IS_TTY = sys.stderr.isatty()
+IS_TTY = _IS_TTY  # Public alias for external consumers
 
 
 def _c(code: str, text: str) -> str:

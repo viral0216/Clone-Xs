@@ -113,7 +113,8 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 export const api = {
   get: <T>(path: string, opts?: Record<string, string> | { params?: Record<string, string>; signal?: AbortSignal }) => {
     if (opts && "signal" in opts) {
-      return apiFetch<T>(path, { method: "GET", params: opts.params, signal: opts.signal });
+      const { params, signal } = opts as { params?: Record<string, string>; signal?: AbortSignal };
+      return apiFetch<T>(path, { method: "GET", params, signal });
     }
     return apiFetch<T>(path, { method: "GET", params: opts as Record<string, string> });
   },

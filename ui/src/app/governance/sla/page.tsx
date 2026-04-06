@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +13,8 @@ import { Clock, Plus, Play, Loader2, CheckCircle2, XCircle, AlertTriangle } from
 import DataTable, { Column } from "@/components/DataTable";
 
 export default function SLAPage() {
-  const [rules, setRules] = useState<any[]>([]);
-  const [status, setStatus] = useState<any>({});
+  const [rules, setRules] = usePersistedState<any[]>("gov-sla-rules", []);
+  const [status, setStatus] = usePersistedState<any>("gov-sla-status", {});
   const [showForm, setShowForm] = useState(false);
   const [running, setRunning] = useState(false);
   const [form, setForm] = useState({ table_fqn: "", metric: "freshness", threshold_hours: 24, severity: "warning", owner_team: "" });

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,7 @@ function timeAgo(ts: string) {
 }
 
 export default function RollbackPage() {
-  const [logs, setLogs] = useState<RollbackLog[]>([]);
+  const [logs, setLogs] = usePersistedState<RollbackLog[]>("rollback-logs", []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
@@ -214,7 +215,7 @@ export default function RollbackPage() {
       )}
 
       {/* Rollback entries */}
-      {loading ? (
+      {loading && logs.length === 0 ? (
         <div className="space-y-2">
           {[1, 2, 3].map(i => <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />)}
         </div>

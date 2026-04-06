@@ -7,6 +7,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationPanel from "@/components/NotificationPanel";
 import PortalSwitcher from "@/components/PortalSwitcher";
 import CloneBuilder from "@/components/CloneBuilder";
+import ActiveJobsIndicator from "@/components/ActiveJobsIndicator";
 import { api } from "@/lib/api-client";
 import { useAiStatus } from "@/hooks/useAi";
 
@@ -354,6 +355,7 @@ export default function HeaderBar({ onMenuToggle }: HeaderBarProps) {
           )}
         </div>
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1.5 hidden sm:block" />
+        <ActiveJobsIndicator />
         <NotificationPanel />
         <div className="relative" ref={themePickerRef}>
           <button

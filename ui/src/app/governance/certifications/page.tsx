@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,7 @@ const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
 };
 
 export default function CertificationsPage() {
-  const [certs, setCerts] = useState<any[]>([]);
+  const [certs, setCerts] = usePersistedState<any[]>("gov-certifications", []);
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [form, setForm] = useState({ table_fqn: "", status: "certified", notes: "", expiry_date: "", review_frequency: "quarterly" });

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -349,7 +350,7 @@ function LogDetailPanel({ jobId }: { jobId: string }) {
 }
 
 export default function AuditPage() {
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [entries, setEntries] = usePersistedState<AuditEntry[]>("audit-entries", []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -519,7 +520,7 @@ export default function AuditPage() {
       )}
 
       {/* Entries List */}
-      {loading ? (
+      {loading && entries.length === 0 ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map(i => (
             <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />

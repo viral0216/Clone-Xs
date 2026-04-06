@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,7 +71,7 @@ export default function MonitoringConfigPage() {
 
   // Run monitoring
   const [running, setRunning] = useState(false);
-  const [runResult, setRunResult] = useState<any>(null);
+  const [runResult, setRunResult] = usePersistedState<any>("dq-monitoring-runResult", null);
 
   // Scheduler state
   const [scheduler, setScheduler] = useState<any>(null);
@@ -84,14 +85,24 @@ export default function MonitoringConfigPage() {
   // Auto-refresh scheduler status every 30 seconds when enabled
   useEffect(() => {
     if (!scheduler?.enabled) return;
-    const interval = setInterval(loadScheduler, 30_000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    const poll = async () => {
+      try {
+        const data = await api.get("/data-quality/monitoring/scheduler", { signal: controller.signal });
+        setScheduler(data);
+      } catch { /* ignore aborted */ }
+    };
+    const interval = setInterval(poll, 30_000);
+    return () => { controller.abort(); clearInterval(interval); };
   }, [scheduler?.enabled]);
 
   async function loadScheduler() {
     try {
       const data = await api.get("/data-quality/monitoring/scheduler");
       setScheduler(data);
+      if (data?.last_run_result && !runResult) {
+        setRunResult(data.last_run_result);
+      }
     } catch { /* scheduler not available */ }
   }
 

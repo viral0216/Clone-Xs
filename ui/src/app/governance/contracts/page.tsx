@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import { FileText, Plus, Play, CheckCircle2, XCircle, AlertTriangle, Loader2 } f
 import DataTable, { Column } from "@/components/DataTable";
 
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState<any[]>([]);
+  const [contracts, setContracts] = usePersistedState<any[]>("gov-contracts", []);
   const [showForm, setShowForm] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
   const [validationResult, setValidationResult] = useState<any>(null);

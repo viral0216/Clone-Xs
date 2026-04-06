@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,8 +21,8 @@ import LogPanel from "@/components/LogPanel";
 export default function DQXPage() {
   const [tab, setTab] = useState<"dashboard" | "checks" | "profile" | "results" | "functions">("dashboard");
   const [dashboard, setDashboard] = useState<any>({});
-  const [checks, setChecks] = useState<any[]>([]);
-  const [results, setResults] = useState<any[]>([]);
+  const [checks, setChecks] = usePersistedState<any[]>("gov-dqx-checks", []);
+  const [results, setResults] = usePersistedState<any[]>("gov-dqx-results", []);
   const [functions, setFunctions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterTable, setFilterTable] = useState("");
@@ -33,7 +34,7 @@ export default function DQXPage() {
   const [profileSchema, setProfileSchema] = useState("");
   const [profileTable, setProfileTable] = useState("");
   const [profiling, setProfiling] = useState(false);
-  const [profileResult, setProfileResult] = useState<any>(null);
+  const [profileResult, setProfileResult] = usePersistedState<any>("gov-dqx-profile", null);
   const [logs, setLogs] = useState<string[]>([]);
   const [profileOpts, setProfileOpts] = useState({ sample_fraction: 0.3, max_in_count: 10, max_null_ratio: 0.01, remove_outliers: true, max_parallelism: 4 });
 
@@ -395,7 +396,7 @@ export default function DQXPage() {
         ))}
       </div>
 
-      {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div> : (
+      {loading && checks.length === 0 ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div> : (
         <>
           {/* ============ DASHBOARD ============ */}
           {tab === "dashboard" && (

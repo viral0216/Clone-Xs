@@ -137,7 +137,7 @@ tables:
     state: state
 dqx:
   auto_save_to_delta: true
-  default_target_table: ""  # leave empty to use audit_catalog.governance.dqx_exported_checks
+  default_target_table: ''
 anomaly_detection:
   baseline_window: 30
   warning_threshold: 2.0

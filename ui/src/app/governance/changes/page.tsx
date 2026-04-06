@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
@@ -27,7 +28,7 @@ function timeAgo(dateStr: string) {
 }
 
 export default function ChangesPage() {
-  const [changes, setChanges] = useState<any[]>([]);
+  const [changes, setChanges] = usePersistedState<any[]>("gov-changes", []);
   const [entityFilter, setEntityFilter] = useState("");
 
   useEffect(() => { load(); }, [entityFilter]);

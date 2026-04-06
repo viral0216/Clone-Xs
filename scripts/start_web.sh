@@ -22,6 +22,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_PID=""
 UI_PID=""
 
+# ── Activate venv if available ──────────────────────────────
+if [[ -f "$ROOT/.venv/bin/activate" ]]; then
+    source "$ROOT/.venv/bin/activate"
+fi
+
 cleanup() {
     echo ""
     echo -e "${YELLOW}Shutting down...${NC}"

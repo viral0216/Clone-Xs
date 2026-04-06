@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,7 @@ import { BarChart3, CheckCircle2, XCircle, Play, Loader2, ShieldCheck, AlertTria
 import { toast } from "sonner";
 
 export default function DQDashboardPage() {
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = usePersistedState<any[]>("gov-dq-dashboard-results", []);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
 

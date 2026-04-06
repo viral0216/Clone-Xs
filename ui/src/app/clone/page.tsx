@@ -10,6 +10,7 @@ import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useActiveJobs } from "@/contexts/ActiveJobsContext";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
@@ -263,27 +264,32 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
 }
 
 function JobProgress({ jobId }: { jobId: string }) {
+  const { getJob } = useActiveJobs();
   const [job, setJob] = useState<any>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Poll job status
+  // Use global context data as baseline, poll faster (2s) for active view
   useEffect(() => {
+    const contextJob = getJob(jobId);
+    if (contextJob) setJob(contextJob);
+  }, [getJob, jobId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const poll = async () => {
       try {
-        const data = await api.get(`/clone/${jobId}`);
+        const data = await api.get(`/clone/${jobId}`, { signal: controller.signal });
         setJob(data);
         if (data.status === "completed" || data.status === "failed") {
           if (pollRef.current) clearInterval(pollRef.current);
         }
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore aborted */ }
     };
 
     poll();
     pollRef.current = setInterval(poll, 2000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => { controller.abort(); if (pollRef.current) clearInterval(pollRef.current); };
   }, [jobId]);
-
-  // Polling handles progress updates (every 2s via the effect above)
 
 
   if (!job) {

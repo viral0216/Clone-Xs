@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import { BookOpen, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 
 export default function DictionaryPage() {
-  const [terms, setTerms] = useState<any[]>([]);
+  const [terms, setTerms] = usePersistedState<any[]>("gov-dictionary-terms", []);
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", abbreviation: "", definition: "", domain: "General", owner: "", tags: "", status: "draft" });

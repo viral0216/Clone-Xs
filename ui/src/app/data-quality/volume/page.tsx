@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -132,8 +133,8 @@ export default function VolumeMonitorPage() {
   const [schema, setSchema] = useState("");
   const [loading, setLoading] = useState(false);
   const [snapshotting, setSnapshotting] = useState(false);
-  const [results, setResults] = useState<VolumeRow[]>([]);
-  const [hasData, setHasData] = useState(false);
+  const [results, setResults] = usePersistedState<VolumeRow[]>("dq-volume-results", []);
+  const [hasData, setHasData] = usePersistedState("dq-volume-hasData", false);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("current_rows");
   const [sortDir, setSortDir] = useState<SortDir>("desc");

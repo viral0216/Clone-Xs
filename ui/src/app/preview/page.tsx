@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ export default function PreviewPage() {
   const [table, setTable] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = usePersistedState<any>("preview-results", null);
 
   // Search & sort state
   const [searchQuery, setSearchQuery] = useState("");

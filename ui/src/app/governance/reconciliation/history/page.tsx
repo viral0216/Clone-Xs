@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,7 +70,7 @@ function fmtDuration(seconds: number | null | undefined): string {
 }
 
 export default function ReconciliationHistoryPage() {
-  const [runs, setRuns] = useState<any[]>([]);
+  const [runs, setRuns] = usePersistedState<any[]>("gov-recon-history-runs", []);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [limit, setLimit] = useState(30);
@@ -457,7 +458,7 @@ export default function ReconciliationHistoryPage() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Past Runs ({filtered.length})</CardTitle></CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && runs.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4"><Loader2 className="h-4 w-4 animate-spin" /> Loading...</div>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No reconciliation runs found.</p>

@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
@@ -9,7 +10,7 @@ import DataTable, { Column } from "@/components/DataTable";
 import { ClipboardCheck, CheckCircle2, XCircle } from "lucide-react";
 
 export default function DQResultsPage() {
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = usePersistedState<any[]>("gov-dq-results", []);
   const [sevFilter, setSevFilter] = useState("");
 
   useEffect(() => { api.get("/governance/dq/results").then(d => setResults(Array.isArray(d) ? d : [])).catch(() => {}); }, []);

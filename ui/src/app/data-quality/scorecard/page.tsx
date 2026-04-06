@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +45,7 @@ export default function ScorecardPage() {
   const [schema, setSchema] = useState("");
   const [table, setTable] = useState("");
   const [loading, setLoading] = useState(false);
-  const [scorecard, setScorecard] = useState<any>(null);
+  const [scorecard, setScorecard] = usePersistedState<any>("dq-scorecard-data", null);
 
   async function runScorecard() {
     if (!catalog || !schema || !table) { toast.error("Select a table."); return; }

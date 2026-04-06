@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +36,9 @@ function sevColor(s: string) {
 }
 
 export default function SLAManagementPage() {
-  const [rules, setRules] = useState<any[]>([]);
-  const [status, setStatus] = useState<any>({});
-  const [trend, setTrend] = useState<any[]>([]);
+  const [rules, setRules] = usePersistedState<any[]>("dq-sla-rules", []);
+  const [status, setStatus] = usePersistedState<any>("dq-sla-status", {});
+  const [trend, setTrend] = usePersistedState<any[]>("dq-sla-trend", []);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -280,7 +281,7 @@ export default function SLAManagementPage() {
           <CardTitle className="text-base">SLA Rules ({rules.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && rules.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading...
             </div>

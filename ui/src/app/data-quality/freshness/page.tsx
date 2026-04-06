@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +44,8 @@ export default function DataFreshnessPage() {
   const [catalog, setCatalog] = useState("");
   const [maxStaleHours, setMaxStaleHours] = useState(24);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<FreshnessRow[]>([]);
-  const [hasRun, setHasRun] = useState(false);
+  const [results, setResults] = usePersistedState<FreshnessRow[]>("dq-freshness-results", []);
+  const [hasRun, setHasRun] = usePersistedState("dq-freshness-hasRun", false);
 
   async function checkFreshness() {
     if (!catalog) {
@@ -144,7 +145,7 @@ export default function DataFreshnessPage() {
             <CardTitle className="text-base">Freshness Results ({results.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {loading && results.length === 0 ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="h-4 w-4 animate-spin" /> Checking freshness...
               </div>

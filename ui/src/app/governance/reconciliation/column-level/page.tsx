@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,8 +52,8 @@ export default function ColumnLevelReconciliationPage() {
     }
   }, [source, sourceSchema]);
   const [loading, setLoading] = useState(false);
-  const [compareResults, setCompareResults] = useState<any>(null);
-  const [profileResults, setProfileResults] = useState<any>(null);
+  const [compareResults, setCompareResults] = usePersistedState<any>("gov-recon-col-compare-results", null);
+  const [profileResults, setProfileResults] = usePersistedState<any>("gov-recon-col-profile-results", null);
 
   // ── Advanced options ──────────────────────────────────────────
   const [maxWorkers, setMaxWorkers] = useState(4);
@@ -63,7 +64,7 @@ export default function ColumnLevelReconciliationPage() {
   const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
   const [batchJobId, setBatchJobId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState<any>(null);
-  const [batchResults, setBatchResults] = useState<any>(null);
+  const [batchResults, setBatchResults] = usePersistedState<any>("gov-recon-col-batch-results", null);
 
   function addToBatch() {
     if (!sourceSchema || !sourceTable) return;

@@ -14,6 +14,7 @@ import {
   Layers, RefreshCw, XCircle, Clock, Loader2,
   CheckCircle, AlertTriangle, Play, Trash2,
 } from "lucide-react";
+import { useActiveJobs } from "@/contexts/ActiveJobsContext";
 
 interface Job {
   job_id: string;
@@ -63,26 +64,9 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label:
 }
 
 export default function ActiveJobsPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { jobs, refreshNow: loadJobs } = useActiveJobs();
+  const loading = false; // Context handles loading
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-
-  async function loadJobs() {
-    try {
-      const data = await api.get("/clone/jobs");
-      setJobs(Array.isArray(data) ? data : []);
-    } catch {
-      setJobs([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadJobs();
-    const interval = setInterval(loadJobs, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   async function cancelJob(jobId: string) {
     try {

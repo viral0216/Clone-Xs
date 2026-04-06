@@ -11,19 +11,19 @@ import Sidebar from "@/components/layout/Sidebar";
 import Dashboard from "@/app/page";
 import ClonePage from "@/app/clone/page";
 import ExplorePage from "@/app/explore/page";
-import DiffPage from "@/app/diff/page";
+const DiffPage = lazy(() => import("@/app/diff/page"));
 import MonitorPage from "@/app/monitor/page";
 import ConfigPage from "@/app/config/page";
 import ReportsPage from "@/app/reports/page";
 import SettingsPage from "@/app/settings/page";
-import PiiPage from "@/app/pii/page";
-import RtbfPage from "@/app/rtbf/page";
+const PiiPage = lazy(() => import("@/app/pii/page"));
+const RtbfPage = lazy(() => import("@/app/rtbf/page"));
 import HelpPage from "@/app/help/page";
 import ObservabilityPage from "@/app/observability/page";
-import DsarPage from "@/app/dsar/page";
+const DsarPage = lazy(() => import("@/app/dsar/page"));
 import PipelinesPage from "@/app/pipelines/page";
-import SchemaDriftPage from "@/app/schema-drift/page";
-import PreflightPage from "@/app/preflight/page";
+const SchemaDriftPage = lazy(() => import("@/app/schema-drift/page"));
+const PreflightPage = lazy(() => import("@/app/preflight/page"));
 import SyncPage from "@/app/sync/page";
 import ConfigDiffPage from "@/app/config-diff/page";
 import GeneratePage from "@/app/generate/page";
@@ -36,9 +36,9 @@ import MultiClonePage from "@/app/multi-clone/page";
 import LineagePage from "@/app/lineage/page";
 import ImpactPage from "@/app/impact/page";
 import PreviewPage from "@/app/preview/page";
-import ProfilingPage from "@/app/profiling/page";
+const ProfilingPage = lazy(() => import("@/app/profiling/page"));
 import CostPage from "@/app/cost/page";
-import CompliancePage from "@/app/compliance/page";
+const CompliancePage = lazy(() => import("@/app/compliance/page"));
 import WarehousePage from "@/app/warehouse/page";
 import RbacPage from "@/app/rbac/page";
 import PluginsPage from "@/app/plugins/page";
@@ -263,7 +263,7 @@ export default function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />
               <Route path="/explore" element={<ExplorePage />} />
-              <Route path="/diff" element={<DiffPage />} />
+              <Route path="/diff" element={<Suspense fallback={<PageFallback />}><DiffPage /></Suspense>} />
               <Route path="/monitor" element={<MonitorPage />} />
               <Route path="/config" element={<ConfigPage />} />
               <Route path="/reports" element={<ReportsPage />} />
@@ -289,9 +289,9 @@ export default function App() {
               <Route path="/lineage" element={<LineagePage />} />
               <Route path="/impact" element={<ImpactPage />} />
               <Route path="/preview" element={<PreviewPage />} />
-              <Route path="/profiling" element={<ProfilingPage />} />
+              <Route path="/profiling" element={<Suspense fallback={<PageFallback />}><ProfilingPage /></Suspense>} />
               <Route path="/cost" element={<CostPage />} />
-              <Route path="/compliance" element={<CompliancePage />} />
+              <Route path="/compliance" element={<Suspense fallback={<PageFallback />}><CompliancePage /></Suspense>} />
               <Route path="/warehouse" element={<WarehousePage />} />
               <Route path="/rbac" element={<RbacPage />} />
               <Route path="/plugins" element={<PluginsPage />} />
@@ -334,8 +334,8 @@ export default function App() {
               <Route path="/governance/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
               <Route path="/governance/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
               <Route path="/governance/reconciliation/history" element={<Suspense fallback={<PageFallback />}><GovReconciliationHistory /></Suspense>} />
-              <Route path="/governance/rtbf" element={<RtbfPage />} />
-              <Route path="/governance/dsar" element={<DsarPage />} />
+              <Route path="/governance/rtbf" element={<Suspense fallback={<PageFallback />}><RtbfPage /></Suspense>} />
+              <Route path="/governance/dsar" element={<Suspense fallback={<PageFallback />}><DsarPage /></Suspense>} />
 
               {/* Data Quality Portal Routes */}
               <Route path="/data-quality" element={<Suspense fallback={<PageFallback />}><DQOverview /></Suspense>} />
@@ -347,13 +347,13 @@ export default function App() {
               <Route path="/data-quality/reconciliation/column-level" element={<Suspense fallback={<PageFallback />}><GovReconciliationColumn /></Suspense>} />
               <Route path="/data-quality/reconciliation/deep" element={<Suspense fallback={<PageFallback />}><GovReconciliationDeep /></Suspense>} />
               <Route path="/data-quality/reconciliation/history" element={<Suspense fallback={<PageFallback />}><GovReconciliationHistory /></Suspense>} />
-              <Route path="/data-quality/profiling" element={<ProfilingPage />} />
-              <Route path="/data-quality/schema-drift" element={<SchemaDriftPage />} />
-              <Route path="/data-quality/diff" element={<DiffPage />} />
-              <Route path="/data-quality/preflight" element={<PreflightPage />} />
-              <Route path="/data-quality/compliance" element={<CompliancePage />} />
-              <Route path="/data-quality/pii" element={<PiiPage />} />
-              <Route path="/data-quality/rtbf" element={<RtbfPage />} />
+              <Route path="/data-quality/profiling" element={<Suspense fallback={<PageFallback />}><ProfilingPage /></Suspense>} />
+              <Route path="/data-quality/schema-drift" element={<Suspense fallback={<PageFallback />}><SchemaDriftPage /></Suspense>} />
+              <Route path="/data-quality/diff" element={<Suspense fallback={<PageFallback />}><DiffPage /></Suspense>} />
+              <Route path="/data-quality/preflight" element={<Suspense fallback={<PageFallback />}><PreflightPage /></Suspense>} />
+              <Route path="/data-quality/compliance" element={<Suspense fallback={<PageFallback />}><CompliancePage /></Suspense>} />
+              <Route path="/data-quality/pii" element={<Suspense fallback={<PageFallback />}><PiiPage /></Suspense>} />
+              <Route path="/data-quality/rtbf" element={<Suspense fallback={<PageFallback />}><RtbfPage /></Suspense>} />
               <Route path="/data-quality/freshness" element={<Suspense fallback={<PageFallback />}><DQFreshness /></Suspense>} />
               <Route path="/data-quality/volume" element={<Suspense fallback={<PageFallback />}><DQVolume /></Suspense>} />
               <Route path="/data-quality/anomalies" element={<Suspense fallback={<PageFallback />}><DQAnomalies /></Suspense>} />

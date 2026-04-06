@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,8 +127,8 @@ export default function DeepReconciliationPage() {
 
   // ── Deep reconciliation results ────────────────────────────────
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [results, setResults] = usePersistedState<any>("gov-recon-deep-results", null);
+  const [logs, setLogs] = usePersistedState<string[]>("gov-recon-deep-logs", []);
   const [sampleDiffs, setSampleDiffs] = useState(10);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
 

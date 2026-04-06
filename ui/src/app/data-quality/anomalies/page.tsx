@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ function SeverityIcon({ severity }: { severity: string }) {
 
 export default function AnomaliesPage() {
   const [loading, setLoading] = useState(true);
-  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [anomalies, setAnomalies] = usePersistedState<Anomaly[]>("dq-anomalies-results", []);
   const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -57,7 +58,7 @@ export default function AnomaliesPage() {
   const [collectResult, setCollectResult] = useState<any>(null);
 
   // All recent measurements (not just anomalies)
-  const [allMetrics, setAllMetrics] = useState<any[]>([]);
+  const [allMetrics, setAllMetrics] = usePersistedState<any[]>("dq-anomalies-allMetrics", []);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsHint, setMetricsHint] = useState<string | null>(null);
 
@@ -271,7 +272,7 @@ export default function AnomaliesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && anomalies.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading anomalies...
             </div>

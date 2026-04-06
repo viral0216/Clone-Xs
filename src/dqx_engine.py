@@ -1243,16 +1243,12 @@ def detect_profile_drift(client, warehouse_id, config, table_fqn: str,
     Returns drift analysis with recommendations for new/updated/removed checks.
     Requires DQX runtime (PySpark).
     """
-    schema = _get_schema(config)
-
     # 1. Get existing profiles for this table
     old_profiles = list_profiles(client, warehouse_id, config, table_fqn)
     old_columns = {p.get("column_name", ""): p for p in old_profiles}
 
     # 2. Get existing checks for this table
     existing_checks = list_checks(client, warehouse_id, config, table_fqn)
-    checked_columns = {c.get("check_function", "") + ":" + _json_dumps(c.get("arguments", {}))
-                       for c in existing_checks}
 
     # 3. Re-profile the table
     new_profile_result = profile_table(client, warehouse_id, config, table_fqn, user=user)
@@ -1323,7 +1319,6 @@ def detect_profile_drift(client, warehouse_id, config, table_fqn: str,
     for col, p in new_columns.items():
         if not col:
             continue
-        check_key = p.get("rule_type", "") + ":" + (p.get("parameters", "{}"))
         has_check = any(
             c.get("check_function") == p.get("rule_type") and
             c.get("arguments", {}).get("column") == col
@@ -1455,7 +1450,6 @@ def get_coverage_report(client, warehouse_id, config, catalog: str) -> dict:
     # 4. Build coverage results
     covered_tables = []
     uncovered_tables = []
-    all_tables_lower = {t.lower(): t for t in all_tables}
     checks_lower = {k.lower(): v for k, v in checks_by_table.items()}
 
     for fqn in all_tables:

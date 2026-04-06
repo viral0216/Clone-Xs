@@ -110,6 +110,18 @@ const DQCatalogBrowser = lazy(() => import("@/app/data-quality/catalog-browser/p
 const DQReports = lazy(() => import("@/app/data-quality/reports/page"));
 const DQOwnership = lazy(() => import("@/app/data-quality/ownership/page"));
 
+// New feature pages
+const DQTrustScores = lazy(() => import("@/app/data-quality/trust-scores/page"));
+const DQCoverage = lazy(() => import("@/app/data-quality/coverage/page"));
+const DQCorrelations = lazy(() => import("@/app/data-quality/correlations/page"));
+const DQAlertRouting = lazy(() => import("@/app/data-quality/alert-routing/page"));
+const FinOpsCOPQ = lazy(() => import("@/app/finops/copq/page"));
+const GovNLRules = lazy(() => import("@/app/governance/nl-rules/page"));
+const AutomationPlaybooks = lazy(() => import("@/app/automation/playbooks/page"));
+const MarketplacePage = lazy(() => import("@/app/marketplace/page"));
+const ComplianceFrameworks = lazy(() => import("@/app/compliance/frameworks/page"));
+const EnvironmentsPage = lazy(() => import("@/app/environments/page"));
+
 // FinOps portal pages
 const FinOpsDashboard = lazy(() => import("@/app/finops/page"));
 const FinOpsBilling = lazy(() => import("@/app/finops/billing/page"));
@@ -252,6 +264,7 @@ export default function App() {
             <Route path="/automation/*" element={<AutomationSidebar />} />
             <Route path="/infrastructure/*" element={<InfrastructureSidebar />} />
             <Route path="/mdm/*" element={<MdmSidebar />} />
+            <Route path="/compliance/*" element={<GovernanceSidebar />} />
             <Route path="*" element={
               <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
             } />
@@ -396,6 +409,19 @@ export default function App() {
               <Route path="/data-quality/catalog-browser" element={<Suspense fallback={<PageFallback />}><DQCatalogBrowser /></Suspense>} />
               <Route path="/data-quality/reports" element={<Suspense fallback={<PageFallback />}><DQReports /></Suspense>} />
               <Route path="/data-quality/ownership" element={<Suspense fallback={<PageFallback />}><DQOwnership /></Suspense>} />
+
+              {/* New Feature Routes */}
+              <Route path="/data-quality/trust-scores" element={<Suspense fallback={<PageFallback />}><DQTrustScores /></Suspense>} />
+              <Route path="/data-quality/coverage" element={<Suspense fallback={<PageFallback />}><DQCoverage /></Suspense>} />
+              <Route path="/data-quality/correlations" element={<Suspense fallback={<PageFallback />}><DQCorrelations /></Suspense>} />
+              <Route path="/data-quality/alert-routing" element={<Suspense fallback={<PageFallback />}><DQAlertRouting /></Suspense>} />
+              <Route path="/finops/copq" element={<Suspense fallback={<PageFallback />}><FinOpsCOPQ /></Suspense>} />
+              <Route path="/governance/nl-rules" element={<Suspense fallback={<PageFallback />}><GovNLRules /></Suspense>} />
+              <Route path="/automation/playbooks" element={<Suspense fallback={<PageFallback />}><AutomationPlaybooks /></Suspense>} />
+              <Route path="/marketplace" element={<Suspense fallback={<PageFallback />}><MarketplacePage /></Suspense>} />
+              <Route path="/compliance/frameworks" element={<Suspense fallback={<PageFallback />}><ComplianceFrameworks /></Suspense>} />
+              <Route path="/environments" element={<Suspense fallback={<PageFallback />}><EnvironmentsPage /></Suspense>} />
+
               <Route path="/governance/rbac" element={<RbacPage />} />
 
               {/* Security Portal */}

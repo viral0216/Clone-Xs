@@ -104,9 +104,13 @@ TABLE_SECTIONS = [
     {
         "key": "governance",
         "title": "Governance",
-        "subtitle": "Business glossary, certifications, and change history",
+        "subtitle": "Business glossary, certifications, change history, and new features",
         "schema": "governance",
-        "tables": ["business_glossary", "glossary_links", "certifications", "change_history"],
+        "tables": ["business_glossary", "glossary_links", "certifications", "change_history",
+                    "coverage_snapshots", "copq_events", "copq_config", "nl_rule_audit",
+                    "playbooks", "playbook_executions", "data_products", "data_product_subscriptions",
+                    "compliance_frameworks", "compliance_evidence", "compliance_scores",
+                    "alert_routing_rules", "alert_inbox", "alert_digests"],
     },
     {
         "key": "dq_rules",
@@ -155,9 +159,10 @@ TABLE_SECTIONS = [
     {
         "key": "data_quality",
         "title": "Data Quality Monitoring",
-        "subtitle": "Anomaly detection baselines and freshness tracking",
+        "subtitle": "Anomaly detection baselines, freshness, trust scores, and coverage",
         "schema": "data_quality",
-        "tables": ["metric_baselines", "freshness_history", "monitoring_configs", "expectation_suites"],
+        "tables": ["metric_baselines", "freshness_history", "monitoring_configs", "expectation_suites",
+                    "trust_scores", "trust_score_config", "anomaly_correlations"],
     },
     {
         "key": "lineage",
@@ -197,9 +202,10 @@ TABLE_SECTIONS = [
     {
         "key": "state",
         "title": "State & Scheduler",
-        "subtitle": "Clone state tracking, TTL policies, and scheduler configuration",
+        "subtitle": "Clone state tracking, TTL policies, scheduler, and environments",
         "schema": "state",
-        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state", "scheduler_run_history"],
+        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state", "scheduler_run_history",
+                    "environments", "environment_templates"],
     },
 ]
 

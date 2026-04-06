@@ -296,6 +296,46 @@ _tag_metadata = [
         "name": "data-quality",
         "description": "Data quality observability — freshness monitoring, anomaly detection, volume tracking, expectation suites, incidents, and health scores.",
     },
+    {
+        "name": "trust-scores",
+        "description": "Trust Score Engine — composite per-table trust scores (0-100) from DQ, freshness, anomaly, schema, PII, and lineage dimensions.",
+    },
+    {
+        "name": "coverage",
+        "description": "DQ Coverage Map — heatmap of quality check coverage with gap analysis.",
+    },
+    {
+        "name": "copq",
+        "description": "Cost of Poor Data Quality — quantify DQ failures in dollars.",
+    },
+    {
+        "name": "anomaly-correlations",
+        "description": "Cross-table anomaly correlation — root cause analysis across the lineage graph.",
+    },
+    {
+        "name": "nl-rules",
+        "description": "Natural Language DQ Rule Builder — define rules in plain English.",
+    },
+    {
+        "name": "playbooks",
+        "description": "Automated Remediation Playbooks — if-this-then-that workflows triggered by DQ events.",
+    },
+    {
+        "name": "data-products",
+        "description": "Data Product Marketplace — publish, discover, and subscribe to curated data products.",
+    },
+    {
+        "name": "compliance-automation",
+        "description": "Regulatory Compliance — map controls to SOC2/GDPR/HIPAA/CCPA/DORA with automated evidence.",
+    },
+    {
+        "name": "alert-routing",
+        "description": "Intelligent Alert Routing — smart deduplication, priority routing, and digest engine.",
+    },
+    {
+        "name": "environments",
+        "description": "Data Environment Manager — ephemeral sandboxes with masking, DQ validation, and TTL cleanup.",
+    },
 ]
 
 app = FastAPI(
@@ -418,6 +458,37 @@ app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-as
 
 from api.routers import notebooks
 app.include_router(notebooks.router, prefix="/api/notebooks", tags=["notebooks"])
+
+# ── New Feature Routers ────────────────────────────────────────────────
+from api.routers import trust_score
+app.include_router(trust_score.router, prefix="/api/trust-scores", tags=["trust-scores"])
+
+from api.routers import coverage
+app.include_router(coverage.router, prefix="/api/coverage", tags=["coverage"])
+
+from api.routers import copq
+app.include_router(copq.router, prefix="/api/copq", tags=["copq"])
+
+from api.routers import anomaly_correlation
+app.include_router(anomaly_correlation.router, prefix="/api/anomaly-correlations", tags=["anomaly-correlations"])
+
+from api.routers import nl_rules
+app.include_router(nl_rules.router, prefix="/api/nl-rules", tags=["nl-rules"])
+
+from api.routers import playbooks
+app.include_router(playbooks.router, prefix="/api/playbooks", tags=["playbooks"])
+
+from api.routers import data_products
+app.include_router(data_products.router, prefix="/api/data-products", tags=["data-products"])
+
+from api.routers import compliance_engine
+app.include_router(compliance_engine.router, prefix="/api/compliance", tags=["compliance-automation"])
+
+from api.routers import alert_routing
+app.include_router(alert_routing.router, prefix="/api/alerts", tags=["alert-routing"])
+
+from api.routers import environments
+app.include_router(environments.router, prefix="/api/environments", tags=["environments"])
 
 # Serve frontend static files in production
 import os

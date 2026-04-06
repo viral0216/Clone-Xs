@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, GitBranch, Briefcase, LayoutTemplate, Workflow,
+  LayoutDashboard, GitBranch, Briefcase, LayoutTemplate, Workflow, Zap,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
@@ -24,6 +24,12 @@ const NAV_SECTIONS = [
     items: [
       { href: "/automation/jobs", label: "Clone Jobs", icon: Briefcase },
       { href: "/automation/create-job", label: "Create Job", icon: Briefcase },
+    ],
+  },
+  {
+    title: "Remediation",
+    items: [
+      { href: "/automation/playbooks", label: "Playbooks", icon: Zap },
     ],
   },
   {

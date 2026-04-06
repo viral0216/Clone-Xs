@@ -8,6 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen, Target, BellRing,
   Network, TrendingUp, CalendarClock,
   Wrench, FolderTree, FileSpreadsheet, Users,
+  ShieldHalf, Map, GitMerge, Route,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -69,10 +70,19 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "Trust & Coverage",
+    items: [
+      { href: "/data-quality/trust-scores", label: "Trust Scores", icon: ShieldHalf },
+      { href: "/data-quality/coverage", label: "Coverage Map", icon: Map },
+      { href: "/data-quality/correlations", label: "Anomaly Correlation", icon: GitMerge },
+    ],
+  },
+  {
     title: "Observability",
     items: [
       { href: "/data-quality/observability", label: "Health Dashboard", icon: Activity },
       { href: "/data-quality/alerts", label: "Alert Rules", icon: BellRing },
+      { href: "/data-quality/alert-routing", label: "Alert Routing", icon: Route },
       { href: "/data-quality/trends", label: "DQ Trends", icon: TrendingUp },
       { href: "/data-quality/lineage", label: "Data Lineage", icon: Network },
     ],

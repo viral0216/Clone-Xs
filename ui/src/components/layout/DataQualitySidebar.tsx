@@ -2,12 +2,11 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Zap, ShieldCheck, BarChart3, ClipboardCheck,
-  Rows3, Columns3, Activity, ScanSearch, Shield, GitCompare,
+  Rows3, Columns3, Activity, Shield, GitCompare,
   Fingerprint, CheckSquare, Search, SearchCode, History,
   Clock, Database, AlertTriangle, Bell, ClipboardList, Settings,
-  DollarSign, PanelLeftClose, PanelLeftOpen, UserX,
-  FileCode, BookOpen, Award, Target, BellRing,
-  FileClock, SearchSlash, Network, TrendingUp, CalendarClock,
+  PanelLeftClose, PanelLeftOpen, Target, BellRing,
+  Network, TrendingUp, CalendarClock,
   Wrench, FolderTree, FileSpreadsheet, Users,
 } from "lucide-react";
 
@@ -70,17 +69,6 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Governance",
-    items: [
-      { href: "/data-quality/sla", label: "SLA Management", icon: Clock },
-      { href: "/data-quality/contracts", label: "Data Contracts", icon: FileCode },
-      { href: "/data-quality/dictionary", label: "Data Dictionary", icon: BookOpen },
-      { href: "/data-quality/certifications", label: "Certifications", icon: Award },
-      { href: "/data-quality/changes", label: "Change History", icon: FileClock },
-      { href: "/data-quality/search", label: "Metadata Search", icon: SearchSlash },
-    ],
-  },
-  {
     title: "Observability",
     items: [
       { href: "/data-quality/observability", label: "Health Dashboard", icon: Activity },
@@ -103,12 +91,6 @@ const NAV_SECTIONS = [
       { href: "/data-quality/catalog-browser", label: "Catalog Browser", icon: FolderTree },
       { href: "/data-quality/reports", label: "DQ Reports", icon: FileSpreadsheet },
       { href: "/data-quality/ownership", label: "Team Ownership", icon: Users },
-    ],
-  },
-  {
-    title: "Compliance",
-    items: [
-      { href: "/data-quality/rtbf", label: "RTBF / Erasure", icon: UserX },
     ],
   },
 ];

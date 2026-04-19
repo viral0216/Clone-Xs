@@ -826,6 +826,68 @@ For full details on how serverless works, volume requirements, and incremental s
 
 ---
 
+## Cost & time estimate
+
+Before you run a clone, the **Preview** step (step 3 on the Clone page) can surface a pre-flight estimate:
+
+- **Table count** — how many tables are in scope
+- **Total size** — sum of `sizeInBytes` from `DESCRIBE DETAIL` on each source table
+- **Estimated duration** — heuristic ~500 MB/s for DEEP clone on a medium warehouse
+- **Storage cost** — `total_gb × price_per_gb` per month / year (default $0.023/GB/month, override in config)
+
+Click **Estimate** in the Preview panel. Under the hood it calls [`POST /api/estimate`](../reference/api#analysis), which runs `DESCRIBE DETAIL` sequentially — expect ~1 second per table, so ~1 minute per 100 tables. SHALLOW clones skip the duration/cost estimate since they don't copy data files.
+
+```bash
+# Via CLI:
+curl -X POST $CLXS_HOST/api/estimate \
+  -H "Content-Type: application/json" \
+  -d '{"source_catalog": "prod", "price_per_gb": 0.023}'
+```
+
+---
+
+## Runtime guardrails
+
+Hard limits that abort the job in flight — a safety net against runaway scope changes or unexpectedly large catalogs:
+
+```yaml
+max_duration_min: 60     # Abort after 60 minutes wall clock
+max_tables: 500          # Abort after 500 tables touched (any outcome)
+```
+
+Enforced in the orchestrator after each schema completes. When tripped, remaining schemas are cancelled and the job's summary gets `aborted: true` + `abort_reason: "max_duration_min" | "max_tables"`. Already-cloned tables stay in place; use [Rollback](./rollback) to undo them.
+
+**When to use:** scheduled / CI clones where an unexpectedly long run is worse than a failed run. Not for interactive work.
+
+:::caution
+Guardrails only check **between** schemas, not **during**. A single schema with 2,000 tables won't be interrupted mid-schema even if `max_tables=100` is set — set `parallel_tables` higher and `max_workers` lower to shorten the check interval.
+:::
+
+---
+
+## Cloning from a named snapshot
+
+You can tag a catalog's current state as a named snapshot (fork point) and later clone **from** that snapshot instead of the current state. Useful for pre-migration baselines, month-end captures, and repeatable dev refresh.
+
+```bash
+# 1. Take a snapshot
+curl -X POST $CLXS_HOST/api/clone-snapshots \
+  -d '{"source_catalog": "prod", "name": "pre-migration"}'
+# returns { "snapshot_id": "7f3a4b5c-...", ... }
+
+# 2. Clone from it later
+curl -X POST $CLXS_HOST/api/clone \
+  -d '{
+    "source_catalog": "prod",
+    "destination_catalog": "prod_audit",
+    "source_snapshot_id": "7f3a4b5c-..."
+  }'
+```
+
+The snapshot's `captured_at` timestamp becomes the default `as_of_timestamp` for every table in the clone. See the dedicated [Snapshots guide](./snapshots) for create/list/delete, UI flow, and limitations.
+
+---
+
 ## Reading the clone log
 
 Every clone emits a consistent progression of log lines — the same stream surfaces in the Clone-Xs UI's **Execution** panel, in `stdout`/`stderr` for the CLI, and in the Databricks run view when a serverless job runs the clone.

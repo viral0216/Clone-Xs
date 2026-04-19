@@ -149,6 +149,130 @@ export function useValidateTarget() {
   });
 }
 
+export function useEstimate() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/estimate", req),
+  });
+}
+
+export function useStartSync() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/sync", req),
+  });
+}
+
+export function useIncrementalCheck() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/check", req),
+  });
+}
+
+export function useStartIncrementalSync() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/sync", req),
+  });
+}
+
+export function useSchemaEvolutionDetect() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/schema-evolution/detect", req),
+  });
+}
+
+export function useCdfCheck() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/cdf-check", req),
+  });
+}
+
+export function useSchedules() {
+  return useQuery({
+    queryKey: ["schedules"],
+    queryFn: () => api.get<any[]>("/schedules"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useCreateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/schedules", req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function usePauseSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/schedules/${encodeURIComponent(id)}/pause`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useResumeSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/schedules/${encodeURIComponent(id)}/resume`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useDeleteSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/schedules/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useSyncJobs() {
+  return useQuery({
+    queryKey: ["sync-jobs"],
+    queryFn: async () => {
+      const all = await api.get<any[]>("/clone/jobs");
+      // Backend job_type is "sync" or "incremental_sync"
+      return (all || []).filter((j) => {
+        const t = (j.job_type || "").toLowerCase();
+        return t === "sync" || t === "incremental_sync";
+      });
+    },
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useDiffPreview() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/diff", req),
+  });
+}
+
+export function useSnapshots(catalog?: string | null) {
+  const qs = catalog ? `?source_catalog=${encodeURIComponent(catalog)}` : "";
+  return useQuery({
+    queryKey: ["clone-snapshots", catalog || null],
+    queryFn: () => api.get<any[]>(`/clone-snapshots${qs}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/clone-snapshots", req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clone-snapshots"] }),
+  });
+}
+
+export function useDeleteSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/clone-snapshots/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clone-snapshots"] }),
+  });
+}
+
 export function useSchemaObjects(catalog: string | null, schema: string | null) {
   return useQuery({
     queryKey: ["schema-objects", catalog, schema],

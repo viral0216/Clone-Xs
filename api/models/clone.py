@@ -89,6 +89,13 @@ class CloneRequest(BaseModel):
     schema_only: bool = False
     include_objects: list[ObjectRef] | None = None
     target_workspace: TargetWorkspace | None = None
+    # Runtime guardrails (None = no limit)
+    max_duration_min: int | None = None
+    max_tables: int | None = None
+    # Named snapshot to clone from. When set, the orchestrator resolves the
+    # snapshot's captured per-table Delta version and issues DEEP CLONE …
+    # VERSION AS OF … statements instead of cloning current state.
+    source_snapshot_id: str | None = None
 
     @model_validator(mode="after")
     def _different_catalogs(self) -> "CloneRequest":

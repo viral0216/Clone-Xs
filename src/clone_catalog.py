@@ -514,6 +514,23 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if filter_tags:
         schemas = _filter_schemas_by_tags(client, warehouse_id, source, schemas, filter_tags)
 
+    # If the request names a snapshot, resolve its captured timestamp and
+    # use it as the default `as_of_timestamp` so every table clones from the
+    # snapshot's point-in-time state. Per-request `as_of_timestamp` /
+    # `as_of_version` still win if explicitly set.
+    snapshot_id = config.get("source_snapshot_id")
+    if snapshot_id and not config.get("as_of_timestamp") and not config.get("as_of_version"):
+        try:
+            from src.clone_snapshots import resolve_snapshot_timestamp
+            snap_ts = resolve_snapshot_timestamp(client, warehouse_id, config, snapshot_id)
+            if snap_ts:
+                config["as_of_timestamp"] = snap_ts
+                logger.info(f"{CATALOG} Cloning from snapshot {snapshot_id} (captured_at={snap_ts})")
+            else:
+                logger.warning(f"Snapshot {snapshot_id} not found — ignoring source_snapshot_id")
+        except Exception as e:
+            logger.warning(f"Could not resolve snapshot {snapshot_id}: {e}")
+
     logger.info(f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}")
 
     # Pre-count tables per schema so the progress bar has a catalog-level denominator
@@ -552,6 +569,12 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         except Exception:
             pass  # Fall back to standard progress tracker
 
+    # Runtime guardrails — aborting the schema loop on breach so the error
+    # surfaces in the job's `error` field and shows up in the UI summary.
+    max_duration_min = config.get("max_duration_min")
+    max_tables_budget = config.get("max_tables")
+    budget_aborted = False
+
     all_results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -584,6 +607,37 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 if dashboard:
                     dashboard.schema_completed(schema_name, error_result)
 
+            # Budget check after every schema finishes — aborts remaining futures.
+            if max_duration_min is not None:
+                elapsed_min = (time.time() - clone_start) / 60.0
+                if elapsed_min >= float(max_duration_min):
+                    logger.error(
+                        f"{FAIL} BUDGET: max_duration_min={max_duration_min} reached "
+                        f"after {elapsed_min:.1f} min — aborting remaining schemas"
+                    )
+                    budget_aborted = "max_duration_min"
+                    for f in futures:
+                        if not f.done():
+                            f.cancel()
+                    break
+            if max_tables_budget is not None:
+                tables_done = sum(
+                    (r.get("tables", {}).get("success", 0) or 0)
+                    + (r.get("tables", {}).get("failed", 0) or 0)
+                    + (r.get("tables", {}).get("skipped", 0) or 0)
+                    for r in all_results
+                )
+                if tables_done >= int(max_tables_budget):
+                    logger.error(
+                        f"{FAIL} BUDGET: max_tables={max_tables_budget} reached "
+                        f"({tables_done} tables touched) — aborting remaining schemas"
+                    )
+                    budget_aborted = "max_tables"
+                    for f in futures:
+                        if not f.done():
+                            f.cancel()
+                    break
+
     progress.stop()
     if dashboard:
         dashboard.stop()
@@ -598,6 +652,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Step 5: Build and print summary
     summary = _build_summary(all_results)
     summary["duration_seconds"] = round(time.time() - clone_start, 1)
+    if budget_aborted:
+        summary["aborted"] = True
+        summary["abort_reason"] = budget_aborted
     _print_summary(summary, source, dest, dry_run=dry_run)
 
     # Save metrics (#6)

@@ -81,7 +81,7 @@ export function ActiveJobsProvider({ children }: { children: React.ReactNode }) 
                   body: failed
                     ? `Job ${job.job_id} failed: ${job.error || "Unknown error"}`
                     : `Job ${job.job_id} (${job.job_type || "clone"}) completed successfully`,
-                  icon: "/favicon.ico",
+                  icon: "/favicon.svg",
                 });
               }
             } catch { /* notifications not supported */ }

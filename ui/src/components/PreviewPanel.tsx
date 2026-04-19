@@ -7,10 +7,12 @@ import {
   Copy, Check, Eye, Play, Loader2,
   FolderTree, Table2, AlertTriangle,
   CheckCircle2, XCircle, ArrowRight, Share2, Database, Download,
+  DollarSign, GitCompare, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ObjectRef, ScopeMode } from "@/components/ScopePicker";
 import type { TargetWorkspaceValue } from "@/components/TargetWorkspaceForm";
+import { useEstimate, useDiffPreview } from "@/hooks/useApi";
 
 interface Props {
   config: any;
@@ -41,6 +43,29 @@ export default function PreviewPanel({
 }: Props) {
   const [tab, setTab] = useState<Tab>("cli");
   const [copied, setCopied] = useState<Tab | null>(null);
+
+  const estimate = useEstimate();
+  const diff = useDiffPreview();
+
+  const runEstimate = () => {
+    if (!config.source_catalog) return;
+    estimate.mutate({
+      source_catalog: config.source_catalog,
+      include_schemas: config.include_schemas || undefined,
+      exclude_schemas: config.exclude_schemas,
+      warehouse_id: config.warehouse_id,
+    });
+  };
+
+  const runDiff = () => {
+    if (!config.source_catalog || !config.destination_catalog) return;
+    diff.mutate({
+      source_catalog: config.source_catalog,
+      destination_catalog: config.destination_catalog,
+      exclude_schemas: config.exclude_schemas,
+      warehouse_id: config.warehouse_id,
+    });
+  };
 
   const cliCommand = useMemo(() => buildCli(config, crossWorkspace, target, selectedObjects), [config, crossWorkspace, target, selectedObjects]);
   const yamlConfig = useMemo(() => buildYaml(config, crossWorkspace, target, selectedObjects), [config, crossWorkspace, target, selectedObjects]);
@@ -124,6 +149,26 @@ export default function PreviewPanel({
             }
           />
         </div>
+
+        {/* Cost + time estimate */}
+        <EstimateSection
+          data={estimate.data}
+          isLoading={estimate.isPending}
+          isError={estimate.isError}
+          onRun={runEstimate}
+          disabled={!config.source_catalog}
+          config={config}
+        />
+
+        {/* Diff vs existing destination */}
+        <DiffSection
+          data={diff.data}
+          isLoading={diff.isPending}
+          isError={diff.isError}
+          onRun={runDiff}
+          disabled={!config.source_catalog || !config.destination_catalog}
+          crossWorkspace={crossWorkspace}
+        />
 
         {/* Cross-workspace pipeline diagram */}
         {crossWorkspace && <PipelineDiagram target={target.host} config={config} />}
@@ -242,6 +287,187 @@ function PipelineDiagram({ target, config }: { target: string; config: any }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function EstimateSection({ data, isLoading, isError, onRun, disabled, config }: any) {
+  const fmtGb = (gb: number | undefined) => {
+    if (gb === undefined || gb === null) return "—";
+    if (gb >= 1024) return `${(gb / 1024).toFixed(2)} TB`;
+    if (gb < 1) return `${(gb * 1024).toFixed(0)} MB`;
+    return `${gb.toFixed(2)} GB`;
+  };
+  const estDurationMin = (gb: number | undefined) => {
+    if (!gb) return null;
+    // Rough heuristic: ~500 MB/s on a medium warehouse for DEEP CLONE.
+    const minutes = (gb * 1024) / (500 * 60);
+    if (minutes < 1) return "< 1 min";
+    if (minutes < 60) return `~${Math.round(minutes)} min`;
+    return `~${(minutes / 60).toFixed(1)} hr`;
+  };
+
+  return (
+    <div className="border rounded-md p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <DollarSign className="h-4 w-4 text-muted-foreground" />
+        <div className="text-sm font-medium">Cost & time estimate</div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={onRun}
+          disabled={disabled || isLoading}
+        >
+          {isLoading ? (
+            <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Estimating…</>
+          ) : data ? (
+            "Re-run"
+          ) : (
+            "Estimate"
+          )}
+        </Button>
+      </div>
+      {!data && !isLoading && !isError && (
+        <div className="text-xs text-muted-foreground">
+          Estimate storage + duration + compute cost before kicking off the clone. Queries DESCRIBE DETAIL on source tables.
+        </div>
+      )}
+      {isError && (
+        <div className="text-xs text-red-600">
+          Estimate failed. Check that the source catalog exists and the warehouse is running.
+        </div>
+      )}
+      {data && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+          <EstTile label="Tables" value={String(data.table_count ?? 0)} />
+          <EstTile label="Total size" value={fmtGb(data.total_gb)} />
+          <EstTile
+            label="Est. duration"
+            value={estDurationMin(data.total_gb) || "—"}
+            subtle={config?.clone_type === "SHALLOW" ? "SHALLOW = nearly instant" : undefined}
+          />
+          <EstTile
+            label="Storage cost"
+            value={data.monthly_cost_usd !== undefined ? `$${data.monthly_cost_usd}/mo` : "—"}
+            subtle={
+              data.yearly_cost_usd !== undefined ? `$${data.yearly_cost_usd}/yr` : undefined
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EstTile({ label, value, subtle }: { label: string; value: string; subtle?: string }) {
+  return (
+    <div className="bg-muted/40 rounded p-2">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
+      {subtle && <div className="text-[10px] text-muted-foreground">{subtle}</div>}
+    </div>
+  );
+}
+
+function DiffSection({ data, isLoading, isError, onRun, disabled, crossWorkspace }: any) {
+  const [expanded, setExpanded] = useState(false);
+
+  const added = data?.added ?? data?.only_in_source ?? [];
+  const removed = data?.removed ?? data?.only_in_dest ?? [];
+  const changed = data?.changed ?? data?.modified ?? [];
+
+  const summary = data
+    ? `${added.length} new · ${removed.length} dropped · ${changed.length} changed`
+    : null;
+
+  return (
+    <div className="border rounded-md p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <GitCompare className="h-4 w-4 text-muted-foreground" />
+        <div className="text-sm font-medium">
+          Diff vs existing destination
+          {crossWorkspace && (
+            <span className="ml-2 text-xs text-muted-foreground font-normal">
+              (same-metastore only — cross-workspace diff not supported)
+            </span>
+          )}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={onRun}
+          disabled={disabled || isLoading || crossWorkspace}
+        >
+          {isLoading ? (
+            <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Diffing…</>
+          ) : data ? (
+            "Re-run"
+          ) : (
+            "Diff"
+          )}
+        </Button>
+      </div>
+      {!data && !isLoading && !isError && !crossWorkspace && (
+        <div className="text-xs text-muted-foreground">
+          Shows which tables would be added, dropped, or schema-changed by this clone. Run against an existing destination to preview the delta.
+        </div>
+      )}
+      {isError && (
+        <div className="text-xs text-red-600">
+          Diff failed — the destination catalog probably doesn't exist yet (expected for a fresh clone).
+        </div>
+      )}
+      {data && (
+        <>
+          <div className="text-xs text-muted-foreground">{summary}</div>
+          {(added.length || removed.length || changed.length) > 0 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="text-xs text-[#E8453C] hover:underline mt-1"
+            >
+              {expanded ? "Hide details" : "Show details"}
+            </button>
+          )}
+          {expanded && (
+            <div className="mt-2 space-y-2 text-xs">
+              {added.length > 0 && (
+                <DiffGroup label="New in source" items={added} tone="added" />
+              )}
+              {removed.length > 0 && (
+                <DiffGroup label="Only on destination" items={removed} tone="removed" />
+              )}
+              {changed.length > 0 && (
+                <DiffGroup label="Schema changed" items={changed} tone="changed" />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function DiffGroup({ label, items, tone }: { label: string; items: any[]; tone: string }) {
+  const color =
+    tone === "added"
+      ? "text-green-700 dark:text-green-400"
+      : tone === "removed"
+      ? "text-red-700 dark:text-red-400"
+      : "text-amber-700 dark:text-amber-400";
+  return (
+    <div>
+      <div className={`font-medium ${color}`}>{label} ({items.length})</div>
+      <ul className="list-disc pl-5 max-h-40 overflow-auto">
+        {items.slice(0, 50).map((it: any, i: number) => (
+          <li key={i}>{typeof it === "string" ? it : it.fqn || `${it.schema}.${it.name}`}</li>
+        ))}
+        {items.length > 50 && <li className="text-muted-foreground">…and {items.length - 50} more</li>}
+      </ul>
     </div>
   );
 }
@@ -447,6 +673,22 @@ function buildWarnings(
 
   if (config.ttl && !/^\d+[hdw]$/.test(config.ttl)) {
     out.push(`TTL "${config.ttl}" doesn't match expected format (e.g. 24h, 7d, 2w).`);
+  }
+
+  if (config.max_duration_min !== undefined && config.max_duration_min !== null) {
+    const v = Number(config.max_duration_min);
+    if (!Number.isFinite(v) || v <= 0) {
+      out.push("max_duration_min must be a positive integer.");
+    }
+  }
+  if (config.max_tables !== undefined && config.max_tables !== null) {
+    const v = Number(config.max_tables);
+    if (!Number.isFinite(v) || v <= 0) {
+      out.push("max_tables must be a positive integer.");
+    }
+  }
+  if (config.source_snapshot_id && (config.as_of_timestamp || config.as_of_version)) {
+    out.push("source_snapshot_id overrides as_of_timestamp / as_of_version — clear the explicit time-travel fields to avoid confusion.");
   }
 
   return out;

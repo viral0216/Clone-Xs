@@ -122,6 +122,7 @@ const AutomationPlaybooks = lazy(() => import("@/app/automation/playbooks/page")
 const MarketplacePage = lazy(() => import("@/app/marketplace/page"));
 const ComplianceFrameworks = lazy(() => import("@/app/compliance/frameworks/page"));
 const EnvironmentsPage = lazy(() => import("@/app/environments/page"));
+const SnapshotsPage = lazy(() => import("@/app/snapshots/page"));
 
 // FinOps portal pages
 const FinOpsDashboard = lazy(() => import("@/app/finops/page"));
@@ -422,6 +423,7 @@ export default function App() {
               <Route path="/marketplace" element={<Suspense fallback={<PageFallback />}><MarketplacePage /></Suspense>} />
               <Route path="/compliance/frameworks" element={<Suspense fallback={<PageFallback />}><ComplianceFrameworks /></Suspense>} />
               <Route path="/environments" element={<Suspense fallback={<PageFallback />}><EnvironmentsPage /></Suspense>} />
+              <Route path="/snapshots" element={<Suspense fallback={<PageFallback />}><SnapshotsPage /></Suspense>} />
 
               <Route path="/governance/rbac" element={<RbacPage />} />
 

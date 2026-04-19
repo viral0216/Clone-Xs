@@ -259,6 +259,9 @@ Submit a clone job to the background queue.
 | `volume`               | string   | No       |                                        | UC Volume path for serverless        |
 | `include_objects`      | object[] | No       |                                        | Partial-scope clone — a list of `{schema, name, type}` records where `type` is `table`, `view`, `function`, or `volume`. Translated by the router into `include_schemas` + an anchored `include_tables_regex`. Use instead of (or alongside) `include_schemas` when the UI Scope Picker is in "Select schemas + objects" mode. |
 | `target_workspace`     | object   | No       |                                        | Cross-workspace migration — see [Target Workspace](#target-workspace). When set, routes the job to the Delta Sharing + DEEP CLONE orchestrator (`job_type=clone_cross_workspace`) and the `destination_catalog` may legitimately share the source name since it lives on a different metastore. |
+| `max_duration_min`     | integer  | No       |                                        | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. Checked between schemas. |
+| `max_tables`           | integer  | No       |                                        | Runtime guardrail — abort after this many tables have been touched. Checked between schemas. |
+| `source_snapshot_id`   | string   | No       |                                        | UUID of a row in `<audit>.clone_snapshots`. When set, resolved to `as_of_timestamp` so every table clones from the snapshot's captured state. See [Clone Snapshots](#clone-snapshots). |
 
 **Example request:**
 
@@ -401,6 +404,72 @@ curl -X POST http://localhost:8080/api/target/validate \
 | `400`  | Request body violates the `TargetWorkspace` schema (e.g. missing PAT when `auth_method="pat"`).            |
 | `401`  | Authentication failed — bad host, invalid token, or unreachable workspace. Error detail in `detail`.       |
 | `200` (with `sharing_error`) | Auth OK but metastore introspection failed. Auth works, but you may need to enable Delta Sharing manually. |
+
+---
+
+## Clone Snapshots
+
+Named fork points for point-in-time clones. See [Clone Snapshots guide](../guide/snapshots) for the full flow. Requires `audit_trail.catalog` to be configured — snapshots live in a Delta table in that catalog.
+
+### `POST /api/clone-snapshots`
+
+Capture a named snapshot of a catalog's current Delta-version state.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `source_catalog` | string | Yes | Catalog to capture |
+| `name` | string | Yes | Human-readable label |
+| `description` | string | No | Free-text context shown in listings |
+| `exclude_schemas` | string[] | No | Schemas to skip; defaults to `["information_schema", "default"]` |
+
+**Response** (200):
+
+```json
+{
+  "snapshot_id": "7f3a4b5c-8d2e-4a1f-b9d3-...",
+  "name": "pre-migration",
+  "source_catalog": "prod",
+  "description": "Captured before 2026-04 refactor",
+  "captured_at": "2026-04-19T14:30:00Z",
+  "created_by": "alice@example.com",
+  "table_count": 611,
+  "total_bytes": 2574326784
+}
+```
+
+Errors: `400` if `audit_trail.catalog` or `sql_warehouse_id` is missing.
+
+### `GET /api/clone-snapshots`
+
+List all snapshots, newest first.
+
+| Query | Type | Description |
+|---|---|---|
+| `source_catalog` | string (optional) | Filter to snapshots captured from this catalog |
+
+Response is an array of the shape above (without `tables_json`).
+
+### `GET /api/clone-snapshots/{snapshot_id}`
+
+Return one snapshot including the parsed per-table list:
+
+```json
+{
+  "snapshot_id": "...",
+  "name": "pre-migration",
+  "table_count": 611,
+  "tables": [
+    { "schema": "bronze", "table": "orders",    "version": 42, "size_bytes": 1073741824 },
+    { "schema": "bronze", "table": "customers", "version": 8,  "size_bytes": 268435456 }
+  ]
+}
+```
+
+Returns `404` if `snapshot_id` is not found.
+
+### `DELETE /api/clone-snapshots/{snapshot_id}`
+
+Remove a snapshot row. Idempotent — returns `{snapshot_id, deleted: true}` whether or not the row existed.
 
 ---
 

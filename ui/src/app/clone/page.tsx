@@ -23,6 +23,7 @@ import TargetWorkspaceForm, { TargetWorkspaceValue } from "@/components/TargetWo
 import ScopePicker, { ObjectRef, ScopeMode } from "@/components/ScopePicker";
 import PreviewPanel from "@/components/PreviewPanel";
 import FieldLabel, { FieldLabelSmall, InfoDot } from "@/components/FieldLabel";
+import { useSnapshots } from "@/hooks/useApi";
 import { toast } from "sonner";
 
 const TTL_PATTERN = /^\d+[hdw]$/;
@@ -579,6 +580,36 @@ function JobProgress({ jobId }: { jobId: string }) {
   );
 }
 
+function SnapshotPicker({
+  catalog, value, onChange,
+}: { catalog: string; value: string; onChange: (id: string) => void }) {
+  const snapshots = useSnapshots(catalog || null);
+  const items = snapshots.data || [];
+  // Don't render the picker at all when there are no snapshots for this catalog —
+  // keeps the Source step clean for the common case. A single help line in
+  // /snapshots explains how to create one.
+  if (!catalog || !items.length) return null;
+  return (
+    <div>
+      <FieldLabelSmall hint="Clone from a named point-in-time snapshot instead of the catalog's current state. Resolves to as_of_timestamp under the hood.">
+        Source snapshot (optional)
+      </FieldLabelSmall>
+      <select
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">— current state —</option>
+        {items.map((s: any) => (
+          <option key={s.snapshot_id} value={s.snapshot_id}>
+            {s.name} · {new Date(s.captured_at).toLocaleDateString()} · {s.table_count ?? 0} tbl
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [catalogs, setCatalogs] = useState<string[]>([]);
   const [isNew, setIsNew] = useState(false);
@@ -672,6 +703,7 @@ function ClonePageInner() {
   const defaults = {
     source_catalog: "",
     destination_catalog: "",
+    source_snapshot_id: null as string | null,
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
     load_type: "FULL" as "FULL" | "INCREMENTAL",
     dry_run: false,
@@ -679,6 +711,8 @@ function ClonePageInner() {
     parallel_tables: 1,
     max_parallel_queries: 100,
     max_rps: 0,
+    max_duration_min: null as number | null,
+    max_tables: null as number | null,
     // Copy options
     copy_permissions: true,
     copy_ownership: true,
@@ -862,6 +896,9 @@ function ClonePageInner() {
     if (!payload.ttl) delete payload.ttl;
     if (!payload.template) delete payload.template;
     if (!payload.where_clause) delete payload.where_clause;
+    if (payload.max_duration_min == null) delete payload.max_duration_min;
+    if (payload.max_tables == null) delete payload.max_tables;
+    if (!payload.source_snapshot_id) delete payload.source_snapshot_id;
 
     if (crossWorkspace) {
       const tw: Record<string, unknown> = {
@@ -975,6 +1012,11 @@ function ClonePageInner() {
                 Source and destination catalogs must be different.
               </p>
             )}
+            <SnapshotPicker
+              catalog={config.source_catalog}
+              value={config.source_snapshot_id || ""}
+              onChange={(id) => setConfig({ ...config, source_snapshot_id: id || null })}
+            />
             <div>
               <label className="text-sm font-medium">Storage Location (optional)</label>
               <Input
@@ -1281,6 +1323,40 @@ function ClonePageInner() {
                   <FieldLabelSmall field="template">Template</FieldLabelSmall>
                   <Input placeholder="e.g. dev-refresh, dr-replica" value={config.template}
                     onChange={(e) => setConfig({ ...config, template: e.target.value })} />
+                </div>
+                <div>
+                  <FieldLabelSmall hint="Runtime guardrail: abort the clone if it takes longer than this (minutes). Leave blank for no limit.">
+                    Max duration (min)
+                  </FieldLabelSmall>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 60"
+                    value={config.max_duration_min ?? ""}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        max_duration_min: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabelSmall hint="Runtime guardrail: abort the clone after this many tables have been touched. Safety net against runaway scope changes.">
+                    Max tables
+                  </FieldLabelSmall>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 500"
+                    value={config.max_tables ?? ""}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        max_tables: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })
+                    }
+                  />
                 </div>
               </div>
             </div>

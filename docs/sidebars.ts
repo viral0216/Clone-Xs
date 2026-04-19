@@ -19,6 +19,8 @@ const sidebars: SidebarsConfig = {
         'guide/diff-and-compare',
         'guide/sync',
         'guide/rollback',
+        'guide/snapshots',
+        'guide/advanced-features',
         'guide/safety',
         'guide/governance',
         'guide/pii-detection',

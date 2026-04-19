@@ -80,6 +80,17 @@ retry_delay: 2                # Seconds between retries
 pre_clone_hooks: []           # SQL statements to run before clone
 post_clone_hooks: []          # SQL statements to run after clone
 
+# ── Runtime guardrails ───────────────────────────────
+# Abort the clone in flight if it exceeds these limits. Checked between
+# schemas. When tripped, the job's summary gets aborted=true + abort_reason.
+max_duration_min: null      # e.g. 60  — null = no wall-clock limit
+max_tables: null            # e.g. 500 — null = no table-count limit
+
+# ── Named snapshot source ────────────────────────────
+# Clone FROM a previously captured snapshot instead of the catalog's current
+# state. See guide/snapshots.md. Resolved to `as_of_timestamp` at run time.
+source_snapshot_id: null    # UUID of a row in <audit>.clone_snapshots
+
 # ── Cross-workspace / cross-cloud migration ─────────
 # When target_workspace is set, the clone runs through the Delta Sharing + DEEP
 # CLONE orchestrator (see the Cross-workspace guide). Leave unset for normal
@@ -295,6 +306,9 @@ Controls which metadata flows from source to destination. All default to `true`.
 | WHERE Clause | `where_clause` | Per-table row predicate applied to DEEP clones. Only rows matching the predicate are copied to the destination. |
 | TTL | `ttl` | Auto-expiry for the destination catalog (e.g. `7d`, `30d`, `2w`). A background cleanup job drops expired catalogs. |
 | Template | `template` | Named config preset (e.g. `dev-refresh`, `dr-replica`) that overrides common flags. See `clxs templates list` for available presets. |
+| Max duration (min) | `max_duration_min` | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. `null` = no limit. Checked between schemas. |
+| Max tables | `max_tables` | Runtime guardrail — abort after this many tables have been touched (success/failed/skipped). Safety net against runaway scope changes. |
+| Source snapshot ID | `source_snapshot_id` | Clone from a named snapshot instead of the catalog's current state. The snapshot's `captured_at` is applied as `as_of_timestamp`. See [Clone Snapshots](../guide/snapshots). |
 
 ---
 

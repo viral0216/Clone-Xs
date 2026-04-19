@@ -340,6 +340,34 @@ _tag_metadata = [
         "name": "target",
         "description": "Target workspace endpoints for cross-workspace / cross-cloud migration — validate credentials and inspect target metastore.",
     },
+    {
+        "name": "clone-snapshots",
+        "description": "Named clone snapshots (fork points) — capture a catalog's Delta-version state at a moment in time, then clone from it later via `source_snapshot_id`.",
+    },
+    {
+        "name": "schema-evolution",
+        "description": "Detect + apply additive schema changes (ALTER TABLE ADD / DROP / ALTER COLUMN) without re-cloning the table.",
+    },
+    {
+        "name": "reconciliation",
+        "description": "Cross-metastore reconciliation — verify a cross-workspace clone landed correctly via row-count + optional checksum comparison across two WorkspaceClients.",
+    },
+    {
+        "name": "provenance",
+        "description": "Clone signing / provenance — HMAC-SHA256 sign + verify a clone manifest. Secret via `CLONE_XS_SIGNING_SECRET` env var.",
+    },
+    {
+        "name": "continuous-sync",
+        "description": "Continuous sync **preview** (v0.11.0) — generate a Structured Streaming job spec for near-real-time replication. Execution engine ships in v0.12.0.",
+    },
+    {
+        "name": "streaming-clone",
+        "description": "Streaming / MV data-clone **preview** (v0.11.0) — generate the DLT pipeline spec + SQL that rebuilds MV / streaming-table data on the destination. Execution in v0.12.0.",
+    },
+    {
+        "name": "schedules",
+        "description": "Clone / Sync schedules — cron-backed recurring jobs. Persisted locally and (when credentials allow) also provisioned as Databricks Jobs so the cron fires workspace-side.",
+    },
 ]
 
 app = FastAPI(
@@ -496,6 +524,27 @@ app.include_router(environments.router, prefix="/api/environments", tags=["envir
 
 from api.routers import target as target_router
 app.include_router(target_router.router, prefix="/api/target", tags=["target"])
+
+from api.routers import clone_snapshots as clone_snapshots_router
+app.include_router(clone_snapshots_router.router, prefix="/api/clone-snapshots", tags=["clone-snapshots"])
+
+from api.routers import schema_evolution as schema_evolution_router
+app.include_router(schema_evolution_router.router, prefix="/api/schema-evolution", tags=["schema-evolution"])
+
+from api.routers import cross_metastore_recon as cmr_router
+app.include_router(cmr_router.router, prefix="/api/reconciliation", tags=["reconciliation"])
+
+from api.routers import clone_provenance as provenance_router
+app.include_router(provenance_router.router, prefix="/api/provenance", tags=["provenance"])
+
+from api.routers import continuous_sync as continuous_sync_router
+app.include_router(continuous_sync_router.router, prefix="/api/continuous-sync", tags=["continuous-sync"])
+
+from api.routers import streaming_clone_generator as streaming_clone_router
+app.include_router(streaming_clone_router.router, prefix="/api/streaming-clone", tags=["streaming-clone"])
+
+from api.routers import schedules as schedules_router
+app.include_router(schedules_router.router, prefix="/api/schedules", tags=["schedules"])
 
 # Serve frontend static files in production
 import os

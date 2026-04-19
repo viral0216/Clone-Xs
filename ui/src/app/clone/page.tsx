@@ -18,6 +18,25 @@ import {
 } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import LoadingState from "@/components/LoadingState";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import TargetWorkspaceForm, { TargetWorkspaceValue } from "@/components/TargetWorkspaceForm";
+import ScopePicker, { ObjectRef, ScopeMode } from "@/components/ScopePicker";
+import PreviewPanel from "@/components/PreviewPanel";
+import FieldLabel, { FieldLabelSmall, InfoDot } from "@/components/FieldLabel";
+import { toast } from "sonner";
+
+const TTL_PATTERN = /^\d+[hdw]$/;
+
+const EMPTY_TARGET: TargetWorkspaceValue = {
+  host: "",
+  auth_method: "pat",
+  token: "",
+  client_id: "",
+  client_secret: "",
+  profile: "",
+  warehouse_id: "",
+  keep_share: false,
+};
 
 type Step = "source" | "options" | "preview" | "execute";
 
@@ -285,7 +304,7 @@ function JobProgress({ jobId }: { jobId: string }) {
         }
       } catch (e: any) {
         if (e?.name === "AbortError") return; // Expected on unmount
-        console.warn("Job poll failed:", e?.message);
+        // Transient poll failures are expected during network blips; next tick retries.
       }
     };
 
@@ -568,7 +587,13 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   useEffect(() => {
     setLoading(true);
     api.get<string[]>("/catalogs")
-      .then((data) => setCatalogs(data || []))
+      .then((data) => {
+        const list = data || [];
+        setCatalogs(list);
+        if (list.length === 0) {
+          toast.warning("No catalogs visible — check workspace permissions or type a name manually.");
+        }
+      })
       .catch(() => setCatalogs([]))
       .finally(() => setLoading(false));
   }, []);
@@ -626,13 +651,22 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   );
 }
 
-export default function ClonePage() {
+function ClonePageInner() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const { favorites, addFavorite, removeFavorite } = useFavorites();
   const [showAddFav, setShowAddFav] = useState(false);
   const [favSource, setFavSource] = useState("");
   const [favDest, setFavDest] = useState("");
+
+  // Cross-workspace / cross-cloud migration state
+  const [crossWorkspace, setCrossWorkspace] = useState(false);
+  const [target, setTarget] = useState<TargetWorkspaceValue>(EMPTY_TARGET);
+  const [targetValidated, setTargetValidated] = useState(false);
+
+  // Scope selection state
+  const [scopeMode, setScopeMode] = useState<ScopeMode>("all");
+  const [selectedObjects, setSelectedObjects] = useState<ObjectRef[]>([]);
 
   // Default config
   const defaults = {
@@ -787,6 +821,33 @@ export default function ClonePage() {
   const volumes = useVolumes();
 
   const handleClone = (dryRun: boolean) => {
+    if (
+      !crossWorkspace &&
+      config.source_catalog &&
+      config.source_catalog === config.destination_catalog
+    ) {
+      toast.error("Source and destination catalogs must be different.");
+      return;
+    }
+    if (crossWorkspace && !targetValidated) {
+      toast.error("Test the target workspace connection before cloning.");
+      return;
+    }
+    for (const field of ["include_tables_regex", "exclude_tables_regex"] as const) {
+      const pattern = (config as any)[field];
+      if (pattern) {
+        try {
+          new RegExp(pattern);
+        } catch {
+          toast.error(`Invalid regex in ${field.replace(/_/g, " ")}: ${pattern}`);
+          return;
+        }
+      }
+    }
+    if (config.ttl && !TTL_PATTERN.test(config.ttl)) {
+      toast.error("TTL must look like 24h, 7d, or 2w.");
+      return;
+    }
     // Clean up empty strings → null so Pydantic optional fields validate correctly
     const payload: Record<string, unknown> = { ...config, dry_run: dryRun };
     if (!payload.order_by_size) payload.order_by_size = null;
@@ -801,6 +862,26 @@ export default function ClonePage() {
     if (!payload.ttl) delete payload.ttl;
     if (!payload.template) delete payload.template;
     if (!payload.where_clause) delete payload.where_clause;
+
+    if (crossWorkspace) {
+      const tw: Record<string, unknown> = {
+        host: target.host.trim(),
+        auth_method: target.auth_method,
+        warehouse_id: target.warehouse_id.trim(),
+        keep_share: !!target.keep_share,
+      };
+      if (target.auth_method === "pat") tw.token = target.token;
+      if (target.auth_method === "service_principal") {
+        tw.client_id = target.client_id;
+        tw.client_secret = target.client_secret;
+      }
+      if (target.auth_method === "profile") tw.profile = target.profile;
+      payload.target_workspace = tw;
+    }
+
+    if (scopeMode === "select" && selectedObjects.length > 0) {
+      payload.include_objects = selectedObjects;
+    }
 
     startClone.mutate(payload, {
       onSuccess: (data: any) => {
@@ -888,6 +969,12 @@ export default function ClonePage() {
               value={config.destination_catalog}
               onChange={(v) => setConfig({ ...config, destination_catalog: v })}
             />
+            {config.source_catalog && config.destination_catalog &&
+              config.source_catalog === config.destination_catalog && (
+              <p className="text-xs text-red-600 dark:text-red-400 -mt-2">
+                Source and destination catalogs must be different.
+              </p>
+            )}
             <div>
               <label className="text-sm font-medium">Storage Location (optional)</label>
               <Input
@@ -897,11 +984,38 @@ export default function ClonePage() {
               />
               <p className="text-xs text-gray-400 mt-1">Required if workspace uses Default Storage</p>
             </div>
-            <Button onClick={() => setStep("options")} disabled={!config.source_catalog || !config.destination_catalog}>
+            <ScopePicker
+              catalog={config.source_catalog}
+              mode={scopeMode}
+              onModeChange={setScopeMode}
+              selected={selectedObjects}
+              onSelectedChange={setSelectedObjects}
+            />
+            <Button
+              onClick={() => setStep("options")}
+              disabled={
+                !config.source_catalog ||
+                !config.destination_catalog ||
+                (!crossWorkspace && config.source_catalog === config.destination_catalog) ||
+                (crossWorkspace && !targetValidated) ||
+                (scopeMode === "select" && selectedObjects.length === 0)
+              }
+            >
               Next: Options
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {step === "source" && (
+        <TargetWorkspaceForm
+          enabled={crossWorkspace}
+          onEnabledChange={setCrossWorkspace}
+          value={target}
+          onChange={setTarget}
+          validated={targetValidated}
+          onValidatedChange={setTargetValidated}
+        />
       )}
 
       {/* Step 2: Clone Options */}
@@ -913,7 +1027,7 @@ export default function ClonePage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium">Clone Type</label>
+                <FieldLabel field="clone_type">Clone Type</FieldLabel>
                 <div className="flex gap-2 mt-1">
                   {(["DEEP", "SHALLOW"] as const).map((t) => (
                     <Button
@@ -928,7 +1042,7 @@ export default function ClonePage() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium">Load Type</label>
+                <FieldLabel field="load_type">Load Type</FieldLabel>
                 <div className="flex gap-2 mt-1">
                   {(["FULL", "INCREMENTAL"] as const).map((t) => (
                     <Button
@@ -955,10 +1069,11 @@ export default function ClonePage() {
                     onChange={(e) => setConfig({ ...config, serverless: e.target.checked })}
                   />
                   Use Serverless Compute
+                  <InfoDot field="serverless" />
                 </label>
                 {config.serverless && (
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">UC Volume (required for serverless)</label>
+                    <FieldLabelSmall field="volume" className="text-xs text-gray-500 mb-1 inline-flex items-center gap-1.5">UC Volume (required for serverless)</FieldLabelSmall>
                     {volumes.isLoading ? (
                       <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -997,29 +1112,29 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Performance</label>
               <div className="grid grid-cols-4 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">Max Workers (schemas)</label>
+                  <FieldLabelSmall field="max_workers">Max Workers (schemas)</FieldLabelSmall>
                   <Input type="number" min={1} max={16} value={config.max_workers}
                     onChange={(e) => setConfig({ ...config, max_workers: parseInt(e.target.value) || 4 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Parallel Tables</label>
+                  <FieldLabelSmall field="parallel_tables">Parallel Tables</FieldLabelSmall>
                   <Input type="number" min={1} max={8} value={config.parallel_tables}
                     onChange={(e) => setConfig({ ...config, parallel_tables: parseInt(e.target.value) || 1 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Max Parallel Queries</label>
+                  <FieldLabelSmall field="max_parallel_queries">Max Parallel Queries</FieldLabelSmall>
                   <Input type="number" min={1} max={200} value={config.max_parallel_queries}
                     onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 100 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Max RPS (0=unlimited)</label>
+                  <FieldLabelSmall field="max_rps">Max RPS (0=unlimited)</FieldLabelSmall>
                   <Input type="number" min={0} max={100} value={config.max_rps}
                     onChange={(e) => setConfig({ ...config, max_rps: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 mt-3">
                 <div>
-                  <label className="text-xs text-gray-500">Order by Size</label>
+                  <FieldLabelSmall field="order_by_size">Order by Size</FieldLabelSmall>
                   <div className="flex gap-1 mt-1">
                     {(["", "asc", "desc"] as const).map((v) => (
                       <Button key={v || "none"} size="sm" variant={config.order_by_size === v ? "default" : "outline"}
@@ -1030,7 +1145,7 @@ export default function ClonePage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Throttle Profile</label>
+                  <FieldLabelSmall field="throttle">Throttle Profile</FieldLabelSmall>
                   <div className="flex gap-1 mt-1">
                     {(["", "low", "medium", "high", "max"] as const).map((v) => (
                       <Button key={v || "none"} size="sm" variant={config.throttle === v ? "default" : "outline"}
@@ -1060,6 +1175,7 @@ export default function ClonePage() {
                     <input type="checkbox" checked={config[key] as boolean}
                       onChange={(e) => setConfig({ ...config, [key]: e.target.checked })} />
                     {label}
+                    <InfoDot field={key} />
                   </label>
                 ))}
               </div>
@@ -1088,6 +1204,7 @@ export default function ClonePage() {
                     <input type="checkbox" checked={config[key] as boolean}
                       onChange={(e) => setConfig({ ...config, [key]: e.target.checked })} />
                     {label}
+                    <InfoDot field={key} />
                   </label>
                 ))}
               </div>
@@ -1096,7 +1213,7 @@ export default function ClonePage() {
             {/* Auto Rollback Threshold */}
             {config.auto_rollback && (
               <div className="w-48">
-                <label className="text-xs text-gray-500">Rollback Threshold (%)</label>
+                <FieldLabelSmall field="rollback_threshold">Rollback Threshold (%)</FieldLabelSmall>
                 <Input type="number" min={0} max={100} value={config.rollback_threshold}
                   onChange={(e) => setConfig({ ...config, rollback_threshold: parseFloat(e.target.value) || 5 })} />
               </div>
@@ -1107,22 +1224,22 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Filtering</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">Include Schemas (comma-separated)</label>
+                  <FieldLabelSmall field="include_schemas">Include Schemas (comma-separated)</FieldLabelSmall>
                   <Input placeholder="e.g. bronze,silver,gold" value={config.include_schemas.join(",")}
                     onChange={(e) => setConfig({ ...config, include_schemas: e.target.value ? e.target.value.split(",").map(s => s.trim()) : [] })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Exclude Schemas (comma-separated)</label>
+                  <FieldLabelSmall field="exclude_schemas">Exclude Schemas (comma-separated)</FieldLabelSmall>
                   <Input value={config.exclude_schemas.join(",")}
                     onChange={(e) => setConfig({ ...config, exclude_schemas: e.target.value ? e.target.value.split(",").map(s => s.trim()) : [] })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Include Tables Regex</label>
+                  <FieldLabelSmall field="include_tables_regex">Include Tables Regex</FieldLabelSmall>
                   <Input placeholder="e.g. ^fact_.*" value={config.include_tables_regex}
                     onChange={(e) => setConfig({ ...config, include_tables_regex: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Exclude Tables Regex</label>
+                  <FieldLabelSmall field="exclude_tables_regex">Exclude Tables Regex</FieldLabelSmall>
                   <Input placeholder="e.g. _tmp$|_backup$" value={config.exclude_tables_regex}
                     onChange={(e) => setConfig({ ...config, exclude_tables_regex: e.target.value })} />
                 </div>
@@ -1134,12 +1251,12 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Time Travel (optional)</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">As-of Timestamp</label>
+                  <FieldLabelSmall field="as_of_timestamp">As-of Timestamp</FieldLabelSmall>
                   <Input type="datetime-local" value={config.as_of_timestamp}
                     onChange={(e) => setConfig({ ...config, as_of_timestamp: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">As-of Version</label>
+                  <FieldLabelSmall field="as_of_version">As-of Version</FieldLabelSmall>
                   <Input type="number" min={0} placeholder="e.g. 5" value={config.as_of_version}
                     onChange={(e) => setConfig({ ...config, as_of_version: e.target.value })} />
                 </div>
@@ -1151,17 +1268,17 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Advanced</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">WHERE Clause (deep clone only)</label>
+                  <FieldLabelSmall field="where_clause">WHERE Clause (deep clone only)</FieldLabelSmall>
                   <Input placeholder="e.g. created_date > '2024-01-01'" value={config.where_clause}
                     onChange={(e) => setConfig({ ...config, where_clause: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">TTL (e.g. 7d, 30d, 2w)</label>
+                  <FieldLabelSmall field="ttl">TTL (e.g. 7d, 30d, 2w)</FieldLabelSmall>
                   <Input placeholder="e.g. 7d" value={config.ttl}
                     onChange={(e) => setConfig({ ...config, ttl: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Template</label>
+                  <FieldLabelSmall field="template">Template</FieldLabelSmall>
                   <Input placeholder="e.g. dev-refresh, dr-replica" value={config.template}
                     onChange={(e) => setConfig({ ...config, template: e.target.value })} />
                 </div>
@@ -1178,44 +1295,18 @@ export default function ClonePage() {
 
       {/* Step 3: Preview */}
       {step === "preview" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Preview Clone Configuration
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-gray-900 text-gray-300 p-4 rounded-lg font-mono text-sm space-y-1">
-              <p>clxs clone \</p>
-              <p>  --source {config.source_catalog} --dest {config.destination_catalog} \</p>
-              <p>  --clone-type {config.clone_type} --load-type {config.load_type} \</p>
-              <p>  --max-workers {config.max_workers} --parallel-tables {config.parallel_tables} \</p>
-              {!config.copy_permissions && <p>  --no-permissions \</p>}
-              {!config.copy_tags && <p>  --no-tags \</p>}
-              {!config.copy_security && <p>  --no-security \</p>}
-              {config.enable_rollback && <p>  --enable-rollback \</p>}
-              {config.validate_after_clone && <p>  --validate \</p>}
-              {config.force_reclone && <p>  --force-reclone \</p>}
-              {config.serverless && <p>  --serverless \</p>}
-              {config.serverless && config.volume && <p>  --volume &quot;{config.volume}&quot; \</p>}
-              {config.location && <p>  --location &quot;{config.location}&quot; \</p>}
-              <p>  --progress</p>
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep("options")}>Back</Button>
-              <Button variant="outline" onClick={() => handleClone(true)} disabled={startClone.isPending}>
-                {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
-                Dry Run
-              </Button>
-              <Button onClick={() => handleClone(false)} className="bg-[#E8453C] hover:bg-[#D93025]" disabled={startClone.isPending}>
-                {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                Execute Clone
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PreviewPanel
+          config={config}
+          scopeMode={scopeMode}
+          selectedObjects={selectedObjects}
+          crossWorkspace={crossWorkspace}
+          target={target}
+          onBack={() => setStep("options")}
+          onDryRun={() => handleClone(true)}
+          onExecute={() => handleClone(false)}
+          isStartingClone={startClone.isPending}
+          dryRunResult={startClone.isSuccess && config.dry_run ? startClone.data : null}
+        />
       )}
 
       {/* Step 4: Execution with Live Progress */}
@@ -1312,5 +1403,13 @@ export default function ClonePage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ClonePage() {
+  return (
+    <ErrorBoundary fallbackTitle="Clone page failed to render">
+      <ClonePageInner />
+    </ErrorBoundary>
   );
 }

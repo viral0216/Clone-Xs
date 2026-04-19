@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
+import FieldLabel, { InfoDot } from "@/components/FieldLabel";
 import {
   RefreshCw, Loader2, XCircle, ArrowRight, Plus, Minus, CheckCircle,
   AlertTriangle, Pencil, Clock, Download, ClipboardCopy, Check,
@@ -310,14 +311,14 @@ export default function SyncPage() {
         <CardContent className="pt-6">
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="text-sm font-medium">Source Catalog</label>
+              <FieldLabel hint="Catalog whose schema/object structure is the source of truth — sync mirrors this onto the destination.">Source Catalog</FieldLabel>
               <CatalogPicker catalog={source} onCatalogChange={setSource} showSchema={false} showTable={false} />
             </div>
             <div className="flex items-center text-gray-400 pb-2">
               <ArrowRight className="h-5 w-5" />
             </div>
             <div className="flex-1">
-              <label className="text-sm font-medium">Destination Catalog</label>
+              <FieldLabel hint="Catalog being kept in sync with the source. Existing tables not in source may be dropped — see Drop Extra.">Destination Catalog</FieldLabel>
               <CatalogPicker catalog={dest} onCatalogChange={setDest} showSchema={false} showTable={false} />
             </div>
             <div className="flex items-center gap-4 pb-2">
@@ -325,10 +326,12 @@ export default function SyncPage() {
                 <input type="checkbox" checked={dryRun}
                   onChange={(e) => { setDryRun(e.target.checked); setShowConfirm(false); }} />
                 Dry Run
+                <InfoDot hint="Compute and show the planned operations without applying any changes to the destination." />
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={dropExtra} onChange={(e) => setDropExtra(e.target.checked)} />
                 Drop Extra
+                <InfoDot hint="Drop tables on the destination that no longer exist on the source. Off = sync is additive only." />
               </label>
             </div>
             <Button onClick={handleSync} disabled={!source || !dest || submitting}

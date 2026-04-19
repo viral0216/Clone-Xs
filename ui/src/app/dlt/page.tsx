@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import PageHeader from "@/components/PageHeader";
 import DataTable, { Column } from "@/components/DataTable";
+import { InfoDot } from "@/components/FieldLabel";
 import { api } from "@/lib/api-client";
 import {
   Zap, Play, Square, Copy, Loader2, RefreshCw, CheckCircle, XCircle,
@@ -324,6 +325,10 @@ export default function DltPage() {
             </div>
 
             {/* Mode toggle */}
+            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              Clone Mode
+              <InfoDot hint="Same workspace = clone definition stays local. Different workspace = pipeline JSON is recreated against another Databricks host." />
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setCloneMode("same")}
                 className={`text-left px-3 py-2.5 rounded-lg border-2 text-sm transition-all ${cloneMode === "same" ? "border-[#E8453C] bg-[#E8453C]/5 dark:bg-[#E8453C]/10" : "border-border hover:border-muted-foreground/30"}`}>
@@ -339,7 +344,10 @@ export default function DltPage() {
 
             {/* New name */}
             <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">New Pipeline Name</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold inline-flex items-center gap-1.5">
+                New Pipeline Name
+                <InfoDot hint="Display name for the cloned pipeline. Pre-filled with 'Copy of <original>' — change to avoid confusion in the Pipelines list." />
+              </Label>
               <Input className="h-11" value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="e.g., My Pipeline - DR Copy" />
             </div>
 
@@ -350,14 +358,20 @@ export default function DltPage() {
                   <Globe className="h-3.5 w-3.5" /> Destination Workspace
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Workspace URL</Label>
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold inline-flex items-center gap-1.5">
+                    Workspace URL
+                    <InfoDot hint="Target Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net). Cross-workspace clone only." />
+                  </Label>
                   <div className="relative">
                     <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input className="pl-10 h-10" placeholder="https://adb-xxx.azuredatabricks.net" value={destHost} onChange={(e) => setDestHost(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Personal Access Token</Label>
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold inline-flex items-center gap-1.5">
+                    Personal Access Token
+                    <InfoDot hint="PAT for the destination workspace. Needs Workflows + Pipelines permissions. Cross-workspace clone only." />
+                  </Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input className="pl-10 h-10" type="password" placeholder="dapi..." value={destToken} onChange={(e) => setDestToken(e.target.value)} />
@@ -370,6 +384,7 @@ export default function DltPage() {
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={cloneDryRun} onChange={(e) => setCloneDryRun(e.target.checked)} className="rounded" />
               <span className="text-muted-foreground">Dry run — preview without creating</span>
+              <InfoDot hint="Validate that the clone would succeed without creating anything. Shows what would be created on the target." />
             </label>
 
             {/* Result */}

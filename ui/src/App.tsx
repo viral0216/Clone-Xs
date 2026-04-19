@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { KeyboardShortcutHelp } from "@/components/KeyboardShortcutHelp";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import LoginPage from "@/app/login/page";
 import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
@@ -239,7 +240,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <TooltipProvider>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-lg focus:text-sm focus:font-medium"
@@ -467,6 +468,6 @@ export default function App() {
           </main>
         </div>
       </div>
-    </>
+    </TooltipProvider>
   );
 }

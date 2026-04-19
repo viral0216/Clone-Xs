@@ -336,6 +336,10 @@ _tag_metadata = [
         "name": "environments",
         "description": "Data Environment Manager — ephemeral sandboxes with masking, DQ validation, and TTL cleanup.",
     },
+    {
+        "name": "target",
+        "description": "Target workspace endpoints for cross-workspace / cross-cloud migration — validate credentials and inspect target metastore.",
+    },
 ]
 
 app = FastAPI(
@@ -489,6 +493,9 @@ app.include_router(alert_routing.router, prefix="/api/alerts", tags=["alert-rout
 
 from api.routers import environments
 app.include_router(environments.router, prefix="/api/environments", tags=["environments"])
+
+from api.routers import target as target_router
+app.include_router(target_router.router, prefix="/api/target", tags=["target"])
 
 # Serve frontend static files in production
 import os

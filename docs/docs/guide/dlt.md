@@ -7,6 +7,10 @@ title: Delta Live Tables (DLT)
 
 Clone-Xs provides comprehensive management for Databricks Delta Live Tables pipelines — discover, clone, monitor, trigger, and integrate DLT pipeline lineage with Unity Catalog.
 
+:::tip Field tooltips
+Every field in the DLT clone modal (Clone Mode, New Pipeline Name, Workspace URL, PAT, Dry run) has an info icon — hover for a 1-line explanation, especially useful for the cross-workspace path where the target PAT permissions matter.
+:::
+
 ## Overview
 
 | Feature | Description |
@@ -88,6 +92,35 @@ The clone copies: catalog, target schema, libraries (notebooks), cluster config,
 :::note
 If the source pipeline has **no notebook libraries** (common with serverless/SQL-based DLT pipelines), Clone-Xs automatically creates a placeholder notebook at `/Shared/clone-xs/dlt_placeholder_{name}` in the destination workspace. Replace this placeholder with your actual pipeline code after cloning.
 :::
+
+### How it works
+
+> **Source:** [`src/dlt_management.py`](https://github.com/viral0216/clone-xs/blob/main/src/dlt_management.py)
+
+**When you'll reach for this:** duplicating a pipeline for A/B testing a logic change, pre-staging a DR pipeline in another workspace, or producing a dev copy of a production pipeline. See [Use Cases → Delta Live Tables](./use-cases#delta-live-tables) for concrete scenarios.
+
+Pipeline clone is an **SDK-only** operation — no data is copied, no SQL runs. DLT pipelines are metadata (a spec that tells Databricks how to build tables); the destination pipeline must be **triggered separately** to actually populate data.
+
+**Same-workspace clone:**
+
+1. `client.pipelines.get(pipeline_id)` → returns the full `PipelineSpec` (catalog, target schema, libraries, clusters, configuration, continuous / serverless flags, notifications).
+2. Strip runtime-only fields: `pipeline_id`, `creator_user_name`.
+3. Set `development=True` and the new name.
+4. `client.pipelines.create(name=<new_name>, spec=…)` → returns the new `pipeline_id`.
+
+**Cross-workspace clone:**
+
+1. `source_client.pipelines.get()` on the source workspace.
+2. Build a destination `WorkspaceClient` with `get_client(host=dest_host, token=dest_token)`.
+3. **Library handling** — walk the source spec's `libraries` list. Each entry is either `notebook.path` or `file.path`.
+4. **Placeholder path** — if the source pipeline has **zero libraries** (common with serverless / SQL DLT), `dest_client.workspace.import_()` writes a minimal placeholder notebook to `/Shared/clone-xs/dlt_placeholder_<name>` so the `pipelines.create()` call below doesn't 400.
+5. `dest_client.pipelines.create(...)` in the destination workspace. Cross-workspace clones **always** land in development mode regardless of source setting — you promote to production manually after review.
+
+**What doesn't transfer:**
+
+- **Notebook contents** — only the path is in the spec. Copy the notebooks separately with the Databricks workspace CLI or `client.workspace.export()` → `client.workspace.import_()` before triggering the cloned pipeline.
+- **Table data** — DLT pipelines are definitions, not data. Use a separate catalog clone if you need to migrate the tables the pipeline produces.
+- **Cluster IDs** — any `existing_cluster_id` reference in the source spec will likely 404 on the destination. Clone-Xs warns but doesn't rewrite; update the destination pipeline to use a policy or new cluster config.
 
 ### Cross-workspace clone
 

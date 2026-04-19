@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import FieldLabel, { InfoDot } from "@/components/FieldLabel";
 import { useCurrency } from "@/hooks/useSettings";
 import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
@@ -417,9 +418,9 @@ export default function DemoDataPage() {
         <CardContent className="space-y-5">
           {/* Catalog Name */}
           <div>
-            <label className="text-sm font-medium">
+            <FieldLabel hint="Name of the new demo catalog. Must not already exist unless 'Drop Existing' is checked.">
               Catalog Name <span className="text-red-500">*</span>
-            </label>
+            </FieldLabel>
             <Input
               value={catalogName}
               onChange={(e) => setCatalogName(e.target.value)}
@@ -431,7 +432,7 @@ export default function DemoDataPage() {
 
           {/* Industries */}
           <div>
-            <label className="text-sm font-medium">Industries</label>
+            <FieldLabel hint="Each industry generates a domain-specific schema (e.g. healthcare gets patients, encounters, claims). Pick one for a quick demo, several for cross-domain analytics scenarios.">Industries</FieldLabel>
             <div className="flex flex-wrap gap-3 mt-2">
               {INDUSTRIES.map((industry) => (
                 <label
@@ -453,7 +454,7 @@ export default function DemoDataPage() {
 
           {/* Scale Factor */}
           <div>
-            <label className="text-sm font-medium">Scale Factor</label>
+            <FieldLabel hint="Multiplier on row counts. 0.01 = ~10M rows total (good for laptop demos); 1.0 = ~1B rows (production-scale benchmark).">Scale Factor</FieldLabel>
             <select
               value={scaleFactor}
               onChange={(e) => setScaleFactor(e.target.value)}
@@ -470,7 +471,7 @@ export default function DemoDataPage() {
 
           {/* Owner */}
           <div>
-            <label className="text-sm font-medium">Owner</label>
+            <FieldLabel hint="Sets the catalog owner principal — usually a team email or group SCIM name. Defaults to the current user.">Owner</FieldLabel>
             <Input
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
@@ -483,7 +484,7 @@ export default function DemoDataPage() {
 
           {/* Storage Location */}
           <div>
-            <label className="text-sm font-medium">Storage Location</label>
+            <FieldLabel hint="External storage URI for managed tables. Required if the workspace doesn't have a default Unity Catalog storage root configured.">Storage Location</FieldLabel>
             <Input
               value={storageLocation}
               onChange={(e) => setStorageLocation(e.target.value)}
@@ -497,7 +498,7 @@ export default function DemoDataPage() {
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-4 max-w-xl">
             <div>
-              <label className="text-sm font-medium">Start Date</label>
+              <FieldLabel hint="Earliest date for generated transactional data (orders, claims, events).">Start Date</FieldLabel>
               <Input
                 type="date"
                 value={startDate}
@@ -507,7 +508,7 @@ export default function DemoDataPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">End Date</label>
+              <FieldLabel hint="Latest date for generated transactional data. Window between start and end determines volume per day.">End Date</FieldLabel>
               <Input
                 type="date"
                 value={endDate}
@@ -520,7 +521,7 @@ export default function DemoDataPage() {
 
           {/* Destination Catalog */}
           <div>
-            <label className="text-sm font-medium">Destination Catalog</label>
+            <FieldLabel hint="If set, the generated catalog is auto-cloned to this destination after generation completes.">Destination Catalog</FieldLabel>
             <Input
               value={destCatalog}
               onChange={(e) => setDestCatalog(e.target.value)}
@@ -542,6 +543,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
               />
               <span className="text-sm font-medium">Drop Existing</span>
+              <InfoDot hint="Drop the catalog if it already exists, then recreate. Without this, generation aborts on conflict." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               If checked, the existing catalog will be dropped and recreated.
@@ -559,6 +561,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Medallion Architecture (Bronze / Silver / Gold)</span>
+              <InfoDot hint="Generate bronze → silver → gold schemas per industry, mirroring the standard Lakehouse layering." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates bronze (raw), silver (cleaned), and gold (aggregated) schemas per industry.
@@ -577,6 +580,7 @@ export default function DemoDataPage() {
                   className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
                 />
                 <span className="text-sm font-medium">UC Best Practices Naming</span>
+                <InfoDot hint="Shared naming (bronze.healthcare_patients) instead of legacy per-industry schemas (healthcare_bronze.patients). Recommended for new deployments." />
               </label>
               <p className="text-xs text-muted-foreground mt-1 ml-6">
                 {ucBestPractices
@@ -606,6 +610,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create UDFs (User-Defined Functions)</span>
+              <InfoDot hint="Generate ~20 SQL UDFs per industry — masking, formatters, validators, business calculations. Adds ~30s to generation." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates 20 SQL UDFs per industry for masking, formatting, validation, and business logic.
@@ -623,6 +628,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create Volumes with Sample Files</span>
+              <InfoDot hint="Create one managed volume per industry and seed it with sample CSV exports (1000 rows/table). Useful for ingestion demos." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates managed volumes and exports sample CSV files (1000 rows per table).

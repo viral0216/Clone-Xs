@@ -183,6 +183,9 @@ class JobManager:
                 else:
                     from src.clone_catalog import clone_catalog
                     result = clone_catalog(client, config)
+            elif job_type == "clone_cross_workspace":
+                from src.clone_cross_workspace import run_cross_workspace_clone
+                result = run_cross_workspace_clone(client, config)
             elif job_type == "validate":
                 from src.validation import validate_catalog
                 result = validate_catalog(

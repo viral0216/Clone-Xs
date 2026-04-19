@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import { InfoDot } from "@/components/FieldLabel";
 import {
   Undo2, RefreshCw, AlertTriangle, CheckCircle, XCircle, ChevronDown,
   ChevronRight, Database, Eye, FunctionSquare, Box, Layers, Trash2,
@@ -449,6 +450,7 @@ export default function RollbackPage() {
                                     className="rounded"
                                   />
                                   Also drop the destination catalog
+                                  <InfoDot hint="Drop the destination catalog after restoring tables. Use when you want to fully undo the clone, not just the data." />
                                 </label>
                                 <Button
                                   size="sm"

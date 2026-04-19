@@ -284,6 +284,7 @@ def clone_tables_in_schema(
     where_clauses: dict | None = None,
     force_reclone: bool = False,
     schema_only: bool = False,
+    tables_progress=None,
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -298,6 +299,17 @@ def clone_tables_in_schema(
     tables = get_tables(client, warehouse_id, source_catalog, schema, order_by_size=order_by_size)
     results = {"success": 0, "failed": 0, "skipped": 0}
 
+    def _bump(kind: str) -> None:
+        """Mirror the schema-local counter increment onto the catalog-level tracker."""
+        if tables_progress is None:
+            return
+        if kind == "success":
+            tables_progress.tables_update(success=1)
+        elif kind == "failed":
+            tables_progress.tables_update(failed=1)
+        elif kind == "skipped":
+            tables_progress.tables_update(skipped=1)
+
     # For incremental loads, check what already exists
     existing = set()
     if load_type == "INCREMENTAL":
@@ -311,26 +323,31 @@ def clone_tables_in_schema(
         if table_name in exclude_tables:
             logger.info(f"  {SKIP} Skipping excluded table: {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if table_name.startswith("event_log_") or table_name.startswith("__materialization_"):
             logger.info(f"  {SKIP} Skipping DLT pipeline table: {dim(table_name)}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if not _matches_regex(table_name, include_tables_regex, exclude_tables_regex):
             logger.info(f"  {SKIP} Skipping table (regex filter): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if load_type == "INCREMENTAL" and table_name in existing:
             logger.info(f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if resumed_tables and table_name in resumed_tables:
             logger.info(f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         tables_to_clone.append(table_name)
@@ -364,8 +381,10 @@ def clone_tables_in_schema(
                 _, success = future.result()
                 if success:
                     results["success"] += 1
+                    _bump("success")
                 else:
                     results["failed"] += 1
+                    _bump("failed")
     else:
         for tname in tables_to_clone:
             _, success = _clone_single_table(
@@ -378,7 +397,9 @@ def clone_tables_in_schema(
             )
             if success:
                 results["success"] += 1
+                _bump("success")
             else:
                 results["failed"] += 1
+                _bump("failed")
 
     return results

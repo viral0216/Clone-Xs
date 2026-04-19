@@ -143,6 +143,26 @@ export function useStartClone() {
   });
 }
 
+export function useValidateTarget() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/target/validate", req),
+  });
+}
+
+export function useSchemaObjects(catalog: string | null, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-objects", catalog, schema],
+    queryFn: () => api.get<{
+      tables: string[];
+      views: string[];
+      functions: string[];
+      volumes: string[];
+    }>(`/catalogs/${encodeURIComponent(catalog!)}/${encodeURIComponent(schema!)}/objects`),
+    enabled: !!catalog && !!schema,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useDiff() {
   return useMutation({
     mutationFn: (req: { source_catalog: string; destination_catalog: string; warehouse_id?: string }) =>

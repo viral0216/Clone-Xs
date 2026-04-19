@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'guide/quickstart',
+        'guide/use-cases',
         'guide/setup',
         'guide/authentication',
         'guide/architecture',

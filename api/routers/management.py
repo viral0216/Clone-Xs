@@ -305,6 +305,52 @@ async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
         return []
 
 
+@router.get("/catalogs/{catalog}/{schema}/objects")
+async def list_schema_objects(catalog: str, schema: str, client=Depends(get_db_client)):
+    """List every cloneable object in a schema: tables, views, functions, volumes.
+
+    Returns a flat object keyed by type so the Scope Picker in the UI can
+    render checkbox trees. Uses the SDK directly — no SQL warehouse required.
+    """
+    tables: list[str] = []
+    views: list[str] = []
+    functions: list[str] = []
+    volumes: list[str] = []
+
+    try:
+        for t in client.tables.list(catalog_name=catalog, schema_name=schema):
+            if not t.name:
+                continue
+            kind = str(getattr(t, "table_type", "")).split(".")[-1]
+            if kind in ("VIEW", "MATERIALIZED_VIEW"):
+                views.append(t.name)
+            else:
+                tables.append(t.name)
+    except Exception:
+        pass
+
+    try:
+        for f in client.functions.list(catalog_name=catalog, schema_name=schema):
+            if f.name:
+                functions.append(f.name)
+    except Exception:
+        pass
+
+    try:
+        for v in client.volumes.list(catalog_name=catalog, schema_name=schema):
+            if v.name:
+                volumes.append(v.name)
+    except Exception:
+        pass
+
+    return {
+        "tables": sorted(tables),
+        "views": sorted(views),
+        "functions": sorted(functions),
+        "volumes": sorted(volumes),
+    }
+
+
 @router.get("/uc-objects")
 async def list_uc_objects(client=Depends(get_db_client)):
     """List all Unity Catalog workspace-level objects using the SDK (no SQL warehouse needed)."""

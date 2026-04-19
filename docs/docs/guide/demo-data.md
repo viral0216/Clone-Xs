@@ -5,6 +5,10 @@ title: Demo Data Generator
 
 # Demo Data Generator
 
+:::tip Field tooltips
+All 13 fields on the Demo Data page (Catalog Name, Industries, Scale Factor, Medallion, UC Best Practices, Create UDFs, Create Volumes, …) have an info icon — hover for a 1-line description of what each option does. Existing inline `text-xs` helper lines still sit under each field for casual reading; the tooltip has the longer form.
+:::
+
 ## Overview
 The Demo Data Generator creates realistic Unity Catalog demo catalogs with synthetic data for showcasing Clone-Xs capabilities. All data is generated server-side using Databricks SQL — no data is transferred from the client.
 

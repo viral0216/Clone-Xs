@@ -257,6 +257,8 @@ Submit a clone job to the background queue.
 | `location`             | string   | No       |                                        | External location for catalog        |
 | `serverless`           | boolean  | No       | `false`                                | Use serverless compute               |
 | `volume`               | string   | No       |                                        | UC Volume path for serverless        |
+| `include_objects`      | object[] | No       |                                        | Partial-scope clone — a list of `{schema, name, type}` records where `type` is `table`, `view`, `function`, or `volume`. Translated by the router into `include_schemas` + an anchored `include_tables_regex`. Use instead of (or alongside) `include_schemas` when the UI Scope Picker is in "Select schemas + objects" mode. |
+| `target_workspace`     | object   | No       |                                        | Cross-workspace migration — see [Target Workspace](#target-workspace). When set, routes the job to the Delta Sharing + DEEP CLONE orchestrator (`job_type=clone_cross_workspace`) and the `destination_catalog` may legitimately share the source name since it lives on a different metastore. |
 
 **Example request:**
 
@@ -342,6 +344,63 @@ Cancel a running or queued clone job.
 ### `WebSocket /api/clone/ws/{job_id}`
 
 WebSocket endpoint for live clone progress updates. Send `"ping"` to keep the connection alive; receive JSON progress events.
+
+---
+
+## Target Workspace
+
+Endpoints for cross-workspace / cross-cloud catalog migration. See the [Cross-workspace clone guide](../guide/clone) for the full pipeline.
+
+### `POST /api/target/validate`
+
+Verify credentials for a target workspace and read its metastore sharing identifier. Call this before `POST /api/clone` with `target_workspace` to fail fast on bad creds.
+
+**Request body** — the `TargetWorkspace` model:
+
+| Field           | Type    | Required | Description                                                                 |
+|-----------------|---------|----------|-----------------------------------------------------------------------------|
+| `host`          | string  | Yes      | Full workspace URL (must start with `https://`)                             |
+| `auth_method`   | string  | No       | `"pat"` (default), `"service_principal"`, or `"profile"`                    |
+| `token`         | string  | Cond.    | Required when `auth_method="pat"`                                           |
+| `client_id`     | string  | Cond.    | Required when `auth_method="service_principal"`                             |
+| `client_secret` | string  | Cond.    | Required when `auth_method="service_principal"`                             |
+| `profile`       | string  | Cond.    | CLI profile name (from `~/.databrickscfg`); required when `auth_method="profile"` |
+| `warehouse_id`  | string  | Yes      | Target SQL warehouse that will run DDL + DEEP CLONE                         |
+| `keep_share`    | boolean | No       | Leave the Delta Share intact after migration (`false` by default)           |
+
+**Example request:**
+
+```bash
+curl -X POST http://localhost:8080/api/target/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "https://adb-target.azuredatabricks.net",
+    "auth_method": "pat",
+    "token": "dapi...",
+    "warehouse_id": "abc123"
+  }'
+```
+
+**Example response (success):**
+
+```json
+{
+  "ok": true,
+  "host": "https://adb-target.azuredatabricks.net",
+  "catalog_count": 14,
+  "metastore_sharing_id": "azure:eastus:a1b2c3d4-...",
+  "sharing_error": null
+}
+```
+
+**Responses:**
+
+| Status | Meaning                                                                                                    |
+|--------|------------------------------------------------------------------------------------------------------------|
+| `200`  | Credentials work. `metastore_sharing_id` is usable as the recipient identifier on source.                  |
+| `400`  | Request body violates the `TargetWorkspace` schema (e.g. missing PAT when `auth_method="pat"`).            |
+| `401`  | Authentication failed — bad host, invalid token, or unreachable workspace. Error detail in `detail`.       |
+| `200` (with `sharing_error`) | Auth OK but metastore introspection failed. Auth works, but you may need to enable Delta Sharing manually. |
 
 ---
 
@@ -1000,6 +1059,26 @@ List tables in a schema.
 |-----------|--------|------|----------|--------------|
 | `catalog` | string | path | Yes      | Catalog name |
 | `schema`  | string | path | Yes      | Schema name  |
+
+### `GET /api/catalogs/{catalog}/{schema}/objects`
+
+List every cloneable object in a schema: tables, views, functions, and volumes. Used by the UI Scope Picker to render the object tree. SDK-based — no SQL warehouse required.
+
+| Parameter | Type   | In   | Required | Description  |
+|-----------|--------|------|----------|--------------|
+| `catalog` | string | path | Yes      | Catalog name |
+| `schema`  | string | path | Yes      | Schema name  |
+
+**Example response:**
+
+```json
+{
+  "tables": ["orders", "customers", "line_items"],
+  "views": ["v_active_customers", "v_monthly_revenue"],
+  "functions": ["calculate_discount"],
+  "volumes": ["raw_uploads", "exports"]
+}
+```
 
 ### `GET /api/catalogs/{catalog}/{schema}/{table}/info`
 

@@ -9,6 +9,44 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.11.0 — Cross-Workspace / Cross-Cloud Migration (2026-04-19)
+
+### Added
+- **Cross-workspace catalog migration via Delta Sharing + DEEP CLONE** — migrate a catalog from workspace A to workspace B across clouds (AWS ↔ Azure ↔ GCP). Source creates a Delta Share + recipient pointed at the target metastore's global sharing id; target consumes via `CREATE CATALOG … USING SHARE` and DEEP CLONEs data into target storage. Full scope:
+  - Schemas + managed/external tables (DEEP CLONE)
+  - Views + SQL functions (DDL replay with catalog-reference rewrite)
+  - Volumes + files (Databricks Files API; 500 MB per-file cap)
+  - Grants, tags, ownership (best-effort replay)
+- **Target Workspace UI** — new `TargetWorkspaceForm` card on the Clone page with PAT / Service Principal / CLI profile auth, target warehouse picker, **Test connection** button, and keep-share toggle
+- **New API endpoint** — `POST /api/target/validate` — verifies target creds and returns the metastore sharing identifier before kicking off a migration
+- **New config** — `target_workspace` object (host / auth_method / token / client_id / client_secret / profile / warehouse_id / keep_share); `clone_views`, `clone_functions`, `clone_volumes`, `volume_max_file_mb` flags
+- **Orchestrator** — `src/clone_cross_workspace.py` with `run_cross_workspace_clone()` entry point wired into `JobManager` as `job_type=clone_cross_workspace`
+- **Scope Picker** — partial-catalog clones from the UI. New `ScopePicker` component on the Clone page's step 1 with a toggle between "Entire catalog" and "Select schemas + objects"; lazy-loaded schema tree with per-object checkboxes for tables, views, functions, and volumes
+- **`include_objects` field** on `CloneRequest` — list of `{schema, name, type}` records. Router translates into `include_schemas` + anchored `include_tables_regex`, so both orchestrators (same-workspace and cross-workspace) honor the selection without a per-type refactor
+- **New API endpoint** — `GET /api/catalogs/{catalog}/{schema}/objects` returns `{tables, views, functions, volumes}` for the UI scope tree (SDK-based, no warehouse)
+- **Preview Panel** — step 3 is rebuilt: three scope-summary tiles, multi-format tabs (CLI / YAML / `curl`) with per-tab copy buttons, rule-based warnings panel (empty scope, DEEP-clone without storage, invalid regex, malformed TTL, `parallel_tables=1` on a large scope, etc.), cross-workspace pipeline diagram when `target_workspace` is set, and inline dry-run results card
+- **Field tooltips across Operations pages** — hover any info icon next to a label on the Clone, Sync, Rollback, Demo Data, DLT, and Advanced Tables pages for a 1-sentence description. Backed by a reusable `FieldLabel` / `FieldLabelSmall` / `InfoDot` component set (`ui/src/components/FieldLabel.tsx`) and a single root `<TooltipProvider>` in `App.tsx`. Every Clone-Options field's hint is also mirrored in the [Clone options reference](../reference/configuration#clone-options-reference) table
+- **Catalog-level clone log output** — the clone job now emits three new log signals that show up in both the Databricks run view and the Clone-Xs UI log panel:
+  - **Startup summary**: `Starting clone: 611 tables across 50 schemas → edp_01` (after table pre-count)
+  - **Live Tables counter** rendered inline on the Schemas progress bar: `Schemas |████| 5/50 [5ok/0fail/0skip] ETA: 2m · Tables 120/611 [115ok/2fail/3skip]` — updates live per table, not just per schema
+  - **Per-schema roll-up**: `Schema bronze complete: 42/45 tables cloned (2 failed, 1 skipped) in 18s` — emitted as each schema finishes (silent on metadata-only schemas)
+
+### Changed
+- `POST /api/clone` now routes to the cross-workspace orchestrator when `target_workspace` is supplied; otherwise runs the existing same-workspace path
+- `CloneRequest` same-catalog-name guard is skipped when `target_workspace` is set (legitimate: prod → prod-dr with identical catalog names on a different metastore)
+- `_list_schemas` / `_list_tables` / `_list_views` / `_list_functions` in `clone_cross_workspace.py` now honor `include_schemas` + `include_tables_regex` / `exclude_tables_regex` (matching the same-workspace behavior)
+- Old `destination_workspace` YAML stub in `configuration.md` renamed to `target_workspace` and expanded to the full Pydantic model
+- Secrets (`token`, `client_secret`) in the Preview Panel's YAML + `curl` output are rendered as `<redacted>` to avoid copy-paste leaks
+
+### Fixed
+- Clone page — `src == dest` guard: inline error + disabled **Next** button, plus a Pydantic `model_validator` on `CloneRequest`
+- Clone page — `include_tables_regex`, `exclude_tables_regex`, and `ttl` (`^\d+[hdw]$`) validated client-side before `POST /api/clone`
+- Clone page — leftover `console.warn` removed from the 2-second job-poll loop
+- Clone page — empty catalog list now surfaces a toast warning instead of silently falling back to a text input
+- Clone page — wrapped in a new `ErrorBoundary` component so render errors show a fallback card instead of a white-screen
+
+---
+
 ## v0.10.4 — Enhanced Presentation Mode (2026-03-31)
 
 ### Added

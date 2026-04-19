@@ -37,6 +37,33 @@ from src.rollback import create_rollback_log, record_object
 logger = logging.getLogger(__name__)
 
 
+def _log_schema_rollup(schema_name: str, result: dict) -> None:
+    """Emit a one-line per-schema summary after a schema finishes.
+
+    Example: ``[INFO] Schema bronze complete: 42/45 tables cloned (2 failed, 1 skipped) in 18s``
+    """
+    t = result.get("tables") or {}
+    success = int(t.get("success", 0) or 0)
+    failed = int(t.get("failed", 0) or 0)
+    skipped = int(t.get("skipped", 0) or 0)
+    total = success + failed + skipped
+    dur = result.get("duration_seconds")
+    dur_s = f" in {dur:.0f}s" if isinstance(dur, (int, float)) else ""
+    # Only emit if the schema actually had tables — keeps logs quiet on metadata-only schemas
+    if total == 0:
+        return
+    detail_parts = []
+    if failed:
+        detail_parts.append(f"{failed} failed")
+    if skipped:
+        detail_parts.append(f"{skipped} skipped")
+    detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+    logger.info(
+        f"{SCHEMA} Schema {bold(schema_name)} complete: "
+        f"{success}/{total} tables cloned{detail}{dur_s}"
+    )
+
+
 def get_schemas(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -245,6 +272,7 @@ def process_schema(
             as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
             force_reclone=force_reclone, where_clauses=where_clause,
             schema_only=config.get("schema_only", False),
+            tables_progress=config.get("_tables_progress"),
         )
 
         # Apply data masking after table cloning
@@ -488,9 +516,31 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
 
     logger.info(f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}")
 
+    # Pre-count tables per schema so the progress bar has a catalog-level denominator
+    # and we can emit a meaningful startup summary. Best-effort — on failure we
+    # just skip the denominator and the Tables suffix disappears from the bar.
+    tables_total = 0
+    try:
+        from src.client import list_tables_sdk
+        for _s in schemas:
+            try:
+                tables_total += len(list_tables_sdk(client, source, _s) or [])
+            except Exception:
+                pass
+    except Exception:
+        tables_total = 0
+
+    if tables_total:
+        logger.info(
+            f"{SCHEMA} Starting clone: {bold(str(tables_total))} tables across "
+            f"{bold(str(len(schemas)))} schemas {ARROW} {cyan(dest)}"
+        )
+
     # Step 4: Process schemas in parallel with progress tracking
-    progress = SchemaProgressTracker(schemas, show_progress=show_progress)
+    progress = SchemaProgressTracker(schemas, show_progress=show_progress, tables_total=tables_total)
     progress.start()
+    # Stash on config so process_schema → clone_tables_in_schema can bump live
+    config["_tables_progress"] = progress
 
     # Optional TUI dashboard for terminal sessions
     dashboard = None
@@ -519,6 +569,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                 result = future.result()
                 all_results.append(result)
                 progress.schema_done(result)
+                _log_schema_rollup(schema_name, result)
                 if pm:
                     pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
                 if dashboard:

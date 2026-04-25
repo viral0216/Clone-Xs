@@ -164,13 +164,18 @@ class JobManager:
 
             # Log operation start to audit trail (clone_operations table)
             audit_start_time = datetime.now(timezone.utc)
+            audit_ready = False
             try:
                 from src.audit_trail import ensure_audit_table, log_operation_start
                 ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)
                 log_operation_start(client, config.get("sql_warehouse_id", ""),
                                     config, job_id, operation_type=job_type)
-            except Exception:
-                pass
+                audit_ready = True
+            except Exception as e:
+                # Don't fail the job, but make it visible WHY the completion
+                # log later won't have a row to UPDATE.
+                logger.warning("Audit trail unavailable for job %s: %s", job_id, e)
+            self.jobs[job_id]["_audit_ready"] = audit_ready
 
             if job_type == "clone":
                 if config.get("serverless") and config.get("volume"):
@@ -746,18 +751,20 @@ class JobManager:
             except Exception as log_err:
                 logger.debug(f"Could not persist run log to Delta: {log_err}")
 
-            # Log operation completion to audit trail (clone_operations table)
-            try:
-                from src.audit_trail import log_operation_complete
-                job_data = self.jobs[job_id]
-                summary = job_data.get("result") or {}
-                log_operation_complete(
-                    client, config.get("sql_warehouse_id", ""), config,
-                    job_id, summary, audit_start_time,
-                    error_message=job_data.get("error"),
-                )
-            except Exception as audit_err:
-                logger.debug(f"Could not persist audit trail to Delta: {audit_err}")
+            # Log operation completion to audit trail (clone_operations table) —
+            # skip if start never succeeded, otherwise UPDATE has no row to hit.
+            if self.jobs[job_id].get("_audit_ready"):
+                try:
+                    from src.audit_trail import log_operation_complete
+                    job_data = self.jobs[job_id]
+                    summary = job_data.get("result") or {}
+                    log_operation_complete(
+                        client, config.get("sql_warehouse_id", ""), config,
+                        job_id, summary, audit_start_time,
+                        error_message=job_data.get("error"),
+                    )
+                except Exception as audit_err:
+                    logger.debug(f"Could not persist audit trail to Delta: {audit_err}")
 
             # Save operation metrics to clone_metrics table
             try:

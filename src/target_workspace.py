@@ -72,10 +72,14 @@ def metastore_sharing_id(client: WorkspaceClient) -> str:
     Returns:
         The sharing identifier string. Raises on failure.
     """
-    ms = client.metastores.current()
-    # Databricks SDK exposes this as `global_metastore_id` on newer versions.
-    for attr in ("global_metastore_id", "metastore_id"):
-        val = getattr(ms, attr, None)
-        if val:
-            return val
-    raise RuntimeError("could not determine metastore sharing identifier from target workspace")
+    # metastores.summary() returns the full metastore info including
+    # global_metastore_id. metastores.current() only returns the workspace→metastore
+    # assignment (bare UUID), which is NOT a valid CREATE RECIPIENT ... USING ID value.
+    summary = client.metastores.summary()
+    gmid = getattr(summary, "global_metastore_id", None)
+    if gmid:
+        return gmid
+    raise RuntimeError(
+        "target workspace metastore has no global_metastore_id — "
+        "cannot create Delta Sharing recipient"
+    )

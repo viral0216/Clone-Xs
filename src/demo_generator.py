@@ -2444,6 +2444,26 @@ CHECK_CONSTRAINTS = {
 }
 
 
+def _split_top_level(s: str, sep: str = ",") -> list[str]:
+    """Split on `sep` only when paren depth is zero — preserves type specs like DECIMAL(10,2)."""
+    parts: list[str] = []
+    depth = 0
+    buf: list[str] = []
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == sep and depth == 0:
+            parts.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        parts.append("".join(buf).strip())
+    return parts
+
+
 def _apply_seasonal_patterns(client, warehouse_id, catalog, industry, industry_def, scale_factor=1.0):
     """Shift data dates to create realistic seasonal patterns."""
     fqn_prefix = f"{catalog}.{industry}"
@@ -2482,15 +2502,23 @@ def _apply_seasonal_patterns(client, warehouse_id, catalog, industry, industry_d
                 month_cond = f"month({date_col}) BETWEEN {peak_end + 1} AND {peak_start - 1}"
                 shift_expr = f"add_months({date_col}, {peak_start} - month({date_col}) + 12)"
 
-            # Get all columns except the date column, then add shifted date
-            all_cols = [c.strip().split()[0] for c in tbl["ddl_cols"].split(",")]
-            other_cols = [c for c in all_cols if c != date_col]
-            select_cols = ", ".join(other_cols)
+            # Parse column names — naive .split(",") breaks on type specs like
+            # DECIMAL(10,2) where the comma is inside parentheses. Walk the string
+            # and only split on top-level commas.
+            all_cols = [c.split()[0] for c in _split_top_level(tbl["ddl_cols"])]
+            # Build a SELECT that preserves the original column order, replacing
+            # only the date column with the shifted expression. INSERT INTO ...
+            # SELECT matches positionally, so the SELECT must mirror table order.
+            select_parts = [
+                f"{shift_expr} AS {date_col}" if c == date_col else c
+                for c in all_cols
+            ]
+            select_cols = ", ".join(select_parts)
             limit_rows = max(1000, int(tbl["rows"] * scale_factor * 0.05))
 
             execute_sql(client, warehouse_id, f"""
-                INSERT INTO {fqn}
-                SELECT {select_cols}, {shift_expr} AS {date_col}
+                INSERT INTO {fqn} ({", ".join(all_cols)})
+                SELECT {select_cols}
                 FROM {fqn}
                 WHERE {month_cond}
                 AND rand() < 0.15

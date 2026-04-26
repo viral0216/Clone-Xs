@@ -152,9 +152,28 @@ You're trying to clone via Delta Sharing between two workspaces that happen to s
 
 Same metastore = same UC = no Delta Sharing required. The same-metastore preflight check fails fast in 1–2 seconds before any orphan recipients/shares are created. To verify the metastores match: in either workspace's SQL editor, run `SELECT current_metastore()` — if both return the same UUID, this is your situation.
 
+### Why does my second cross-workspace clone reuse the recipient from the first one?
+
+You'll see a log line like:
+
+```
+Reusing existing recipient 'clone_xs_recipient_6dd41a34' that already points at
+target metastore 'azure:westeurope:a649b7f5-...'. (Clone-Xs originally derived
+'clone_xs_recipient_143c66be' from the deterministic hash, but Databricks
+allows only one recipient per target metastore.)
+```
+
+This is correct behaviour, not a bug. **Databricks Unity Catalog enforces one recipient per `(source_metastore, target_metastore_sharing_id)` tuple.** After your first cross-workspace clone created `clone_xs_recipient_<suffix>` pointing at the target metastore, that one recipient occupies the only "slot" the source metastore has for that target. Subsequent clones from the same source workspace to the same target workspace — regardless of `dest_catalog` name, regardless of which deterministic suffix Clone-Xs computes — must share that single recipient.
+
+**Recipients are pure auth identifiers**, so this is fine: one recipient can be GRANTed to many shares, and Clone-Xs creates a fresh share per `(source_catalog, dest_catalog)` pair. Sharing the recipient across multiple clone pairs is semantically correct.
+
+The pre-fix symptom was that `CREATE RECIPIENT … USING ID …` issued via the SQL Statement Execution API silently no-oped against the in-use target metastore — the SDK exposes it as the real "already exists with same sharing identifier" error, which Clone-Xs now catches by scanning existing recipients first and reusing instead of creating.
+
+If you want a fresh recipient (e.g. you DROPed the old one for compliance reasons), Clone-Xs's next clone will detect there's no existing recipient for the target and create one. No special config needed.
+
 ### "GRANT failed because recipient ... is not visible" / "phantom recipient"
 
-This was a long-standing failure mode caused by `CREATE RECIPIENT IF NOT EXISTS` silently no-oping when the create couldn't actually proceed (cross-region/account constraint, missing entitlement, etc.). Clone-Xs now uses a **probe-then-bare-CREATE** pattern: it checks `SHOW RECIPIENTS LIKE` first, and if missing runs **bare** `CREATE RECIPIENT` without `IF NOT EXISTS`. If the bare CREATE fails, you'll see the underlying Databricks error wrapped with these likely causes:
+Less common after the recipient-reuse fix above, but can still happen if `CREATE RECIPIENT` fails for an unrelated reason (cross-region/account constraint, missing entitlement, name collision with a soft-deleted recipient in another metastore). Clone-Xs now uses an **SDK-based `recipients.create()`** path (not SQL DDL), which surfaces the real error rather than silently no-oping. If the SDK call fails, you'll see the underlying Databricks error wrapped with these likely causes:
 
 - Cross-account / cross-region D2D Delta Sharing isn't enabled on the source metastore (check Databricks Account Console → Delta Sharing settings)
 - Your identity lacks `CREATE RECIPIENT` privilege on the source metastore (metastore-admin needed)

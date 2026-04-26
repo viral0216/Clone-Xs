@@ -273,6 +273,7 @@ def process_schema(
             force_reclone=force_reclone, where_clauses=where_clause,
             schema_only=config.get("schema_only", False),
             tables_progress=config.get("_tables_progress"),
+            tbl_properties=config.get("clone_tbl_properties"),
         )
 
         # Apply data masking after table cloning
@@ -843,6 +844,18 @@ def _build_summary(results: list[dict]) -> dict:
         "volumes": {"success": 0, "failed": 0, "skipped": 0},
         "errors": [],
         "schema_durations": {},
+        # Catalog-wide CLONE metric totals (Databricks per-CLONE response rows
+        # summed across every table). Useful for cloud-egress finance reporting
+        # and surfacing "GB transferred" on the run summary.
+        "bytes_copied": 0,
+        "files_copied": 0,
+        "source_table_size": 0,
+        "source_num_of_files": 0,
+        # Per-source-format success counters (DELTA / PARQUET / ICEBERG / etc.)
+        # — same CLONE syntax works across all three when the source is
+        # registered in UC. Surfaced in the run summary so users can see the
+        # mix of formats they migrated.
+        "formats": {},
     }
 
     for result in results:
@@ -854,6 +867,15 @@ def _build_summary(results: list[dict]) -> dict:
             if obj_type in result:
                 for key in ("success", "failed", "skipped"):
                     summary[obj_type][key] += result[obj_type].get(key, 0)
+
+        # Roll up per-schema clone metrics into the catalog-wide totals.
+        tbl = result.get("tables") or {}
+        for metric in ("bytes_copied", "files_copied", "source_table_size", "source_num_of_files"):
+            summary[metric] += tbl.get(metric, 0)
+
+        # Roll up per-source-format counters (Delta / Parquet / Iceberg).
+        for fmt, count in (tbl.get("formats") or {}).items():
+            summary["formats"][fmt] = summary["formats"].get(fmt, 0) + count
 
         if "duration_seconds" in result:
             summary["schema_durations"][result["schema"]] = result["duration_seconds"]

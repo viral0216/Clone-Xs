@@ -129,13 +129,35 @@ export default function PreviewPanel({
           <Eye className="h-5 w-5" />
           Preview Clone Configuration
           {crossWorkspace && (
-            <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400 border-blue-200">
+            <Badge variant="outline" className="text-xs gap-1">
+              <Share2 className="h-3 w-3" />
               Cross-workspace
             </Badge>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Source → destination — always visible so the catalog names aren't
+            hidden in the tile details below, especially in cross-workspace
+            mode where the third tile shows target host instead of dest catalog. */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/30 border border-border text-sm flex-wrap">
+          <Database className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-muted-foreground">Source:</span>
+          <span className="font-mono font-medium text-foreground">
+            {config.source_catalog || "—"}
+          </span>
+          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Destination:</span>
+          <span className="font-mono font-medium text-foreground">
+            {config.destination_catalog || "—"}
+          </span>
+          {crossWorkspace && (
+            <span className="text-xs text-muted-foreground ml-auto">
+              on target workspace
+            </span>
+          )}
+        </div>
+
         {/* Scope summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <SummaryTile

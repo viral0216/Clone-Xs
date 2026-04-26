@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -39,6 +40,7 @@ from dataclasses import dataclass, field
 from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql
+from src.clone_tables import _extract_clone_metrics, _format_tbl_properties
 from src.target_workspace import build_target_client, metastore_sharing_id
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,40 @@ def _recipient_global_metastore_id(
             val = row.get("info_value") or row.get("data_type")
             if val:
                 return str(val).strip()
+    return None
+
+
+def _find_recipient_for_target(
+    client: WorkspaceClient, target_sharing_id: str,
+) -> str | None:
+    """Find an existing recipient on the source pointing at the given target.
+
+    Databricks enforces uniqueness on (source_metastore, target_metastore_id):
+    you can have at most one recipient per target. If a clone has already
+    been run from this source to this target, it left behind a recipient
+    pointing at `target_sharing_id`. We must reuse it — a second CREATE
+    fails with "already exists with same sharing identifier".
+
+    Recipients are pure auth identifiers; one recipient can be GRANTed to
+    many shares, so reusing across multiple (source_catalog, dest_catalog)
+    pairs is safe. The share name remains deterministic per pair.
+
+    Returns the recipient name, or None if no existing recipient covers
+    this target. Best-effort — if the SDK list call fails, returns None
+    (caller will fall through to CREATE which will surface its own error).
+    """
+    try:
+        for r in client.recipients.list():
+            gmid = (
+                getattr(r, "data_recipient_global_metastore_id", None)
+                or getattr(r, "sharing_code", None)
+            )
+            if gmid and str(gmid).strip() == str(target_sharing_id).strip():
+                name = getattr(r, "name", None)
+                if name:
+                    return name
+    except Exception as e:
+        logger.debug(f"recipients.list failed during target-id scan: {e}")
     return None
 
 
@@ -321,6 +357,17 @@ class TableResult:
     status: str  # "cloned" | "failed" | "skipped"
     error: str | None = None
     duration_ms: int | None = None
+    # Databricks per-CLONE metrics row, when available. None for failed runs,
+    # dry-run, or any case where the response didn't carry the expected
+    # `num_copied_files` / `copied_files_size` / `source_table_size` /
+    # `source_num_of_files` columns.
+    bytes_copied: int | None = None
+    files_copied: int | None = None
+    source_table_size: int | None = None
+    source_num_of_files: int | None = None
+    # Source data-source format (DELTA / PARQUET / ICEBERG / etc.). Same
+    # CLONE syntax works across formats when the source is registered in UC.
+    source_format: str | None = None
 
 
 @dataclass
@@ -357,6 +404,19 @@ class CrossWorkspaceResult:
     volumes_failed: int = 0
     volume_files_copied: int = 0
     volume_bytes_copied: int = 0
+    # Aggregate Databricks per-CLONE metrics across all tables — sums of
+    # `copied_files_size` (bytes_copied), `num_copied_files` (files_copied),
+    # `source_table_size`, `source_num_of_files`. Per-table rows that don't
+    # carry metrics (dry-run or unexpected response shape) contribute 0.
+    bytes_copied: int = 0
+    files_copied: int = 0
+    source_table_size: int = 0
+    source_num_of_files: int = 0
+    # Per-source-format success counters (DELTA / PARQUET / ICEBERG / etc.).
+    # Same `CREATE TABLE … DEEP CLONE source` syntax handles all three when
+    # the source is registered in UC. Surfaced in the run summary so users
+    # see the format mix they migrated.
+    formats: dict[str, int] = field(default_factory=dict)
     grants_replayed: int = 0
     grants_skipped: int = 0
     tags_replayed: int = 0
@@ -392,6 +452,11 @@ class CrossWorkspaceResult:
             "volumes_failed": self.volumes_failed,
             "volume_files_copied": self.volume_files_copied,
             "volume_bytes_copied": self.volume_bytes_copied,
+            "bytes_copied": self.bytes_copied,
+            "files_copied": self.files_copied,
+            "source_table_size": self.source_table_size,
+            "source_num_of_files": self.source_num_of_files,
+            "formats": dict(self.formats),
             "grants_replayed": self.grants_replayed,
             "grants_skipped": self.grants_skipped,
             "tags_replayed": self.tags_replayed,
@@ -459,15 +524,69 @@ def _match_name(name: str, include_re: re.Pattern | None, exclude_re: re.Pattern
     return True
 
 
+def _format_clone_error(source_format: str, alias: str, err: Exception) -> str:
+    """Wrap known per-format CLONE failures with an actionable message.
+
+    Databricks's CLONE for Parquet / Iceberg sources has documented
+    limitations (partition evolution, truncated decimal columns, path-based
+    clone for partitioned Parquet, glob patterns). Detect those by error-text
+    pattern and prefix with a clearer hint pointing at the doc, while still
+    keeping the original Databricks error inline for diagnostics.
+
+    See https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet
+    for the canonical list of limitations.
+    """
+    raw = str(err)
+    msg = raw.lower()
+    fmt = (source_format or "").upper()
+
+    if fmt == "ICEBERG" and "partition evolution" in msg:
+        return (
+            f"Source Iceberg table {alias} has experienced partition "
+            f"evolution, which Databricks CLONE does not support. Use "
+            f"a different ingestion path (e.g. CONVERT TO DELTA or a "
+            f"manual CTAS) for this table.\n\nOriginal error: {raw}"
+        )
+    if fmt == "ICEBERG" and ("truncated" in msg and "decimal" in msg):
+        return (
+            f"Source Iceberg table {alias} has a partition truncated on a "
+            f"decimal column, which Databricks CLONE does not support "
+            f"(only string / long / int truncated columns work, on "
+            f"DBR 13.3+).\n\nOriginal error: {raw}"
+        )
+    if fmt == "PARQUET" and "partition" in msg and "path" in msg:
+        return (
+            f"Source Parquet table {alias} appears to be partitioned and "
+            f"referenced by path. Per Databricks docs, partitioned Parquet "
+            f"tables must be registered to UC (or the legacy Hive metastore) "
+            f"and cloned by table name — path-based clone isn't supported "
+            f"for partitioned Parquet sources.\n\nOriginal error: {raw}"
+        )
+    if "glob" in msg and ("pattern" in msg or "wildcard" in msg):
+        return (
+            f"Source path for {alias} uses a glob/wildcard pattern, which "
+            f"Databricks CLONE does not support. Provide an explicit "
+            f"directory path.\n\nOriginal error: {raw}"
+        )
+    return raw
+
+
 def _list_tables(
     client: WorkspaceClient,
     catalog: str,
     schema: str,
     include_re: re.Pattern | None = None,
     exclude_re: re.Pattern | None = None,
-) -> list[str]:
-    """List *managed* and *external* tables (skip views — Phase 2 handles those)."""
-    tables = []
+) -> list[tuple[str, str]]:
+    """List *managed* and *external* tables (skip views — Phase 2 handles those).
+
+    Returns a list of ``(table_name, source_format)`` tuples. ``source_format``
+    is the upper-cased Databricks ``data_source_format`` (DELTA / PARQUET /
+    ICEBERG / etc.); falls back to ``DELTA`` when unset, since the most
+    common case is unannotated managed Delta. The format is surfaced in run
+    summaries so users can see they migrated mixed-format catalogs.
+    """
+    tables: list[tuple[str, str]] = []
     for t in client.tables.list(catalog_name=catalog, schema_name=schema):
         table_type = getattr(t, "table_type", None)
         kind = str(table_type).split(".")[-1] if table_type else ""
@@ -477,7 +596,9 @@ def _list_tables(
             continue
         if not _match_name(t.name, include_re, exclude_re):
             continue
-        tables.append(t.name)
+        fmt_raw = getattr(t, "data_source_format", None)
+        fmt = str(fmt_raw).split(".")[-1].upper() if fmt_raw else "DELTA"
+        tables.append((t.name, fmt))
     return tables
 
 
@@ -1040,7 +1161,7 @@ def _replay_metadata(
     source_catalog: str,
     dest_catalog: str,
     schemas: list[str],
-    tables_by_schema: dict[str, list[str]],
+    tables_by_schema: dict[str, list[tuple[str, str]]],
     *,
     copy_permissions: bool,
     copy_ownership: bool,
@@ -1081,7 +1202,7 @@ def _replay_metadata(
             )
 
         # --- Table level ---------------------------------------------------
-        for table in tables_by_schema.get(schema, []):
+        for table, _fmt in tables_by_schema.get(schema, []):
             tbl_src = f"TABLE {_fqn(source_catalog, schema, table)}"
             tbl_dst = f"TABLE {_fqn(dest_catalog, schema, table)}"
             if copy_permissions:
@@ -1223,7 +1344,11 @@ def run_cross_workspace_clone(
         schemas = _list_schemas(source_client, source_catalog, exclude_schemas, include_schemas=include_schemas)
         logger.info(f"Found {len(schemas)} schemas")
 
-        tables_by_schema: dict[str, list[str]] = {}
+        # tables_by_schema is now schema → list of (table_name, source_format)
+        # tuples so the per-table CLONE step can stamp the format onto the
+        # returned TableResult and the orchestrator can roll up per-format
+        # counters at the end of the run.
+        tables_by_schema: dict[str, list[tuple[str, str]]] = {}
         total_tables = 0
         for schema in schemas:
             tables = _list_tables(source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re)
@@ -1292,34 +1417,59 @@ def run_cross_workspace_clone(
             )
         share_created = True
 
-        # Recipient: probe first, then BARE CREATE (no IF NOT EXISTS).
+        # Recipient: reuse-existing-or-create.
         #
-        # Why not IF NOT EXISTS? Databricks's `CREATE RECIPIENT IF NOT EXISTS`
-        # returns success even when the create silently fails (e.g. cross-region
-        # / cross-account Delta Sharing isn't enabled, missing entitlement,
-        # phantom name collision). That hides the real error and the failure
-        # surfaces much later as a confusing "GRANT against missing recipient".
-        # Probe → bare CREATE preserves the original Databricks error.
+        # Databricks enforces uniqueness on (source_metastore, target_metastore_id):
+        # you can have at most ONE recipient per target metastore. If a clone
+        # has already been run from this source workspace to this target
+        # workspace, it left behind a recipient pointing at target_sharing_id.
+        # A new CREATE for the same target fails with "already exists with
+        # same sharing identifier". So: scan first, reuse if found, only
+        # create if there's no existing recipient.
+        #
+        # Recipients are pure auth identifiers — one recipient can be GRANTed
+        # to many shares, so reusing across multiple (source_catalog, dest_catalog)
+        # pairs is correct. Only the share name needs to be deterministic per
+        # pair (which it already is).
+        if not dry_run:
+            existing_for_target = _find_recipient_for_target(source_client, target_sharing_id)
+            if existing_for_target:
+                logger.info(
+                    f"Reusing existing recipient '{existing_for_target}' that already "
+                    f"points at target metastore '{target_sharing_id}'. (Clone-Xs "
+                    f"originally derived '{recipient_name}' from the deterministic "
+                    f"hash, but Databricks allows only one recipient per target metastore.)"
+                )
+                recipient_name = existing_for_target
+                result.recipient_name = existing_for_target
+
         if not dry_run and _recipient_exists(source_client, source_wh, recipient_name):
             logger.info(f"Recipient {recipient_name} already exists — reusing")
-        else:
-            logger.info(f"Creating recipient on source: {recipient_name}")
+        elif not dry_run:
+            # Use the SDK's recipients.create() instead of SQL DDL via the
+            # Statement Execution API. Empirically, CREATE RECIPIENT against
+            # the same target metastore can silently no-op via the warehouse
+            # SQL channel while succeeding via the SDK REST endpoint — likely
+            # a Statement Execution API quirk for this specific UC operation.
+            # The SDK call hits a different REST endpoint (Unity Catalog
+            # `/api/2.1/unity-catalog/recipients`) and surfaces real errors.
+            logger.info(f"Creating recipient on source: {recipient_name} (via SDK)")
             try:
-                _run(
-                    source_client, source_wh,
-                    f"CREATE RECIPIENT {_quote_ident(recipient_name)} "
-                    f"USING ID '{target_sharing_id}'",
-                    dry_run=dry_run,
+                from databricks.sdk.service.sharing import AuthenticationType
+                source_client.recipients.create(
+                    name=recipient_name,
+                    authentication_type=AuthenticationType.DATABRICKS,
+                    data_recipient_global_metastore_id=target_sharing_id,
                 )
             except Exception as e:
+                msg = str(e).lower()
                 # Race: another caller created it between our probe and CREATE.
-                if "already exists" in str(e).lower():
+                if "already exists" in msg:
                     logger.info(f"Recipient {recipient_name} created concurrently — reusing")
                 else:
-                    # Surface the real Databricks error with context. Common
-                    # causes called out so the user doesn't have to guess.
+                    # Surface the real Databricks error with context.
                     raise RuntimeError(
-                        f"CREATE RECIPIENT failed for '{recipient_name}': {e}\n\n"
+                        f"recipients.create() failed for '{recipient_name}': {e}\n\n"
                         f"Common causes:\n"
                         f"  - Cross-account / cross-region Delta Sharing isn't enabled on "
                         f"the source metastore (check Databricks Account Console → Delta Sharing).\n"
@@ -1328,6 +1478,12 @@ def run_cross_workspace_clone(
                         f"To diagnose, run this in the source workspace SQL editor:\n"
                         f"  CREATE RECIPIENT clone_xs_diag USING ID '{target_sharing_id}';"
                     ) from e
+        else:
+            # dry-run path: just log what would happen
+            logger.info(
+                f"[DRY RUN] Would create recipient {recipient_name} "
+                f"USING ID '{target_sharing_id}' via SDK recipients.create()"
+            )
 
         # Verify visibility — if CREATE returned success but the recipient
         # still can't be read, fail fast with the underlying cause instead of
@@ -1341,22 +1497,65 @@ def run_cross_workspace_clone(
                 time.sleep(2)  # eventual-consistency settle
                 recipient_visible = _recipient_exists(source_client, source_wh, recipient_name)
             if not recipient_visible:
-                raise RuntimeError(
-                    f"CREATE RECIPIENT '{recipient_name}' reported success but the "
-                    f"recipient is not visible via SHOW RECIPIENTS or the SDK from "
-                    f"warehouse {source_wh}.\n\n"
-                    f"This means the CREATE silently failed inside Databricks. Most "
-                    f"common reasons:\n"
-                    f"  - Cross-region / cross-account D2D Delta Sharing isn't enabled "
-                    f"between source ({source_sharing_id or '<unknown>'}) and target ({target_sharing_id}).\n"
-                    f"  - Warehouse {source_wh} is bound to a different metastore than "
-                    f"the one you're an admin on.\n"
-                    f"  - A phantom recipient with this name exists in another metastore "
-                    f"the SDK can see but your SQL can't.\n\n"
-                    f"To diagnose, run this manually in the source workspace SQL editor "
-                    f"(without IF NOT EXISTS, so the real error surfaces):\n"
-                    f"  CREATE RECIPIENT clone_xs_diag USING ID '{target_sharing_id}';"
+                # Bare CREATE silently failed for this specific deterministic
+                # name. Most often: a phantom/soft-deleted name reservation
+                # in the metastore catalog that we can't see via SHOW. Try
+                # a fully-random name (NOT prefixed with the deterministic
+                # suffix) so we escape any substring-based name reservation
+                # Databricks may be enforcing. The share name is unchanged
+                # (still deterministic per source → dest pair); the recipient
+                # name is just an auth identifier so a different name doesn't
+                # break anything downstream.
+                fallback_name = f"clone_xs_recipient_{secrets.token_hex(4)}"
+                logger.warning(
+                    f"Deterministic recipient name '{recipient_name}' silently "
+                    f"failed to create (likely a phantom/reserved name in the "
+                    f"metastore catalog). Falling back to randomly-suffixed "
+                    f"name '{fallback_name}'."
                 )
+                try:
+                    _run(
+                        source_client, source_wh,
+                        f"CREATE RECIPIENT {_quote_ident(fallback_name)} "
+                        f"USING ID '{target_sharing_id}'",
+                        dry_run=dry_run,
+                    )
+                except Exception as fallback_err:
+                    if "already exists" not in str(fallback_err).lower():
+                        raise RuntimeError(
+                            f"Both deterministic and fallback CREATE RECIPIENT "
+                            f"failed. Original name '{recipient_name}' silently "
+                            f"no-oped; fallback '{fallback_name}' failed with: "
+                            f"{fallback_err}"
+                        ) from fallback_err
+                # Verify the fallback is visible — if not, raise the original
+                # actionable error so the user sees the metastore-side hint.
+                fallback_visible = _recipient_exists(source_client, source_wh, fallback_name)
+                if not fallback_visible:
+                    time.sleep(2)
+                    fallback_visible = _recipient_exists(source_client, source_wh, fallback_name)
+                if not fallback_visible:
+                    raise RuntimeError(
+                        f"CREATE RECIPIENT silently failed for both the "
+                        f"deterministic name '{recipient_name}' AND the random "
+                        f"fallback '{fallback_name}'. This means the metastore "
+                        f"is rejecting CREATE RECIPIENT for this target id "
+                        f"entirely.\n\n"
+                        f"Most common reasons:\n"
+                        f"  - Cross-region / cross-account D2D Delta Sharing "
+                        f"isn't enabled between source "
+                        f"({source_sharing_id or '<unknown>'}) and target "
+                        f"({target_sharing_id}).\n"
+                        f"  - Warehouse {source_wh} is bound to a different "
+                        f"metastore than the one you're an admin on.\n\n"
+                        f"To diagnose, run this manually in the source SQL editor:\n"
+                        f"  CREATE RECIPIENT clone_xs_diag USING ID '{target_sharing_id}';\n"
+                        f"  DESC RECIPIENT clone_xs_diag;"
+                    )
+                # Fallback succeeded — adopt the new name for the rest of the
+                # orchestrator (GRANT, audit row, result.recipient_name).
+                recipient_name = fallback_name
+                result.recipient_name = fallback_name
         existing_gmid = (
             None if dry_run
             else _recipient_global_metastore_id(source_client, source_wh, recipient_name)
@@ -1385,7 +1584,7 @@ def run_cross_workspace_clone(
         desired_aliases = {
             f"{schema}.{table}"
             for schema, tables in tables_by_schema.items()
-            for table in tables
+            for table, _fmt in tables
         }
         to_add = desired_aliases - existing_aliases
         to_remove = (existing_aliases - desired_aliases) if prune_share_extras else set()
@@ -1577,58 +1776,94 @@ def run_cross_workspace_clone(
         # --- 5. DEEP CLONE every table from shared_catalog → target -----------------
         logger.info(f"DEEP CLONE {total_tables} tables (parallel={parallel_tables})...")
 
-        def clone_one(schema: str, table: str) -> TableResult:
+        def clone_one(schema: str, table: str, source_format: str) -> TableResult:
             alias = f"{schema}.{table}"
             src = _fqn(shared_catalog_name, schema, table)
             dst = _fqn(dest_catalog, schema, table)
+            # Optional inline TBLPROPERTIES override on the CLONE statement —
+            # primary archival use case (e.g. delta.logRetentionDuration).
+            # Setting via ALTER TABLE post-clone is too late for retention
+            # windows because the first commit has already happened. The
+            # field lives on the top-level CloneRequest (applies to both
+            # single- and cross-workspace clones), not on TargetWorkspace.
+            tbl_props_clause = _format_tbl_properties(
+                config.get("clone_tbl_properties")
+            )
             t0 = time.time()
             try:
                 if data_sync_mode == "incremental":
-                    _run(
+                    rows = _run(
                         target_client, target_wh,
-                        f"CREATE OR REPLACE TABLE {dst} DEEP CLONE {src}",
+                        f"CREATE OR REPLACE TABLE {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
                 elif data_sync_mode == "force_full":
                     _run(target_client, target_wh, f"DROP TABLE IF EXISTS {dst}", dry_run=dry_run)
-                    _run(
+                    rows = _run(
                         target_client, target_wh,
-                        f"CREATE TABLE {dst} DEEP CLONE {src}",
+                        f"CREATE TABLE {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
                 else:  # snapshot_once
-                    _run(
+                    rows = _run(
                         target_client, target_wh,
-                        f"CREATE TABLE IF NOT EXISTS {dst} DEEP CLONE {src}",
+                        f"CREATE TABLE IF NOT EXISTS {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
-                return TableResult(schema=schema, table=table, status="cloned",
-                                   duration_ms=int((time.time() - t0) * 1000))
+                metrics = _extract_clone_metrics(rows) if not dry_run else None
+                return TableResult(
+                    schema=schema, table=table, status="cloned",
+                    duration_ms=int((time.time() - t0) * 1000),
+                    bytes_copied=(metrics or {}).get("copied_files_size"),
+                    files_copied=(metrics or {}).get("num_copied_files"),
+                    source_table_size=(metrics or {}).get("source_table_size"),
+                    source_num_of_files=(metrics or {}).get("source_num_of_files"),
+                    source_format=source_format,
+                )
             except Exception as e:
                 logger.warning(f"DEEP CLONE failed for {alias}: {e}")
-                return TableResult(schema=schema, table=table, status="failed",
-                                   error=str(e),
-                                   duration_ms=int((time.time() - t0) * 1000))
+                # Wrap the documented Parquet/Iceberg-specific failure modes
+                # with a clearer message so users don't have to dig through
+                # Databricks docs to understand what hit them.
+                err = _format_clone_error(source_format, alias, e)
+                return TableResult(
+                    schema=schema, table=table, status="failed",
+                    error=err,
+                    duration_ms=int((time.time() - t0) * 1000),
+                    source_format=source_format,
+                )
 
-        flat: list[tuple[str, str]] = [
-            (schema, table)
+        # Flatten (schema → list[(name, fmt)]) into a flat (schema, name, fmt)
+        # iterable so the parallel executor can submit per-table jobs.
+        flat: list[tuple[str, str, str]] = [
+            (schema, table, fmt)
             for schema, tables in tables_by_schema.items()
-            for table in tables
+            for table, fmt in tables
         ]
 
         if parallel_tables <= 1:
-            for schema, table in flat:
-                tr = clone_one(schema, table)
+            for schema, table, fmt in flat:
+                tr = clone_one(schema, table, fmt)
                 result.details.append(tr)
         else:
             with ThreadPoolExecutor(max_workers=parallel_tables) as ex:
-                futures = {ex.submit(clone_one, s, t): (s, t) for s, t in flat}
+                futures = {ex.submit(clone_one, s, t, f): (s, t) for s, t, f in flat}
                 for fut in as_completed(futures):
                     result.details.append(fut.result())
 
         result.tables_cloned = sum(1 for d in result.details if d.status == "cloned")
         result.tables_failed = sum(1 for d in result.details if d.status == "failed")
         result.tables_skipped = sum(1 for d in result.details if d.status == "skipped")
+        # Roll up per-table CLONE metrics into the run-level totals.
+        result.bytes_copied = sum(d.bytes_copied or 0 for d in result.details)
+        result.files_copied = sum(d.files_copied or 0 for d in result.details)
+        result.source_table_size = sum(d.source_table_size or 0 for d in result.details)
+        result.source_num_of_files = sum(d.source_num_of_files or 0 for d in result.details)
+        # Per-source-format success counters — only count cloned (not failed)
+        # so the total matches result.tables_cloned.
+        for d in result.details:
+            if d.status == "cloned" and d.source_format:
+                result.formats[d.source_format] = result.formats.get(d.source_format, 0) + 1
 
         # --- Phase 2: views + functions -----------------------------------
         if clone_views:

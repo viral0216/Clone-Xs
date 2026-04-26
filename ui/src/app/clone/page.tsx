@@ -92,6 +92,21 @@ function downloadFile(content: string, filename: string, type = "application/jso
   URL.revokeObjectURL(url);
 }
 
+// Render a byte count with the largest sensible unit. Used by the clone
+// metrics row (Databricks reports `copied_files_size` in bytes; teams want
+// to see GB / MB).
+function formatBytes(n: number): string {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
+
 function generateReport(job: any): string {
   const result = normalizeResult(job.result);
   const v = result?.validation;
@@ -483,6 +498,58 @@ function JobProgress({ jobId }: { jobId: string }) {
               );
             })}
           </div>
+
+          {/* Source format mix — same CLONE syntax handles Delta, Parquet, and
+              Iceberg sources registered in UC. Surface the breakdown so the
+              user knows what they migrated (especially useful for catalogs
+              that mix formats during a migration). */}
+          {result.formats && Object.keys(result.formats).length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground">Source formats:</span>
+              {Object.entries(result.formats as Record<string, number>)
+                .sort((a, b) => (b[1] as number) - (a[1] as number))
+                .map(([fmt, count]) => (
+                  <Badge key={fmt} variant="outline" className="text-xs">
+                    {fmt}: {count}
+                  </Badge>
+                ))}
+            </div>
+          )}
+
+          {/* Clone metrics (Databricks per-CLONE counters, summed across tables) —
+              only render when we actually have data movement to show. */}
+          {((result.bytes_copied || 0) > 0 || (result.files_copied || 0) > 0) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="pt-4 text-center">
+                  <p className="text-2xl font-bold text-foreground">{formatBytes(result.bytes_copied || 0)}</p>
+                  <p className="text-xs text-gray-500">Bytes Copied</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 text-center">
+                  <p className="text-2xl font-bold text-foreground">{(result.files_copied || 0).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">Files Copied</p>
+                </CardContent>
+              </Card>
+              {(result.source_table_size || 0) > 0 && (
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-foreground">{formatBytes(result.source_table_size || 0)}</p>
+                    <p className="text-xs text-gray-500">Source Size</p>
+                  </CardContent>
+                </Card>
+              )}
+              {(result.source_num_of_files || 0) > 0 && (
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-foreground">{(result.source_num_of_files || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">Source Files</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
 
           {/* Duration */}
           {result.duration_seconds && (
@@ -941,6 +1008,9 @@ function ClonePageInner() {
     throttle: "" as "" | "low" | "medium" | "high" | "max",
     ttl: "",
     template: "",
+    // Free-form TBLPROPERTIES override block — one `key = value` per line.
+    // Parsed at submit-time into clone_tbl_properties dict. Empty = no override.
+    clone_tbl_properties_text: "",
   };
 
   // Apply URL query params from template selection on mount
@@ -1086,6 +1156,29 @@ function ClonePageInner() {
     if (payload.max_duration_min == null) delete payload.max_duration_min;
     if (payload.max_tables == null) delete payload.max_tables;
     if (!payload.source_snapshot_id) delete payload.source_snapshot_id;
+
+    // Parse the free-form TBLPROPERTIES textarea ("key = value" per line) into
+    // the dict the backend expects on `clone_tbl_properties`. Skip blank
+    // lines and lines without `=`. Strip surrounding quotes from values.
+    const tblPropsText = (payload.clone_tbl_properties_text as string) || "";
+    delete payload.clone_tbl_properties_text;
+    if (tblPropsText.trim()) {
+      const props: Record<string, string> = {};
+      for (const line of tblPropsText.split("\n")) {
+        const eq = line.indexOf("=");
+        if (eq < 0) continue;
+        const k = line.slice(0, eq).trim();
+        let v = line.slice(eq + 1).trim();
+        if (!k) continue;
+        if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+          v = v.slice(1, -1);
+        }
+        props[k] = v;
+      }
+      if (Object.keys(props).length > 0) {
+        payload.clone_tbl_properties = props;
+      }
+    }
 
     if (crossWorkspace && targetConnectionName) {
       // Resolve localStorage entry → inline target_workspace creds for this
@@ -1551,6 +1644,19 @@ function ClonePageInner() {
                     }
                   />
                 </div>
+              </div>
+
+              <div className="mt-3">
+                <FieldLabelSmall hint="Optional Databricks TBLPROPERTIES applied INLINE on every per-table CLONE statement. One `key = value` per line. Primary use case: archival retention (e.g. delta.logRetentionDuration = '3650 days'). Setting these via ALTER TABLE post-clone is too late for the first VACUUM window.">
+                  TBLPROPERTIES override (advanced — for archival use)
+                </FieldLabelSmall>
+                <textarea
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
+                  rows={3}
+                  placeholder={"delta.logRetentionDuration = '3650 days'\ndelta.deletedFileRetentionDuration = '3650 days'"}
+                  value={config.clone_tbl_properties_text}
+                  onChange={(e) => setConfig({ ...config, clone_tbl_properties_text: e.target.value })}
+                />
               </div>
             </div>
 

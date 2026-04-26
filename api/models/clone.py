@@ -141,6 +141,11 @@ class CloneRequest(BaseModel):
     schema_only: bool = False
     include_objects: list[ObjectRef] | None = None
     target_workspace: TargetWorkspace | None = None
+    # Optional `TBLPROPERTIES (...)` overrides emitted on every per-table
+    # CLONE statement (e.g. {"delta.logRetentionDuration": "3650 days"} for
+    # archival tables). Setting via ALTER TABLE post-clone is too late for
+    # retention windows because the first commit has already happened.
+    clone_tbl_properties: dict[str, str] | None = None
     # Cross-workspace object-type toggles. Effective only when target_workspace
     # is set; same-workspace clone_catalog.py does not read these.
     clone_views: bool = True

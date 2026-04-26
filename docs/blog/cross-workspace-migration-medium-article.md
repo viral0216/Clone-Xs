@@ -372,12 +372,12 @@ What happens to the data on re-run is controlled by `data_sync_mode` on `target_
 | Mode | SQL emitted per table | Re-run behaviour | When to use |
 |---|---|---|---|
 | `snapshot_once` (default) | `CREATE TABLE IF NOT EXISTS dst DEEP CLONE src` | No-op on existing tables. Only newly-added tables in source get cloned. | One-time hydration. Target is meant to drift independently after the initial copy. Safest mode — never overwrites target. |
-| `incremental` | `CREATE OR REPLACE TABLE dst DEEP CLONE src` | Reads both Delta logs and copies only files added since the last clone. **Overwrites any target-side writes to cloned tables.** | Source is system of record; target is a read-replica or DR mirror. |
+| `incremental` | `CREATE OR REPLACE TABLE dst DEEP CLONE src` | Databricks tracks the source version cloned-from in the destination's metadata; on re-run, it consults the source Delta log and copies only the files added since that version. **Overwrites any target-side writes to cloned tables** (state mirrors source). | Source is system of record; target is a read-replica or DR mirror. |
 | `force_full` | `DROP TABLE IF EXISTS dst; CREATE TABLE dst DEEP CLONE src` | Full re-clone every run. | Recovery from corruption, or after a schema change you want to apply cleanly. |
 
 `incremental` and `force_full` log a WARNING at run start because of the data-loss implication — `DEEP CLONE` is a one-way mirror. Databricks doesn't expose `MERGE` semantics for clone, so any row inserted on the target after a previous clone is lost on re-run in those modes. The 3-button picker lives on the Target Workspace card in Settings, and the Preview step (just before you confirm a clone) surfaces an amber warning row when the active config has anything but the default mode.
 
-The `incremental` mode is the interesting one for ongoing sync: Databricks `DEEP CLONE` is internally aware of which files it copied last time (it tracks the source's Delta version in the destination's metadata) and only copies files added or changed since. A 2 TB catalog with a 100 MB daily delta clones in seconds, not hours.
+The `incremental` mode is the interesting one for ongoing sync: Databricks `DEEP CLONE` is internally aware of which files it copied last time (it tracks the source's Delta version in the destination's metadata) and only copies files added or changed since. A 2 TB catalog with a 100 MB daily delta clones in seconds, not hours. Verified empirically — see [`notebooks/test_deep_clone_incremental.py`](https://github.com/viral0216/clone-xs/blob/main/notebooks/test_deep_clone_incremental.py) for a runnable proof (9/9 assertions pass on a Serverless SQL warehouse).
 
 > [INSERT IMAGE: screenshots/03-data-sync-mode-picker.png]
 > Caption: Data sync mode picker on the Target Workspace card with the data-loss warning.
@@ -481,8 +481,10 @@ The same-catalog-name guard is automatically waived when `target_workspace` is s
 
 ## Try it
 
+Clone-Xs isn't published to PyPI — install from source instead:
+
 ```bash
-pip install clone-xs
+pip install git+https://github.com/viral0216/Clone-Xs.git
 clxs serve
 ```
 

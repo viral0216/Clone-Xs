@@ -51,6 +51,8 @@ Steps 2 and 3 let you adjust options (which schemas to include, whether to copy 
 
 That's it. The form does what eight pages of a hand-rolled script used to do. The first time you set up a target connection takes a couple of minutes — you'll need a workspace URL and a credential (your platform team can generate one). After that, every future migration to the same target is one click.
 
+A small detail with outsized importance: those saved target connections live **in your browser only**. The credential — the long-lived token that lets Clone-Xs talk to the destination workspace — never persists to a server, never lands in a config file, never travels through git. Each migration sends the credential inline with the request and forgets it afterwards. If you've ever had a security review balk at "who else can read those tokens at rest" — the answer here is *nobody, they're not at rest*. Your platform team can verify this in the source code in a couple of minutes; for everyone else it's enough to know that Clone-Xs sidestepped the most common cause of leaked-secret incidents (a token committed to a config file by mistake) by not having the file in the first place.
+
 Underneath the form, Clone-Xs is doing roughly forty things on your behalf — setting up a one-way data conduit between the two clouds, copying every table, recreating every report, rewriting cross-references, replaying every permission, applying every security rule, and tearing the conduit down when it's done. None of that needs your attention.
 
 > [INSERT IMAGE: screenshots/04-clone-page-target-picker.png]
@@ -113,13 +115,27 @@ The thing that distinguishes this from a script someone wrote in an afternoon is
 
 **A complete audit trail.** Every action is logged to a tracked table — what was migrated, when, by whom, with what config, with what outcome, including the total bytes moved per run. Compliance gets the records-of-processing report; ops gets the run history; finance gets the bytes-transferred number, which they can multiply by their cloud's egress rate to size the actual charge on the bill.
 
+**Refusing to do the wrong thing.** The most expensive class of cloud-platform mistake is the one that runs successfully but does something nobody wanted. Clone-Xs's preflight checks catch the common ones before any data moves: if you accidentally aim a "cross-cloud DR migration" at a destination that's actually in the same metastore as the source (a frequent mix-up after teams add a second workspace to an existing setup), the run fails in two seconds with a plain-English message telling you to use the in-workspace clone path instead. Each saved target shows the email address of the credential it's authenticated as, on the connection card, so you spot a wrong-account token before you click run. If the destination warehouse doesn't exist or you've mistyped its ID, the validation step catches it instead of the migration failing twenty minutes in. The point isn't that the tool is foolproof; it's that the failure modes are loud, specific, and early — not silent and discovered three hours later when a data engineer notices the destination is empty.
+
 - - -
 
 ## When you'd reach for this
 
 Four common scenarios:
 
-**Disaster recovery.** Your production data lives in one region. A regulator asks for a hot standby in a different region or different cloud. With Clone-Xs, the initial hydration is one click, and subsequent incremental refreshes use the `incremental` sync mode to copy only the changes since the last run. Schedule it as a daily cron and the DR replica stays current with no human in the loop — the built-in scheduler routes cross-workspace clones the same way as same-workspace ones.
+**Disaster recovery.** Your production data lives in one region. A regulator asks for a hot standby in a different region or different cloud. With Clone-Xs, the initial hydration is one click, and subsequent incremental refreshes copy only the changes since the last run — Databricks's underlying `DEEP CLONE` engine tracks the source version in the destination's metadata and only physically copies files added or changed since the last sync. Schedule it as a cron and the DR replica stays current with no human in the loop; the built-in scheduler routes cross-workspace clones the same way as same-workspace ones.
+
+The economics of this are worth being explicit about, because most teams underestimate how much it changes DR planning:
+
+| Dimension | Without incremental clone (full re-clone each refresh) | With incremental clone |
+|---|---|---|
+| **RPO** (data loss window if disaster strikes) | "Yesterday's full clone" — typically 24 hours | Whatever cron interval you pick — hourly is realistic for most catalogs, even 15-minute for small ones |
+| **RTO** (time to bring DR online) | Same — DR replica is always live | Same — DR replica is always live |
+| **Egress per refresh** | 100% of catalog size | Just the delta — typically 0.1%–2% of total |
+| **Refresh frequency you can afford** | Weekly or nightly (cost-bound) | Hourly (cost is no longer the limit) |
+| **Worked example: 10 TB catalog, 100 GB daily delta, $0.09/GB cross-region egress** | $900 per refresh × 30 daily refreshes = **$27,000/month** if you somehow ran it daily | $9 per incremental × 720 hourly refreshes = **$6,480/month** for 24× tighter RPO |
+
+The interesting thing isn't just that incremental is cheaper — it's that **incremental refresh is cheap enough to run hourly**, which moves DR from "we can recover to yesterday" to "we can recover to an hour ago." For regulated workloads (financial services, healthcare claims, anything subject to SLA contracts), that's the difference between a recoverable incident and a reportable one.
 
 **Cloud migration.** Your CFO renegotiated the cloud contract. The new home is a different provider. You need to move the lakehouse without 18 months of project overhead. Clone-Xs migrates the metadata and data; you handle the application layer.
 
@@ -137,7 +153,7 @@ A migration creates a second copy of the data. That has GDPR implications, and m
 
 **Records of processing ([Article 30](https://gdpr-info.eu/art-30-gdpr/)).** Every migration logs the source, destination, scope, principal, configuration, and outcome to an audit table — a Delta table in your existing workspace, queryable like any other table. Compliance teams can pull these directly as records of processing activities. Every migration is recorded; nothing is invisible.
 
-**Privacy by design and by default ([Article 25](https://gdpr-info.eu/art-25-gdpr/)).** Column masks and row filters that protect personal data on the source are preserved on the target. If your `patients` table masks the SSN on source, the destination copy masks it too — automatically, with the masking function rewritten for the new catalog. You don't have to remember to re-apply masks after a migration; the migration applies them.
+**Privacy by design and by default ([Article 25](https://gdpr-info.eu/art-25-gdpr/)).** Column masks and row filters that protect personal data on the source are preserved on the target. If your `patients` table masks the SSN on source, the destination copy masks it too — automatically, with the masking function rewritten for the new catalog. You don't have to remember to re-apply masks after a migration; the migration applies them. The credentials Clone-Xs uses to talk to the destination workspace also follow this principle: they live in the operator's browser only, never persist on a server or in a config file, and travel only inline with the migration request — minimising the surface area where a long-lived token could be exposed.
 
 **Right to erasure ([Article 17](https://gdpr-info.eu/art-17-gdpr/)).** When a data subject requests deletion, every copy of their data has to go — including disaster recovery replicas, sandbox copies, and migrated catalogs. Clone-Xs ships a Right to be Forgotten workflow that discovers personal data across all cloned catalogs, deletes it, runs Delta `VACUUM` to remove history, verifies, and produces a certificate. The workflow knows about 34 legal bases across 18 jurisdictions and works the same on a migrated catalog as on the source.
 
@@ -189,6 +205,8 @@ Three ways, depending on how much commitment you want:
 **Dry-run on a sandbox.** Install Clone-Xs and point it at any non-production catalog with the dry-run flag turned on. The tool walks every step of the migration — generates the SQL, builds the share, connects to the target, lists what would be created — without actually executing the destructive bits. You see the run plan and the cost estimate; nothing is changed. Twenty minutes including install.
 
 **Trial in your own workspace.** Same install, but turn dry-run off and let it actually run against a development catalog into a test target. Half an hour, including configuration.
+
+> **How to install.** Clone-Xs is distributed from source rather than published to a public package index. Your platform team can install it with `pip install git+https://github.com/viral0216/Clone-Xs.git` (or pin to a specific tag once one is cut). The repository is open source — you can fork, audit, or vendor it into an internal package mirror as your security policy requires.
 
 **Production pilot.** Pick one non-critical catalog you've been meaning to mirror to a second region. Run the migration with Clone-Xs. Compare the timeline against whatever the previous estimate had been. Most teams find the answer surprising.
 

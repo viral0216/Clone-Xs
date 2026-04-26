@@ -37,6 +37,21 @@ class TargetWorkspace(BaseModel):
     profile: str | None = None
     warehouse_id: str
     keep_share: bool = False  # keep Delta Share after migration for audit/debug
+    # How to handle re-runs of an already-cloned table.
+    #   snapshot_once = CREATE TABLE IF NOT EXISTS ... DEEP CLONE  (no-op on existing tables)
+    #   incremental   = CREATE OR REPLACE TABLE ... DEEP CLONE     (mirror source updates)
+    #   force_full    = DROP + CREATE                              (full re-clone every run)
+    # incremental and force_full overwrite any target-side writes to cloned tables.
+    data_sync_mode: Literal["snapshot_once", "incremental", "force_full"] = "snapshot_once"
+    # Delta Sharing refuses to share tables that have column masks or row filters.
+    # When True, Clone-Xs will:
+    #   1. Inventory mask/filter functions on each source table before adding to share
+    #   2. Drop them on source so the table can be added to the share
+    #   3. After the clone completes, re-apply the same masks/filters on the target
+    #   4. For data_sync_mode in (snapshot_once, force_full): also restore on source
+    #      For data_sync_mode=incremental: leave source masks dropped (otherwise
+    #      ongoing share reads would fail on Databricks-side; logs a warning)
+    auto_handle_masks: bool = False
 
     @model_validator(mode="after")
     def _creds_present(self) -> "TargetWorkspace":
@@ -51,6 +66,34 @@ class TargetWorkspace(BaseModel):
             raise ValueError("target profile name is required for profile auth")
         if not (self.warehouse_id or "").strip():
             raise ValueError("target warehouse_id is required (DDL + DEEP CLONE run on target)")
+        return self
+
+
+class TargetWorkspaceConnect(BaseModel):
+    """Same auth fields as TargetWorkspace, but without warehouse_id.
+
+    Used by /api/target/warehouses to discover warehouses *before* the user
+    has picked one — they can't supply a warehouse_id at that point.
+    """
+
+    host: str
+    auth_method: Literal["pat", "service_principal", "profile"] = "pat"
+    token: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    profile: str | None = None
+
+    @model_validator(mode="after")
+    def _creds_present(self) -> "TargetWorkspaceConnect":
+        host = (self.host or "").strip()
+        if not host or not (host.startswith("http://") or host.startswith("https://")):
+            raise ValueError("target host must be a full https:// URL")
+        if self.auth_method == "pat" and not self.token:
+            raise ValueError("target token is required for PAT auth")
+        if self.auth_method == "service_principal" and not (self.client_id and self.client_secret):
+            raise ValueError("target client_id and client_secret are required for service_principal auth")
+        if self.auth_method == "profile" and not self.profile:
+            raise ValueError("target profile name is required for profile auth")
         return self
 
 

@@ -63,6 +63,7 @@ async def start_clone(
     config.update(req_data)
     # Use warehouse from request, or keep config file value
     config["sql_warehouse_id"] = req.warehouse_id or config.get("sql_warehouse_id", "")
+
     # Translate include_objects into include_schemas + include_tables_regex
     _apply_include_objects(config, req.include_objects)
     # Ensure required keys have defaults
@@ -82,7 +83,7 @@ async def start_clone(
     if config.get("location") and not config.get("catalog_location"):
         config["catalog_location"] = config["location"]
 
-    job_type = "clone_cross_workspace" if req.target_workspace is not None else "clone"
+    job_type = "clone_cross_workspace" if config.get("target_workspace") else "clone"
     message = (
         "Cross-workspace clone job submitted (Delta Sharing → DEEP CLONE)"
         if job_type == "clone_cross_workspace"

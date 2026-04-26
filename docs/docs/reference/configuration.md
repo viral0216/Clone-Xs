@@ -104,6 +104,17 @@ target_workspace:
   profile: ""                 # required when auth_method="profile"
   warehouse_id: ""            # target SQL warehouse for DDL + DEEP CLONE
   keep_share: false           # leave the Delta Share intact post-migration
+  # How re-runs treat tables that already exist on the target.
+  #   snapshot_once = CREATE TABLE IF NOT EXISTS ... DEEP CLONE  (default; skip existing)
+  #   incremental   = CREATE OR REPLACE TABLE ... DEEP CLONE     (mirror source; overwrites target writes)
+  #   force_full    = DROP + CREATE                              (full re-clone every run)
+  data_sync_mode: snapshot_once
+  # Delta Sharing refuses tables with column masks or row filters. When true,
+  # Clone-Xs drops them on source before adding the table to the share, then
+  # re-applies them on the target after the clone. For snapshot_once /
+  # force_full the masks are also restored on source. For incremental the
+  # source masks remain dropped (otherwise ongoing share reads break).
+  auto_handle_masks: false
 
 # Toggle which object types migrate cross-workspace (all default true).
 # copy_permissions / copy_ownership / copy_tags above also apply.

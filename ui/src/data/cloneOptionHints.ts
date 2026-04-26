@@ -8,6 +8,10 @@ export const cloneOptionHints: Record<string, string> = {
     "DEEP copies all data files into the destination (independent of source). SHALLOW only copies metadata — destination points at source files.",
   load_type:
     "FULL re-clones every table on each run. INCREMENTAL only clones tables whose Delta version advanced since the last run.",
+  data_sync_mode:
+    "snapshot_once = clone only new tables (default, safe). incremental = mirror source updates into target — overwrites target writes. force_full = drop + reclone every run.",
+  auto_handle_masks:
+    "Drop column masks / row filters on source so masked tables can be added to the Delta Share, then re-apply on target. Restored on source for snapshot_once / force_full; left dropped for incremental.",
 
   // Compute
   serverless:

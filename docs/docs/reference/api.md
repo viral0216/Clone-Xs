@@ -370,6 +370,8 @@ Verify credentials for a target workspace and read its metastore sharing identif
 | `profile`       | string  | Cond.    | CLI profile name (from `~/.databrickscfg`); required when `auth_method="profile"` |
 | `warehouse_id`  | string  | Yes      | Target SQL warehouse that will run DDL + DEEP CLONE                         |
 | `keep_share`    | boolean | No       | Leave the Delta Share intact after migration (`false` by default)           |
+| `data_sync_mode` | string | No       | How re-runs treat existing target tables. `"snapshot_once"` (default; CREATE IF NOT EXISTS), `"incremental"` (CREATE OR REPLACE — mirrors source updates, overwrites target writes), or `"force_full"` (DROP + CREATE every run) |
+| `auto_handle_masks` | boolean | No   | When true, Clone-Xs drops column masks / row filters on source so masked tables can be added to the share, re-applies them on target after the clone, and (for `snapshot_once` / `force_full`) restores them on source in the finally block. Leaves source masks dropped for `incremental` mode. Default `false`. |
 
 **Example request:**
 

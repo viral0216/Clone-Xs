@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useStartClone, useVolumes } from "@/hooks/useApi";
+import { useStartClone, useVolumes, useTargetConnections, useTargetCatalogs, useTestTargetConnection, useSnapshots } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
@@ -19,25 +19,12 @@ import {
 import StatusBadge from "@/components/StatusBadge";
 import LoadingState from "@/components/LoadingState";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import TargetWorkspaceForm, { TargetWorkspaceValue } from "@/components/TargetWorkspaceForm";
 import ScopePicker, { ObjectRef, ScopeMode } from "@/components/ScopePicker";
 import PreviewPanel from "@/components/PreviewPanel";
 import FieldLabel, { FieldLabelSmall, InfoDot } from "@/components/FieldLabel";
-import { useSnapshots } from "@/hooks/useApi";
 import { toast } from "sonner";
 
 const TTL_PATTERN = /^\d+[hdw]$/;
-
-const EMPTY_TARGET: TargetWorkspaceValue = {
-  host: "",
-  auth_method: "pat",
-  token: "",
-  client_id: "",
-  client_secret: "",
-  profile: "",
-  warehouse_id: "",
-  keep_share: false,
-};
 
 type Step = "source" | "options" | "preview" | "execute";
 
@@ -610,32 +597,63 @@ function SnapshotPicker({
   );
 }
 
-function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [catalogs, setCatalogs] = useState<string[]>([]);
+function DestinationCatalogPicker({
+  value,
+  onChange,
+  targetConnectionName,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  targetConnectionName?: string | null;
+}) {
+  const [sourceCatalogs, setSourceCatalogs] = useState<string[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // When the user is doing a cross-workspace clone with a saved target picked,
+  // the dropdown must list catalogs that exist in the *target* workspace
+  // (otherwise we suggest catalogs that don't exist on the destination side).
+  const targetCatalogs = useTargetCatalogs(targetConnectionName ?? null);
+  const useTarget = !!targetConnectionName;
+
   useEffect(() => {
+    if (useTarget) return; // skip source-side fetch
     setLoading(true);
     api.get<string[]>("/catalogs")
       .then((data) => {
         const list = data || [];
-        setCatalogs(list);
+        setSourceCatalogs(list);
         if (list.length === 0) {
           toast.warning("No catalogs visible — check workspace permissions or type a name manually.");
         }
       })
-      .catch(() => setCatalogs([]))
+      .catch(() => setSourceCatalogs([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [useTarget]);
+
+  const catalogs = useTarget ? (targetCatalogs.data ?? []) : sourceCatalogs;
+  const isLoading = useTarget ? targetCatalogs.isLoading : loading;
+  const fetchError = useTarget && targetCatalogs.isError;
 
   const selectClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div>
-      <label className="text-sm font-medium">Destination Catalog</label>
-      {loading ? (
+      <label className="text-sm font-medium">
+        Destination Catalog
+        {useTarget && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            (from target '{targetConnectionName}')
+          </span>
+        )}
+      </label>
+      {fetchError && (
+        <p className="text-xs text-red-500 mt-1">
+          Could not list target catalogs — check the saved connection in Settings.
+        </p>
+      )}
+      {isLoading ? (
         <LoadingState message="Loading catalogs..." className="py-2" />
       ) : isNew ? (
         <div className="space-y-2">
@@ -682,6 +700,108 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   );
 }
 
+function CrossWorkspaceTogglePanel({
+  enabled,
+  onEnabledChange,
+  connectionName,
+  onConnectionChange,
+}: {
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  connectionName: string;
+  onConnectionChange: (v: string) => void;
+}) {
+  const conns = useTargetConnections();
+  const test = useTestTargetConnection();
+  const list = conns.data ?? [];
+  const picked = list.find((c) => c.name === connectionName);
+
+  const runTest = () => {
+    if (!connectionName) return;
+    test.mutate(connectionName, {
+      onSuccess: (data: any) => {
+        const extras = [
+          typeof data?.catalog_count === "number" ? `${data.catalog_count} catalogs` : "",
+          data?.warehouse_state ? `warehouse ${data.warehouse_state}` : "",
+        ].filter(Boolean);
+        toast.success(`'${connectionName}' connection OK${extras.length ? ` — ${extras.join(", ")}` : ""}`);
+        if (data?.warehouse_start_triggered) {
+          toast.info(`Warehouse was ${data.warehouse_state} — start triggered, RUNNING in 30–60s.`);
+        }
+      },
+      onError: (e: any) => toast.error(e?.message || `'${connectionName}' test failed`),
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+        <div>
+          <div className="text-sm font-medium">Clone to a different workspace</div>
+          {!enabled && (
+            <div className="text-xs text-muted-foreground">
+              Cross-workspace / cross-cloud migration via Delta Sharing → DEEP CLONE. Manage saved targets in Settings.
+            </div>
+          )}
+        </div>
+      </label>
+
+      {enabled && (
+        <div className="space-y-2 border-t pt-3">
+          {conns.isLoading && (
+            <p className="text-xs text-muted-foreground">Loading saved targets…</p>
+          )}
+          {!conns.isLoading && list.length === 0 && (
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">No saved target workspaces.</p>
+              <a href="/settings#target-workspaces" className="text-sm text-[#E8453C] underline">
+                + Configure in Settings →
+              </a>
+            </div>
+          )}
+          {list.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium">Target connection:</span>
+              <select
+                className="h-9 px-3 py-1 text-sm bg-background border border-input rounded-md min-w-[200px]"
+                value={connectionName}
+                onChange={(e) => onConnectionChange(e.target.value)}
+              >
+                <option value="">— select target —</option>
+                {list.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runTest}
+                disabled={!connectionName || test.isPending}
+              >
+                {test.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+              </Button>
+              <a href="/settings#target-workspaces" className="text-xs text-muted-foreground hover:text-foreground underline">
+                Manage in Settings →
+              </a>
+            </div>
+          )}
+          {picked && (
+            <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 font-mono truncate">
+              {picked.host} · {picked.auth_method === "pat" ? "PAT" : picked.auth_method === "service_principal" ? "SP" : `Profile ${picked.profile}`} · WH {picked.warehouse_id} · {picked.data_sync_mode}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClonePageInner() {
   const [step, setStep] = useState<Step>("source");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -692,8 +812,37 @@ function ClonePageInner() {
 
   // Cross-workspace / cross-cloud migration state
   const [crossWorkspace, setCrossWorkspace] = useState(false);
-  const [target, setTarget] = useState<TargetWorkspaceValue>(EMPTY_TARGET);
-  const [targetValidated, setTargetValidated] = useState(false);
+  const [targetConnectionName, setTargetConnectionName] = useState<string>("");
+  const targetConnections = useTargetConnections();
+  const pickedConnection = (targetConnections.data ?? []).find((c) => c.name === targetConnectionName) ?? null;
+  // Synthesize a target shape for PreviewPanel's CLI/YAML output. Secrets stay
+  // redacted as "***" (the GET endpoint masks them) — correct behavior for
+  // commands the user might paste/share.
+  const targetForPreview = pickedConnection
+    ? {
+        host: pickedConnection.host,
+        auth_method: pickedConnection.auth_method,
+        token: pickedConnection.token ?? "",
+        client_id: pickedConnection.client_id ?? "",
+        client_secret: pickedConnection.client_secret ?? "",
+        profile: pickedConnection.profile ?? "",
+        warehouse_id: pickedConnection.warehouse_id,
+        keep_share: !!pickedConnection.keep_share,
+        data_sync_mode: pickedConnection.data_sync_mode ?? "snapshot_once",
+        auto_handle_masks: !!pickedConnection.auto_handle_masks,
+      }
+    : {
+        host: "",
+        auth_method: "pat" as const,
+        token: "",
+        client_id: "",
+        client_secret: "",
+        profile: "",
+        warehouse_id: "",
+        keep_share: false,
+        data_sync_mode: "snapshot_once" as const,
+        auto_handle_masks: false,
+      };
 
   // Scope selection state
   const [scopeMode, setScopeMode] = useState<ScopeMode>("all");
@@ -863,8 +1012,8 @@ function ClonePageInner() {
       toast.error("Source and destination catalogs must be different.");
       return;
     }
-    if (crossWorkspace && !targetValidated) {
-      toast.error("Test the target workspace connection before cloning.");
+    if (crossWorkspace && !targetConnectionName) {
+      toast.error("Pick a target workspace (or add one in Settings).");
       return;
     }
     for (const field of ["include_tables_regex", "exclude_tables_regex"] as const) {
@@ -900,20 +1049,25 @@ function ClonePageInner() {
     if (payload.max_tables == null) delete payload.max_tables;
     if (!payload.source_snapshot_id) delete payload.source_snapshot_id;
 
-    if (crossWorkspace) {
-      const tw: Record<string, unknown> = {
-        host: target.host.trim(),
-        auth_method: target.auth_method,
-        warehouse_id: target.warehouse_id.trim(),
-        keep_share: !!target.keep_share,
-      };
-      if (target.auth_method === "pat") tw.token = target.token;
-      if (target.auth_method === "service_principal") {
-        tw.client_id = target.client_id;
-        tw.client_secret = target.client_secret;
+    if (crossWorkspace && targetConnectionName) {
+      // Resolve localStorage entry → inline target_workspace creds for this
+      // single request. Server is stateless w.r.t. saved connections.
+      if (!pickedConnection) {
+        toast.error(`Target '${targetConnectionName}' not found in browser storage.`);
+        return;
       }
-      if (target.auth_method === "profile") tw.profile = target.profile;
-      payload.target_workspace = tw;
+      payload.target_workspace = {
+        host: pickedConnection.host,
+        auth_method: pickedConnection.auth_method,
+        token: pickedConnection.token,
+        client_id: pickedConnection.client_id,
+        client_secret: pickedConnection.client_secret,
+        profile: pickedConnection.profile,
+        warehouse_id: pickedConnection.warehouse_id,
+        keep_share: !!pickedConnection.keep_share,
+        data_sync_mode: pickedConnection.data_sync_mode || "snapshot_once",
+        auto_handle_masks: !!pickedConnection.auto_handle_masks,
+      };
     }
 
     if (scopeMode === "select" && selectedObjects.length > 0) {
@@ -1005,6 +1159,7 @@ function ClonePageInner() {
             <DestinationCatalogPicker
               value={config.destination_catalog}
               onChange={(v) => setConfig({ ...config, destination_catalog: v })}
+              targetConnectionName={crossWorkspace ? targetConnectionName : null}
             />
             {config.source_catalog && config.destination_catalog &&
               config.source_catalog === config.destination_catalog && (
@@ -1026,6 +1181,17 @@ function ClonePageInner() {
               />
               <p className="text-xs text-gray-400 mt-1">Required if workspace uses Default Storage</p>
             </div>
+            <div className="border-t border-b py-4">
+              <CrossWorkspaceTogglePanel
+                enabled={crossWorkspace}
+                onEnabledChange={(v) => {
+                  setCrossWorkspace(v);
+                  if (!v) setTargetConnectionName("");
+                }}
+                connectionName={targetConnectionName}
+                onConnectionChange={setTargetConnectionName}
+              />
+            </div>
             <ScopePicker
               catalog={config.source_catalog}
               mode={scopeMode}
@@ -1039,7 +1205,7 @@ function ClonePageInner() {
                 !config.source_catalog ||
                 !config.destination_catalog ||
                 (!crossWorkspace && config.source_catalog === config.destination_catalog) ||
-                (crossWorkspace && !targetValidated) ||
+                (crossWorkspace && !targetConnectionName) ||
                 (scopeMode === "select" && selectedObjects.length === 0)
               }
             >
@@ -1047,17 +1213,6 @@ function ClonePageInner() {
             </Button>
           </CardContent>
         </Card>
-      )}
-
-      {step === "source" && (
-        <TargetWorkspaceForm
-          enabled={crossWorkspace}
-          onEnabledChange={setCrossWorkspace}
-          value={target}
-          onChange={setTarget}
-          validated={targetValidated}
-          onValidatedChange={setTargetValidated}
-        />
       )}
 
       {/* Step 2: Clone Options */}
@@ -1376,7 +1531,7 @@ function ClonePageInner() {
           scopeMode={scopeMode}
           selectedObjects={selectedObjects}
           crossWorkspace={crossWorkspace}
-          target={target}
+          target={targetForPreview}
           onBack={() => setStep("options")}
           onDryRun={() => handleClone(true)}
           onExecute={() => handleClone(false)}

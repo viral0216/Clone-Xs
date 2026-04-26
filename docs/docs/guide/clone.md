@@ -689,9 +689,39 @@ On the Clone page, step 1 ("Source & Destination") now has a **Target Workspace*
 | Auth Method | `Personal Access Token`, `Service Principal`, or `CLI Profile` |
 | Token / Client ID + Secret / Profile | Credentials for the chosen method |
 | Target SQL Warehouse ID | Runs DDL + DEEP CLONE SQL on the target side |
+| Data sync mode | How re-runs treat tables that already exist on the target (see below) |
 | Keep migration share | Leave the Delta Share in place after migration (debug / audit) |
 
 Click **Test connection** — Clone-Xs calls `POST /api/target/validate`, constructs a `WorkspaceClient` against the target, and confirms the metastore sharing identifier can be resolved. You can't proceed to the next step until this succeeds.
+
+### Data sync modes
+
+When you re-run a cross-workspace clone for the same source → target pair, the deterministic share/recipient names mean the Delta Sharing handshake is skipped and only table data is reconciled. How that reconciliation happens is controlled by `data_sync_mode`:
+
+| Mode | SQL emitted per table | Re-run behaviour | When to use |
+|---|---|---|---|
+| `snapshot_once` (default) | `CREATE TABLE IF NOT EXISTS dst DEEP CLONE src` | No-op on existing tables; only newly-added tables in source get cloned. | One-time hydration. The target is meant to drift independently after the initial copy. |
+| `incremental` | `CREATE OR REPLACE TABLE dst DEEP CLONE src` | Reads both Delta logs and copies only files added since the last clone. ⚠ Overwrites any target-side writes to cloned tables. | Source is the system of record and the target is a read-replica/mirror. |
+| `force_full` | `DROP TABLE IF EXISTS dst; CREATE TABLE dst DEEP CLONE src` | Full re-clone every run. Slowest, most predictable. | Recovery from corruption, or after a schema change you want to apply cleanly. |
+
+`incremental` and `force_full` log a WARNING at the start of the run because of the data-loss implication. DEEP CLONE is a one-way mirror — Databricks doesn't expose `MERGE` semantics for clone, so any row inserted on the target after a previous clone is lost on re-run in those modes.
+
+### Column masks and row filters
+
+Delta Sharing refuses to share any table that has a column mask or row filter applied — the cross-workspace clone will fail at `ALTER SHARE ADD TABLE` for those tables, and any view that joins them will then fail with `TABLE_OR_VIEW_NOT_FOUND` on the target.
+
+Set `auto_handle_masks: true` on `target_workspace` to let Clone-Xs handle this automatically. The flow becomes:
+
+1. Before adding each table to the share, Clone-Xs runs `DESCRIBE EXTENDED` on it and parses out any `# Column Masks` and `# Row Filter` entries.
+2. For tables with masks/filters: drops them on the source (`ALTER TABLE ... ALTER COLUMN ... DROP MASK` and `ALTER TABLE ... DROP ROW FILTER`).
+3. Adds the table to the share — now succeeds.
+4. The clone runs through (DEEP CLONE → views → functions → etc.). The mask/filter UDFs themselves get migrated by the existing function-migration step.
+5. After functions migration, re-applies the masks/filters on the **target** tables, rewriting the function FQN from source catalog to destination catalog.
+6. **Finally:** restoration on source depends on `data_sync_mode`:
+   - `snapshot_once` / `force_full` → restore the masks on source. The clone is a one-shot operation; the share isn't being read continuously.
+   - `incremental` → leave the source masks dropped. Re-applying them would break ongoing Delta Sharing reads (Databricks invalidates the share when masks reappear). A WARNING is logged; you'll need to drop and re-apply manually after you stop syncing if you need source-side protection back.
+
+If `auto_handle_masks` is left `false` (the default), masked tables are skipped (with a warning at `ALTER SHARE ADD TABLE`) and any downstream views that depend on them fail. Use this option when you have demo data or a non-production source where you can tolerate brief mask-removal windows.
 
 ### API usage
 

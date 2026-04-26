@@ -9,6 +9,31 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Cross-workspace incremental data sync
+
+### Added
+- **Deterministic share/recipient/shared-catalog names** in cross-workspace clone — `clone_xs_share_<sha1>`, `clone_xs_recipient_<sha1>`, `clone_xs_shared_<sha1>` derived from `(source_host, source_catalog, target_host, dest_catalog, target_metastore_id)`. Subsequent clones for the same source → target pair reuse the same Delta Sharing objects instead of generating new randomly-suffixed ones each run. Eliminates orphaned `clone_xs_*_<random>` accumulation and the "Recipient already exists" class of errors on retries.
+- **Recipient verification on reuse** — when an existing recipient is found, its `USING ID` is checked against the current target's global metastore id. If they don't match, the run fails loudly instead of silently leaking data to the wrong destination.
+- **Share-membership diff** — re-runs only `ALTER SHARE ADD TABLE` for tables that aren't already in the share. Optional `prune_share_extras: true` config also `REMOVE TABLE` for tables no longer in source.
+- **`data_sync_mode` config on `target_workspace`** — three values:
+  - `snapshot_once` (default) — `CREATE TABLE IF NOT EXISTS … DEEP CLONE`. Skip tables that already exist on target. Only catches newly-added tables on re-run. Safest: never overwrites target.
+  - `incremental` — `CREATE OR REPLACE TABLE … DEEP CLONE`. Mirrors source updates into target by leveraging Databricks DEEP CLONE's incremental file diff. ⚠ Overwrites any target-side writes to cloned tables.
+  - `force_full` — `DROP TABLE IF EXISTS dst; CREATE TABLE dst DEEP CLONE src`. Full re-clone every run. For recovery scenarios.
+  - Non-default modes log a WARNING at run start describing the data-loss implication.
+- **`cleanup_after_clone` config on `target_workspace`** — opt-in teardown (default `false` since deterministic objects are designed to persist between runs). Legacy `keep_share` flag still honoured for backwards compatibility.
+- **3-button Data sync mode picker** in `TargetWorkspaceForm` UI, with inline amber warning when `incremental` or `force_full` is selected.
+- **`auto_handle_masks` config on `target_workspace`** — when true, Clone-Xs inventories column masks + row filters on each source table via `DESCRIBE EXTENDED`, drops them so the table can be added to the Delta Share, re-applies them on the target after the clone (rewriting function FQNs to the target catalog), and (for `snapshot_once` / `force_full` modes) restores them on source in the finally block. For `incremental` mode, source masks remain dropped for the lifetime of the sync — re-applying would break ongoing Delta Sharing reads. Default `false`.
+
+### Fixed
+- **View migration target qualification** — `SHOW CREATE TABLE` returns 2-part view names that resolve against the target warehouse's *current catalog*, not the destination catalog Clone-Xs is writing to. Added `_qualify_create_target()` to inject the destination catalog so the CREATE target is always 3-part. Fixes `[SCHEMA_NOT_FOUND] dbr_xxx.<schema>` errors during view migration on cross-workspace clones.
+- **Function migration** — same 2-part qualification issue applied to `_migrate_functions`.
+- **Audit-trail visibility** — `JobManager` now logs a WARNING (instead of swallowing) when `ensure_audit_table` fails at job start, and skips the completion-time UPDATE if the start INSERT never happened (was producing a confusing `TABLE_OR_VIEW_NOT_FOUND` at the end of every job whose audit catalog didn't exist).
+- **`metastore_sharing_id`** now uses `client.metastores.summary()` instead of `metastores.current()` so the returned identifier is the proper `<cloud>:<region>:<uuid>` global form, not the bare metastore UUID. Fixes `INVALID_PARAMETER_VALUE: ... is an invalid id for metastore` on `CREATE RECIPIENT USING ID`.
+- **LogPanel colouring** — WARNING lines whose message body contains the word "failed" no longer get painted red. The colourer now anchors on the log-level prefix.
+- **Demo generator seasonal-pattern SQL** — naive `.split(",")` on `ddl_cols` was breaking inside `DECIMAL(10,2)` type specs and producing malformed `INSERT INTO ... SELECT` statements. Added a paren-aware splitter (`_split_top_level`), and the seasonal-pattern INSERT now emits an explicit column list so the SELECT mirrors target column order rather than relying on positional matching.
+
+---
+
 ## v0.11.0 — Cross-Workspace / Cross-Cloud Migration (2026-04-19)
 
 ### Added

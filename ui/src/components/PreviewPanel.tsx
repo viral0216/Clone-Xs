@@ -11,8 +11,24 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ObjectRef, ScopeMode } from "@/components/ScopePicker";
-import type { TargetWorkspaceValue } from "@/components/TargetWorkspaceForm";
 import { useEstimate, useDiffPreview } from "@/hooks/useApi";
+
+// Shape used by the CLI / YAML / cURL preview builders. Source data comes from
+// either an inline form or a saved target connection — secrets may be redacted
+// as "***" when sourced from a saved connection (which is correct for shared
+// commands).
+export type TargetWorkspaceValue = {
+  host: string;
+  auth_method: "pat" | "service_principal" | "profile";
+  token?: string;
+  client_id?: string;
+  client_secret?: string;
+  profile?: string;
+  warehouse_id: string;
+  keep_share?: boolean;
+  data_sync_mode?: "snapshot_once" | "incremental" | "force_full";
+  auto_handle_masks?: boolean;
+};
 
 interface Props {
   config: any;
@@ -532,6 +548,9 @@ function buildCli(
     parts.push(`--target-auth ${target.auth_method}`);
     parts.push(`--target-warehouse "${target.warehouse_id}"`);
     if (target.keep_share) parts.push("--keep-share");
+    if (target.data_sync_mode && target.data_sync_mode !== "snapshot_once") {
+      parts.push(`--target-data-sync-mode ${target.data_sync_mode}`);
+    }
   }
   const schemas = Array.from(new Set(selectedObjects.map((o) => o.schema)));
   if (schemas.length) {
@@ -582,6 +601,8 @@ function buildYaml(
     if (target.auth_method === "profile") lines.push(`  profile: "${target.profile || ""}"`);
     lines.push(`  warehouse_id: "${target.warehouse_id || ""}"`);
     lines.push(`  keep_share: ${target.keep_share ? "true" : "false"}`);
+    lines.push(`  data_sync_mode: ${target.data_sync_mode || "snapshot_once"}`);
+    lines.push(`  auto_handle_masks: ${target.auto_handle_masks ? "true" : "false"}`);
   }
   return lines.join("\n");
 }
@@ -611,6 +632,8 @@ function buildCurl(
       auth_method: target.auth_method,
       warehouse_id: target.warehouse_id,
       keep_share: !!target.keep_share,
+      data_sync_mode: target.data_sync_mode || "snapshot_once",
+      auto_handle_masks: !!target.auto_handle_masks,
     };
     if (target.auth_method === "pat") tw.token = "<redacted>";
     if (target.auth_method === "service_principal") {

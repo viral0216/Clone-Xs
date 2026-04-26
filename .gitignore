@@ -107,6 +107,9 @@ marketplace/
 # Config cache
 config/cache/
 
+# Saved cross-workspace target connections (contains PATs / client_secrets)
+config/target_connections.yaml
+
 # Misc
 *.bak
 *.tmp

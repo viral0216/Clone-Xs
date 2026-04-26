@@ -3,7 +3,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { useAuthStatus, useWarehouses } from "@/hooks/useApi";
+import {
+  useAuthStatus,
+  useWarehouses,
+  useTargetConnections,
+  useCreateTargetConnection,
+  useUpdateTargetConnection,
+  useDeleteTargetConnection,
+  useTestTargetConnection,
+  useTargetWarehouses,
+  type TargetConnection,
+} from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { allNavSections } from "@/components/layout/Sidebar";
@@ -39,12 +49,13 @@ import {
 
 type AuthTab = "token" | "oauth" | "azure" | "sp";
 
-type SettingsSection = "connection" | "auth" | "warehouse" | "ai-model" | "genie" | "compute" | "anomaly" | "audit" | "azure" | "interface" | "performance" | "features";
+type SettingsSection = "connection" | "auth" | "warehouse" | "target-workspaces" | "ai-model" | "genie" | "compute" | "anomaly" | "audit" | "azure" | "interface" | "performance" | "features";
 
 const sectionMeta: { key: SettingsSection; label: string; icon: React.ElementType }[] = [
   { key: "connection", label: "Connection", icon: Globe },
   { key: "auth", label: "Authentication", icon: Key },
   { key: "warehouse", label: "Warehouses", icon: Server },
+  { key: "target-workspaces", label: "Target Workspaces", icon: Globe },
   { key: "ai-model", label: "AI Model", icon: Cpu },
   { key: "genie", label: "Genie Space", icon: Sparkles },
   { key: "compute", label: "Compute", icon: Cpu },
@@ -731,6 +742,12 @@ export default function SettingsPage() {
             </div>
           </section>}
 
+          {/* ─── Target Workspaces ─── */}
+          {activeSection === "target-workspaces" && <section id="target-workspaces">
+            <SectionHeading title="Target Workspaces" subtitle="Saved cross-workspace clone targets — picked from a dropdown on /clone instead of re-entering credentials each time" />
+            <TargetWorkspacesSection />
+          </section>}
+
           {/* ─── AI Model ─── */}
           {activeSection === "ai-model" && <section id="ai-model">
             <SectionHeading title="AI Model" subtitle="Select a serving endpoint for AI features, or use direct Anthropic API" />
@@ -878,6 +895,346 @@ function SectionHeading({ title, subtitle }: { title: string; subtitle: string }
     <div className="border-b border-border pb-2">
       <h2 className="text-base font-semibold">{title}</h2>
       <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+    </div>
+  );
+}
+
+const EMPTY_CONN: TargetConnection = {
+  name: "",
+  host: "",
+  auth_method: "pat",
+  token: "",
+  client_id: "",
+  client_secret: "",
+  profile: "",
+  warehouse_id: "",
+  keep_share: false,
+  data_sync_mode: "snapshot_once",
+  auto_handle_masks: false,
+};
+
+function TargetWorkspacesSection() {
+  const conns = useTargetConnections();
+  const create = useCreateTargetConnection();
+  const update = useUpdateTargetConnection();
+  const del = useDeleteTargetConnection();
+  const test = useTestTargetConnection();
+
+  const [editing, setEditing] = useState<{ mode: "add" | "edit"; conn: TargetConnection } | null>(null);
+  const [testStates, setTestStates] = useState<Record<string, { ok: boolean; warehouse_state?: string }>>({});
+
+  const runTest = (name: string) => {
+    test.mutate(name, {
+      onSuccess: (data: any) => {
+        setTestStates((s) => ({ ...s, [name]: { ok: true, warehouse_state: data?.warehouse_state } }));
+        const extras = [
+          typeof data?.catalog_count === "number" ? `${data.catalog_count} catalogs` : "",
+          data?.warehouse_state ? `warehouse ${data.warehouse_state}` : "",
+        ].filter(Boolean);
+        toast.success(`'${name}' connection OK${extras.length ? ` — ${extras.join(", ")}` : ""}`);
+        if (data?.warehouse_start_triggered) {
+          toast.info(`Warehouse was ${data.warehouse_state} — start triggered, RUNNING in 30–60s.`);
+        }
+      },
+      onError: (e: any) => {
+        setTestStates((s) => ({ ...s, [name]: { ok: false } }));
+        toast.error(e?.message || `'${name}' test failed`);
+      },
+    });
+  };
+
+  return (
+    <div className="mt-3 space-y-3">
+      <Button size="sm" onClick={() => setEditing({ mode: "add", conn: EMPTY_CONN })}>
+        + Add target
+      </Button>
+
+      {conns.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {!conns.isLoading && (conns.data?.length ?? 0) === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No target workspaces saved. Add one to enable cross-workspace clones from /clone.
+        </p>
+      )}
+
+      {(conns.data ?? []).map((c) => {
+        const ts = testStates[c.name];
+        return (
+          <div key={c.name} className="border border-border rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{c.name}</span>
+                {ts?.ok && (
+                  <Badge className="bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 border-green-200 text-xs">
+                    Connected{ts.warehouse_state ? ` · WH ${ts.warehouse_state}` : ""}
+                  </Badge>
+                )}
+                {ts?.ok === false && (
+                  <Badge variant="outline" className="text-xs text-red-600 border-red-300">Failed</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" variant="outline" onClick={() => runTest(c.name)} disabled={test.isPending}>
+                  {test.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setEditing({ mode: "edit", conn: c })}>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!confirm(`Delete target '${c.name}'?`)) return;
+                    del.mutate(c.name, {
+                      onSuccess: () => toast.success(`Deleted '${c.name}'`),
+                      onError: (e: any) => toast.error(e?.message || "Delete failed"),
+                    });
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground font-mono truncate">{c.host}</div>
+            <div className="text-xs text-muted-foreground">
+              {c.auth_method === "pat" && "Personal Access Token"}
+              {c.auth_method === "service_principal" && "Service Principal"}
+              {c.auth_method === "profile" && `CLI Profile · ${c.profile}`}
+              {" · Warehouse "}
+              <span className="font-mono">{c.warehouse_id}</span>
+              {" · "}{c.data_sync_mode}
+            </div>
+          </div>
+        );
+      })}
+
+      {editing && (
+        <TargetConnectionDialog
+          mode={editing.mode}
+          initial={editing.conn}
+          onClose={() => setEditing(null)}
+          onSave={(payload) => {
+            if (editing.mode === "add") {
+              create.mutate(payload, {
+                onSuccess: () => {
+                  toast.success(`Saved target '${payload.name}'`);
+                  setEditing(null);
+                },
+                onError: (e: any) => toast.error(e?.message || "Save failed"),
+              });
+            } else {
+              update.mutate(
+                { name: editing.conn.name, patch: payload },
+                {
+                  onSuccess: () => {
+                    toast.success(`Updated target '${editing.conn.name}'`);
+                    setEditing(null);
+                  },
+                  onError: (e: any) => toast.error(e?.message || "Update failed"),
+                },
+              );
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TargetConnectionDialog({
+  mode,
+  initial,
+  onClose,
+  onSave,
+}: {
+  mode: "add" | "edit";
+  initial: TargetConnection;
+  onClose: () => void;
+  onSave: (payload: TargetConnection) => void;
+}) {
+  const [form, setForm] = useState<TargetConnection>(initial);
+  const targetWh = useTargetWarehouses();
+
+  const fetchWarehouses = () => {
+    if (!form.host) { toast.error("Enter target host first"); return; }
+    const credsOk =
+      (form.auth_method === "pat" && form.token && form.token !== "***") ||
+      (form.auth_method === "service_principal" && form.client_id && form.client_secret && form.client_secret !== "***") ||
+      (form.auth_method === "profile" && form.profile);
+    if (!credsOk) { toast.error("Enter target credentials first"); return; }
+    const payload: Record<string, unknown> = { host: form.host, auth_method: form.auth_method };
+    if (form.auth_method === "pat") payload.token = form.token;
+    if (form.auth_method === "service_principal") {
+      payload.client_id = form.client_id;
+      payload.client_secret = form.client_secret;
+    }
+    if (form.auth_method === "profile") payload.profile = form.profile;
+    targetWh.mutate(payload, {
+      onSuccess: (data: any[]) => toast.success(`${data.length} warehouse${data.length === 1 ? "" : "s"} found`),
+      onError: (e: any) => toast.error(e?.message || "Could not list warehouses"),
+    });
+  };
+
+  const handleSubmit = () => {
+    // For edit mode, blank-but-masked secrets stay null so backend keeps existing.
+    const payload: TargetConnection = { ...form };
+    if (mode === "edit") {
+      if (payload.token === "***" || !payload.token) payload.token = null;
+      if (payload.client_secret === "***" || !payload.client_secret) payload.client_secret = null;
+    }
+    onSave(payload);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-background border border-border rounded-lg shadow-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-3">{mode === "add" ? "Add target workspace" : `Edit target '${initial.name}'`}</h3>
+
+        <div className="space-y-3">
+          <FieldGroup label="Name" required>
+            <Input
+              placeholder="e.g. prod-azure"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={mode === "edit"}
+            />
+            <p className="text-xs text-muted-foreground">Letters, digits, '-', '_'. Used to reference this connection from /clone.</p>
+          </FieldGroup>
+
+          <FieldGroup label="Target Host" required>
+            <Input
+              placeholder="https://adb-xxxx.azuredatabricks.net"
+              value={form.host}
+              onChange={(e) => setForm({ ...form, host: e.target.value })}
+            />
+          </FieldGroup>
+
+          <FieldGroup label="Auth Method" required>
+            <div className="flex gap-2">
+              {(["pat", "service_principal", "profile"] as const).map((m) => (
+                <Button
+                  key={m}
+                  size="sm"
+                  variant={form.auth_method === m ? "default" : "outline"}
+                  onClick={() => setForm({ ...form, auth_method: m })}
+                  type="button"
+                >
+                  {m === "pat" ? "Personal Access Token" : m === "service_principal" ? "Service Principal" : "CLI Profile"}
+                </Button>
+              ))}
+            </div>
+          </FieldGroup>
+
+          {form.auth_method === "pat" && (
+            <FieldGroup label="Personal Access Token" required>
+              <Input
+                type="password"
+                placeholder={mode === "edit" ? "Leave as *** to keep existing" : "dapi..."}
+                value={form.token || ""}
+                onChange={(e) => setForm({ ...form, token: e.target.value })}
+              />
+            </FieldGroup>
+          )}
+
+          {form.auth_method === "service_principal" && (
+            <div className="grid grid-cols-2 gap-3">
+              <FieldGroup label="Client ID" required>
+                <Input value={form.client_id || ""} onChange={(e) => setForm({ ...form, client_id: e.target.value })} />
+              </FieldGroup>
+              <FieldGroup label="Client Secret" required>
+                <Input
+                  type="password"
+                  placeholder={mode === "edit" ? "Leave as *** to keep existing" : ""}
+                  value={form.client_secret || ""}
+                  onChange={(e) => setForm({ ...form, client_secret: e.target.value })}
+                />
+              </FieldGroup>
+            </div>
+          )}
+
+          {form.auth_method === "profile" && (
+            <FieldGroup label="CLI Profile name" required>
+              <Input value={form.profile || ""} onChange={(e) => setForm({ ...form, profile: e.target.value })} />
+            </FieldGroup>
+          )}
+
+          <FieldGroup label="Target SQL Warehouse" required>
+            {targetWh.data && targetWh.data.length > 0 ? (
+              <div className="flex gap-2">
+                <select
+                  className="flex-1 h-9 px-3 py-1 text-sm bg-background border border-input rounded-md"
+                  value={form.warehouse_id || ""}
+                  onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}
+                >
+                  <option value="">— select a warehouse —</option>
+                  {targetWh.data.map((wh: any) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.name || wh.id}
+                      {wh.size ? ` · ${wh.size}` : ""}
+                      {wh.type ? ` · ${wh.type}` : ""}
+                      {wh.state ? ` · ${wh.state}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" variant="outline" size="sm" onClick={fetchWarehouses} disabled={targetWh.isPending}>
+                  <RefreshCw className={`h-4 w-4 ${targetWh.isPending ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g. 1234567890abcdef"
+                  value={form.warehouse_id}
+                  onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={fetchWarehouses} disabled={targetWh.isPending}>
+                  {targetWh.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Browse"}
+                </Button>
+              </div>
+            )}
+          </FieldGroup>
+
+          <FieldGroup label="Default data sync mode">
+            <div className="flex gap-2">
+              {(["snapshot_once", "incremental", "force_full"] as const).map((m) => (
+                <Button
+                  key={m}
+                  size="sm"
+                  variant={form.data_sync_mode === m ? "default" : "outline"}
+                  onClick={() => setForm({ ...form, data_sync_mode: m })}
+                  type="button"
+                >
+                  {m === "snapshot_once" ? "Snapshot once" : m === "incremental" ? "Incremental" : "Force full"}
+                </Button>
+              ))}
+            </div>
+          </FieldGroup>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!form.auto_handle_masks}
+              onChange={(e) => setForm({ ...form, auto_handle_masks: e.target.checked })}
+            />
+            Auto-handle column masks &amp; row filters
+          </label>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!form.keep_share}
+              onChange={(e) => setForm({ ...form, keep_share: e.target.checked })}
+            />
+            Keep migration share after clone (for audit / debugging)
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!form.name || !form.host || !form.warehouse_id}>
+            {mode === "add" ? "Save" : "Update"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

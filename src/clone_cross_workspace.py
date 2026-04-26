@@ -29,10 +29,10 @@ capture (JobLogHandler) surfaces progress in the UI.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
@@ -57,8 +57,261 @@ def _fqn(*parts: str) -> str:
     return ".".join(_quote_ident(p) for p in parts)
 
 
-def _safe_suffix() -> str:
-    return uuid.uuid4().hex[:8]
+def _deterministic_suffix(*parts: str) -> str:
+    """8-char hex hash of the given parts — stable across runs for the same inputs.
+
+    Used so the share/recipient/shared-catalog names are reused on subsequent
+    clones for the same (source → target) pair, rather than generating new
+    randomly-suffixed objects each run.
+    """
+    h = hashlib.sha1("|".join(p or "" for p in parts).encode("utf-8"), usedforsecurity=False)
+    return h.hexdigest()[:8]
+
+
+def _share_exists(client: WorkspaceClient, wh: str, share_name: str) -> bool:
+    try:
+        rows = execute_sql(client, wh, "SHOW SHARES")
+        return any((r.get("name") or r.get("share_name")) == share_name for r in rows)
+    except Exception as e:
+        logger.debug(f"SHOW SHARES failed: {e}")
+        return False
+
+
+def _recipient_exists(client: WorkspaceClient, wh: str, recipient_name: str) -> bool:
+    """Existence check — tries SDK first, then SHOW RECIPIENTS as a fallback.
+
+    Each path can fail for unrelated reasons (SDK version, column name
+    differences, visibility filtering by current identity), so we treat them
+    as independent best-effort checks and consider the recipient present if
+    *any* of them sees it.
+    """
+    # Path 1: SDK
+    try:
+        for r in client.recipients.list():
+            if getattr(r, "name", None) == recipient_name:
+                return True
+    except Exception as e:
+        logger.debug(f"recipients.list failed: {e}")
+
+    # Path 2: SDK get-by-name (raises 404 if missing)
+    try:
+        r = client.recipients.get(name=recipient_name)
+        if r and getattr(r, "name", None):
+            return True
+    except Exception as e:
+        msg = str(e).lower()
+        if "does not exist" not in msg and "not found" not in msg and "404" not in msg:
+            logger.debug(f"recipients.get failed (non-404): {e}")
+
+    # Path 3: SHOW RECIPIENTS — search any column for the name (column names
+    # vary across DBR versions: `name`, `recipient_name`, etc.).
+    try:
+        rows = execute_sql(client, wh, "SHOW RECIPIENTS")
+        if rows:
+            logger.debug(f"SHOW RECIPIENTS returned {len(rows)} rows; columns: {list(rows[0].keys())}")
+        for r in rows:
+            for v in r.values():
+                if v == recipient_name:
+                    return True
+    except Exception as e:
+        logger.debug(f"SHOW RECIPIENTS failed: {e}")
+
+    return False
+
+
+def _recipient_global_metastore_id(
+    client: WorkspaceClient, wh: str, recipient_name: str
+) -> str | None:
+    """Return the existing recipient's USING ID, or None if recipient doesn't exist.
+
+    Tries the SDK first (more reliable field names), falls back to DESC RECIPIENT.
+    """
+    try:
+        r = client.recipients.get(name=recipient_name)
+        gmid = (
+            getattr(r, "data_recipient_global_metastore_id", None)
+            or getattr(r, "sharing_code", None)
+        )
+        if gmid:
+            return gmid
+    except Exception as e:
+        msg = str(e)
+        if "does not exist" in msg or "RESOURCE_DOES_NOT_EXIST" in msg or "404" in msg:
+            return None
+        logger.debug(f"recipients.get failed: {e}")
+
+    try:
+        rows = execute_sql(client, wh, f"DESC RECIPIENT {_quote_ident(recipient_name)}")
+    except Exception as e:
+        msg = str(e)
+        if "does not exist" in msg or "RESOURCE_DOES_NOT_EXIST" in msg:
+            return None
+        logger.debug(f"DESC RECIPIENT failed: {e}")
+        return None
+    for row in rows:
+        # Output schema is typically: info_name | info_value
+        key = (row.get("info_name") or row.get("col_name") or "").lower()
+        if key in ("data_recipient_global_metastore_id", "sharing_code"):
+            val = row.get("info_value") or row.get("data_type")
+            if val:
+                return str(val).strip()
+    return None
+
+
+@dataclass
+class TableProtections:
+    """Column masks + row filter currently applied to a table.
+
+    Captured before the cross-workspace clone drops them (Delta Sharing
+    refuses tables with masks/filters) so they can be re-applied after.
+    """
+
+    column_masks: list[tuple[str, str]] = field(default_factory=list)
+    """List of (column_name, mask_function_fqn) — bare SQL, not quoted."""
+
+    row_filter_function: str | None = None
+    """FQN of the row filter function (or None if none applied)."""
+
+    row_filter_columns: list[str] = field(default_factory=list)
+    """Column names the row filter operates on (the ON (..) args)."""
+
+    def has_anything(self) -> bool:
+        return bool(self.column_masks) or self.row_filter_function is not None
+
+
+def _inventory_table_protections(
+    client: WorkspaceClient, wh: str, fqn: str
+) -> TableProtections:
+    """Parse DESCRIBE EXTENDED output to capture column masks + row filter.
+
+    DESCRIBE EXTENDED returns sectioned rows; mask info appears under
+    `# Column Masks` and row filter info under `# Row Filter` (singular).
+    Column-mask rows look like: col_name='email', data_type='`cat`.`sch`.`mask_fn`'.
+    Row-filter rows look like: col_name='Function', data_type='`cat`.`sch`.`fn`',
+    then col_name='Columns', data_type='col1, col2'.
+    """
+    out = TableProtections()
+    try:
+        rows = execute_sql(client, wh, f"DESCRIBE EXTENDED {fqn}")
+    except Exception as e:
+        logger.debug(f"DESCRIBE EXTENDED {fqn} failed: {e}")
+        return out
+
+    section: str | None = None
+    for r in rows:
+        col = (r.get("col_name") or "").strip()
+        val = (r.get("data_type") or "").strip()
+        if not col:
+            continue
+        if col.startswith("#"):
+            header = col.lstrip("# ").lower()
+            if "column mask" in header:
+                section = "masks"
+            elif "row filter" in header:
+                section = "filter"
+            else:
+                section = None
+            continue
+        if section == "masks" and val:
+            out.column_masks.append((col, val))
+        elif section == "filter" and val:
+            key = col.lower()
+            if "function" in key:
+                out.row_filter_function = val
+            elif "column" in key:
+                # comma-separated; strip whitespace and any backticks
+                cols = [c.strip().strip("`") for c in val.split(",") if c.strip()]
+                out.row_filter_columns = cols
+    return out
+
+
+def _drop_table_protections(
+    client: WorkspaceClient, wh: str, fqn: str, p: TableProtections
+) -> None:
+    """Drop all column masks + row filter from a table. Best effort."""
+    for col, _mask_fn in p.column_masks:
+        try:
+            execute_sql(
+                client, wh,
+                f"ALTER TABLE {fqn} ALTER COLUMN {_quote_ident(col)} DROP MASK",
+            )
+            logger.info(f"  dropped mask: {fqn}.{col}")
+        except Exception as e:
+            logger.warning(f"  failed to drop mask on {fqn}.{col}: {e}")
+    if p.row_filter_function:
+        try:
+            execute_sql(client, wh, f"ALTER TABLE {fqn} DROP ROW FILTER")
+            logger.info(f"  dropped row filter: {fqn}")
+        except Exception as e:
+            logger.warning(f"  failed to drop row filter on {fqn}: {e}")
+
+
+def _apply_table_protections(
+    client: WorkspaceClient, wh: str, fqn: str, p: TableProtections,
+    *, rewrite_catalog: tuple[str, str] | None = None,
+) -> None:
+    """Apply column masks + row filter to a table.
+
+    `rewrite_catalog=(src, dst)` rewrites mask/filter function FQNs from
+    the source catalog to the destination catalog (used when re-applying
+    on the target workspace).
+    """
+    def _rewrite(fn_fqn: str) -> str:
+        if not rewrite_catalog:
+            return fn_fqn
+        src, dst = rewrite_catalog
+        # Handle both backtick-quoted and bare forms
+        return (fn_fqn
+                .replace(f"`{src}`.", f"`{dst}`.")
+                .replace(f"{src}.", f"{dst}."))
+
+    for col, mask_fn in p.column_masks:
+        target_fn = _rewrite(mask_fn)
+        try:
+            execute_sql(
+                client, wh,
+                f"ALTER TABLE {fqn} ALTER COLUMN {_quote_ident(col)} SET MASK {target_fn}",
+            )
+            logger.info(f"  applied mask: {fqn}.{col} -> {target_fn}")
+        except Exception as e:
+            logger.error(f"  failed to apply mask on {fqn}.{col}: {e}")
+    if p.row_filter_function:
+        target_fn = _rewrite(p.row_filter_function)
+        cols_clause = ", ".join(_quote_ident(c) for c in p.row_filter_columns)
+        try:
+            execute_sql(
+                client, wh,
+                f"ALTER TABLE {fqn} SET ROW FILTER {target_fn} ON ({cols_clause})",
+            )
+            logger.info(f"  applied row filter: {fqn} -> {target_fn} ON ({cols_clause})")
+        except Exception as e:
+            logger.error(f"  failed to apply row filter on {fqn}: {e}")
+
+
+def _existing_share_tables(
+    client: WorkspaceClient, wh: str, share_name: str
+) -> set[str]:
+    """Return aliases ('schema.table') of tables currently in the share."""
+    try:
+        rows = execute_sql(client, wh, f"SHOW ALL IN SHARE {_quote_ident(share_name)}")
+    except Exception as e:
+        logger.debug(f"SHOW ALL IN SHARE failed: {e}")
+        return set()
+    aliases: set[str] = set()
+    for r in rows:
+        kind = (r.get("type") or r.get("object_type") or "").upper()
+        if kind and kind != "TABLE":
+            continue
+        # The alias appears under various column names depending on DBR version
+        alias = (
+            r.get("shared_as")
+            or r.get("name")
+            or r.get("object_name")
+            or ""
+        )
+        if alias:
+            aliases.add(str(alias))
+    return aliases
 
 
 @dataclass
@@ -295,6 +548,38 @@ def _rewrite_catalog_refs(sql: str, source_catalog: str, dest_catalog: str) -> s
     return sql
 
 
+def _qualify_create_target(sql: str, dest_catalog: str) -> str:
+    """Ensure the CREATE [...] target name is fully qualified with ``dest_catalog``.
+
+    SHOW CREATE TABLE on a view/function returns a 2-part name (``schema.name``)
+    when the source warehouse already has a current catalog set. Re-running that
+    DDL on the target warehouse resolves the 2-part name against *target's*
+    current catalog — which is wrong. Inject the dest catalog so the CREATE
+    target is always 3-part.
+
+    Safe to call on already-3-part names; it's a no-op then.
+    """
+    if not sql:
+        return sql
+
+    pattern = re.compile(
+        r"\b(CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMPORARY\s+)?(?:MATERIALIZED\s+)?"
+        r"(?:VIEW|FUNCTION|TABLE)\s+(?:IF\s+NOT\s+EXISTS\s+)?)"
+        r"((?:`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)"
+        r"(?:\s*\.\s*(?:`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)){0,2})",
+        re.IGNORECASE,
+    )
+    m = pattern.search(sql)
+    if not m:
+        return sql
+    name_part = m.group(2)
+    dot_count = name_part.count(".") - name_part.count("\\.")  # raw dots only
+    if dot_count >= 2:
+        return sql  # already catalog.schema.name
+    qualified = f"`{dest_catalog}`.{name_part}"
+    return sql[: m.start(2)] + qualified + sql[m.end(2):]
+
+
 def _migrate_views(
     source_client: WorkspaceClient,
     target_client: WorkspaceClient,
@@ -362,6 +647,9 @@ def _migrate_views(
                     count=1,
                     flags=re.IGNORECASE,
                 )
+                # Force the CREATE VIEW target to be 3-part so it doesn't resolve
+                # against target warehouse's current catalog.
+                rewritten = _qualify_create_target(rewritten, dest_catalog)
                 _run(target_client, target_wh, rewritten, dry_run=dry_run)
                 result.object_details.append(ObjectResult(
                     kind="view", schema=schema, name=name, status="migrated",
@@ -432,6 +720,7 @@ def _migrate_functions(
                     count=1,
                     flags=re.IGNORECASE,
                 )
+                rewritten = _qualify_create_target(rewritten, dest_catalog)
                 _run(target_client, target_wh, rewritten, dry_run=dry_run)
                 result.object_details.append(ObjectResult(
                     kind="function", schema=schema, name=name, status="migrated",
@@ -796,7 +1085,26 @@ def run_cross_workspace_clone(
     copy_ownership = bool(config.get("copy_ownership", True))
     copy_tags = bool(config.get("copy_tags", True))
     volume_max_file_mb = int(config.get("volume_max_file_mb", 500) or 500)
-    keep_share = bool(target_cfg.get("keep_share", False))
+    # With deterministic share/recipient names, default is to keep the objects
+    # so subsequent runs reuse them (true incremental sync). Set
+    # cleanup_after_clone=true to drop them at end of run.
+    #
+    # NOTE: legacy `keep_share` is no longer auto-inverted into `cleanup_after`.
+    # The UI sends keep_share=false by default (box unticked) which used to
+    # silently flip cleanup_after to True and destroy the deterministic objects
+    # after every run — breaking incremental sync. Now keep_share is purely
+    # informational; cleanup only runs when cleanup_after_clone=true is set
+    # explicitly.
+    cleanup_after = bool(target_cfg.get("cleanup_after_clone", False))
+    prune_share_extras = bool(target_cfg.get("prune_share_extras", False))
+
+    data_sync_mode = (target_cfg.get("data_sync_mode") or "snapshot_once").lower()
+    if data_sync_mode not in ("snapshot_once", "incremental", "force_full"):
+        raise ValueError(
+            f"invalid data_sync_mode: {data_sync_mode!r} "
+            "(expected snapshot_once | incremental | force_full)"
+        )
+    auto_handle_masks = bool(target_cfg.get("auto_handle_masks", False))
 
     include_re_pattern = config.get("include_tables_regex")
     exclude_re_pattern = config.get("exclude_tables_regex")
@@ -813,10 +1121,11 @@ def run_cross_workspace_clone(
     source_host = getattr(getattr(source_client, "config", None), "host", "") or ""
     target_host = getattr(getattr(target_client, "config", None), "host", "") or ""
 
-    suffix = _safe_suffix()
-    share_name = f"clone_xs_migration_{suffix}"
-    recipient_name = f"clone_xs_recipient_{suffix}"
-    shared_catalog_name = f"clone_xs_shared_{suffix}"
+    # Names are derived once we know target_sharing_id (below). Initialise to
+    # placeholders so dataclass construction stays close to the entry point.
+    share_name = ""
+    recipient_name = ""
+    shared_catalog_name = ""
 
     result = CrossWorkspaceResult(
         status="failed",
@@ -833,15 +1142,23 @@ def run_cross_workspace_clone(
     logger.info("CROSS-WORKSPACE MIGRATION")
     logger.info(f"  Source:      {source_host} / {source_catalog}")
     logger.info(f"  Target:      {target_host} / {dest_catalog}")
-    logger.info(f"  Share:       {share_name}")
-    logger.info(f"  Recipient:   {recipient_name}")
-    logger.info(f"  Shared cat:  {shared_catalog_name}")
+    logger.info(f"  Sync mode:   {data_sync_mode}")
     logger.info(f"  Dry run:     {dry_run}")
     logger.info("=" * 72)
+    if data_sync_mode != "snapshot_once":
+        logger.warning(
+            "data_sync_mode=%s — target tables will be overwritten by source. "
+            "Any target-side inserts/updates to cloned tables will be lost.",
+            data_sync_mode,
+        )
 
     share_created = False
     recipient_created = False
     shared_catalog_created = False
+    # src_fqn -> TableProtections we dropped on source for sharing.
+    # Re-applied on target after clone, and on source in the finally block
+    # (unless data_sync_mode=incremental, where we leave them dropped).
+    dropped_protections: dict[str, "TableProtections"] = {}
 
     try:
         # --- 1. Introspect source ---------------------------------------------------
@@ -868,44 +1185,204 @@ def run_cross_workspace_clone(
         target_sharing_id = metastore_sharing_id(target_client)
         logger.info(f"Target metastore sharing id: {target_sharing_id}")
 
-        # --- 3. Source-side: CREATE SHARE + ALTER SHARE + CREATE RECIPIENT + GRANT --
-        logger.info(f"Creating Delta Share on source: {share_name}")
-        _run(source_client, source_wh, f"CREATE SHARE {_quote_ident(share_name)}", dry_run=dry_run)
+        # Now that we know target_sharing_id, derive deterministic object names
+        # so subsequent runs of the same (source → target) pair reuse them.
+        suffix = _deterministic_suffix(
+            source_host, source_catalog, target_host, dest_catalog, target_sharing_id
+        )
+        share_name = f"clone_xs_share_{suffix}"
+        recipient_name = f"clone_xs_recipient_{suffix}"
+        shared_catalog_name = f"clone_xs_shared_{suffix}"
+        result.share_name = share_name
+        result.recipient_name = recipient_name
+        result.shared_catalog_name = shared_catalog_name
+        logger.info(f"  Share:       {share_name}")
+        logger.info(f"  Recipient:   {recipient_name}")
+        logger.info(f"  Shared cat:  {shared_catalog_name}")
+
+        # --- 3. Source-side: ensure SHARE + RECIPIENT exist (incremental) -----------
+        if not dry_run and _share_exists(source_client, source_wh, share_name):
+            logger.info(f"Reusing existing Delta Share on source: {share_name}")
+        else:
+            logger.info(f"Creating Delta Share on source: {share_name}")
+            _run(
+                source_client, source_wh,
+                f"CREATE SHARE IF NOT EXISTS {_quote_ident(share_name)}",
+                dry_run=dry_run,
+            )
         share_created = True
 
-        logger.info(f"Adding {total_tables} tables to share...")
-        add_stmts = []
-        for schema, tables in tables_by_schema.items():
-            for table in tables:
-                alias = f"{schema}.{table}"
-                src_fqn = _fqn(source_catalog, schema, table)
-                add_stmts.append(
-                    f"ALTER SHARE {_quote_ident(share_name)} ADD TABLE {src_fqn} AS {alias}"
+        # Recipient: idempotent create — defensive against "already exists" since
+        # CREATE RECIPIENT IF NOT EXISTS isn't reliably supported on every DBR.
+        logger.info(f"Ensuring recipient on source: {recipient_name}")
+        try:
+            _run(
+                source_client, source_wh,
+                f"CREATE RECIPIENT IF NOT EXISTS {_quote_ident(recipient_name)} "
+                f"USING ID '{target_sharing_id}'",
+                dry_run=dry_run,
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            if "already exists" in msg:
+                # Older DBR where IF NOT EXISTS is rejected for RECIPIENT — fall
+                # through, the recipient is there and that's what we want.
+                logger.info(f"Recipient {recipient_name} already exists — reusing")
+            elif "syntax" in msg and "if not exists" in msg:
+                # Fallback for DBR versions that don't accept IF NOT EXISTS at all
+                logger.warning("CREATE RECIPIENT IF NOT EXISTS not supported — falling back to bare CREATE")
+                try:
+                    _run(
+                        source_client, source_wh,
+                        f"CREATE RECIPIENT {_quote_ident(recipient_name)} "
+                        f"USING ID '{target_sharing_id}'",
+                        dry_run=dry_run,
+                    )
+                except Exception as e2:
+                    if "already exists" in str(e2).lower():
+                        logger.info(f"Recipient {recipient_name} already exists — reusing")
+                    else:
+                        raise
+            else:
+                raise
+
+        # Visibility probe — informational. Don't block the run on this; let
+        # GRANT speak for itself if the recipient is truly missing or invisible
+        # to the current identity.
+        recipient_visible = (
+            False if dry_run
+            else _recipient_exists(source_client, source_wh, recipient_name)
+        )
+        if not dry_run and not recipient_visible:
+            # Brief settle for eventual-consistency edge cases, then re-check
+            time.sleep(2)
+            recipient_visible = _recipient_exists(source_client, source_wh, recipient_name)
+        if not dry_run and not recipient_visible:
+            logger.warning(
+                "Recipient %s is not visible via SDK or SHOW RECIPIENTS to the "
+                "current identity. This may be a phantom recipient owned by a "
+                "different identity (PAT/SP), or your warehouse may be bound to "
+                "a different metastore. GRANT will likely fail; if it does, check "
+                "ownership in the Databricks UI (Catalog → Delta Sharing → Shared by me).",
+                recipient_name,
+            )
+        existing_gmid = (
+            None if dry_run
+            else _recipient_global_metastore_id(source_client, source_wh, recipient_name)
+        )
+        if not dry_run:
+            if existing_gmid and existing_gmid != target_sharing_id:
+                raise RuntimeError(
+                    f"Recipient '{recipient_name}' points at '{existing_gmid}', "
+                    f"not the requested target '{target_sharing_id}'. Refusing to "
+                    f"GRANT — drop the recipient on source manually if this is expected."
                 )
-        # Batch ALTER SHARE ADD TABLE — one statement per table for clearer error attribution
-        for i, sql in enumerate(add_stmts, 1):
+            elif existing_gmid:
+                logger.info(f"Verified recipient {recipient_name} points at {existing_gmid}")
+            else:
+                logger.debug(
+                    "Recipient %s gmid not readable via SDK/SQL — relying on "
+                    "deterministic name match for safety", recipient_name,
+                )
+        recipient_created = True
+
+        # Sync share contents — diff against currently-shared tables.
+        existing_aliases = (
+            set() if dry_run
+            else _existing_share_tables(source_client, source_wh, share_name)
+        )
+        desired_aliases = {
+            f"{schema}.{table}"
+            for schema, tables in tables_by_schema.items()
+            for table in tables
+        }
+        to_add = desired_aliases - existing_aliases
+        to_remove = (existing_aliases - desired_aliases) if prune_share_extras else set()
+
+        logger.info(
+            f"Share sync: {len(existing_aliases)} existing, "
+            f"{len(to_add)} to add, {len(to_remove)} to remove "
+            f"(prune_extras={prune_share_extras})"
+        )
+
+        # If auto_handle_masks is on, inventory + drop column masks / row filters
+        # on tables we're about to add. Tracking dict is read by the finally block
+        # for restoration and by the post-clone step for re-application on target.
+        if auto_handle_masks and not dry_run and to_add:
+            logger.info("auto_handle_masks=true — checking for column masks / row filters on source tables")
+            for alias in sorted(to_add):
+                schema, table = alias.split(".", 1)
+                src_fqn = _fqn(source_catalog, schema, table)
+                p = _inventory_table_protections(source_client, source_wh, src_fqn)
+                if p.has_anything():
+                    logger.info(
+                        f"  {src_fqn}: {len(p.column_masks)} mask(s), "
+                        f"row filter={'yes' if p.row_filter_function else 'no'} — dropping for share"
+                    )
+                    _drop_table_protections(source_client, source_wh, src_fqn, p)
+                    dropped_protections[src_fqn] = p
+
+        # ADD missing tables
+        for i, alias in enumerate(sorted(to_add), 1):
+            schema, table = alias.split(".", 1)
+            sql = (
+                f"ALTER SHARE {_quote_ident(share_name)} ADD TABLE "
+                f"{_fqn(source_catalog, schema, table)} AS {alias}"
+            )
             try:
                 _run(source_client, source_wh, sql, dry_run=dry_run)
-                if i % 20 == 0 or i == len(add_stmts):
-                    logger.info(f"  added {i}/{len(add_stmts)} tables to share")
+                if i % 20 == 0 or i == len(to_add):
+                    logger.info(f"  added {i}/{len(to_add)} tables to share")
             except Exception as e:
                 result.errors.append(f"failed to add table to share: {sql} — {e}")
                 logger.warning(f"add-to-share failed ({e}); continuing")
 
-        logger.info(f"Creating recipient on source pointing at target metastore: {recipient_name}")
-        _run(
-            source_client, source_wh,
-            f"CREATE RECIPIENT {_quote_ident(recipient_name)} USING ID '{target_sharing_id}'",
-            dry_run=dry_run,
-        )
-        recipient_created = True
+        # REMOVE extras (only when prune_share_extras=true)
+        for alias in sorted(to_remove):
+            sql = f"ALTER SHARE {_quote_ident(share_name)} REMOVE TABLE {alias}"
+            try:
+                _run(source_client, source_wh, sql, dry_run=dry_run)
+            except Exception as e:
+                logger.warning(f"prune from share failed ({alias}): {e}")
 
-        logger.info(f"Granting SELECT on share to recipient")
-        _run(
-            source_client, source_wh,
-            f"GRANT SELECT ON SHARE {_quote_ident(share_name)} TO RECIPIENT {_quote_ident(recipient_name)}",
-            dry_run=dry_run,
-        )
+        logger.info("Granting SELECT on share to recipient")
+        try:
+            _run(
+                source_client, source_wh,
+                f"GRANT SELECT ON SHARE {_quote_ident(share_name)} "
+                f"TO RECIPIENT {_quote_ident(recipient_name)}",
+                dry_run=dry_run,
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            # Idempotent: re-granting an existing privilege errors on some
+            # workspaces — safe to ignore.
+            if "already" in msg:
+                logger.debug(f"GRANT already in place: {e}")
+            elif "does not exist" in msg and "recipient" in msg:
+                # Phantom recipient — owned by someone else, or warehouse-metastore
+                # mismatch. Surface a clearer actionable message than the raw error.
+                raise RuntimeError(
+                    f"GRANT failed because recipient '{recipient_name}' is not "
+                    f"visible to your current identity, despite CREATE RECIPIENT "
+                    f"IF NOT EXISTS reporting success. Most common cause: a "
+                    f"recipient with this name already exists, owned by a "
+                    f"different identity (PAT or service principal), so your "
+                    f"identity can neither see nor grant against it.\n\n"
+                    f"To resolve:\n"
+                    f"  1. In Databricks UI: Catalog → Delta Sharing → Shared by "
+                    f"me → look for '{recipient_name}'. If you see it under a "
+                    f"different owner, ask them to DROP RECIPIENT or transfer "
+                    f"ownership to your identity.\n"
+                    f"  2. If it isn't visible there either, run "
+                    f"`DROP RECIPIENT IF EXISTS \\`{recipient_name}\\`` as a "
+                    f"metastore admin via the source workspace SQL editor, then "
+                    f"re-run the clone.\n"
+                    f"  3. Verify warehouse {source_wh} is bound to the same "
+                    f"metastore as your source workspace's UC."
+                ) from e
+            else:
+                raise
 
         # --- 4. Target-side: wait for share to appear, create catalog structure -----
         logger.info("Locating source provider on target workspace...")
@@ -951,10 +1428,27 @@ def run_cross_workspace_clone(
             alias = f"{schema}.{table}"
             src = _fqn(shared_catalog_name, schema, table)
             dst = _fqn(dest_catalog, schema, table)
-            sql = f"CREATE TABLE IF NOT EXISTS {dst} DEEP CLONE {src}"
             t0 = time.time()
             try:
-                _run(target_client, target_wh, sql, dry_run=dry_run)
+                if data_sync_mode == "incremental":
+                    _run(
+                        target_client, target_wh,
+                        f"CREATE OR REPLACE TABLE {dst} DEEP CLONE {src}",
+                        dry_run=dry_run,
+                    )
+                elif data_sync_mode == "force_full":
+                    _run(target_client, target_wh, f"DROP TABLE IF EXISTS {dst}", dry_run=dry_run)
+                    _run(
+                        target_client, target_wh,
+                        f"CREATE TABLE {dst} DEEP CLONE {src}",
+                        dry_run=dry_run,
+                    )
+                else:  # snapshot_once
+                    _run(
+                        target_client, target_wh,
+                        f"CREATE TABLE IF NOT EXISTS {dst} DEEP CLONE {src}",
+                        dry_run=dry_run,
+                    )
                 return TableResult(schema=schema, table=table, status="cloned",
                                    duration_ms=int((time.time() - t0) * 1000))
             except Exception as e:
@@ -1019,6 +1513,24 @@ def run_cross_workspace_clone(
                 dry_run=dry_run, result=result,
             )
 
+        # --- Phase 5: re-apply column masks / row filters on target ----------
+        # Functions migration in Phase 2 already created the mask UDFs in the
+        # target catalog. Now bind them to the cloned target tables.
+        if dropped_protections and not dry_run:
+            logger.info(
+                f"Re-applying column masks / row filters on {len(dropped_protections)} target table(s)"
+            )
+            for src_fqn, p in dropped_protections.items():
+                # src_fqn like `source_catalog`.`schema`.`table`; rewrite
+                # to target catalog by string-replacing the catalog portion
+                target_fqn = src_fqn.replace(
+                    f"`{source_catalog}`.", f"`{dest_catalog}`.", 1
+                )
+                _apply_table_protections(
+                    target_client, target_wh, target_fqn, p,
+                    rewrite_catalog=(source_catalog, dest_catalog),
+                )
+
         # Recompute overall status: failures in later phases downgrade
         # the outcome from success → partial.
         any_failures = (
@@ -1055,11 +1567,33 @@ def run_cross_workspace_clone(
         logger.info("=" * 72)
 
     finally:
-        # --- 6. Teardown ------------------------------------------------------------
-        if keep_share:
-            logger.info(f"keep_share=true — leaving share/recipient/shared-catalog intact")
-            result.share_kept = True
-        else:
+        # --- 6a. Restore source column masks / row filters --------------------------
+        # We dropped them on source so the table could be added to the share.
+        # Restoration policy depends on data_sync_mode:
+        #   - snapshot_once / force_full: restore on source (one-shot use)
+        #   - incremental: leave dropped — re-applying breaks ongoing share reads
+        #     since Databricks invalidates the share when masks reappear.
+        if dropped_protections and not dry_run:
+            if data_sync_mode in ("snapshot_once", "force_full"):
+                logger.info(
+                    f"Restoring column masks / row filters on {len(dropped_protections)} source table(s)"
+                )
+                for src_fqn, p in dropped_protections.items():
+                    _apply_table_protections(source_client, source_wh, src_fqn, p)
+            else:
+                logger.warning(
+                    "data_sync_mode=incremental — leaving column masks / row filters "
+                    "DROPPED on source for %d table(s). Re-applying them would break "
+                    "ongoing Delta Sharing reads. Drop and re-apply manually after "
+                    "you stop syncing if you need source-side protection restored.",
+                    len(dropped_protections),
+                )
+
+        # --- 6b. Teardown ----------------------------------------------------------
+        # Deterministic names are designed to persist across runs so the next
+        # clone of the same (source → target) pair can reuse them. Only tear
+        # down when the user explicitly opts in via cleanup_after_clone=true.
+        if cleanup_after:
             _teardown(
                 source_client, source_wh, target_client, target_wh,
                 share_name if share_created else None,
@@ -1067,6 +1601,12 @@ def run_cross_workspace_clone(
                 shared_catalog_name if shared_catalog_created else None,
                 dry_run=dry_run,
             )
+        else:
+            logger.info(
+                "cleanup_after_clone=false — leaving share/recipient/shared-catalog "
+                "intact for incremental re-runs"
+            )
+            result.share_kept = True
 
     return result.to_dict()
 

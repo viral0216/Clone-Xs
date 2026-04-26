@@ -149,6 +149,152 @@ export function useValidateTarget() {
   });
 }
 
+export function useTargetWarehouses() {
+  return useMutation<WarehouseInfo[], Error, Record<string, unknown>>({
+    mutationFn: (req) => api.post("/target/warehouses", req),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Saved target connections — stored in browser localStorage. The server
+// is intentionally stateless w.r.t. target creds; clones send full creds
+// inline in the request body, sourced from the localStorage entry.
+// ──────────────────────────────────────────────────────────────────
+
+export interface TargetConnection {
+  name: string;
+  host: string;
+  auth_method: "pat" | "service_principal" | "profile";
+  token?: string;
+  client_id?: string;
+  client_secret?: string;
+  profile?: string;
+  warehouse_id: string;
+  keep_share?: boolean;
+  data_sync_mode?: "snapshot_once" | "incremental" | "force_full";
+  auto_handle_masks?: boolean;
+}
+
+const TARGETS_KEY = "clxs_target_connections";
+
+function readTargets(): TargetConnection[] {
+  try {
+    const raw = localStorage.getItem(TARGETS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTargets(list: TargetConnection[]): void {
+  localStorage.setItem(TARGETS_KEY, JSON.stringify(list));
+}
+
+export function findTargetConnection(name: string): TargetConnection | null {
+  return readTargets().find((c) => c.name === name) ?? null;
+}
+
+// Build the body POSTed to /target/* endpoints from a stored connection.
+// Strips the sentinel "***" placeholder that some legacy entries may carry.
+export function targetCredsBody(conn: TargetConnection): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    host: conn.host,
+    auth_method: conn.auth_method,
+  };
+  if (conn.auth_method === "pat") body.token = conn.token;
+  if (conn.auth_method === "service_principal") {
+    body.client_id = conn.client_id;
+    body.client_secret = conn.client_secret;
+  }
+  if (conn.auth_method === "profile") body.profile = conn.profile;
+  return body;
+}
+
+export function useTargetConnections() {
+  return useQuery<TargetConnection[]>({
+    queryKey: ["target-connections"],
+    queryFn: () => Promise.resolve(readTargets()),
+    staleTime: Infinity,
+  });
+}
+
+export function useCreateTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<TargetConnection, Error, TargetConnection>({
+    mutationFn: async (conn) => {
+      const list = readTargets();
+      if (list.some((c) => c.name === conn.name)) {
+        throw new Error(`Target connection '${conn.name}' already exists`);
+      }
+      list.push(conn);
+      writeTargets(list);
+      return conn;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+export function useUpdateTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<TargetConnection, Error, { name: string; patch: Partial<TargetConnection> }>({
+    mutationFn: async ({ name, patch }) => {
+      const list = readTargets();
+      const idx = list.findIndex((c) => c.name === name);
+      if (idx < 0) throw new Error(`Target connection '${name}' not found`);
+      const merged = { ...list[idx], ...patch, name };
+      list[idx] = merged;
+      writeTargets(list);
+      return merged;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+export function useDeleteTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<{ name: string }, Error, string>({
+    mutationFn: async (name) => {
+      const list = readTargets();
+      const remaining = list.filter((c) => c.name !== name);
+      if (remaining.length === list.length) throw new Error(`Target connection '${name}' not found`);
+      writeTargets(remaining);
+      return { name };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+// Test takes a connection NAME (resolved from localStorage to creds), then
+// posts the inline creds to the existing /target/validate endpoint.
+export function useTestTargetConnection() {
+  return useMutation<any, Error, string>({
+    mutationFn: async (name) => {
+      const conn = findTargetConnection(name);
+      if (!conn) throw new Error(`Target connection '${name}' not found`);
+      const body = { ...targetCredsBody(conn), warehouse_id: conn.warehouse_id };
+      return api.post("/target/validate", body);
+    },
+  });
+}
+
+// Resolves connection name → creds from localStorage, then POSTs to the
+// stateless /target/catalogs endpoint.
+export function useTargetCatalogs(connectionName: string | null | undefined) {
+  return useQuery<string[]>({
+    queryKey: ["target-catalogs", connectionName],
+    queryFn: () => {
+      const conn = findTargetConnection(connectionName!);
+      if (!conn) throw new Error(`Target connection '${connectionName}' not found`);
+      return api.post("/target/catalogs", targetCredsBody(conn));
+    },
+    enabled: !!connectionName,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useEstimate() {
   return useMutation({
     mutationFn: (req: Record<string, unknown>) => api.post("/estimate", req),

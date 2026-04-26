@@ -21,6 +21,25 @@ No. Clone Catalog only works with Unity Catalog. Hive metastore tables are not s
 
 Yes. Use the `--dest-host` and `--dest-token` flags to specify the destination workspace. Both workspaces must share the same Unity Catalog metastore, or you must have cross-metastore access configured.
 
+### My cross-workspace clone fails with "table has row level security or column masks, which is not supported by Delta Sharing" — what now?
+
+Set `auto_handle_masks: true` on the `target_workspace` config block. Clone-Xs will then:
+1. Detect masks/filters on each table via `DESCRIBE EXTENDED`,
+2. Drop them on source so the table can join the share,
+3. Run the clone (DEEP CLONE → views → functions),
+4. Re-apply the masks/filters on the target,
+5. Restore them on source if `data_sync_mode` is `snapshot_once` or `force_full`.
+
+For `incremental` mode the source masks stay dropped while the sync is active — re-applying them mid-sync invalidates the share. Drop and re-apply manually after you stop syncing if you need source-side protection back. See the [Cross-workspace clone guide](../guide/clone#column-masks-and-row-filters) for the full flow.
+
+### How do I keep the target catalog in sync with source after the initial clone?
+
+Set `data_sync_mode: incremental` in the `target_workspace` config block. On the first run Clone-Xs creates the share/recipient/shared-catalog and full-clones every table. On every subsequent run for the same source → target pair, the deterministic Delta Sharing object names mean the handshake is skipped, and `CREATE OR REPLACE TABLE … DEEP CLONE` reads both Delta logs and copies only the files that changed since the last run.
+
+⚠ DEEP CLONE is a one-way mirror. Any rows or columns added on the target side after a previous clone are lost on the next `incremental` run — Databricks doesn't expose `MERGE` semantics for the clone operation. If you need bidirectional or merge semantics, you'll need to write a `MERGE INTO` job that reads from the shared catalog Clone-Xs provisions on target.
+
+The default `data_sync_mode: snapshot_once` is non-destructive: re-runs only catch newly-added tables and never touch already-cloned data.
+
 ### Does it clone the data or just metadata?
 
 - **Deep clone** copies all data (creates independent Delta files)

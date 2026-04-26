@@ -41,18 +41,27 @@ def build_target_client(target: dict | Any) -> WorkspaceClient:
     if not host:
         raise ValueError("target host is required")
 
+    # auth_type pins the SDK's auth chain to the method the user picked in the
+    # UI. Without it, DATABRICKS_HOST / DATABRICKS_TOKEN / DATABRICKS_CLIENT_ID
+    # env vars set during source-workspace login (see src/auth.py) can leak in
+    # and the resulting client points at the source workspace instead of target.
     if auth_method == "pat":
         token = t.get("token")
         if not token:
             raise ValueError("target token is required for PAT auth")
-        return WorkspaceClient(host=host, token=token)
+        return WorkspaceClient(host=host, token=token, auth_type="pat")
 
     if auth_method == "service_principal":
         client_id = t.get("client_id")
         client_secret = t.get("client_secret")
         if not client_id or not client_secret:
             raise ValueError("target client_id and client_secret are required for service_principal auth")
-        return WorkspaceClient(host=host, client_id=client_id, client_secret=client_secret)
+        return WorkspaceClient(
+            host=host,
+            client_id=client_id,
+            client_secret=client_secret,
+            auth_type="oauth-m2m",
+        )
 
     if auth_method == "profile":
         profile = t.get("profile")

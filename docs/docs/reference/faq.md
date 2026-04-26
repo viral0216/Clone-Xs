@@ -141,6 +141,60 @@ clxs clone --source prod --dest staging --dry-run
 
 ---
 
+## Cross-workspace troubleshooting
+
+### Cross-workspace clone fails with "Source and target workspaces are in the same Unity Catalog metastore"
+
+You're trying to clone via Delta Sharing between two workspaces that happen to share the same UC metastore. Delta Sharing requires distinct source and target metastores — you cannot share to yourself. The fix:
+
+1. On `/clone`, **untick** "Clone to a different workspace"
+2. Run a normal in-metastore clone (`source_catalog → destination_catalog`)
+
+Same metastore = same UC = no Delta Sharing required. The same-metastore preflight check fails fast in 1–2 seconds before any orphan recipients/shares are created. To verify the metastores match: in either workspace's SQL editor, run `SELECT current_metastore()` — if both return the same UUID, this is your situation.
+
+### "GRANT failed because recipient ... is not visible" / "phantom recipient"
+
+This was a long-standing failure mode caused by `CREATE RECIPIENT IF NOT EXISTS` silently no-oping when the create couldn't actually proceed (cross-region/account constraint, missing entitlement, etc.). Clone-Xs now uses a **probe-then-bare-CREATE** pattern: it checks `SHOW RECIPIENTS LIKE` first, and if missing runs **bare** `CREATE RECIPIENT` without `IF NOT EXISTS`. If the bare CREATE fails, you'll see the underlying Databricks error wrapped with these likely causes:
+
+- Cross-account / cross-region D2D Delta Sharing isn't enabled on the source metastore (check Databricks Account Console → Delta Sharing settings)
+- Your identity lacks `CREATE RECIPIENT` privilege on the source metastore (metastore-admin needed)
+- Target metastore is unreachable from this account
+
+To diagnose manually, run this in the source workspace SQL editor (without `IF NOT EXISTS`, so the real error surfaces):
+
+```sql
+CREATE RECIPIENT clone_xs_diag USING ID 'azure:westeurope:<target-metastore-uuid>';
+```
+
+### A table fails with "row level security or column masks, which is not supported by Delta Sharing" even with `auto_handle_masks: true`
+
+The upfront `DESCRIBE EXTENDED` parser doesn't reliably catch every mask/filter format. Clone-Xs now catches this specific Delta Sharing error in the ADD TABLE loop and runs **inventory + drop + retry once**. If inventory still misses it, falls back to a blind `ALTER TABLE ... DROP ROW FILTER`. You should see lines like this in the log:
+
+```
+ADD failed for healthcare.facilities due to mask/row-filter; inventorying and dropping protections, then retrying
+fallback DROP ROW FILTER on `demo_quick`.`healthcare`.`facilities`
+retry succeeded for healthcare.facilities
+```
+
+The source-side mask/filter is still restored at the end of the run (via the existing `_apply_table_protections` finally block) for `snapshot_once` / `force_full` modes.
+
+### DEEP CLONE fails with "TABLE_OR_VIEW_NOT_FOUND" on a table I just added to the share
+
+`CREATE CATALOG ... USING SHARE` snapshots the share's table list at mount time. If you re-run a clone and a previous run already created the shared catalog on the target, subsequent additions to the share aren't visible to the existing mounted catalog. Clone-Xs fixes this automatically by **dropping and recreating the shared catalog** on the target whenever `to_add` is non-empty (i.e. tables were added to the share this run). If the issue persists, manually drop the shared catalog on the target and re-run:
+
+```sql
+-- Run on TARGET workspace SQL editor:
+DROP CATALOG IF EXISTS clone_xs_shared_<suffix>;
+```
+
+The deterministic suffix is shown in the Clone-Xs log (`Shared cat: clone_xs_shared_xxxxxxxx`).
+
+### Where are my saved target workspaces stored?
+
+In **browser localStorage**, key `clxs_target_connections`. They never persist on the server. PATs and client_secrets are sent inline with each clone request; nothing touches `clone_config.yaml`. To clear all saved targets, open browser devtools → Application → Local Storage → delete the `clxs_target_connections` key. To export/import (e.g., onboard a teammate), copy the JSON value.
+
+---
+
 ## New features
 
 ### How does auto-rollback work?

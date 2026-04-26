@@ -12,6 +12,7 @@ import {
   useDeleteTargetConnection,
   useTestTargetConnection,
   useTargetWarehouses,
+  useTargetWhoami,
   type TargetConnection,
 } from "@/hooks/useApi";
 import { api } from "@/lib/api-client";
@@ -607,6 +608,12 @@ export default function SettingsPage() {
                         </FieldGroup>
                         <Button onClick={saveCredentials}>Save & Connect</Button>
                         <p className="text-xs text-muted-foreground/70">Credentials are stored in browser session only.</p>
+                        {auth.data?.authenticated && auth.data?.user && (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
+                            <CheckCircle className="h-3.5 w-3.5 text-foreground" />
+                            Logged in as <span className="font-medium text-foreground">{auth.data.user}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -921,12 +928,12 @@ function TargetWorkspacesSection() {
   const test = useTestTargetConnection();
 
   const [editing, setEditing] = useState<{ mode: "add" | "edit"; conn: TargetConnection } | null>(null);
-  const [testStates, setTestStates] = useState<Record<string, { ok: boolean; warehouse_state?: string }>>({});
+  const [testStates, setTestStates] = useState<Record<string, { ok: boolean; warehouse_state?: string; user?: string }>>({});
 
   const runTest = (name: string) => {
     test.mutate(name, {
       onSuccess: (data: any) => {
-        setTestStates((s) => ({ ...s, [name]: { ok: true, warehouse_state: data?.warehouse_state } }));
+        setTestStates((s) => ({ ...s, [name]: { ok: true, warehouse_state: data?.warehouse_state, user: data?.user } }));
         const extras = [
           typeof data?.catalog_count === "number" ? `${data.catalog_count} catalogs` : "",
           data?.warehouse_state ? `warehouse ${data.warehouse_state}` : "",
@@ -956,56 +963,23 @@ function TargetWorkspacesSection() {
         </p>
       )}
 
-      {(conns.data ?? []).map((c) => {
-        const ts = testStates[c.name];
-        return (
-          <div key={c.name} className="border border-border rounded-lg p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-sm">{c.name}</span>
-                {ts?.ok && (
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 border-green-200 text-xs">
-                    Connected{ts.warehouse_state ? ` · WH ${ts.warehouse_state}` : ""}
-                  </Badge>
-                )}
-                {ts?.ok === false && (
-                  <Badge variant="outline" className="text-xs text-red-600 border-red-300">Failed</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Button size="sm" variant="outline" onClick={() => runTest(c.name)} disabled={test.isPending}>
-                  {test.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setEditing({ mode: "edit", conn: c })}>
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (!confirm(`Delete target '${c.name}'?`)) return;
-                    del.mutate(c.name, {
-                      onSuccess: () => toast.success(`Deleted '${c.name}'`),
-                      onError: (e: any) => toast.error(e?.message || "Delete failed"),
-                    });
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground font-mono truncate">{c.host}</div>
-            <div className="text-xs text-muted-foreground">
-              {c.auth_method === "pat" && "Personal Access Token"}
-              {c.auth_method === "service_principal" && "Service Principal"}
-              {c.auth_method === "profile" && `CLI Profile · ${c.profile}`}
-              {" · Warehouse "}
-              <span className="font-mono">{c.warehouse_id}</span>
-              {" · "}{c.data_sync_mode}
-            </div>
-          </div>
-        );
-      })}
+      {(conns.data ?? []).map((c) => (
+        <TargetConnectionCard
+          key={c.name}
+          conn={c}
+          testState={testStates[c.name]}
+          testIsPending={test.isPending}
+          onTest={() => runTest(c.name)}
+          onEdit={() => setEditing({ mode: "edit", conn: c })}
+          onDelete={() => {
+            if (!confirm(`Delete target '${c.name}'?`)) return;
+            del.mutate(c.name, {
+              onSuccess: () => toast.success(`Deleted '${c.name}'`),
+              onError: (e: any) => toast.error(e?.message || "Delete failed"),
+            });
+          }}
+        />
+      ))}
 
       {editing && (
         <TargetConnectionDialog
@@ -1036,6 +1010,79 @@ function TargetWorkspacesSection() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function TargetConnectionCard({
+  conn,
+  testState,
+  testIsPending,
+  onTest,
+  onEdit,
+  onDelete,
+}: {
+  conn: TargetConnection;
+  testState?: { ok: boolean; warehouse_state?: string; user?: string };
+  testIsPending: boolean;
+  onTest: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  // Lightweight identity probe so the card shows "Logged in as" without
+  // needing a full Test (no warehouse cold-start, no metastore lookup).
+  const whoami = useTargetWhoami(conn.name);
+  // Test result wins (it's freshest), otherwise fall back to the auto-fetched
+  // identity. So clicking Test refreshes the displayed user.
+  const displayUser = testState?.user || whoami.data?.user || null;
+
+  return (
+    <div className="border border-border rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{conn.name}</span>
+          {testState?.ok && (
+            <Badge variant="outline" className="text-xs gap-1 border-border">
+              <CheckCircle className="h-3 w-3 text-foreground" />
+              Connected{testState.warehouse_state ? ` · WH ${testState.warehouse_state}` : ""}
+            </Badge>
+          )}
+          {testState?.ok === false && (
+            <Badge variant="outline" className="text-xs gap-1 border-border">
+              <XCircle className="h-3 w-3 text-red-500" />
+              Failed
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="outline" onClick={onTest} disabled={testIsPending}>
+            {testIsPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={onEdit}>Edit</Button>
+          <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+        </div>
+      </div>
+      <div className="text-xs text-muted-foreground font-mono truncate">{conn.host}</div>
+      {displayUser && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CheckCircle className="h-3 w-3 text-foreground" />
+          Logged in as <span className="font-medium text-foreground">{displayUser}</span>
+        </div>
+      )}
+      {whoami.isError && !testState?.user && (
+        <div className="flex items-center gap-1.5 text-xs text-red-600">
+          <XCircle className="h-3 w-3" />
+          Auth check failed — click Test for details
+        </div>
+      )}
+      <div className="text-xs text-muted-foreground">
+        {conn.auth_method === "pat" && "Personal Access Token"}
+        {conn.auth_method === "service_principal" && "Service Principal"}
+        {conn.auth_method === "profile" && `CLI Profile · ${conn.profile}`}
+        {" · Warehouse "}
+        <span className="font-mono">{conn.warehouse_id}</span>
+        {" · "}{conn.data_sync_mode}
+      </div>
     </div>
   );
 }

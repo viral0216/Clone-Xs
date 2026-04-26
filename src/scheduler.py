@@ -110,16 +110,25 @@ def check_drift(client, warehouse_id: str, source: str, dest: str, exclude_schem
 
 
 def run_scheduled_clone(client, config: dict, on_complete=None) -> dict:
-    """Execute a single scheduled clone run."""
-    from src.clone_catalog import clone_catalog
+    """Execute a single scheduled clone run.
 
+    Routes to the cross-workspace orchestrator when ``target_workspace`` is set
+    on the config; otherwise to the same-workspace ``clone_catalog`` path.
+
+    Drift detection (``compare_catalogs``) only works within one metastore, so
+    it is skipped for cross-workspace runs — the cross-workspace orchestrator
+    has its own no-op semantics (``snapshot_once`` skips already-cloned tables;
+    deterministic share names mean the Delta Sharing handshake is reused).
+    """
     source = config.get("source_catalog", "")
     dest = config.get("destination_catalog", "")
     exclude_schemas = config.get("exclude_schemas", [])
     warehouse_id = config.get("sql_warehouse_id", "")
+    is_cross_workspace = bool(config.get("target_workspace"))
 
-    # Drift detection
-    if config.get("drift_check_before_clone", True):
+    # Drift detection — same-workspace only. For cross-workspace, the
+    # orchestrator's data_sync_mode handles re-run semantics directly.
+    if not is_cross_workspace and config.get("drift_check_before_clone", True):
         logger.info(f"Checking for drift: {source} vs {dest}")
         has_drift = check_drift(client, warehouse_id, source, dest, exclude_schemas)
         if not has_drift:
@@ -129,10 +138,20 @@ def run_scheduled_clone(client, config: dict, on_complete=None) -> dict:
                 on_complete(result)
             return result
 
-    logger.info(f"Starting scheduled clone: {source} -> {dest}")
+    if is_cross_workspace:
+        target_host = (config.get("target_workspace") or {}).get("host", "")
+        logger.info(f"Starting scheduled cross-workspace clone: {source} -> {target_host}/{dest}")
+    else:
+        logger.info(f"Starting scheduled clone: {source} -> {dest}")
+
     try:
-        summary = clone_catalog(client, config)
-        summary["status"] = "completed"
+        if is_cross_workspace:
+            from src.clone_cross_workspace import run_cross_workspace_clone
+            summary = run_cross_workspace_clone(client, config)
+        else:
+            from src.clone_catalog import clone_catalog
+            summary = clone_catalog(client, config)
+        summary["status"] = summary.get("status") or "completed"
     except Exception as e:
         logger.error(f"Scheduled clone failed: {e}")
         summary = {"status": "failed", "error": str(e)}

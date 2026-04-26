@@ -403,6 +403,29 @@ class CrossWorkspaceResult:
             "errors": self.errors,
             "warnings": self.warnings,
             "share_kept": self.share_kept,
+            # Canonical aliases — match clone_catalog.py shape so UI/audit/reporting
+            # code can render either result without branching on the source module.
+            "schemas_processed": self.schemas_created,
+            "tables": {
+                "success": self.tables_cloned,
+                "failed": self.tables_failed,
+                "skipped": self.tables_skipped,
+            },
+            "views": {
+                "success": self.views_migrated,
+                "failed": self.views_failed,
+                "skipped": 0,
+            },
+            "functions": {
+                "success": self.functions_migrated,
+                "failed": self.functions_failed,
+                "skipped": 0,
+            },
+            "volumes": {
+                "success": self.volumes_migrated,
+                "failed": self.volumes_failed,
+                "skipped": 0,
+            },
         }
 
 
@@ -664,10 +687,68 @@ def _migrate_views(
                 result.views_failed += 1
 
 
+def _build_function_ddl(fn_info, source_catalog: str, dest_catalog: str) -> str:
+    """Reconstruct CREATE OR REPLACE FUNCTION DDL from a FunctionInfo SDK object.
+
+    Databricks SQL has no `SHOW CREATE FUNCTION` — we read the function metadata
+    via the Catalog SDK and rebuild the DDL from its parts. Handles both SQL UDFs
+    (`RETURN <expr>`) and Python UDFs (`LANGUAGE PYTHON AS $$ ... $$`).
+    """
+    schema_name = fn_info.schema_name
+    name = fn_info.name
+    target_fqn = f"`{dest_catalog}`.`{schema_name}`.`{name}`"
+
+    # Parameters
+    params: list[str] = []
+    in_params = getattr(fn_info, "input_params", None)
+    if in_params is not None:
+        for p in (getattr(in_params, "parameters", None) or []):
+            pname = getattr(p, "name", "")
+            ptype = getattr(p, "type_text", None) or str(getattr(p, "type_name", "") or "")
+            if pname and ptype:
+                params.append(f"`{pname}` {ptype}")
+    params_str = ", ".join(params)
+
+    # Return type — full_data_type carries complex types (ARRAY<...>, STRUCT<...>)
+    return_type = (getattr(fn_info, "full_data_type", None)
+                   or str(getattr(fn_info, "data_type", "") or ""))
+    # Strip enum wrappers if data_type came back as ColumnTypeName.STRING etc
+    if "." in return_type and return_type.startswith("ColumnTypeName"):
+        return_type = return_type.split(".")[-1]
+
+    # Body and language
+    body = getattr(fn_info, "routine_definition", "") or ""
+    routine_body = str(getattr(fn_info, "routine_body", "") or "").upper()
+    language = str(getattr(fn_info, "language", "") or "").upper()
+    is_python = "PYTHON" in language or "EXTERNAL" in routine_body
+
+    # Rewrite source catalog → dest catalog inside the body so refs resolve.
+    body_rewritten = (body
+                      .replace(f"`{source_catalog}`.", f"`{dest_catalog}`.")
+                      .replace(f"{source_catalog}.", f"{dest_catalog}."))
+
+    # Comment (escape single quotes)
+    comment = getattr(fn_info, "comment", None)
+    comment_clause = ""
+    if comment:
+        comment_clause = f"COMMENT '{comment.replace(chr(39), chr(39) + chr(39))}'"
+
+    parts = [f"CREATE OR REPLACE FUNCTION {target_fqn}({params_str}) RETURNS {return_type}"]
+    if comment_clause:
+        parts.append(comment_clause)
+    if is_python:
+        parts.append("LANGUAGE PYTHON")
+        parts.append(f"AS $$\n{body_rewritten}\n$$")
+    else:
+        # SQL UDF — body is a single expression after RETURN
+        parts.append(f"RETURN {body_rewritten}")
+
+    return "\n".join(parts)
+
+
 def _migrate_functions(
     source_client: WorkspaceClient,
     target_client: WorkspaceClient,
-    source_wh: str,
     target_wh: str,
     source_catalog: str,
     dest_catalog: str,
@@ -678,7 +759,11 @@ def _migrate_functions(
     include_re: re.Pattern | None = None,
     exclude_re: re.Pattern | None = None,
 ) -> None:
-    """Re-issue SQL function DDL on target. Python UDFs are best-effort."""
+    """Re-issue UC function DDL on target via the Catalog SDK.
+
+    The SDK is authoritative here — Databricks SQL has no `SHOW CREATE FUNCTION`,
+    so we read FunctionInfo via `client.functions.get(...)` and rebuild the DDL.
+    """
     logger.info("Migrating functions...")
     for schema in schemas:
         funcs = _list_functions(source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re)
@@ -687,41 +772,11 @@ def _migrate_functions(
         logger.info(f"  {schema}: {len(funcs)} functions")
         for name in funcs:
             src_fqn = _fqn(source_catalog, schema, name)
+            src_full_name = f"{source_catalog}.{schema}.{name}"
             try:
-                rows = execute_sql(
-                    source_client, source_wh, f"SHOW CREATE FUNCTION {src_fqn}",
-                )
-                if not rows:
-                    result.object_details.append(ObjectResult(
-                        kind="function", schema=schema, name=name,
-                        status="failed", error="SHOW CREATE FUNCTION returned no rows",
-                    ))
-                    result.functions_failed += 1
-                    continue
-                row = rows[0]
-                create_stmt = (
-                    row.get("createfunc_stmt")
-                    or row.get("create_statement")
-                    or row.get("createtab_stmt")
-                    or next(iter(row.values()), "")
-                )
-                if not create_stmt:
-                    result.object_details.append(ObjectResult(
-                        kind="function", schema=schema, name=name,
-                        status="failed", error="empty CREATE FUNCTION DDL",
-                    ))
-                    result.functions_failed += 1
-                    continue
-                rewritten = _rewrite_catalog_refs(create_stmt, source_catalog, dest_catalog)
-                rewritten = re.sub(
-                    r"\bCREATE\s+FUNCTION\b",
-                    "CREATE OR REPLACE FUNCTION",
-                    rewritten,
-                    count=1,
-                    flags=re.IGNORECASE,
-                )
-                rewritten = _qualify_create_target(rewritten, dest_catalog)
-                _run(target_client, target_wh, rewritten, dry_run=dry_run)
+                fn_info = source_client.functions.get(src_full_name)
+                ddl = _build_function_ddl(fn_info, source_catalog, dest_catalog)
+                _run(target_client, target_wh, ddl, dry_run=dry_run)
                 result.object_details.append(ObjectResult(
                     kind="function", schema=schema, name=name, status="migrated",
                 ))
@@ -863,8 +918,10 @@ def _copy_volume_files(
         except Exception as e:
             logger.warning(f"file copy failed: {full_src_path} → {dst_path}: {e}")
 
-    # Kick off walk — consume the generator lazily via side effects
-    list(walk(src_root))
+    # Walk the source volume tree. `walk` is NOT a generator — it does its
+    # work via side effects (calls yield_file, which mutates the closures).
+    # Wrapping it in list() raised "'NoneType' object is not iterable".
+    walk(src_root)
     return files_copied, bytes_copied
 
 
@@ -1185,6 +1242,29 @@ def run_cross_workspace_clone(
         target_sharing_id = metastore_sharing_id(target_client)
         logger.info(f"Target metastore sharing id: {target_sharing_id}")
 
+        # --- 2.5 Preflight: source and target must be in different metastores -------
+        # Delta Sharing requires distinct metastores. If both workspaces attach
+        # to the same UC metastore, CREATE RECIPIENT IF NOT EXISTS silently
+        # no-ops (you can't share to your own metastore) and the GRANT step
+        # later fails with a confusing "recipient does not exist" message.
+        # Detect early and point the user at the in-metastore clone path.
+        try:
+            source_sharing_id = metastore_sharing_id(source_client)
+            logger.info(f"Source metastore sharing id: {source_sharing_id}")
+        except Exception as e:
+            logger.warning(f"Could not read source metastore sharing id: {e}")
+            source_sharing_id = None
+
+        if source_sharing_id and source_sharing_id == target_sharing_id:
+            raise RuntimeError(
+                f"Source and target workspaces are in the same Unity Catalog "
+                f"metastore ({source_sharing_id}). Delta Sharing requires "
+                f"distinct metastores — you cannot share to yourself.\n\n"
+                f"Fix: on /clone, untick 'Clone to a different workspace' and "
+                f"run a normal in-metastore clone instead. Same metastore = "
+                f"same UC = no Delta Sharing required."
+            )
+
         # Now that we know target_sharing_id, derive deterministic object names
         # so subsequent runs of the same (source → target) pair reuse them.
         suffix = _deterministic_suffix(
@@ -1212,60 +1292,71 @@ def run_cross_workspace_clone(
             )
         share_created = True
 
-        # Recipient: idempotent create — defensive against "already exists" since
-        # CREATE RECIPIENT IF NOT EXISTS isn't reliably supported on every DBR.
-        logger.info(f"Ensuring recipient on source: {recipient_name}")
-        try:
-            _run(
-                source_client, source_wh,
-                f"CREATE RECIPIENT IF NOT EXISTS {_quote_ident(recipient_name)} "
-                f"USING ID '{target_sharing_id}'",
-                dry_run=dry_run,
-            )
-        except Exception as e:
-            msg = str(e).lower()
-            if "already exists" in msg:
-                # Older DBR where IF NOT EXISTS is rejected for RECIPIENT — fall
-                # through, the recipient is there and that's what we want.
-                logger.info(f"Recipient {recipient_name} already exists — reusing")
-            elif "syntax" in msg and "if not exists" in msg:
-                # Fallback for DBR versions that don't accept IF NOT EXISTS at all
-                logger.warning("CREATE RECIPIENT IF NOT EXISTS not supported — falling back to bare CREATE")
-                try:
-                    _run(
-                        source_client, source_wh,
-                        f"CREATE RECIPIENT {_quote_ident(recipient_name)} "
-                        f"USING ID '{target_sharing_id}'",
-                        dry_run=dry_run,
-                    )
-                except Exception as e2:
-                    if "already exists" in str(e2).lower():
-                        logger.info(f"Recipient {recipient_name} already exists — reusing")
-                    else:
-                        raise
-            else:
-                raise
+        # Recipient: probe first, then BARE CREATE (no IF NOT EXISTS).
+        #
+        # Why not IF NOT EXISTS? Databricks's `CREATE RECIPIENT IF NOT EXISTS`
+        # returns success even when the create silently fails (e.g. cross-region
+        # / cross-account Delta Sharing isn't enabled, missing entitlement,
+        # phantom name collision). That hides the real error and the failure
+        # surfaces much later as a confusing "GRANT against missing recipient".
+        # Probe → bare CREATE preserves the original Databricks error.
+        if not dry_run and _recipient_exists(source_client, source_wh, recipient_name):
+            logger.info(f"Recipient {recipient_name} already exists — reusing")
+        else:
+            logger.info(f"Creating recipient on source: {recipient_name}")
+            try:
+                _run(
+                    source_client, source_wh,
+                    f"CREATE RECIPIENT {_quote_ident(recipient_name)} "
+                    f"USING ID '{target_sharing_id}'",
+                    dry_run=dry_run,
+                )
+            except Exception as e:
+                # Race: another caller created it between our probe and CREATE.
+                if "already exists" in str(e).lower():
+                    logger.info(f"Recipient {recipient_name} created concurrently — reusing")
+                else:
+                    # Surface the real Databricks error with context. Common
+                    # causes called out so the user doesn't have to guess.
+                    raise RuntimeError(
+                        f"CREATE RECIPIENT failed for '{recipient_name}': {e}\n\n"
+                        f"Common causes:\n"
+                        f"  - Cross-account / cross-region Delta Sharing isn't enabled on "
+                        f"the source metastore (check Databricks Account Console → Delta Sharing).\n"
+                        f"  - Your identity lacks CREATE RECIPIENT privilege on the source metastore.\n"
+                        f"  - Target metastore '{target_sharing_id}' is unreachable from this account.\n\n"
+                        f"To diagnose, run this in the source workspace SQL editor:\n"
+                        f"  CREATE RECIPIENT clone_xs_diag USING ID '{target_sharing_id}';"
+                    ) from e
 
-        # Visibility probe — informational. Don't block the run on this; let
-        # GRANT speak for itself if the recipient is truly missing or invisible
-        # to the current identity.
-        recipient_visible = (
-            False if dry_run
-            else _recipient_exists(source_client, source_wh, recipient_name)
-        )
-        if not dry_run and not recipient_visible:
-            # Brief settle for eventual-consistency edge cases, then re-check
-            time.sleep(2)
+        # Verify visibility — if CREATE returned success but the recipient
+        # still can't be read, fail fast with the underlying cause instead of
+        # letting GRANT blow up later with a misleading "phantom recipient"
+        # message. This catches the case where IF NOT EXISTS used to silently
+        # swallow real errors (legacy code path) or where some other layer
+        # masked the failure.
+        if not dry_run:
             recipient_visible = _recipient_exists(source_client, source_wh, recipient_name)
-        if not dry_run and not recipient_visible:
-            logger.warning(
-                "Recipient %s is not visible via SDK or SHOW RECIPIENTS to the "
-                "current identity. This may be a phantom recipient owned by a "
-                "different identity (PAT/SP), or your warehouse may be bound to "
-                "a different metastore. GRANT will likely fail; if it does, check "
-                "ownership in the Databricks UI (Catalog → Delta Sharing → Shared by me).",
-                recipient_name,
-            )
+            if not recipient_visible:
+                time.sleep(2)  # eventual-consistency settle
+                recipient_visible = _recipient_exists(source_client, source_wh, recipient_name)
+            if not recipient_visible:
+                raise RuntimeError(
+                    f"CREATE RECIPIENT '{recipient_name}' reported success but the "
+                    f"recipient is not visible via SHOW RECIPIENTS or the SDK from "
+                    f"warehouse {source_wh}.\n\n"
+                    f"This means the CREATE silently failed inside Databricks. Most "
+                    f"common reasons:\n"
+                    f"  - Cross-region / cross-account D2D Delta Sharing isn't enabled "
+                    f"between source ({source_sharing_id or '<unknown>'}) and target ({target_sharing_id}).\n"
+                    f"  - Warehouse {source_wh} is bound to a different metastore than "
+                    f"the one you're an admin on.\n"
+                    f"  - A phantom recipient with this name exists in another metastore "
+                    f"the SDK can see but your SQL can't.\n\n"
+                    f"To diagnose, run this manually in the source workspace SQL editor "
+                    f"(without IF NOT EXISTS, so the real error surfaces):\n"
+                    f"  CREATE RECIPIENT clone_xs_diag USING ID '{target_sharing_id}';"
+                )
         existing_gmid = (
             None if dry_run
             else _recipient_global_metastore_id(source_client, source_wh, recipient_name)
@@ -1322,18 +1413,61 @@ def run_cross_workspace_clone(
                     _drop_table_protections(source_client, source_wh, src_fqn, p)
                     dropped_protections[src_fqn] = p
 
-        # ADD missing tables
+        # ADD missing tables. If ADD fails because Delta Sharing rejects masks/
+        # row filters AND auto_handle_masks is on, inventory + drop + retry once.
+        # This catches cases where the upfront _inventory_table_protections pass
+        # missed something (DESCRIBE EXTENDED parsing edge cases for row filters).
+        def _is_mask_rejection(err: Exception) -> bool:
+            s = str(err).lower()
+            return (
+                "row level security" in s
+                or "row-level security" in s
+                or "column mask" in s
+                or "column masks" in s
+            )
+
         for i, alias in enumerate(sorted(to_add), 1):
             schema, table = alias.split(".", 1)
+            src_fqn_full = _fqn(source_catalog, schema, table)
             sql = (
                 f"ALTER SHARE {_quote_ident(share_name)} ADD TABLE "
-                f"{_fqn(source_catalog, schema, table)} AS {alias}"
+                f"{src_fqn_full} AS {alias}"
             )
             try:
                 _run(source_client, source_wh, sql, dry_run=dry_run)
                 if i % 20 == 0 or i == len(to_add):
                     logger.info(f"  added {i}/{len(to_add)} tables to share")
             except Exception as e:
+                if auto_handle_masks and not dry_run and _is_mask_rejection(e) and src_fqn_full not in dropped_protections:
+                    # Late-bound mask/filter detected by Delta Sharing's own check.
+                    # Inventory and drop, then retry the ADD once.
+                    logger.info(
+                        f"  ADD failed for {alias} due to mask/row-filter; "
+                        f"inventorying and dropping protections, then retrying"
+                    )
+                    p = _inventory_table_protections(source_client, source_wh, src_fqn_full)
+                    if p.has_anything():
+                        _drop_table_protections(source_client, source_wh, src_fqn_full, p)
+                        dropped_protections[src_fqn_full] = p
+                    else:
+                        # Inventory parsing missed it — drop unconditionally as a
+                        # last resort. Best-effort; ignore individual failures.
+                        try:
+                            execute_sql(source_client, source_wh, f"ALTER TABLE {src_fqn_full} DROP ROW FILTER")
+                            # Synthesize a minimal record so we know we did SOMETHING
+                            # (even if we can't restore precisely).
+                            dropped_protections[src_fqn_full] = TableProtections()
+                            logger.info(f"  fallback DROP ROW FILTER on {src_fqn_full}")
+                        except Exception as drop_err:
+                            logger.warning(f"  fallback DROP ROW FILTER failed: {drop_err}")
+                    try:
+                        _run(source_client, source_wh, sql, dry_run=dry_run)
+                        logger.info(f"  retry succeeded for {alias}")
+                        continue
+                    except Exception as e2:
+                        result.errors.append(f"failed to add table to share (retry): {sql} — {e2}")
+                        logger.warning(f"add-to-share retry failed ({e2}); continuing")
+                        continue
                 result.errors.append(f"failed to add table to share: {sql} — {e}")
                 logger.warning(f"add-to-share failed ({e}); continuing")
 
@@ -1395,6 +1529,25 @@ def run_cross_workspace_clone(
             )
         if source_provider_name:
             logger.info(f"Found source provider on target: {source_provider_name}")
+
+        # If we just added tables to the share on the source side (`to_add`
+        # non-empty), force-refresh the target's shared catalog by dropping
+        # and recreating it. Otherwise the catalog keeps a stale snapshot of
+        # share contents from when it was first mounted, and DEEP CLONE of
+        # the newly-added tables fails with TABLE_OR_VIEW_NOT_FOUND.
+        if source_provider_name and to_add and not dry_run:
+            logger.info(
+                f"Refreshing shared catalog on target (share grew by "
+                f"{len(to_add)} table(s)): drop + recreate {shared_catalog_name}"
+            )
+            try:
+                _run(
+                    target_client, target_wh,
+                    f"DROP CATALOG IF EXISTS {_quote_ident(shared_catalog_name)}",
+                    dry_run=dry_run,
+                )
+            except Exception as e:
+                logger.warning(f"  drop existing shared catalog failed (continuing): {e}")
 
         logger.info(f"Creating shared catalog on target: {shared_catalog_name}")
         if source_provider_name:
@@ -1487,7 +1640,7 @@ def run_cross_workspace_clone(
             )
         if clone_functions:
             _migrate_functions(
-                source_client, target_client, source_wh, target_wh,
+                source_client, target_client, target_wh,
                 source_catalog, dest_catalog, schemas,
                 dry_run=dry_run, result=result,
                 include_re=include_re, exclude_re=exclude_re,

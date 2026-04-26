@@ -52,6 +52,15 @@ class TargetWorkspace(BaseModel):
     #      For data_sync_mode=incremental: leave source masks dropped (otherwise
     #      ongoing share reads would fail on Databricks-side; logs a warning)
     auto_handle_masks: bool = False
+    # When True, drop the deterministic share/recipient/shared-catalog at end of run.
+    # Default False: deterministic objects are designed to persist between runs so
+    # subsequent re-clones reuse them (true incremental sync). Set True for one-shot
+    # migrations where you don't intend to re-run.
+    cleanup_after_clone: bool = False
+    # When True, re-runs also `ALTER SHARE … REMOVE TABLE` for tables that are in
+    # the share but no longer exist in the source. Default False because pruning
+    # is destructive on the share side.
+    prune_share_extras: bool = False
 
     @model_validator(mode="after")
     def _creds_present(self) -> "TargetWorkspace":
@@ -132,6 +141,15 @@ class CloneRequest(BaseModel):
     schema_only: bool = False
     include_objects: list[ObjectRef] | None = None
     target_workspace: TargetWorkspace | None = None
+    # Cross-workspace object-type toggles. Effective only when target_workspace
+    # is set; same-workspace clone_catalog.py does not read these.
+    clone_views: bool = True
+    clone_functions: bool = True
+    clone_volumes: bool = True
+    # Per-file cap (MB) for managed-volume file copy via Databricks Files API.
+    # Files larger than this are skipped with a warning. Effective only for
+    # cross-workspace migrations.
+    volume_max_file_mb: int = 500
     # Runtime guardrails (None = no limit)
     max_duration_min: int | None = None
     max_tables: int | None = None

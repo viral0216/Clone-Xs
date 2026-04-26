@@ -279,6 +279,22 @@ export function useTestTargetConnection() {
   });
 }
 
+// Lightweight identity check — used by /settings to display "Logged in as"
+// for each saved target without running the full validate flow.
+export function useTargetWhoami(connectionName: string | null | undefined) {
+  return useQuery<{ user: string | null; host: string }>({
+    queryKey: ["target-whoami", connectionName],
+    queryFn: () => {
+      const conn = findTargetConnection(connectionName!);
+      if (!conn) throw new Error(`Target connection '${connectionName}' not found`);
+      return api.post("/target/whoami", targetCredsBody(conn));
+    },
+    enabled: !!connectionName,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 // Resolves connection name → creds from localStorage, then POSTs to the
 // stateless /target/catalogs endpoint.
 export function useTargetCatalogs(connectionName: string | null | undefined) {

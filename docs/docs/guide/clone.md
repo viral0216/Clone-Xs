@@ -681,18 +681,48 @@ The backend orchestrator ([`src/clone_cross_workspace.py`](https://github.com/vi
 
 ### UI walkthrough
 
-On the Clone page, step 1 ("Source & Destination") now has a **Target Workspace** card. Tick **Clone to a different workspace** and the form expands:
+**Configure target workspaces once in Settings.** Open `/settings → Target Workspaces → + Add target` and fill in:
 
 | Field | Purpose |
 |---|---|
+| Name | Slug used to reference this connection from /clone (e.g. `prod-azure`) |
 | Target Host | Full workspace URL (e.g. `https://adb-1234.azuredatabricks.net`) |
 | Auth Method | `Personal Access Token`, `Service Principal`, or `CLI Profile` |
 | Token / Client ID + Secret / Profile | Credentials for the chosen method |
-| Target SQL Warehouse ID | Runs DDL + DEEP CLONE SQL on the target side |
-| Data sync mode | How re-runs treat tables that already exist on the target (see below) |
+| Target SQL Warehouse | Runs DDL + DEEP CLONE SQL on the target side. The dropdown auto-populates after Browse |
+| Default data sync mode | Used when this target is picked on /clone (see below) |
+| Auto-handle column masks & row filters | See [Column masks and row filters](#column-masks-and-row-filters) below |
 | Keep migration share | Leave the Delta Share in place after migration (debug / audit) |
 
-Click **Test connection** — Clone-Xs calls `POST /api/target/validate`, constructs a `WorkspaceClient` against the target, and confirms the metastore sharing identifier can be resolved. You can't proceed to the next step until this succeeds.
+Saved connections **live in browser localStorage** (`clxs_target_connections`), not on the server. PATs and client secrets never persist to disk — each clone request sends them inline, sourced from the picked entry. Each saved connection card auto-shows `✓ Logged in as <user>` (resolved via the lightweight `POST /target/whoami` endpoint) so you can spot stale or wrong-identity tokens at a glance.
+
+**On /clone, just pick the saved target.** Step 1 ("Source & Destination") has a **"Clone to a different workspace"** checkbox. Tick it, and a compact picker appears:
+
+```
+☑ Clone to a different workspace
+─────────────────────────────────────────────────────────
+Target connection: [ prod-azure ▼ ]  [ Test ]  Manage in Settings →
+https://adb-7405….azuredatabricks.net · PAT · WH e83992177db8bdd5 · snapshot_once
+```
+
+If no targets are saved yet, the picker shows `+ Configure target in Settings →` instead. **Test** runs the same checks as the saved-connection card (auth + metastore sharing + warehouse existence + non-blocking warehouse start if STOPPED).
+
+When the box is ticked, the **Destination Catalog dropdown switches its data source** — it now lists catalogs that exist in the **target** workspace (with `(from target 'prod-azure')` shown next to the label). You pick an existing target catalog or `+ Create New Catalog` to provision a fresh one.
+
+### Same-metastore guard
+
+If you're attempting a cross-workspace clone between two workspaces that happen to share the same Unity Catalog metastore, Clone-Xs **fails fast in 1–2 seconds** before any Delta Sharing objects are created:
+
+```
+Source and target workspaces are in the same Unity Catalog metastore
+(<your-metastore-uuid>). Delta Sharing requires distinct metastores —
+you cannot share to yourself.
+
+Fix: on /clone, untick 'Clone to a different workspace' and run a normal
+in-metastore clone instead. Same metastore = same UC = no Delta Sharing required.
+```
+
+This is the most common pitfall when teams add a second workspace to an existing UC metastore. `CREATE RECIPIENT IF NOT EXISTS` against your own metastore silently no-ops in Databricks, so without this preflight you'd get a confusing "phantom recipient" error 30 seconds in. The check compares source and target `global_metastore_id` returned by `client.metastores.summary()`.
 
 ### Data sync modes
 

@@ -48,6 +48,40 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
   );
 }
 
+// Cross-workspace clone returns a flat shape (tables_cloned, views_migrated,
+// schemas_created, ...). New backends emit canonical aliases too, but older
+// completed jobs persisted before that change still have only the flat fields,
+// so map them here as a fallback.
+function normalizeResult(result: any): any {
+  if (!result) return result;
+  const isCrossWorkspace = result.tables_total !== undefined && result.tables === undefined;
+  if (!isCrossWorkspace) return result;
+  return {
+    ...result,
+    schemas_processed: result.schemas_processed ?? result.schemas_created ?? 0,
+    tables: result.tables ?? {
+      success: result.tables_cloned || 0,
+      failed: result.tables_failed || 0,
+      skipped: result.tables_skipped || 0,
+    },
+    views: result.views ?? {
+      success: result.views_migrated || 0,
+      failed: result.views_failed || 0,
+      skipped: 0,
+    },
+    functions: result.functions ?? {
+      success: result.functions_migrated || 0,
+      failed: result.functions_failed || 0,
+      skipped: 0,
+    },
+    volumes: result.volumes ?? {
+      success: result.volumes_migrated || 0,
+      failed: result.volumes_failed || 0,
+      skipped: 0,
+    },
+  };
+}
+
 function downloadFile(content: string, filename: string, type = "application/json") {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -59,7 +93,8 @@ function downloadFile(content: string, filename: string, type = "application/jso
 }
 
 function generateReport(job: any): string {
-  const v = job.result?.validation;
+  const result = normalizeResult(job.result);
+  const v = result?.validation;
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const lines = [
     `# Clone Report`,
@@ -76,7 +111,7 @@ function generateReport(job: any): string {
     `| Clone Type | ${job.clone_type} |`,
     `| Started | ${job.started_at ? new Date(job.started_at).toLocaleString() : "—"} |`,
     `| Completed | ${job.completed_at ? new Date(job.completed_at).toLocaleString() : "—"} |`,
-    `| Duration | ${job.result?.duration_seconds ? job.result.duration_seconds.toFixed(1) + "s" : "—"} |`,
+    `| Duration | ${result?.duration_seconds ? result.duration_seconds.toFixed(1) + "s" : "—"} |`,
     ``,
     `## Objects Processed`,
     `| Type | Success | Failed | Skipped |`,
@@ -84,13 +119,13 @@ function generateReport(job: any): string {
   ];
 
   for (const key of ["tables", "views", "functions", "volumes"]) {
-    const d = job.result?.[key];
+    const d = result?.[key];
     if (d) {
       lines.push(`| ${key} | ${d.success || 0} | ${d.failed || 0} | ${d.skipped || 0} |`);
     }
   }
 
-  lines.push(`| schemas | ${job.result?.schemas_processed || 0} | — | — |`);
+  lines.push(`| schemas | ${result?.schemas_processed || 0} | — | — |`);
 
   if (v) {
     lines.push(``);
@@ -125,10 +160,10 @@ function generateReport(job: any): string {
     }
   }
 
-  if (job.result?.errors && job.result.errors.length > 0) {
+  if (result?.errors && result.errors.length > 0) {
     lines.push(``);
     lines.push(`## Warnings`);
-    for (const err of job.result.errors) {
+    for (const err of result.errors) {
       lines.push(`- ${err}`);
     }
   }
@@ -416,18 +451,20 @@ function JobProgress({ jobId }: { jobId: string }) {
       </div>
 
       {/* Result */}
-      {job.status === "completed" && job.result && (
+      {job.status === "completed" && job.result && (() => {
+        const result = normalizeResult(job.result);
+        return (
         <div className="space-y-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-[#E8453C]">{job.result.schemas_processed || 0}</p>
+                <p className="text-2xl font-bold text-[#E8453C]">{result.schemas_processed || 0}</p>
                 <p className="text-xs text-gray-500">Schemas Processed</p>
               </CardContent>
             </Card>
             {["tables", "views", "functions", "volumes"].map((key) => {
-              const d = job.result[key];
+              const d = result[key];
               if (!d) return null;
               const total = (d.success || 0) + (d.failed || 0) + (d.skipped || 0);
               return (
@@ -448,19 +485,19 @@ function JobProgress({ jobId }: { jobId: string }) {
           </div>
 
           {/* Duration */}
-          {job.result.duration_seconds && (
-            <p className="text-sm text-gray-500">Clone duration: {job.result.duration_seconds.toFixed(1)}s</p>
+          {result.duration_seconds && (
+            <p className="text-sm text-gray-500">Clone duration: {result.duration_seconds.toFixed(1)}s</p>
           )}
 
           {/* Validation Results */}
-          {job.result.validation && (
+          {result.validation && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <CheckCircle className="h-5 w-5 text-foreground" />
                   Post-Clone Validation
                   <Badge className="ml-auto bg-muted/40 text-foreground">
-                    {job.result.validation.matched}/{job.result.validation.total_tables} matched
+                    {result.validation.matched}/{result.validation.total_tables} matched
                   </Badge>
                 </CardTitle>
               </CardHeader>
@@ -468,25 +505,25 @@ function JobProgress({ jobId }: { jobId: string }) {
                 {/* Validation summary */}
                 <div className="grid grid-cols-4 gap-3 mb-4">
                   <div className="text-center p-2 bg-muted/20 rounded">
-                    <p className="text-lg font-bold text-foreground">{job.result.validation.matched}</p>
+                    <p className="text-lg font-bold text-foreground">{result.validation.matched}</p>
                     <p className="text-xs text-gray-500">Matched</p>
                   </div>
                   <div className="text-center p-2 bg-red-50 rounded">
-                    <p className="text-lg font-bold text-red-700">{job.result.validation.mismatched}</p>
+                    <p className="text-lg font-bold text-red-700">{result.validation.mismatched}</p>
                     <p className="text-xs text-gray-500">Mismatched</p>
                   </div>
                   <div className="text-center p-2 bg-muted/20 rounded">
-                    <p className="text-lg font-bold text-muted-foreground">{job.result.validation.errors}</p>
+                    <p className="text-lg font-bold text-muted-foreground">{result.validation.errors}</p>
                     <p className="text-xs text-gray-500">Errors</p>
                   </div>
                   <div className="text-center p-2 bg-muted/30 rounded">
-                    <p className="text-lg font-bold text-[#E8453C]">{job.result.validation.total_tables}</p>
+                    <p className="text-lg font-bold text-[#E8453C]">{result.validation.total_tables}</p>
                     <p className="text-xs text-gray-500">Total Tables</p>
                   </div>
                 </div>
 
                 {/* Table details */}
-                {job.result.validation.details && job.result.validation.details.length > 0 && (
+                {result.validation.details && result.validation.details.length > 0 && (
                   <div className="overflow-x-auto max-h-80 overflow-y-auto">
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-white">
@@ -499,7 +536,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {job.result.validation.details.map((row: any, i: number) => (
+                        {result.validation.details.map((row: any, i: number) => (
                           <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-muted/20" : "bg-red-50"}`}>
                             <td className="py-2 px-3">
                               {row.match ? (
@@ -525,17 +562,17 @@ function JobProgress({ jobId }: { jobId: string }) {
           )}
 
           {/* Errors */}
-          {job.result.errors && job.result.errors.length > 0 && (
+          {result.errors && result.errors.length > 0 && (
             <Card className="border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2 text-foreground">
                   <AlertCircle className="h-5 w-5" />
-                  Warnings ({job.result.errors.length})
+                  Warnings ({result.errors.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="max-h-40 overflow-y-auto text-sm space-y-1">
-                  {job.result.errors.map((err: string, i: number) => (
+                  {result.errors.map((err: string, i: number) => (
                     <div key={i} className="text-muted-foreground font-mono text-xs">{err}</div>
                   ))}
                 </div>
@@ -543,7 +580,8 @@ function JobProgress({ jobId }: { jobId: string }) {
             </Card>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Error */}
       {job.status === "failed" && (

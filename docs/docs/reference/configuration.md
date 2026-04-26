@@ -95,6 +95,14 @@ source_snapshot_id: null    # UUID of a row in <audit>.clone_snapshots
 # When target_workspace is set, the clone runs through the Delta Sharing + DEEP
 # CLONE orchestrator (see the Cross-workspace guide). Leave unset for normal
 # same-workspace clones.
+#
+# UI USERS: ignore this block. Saved target connections are managed in the
+# browser via /settings → Target Workspaces and stored in localStorage
+# (key: clxs_target_connections). The /clone payload assembly resolves the
+# picked connection name into the same `target_workspace` object inline at
+# request time, so the server never needs to know about saved targets and
+# no PAT or client_secret is persisted on disk. This block is for users who
+# drive Clone-Xs via the API directly with one-off creds.
 target_workspace:
   host: ""                    # e.g. "https://adb-target.azuredatabricks.net"
   auth_method: "pat"          # "pat" | "service_principal" | "profile"
@@ -103,7 +111,7 @@ target_workspace:
   client_secret: ""           # required when auth_method="service_principal"
   profile: ""                 # required when auth_method="profile"
   warehouse_id: ""            # target SQL warehouse for DDL + DEEP CLONE
-  keep_share: false           # leave the Delta Share intact post-migration
+  keep_share: false           # legacy/informational — leave the Delta Share intact (use cleanup_after_clone instead)
   # How re-runs treat tables that already exist on the target.
   #   snapshot_once = CREATE TABLE IF NOT EXISTS ... DEEP CLONE  (default; skip existing)
   #   incremental   = CREATE OR REPLACE TABLE ... DEEP CLONE     (mirror source; overwrites target writes)
@@ -114,7 +122,27 @@ target_workspace:
   # re-applies them on the target after the clone. For snapshot_once /
   # force_full the masks are also restored on source. For incremental the
   # source masks remain dropped (otherwise ongoing share reads break).
+  # The ADD TABLE loop also has a retry fallback: if Delta Sharing rejects
+  # an ADD because of a mask/filter that the upfront DESCRIBE-EXTENDED-based
+  # inventory missed, the loop catches the specific error, runs inventory +
+  # drop, and retries the ADD once.
   auto_handle_masks: false
+  # Lifecycle of the deterministic share/recipient/shared-catalog. Default
+  # false means objects persist between runs so subsequent re-clones reuse
+  # them (true incremental sync). Set true for one-shot migrations where
+  # you don't intend to re-run.
+  cleanup_after_clone: false
+  # When true, re-runs also `ALTER SHARE … REMOVE TABLE` for tables that are
+  # in the share but no longer exist in the source. Default false because
+  # pruning is destructive on the share side.
+  prune_share_extras: false
+
+# ⚠ Same-metastore preflight: if both source and target workspaces attach to
+# the same Unity Catalog metastore, Clone-Xs refuses to run the cross-workspace
+# orchestrator (Delta Sharing requires distinct metastores — you cannot share
+# to yourself). Use the in-metastore clone path instead by removing
+# target_workspace from your config. The check compares
+# `client.metastores.summary().global_metastore_id` for both clients.
 
 # Toggle which object types migrate cross-workspace (all default true).
 # copy_permissions / copy_ownership / copy_tags above also apply.

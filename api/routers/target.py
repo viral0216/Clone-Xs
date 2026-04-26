@@ -24,6 +24,13 @@ def _run_validation(target: TargetWorkspace) -> dict:
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Could not authenticate to target workspace: {e}")
 
+    # Resolve the authenticated identity so the UI can show "logged in as <user>".
+    try:
+        me = client.current_user.me()
+        user = getattr(me, "user_name", None) or getattr(me, "display_name", None)
+    except Exception:
+        user = None
+
     try:
         sharing_id = metastore_sharing_id(client)
         sharing_error = None
@@ -58,6 +65,7 @@ def _run_validation(target: TargetWorkspace) -> dict:
     return {
         "ok": True,
         "host": target.host,
+        "user": user,
         "catalog_count": len(catalogs),
         "metastore_sharing_id": sharing_id,
         "sharing_error": sharing_error,
@@ -89,6 +97,29 @@ async def list_target_warehouses(target: TargetWorkspaceConnect) -> list[dict]:
             status_code=401,
             detail=f"Could not list target workspace warehouses: {e}",
         )
+
+
+@router.post("/whoami")
+async def target_whoami(target: TargetWorkspaceConnect) -> dict:
+    """Return the authenticated identity for the given target creds.
+
+    Lightweight: just `client.current_user.me()` — no warehouse, no metastore
+    lookup. Used by /settings to surface "Logged in as ..." for each saved
+    target connection without forcing the user to click Test.
+    """
+    try:
+        from src.target_workspace import build_target_client
+
+        client = build_target_client(target.model_dump())
+        me = client.current_user.me()
+        return {
+            "user": getattr(me, "user_name", None) or getattr(me, "display_name", None),
+            "host": target.host,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Could not authenticate: {e}")
 
 
 @router.post("/catalogs")

@@ -4,6 +4,9 @@ How I migrated a full healthcare-shaped data catalog — tables, dashboards, cus
 
 > **Status: under development.** The cross-workspace migration feature described in this post is in active development at the time of writing (April 2026) and is targeted for general availability in May 2026. Treat the workflow, the UI, and the cost estimates as a preview rather than a finished spec — details may shift before release. The synthetic-data run referenced below was performed against an internal pre-release build.
 
+> 🚧 **Now in development: Cross-Workspace and Cross-Cloud Unity Catalog Migration with Delta Sharing + DEEP CLONE.**
+> Targeted release: **May 2026.** For the launch announcement, demo videos, and follow-on product updates as the feature rolls out — **[subscribe to the channel](https://your-channel-link)** and **[follow me](https://your-profile-link)**.
+
 - - -
 
 Imagine your CTO walks into the data team's standup on a Monday morning and says: *legal just told us the lakehouse needs disaster recovery in a second cloud, ideally a second region. By the end of the quarter.*
@@ -16,6 +19,20 @@ In April 2026, Clone-Xs v0.11.0 turned that project into a form on a web page. P
 
 > [INSERT IMAGE: screenshots/01-target-workspace-card.png]
 > Caption: Configure a target workspace once in Settings. The same form covers AWS, Azure, and Google Cloud — Clone-Xs treats them all the same.
+
+- - -
+
+## What you get
+
+A scannable summary before the deeper sections:
+
+- **24× tighter recovery point at 4× lower cost.** Incremental clones run hourly — the DR replica recovers to "an hour ago" instead of "yesterday's snapshot" — and the monthly bill is *lower* than running a daily full clone, not higher. (Worked example with cost numbers below.)
+- **Migration projects become standup tasks.** The 8–12 weeks of bespoke engineering work that historically defined a Databricks DR project becomes a form on a web page: pick a source, pick a target, click run. The first one takes about an hour to set up; subsequent ones are clicks.
+- **Audit-ready by default.** Every migration writes records-of-processing rows to a Delta table — source, destination, scope, principal, configuration, outcome, bytes transferred. Compliance teams query that table directly. No ticket-filing, no spreadsheet exports, no chasing log files.
+- **Zero credential storage on the server.** Target workspace tokens live in your browser only — never in config files, never in git, never persisted on the Clone-Xs server. The single most common cause of leaked-secret incidents (a token accidentally committed to a config file) is sidestepped by design.
+- **Same workflow across every boundary.** AWS ↔ Azure ↔ GCP, region ↔ region, account ↔ account, metastore ↔ metastore — same form, same orchestrator, same run report. Your team learns one tool, not three.
+- **PII protections preserved automatically.** Column masks and row filters that protect personal data on the source come back on the destination with their masking functions rewritten for the new catalog. No manual re-application, no production-without-masks window.
+- **Runs on infrastructure you already pay for.** No separate cluster, no agent service, no monthly minimum, no per-table charge. Uses your existing Databricks SQL warehouses — the cost shows up on the same bill as any other query.
 
 - - -
 

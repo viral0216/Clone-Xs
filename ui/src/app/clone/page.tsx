@@ -496,7 +496,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                 <CardTitle className="text-lg flex items-center gap-2">
                   <CheckCircle className="h-5 w-5 text-foreground" />
                   Post-Clone Validation
-                  <Badge className="ml-auto bg-muted/40 text-foreground">
+                  <Badge variant="outline" className="ml-auto">
                     {result.validation.matched}/{result.validation.total_tables} matched
                   </Badge>
                 </CardTitle>
@@ -1596,28 +1596,28 @@ function ClonePageInner() {
               {config.max_rps > 0 && <Badge variant="outline" className="text-xs">RPS:{config.max_rps}</Badge>}
               {config.order_by_size && <Badge variant="outline" className="text-xs">Size:{config.order_by_size}</Badge>}
               {config.throttle && <Badge variant="outline" className="text-xs">Throttle:{config.throttle}</Badge>}
-              {config.copy_permissions && <Badge className="bg-muted/40 text-foreground text-xs">Permissions</Badge>}
-              {config.copy_tags && <Badge className="bg-muted/40 text-foreground text-xs">Tags</Badge>}
-              {config.copy_security && <Badge className="bg-muted/40 text-foreground text-xs">Security</Badge>}
-              {config.copy_constraints && <Badge className="bg-muted/40 text-foreground text-xs">Constraints</Badge>}
-              {config.copy_properties && <Badge className="bg-muted/40 text-foreground text-xs">Properties</Badge>}
-              {config.copy_comments && <Badge className="bg-muted/40 text-foreground text-xs">Comments</Badge>}
-              {config.enable_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Rollback</Badge>}
-              {config.auto_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
-              {config.validate_after_clone && <Badge className="bg-muted/50 text-foreground text-xs">Validate</Badge>}
-              {config.validate_checksum && <Badge className="bg-muted/50 text-foreground text-xs">Checksum</Badge>}
-              {config.generate_report && <Badge className="bg-muted/50 text-foreground text-xs">Report</Badge>}
-              {config.checkpoint && <Badge className="bg-muted/50 text-foreground text-xs">Checkpoint</Badge>}
-              {config.force_reclone && <Badge className="bg-muted/40 text-foreground text-xs">Force Re-clone</Badge>}
-              {config.schema_only && <Badge className="bg-muted/40 text-foreground text-xs">Schema Only</Badge>}
-              {config.skip_unused && <Badge className="bg-muted/40 text-foreground text-xs">Skip Unused</Badge>}
-              {config.impact_check && <Badge className="bg-muted/40 text-foreground text-xs">Impact Check</Badge>}
-              {config.require_approval && <Badge className="bg-muted/40 text-foreground text-xs">Approval Required</Badge>}
-              {config.dry_run && <Badge className="bg-muted/40 text-foreground text-xs">Dry Run</Badge>}
-              {config.verbose && <Badge className="bg-gray-100 text-gray-800 text-xs">Verbose</Badge>}
-              {config.serverless && <Badge className="bg-muted/40 text-foreground text-xs">Serverless</Badge>}
-              {!config.copy_permissions && <Badge className="bg-red-100 text-red-800 text-xs">No Permissions</Badge>}
-              {!config.copy_ownership && <Badge className="bg-red-100 text-red-800 text-xs">No Ownership</Badge>}
+              {config.copy_permissions && <Badge variant="outline" className="text-xs">Permissions</Badge>}
+              {config.copy_tags && <Badge variant="outline" className="text-xs">Tags</Badge>}
+              {config.copy_security && <Badge variant="outline" className="text-xs">Security</Badge>}
+              {config.copy_constraints && <Badge variant="outline" className="text-xs">Constraints</Badge>}
+              {config.copy_properties && <Badge variant="outline" className="text-xs">Properties</Badge>}
+              {config.copy_comments && <Badge variant="outline" className="text-xs">Comments</Badge>}
+              {config.enable_rollback && <Badge variant="outline" className="text-xs">Rollback</Badge>}
+              {config.auto_rollback && <Badge variant="outline" className="text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
+              {config.validate_after_clone && <Badge variant="outline" className="text-xs">Validate</Badge>}
+              {config.validate_checksum && <Badge variant="outline" className="text-xs">Checksum</Badge>}
+              {config.generate_report && <Badge variant="outline" className="text-xs">Report</Badge>}
+              {config.checkpoint && <Badge variant="outline" className="text-xs">Checkpoint</Badge>}
+              {config.force_reclone && <Badge variant="outline" className="text-xs">Force Re-clone</Badge>}
+              {config.schema_only && <Badge variant="outline" className="text-xs">Schema Only</Badge>}
+              {config.skip_unused && <Badge variant="outline" className="text-xs">Skip Unused</Badge>}
+              {config.impact_check && <Badge variant="outline" className="text-xs">Impact Check</Badge>}
+              {config.require_approval && <Badge variant="outline" className="text-xs">Approval Required</Badge>}
+              {config.dry_run && <Badge variant="outline" className="text-xs">Dry Run</Badge>}
+              {config.verbose && <Badge variant="outline" className="text-xs">Verbose</Badge>}
+              {config.serverless && <Badge variant="outline" className="text-xs">Serverless</Badge>}
+              {!config.copy_permissions && <Badge variant="outline" className="text-xs border-red-400 text-red-600 dark:text-red-400">No Permissions</Badge>}
+              {!config.copy_ownership && <Badge variant="outline" className="text-xs border-red-400 text-red-600 dark:text-red-400">No Ownership</Badge>}
               {config.include_schemas.length > 0 && <Badge variant="outline" className="text-xs">Schemas: {config.include_schemas.join(",")}</Badge>}
               {config.include_tables_regex && <Badge variant="outline" className="text-xs">Include: {config.include_tables_regex}</Badge>}
               {config.exclude_tables_regex && <Badge variant="outline" className="text-xs">Exclude: {config.exclude_tables_regex}</Badge>}

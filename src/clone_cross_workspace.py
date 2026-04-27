@@ -1337,6 +1337,10 @@ def run_cross_workspace_clone(
     # Re-applied on target after clone, and on source in the finally block
     # (unless data_sync_mode=incremental, where we leave them dropped).
     dropped_protections: dict[str, "TableProtections"] = {}
+    # Pre-clone source quiesce snapshots — restored unconditionally in the
+    # finally block. Empty list (quiesce_source disabled or dry-run) is a
+    # no-op restore.
+    quiesce_snapshots: list = []
 
     try:
         # --- 1. Introspect source ---------------------------------------------------
@@ -1361,6 +1365,18 @@ def run_cross_workspace_clone(
             logger.warning("No tables found in source catalog — nothing to migrate.")
             result.status = "success"
             return result.to_dict()
+
+        # Pre-clone source quiesce. Snapshot + revoke write privileges so
+        # concurrent writes can't land mid-clone and produce a target with
+        # missing rows. Restored unconditionally in the finally block. Cross-
+        # workspace clones are typically longer-running than same-workspace
+        # ones (Delta Sharing + DEEP CLONE across regions), so this is the
+        # path most likely to benefit from quiesce.
+        if config.get("quiesce_source") and not dry_run:
+            from src.quiesce import quiesce_source_schemas
+            quiesce_snapshots = quiesce_source_schemas(
+                source_client, source_catalog, schemas,
+            )
 
         # --- 2. Target sharing identifier -------------------------------------------
         logger.info("Resolving target metastore sharing identifier...")
@@ -1955,6 +1971,13 @@ def run_cross_workspace_clone(
         logger.info("=" * 72)
 
     finally:
+        # --- 6.0 Restore quiesce grants -----------------------------------------
+        # Always runs, regardless of clone outcome — admins must never lose
+        # track of which write privileges we revoked. Idempotent on retry.
+        if quiesce_snapshots and not dry_run:
+            from src.quiesce import restore_source_grants
+            restore_source_grants(source_client, quiesce_snapshots)
+
         # --- 6a. Restore source column masks / row filters --------------------------
         # We dropped them on source so the table could be added to the share.
         # Restoration policy depends on data_sync_mode:

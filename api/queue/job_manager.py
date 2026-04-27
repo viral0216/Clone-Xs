@@ -185,12 +185,24 @@ class JobManager:
                         config,
                         volume_path=config["volume"],
                     )
+                elif (config.get("load_type") or "").upper() == "SELECTIVE":
+                    # Selective re-clone: only touch tables that have drifted
+                    # between source and target. Routed inside the "clone" job
+                    # type (rather than a new job_type) so existing /api/clone
+                    # callers can opt in by setting load_type=SELECTIVE without
+                    # changing endpoints, and the audit-trail / run-id flow
+                    # stays identical.
+                    from src.selective_reclone import selective_reclone_catalog
+                    result = selective_reclone_catalog(client, config)
                 else:
                     from src.clone_catalog import clone_catalog
                     result = clone_catalog(client, config)
             elif job_type == "clone_cross_workspace":
                 from src.clone_cross_workspace import run_cross_workspace_clone
                 result = run_cross_workspace_clone(client, config)
+            elif job_type == "clone_fanout":
+                from src.clone_fanout import run_cross_workspace_fanout
+                result = run_cross_workspace_fanout(client, config)
             elif job_type == "validate":
                 from src.validation import validate_catalog
                 result = validate_catalog(

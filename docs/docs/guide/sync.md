@@ -117,3 +117,79 @@ The file is updated **only after a successful per-table sync**. A corrupt file i
 - **Schema evolution**: version mode re-clones the entire source table, so new source columns flow through automatically. CDF mode merges using the **destination's current column list** at merge time — add the column to the destination first (or switch to version mode for that run) when the source schema gains columns.
 - **Non-Delta tables** are skipped at enumeration — incremental sync only touches `MANAGED` + `EXTERNAL` Delta tables.
 - **Streaming tables** and **materialized views** are out of scope. They require the DLT pipeline that defines them; see [Delta Live Tables](./dlt) for those.
+
+---
+
+## Continuous sync (long-running streams)
+
+**When to use:**
+You need second-to-minute-level lag instead of run-on-schedule lag. Examples:
+- A real-time dashboard reading from `staging.metrics` that needs prod data within 60 seconds.
+- A regulated copy in a separate metastore (audit / DR) that must always be ≤ 1 minute behind prod.
+- Customer-facing read replica where the next-batch delay is unacceptable.
+
+For typical batch / nightly use, **stick with incremental sync above** — it's simpler operationally and doesn't require a long-running cluster.
+
+### How it works
+
+Each "stream" is a Databricks Jobs **submitted run** (`client.jobs.submit`) with a Python task that runs one `readStream` → `writeStream` per source table, using Change Data Feed (`readChangeFeed=true`) on the read side and a `forEachBatch` MERGE into the destination on the write side. The run lives on Databricks — Clone-Xs's API server holds only an in-memory registry pointing at the run id, so:
+
+- Streams keep running across Clone-Xs API server restarts.
+- On API server startup, `discover_existing_streams(client)` scans `jobs.list_runs` for runs whose `run_name` starts with `clxs-continuous-sync-` and re-attaches the runner to them.
+
+### Lifecycle
+
+User-facing statuses (`status` in the API response):
+- **starting** — submit issued, run-id assigned, run hasn't started yet
+- **running** — run is `RUNNING`, `BLOCKED`, or `WAITING_FOR_RETRY`
+- **stopping** — `cancel_run` issued, run state is `TERMINATING`
+- **stopped** — manually stopped, cancelled, or terminated cleanly
+- **failed** — run terminated with `FAILED`, `TIMEDOUT`, or `INTERNAL_ERROR`
+- **idle** — registered but no associated run (e.g. submit failed mid-call)
+- **unknown** — Databricks returned an unrecognised state (defensive)
+
+### API
+
+```bash
+# Start
+curl -X POST $CLXS_HOST/api/continuous-sync/start -d '{
+  "source_catalog": "prod",
+  "destination_catalog": "prod_streaming",
+  "tables": ["bronze.events", "bronze.users"],
+  "trigger_ms": 60000
+}'
+# → { "stream_id": "sync-a1b2c3d4e5", "run_id": 4321, "status": "starting", ... }
+
+# List
+curl $CLXS_HOST/api/continuous-sync/streams
+curl $CLXS_HOST/api/continuous-sync/streams?refresh=true   # poll Databricks per stream
+
+# Detail (always polls)
+curl $CLXS_HOST/api/continuous-sync/streams/sync-a1b2c3d4e5
+
+# Stop / restart (idempotent)
+curl -X POST $CLXS_HOST/api/continuous-sync/streams/sync-a1b2c3d4e5/stop
+curl -X POST $CLXS_HOST/api/continuous-sync/streams/sync-a1b2c3d4e5/restart
+```
+
+### Stream-id stability
+
+The `stream_id` is a hash of `(source_catalog, destination_catalog, schema, sorted(tables))` — so calling `start` twice with the same parameters reuses the existing record. This means an idempotent retry doesn't accumulate ghost entries in the registry. To run two streams with the same source/dest pair (different table subsets), pick disjoint table lists; the stream_id will differ.
+
+### Prerequisites
+
+- **Change Data Feed enabled** on every source table in scope: `ALTER TABLE … SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')`. The plan generator emits this in the `prerequisites` block of the submitted plan.
+- **Primary key declared on each destination table** (for the MERGE join). Without a PK, the MERGE template falls back to append-only writes — incorrect semantics.
+- **Write permissions on `checkpoint_root`** (defaults to `/Volumes/<dest_catalog>/_sys/continuous_sync`). Each table's checkpoint lives at `<root>/<schema>/<table>`.
+
+### Failure modes & recovery
+
+- **Source schema change** — the run terminates with `FAILED` and a state_message describing the drift. Recovery: ALTER the destination to match, then `POST /streams/{id}/restart`.
+- **Target catalog deleted** — same handling. Recreate the catalog (or pick a new destination), restart.
+- **Network partition** — the Databricks runtime auto-retries up to its configured retry limit before terminating. While retrying, status reads `running` (life cycle is `WAITING_FOR_RETRY`). Beyond the retry limit, status flips to `failed`.
+- **API server restart** — streams continue running on Databricks. On startup, the runner re-discovers them from `jobs.list_runs` filtered by `clxs-continuous-sync-` prefix.
+
+### Limitations
+
+- The current MERGE template is generated as inline Python (see `_stream_template` in `src/continuous_sync.py`). Production code paths that need custom transformations should fork the plan via the `POST /plan` endpoint, edit the inline_python, and submit via Databricks Jobs directly.
+- Long-running smoke testing (24h+ runs against a low-volume source) is part of the validation roadmap. The current test suite covers lifecycle correctness via mocks; live-runtime validation is a manual operations exercise.

@@ -93,6 +93,24 @@ Behavior modifiers:
 
 Within each schema, `parallel_tables` (default 1) controls how many tables clone simultaneously. Set to 4–8 for catalogs with many small tables; keep at 1 for catalogs dominated by large tables to avoid saturating the warehouse.
 
+#### Mixed-format sources (Delta, Parquet, Iceberg)
+
+The CLONE statement is format-agnostic. The same `CREATE TABLE … DEEP CLONE source` syntax works whether the source is Delta, Parquet, or Iceberg — provided the source is registered in Unity Catalog. The destination always lands as Delta, regardless of source format. This means a single Clone-Xs run can migrate a catalog that mixes formats (typical mid-migration state), and the run summary breaks the result down by source format:
+
+```text
+Source formats:  DELTA: 26   PARQUET: 2   ICEBERG: 1
+Bytes Copied: 480 GB    Files Copied: 12,840
+```
+
+Format-specific gotchas inherited from Databricks CLONE (Clone-Xs surfaces these with an actionable wrapper, but cannot work around them):
+
+- **Iceberg + partition evolution** — clone fails. Use a manual CTAS or [`CONVERT TO DELTA`](https://learn.microsoft.com/en-gb/azure/databricks/delta/convert-to-delta) for that table.
+- **Iceberg with truncated decimal partitions** — clone fails on DBR < 13.3. Truncated partitions on string / long / int columns work on DBR 13.3+.
+- **Partitioned Parquet referenced by path** — clone fails. Register the table to UC by name first.
+- **Glob/wildcard paths** — not supported by Databricks CLONE for any format.
+
+See the [Databricks Parquet/Iceberg CLONE reference](https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet) for the canonical limitations list.
+
 ### Stage 4 — Views, functions, volumes
 
 Run **after tables** because views and functions reference them. For each:
@@ -164,16 +182,17 @@ clxs clone --source production --dest dev_env --clone-type SHALLOW
 
 ---
 
-## Full vs incremental load
+## Full vs incremental vs selective load
 
 > **Docs:** [Delta Clone](https://docs.databricks.com/en/delta/clone.html)
 
 **When to use:**
 - **Full**: First-time clone or when you want a complete refresh.
 - **Incremental**: Subsequent runs where you only want to add new objects that don't exist in the destination yet.
+- **Selective**: Re-clone only tables whose source state has drifted from target — leaves in-sync tables alone. Runtime is proportional to drift size, not catalog size.
 
 **Real-world scenario:**
-You do a full clone every Sunday night. On weekdays, you run incremental loads to pick up new tables added during the week — without re-cloning existing tables.
+You do a full clone every Sunday night. On weekdays, you run incremental loads to pick up new tables added during the week — without re-cloning existing tables. Mid-week, an upstream batch job rewrites three fact tables; you run a selective re-clone instead of a full refresh, which touches only those three tables.
 
 ```bash
 # Sunday: full refresh
@@ -181,6 +200,9 @@ clxs clone --source production --dest staging --load-type FULL
 
 # Mon-Sat: only clone new objects
 clxs clone --source production --dest staging --load-type INCREMENTAL
+
+# Mid-week drift fix: re-clone only tables whose source diverged from target
+clxs clone --source production --dest staging --load-type SELECTIVE
 ```
 
 ```yaml
@@ -190,6 +212,30 @@ clone_type: "DEEP"
 load_type: "INCREMENTAL"   # Only add new tables/views/functions
 sql_warehouse_id: "abc123"
 ```
+
+### Selective re-clone (`load_type: SELECTIVE`)
+
+Selective re-clone is a third mode (alongside FULL and INCREMENTAL) for keeping a previously-cloned catalog fresh without re-transferring static data. On every run, Clone-Xs:
+
+1. Lists tables on **both** source and target via the Catalog SDK.
+2. For each common table, compares the current Delta version on source vs target via `DESCRIBE HISTORY`.
+3. Builds a "drift list" of tables to re-clone:
+   - **`never_cloned`** — present on source, missing from target. Cloned in.
+   - **`version_drift`** — `source.version > target.version`. Re-cloned with `force_reclone=true` (DROP target, then `CREATE TABLE … DEEP CLONE`).
+   - **`unable_to_compare`** — DESCRIBE HISTORY returned nothing on either side (non-Delta source like Parquet/Iceberg, or transient SDK errors). Treated as drifted to be safe — cheaper than missing real drift.
+4. Runs the existing per-table CLONE machinery (so all metrics capture, TBLPROPERTIES overrides, mask handling, ownership/tags/permissions replay still apply) on the drift list only.
+5. Schemas with zero drift log a one-line "in sync" entry and contribute nothing to the run summary.
+
+**What's NOT touched:**
+- Tables on target but not on source — selective is **additive only**, never destructive. Use a separate compare/cleanup if you need to drop orphans on target.
+- Tables where `source.version == target.version` — assumed in sync, skipped.
+- Views, functions, volumes — these aren't versioned the same way. Selective only re-clones tables; combine with a separate FULL or INCREMENTAL run if non-table objects need refreshing.
+
+**Trade-offs vs INCREMENTAL:**
+- INCREMENTAL skips tables that **exist** on target (regardless of drift).
+- SELECTIVE skips tables whose **content** matches target (regardless of whether they exist).
+
+So if you ran `INCREMENTAL` daily, you'd never catch updates to existing tables; if you run `SELECTIVE`, you do — but at the cost of issuing two extra DESCRIBE HISTORY queries per source table.
 
 ---
 
@@ -444,6 +490,62 @@ clxs clone --dry-run -v
 ```
 
 All read operations (listing schemas, tables) still execute so you get an accurate preview. Only write operations are skipped.
+
+---
+
+## Pre-clone source quiesce
+
+**When to use:**
+The source catalog has live writers (ingestion jobs, ad-hoc analyst writes) and you need a clone that's content-consistent — not a mix of "table A at 09:30, table B at 09:31, table A again at 09:32 because someone INSERTED mid-clone."
+
+**Real-world scenario:**
+You're cloning `production` to `production_dr` for a DR drill. Production has a half-dozen Spark jobs that INSERT into bronze tables continuously. Without quiesce, the clone could produce a target where bronze.events has 1.2M rows but bronze.users only has the rows that existed before the Spark job for users started its commit during the clone — silent partial-time-travel divergence between tables.
+
+```bash
+clxs clone --source production --dest production_dr --quiesce-source
+```
+
+```yaml
+quiesce_source: true   # OFF by default
+```
+
+```json
+POST /api/clone
+{ "source_catalog": "production", "destination_catalog": "production_dr", "quiesce_source": true }
+```
+
+### How it works
+
+When `quiesce_source: true`, Clone-Xs:
+
+1. **Snapshots grants** on each source schema via `client.grants.get(SecurableType.SCHEMA, …)`. Captures principal → privileges for every grant that touches writes: `MODIFY`, `WRITE_VOLUME`, `CREATE_TABLE`, `CREATE_VOLUME`, `CREATE_FUNCTION`, `CREATE_MATERIALIZED_VIEW`, `CREATE_MODEL`, `APPLY_TAG`.
+2. **Revokes** those write privileges via `PermissionsChange(remove=[…], principal=p)`. Concurrent INSERT / UPDATE / DELETE / MERGE / new-object creation now fail with `PERMISSION_DENIED` until the clone completes.
+3. **Runs the clone** under the now-read-only source.
+4. **Restores grants** in a finally block — runs whether the clone succeeded, partially failed, or was aborted by a runtime budget. Idempotent on retry (re-granting an already-held privilege is a no-op).
+
+### What stays writable
+
+- `SELECT`, `USE_SCHEMA`, `READ_VOLUME`, `EXECUTE` — never touched. The clone itself reads source via these privileges.
+- Any principal Databricks marks as the schema **owner** retains its inherent privileges (UC owner can always write regardless of grants). If you have ingestion service principals that you cannot afford to block, set them as schema/table owners on the source — they'll keep writing during the clone.
+- Schema-level privileges in scope are revoked; table-level grants outside the schema's grant graph are not touched.
+
+### Failure semantics
+
+- **Per-principal revoke fails** (e.g. principal deleted between grants.get and grants.update) → logged, that principal is NOT added to the snapshot, so restore won't try to re-grant. Other principals on the same schema are unaffected.
+- **`grants.get` fails** for a schema (auth issue, schema deleted) → logged, that schema is left writable. Better partial quiesce than abort.
+- **Per-principal restore fails** (e.g. principal deleted between revoke and restore) → logged, restore continues with the next principal. The finally block must always complete or admins lose track of revoked grants.
+
+If a principal can't be restored, the warning log line tells you exactly which schema and which privileges need manual re-granting:
+
+```
+WARNING Restore: could not re-grant ['MODIFY'] to deleted-user@example.com on prod.bronze: PRINCIPAL_NOT_FOUND. Manual intervention may be needed.
+```
+
+### Trade-offs
+
+- **Cost**: 2 additional `grants.get` + 2 × `grants.update` calls per source schema. Negligible compared to clone runtime.
+- **Risk**: a quiesce'd source rejects writes. If your audit / monitoring is set to page on `PERMISSION_DENIED`, the page volume during a clone could be noisy. Consider gating the quiesce around an explicit clone window.
+- **Cross-workspace**: works the same way as same-workspace — quiesce runs on the source workspace's client. Cross-workspace clones are typically longer-running (Delta Sharing + DEEP CLONE across regions), so they benefit most.
 
 ---
 
@@ -826,6 +928,7 @@ Full reference in [Configuration](../reference/configuration).
 | Catalog | `CREATE CATALOG` on target (optional `MANAGED LOCATION`) | Target name must not already exist |
 | Schemas | `CREATE SCHEMA IF NOT EXISTS` per source schema | |
 | Tables (managed + external) | `CREATE TABLE … DEEP CLONE` from the shared catalog | Streaming tables not migrated in this pipeline |
+| Mixed-format sources (Delta, Parquet, Iceberg) | Same `CREATE TABLE … DEEP CLONE` syntax — Databricks materialises the clone as Delta on the target regardless of source format | Iceberg with partition evolution / decimal-truncated partitions and partitioned Parquet referenced by path are unsupported by Databricks CLONE (Clone-Xs surfaces an actionable error per [Databricks Parquet/Iceberg CLONE limits](https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet)) |
 | Views + materialized views | `SHOW CREATE TABLE` → catalog-reference rewrite → `CREATE OR REPLACE VIEW` | Views referencing catalogs outside the migration scope will fail and be logged |
 | SQL functions | `SHOW CREATE FUNCTION` → rewrite → `CREATE OR REPLACE FUNCTION` | Python UDFs that contain literal catalog names in string bodies are not rewritten |
 | Volumes (managed + external) | `CREATE VOLUME` + file-by-file copy via the Databricks Files API | Per-file cap (`volume_max_file_mb`, default 500 MB); external volumes skipped if no `storage_location` |
@@ -850,6 +953,68 @@ Full reference in [Configuration](../reference/configuration).
 :::tip Debugging failed migrations
 Set `keep_share: true` (or tick the checkbox in the UI). Clone-Xs will leave the Delta Share, recipient, and shared catalog in place after the job completes or fails — you can inspect what the target actually saw via `SHOW TABLES IN clone_xs_shared_<suffix>` and re-issue the DEEP CLONE manually. Run a second migration with `keep_share: false` to clean up when you're done.
 :::
+
+### Multi-target fanout (`target_workspaces`)
+
+**When to use:**
+DR replication or "data lake landing zone" pattern where one source catalog fans out to N target workspaces — typically across regions (us / eu / apac) or environments (prod / staging / dev). Sequential clones to N targets take N × clone-duration; fanout runs them in parallel.
+
+**Real-world scenario:**
+Production data lives in `prod-us` (`us-east-1`). The DR plan requires hot-warm copies in `prod-eu` (`west-europe`) and `prod-apac` (`ap-southeast-2`), refreshed nightly. Without fanout you'd run three sequential clones — ~1 hour × 3 = ~3 hours nightly. With fanout it's ~1 hour total (the slowest target dominates).
+
+```json
+POST /api/clone
+{
+  "source_catalog": "production",
+  "destination_catalog": "production_dr",
+  "target_workspaces": [
+    { "host": "https://eu.cloud.databricks.com",   "auth_method": "pat", "token": "...", "warehouse_id": "wh-eu" },
+    { "host": "https://us.cloud.databricks.com",   "auth_method": "pat", "token": "...", "warehouse_id": "wh-us" },
+    { "host": "https://apac.cloud.databricks.com", "auth_method": "pat", "token": "...", "warehouse_id": "wh-apac" }
+  ],
+  "fanout_max_parallel": 5
+}
+```
+
+The router routes plural-`target_workspaces` to the fanout orchestrator (`src/clone_fanout.py`), which spawns N parallel `run_cross_workspace_clone` calls, one per target. Each target gets its own deterministic share / recipient / shared-catalog (per the Recipient-uniqueness rule — one recipient per target metastore from a given source). Source-side state is independent: a failure on target B doesn't touch target A's share or recipient.
+
+**Result aggregation:**
+
+```json
+{
+  "mode": "fanout",
+  "status": "partial",
+  "target_count": 3,
+  "succeeded_targets": 2,
+  "failed_targets": 1,
+  "bytes_copied": 480000000000,
+  "tables_cloned": 78,
+  "per_target": [
+    { "target_host": "https://eu...",   "target_status": "success", "bytes_copied": 240000000000, "tables_cloned": 39 },
+    { "target_host": "https://us...",   "target_status": "success", "bytes_copied": 240000000000, "tables_cloned": 39 },
+    { "target_host": "https://apac...", "target_status": "failed",  "error": "DEEP CLONE failed on table users: ..." }
+  ]
+}
+```
+
+Aggregate `status` semantics:
+
+- **`success`** — every target finished without raising.
+- **`partial`** — at least one target succeeded AND at least one failed.
+- **`failed`** — no target succeeded.
+
+**`fanout_max_parallel`** caps how many target clones run simultaneously (default 5). Higher values increase source-side egress bandwidth pressure (each parallel target reads from the same source share endpoint); lower values serialize. For the typical 3-region fanout, the default is fine. For 10+ targets, consider stepping down to 3-5 to avoid saturating the source warehouse.
+
+**Mutual exclusivity with `target_workspace`:** the singular field (one cross-workspace clone) and the plural field (fanout to N) are mutually exclusive. Setting both is a 422 — pick one. The router decides dispatch by which field is set:
+
+| Request fields | Routed to |
+|---|---|
+| Neither | Same-workspace clone (`clone_catalog`) |
+| `target_workspace` (singular) | Single cross-workspace (`run_cross_workspace_clone`) |
+| `target_workspaces` (plural) | Fanout (`run_cross_workspace_fanout`) |
+| Both | 422 Validation Error |
+
+**What if one target is in the same metastore as source?** The same-metastore preflight runs *inside* `run_cross_workspace_clone`, so it fires per-target. The offending target raises and is marked `failed` in the per_target list; the other targets run normally. Net result: aggregate `partial`, with a clear error string on the rejected target.
 
 ---
 
@@ -902,6 +1067,40 @@ Click **Estimate** in the Preview panel. Under the hood it calls [`POST /api/est
 curl -X POST $CLXS_HOST/api/estimate \
   -H "Content-Type: application/json" \
   -d '{"source_catalog": "prod", "price_per_gb": 0.023}'
+```
+
+### Full clone vs selective re-clone comparison
+
+When you pass `destination_catalog` to `/api/estimate` AND that target catalog already exists, the response carries an extra `selective` block — the size + cost a [SELECTIVE re-clone](#full-vs-incremental-vs-selective-load) (drifted tables only) would incur, alongside the FULL numbers. The /clone preview tile renders both side-by-side with a "Recommended: SELECTIVE" or "Recommended: FULL" badge based on a 50% savings threshold:
+
+```json
+{
+  "total_gb": 240,
+  "monthly_cost_usd": 5.52,
+  "selective": {
+    "target_exists": true,
+    "size_gb": 12,
+    "monthly_cost_usd": 0.28,
+    "tables_to_clone": 3,
+    "tables_in_sync": 47,
+    "savings_pct": 95.0,
+    "recommended": true,
+    "drift_breakdown": {
+      "never_cloned": 0,
+      "version_drift": 3,
+      "unable_to_compare": 0
+    }
+  }
+}
+```
+
+The recommendation kicks in at savings ≥ 50% — below that, the per-table DESCRIBE HISTORY overhead and operational complexity outweigh the bandwidth savings. The block is omitted entirely when the target catalog doesn't exist (only a full clone is possible) and on cross-workspace previews (the source client can't read target Delta versions across the workspace boundary).
+
+```bash
+# Compare full vs selective when target exists
+curl -X POST $CLXS_HOST/api/estimate \
+  -H "Content-Type: application/json" \
+  -d '{"source_catalog": "prod", "destination_catalog": "prod_dr"}'
 ```
 
 ---

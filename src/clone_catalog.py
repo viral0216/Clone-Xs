@@ -576,68 +576,86 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     max_tables_budget = config.get("max_tables")
     budget_aborted = False
 
+    # Pre-clone source quiesce — snapshot + revoke write privileges on source
+    # schemas so concurrent writes can't land mid-clone and produce a target
+    # with missing rows / out-of-order commits. The corresponding restore in
+    # the finally block below runs even on clone failure (no orphaned
+    # revocations). No-op when quiesce_source is unset/false.
+    quiesce_snapshots = []
+    if config.get("quiesce_source") and not dry_run:
+        from src.quiesce import quiesce_source_schemas
+        quiesce_snapshots = quiesce_source_schemas(client, source, schemas)
+
     all_results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                process_schema, client, config, schema, rollback_log, completed_objects,
-            ): schema
-            for schema in schemas
-        }
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_schema, client, config, schema, rollback_log, completed_objects,
+                ): schema
+                for schema in schemas
+            }
 
-        for future in as_completed(futures):
-            schema_name = futures[future]
-            try:
-                if pm:
-                    pm.run_on_table_start(schema_name, config, client, warehouse_id)
-                result = future.result()
-                all_results.append(result)
-                progress.schema_done(result)
-                _log_schema_rollup(schema_name, result)
-                if pm:
-                    pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
-                if dashboard:
-                    dashboard.schema_completed(schema_name, result)
-            except Exception as e:
-                logger.error(f"{FAIL} Schema {bold_red(schema_name)} failed: {e}")
-                error_result = {"schema": schema_name, "error": str(e)}
-                all_results.append(error_result)
-                progress.schema_done(error_result)
-                if pm:
-                    pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
-                if dashboard:
-                    dashboard.schema_completed(schema_name, error_result)
+            for future in as_completed(futures):
+                schema_name = futures[future]
+                try:
+                    if pm:
+                        pm.run_on_table_start(schema_name, config, client, warehouse_id)
+                    result = future.result()
+                    all_results.append(result)
+                    progress.schema_done(result)
+                    _log_schema_rollup(schema_name, result)
+                    if pm:
+                        pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
+                    if dashboard:
+                        dashboard.schema_completed(schema_name, result)
+                except Exception as e:
+                    logger.error(f"{FAIL} Schema {bold_red(schema_name)} failed: {e}")
+                    error_result = {"schema": schema_name, "error": str(e)}
+                    all_results.append(error_result)
+                    progress.schema_done(error_result)
+                    if pm:
+                        pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
+                    if dashboard:
+                        dashboard.schema_completed(schema_name, error_result)
 
-            # Budget check after every schema finishes — aborts remaining futures.
-            if max_duration_min is not None:
-                elapsed_min = (time.time() - clone_start) / 60.0
-                if elapsed_min >= float(max_duration_min):
-                    logger.error(
-                        f"{FAIL} BUDGET: max_duration_min={max_duration_min} reached "
-                        f"after {elapsed_min:.1f} min — aborting remaining schemas"
+                # Budget check after every schema finishes — aborts remaining futures.
+                if max_duration_min is not None:
+                    elapsed_min = (time.time() - clone_start) / 60.0
+                    if elapsed_min >= float(max_duration_min):
+                        logger.error(
+                            f"{FAIL} BUDGET: max_duration_min={max_duration_min} reached "
+                            f"after {elapsed_min:.1f} min — aborting remaining schemas"
+                        )
+                        budget_aborted = "max_duration_min"
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        break
+                if max_tables_budget is not None:
+                    tables_done = sum(
+                        (r.get("tables", {}).get("success", 0) or 0)
+                        + (r.get("tables", {}).get("failed", 0) or 0)
+                        + (r.get("tables", {}).get("skipped", 0) or 0)
+                        for r in all_results
                     )
-                    budget_aborted = "max_duration_min"
-                    for f in futures:
-                        if not f.done():
-                            f.cancel()
-                    break
-            if max_tables_budget is not None:
-                tables_done = sum(
-                    (r.get("tables", {}).get("success", 0) or 0)
-                    + (r.get("tables", {}).get("failed", 0) or 0)
-                    + (r.get("tables", {}).get("skipped", 0) or 0)
-                    for r in all_results
-                )
-                if tables_done >= int(max_tables_budget):
-                    logger.error(
-                        f"{FAIL} BUDGET: max_tables={max_tables_budget} reached "
-                        f"({tables_done} tables touched) — aborting remaining schemas"
-                    )
-                    budget_aborted = "max_tables"
-                    for f in futures:
-                        if not f.done():
-                            f.cancel()
-                    break
+                    if tables_done >= int(max_tables_budget):
+                        logger.error(
+                            f"{FAIL} BUDGET: max_tables={max_tables_budget} reached "
+                            f"({tables_done} tables touched) — aborting remaining schemas"
+                        )
+                        budget_aborted = "max_tables"
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        break
+    finally:
+        # Always restore source grants — runs whether the schema loop
+        # succeeded, partially failed, or was aborted by a budget breach. Empty
+        # snapshots list (quiesce_source disabled or dry-run) is a no-op.
+        if quiesce_snapshots:
+            from src.quiesce import restore_source_grants
+            restore_source_grants(client, quiesce_snapshots)
 
     progress.stop()
     if dashboard:

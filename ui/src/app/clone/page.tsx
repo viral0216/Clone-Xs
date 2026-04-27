@@ -52,9 +52,15 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
 // schemas_created, ...). New backends emit canonical aliases too, but older
 // completed jobs persisted before that change still have only the flat fields,
 // so map them here as a fallback.
+//
+// Fanout results (`mode: "fanout"`) wrap N per-target cross-workspace results
+// in a `per_target` list with rolled-up totals at the top level. Same
+// flat-field naming as cross-workspace, so the fallback mapping works.
 function normalizeResult(result: any): any {
   if (!result) return result;
-  const isCrossWorkspace = result.tables_total !== undefined && result.tables === undefined;
+  const isFanout = result.mode === "fanout";
+  const isCrossWorkspace =
+    isFanout || (result.tables_total !== undefined && result.tables === undefined);
   if (!isCrossWorkspace) return result;
   return {
     ...result,
@@ -499,6 +505,55 @@ function JobProgress({ jobId }: { jobId: string }) {
             })}
           </div>
 
+          {/* Per-target rollup for fanout runs (mode === "fanout"). Shows
+              one row per target with its status, bytes/tables, and any
+              error so users can see at a glance which target(s) failed. */}
+          {result.mode === "fanout" && Array.isArray(result.per_target) && (
+            <div className="border rounded-md p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-sm font-medium">
+                  Fanout: {result.succeeded_targets ?? 0} of {result.target_count ?? 0} targets succeeded
+                </div>
+                {result.status && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      result.status === "success"
+                        ? "border-emerald-500 text-emerald-700 dark:text-emerald-400 text-[10px]"
+                        : result.status === "partial"
+                        ? "border-amber-500 text-amber-700 dark:text-amber-400 text-[10px]"
+                        : "border-red-500 text-red-700 dark:text-red-400 text-[10px]"
+                    }
+                  >
+                    {String(result.status).toUpperCase()}
+                  </Badge>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {result.per_target.map((t: any, idx: number) => (
+                  <div
+                    key={t.target_host || idx}
+                    className="flex items-start gap-2 bg-muted/30 rounded p-2"
+                  >
+                    {t.target_status === "success" ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-mono truncate">{t.target_host}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {t.target_status === "success"
+                          ? `${t.tables_cloned ?? 0} tables · ${formatBytes(t.bytes_copied || 0)} · ${(t.target_duration_seconds ?? 0).toFixed(1)}s`
+                          : t.error || "failed"}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Source format mix — same CLONE syntax handles Delta, Parquet, and
               Iceberg sources registered in UC. Surface the breakdown so the
               user knows what they migrated (especially useful for catalogs
@@ -810,11 +865,25 @@ function CrossWorkspaceTogglePanel({
   onEnabledChange,
   connectionName,
   onConnectionChange,
+  fanoutMode,
+  onFanoutModeChange,
+  fanoutNames,
+  onFanoutNamesChange,
+  fanoutMaxParallel,
+  onFanoutMaxParallelChange,
 }: {
   enabled: boolean;
   onEnabledChange: (v: boolean) => void;
   connectionName: string;
   onConnectionChange: (v: string) => void;
+  // Fanout state — when on, plural multi-target dispatch replaces the
+  // single-target one. See `target_workspaces` field on CloneRequest.
+  fanoutMode: boolean;
+  onFanoutModeChange: (v: boolean) => void;
+  fanoutNames: string[];
+  onFanoutNamesChange: (v: string[]) => void;
+  fanoutMaxParallel: number;
+  onFanoutMaxParallelChange: (v: number) => void;
 }) {
   const conns = useTargetConnections();
   const test = useTestTargetConnection();
@@ -838,6 +907,14 @@ function CrossWorkspaceTogglePanel({
     });
   };
 
+  const toggleFanoutTarget = (name: string) => {
+    if (fanoutNames.includes(name)) {
+      onFanoutNamesChange(fanoutNames.filter((n) => n !== name));
+    } else {
+      onFanoutNamesChange([...fanoutNames, name]);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <label className="flex items-start gap-2 cursor-pointer">
@@ -858,7 +935,7 @@ function CrossWorkspaceTogglePanel({
       </label>
 
       {enabled && (
-        <div className="space-y-2 border-t pt-3">
+        <div className="space-y-3 border-t pt-3">
           {conns.isLoading && (
             <p className="text-xs text-muted-foreground">Loading saved targets…</p>
           )}
@@ -870,7 +947,22 @@ function CrossWorkspaceTogglePanel({
               </a>
             </div>
           )}
+
+          {/* Fanout mode toggle. Off → single-target dropdown (legacy). On →
+              multi-pick checkboxes that route to the plural target_workspaces
+              field on CloneRequest, dispatching to clone_fanout in parallel. */}
           {list.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={fanoutMode}
+                onChange={(e) => onFanoutModeChange(e.target.checked)}
+              />
+              <span className="text-sm font-medium">Fan out to multiple targets (parallel multi-region clone)</span>
+            </label>
+          )}
+
+          {list.length > 0 && !fanoutMode && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-medium">Target connection:</span>
               <select
@@ -896,7 +988,64 @@ function CrossWorkspaceTogglePanel({
               </a>
             </div>
           )}
-          {picked && (
+
+          {list.length > 0 && fanoutMode && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">
+                Targets ({fanoutNames.length} of {list.length} selected):
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-48 overflow-y-auto border rounded-md p-2">
+                {list.map((c) => {
+                  const checked = fanoutNames.includes(c.name);
+                  return (
+                    <label
+                      key={c.name}
+                      className="flex items-start gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={checked}
+                        onChange={() => toggleFanoutTarget(c.name)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{c.name}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono truncate">
+                          {c.host} · WH {c.warehouse_id}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm">Parallel:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={fanoutMaxParallel}
+                  onChange={(e) => onFanoutMaxParallelChange(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="h-8 w-16 px-2 text-sm bg-background border border-input rounded-md"
+                />
+                <span className="text-xs text-muted-foreground">
+                  How many targets clone simultaneously. Cap at 5 for typical bandwidth-limited sources.
+                </span>
+              </div>
+              {fanoutNames.length === 0 && (
+                <div className="text-xs text-amber-700 dark:text-amber-400">
+                  Pick at least one target to fan out to.
+                </div>
+              )}
+              {fanoutNames.length === 1 && (
+                <div className="text-xs text-muted-foreground">
+                  Only one target picked — request will be sent as `target_workspaces` (plural) but it&apos;s equivalent to a regular cross-workspace clone.
+                </div>
+              )}
+            </div>
+          )}
+
+          {picked && !fanoutMode && (
             <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 font-mono truncate">
               {picked.host} · {picked.auth_method === "pat" ? "PAT" : picked.auth_method === "service_principal" ? "SP" : `Profile ${picked.profile}`} · WH {picked.warehouse_id} · {picked.data_sync_mode}
             </div>
@@ -918,8 +1067,16 @@ function ClonePageInner() {
   // Cross-workspace / cross-cloud migration state
   const [crossWorkspace, setCrossWorkspace] = useState(false);
   const [targetConnectionName, setTargetConnectionName] = useState<string>("");
+  // Multi-target fanout state. When `fanoutMode` is on, the singular target
+  // dropdown is hidden and multi-pick checkboxes drive the request payload's
+  // `target_workspaces` (plural) field — dispatched to the parallel
+  // run_cross_workspace_fanout orchestrator on the server side.
+  const [fanoutMode, setFanoutMode] = useState(false);
+  const [fanoutNames, setFanoutNames] = useState<string[]>([]);
+  const [fanoutMaxParallel, setFanoutMaxParallel] = useState<number>(5);
   const targetConnections = useTargetConnections();
   const pickedConnection = (targetConnections.data ?? []).find((c) => c.name === targetConnectionName) ?? null;
+  const pickedFanoutConnections = (targetConnections.data ?? []).filter((c) => fanoutNames.includes(c.name));
   // Synthesize a target shape for PreviewPanel's CLI/YAML output. Secrets stay
   // redacted as "***" (the GET endpoint masks them) — correct behavior for
   // commands the user might paste/share.
@@ -1120,9 +1277,16 @@ function ClonePageInner() {
       toast.error("Source and destination catalogs must be different.");
       return;
     }
-    if (crossWorkspace && !targetConnectionName) {
-      toast.error("Pick a target workspace (or add one in Settings).");
-      return;
+    if (crossWorkspace) {
+      if (fanoutMode) {
+        if (fanoutNames.length === 0) {
+          toast.error("Pick at least one target to fan out to.");
+          return;
+        }
+      } else if (!targetConnectionName) {
+        toast.error("Pick a target workspace (or add one in Settings).");
+        return;
+      }
     }
     for (const field of ["include_tables_regex", "exclude_tables_regex"] as const) {
       const pattern = (config as any)[field];
@@ -1180,7 +1344,31 @@ function ClonePageInner() {
       }
     }
 
-    if (crossWorkspace && targetConnectionName) {
+    if (crossWorkspace && fanoutMode && fanoutNames.length > 0) {
+      // Multi-target fanout — server-side `clone_fanout` orchestrator runs N
+      // cross-workspace clones in parallel, one per target. Same inline-creds
+      // pattern as the single-target path, just one entry per picked target.
+      const missing = fanoutNames.filter(
+        (n) => !pickedFanoutConnections.some((c) => c.name === n),
+      );
+      if (missing.length > 0) {
+        toast.error(`Target connections not found in browser storage: ${missing.join(", ")}`);
+        return;
+      }
+      payload.target_workspaces = pickedFanoutConnections.map((c) => ({
+        host: c.host,
+        auth_method: c.auth_method,
+        token: c.token,
+        client_id: c.client_id,
+        client_secret: c.client_secret,
+        profile: c.profile,
+        warehouse_id: c.warehouse_id,
+        keep_share: !!c.keep_share,
+        data_sync_mode: c.data_sync_mode || "snapshot_once",
+        auto_handle_masks: !!c.auto_handle_masks,
+      }));
+      payload.fanout_max_parallel = fanoutMaxParallel;
+    } else if (crossWorkspace && targetConnectionName) {
       // Resolve localStorage entry → inline target_workspace creds for this
       // single request. Server is stateless w.r.t. saved connections.
       if (!pickedConnection) {
@@ -1317,10 +1505,26 @@ function ClonePageInner() {
                 enabled={crossWorkspace}
                 onEnabledChange={(v) => {
                   setCrossWorkspace(v);
-                  if (!v) setTargetConnectionName("");
+                  if (!v) {
+                    setTargetConnectionName("");
+                    setFanoutMode(false);
+                    setFanoutNames([]);
+                  }
                 }}
                 connectionName={targetConnectionName}
                 onConnectionChange={setTargetConnectionName}
+                fanoutMode={fanoutMode}
+                onFanoutModeChange={(v) => {
+                  setFanoutMode(v);
+                  // Switching modes clears the other side so submission state
+                  // is unambiguous (matches the Pydantic XOR validator).
+                  if (v) setTargetConnectionName("");
+                  else setFanoutNames([]);
+                }}
+                fanoutNames={fanoutNames}
+                onFanoutNamesChange={setFanoutNames}
+                fanoutMaxParallel={fanoutMaxParallel}
+                onFanoutMaxParallelChange={setFanoutMaxParallel}
               />
             </div>
             <ScopePicker
@@ -1676,6 +1880,13 @@ function ClonePageInner() {
           selectedObjects={selectedObjects}
           crossWorkspace={crossWorkspace}
           target={targetForPreview}
+          fanoutMode={fanoutMode}
+          fanoutTargets={pickedFanoutConnections.map((c) => ({
+            name: c.name,
+            host: c.host,
+            warehouse_id: c.warehouse_id,
+          }))}
+          fanoutMaxParallel={fanoutMaxParallel}
           onBack={() => setStep("options")}
           onDryRun={() => handleClone(true)}
           onExecute={() => handleClone(false)}

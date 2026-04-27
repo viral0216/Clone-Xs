@@ -25,7 +25,19 @@ jobs:
         run: pip install -e ".[dev,web]"
 
       - name: Run tests
-        run: python3 -m pytest tests/ -q --tb=short
+        run: |
+          python3 -m pytest tests/ -q --tb=short \
+            --cov=src --cov=api \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 30
 
   lint:
     runs-on: ubuntu-latest

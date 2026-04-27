@@ -317,6 +317,10 @@ def cmd_clone(args):
         logger.info("Serverless mode: submitting clone as a single Databricks job")
         volume_path = getattr(args, "volume", None) or config.get("volume_path")
         summary = submit_clone_job(client, config, volume_path=volume_path)
+    elif (config.get("load_type") or "").upper() == "SELECTIVE":
+        _resolve_warehouse_id(args, config, client)
+        from src.selective_reclone import selective_reclone_catalog
+        summary = selective_reclone_catalog(client, config)
     else:
         _resolve_warehouse_id(args, config, client)
         summary = clone_catalog(client, config)
@@ -2292,7 +2296,10 @@ def build_parser() -> argparse.ArgumentParser:
     clone_parser.add_argument("--source", help="Override source catalog name")
     clone_parser.add_argument("--dest", help="Override destination catalog name")
     clone_parser.add_argument("--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type")
-    clone_parser.add_argument("--load-type", choices=["FULL", "INCREMENTAL"], help="Load type")
+    clone_parser.add_argument(
+        "--load-type", choices=["FULL", "INCREMENTAL", "SELECTIVE"],
+        help="Load type. SELECTIVE re-clones only tables that have drifted between source and target.",
+    )
     clone_parser.add_argument("--max-workers", type=int, help="Max parallel workers for schemas")
     clone_parser.add_argument("--no-permissions", action="store_true", help="Skip copying permissions")
     clone_parser.add_argument("--no-ownership", action="store_true", help="Skip copying ownership")

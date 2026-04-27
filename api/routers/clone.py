@@ -83,12 +83,22 @@ async def start_clone(
     if config.get("location") and not config.get("catalog_location"):
         config["catalog_location"] = config["location"]
 
-    job_type = "clone_cross_workspace" if config.get("target_workspace") else "clone"
-    message = (
-        "Cross-workspace clone job submitted (Delta Sharing → DEEP CLONE)"
-        if job_type == "clone_cross_workspace"
-        else "Clone job submitted"
-    )
+    if config.get("target_workspaces"):
+        # Multi-target fanout — runs N parallel cross-workspace clones,
+        # one per target. Mutually exclusive with single-target
+        # `target_workspace` (Pydantic XOR validator on CloneRequest).
+        job_type = "clone_fanout"
+        message = (
+            f"Multi-target fanout clone job submitted "
+            f"({len(config['target_workspaces'])} targets, "
+            f"max_parallel={config.get('fanout_max_parallel', 5)})"
+        )
+    elif config.get("target_workspace"):
+        job_type = "clone_cross_workspace"
+        message = "Cross-workspace clone job submitted (Delta Sharing → DEEP CLONE)"
+    else:
+        job_type = "clone"
+        message = "Clone job submitted"
     job_id = await jm.submit_job(job_type, config, client)
     return CloneJobResponse(job_id=job_id, status="queued", message=message)
 

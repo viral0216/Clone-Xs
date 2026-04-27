@@ -9,6 +9,106 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Continuous sync executor (Feature 6)
+
+### Added
+- **Continuous sync moved from preview-only to executor.** The v0.11.0 `src/continuous_sync.py` only generated a streaming plan; this release adds [`src/continuous_sync_runner.py`](https://github.com/viral0216/clone-xs/blob/main/src/continuous_sync_runner.py) which submits the plan to Databricks Jobs (`client.jobs.submit`), tracks run-ids in a process-local registry, classifies run state into user-facing health (`starting` / `running` / `stopping` / `stopped` / `failed` / `idle` / `unknown`), and exposes start/stop/restart controls.
+- **5 new endpoints under `/api/continuous-sync`**:
+  - `POST /start` — submit a stream, get back `{stream_id, run_id, status}`.
+  - `GET /streams` — list registered streams (cached) or `?refresh=true` to poll Databricks per stream.
+  - `GET /streams/{stream_id}` — detail view, always polls fresh state.
+  - `POST /streams/{stream_id}/stop` — idempotent cancel.
+  - `POST /streams/{stream_id}/restart` — cancel + new submit, same `stream_id`, new `run_id`.
+- **Re-attachment after API server restart**: `discover_existing_streams(client)` scans `jobs.list_runs` for runs whose `run_name` starts with `clxs-continuous-sync-` and re-populates the registry. Streams running on Databricks survive an API server bounce; the runner finds them again on startup.
+- **Stable `stream_id`**: hash of `(source, dest, schema, sorted(tables))`. Calling `start` twice with the same parameters reuses the existing record — no ghost entries from idempotent retry.
+- **`docs/docs/guide/sync.md` — "Continuous sync" section** with the lifecycle, API examples, prerequisites (CDF + PK + checkpoint write permissions), failure-mode recovery, and explicit limitations (24h+ smoke testing is a manual ops exercise, not part of the unit suite).
+
+### Tested
+- 36 unit tests in `tests/test_continuous_sync_runner.py` covering: every documented Databricks `life_cycle_state` × `result_state` mapping (13 tests), stream-id stability (sorted-table-list invariance, dest-change differentiation), submit-success + record registration, submit-failure marks failed without raising, invalid-plan ValueError surfacing, stop with cancel + idempotency on already-stopped, stop without run_id (skip cancel), cancel-failure logged not raised, restart preserves stream_id and submits fresh run, refresh translates RUN states + captures state_message on failure, list with/without refresh, get_stream/restart KeyError on unknown id, discover_existing_streams (rediscovery + skip-already-known + list_runs failure), and serialisation round-trip.
+- 9 router tests in `tests/test_router_continuous_sync.py` covering: legacy plan endpoint still returns preview spec, plan-rejects-no-tables-no-schema (400), `POST /start` returns `{run_id, status: starting, stream_id}`, invalid plan via /start surfaces as 400, list-after-start, 404 on get/stop/restart for unknown stream_id, full start→stop lifecycle marks stopped + invokes `cancel_run`.
+
+---
+
+## Unreleased — Multi-target fanout (UI + backend)
+
+### Added
+- **`/clone` Step 1: Multi-target fan-out picker** — new "Fan out to multiple targets (parallel multi-region clone)" checkbox under "Clone to a different workspace". Off (default): the single-target dropdown stays as-is. On: replaced by a multi-select of saved target connections + a `parallel` numeric input (default 5). Selected count is shown live ("Targets (3 of 7 selected)"). Submission payload switches from `target_workspace` (singular) to `target_workspaces` (plural) plus `fanout_max_parallel`, dispatching to the `clone_fanout` orchestrator.
+- **/clone Step 3: Preview tile** now reflects fanout — destination summary shows "Fan out → N targets" with the picked names, and a dedicated "Fanout targets" card lists each selected workspace with its host + warehouse for sanity-check before run. Pipeline diagram is hidden in fanout mode (N stacked diagrams would be visually noisy).
+- **/clone Step 4: Per-target rollup** — when the result has `mode: "fanout"`, the success/failure card renders a per-target row (✓/✗ icon, host, tables/bytes/duration on success, error string on failure). Aggregate badge (SUCCESS / PARTIAL / FAILED) coloured by status.
+- **`normalizeResult` extended** for fanout-shaped results — same flat-field mapping that worked for single-target cross-workspace results applies, so older job records without canonical aliases still render correctly.
+
+---
+
+## Unreleased — Multi-target fanout (`target_workspaces`)
+
+### Added
+- **New `target_workspaces` field** (list of `TargetWorkspace`) on `CloneRequest` — when set, the job is routed to a new fanout orchestrator that runs N cross-workspace clones in parallel, one per target. Use case: N-region DR replication where the same source catalog needs to land in `eu`, `us`, and `apac` simultaneously instead of sequentially. Mutually exclusive with the singular `target_workspace` field (Pydantic XOR validator returns 422 if both set).
+- **New `fanout_max_parallel` field** (default 5) caps simultaneous target clones. Tune down for source-side bandwidth pressure or up if your source warehouse can handle the parallelism.
+- **New module [`src/clone_fanout.py`](https://github.com/viral0216/clone-xs/blob/main/src/clone_fanout.py)** — `run_cross_workspace_fanout(client, config) -> dict`. Per-target results aggregate into a single response with `mode: "fanout"`, `status: "success" | "partial" | "failed"` (success = every target succeeded; partial = some did; failed = none did), per-target detail under `per_target`, and rolled-up `bytes_copied` / `files_copied` / `tables_cloned` totals.
+- **Failure-isolation contract**: one target failing (auth issue, network blip, mid-clone DEEP CLONE error, same-metastore preflight rejection) does NOT fail other targets. The failure is contained to that target's per_target entry; aggregate goes `partial` and the surviving targets land their data normally. This is the central reason fanout is a feature rather than a "for-loop in the caller" — per-target source-side state (share / recipient / shared-catalog) is independent, so isolating failure was always achievable, but rolling it up into one job ID for the operator is what makes this usable.
+- **Router dispatch in [`api/routers/clone.py`](https://github.com/viral0216/clone-xs/blob/main/api/routers/clone.py)** routes `target_workspaces` (plural) → `clone_fanout` job_type, `target_workspace` (singular) → `clone_cross_workspace`, neither → `clone`. JobManager picks the right entrypoint via the existing job_type dispatch chain.
+- **`docs/docs/guide/clone.md` — "Multi-target fanout" subsection** under Cross-workspace migration with the routing table, per-target failure modes, and an example aggregated response payload.
+
+### Tested
+- 10 unit tests in `tests/test_clone_fanout.py` covering the four scenarios the roadmap called out (all-succeed, one-target-connection-failure isolation, one-target-mid-clone-failure isolation, same-metastore-preflight rejection isolated to offending target), plus all-fail → status=failed, single-target degenerate case, zero-targets validation, plural-config-stripping (would otherwise infinite-recurse), max_parallel capping, and a parallel-execution timing assertion (3 × 100ms tasks complete in &lt; 250ms wall clock).
+- 3 router integration tests in `tests/test_router_clone.py` confirming `/api/clone` accepts `target_workspaces` (200 with fanout-flavoured message), rejects setting both singular + plural (422), and rejects `fanout_max_parallel < 1` (422).
+
+---
+
+## Unreleased — Pre-clone source quiesce (`quiesce_source: true`)
+
+### Added
+- **New `quiesce_source` opt-in flag** on `CloneRequest` and the YAML config. When true, Clone-Xs snapshots + revokes write privileges (`MODIFY`, `WRITE_VOLUME`, `CREATE_TABLE`, `CREATE_VOLUME`, `CREATE_FUNCTION`, `CREATE_MATERIALIZED_VIEW`, `CREATE_MODEL`, `APPLY_TAG`) on the source schemas at clone start, and restores them in a finally block at clone end. Concurrent writes that arrive mid-clone fail with `PERMISSION_DENIED` instead of landing on a half-cloned target.
+- **New module [`src/quiesce.py`](https://github.com/viral0216/clone-xs/blob/main/src/quiesce.py)** — `quiesce_source_schemas(client, source_catalog, schemas) → list[SchemaGrantSnapshot]` and `restore_source_grants(client, snapshots)`. Reads + writes go through the SDK Grants API (`client.grants.get` / `client.grants.update`) — no SQL warehouse needed for the quiesce itself.
+- **Wired into both orchestrators** — [`src/clone_catalog.py`](https://github.com/viral0216/clone-xs/blob/main/src/clone_catalog.py) (same-workspace) and [`src/clone_cross_workspace.py`](https://github.com/viral0216/clone-xs/blob/main/src/clone_cross_workspace.py) (cross-workspace). Cross-workspace clones are typically longer-running (Delta Sharing + DEEP CLONE across regions), so they benefit most. Restore runs unconditionally in the existing finally block — no orphaned revocations on partial failure or budget abort.
+- **`docs/docs/guide/clone.md` — "Pre-clone source quiesce" section** documenting the snapshot/revoke/restore flow, what stays writable (SELECT, USE_SCHEMA, owners), failure semantics for per-principal failures, and the cost/risk trade-offs.
+
+### Tested
+- 13 unit tests in `tests/test_quiesce.py` covering: only write privileges are revoked (not SELECT/USE_SCHEMA/EXECUTE), CREATE_* privileges are blocked to prevent new objects mid-clone, no-op when no write principals (the roadmap's edge case), dry-run captures snapshot but skips API calls, `grants.get` failure leaves schema writable, per-principal revoke failure doesn't crash, restore matches snapshot exactly, restore's per-principal failure is logged not raised, and the round-trip integration test (clone raises → restore still runs).
+- 1 router integration test confirming `/api/clone` accepts `quiesce_source: true` (200, not 422).
+
+---
+
+## Unreleased — Dry-run cost comparison: full clone vs selective re-clone
+
+### Added
+- **`/estimate` API now returns a `selective` comparison block** when caller passes `destination_catalog` AND the target catalog already exists. Block contains: `size_bytes` / `size_gb` / `monthly_cost_usd` for the drift-only set, `tables_to_clone` (drifted count), `tables_in_sync` (skipped count), `savings_pct`, a `drift_breakdown` (by reason), and a `recommended` boolean (true when savings ≥ 50%, the threshold above which the per-table DESCRIBE HISTORY overhead is worth paying). Caller-side, `EstimateRequest` gains an optional `destination_catalog` field; existing callers that omit it see no shape change.
+- **`compute_selective_estimate(client, warehouse_id, source_catalog, destination_catalog, schemas, source_table_sizes, price_per_gb)` helper** in [`src/cost_estimation.py`](https://github.com/viral0216/clone-xs/blob/main/src/cost_estimation.py) — reuses `find_drifted_tables` from `src/incremental_sync.py` so the comparison tile and the actual SELECTIVE re-clone agree on what's drifted (no skew between the preview and the real run).
+- **`/clone` Step 4 preview tile renders "Full clone vs selective re-clone"** side-by-side ([`ui/src/components/PreviewPanel.tsx`](https://github.com/viral0216/clone-xs/blob/main/ui/src/components/PreviewPanel.tsx) `EstimateSection`). Tile shows full size · cost vs selective size · cost, with a "Recommended: SELECTIVE" or "Recommended: FULL" badge and a drift breakdown row (`never_cloned: 2 · version_drift: 5 · unable_to_compare: 1`). Hidden entirely on fresh-target clones (no point comparing against an empty target) and on cross-workspace previews (source client can't read target Delta versions through the workspace boundary).
+
+### Tested
+- 6 unit tests in `tests/test_cost_estimation.py` covering: target-missing → None, recommends SELECTIVE on ≥ 50% savings, recommends FULL below threshold, drift_breakdown aggregation across reasons, zero-drift edge case, and resilience when one schema's drift check raises (others still computed).
+- 3 integration tests on `estimate_clone_cost` confirming the `selective` block is present when target exists, absent when target is missing, and absent when caller doesn't supply `destination_catalog`.
+
+---
+
+## Unreleased — Selective re-clone (`load_type: SELECTIVE`)
+
+### Added
+- **Third `load_type` value: `SELECTIVE`** — alongside FULL and INCREMENTAL on `CloneRequest` and the `clxs clone --load-type` CLI flag. New orchestrator [`src/selective_reclone.py`](https://github.com/viral0216/clone-xs/blob/main/src/selective_reclone.py) re-clones only tables whose source Delta version has drifted from target. Tables whose `source.version == target.version` are skipped (the whole point — runtime is proportional to drift, not catalog size). Tables present on source but missing from target count as drifted (`reason: never_cloned`). Tables Clone-Xs can't read a version from on either side (Parquet/Iceberg sources, transient SDK errors) are treated as drifted (`reason: unable_to_compare`) — conservative, cheaper than missing real drift. Tables on target but absent from source are NOT touched: selective re-clone is additive only, never destructive.
+- **`find_drifted_tables(client, warehouse_id, source, dest, schema)` helper** in [`src/incremental_sync.py`](https://github.com/viral0216/clone-xs/blob/main/src/incremental_sync.py) — compares source vs target Delta versions directly via DESCRIBE HISTORY (not the json sync_state file the older `get_tables_needing_sync` used). Works correctly cross-workspace too, since it only reads from the SDK.
+- **JobManager dispatch routes SELECTIVE to the new orchestrator** — same `/api/clone` endpoint, same audit-trail / run-id wiring, same dry-run plumbing. Existing FULL/INCREMENTAL callers are unaffected (default `load_type` stays `FULL`).
+- **Run summary `mode: "selective"` and `total_drifted_tables: N` keys** so downstream report generators can distinguish a selective run from a regular one. Per-table metrics (`bytes_copied`, `files_copied`) and per-format counters (`formats: {DELTA: 2, PARQUET: 1}`) still aggregate identically — selective benefits unchanged from the Tier 1/2 work.
+
+### Tested
+- 11 unit tests in `tests/test_selective_reclone.py` covering: drift detection (never-cloned, version-drift, in-sync, unable-to-compare, target orphans ignored), `get_table_current_version` edge cases (empty history, garbage version), drift breakdown helper, and the orchestrator (drifted-only invocation of `_clone_single_table`, no-drift no-op, metrics + format counter aggregation).
+- 2 router tests in `tests/test_router_clone.py` confirming `/api/clone` accepts `load_type=SELECTIVE` (200) and rejects unknown values (422).
+
+---
+
+## Unreleased — Mixed-format source support (Delta + Parquet + Iceberg)
+
+### Added
+- **Per-source-format counter on every clone run** — `clone_tables_in_schema` and the cross-workspace orchestrator now emit a `formats` rollup (e.g. `{DELTA: 26, PARQUET: 2, ICEBERG: 1}`) alongside `bytes_copied` / `files_copied` in the run summary. Clone-Xs has always been format-agnostic at the SQL level (Databricks's `CREATE TABLE … CLONE source` works for Delta, Parquet, and Iceberg sources registered in UC), but the run summary previously didn't surface the mix. The /clone Step 4 result card now renders a "Source formats:" badge row when more than one format is present in the catalog — useful for in-progress format migrations where you want to confirm your DELTA+PARQUET catalog landed entirely as DELTA on the target.
+- **Iceberg / Parquet error wrapping** — known Databricks CLONE limitations now wrap with an actionable hint pointing at the [Databricks Parquet/Iceberg CLONE doc](https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet) instead of bubbling the raw `[DELTA_CLONE_*]` error. Covers: Iceberg with partition evolution, Iceberg with truncated decimal partitions on DBR < 13.3, partitioned Parquet referenced by path, and any source path using glob/wildcard patterns. The original Databricks error stays inline below the hint for diagnostics.
+- **`docs/docs/guide/clone.md` — mixed-format section** under Stage 3 — Tables documenting the format-agnostic CLONE behaviour, the run summary breakdown, and the Databricks-side gotchas Clone-Xs cannot work around.
+
+### Tested
+- 3 unit tests in `tests/test_clone_tables.py` covering: per-format counter aggregation across a mixed Delta/Parquet/Iceberg/no-format-tag schema, failed clones excluded from the format counter, and case-insensitive normalisation (`parquet` / `Parquet` / `PARQUET` all rolled up under `PARQUET`).
+- 1 cross-workspace test in `tests/test_clone_cross_workspace.py` verifying `_list_tables` emits `(name, format)` tuples for Delta + Parquet + Iceberg, defaults to DELTA when format is unset, and excludes views.
+
+---
+
 ## Unreleased — Browser-side target connections + cross-workspace robustness
 
 ### Added

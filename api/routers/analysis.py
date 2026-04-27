@@ -198,6 +198,7 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     result = estimate_clone_cost(
         client, wid, req.source_catalog, req.exclude_schemas,
         include_schemas=req.include_schemas, price_per_gb=req.price_per_gb,
+        destination_catalog=req.destination_catalog,
     )
     return result
 

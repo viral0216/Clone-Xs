@@ -5,7 +5,7 @@ from datetime import datetime
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.client import execute_sql, list_tables_sdk
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,91 @@ def enforce_rbac_for_sync(client, source_catalog: str, dest_catalog: str, config
         "destination_catalog": dest_catalog,
         "rbac_policy_path": rbac_config.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
     }, operation="sync")
+
+
+def get_table_current_version(
+    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+) -> int | None:
+    """Read the current Delta version of a table via DESCRIBE HISTORY.
+
+    Returns None when the table doesn't exist or isn't a Delta table (Parquet/
+    Iceberg sources don't expose a meaningful version). Callers should treat
+    None as "can't compare — assume drifted" for selective re-clone.
+    """
+    history = get_table_history(client, warehouse_id, catalog, schema, table_name)
+    if not history:
+        return None
+    try:
+        return int(history[0].get("version", 0))
+    except (TypeError, ValueError):
+        return None
+
+
+def find_drifted_tables(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+) -> list[dict]:
+    """Find tables whose source state has drifted from target — for selective re-clone.
+
+    Compares Delta versions on source vs target directly (not via the
+    sync_state json file used by `get_tables_needing_sync`). A table is
+    "drifted" if any of:
+
+    - It exists on source but not on target (`never_cloned`)
+    - Source version > target version (`version_drift`)
+    - Either side's version is unreadable, e.g. non-Delta source (`unable_to_compare`)
+
+    Tables that exist on target but not on source are NOT included — selective
+    re-clone is additive only, not destructive. Use a separate compare/cleanup
+    flow if you need to drop orphans on the target.
+
+    Returns a list of dicts with `table_name`, `reason`, `source_version`,
+    `target_version`. Empty list means source and target are in sync.
+    """
+    src_rows = list_tables_sdk(client, source_catalog, schema)
+    src_tables = {r["table_name"] for r in src_rows if r.get("table_name")}
+
+    dst_rows = list_tables_sdk(client, dest_catalog, schema)
+    dst_tables = {r["table_name"] for r in dst_rows if r.get("table_name")}
+
+    drifted: list[dict] = []
+    for tname in sorted(src_tables):
+        if tname not in dst_tables:
+            drifted.append({
+                "table_name": tname,
+                "reason": "never_cloned",
+                "source_version": None,
+                "target_version": None,
+            })
+            continue
+
+        src_v = get_table_current_version(client, warehouse_id, source_catalog, schema, tname)
+        dst_v = get_table_current_version(client, warehouse_id, dest_catalog, schema, tname)
+
+        if src_v is None or dst_v is None:
+            # Non-Delta source (Parquet/Iceberg) or transient DESCRIBE HISTORY
+            # failure — be conservative, mark drifted so the user gets the
+            # newest copy. Cheaper than missing real drift.
+            drifted.append({
+                "table_name": tname,
+                "reason": "unable_to_compare",
+                "source_version": src_v,
+                "target_version": dst_v,
+            })
+            continue
+
+        if src_v > dst_v:
+            drifted.append({
+                "table_name": tname,
+                "reason": "version_drift",
+                "source_version": src_v,
+                "target_version": dst_v,
+            })
+
+    return drifted
 
 
 def get_tables_needing_sync(

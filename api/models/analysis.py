@@ -47,6 +47,11 @@ class ProfileRequest(CatalogRequest):
 class EstimateRequest(CatalogRequest):
     price_per_gb: float = 0.023
     include_schemas: list[str] | None = None
+    # Optional destination catalog. When set AND it already exists on the
+    # workspace, the estimate response includes a `selective` block showing
+    # what a SELECTIVE re-clone (drifted tables only) would cost vs a full
+    # clone — drives the side-by-side comparison tile on the /clone preview.
+    destination_catalog: str | None = None
 
 
 class StorageMetricsRequest(CatalogRequest):

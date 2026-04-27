@@ -36,6 +36,12 @@ interface Props {
   selectedObjects: ObjectRef[];
   crossWorkspace: boolean;
   target: TargetWorkspaceValue;
+  // Multi-target fanout (Feature 5). When `fanoutMode` is on,
+  // `fanoutTargets` is the list of saved-connection summaries the user
+  // picked; the preview renders them in place of the single target line.
+  fanoutMode?: boolean;
+  fanoutTargets?: Array<{ name: string; host: string; warehouse_id: string }>;
+  fanoutMaxParallel?: number;
   onBack: () => void;
   onDryRun: () => void;
   onExecute: () => void;
@@ -51,6 +57,9 @@ export default function PreviewPanel({
   selectedObjects,
   crossWorkspace,
   target,
+  fanoutMode = false,
+  fanoutTargets = [],
+  fanoutMaxParallel = 5,
   onBack,
   onDryRun,
   onExecute,
@@ -67,6 +76,11 @@ export default function PreviewPanel({
     if (!config.source_catalog) return;
     estimate.mutate({
       source_catalog: config.source_catalog,
+      // When destination_catalog is set, the API checks whether it exists and,
+      // if so, returns a `selective` comparison block. Skip on cross-workspace
+      // because the destination lives in a different workspace and the source
+      // client can't read its Delta versions.
+      destination_catalog: crossWorkspace ? undefined : config.destination_catalog,
       include_schemas: config.include_schemas || undefined,
       exclude_schemas: config.exclude_schemas,
       warehouse_id: config.warehouse_id,
@@ -172,21 +186,56 @@ export default function PreviewPanel({
             value={`${config.clone_type || "DEEP"} / ${config.load_type || "FULL"}`}
             detail={`parallel_tables=${config.parallel_tables || 1} · max_workers=${config.max_workers || 4}`}
           />
-          <SummaryTile
-            icon={crossWorkspace ? Share2 : Database}
-            label={crossWorkspace ? "Target workspace" : "Destination"}
-            value={
-              crossWorkspace
-                ? new URL(target.host || "https://unknown").host
-                : config.destination_catalog || "—"
+          {(() => {
+            // Compute the destination tile's three labels once. The branching
+            // is non-trivial (3-way: same-workspace / single-target XW / fanout)
+            // so a small IIFE is clearer than a triple-nested ternary.
+            let destLabel = "Destination";
+            let destValue = config.destination_catalog || "—";
+            let destDetail = `from ${config.source_catalog || "—"}`;
+            if (crossWorkspace && fanoutMode) {
+              destLabel = `Fan out → ${fanoutTargets.length} targets`;
+              destValue = `${fanoutTargets.length} parallel`;
+              destDetail = `max_parallel=${fanoutMaxParallel} · ${fanoutTargets.map((t) => t.name).join(", ") || "none picked"}`;
+            } else if (crossWorkspace) {
+              destLabel = "Target workspace";
+              destValue = new URL(target.host || "https://unknown").host;
+              destDetail = `${target.auth_method.toUpperCase()} · wh ${target.warehouse_id || "?"}`;
             }
-            detail={
-              crossWorkspace
-                ? `${target.auth_method.toUpperCase()} · wh ${target.warehouse_id || "?"}`
-                : `from ${config.source_catalog || "—"}`
-            }
-          />
+            return (
+              <SummaryTile
+                icon={crossWorkspace ? Share2 : Database}
+                label={destLabel}
+                value={destValue}
+                detail={destDetail}
+              />
+            );
+          })()}
         </div>
+
+        {/* Per-target list when fanout is active. Replaces the single-target
+            pipeline diagram below — N pipelines would be visually noisy.
+            Rendered as a compact card so users can verify which workspaces
+            they're about to fan out to before running. */}
+        {crossWorkspace && fanoutMode && fanoutTargets.length > 0 && (
+          <div className="border rounded-md p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Share2 className="h-4 w-4 text-muted-foreground" />
+              <div className="text-sm font-medium">Fanout targets</div>
+              <Badge variant="outline" className="text-[10px]">
+                {fanoutTargets.length} parallel · max {fanoutMaxParallel} simultaneous
+              </Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {fanoutTargets.map((t) => (
+                <div key={t.name} className="text-xs bg-muted/40 rounded p-2 font-mono truncate">
+                  <span className="font-medium not-italic">{t.name}</span>
+                  <span className="text-muted-foreground"> · {t.host} · WH {t.warehouse_id}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Cost + time estimate */}
         <EstimateSection
@@ -208,8 +257,10 @@ export default function PreviewPanel({
           crossWorkspace={crossWorkspace}
         />
 
-        {/* Cross-workspace pipeline diagram */}
-        {crossWorkspace && <PipelineDiagram target={target.host} config={config} />}
+        {/* Cross-workspace pipeline diagram. Hidden in fanout mode because
+            the per-target list above is already showing the N targets — N
+            stacked pipeline diagrams would be visually noisy. */}
+        {crossWorkspace && !fanoutMode && <PipelineDiagram target={target.host} config={config} />}
 
         {/* Warnings */}
         {warnings.length > 0 && (
@@ -393,6 +444,58 @@ function EstimateSection({ data, isLoading, isError, onRun, disabled, config }: 
               data.yearly_cost_usd !== undefined ? `$${data.yearly_cost_usd}/yr` : undefined
             }
           />
+        </div>
+      )}
+
+      {/* Selective comparison — only present when destination catalog already
+          exists. Surfaces the size delta the user would save by running with
+          load_type=SELECTIVE instead of FULL, and recommends switching when
+          savings ≥ 50%. Hidden entirely on fresh-target clones (no point
+          comparing against an empty target). */}
+      {data?.selective?.target_exists && (
+        <div className="border rounded-md p-3 mt-3 bg-muted/30">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-sm font-medium">Full clone vs selective re-clone</div>
+            {data.selective.recommended ? (
+              <Badge variant="outline" className="border-emerald-500 text-emerald-700 dark:text-emerald-400 text-[10px]">
+                Recommended: SELECTIVE
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px]">
+                Recommended: FULL
+              </Badge>
+            )}
+            <span className="ml-auto text-xs text-muted-foreground">
+              {data.selective.savings_pct}% smaller
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <EstTile
+              label="Full clone"
+              value={fmtGb(data.total_gb)}
+              subtle={`${data.table_count ?? 0} tables · $${data.monthly_cost_usd ?? 0}/mo`}
+            />
+            <EstTile
+              label="Selective"
+              value={fmtGb(data.selective.size_gb)}
+              subtle={
+                `${data.selective.tables_to_clone} drifted · ${data.selective.tables_in_sync} in sync · ` +
+                `$${data.selective.monthly_cost_usd}/mo`
+              }
+            />
+          </div>
+          {data.selective.drift_breakdown && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Drift:</span>
+              {Object.entries(data.selective.drift_breakdown as Record<string, number>)
+                .filter(([, n]) => n > 0)
+                .map(([reason, n]) => (
+                  <Badge key={reason} variant="outline" className="text-[10px]">
+                    {reason.replaceAll("_", " ")}: {String(n)}
+                  </Badge>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>

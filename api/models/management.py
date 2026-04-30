@@ -1,6 +1,6 @@
 """Management request models."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class RollbackRequest(BaseModel):
@@ -17,7 +17,20 @@ class PreflightRequest(BaseModel):
 
 
 class PIIScanRequest(BaseModel):
-    source_catalog: str
+    """PII scan request — single OR multi catalog.
+
+    Single mode (default): pass `source_catalog: str`. Routes to
+    `src.pii_detection.scan_catalog_for_pii`.
+
+    Multi mode: pass `source_catalogs: list[str]`. Routes to
+    `src.pii_multi.scan_catalogs_for_pii_multi`, which fans the scan
+    out across the listed catalogs in parallel and returns a merged
+    response with each detection stamped with its owning `catalog`.
+    """
+    # Optional in multi mode. The validator below requires at least
+    # one of `source_catalog` / `source_catalogs` to be set.
+    source_catalog: str = ""
+    source_catalogs: list[str] | None = None
     warehouse_id: str | None = None
     exclude_schemas: list[str] = ["information_schema", "default"]
     sample_data: bool = False
@@ -27,6 +40,13 @@ class PIIScanRequest(BaseModel):
     save_history: bool = False
     schema_filter: list[str] | None = None
     table_filter: str | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_catalog(self) -> "PIIScanRequest":
+        if not self.source_catalog and not self.source_catalogs:
+            from api.models.analysis import _NEITHER_CATALOG_MSG
+            raise ValueError(_NEITHER_CATALOG_MSG)
+        return self
 
 
 class PIITagRequest(BaseModel):

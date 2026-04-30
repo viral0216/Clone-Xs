@@ -9,6 +9,150 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Cleanup tab: small-files detection, DROP-script export, saved presets, per-finding cost
+
+Closes the four deferred items from the original Cleanup tab batch:
+
+### Added
+- **Per-finding `Save / mo` column** on the Cleanup findings table — shows projected monthly storage savings per row (`size_bytes × price_per_gb / 1024³`). Only renders for MANAGED stale findings with stats; everything else shows "—" so users don't conflate "unknown" with "$0". Pairs with the headline "Save / month" summary card shipped previously.
+- **Many-small-files detection** (opt-in DESCRIBE DETAIL enrichment):
+  - New `check_small_files: bool = False` parameter on `detect_stale_tables` and `detect_stale_tables_multi` — when true, the scan runs `DESCRIBE DETAIL` in parallel (max 8 concurrent) on up to 200 candidate tables already in the findings list and enriches them with `num_files` + `avg_file_size_bytes`.
+  - Heuristic: `num_files >= 50` AND `avg_file_size < 64 MB` flags a table for compaction. Suggested action becomes `"OPTIMIZE (compacts small files)"` for findings where it's actionable; intentionally preserves higher-priority actions (`Run OPTIMIZE (collects stats)`, `Review for drop`, EXTERNAL/VIEW review hints) since compacting before a likely drop is wasted work.
+  - Cleanup tab gains a "Detect small-files (slower)" toggle, a "Small files" filter chip (only when the enrichment ran), and a Files column showing `num_files` with an amber ⚠ when flagged. Tooltip shows avg MB/file.
+- **Export DROP script** bulk-action button: select stale findings → "Export DROP script" downloads `clxs-cleanup-drop-<timestamp>.sql` with one `DROP TABLE IF EXISTS` per row, grouped by catalog with header comments. The app **never executes drops** — user reviews the script and runs it manually. Honors the original "maintenance ops only" UI choice while still surfacing the destructive workflow when users want it.
+- **Saved scan presets** (localStorage): "Save current as preset" captures `{mode, catalogs, days_threshold, min_size_mb, check_small_files}` under a user-named key (`clxs-cleanup-presets`). Pills above the scan controls show saved presets with one-click apply + per-preset delete. Survives page reloads but not browser clears — durable persistence is tied to scheduled scans (deferred).
+
+### Tested
+- 4 new tests in `tests/test_stale_detection.py` (`TestSmallFilesEnrichment`): default-off behaviour preserved (no DESCRIBE DETAIL when toggle off), heuristic flags 200×32MB-files candidate, well-sized files pass through unflagged, per-table DESCRIBE DETAIL failure swallowed without aborting the scan.
+- Existing 24 stale-detection tests preserved (the new parameter is optional with safe default).
+- All other tests (1,769 prior) preserved. Total: 1,773 passing.
+
+### Out of scope (deferred)
+- **Scheduled scans** — saved presets ship as the persistence half; cron-style execution + notifications + result history are a real product feature deserving its own batch (jobs runner, durable storage, notifications).
+- **Real DROP execution from UI** — script export covers the workflow with zero blast radius. If users want one-click drops, follow-up with a typed-confirmation modal pattern (preview already in the original AskUserQuestion).
+
+---
+
+## Unreleased — Catalog Explorer: FinOps trend, catalog diff detail, permissions audit
+
+This batch ships three composable governance / FinOps capabilities on top of the multi-catalog Explorer:
+
+### FinOps — cost rollup + 30-day trend
+- **$/month rollup** on the Cleanup tab summary cards: converts `total_reclaimable_bytes` to monthly spend using the configured `price_per_gb`, plus a yearly sub-line. The Per-Catalog Rollup card on Multi Overview also shows per-catalog `$/mo` so users can spot the dominant cost catalog at a glance.
+- **New module [`src/catalog_size_history.py`](https://github.com/viral0216/clone-xs/blob/main/src/catalog_size_history.py)** — auto-creates `<audit_catalog>.clone_xs.catalog_size_history` (Delta) on first write and upserts one row per `(date, catalog)` carrying `num_tables`, `num_schemas`, `total_size_bytes`, `total_rows`, `captured_at`. Idempotent by `(date, catalog)`: re-clicking Explore the same day overwrites today's row. Best-effort everywhere — never raises into `/stats`.
+- **Opportunistic snapshots**: `POST /stats` (single + multi paths) now calls `record_snapshots_from_stats(...)` after returning, fire-and-forget. No scheduler needed; the trend chart fills in over time as users browse.
+- **New endpoint `GET /catalog-size-history?catalogs=a,b,c&days=30`** — reads back per-catalog daily snapshots; returns `[]` gracefully when the audit catalog isn't configured or the table doesn't exist yet (UI renders an empty-state hint).
+- **Size Trend chart** on the Multi Overview tab: a `recharts` `LineChart` with one line per selected catalog, GB on the Y-axis. Shows a "needs ≥2 days of snapshots" badge when there isn't enough history yet.
+
+### Catalog diff — column drift + size delta
+- **New module [`src/catalog_diff_detail.py`](https://github.com/viral0216/clone-xs/blob/main/src/catalog_diff_detail.py)** — `compare_catalogs_detailed(...)` wraps the existing `src.diff.compare_catalogs` (presence/absence) and overlays per-common-table drift: `columns_only_in_source`, `columns_only_in_dest`, `column_type_changes`, `size_delta_bytes`, `row_delta`. One bulk `information_schema` query per side joins `columns` + `table_properties`; ~3-5s on a 500-table catalog vs 30+s for the per-table `/compare` path.
+- **Skips classification on partial failure**: if either bulk query fails, the response keeps the presence/absence diff with `drift: []` and a `drift_errors` entry — avoids phantom "all columns added/removed" findings that would otherwise appear.
+- **New endpoint `POST /diff-detail`** — same `CatalogPairRequest` shape as `/diff`, returns the combined response. Existing `/diff` endpoint unchanged for backwards compatibility.
+- **Drifted Tables section** on the existing `/diff` UI page — switches the page from `/diff` to `/diff-detail` and renders a new card with summary badges (cols added / removed / type changes / total size Δ) plus a DataTable with per-row inline expansion showing the actual drifted column names. Existing presence/absence sections unchanged.
+
+### Permissions audit — risky GRANTs + PII × access overlay
+- **New module [`src/permissions_audit.py`](https://github.com/viral0216/clone-xs/blob/main/src/permissions_audit.py)** — `audit_catalog_permissions(...)` bulk-queries `<catalog>.information_schema.table_privileges` and classifies every (principal × table × privilege) cluster into CRITICAL / HIGH / MEDIUM / LOW based on:
+  - **Public groups** (`account users`, `users`) — escalate any read/write privilege.
+  - **Destructive privileges** (`ALL PRIVILEGES`, `MODIFY`) — escalate for any non-owner principal.
+  - **PII intersection (opt-in)** — passing a `pii_columns` list (from `scan_catalog_for_pii`) escalates findings on PII-bearing tables one risk level. The marquee finding: public-group SELECT on a PII table = CRITICAL.
+- **New endpoint `POST /permissions-audit`** with new `PermissionsAuditRequest` model (inherits `CatalogRequest`, adds `pii_intersection: bool = False`). When `pii_intersection=true`, runs `scan_catalog_for_pii` inline first (no sample data, no UC tags) and threads the results into the auditor.
+- **Pure classifier helpers** `_classify_finding`, `_is_public`, `_principal_type` are exposed for unit-test isolation. The classifier is the contract — easy to extend with new rules later.
+- **New "Audit" tab on `/explore`**: PII overlay toggle + Run audit button, summary cards (CRITICAL / HIGH / MEDIUM / Tables audited), filter chips (All / CRITICAL only / HIGH+ / PII tables only), findings table with risk badges, principal-type chips, privilege list, suggested action. Single-catalog only in v1 — multi shows a "switch to Single mode" hint.
+
+### Tested
+- 13 new tests in `tests/test_catalog_size_history.py` (idempotent record_snapshot, swallows SQL failures, single vs multi response shape, get_history graceful degradation, endpoint dispatch).
+- 11 new tests in `tests/test_catalog_diff_detail.py` (column drift detection, signed size deltas, no-drift filter, partial-failure fallback, endpoint dispatch).
+- 15 new tests in `tests/test_permissions_audit.py` (classifier rules including the marquee PII × public-group → CRITICAL escalation, principal-type inference, PII overlay opt-in, sort order, INFO findings dropped from response, endpoint dispatch with/without PII overlay).
+- All existing tests preserved.
+
+### Out of scope (deferred follow-ups)
+- **Scheduled daily snapshots** — opportunistic recording on `/stats` covers active catalogs; a scheduled job would cover dormant ones. Hold for now.
+- **Bulk REVOKE action** from the Audit tab. v1 surfaces findings only — users execute revokes via SQL.
+- **Catalog diff trend** — would track the diff over time. Today's snapshot is sufficient; revisit if customers ask.
+
+---
+
+## Unreleased — Catalog Explorer: Cleanup tab (stale & orphan detection)
+
+### Added
+- **New "Cleanup" tab on `/explore`** — joins per-table stats (information_schema size + ANALYZE-derived rows) with read activity (`system.access.audit`, 90-day window) and classifies each table into HIGH / MEDIUM / LOW risk plus a suggested action. Single AND multi-catalog modes both supported (multi adds a Catalog column to the findings table). v1 ships with safe maintenance ops only — destructive `DROP` is out of scope; stale tables surface "Review for drop" as a read-only hint.
+- **New module [`src/stale_detection.py`](https://github.com/viral0216/clone-xs/blob/main/src/stale_detection.py)** — `detect_stale_tables(client, wid, catalog, days_threshold=90, min_age_days=7, min_size_bytes=0, exclude_schemas=...)` orchestrates the join + classification. Pure helpers (`_classify_table`, `_risk_level`, `_suggested_action`) are exposed for unit testing. Risk rules:
+  - **HIGH** — never-accessed + MANAGED + `size_bytes >= 10 GB`
+  - **MEDIUM** — stale + MANAGED, OR no-stats with rows
+  - **LOW** — stale + EXTERNAL or VIEW (informational, can't drop from UI)
+  - **NONE** — fresh + analyzed (filtered out of findings)
+- **New module [`src/stale_detection_multi.py`](https://github.com/viral0216/clone-xs/blob/main/src/stale_detection_multi.py)** — `detect_stale_tables_multi` fans the per-catalog scan out across N catalogs in parallel (max 3 concurrent — joining usage + stats per catalog hits two system queries, lower than `stats_multi`'s 5). Each finding stamped with its owning `catalog`; per-catalog rollups live under `per_catalog`; per-catalog scan failures captured under `errors` instead of aborting the request.
+- **New endpoint `POST /stale-scan`** in `api/routers/analysis.py` — dispatches single vs multi on `source_catalogs` (mirrors the `/stats` and `/pii-scan` patterns). New `StaleScanRequest` model with Pydantic validators clamping `days_threshold` to `1..365` (audit window naturally caps at 90 anyway).
+- **`min_age_days=7` filter** skips brand-new tables — a table altered yesterday wouldn't have read activity in any window, so flagging it as "never accessed" would be a false positive.
+- **Cleanup tab UI** (`ui/src/app/explore/page.tsx`):
+  - Threshold inputs (days + min size MB) + "Run scan" button.
+  - Summary cards: Findings | HIGH | MEDIUM | LOW | Total reclaimable size.
+  - Filter chips: All | HIGH only | Never accessed | Stale | No stats.
+  - Findings table with checkbox column for bulk-select, drill-through to existing `TableDetailDrawer`, per-row OPTIMIZE / VACUUM / Open buttons.
+  - **Bulk-action toolbar** (renders when ≥1 row selected): "OPTIMIZE selected" / "VACUUM selected" → opens a modal that runs the existing `POST /optimize` / `POST /vacuum` with `dry_run=true`, shows the predicted output, then re-runs with `dry_run=false` on user confirmation. No new maintenance endpoints needed — the bulk action reuses what was already there.
+  - Multi-mode rows are grouped by their owning catalog before being submitted so each `POST /optimize` call carries the right `source_catalog`.
+- **Shared validator constant** `_NEITHER_CATALOG_MSG` in `api/models/analysis.py` — the four "single OR multi" request models (`StatsRequest`, `SearchRequest`, `PIIScanRequest`, `StaleScanRequest`) reference one source of truth instead of duplicating the error message.
+
+### Tested
+- 19 new tests in `tests/test_stale_detection.py` covering classification rules (HIGH/MEDIUM/LOW thresholds, EXTERNAL/VIEW caps), `min_age_days` skipping brand-new tables, `min_size_bytes` filtering, NULL `size_bytes` → `Run OPTIMIZE` action, the 10-GB HIGH-risk inclusivity boundary, audit-failure fallback to stats-only signal, and `/stale-scan` endpoint dispatch + validator behaviour.
+- 5 new tests in `tests/test_stale_detection_multi.py` (catalog stamping, summary aggregation, per_catalog rollup, failure isolation, empty-list rejection).
+- All existing tests preserved.
+
+### Out of scope (deferred follow-ups)
+- **Destructive actions (`DROP TABLE`)** — surfaced as a hint only. Users execute via SQL or the existing CLI rollback path.
+- **Many-small-files OPTIMIZE candidates** — would need per-table `DESCRIBE DETAIL` on the slow path.
+- **Scheduled scans / saved findings history** — re-running the scan is one click; persistence is a future Audit Trail integration.
+- **Cost rollup ($/month per finding)** — straightforward extension once storage price config flows through.
+
+---
+
+## Unreleased — Catalog Explorer: multi-catalog tab fan-outs (Option B)
+
+### Added
+- **Functions / Volumes / PII / Feature Store / Search are now multi-aware** on `/explore`. The "pick one catalog to view" placeholder cards are gone — each tab fans out across the user's selected catalogs and renders a unified result with a leading **Catalog** column for sort/filter. Concretely:
+  - **Functions tab**: new `POST /functions/multi` endpoint backed by [`src/functions_listing.py`](https://github.com/viral0216/clone-xs/blob/main/src/functions_listing.py)`:list_functions_multi` fans the per-catalog UDF query out across N catalogs in a `ThreadPoolExecutor` (max 5 concurrent), stamps each row with its owning catalog, and returns `{functions, per_catalog, errors, catalogs}`. Single-catalog `GET /functions/{catalog}` is unchanged — both routes share the extracted `list_functions_for_catalog(client, wid, catalog)` helper.
+  - **Volumes tab**: no backend change — `/auth/volumes` already returned all volumes the user can read; the UI just filters the global list against the active catalog selection (Set membership) instead of one catalog.
+  - **PII Detection tab**: new [`src/pii_multi.py`](https://github.com/viral0216/clone-xs/blob/main/src/pii_multi.py)`:scan_catalogs_for_pii_multi` fans `scan_catalog_for_pii` across N catalogs (max 3 concurrent — PII sampling is heavier than stats). Returns one merged report with per-detection catalog stamping, summed `total_columns_scanned` / `pii_columns_found`, a worst-case rollup `risk_level` (NONE < LOW < MEDIUM < HIGH), and a `per_catalog` block. Masking rules are re-keyed with a `<catalog>.` prefix so two catalogs sharing `<schema>.<table>.<column>` don't collide. `/pii-scan` dispatches on `source_catalogs` vs `source_catalog`.
+  - **Search tab**: new [`src/search_multi.py`](https://github.com/viral0216/clone-xs/blob/main/src/search_multi.py)`:search_tables_multi` fans the regex search out across N catalogs in parallel and merges. Each match (table or column) is stamped with its owning catalog. `SearchRequest` now accepts either `source_catalog` (single) or `source_catalogs` (multi) — Pydantic `model_validator` requires at least one. Inline-fixed a latent rendering bug where the Search tab read `search.data.length` against a dict response — both single and multi modes now read `matched_tables` / `matched_columns` from the dict.
+  - **Feature Store tab**: client-derived from the merged stats `tables[]` (already cross-catalog from Option A), so the only change is the new Catalog column in multi mode.
+
+### Comparison views (B2)
+- **Size Share by Catalog donut** — per-catalog relative size contribution alongside the rollup, so users can spot the dominant catalog at a glance.
+- **Top Schemas (per catalog, by size)** — side-by-side cards, one per catalog, each showing top-8 schemas as a horizontal bar chart of size. Lets users compare which schemas live where without scrolling the merged flat list.
+
+### Tested
+- 8 new tests in `tests/test_functions_multi.py` (catalog stamping, per_catalog rollup, failure isolation, empty-list rejection, endpoint dispatch, invalid-catalog rejection)
+- 8 new tests in `tests/test_search_multi.py` (catalog stamping for tables + columns, per_catalog tables/columns split, failure isolation, endpoint dispatch single vs multi, validator rejects neither)
+- 7 new tests in `tests/test_pii_multi.py` (catalog stamping on detections, summed totals, worst-case risk rollup, masking-rule key collision avoidance, per-catalog failure → UNKNOWN risk, endpoint dispatch, validator)
+- All existing tests preserved.
+
+### Out of scope (deferred follow-ups)
+- Per-catalog comparison "diff" view (which schemas exist in catalog A but not B). Today's side-by-side rollup gets users 80% of the way; a true diff is a follow-up if customers ask.
+
+---
+
+## Unreleased — Catalog Explorer: multi-catalog selection
+
+### Added
+- **Multi-catalog mode on `/explore`**: a new "Single / Multi" pill next to the catalog picker switches the page between the existing single-catalog flow and a checkbox-popover picker that emits `string[]`. Aggregate stats (Schemas / Tables / Total Size / Total Rows) sum across the selected catalogs; the Tables tab gains a leading **Catalog** column for sort/filter; the Overview tab adds a **Per-Catalog Rollup** card showing each catalog's contribution.
+- **New module [`src/stats_multi.py`](https://github.com/viral0216/clone-xs/blob/main/src/stats_multi.py)** — `catalog_stats_multi(client, warehouse_id, catalogs, exclude_schemas, fast=True, max_parallel=5)` fans the per-catalog stats run out across N catalogs in a `ThreadPoolExecutor` and merges responses. Wall-clock latency is the slowest catalog, not the sum (3-catalog Multi explore completes in ~1-3s on the fast path).
+- **Failure isolation**: one catalog inaccessible (auth / mid-deletion) does NOT abort the whole request — the response carries `errors: [{catalog, error}]` while the rest of the catalogs surface normally; the UI renders failed catalogs in red on the Per-Catalog Rollup card.
+- **`StatsRequest` (new model in `api/models/analysis.py`)** — subclasses `CatalogRequest`, accepts either `source_catalog: str` (single, existing contract) or `source_catalogs: list[str]` (new), with a Pydantic `model_validator` requiring at least one. Other endpoints (search, estimate, storage-metrics, profile, snapshot, export) keep the unmodified `CatalogRequest` so their single-catalog contract is unchanged.
+- **`/stats` dispatch**: when `source_catalogs` is non-empty the route routes to `catalog_stats_multi`; otherwise the existing `fast` flag picks `catalog_stats_fast` vs `catalog_stats`. Single-catalog callers see no behavioural change.
+- **`useStats` hook** (`ui/src/hooks/useApi.ts`): now accepts `{ source_catalog?, source_catalogs?, fast? }` and persists multi responses to sessionStorage under `clxs-stats-multi-<sorted-csv>-<mode>` (sorted so `[a,b]` and `[b,a]` share a slot). `getCachedStats` accepts either a single catalog string (legacy) or an array.
+- **`CatalogPicker` component**: opt-in `multi` prop renders a checkbox popover with "Select all / Clear" controls; click-outside closes the popover. Single-mode rendering unchanged.
+- **Single-only tabs gracefully degrade**: Functions / Volumes / PII Detection / Feature Store / Search render a "This tab requires a single catalog" placeholder card with a "Switch to Single" button when N>1, instead of running per-catalog (deferred to a follow-up batch).
+
+### Tested
+- 15 new tests in `tests/test_stats_multi.py`: merge correctness (totals sum, table-row catalog stamping, schema-row stamping, per_catalog rollup populated, top-N recomputed cross-catalog), per-catalog failure isolation, fast vs detailed path selection, empty list raises, endpoint dispatch (source_catalogs routes to multi, source_catalog routes to single, neither returns 422, empty source_catalogs falls back).
+- `tests/test_stats_fast.py:TestEndpointDispatch` extended to cover the multi routing.
+
+### Out of scope (deferred — Option B)
+- Multi-aware Functions / Volumes / PII / Feature Store / Search tabs (would require per-tab cross-catalog endpoints).
+- Comparison views (per-catalog donut diff, side-by-side schema rollup).
+
+---
+
 ## Unreleased — Demo Data Generator: Star Schema modeling layer
 
 ### Added

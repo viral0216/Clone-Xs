@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import CatalogPicker from "@/components/CatalogPicker";
-import { useSearch, useStats, useColumnUsage, getCachedStats } from "@/hooks/useApi";
+import { useSearch, useStats, useColumnUsage, useStaleScan, usePermissionsAudit, getCachedStats } from "@/hooks/useApi";
 import { useShowExports, useShowCatalogBrowser, usePersistedNumber, useCurrency, useStoragePrice } from "@/hooks/useSettings";
 import ResizeHandle from "@/components/ResizeHandle";
 import PageHeader from "@/components/PageHeader";
@@ -14,6 +14,7 @@ import DataTable from "@/components/DataTable";
 import { api } from "@/lib/api-client";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
 } from "recharts";
 import {
   Search, BarChart3, Database, Table2, HardDrive, Rows3,
@@ -21,6 +22,7 @@ import {
   ChevronRight, ChevronDown, TrendingUp, Download, DollarSign, Clock, Zap,
   X, GitCompare, Copy, ScanSearch, ExternalLink, Activity,
   ShieldAlert, FunctionSquare, Package, Layers, AlertTriangle, Globe, Key, Share2, Brain, Sparkles,
+  Trash2, Wrench,
 } from "lucide-react";
 
 // ─── Helpers ───
@@ -51,6 +53,7 @@ function typeBadge(type: string) {
 
 const SCHEMA_COLORS = ["#E8453C", "#6B7280", "#6B7280", "#9CA3AF", "#ef4444", "#374151", "#6B7280", "#6B7280", "#9CA3AF", "#6B7280"];
 const TYPE_COLORS = { MANAGED: "#E8453C", EXTERNAL: "#9CA3AF", VIEW: "#6B7280", UNKNOWN: "#666" };
+
 
 // ─── Table Detail Drawer ───
 function TableDetailDrawer({ catalog, schema, table, onClose }: { catalog: string; schema: string; table: string; onClose: () => void }) {
@@ -364,9 +367,22 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
 // ─── Main Page ───
 export default function ExplorePage() {
   const [catalog, setCatalog] = useState(() => sessionStorage.getItem("clxs-explore-catalog") || "");
+  // Multi-catalog mode (Option A): user can pick N catalogs and see
+  // aggregate stats across them. Per-catalog tabs (Functions / Volumes
+  // / PII / Feature Store / Search) gracefully degrade to a "pick one"
+  // placeholder when N>1; the Tables tab gains a Catalog column.
+  const [mode, setMode] = useState<"single" | "multi">(() => {
+    try { return (sessionStorage.getItem("clxs-explore-mode") as "single" | "multi") || "single"; }
+    catch { return "single"; }
+  });
+  const [selectedCatalogs, setSelectedCatalogs] = useState<string[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem("clxs-explore-catalogs") || "[]"); }
+    catch { return []; }
+  });
+  const isMulti = mode === "multi" && selectedCatalogs.length > 1;
   const [pattern, setPattern] = useState("");
   const [searchColumns, setSearchColumns] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "tables" | "search" | "usage" | "views" | "functions" | "volumes" | "pii" | "feature_store" | "uc_objects">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "tables" | "search" | "usage" | "views" | "functions" | "volumes" | "pii" | "feature_store" | "uc_objects" | "cleanup" | "audit">("overview");
   const [expandedSchema, setExpandedSchema] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<{ catalog: string; schema: string; table: string } | null>(null);
   const [schemaFilter, setSchemaFilter] = useState<Set<string>>(new Set());
@@ -391,6 +407,12 @@ export default function ExplorePage() {
   const [piiScanned, setPiiScanned] = useState(false);
   const [ucObjects, setUcObjects] = useState<any>(null);
   const [ucObjectsLoading, setUcObjectsLoading] = useState(false);
+  // Per-catalog 30-day trend chart on the multi Overview. Pulled
+  // opportunistically — `/stats` records a snapshot every time the
+  // user clicks Explore, so the chart fills in over time without
+  // requiring scheduled jobs.
+  const [trendRows, setTrendRows] = useState<any[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
 
   // Sync with global setting
   useEffect(() => { setShowBrowser(browserGlobal); }, [browserGlobal]);
@@ -398,6 +420,19 @@ export default function ExplorePage() {
   const search = useSearch();
   const stats = useStats();
   const columnUsage = useColumnUsage();
+  const staleScan = useStaleScan();
+  const permsAudit = usePermissionsAudit();
+  // Audit tab state — toggle for the PII overlay (slower but enables
+  // CRITICAL classifications) and a risk-level filter.
+  const [auditPiiOverlay, setAuditPiiOverlay] = useState(true);
+  const [auditFilter, setAuditFilter] = useState<"all" | "critical_only" | "high_or_higher" | "pii_only">("all");
+  // Cleanup tab — threshold inputs + bulk-action confirm modal state.
+  const [staleDays, setStaleDays] = useState(90);
+  const [staleMinSizeMB, setStaleMinSizeMB] = useState(0);
+  const [staleCheckSmallFiles, setStaleCheckSmallFiles] = useState(false);
+  const [staleFilter, setStaleFilter] = useState<"all" | "never_accessed" | "stale" | "no_stats" | "high_only" | "small_files">("all");
+  const [staleSelected, setStaleSelected] = useState<Set<string>>(new Set());
+  const [maintModal, setMaintModal] = useState<null | { op: "OPTIMIZE" | "VACUUM"; tables: { schema: string; table: string; catalog?: string }[]; dryRun: any | null; running: boolean; result: any | null }>(null);
   // Fast vs Detailed stats mode. Fast (default) uses one bulk
   // information_schema query — completes in 1-3s for any catalog size.
   // Detailed runs the per-table COUNT(*) + DESCRIBE DETAIL pipeline —
@@ -409,9 +444,12 @@ export default function ExplorePage() {
     catch { return "fast"; }
   });
 
-  // Auto-load stats for persisted catalog on mount
+  // Auto-load stats for persisted catalog(s) on mount
   useEffect(() => {
-    if (catalog && !stats.data && !stats.isPending) {
+    if (stats.data || stats.isPending) return;
+    if (mode === "multi" && selectedCatalogs.length > 0) {
+      stats.mutate({ source_catalogs: selectedCatalogs, fast: statsMode === "fast" });
+    } else if (catalog) {
       stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" });
     }
   }, []);
@@ -419,6 +457,8 @@ export default function ExplorePage() {
   const loadCatalog = (cat: string) => {
     setCatalog(cat);
     try { sessionStorage.setItem("clxs-explore-catalog", cat); } catch {}
+    setMode("single");
+    try { sessionStorage.setItem("clxs-explore-mode", "single"); } catch {}
     setSchemaFilter(new Set());
     setActiveTab("overview");
     stats.mutate({ source_catalog: cat, fast: statsMode === "fast" });
@@ -429,31 +469,62 @@ export default function ExplorePage() {
     setPiiScanned(false);
   };
 
-  // Load functions when catalog changes — uses dedicated list endpoint
-  const fnCatalogRef = useRef("");
-  useEffect(() => {
-    if (catalog && fnCatalogRef.current !== catalog) {
-      fnCatalogRef.current = catalog;
-      setFunctionsLoading(true);
-      api.get<any[]>(`/functions/${catalog}`)
-        .then((data) => setFunctionsData(Array.isArray(data) ? data : []))
-        .catch(() => setFunctionsData([]))
-        .finally(() => setFunctionsLoading(false));
+  // Run stats for the current mode — single uses `catalog`, multi uses
+  // `selectedCatalogs`. Centralised so the toolbar's Explore button and
+  // future call sites share the same dispatch.
+  const runStats = () => {
+    if (mode === "multi") {
+      if (selectedCatalogs.length === 0) return;
+      stats.mutate({ source_catalogs: selectedCatalogs, fast: statsMode === "fast" });
+    } else {
+      if (!catalog) return;
+      stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" });
     }
-  }, [catalog]);
+    setActiveTab("overview");
+    setSchemaFilter(new Set());
+  };
 
-  // Eagerly load volumes when catalog changes
-  const volCatalogRef = useRef("");
+  // Load functions when the active catalog set changes. Single mode →
+  // GET /functions/{catalog}; multi → POST /functions/multi which fans
+  // out across the selected catalogs in parallel and merges. Each row
+  // in multi mode carries `catalog` so the Functions tab can render
+  // a leading Catalog column when isMulti.
+  const fnKeyRef = useRef("");
   useEffect(() => {
-    if (catalog && volCatalogRef.current !== catalog) {
-      volCatalogRef.current = catalog;
-      setVolumesLoading(true);
-      api.get("/auth/volumes")
-        .then((vols: any) => setVolumesData((vols || []).filter((v: any) => v.catalog === catalog)))
-        .catch(() => setVolumesData([]))
-        .finally(() => setVolumesLoading(false));
-    }
-  }, [catalog]);
+    const key = mode === "multi" ? `multi:${[...selectedCatalogs].sort().join(",")}` : `single:${catalog}`;
+    if (fnKeyRef.current === key) return;
+    if (mode === "multi" ? selectedCatalogs.length === 0 : !catalog) return;
+    fnKeyRef.current = key;
+    setFunctionsLoading(true);
+    const fetcher = mode === "multi"
+      ? api.post<{ functions: any[] }>("/functions/multi", { catalogs: selectedCatalogs })
+          .then((res) => Array.isArray(res?.functions) ? res.functions : [])
+      : api.get<any[]>(`/functions/${catalog}`)
+          .then((d) => Array.isArray(d) ? d : []);
+    fetcher
+      .then((rows) => setFunctionsData(rows))
+      .catch(() => setFunctionsData([]))
+      .finally(() => setFunctionsLoading(false));
+  }, [catalog, mode, selectedCatalogs]);
+
+  // Eagerly load volumes when the active catalog set changes. The
+  // backend `/auth/volumes` endpoint already returns volumes across
+  // all catalogs the user can read — the UI just needs to filter the
+  // global list against the active catalog selection. So multi mode
+  // is essentially free here: filter against the set instead of one.
+  const volKeyRef = useRef("");
+  useEffect(() => {
+    const key = mode === "multi" ? `multi:${[...selectedCatalogs].sort().join(",")}` : `single:${catalog}`;
+    if (volKeyRef.current === key) return;
+    if (mode === "multi" ? selectedCatalogs.length === 0 : !catalog) return;
+    volKeyRef.current = key;
+    setVolumesLoading(true);
+    const activeCats = mode === "multi" ? new Set(selectedCatalogs) : new Set([catalog]);
+    api.get("/auth/volumes")
+      .then((vols: any) => setVolumesData((vols || []).filter((v: any) => activeCats.has(v.catalog))))
+      .catch(() => setVolumesData([]))
+      .finally(() => setVolumesLoading(false));
+  }, [catalog, mode, selectedCatalogs]);
 
   // Lazy-load UC objects when tab is activated
   const ucLoadedRef = useRef(false);
@@ -482,6 +553,24 @@ export default function ExplorePage() {
         .finally(() => setTableUsageLoading(false));
     }
   }, [stats.data, catalog]);
+
+  // Pull per-catalog size history when stats land in multi mode. The
+  // chart on the Overview tab needs at least 2 days of snapshots to
+  // draw a line — for first-time users we render an empty-state hint.
+  const trendKeyRef = useRef("");
+  useEffect(() => {
+    if (!stats.data) return;
+    const cats = mode === "multi" ? selectedCatalogs : (catalog ? [catalog] : []);
+    if (cats.length === 0) return;
+    const key = [...cats].sort().join(",");
+    if (trendKeyRef.current === key) return;
+    trendKeyRef.current = key;
+    setTrendLoading(true);
+    api.get(`/catalog-size-history?catalogs=${encodeURIComponent(cats.join(","))}&days=30`)
+      .then((res: any) => setTrendRows(res?.rows || []))
+      .catch(() => setTrendRows([]))
+      .finally(() => setTrendLoading(false));
+  }, [stats.data, mode, catalog, selectedCatalogs]);
 
   const data = stats.data;
   const tables = data?.tables || [];
@@ -570,13 +659,19 @@ export default function ExplorePage() {
   }, [data]);
   const schemaColorMap = useMemo(() => Object.fromEntries(schemaSizeData.map((s: any) => [s.name, s.color])), [schemaSizeData]);
 
-  // Table columns for DataTable
+  // Table columns for DataTable. In multi mode the rows come from
+  // `catalog_stats_multi` and each row carries its owning catalog —
+  // surface it as the leading column so users can sort/filter by it.
   const tableColumns = [
+    ...(isMulti ? [{
+      key: "catalog", label: "Catalog", sortable: true,
+      render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge>,
+    }] : []),
     { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
     {
       key: "table", label: "Table", sortable: true,
       render: (v: string, row: any) => (
-        <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
+        <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
           <span className="text-sm font-medium text-foreground hover:text-[#E8453C]">{v || row.table_name || "—"}</span>
           {typeBadge(row.table_type || row.type)}
         </button>
@@ -587,16 +682,19 @@ export default function ExplorePage() {
     { key: "num_columns", label: "Cols", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
     {
       key: "_actions", label: "", width: "80px",
-      render: (_: any, row: any) => (
-        <div className="flex items-center gap-0.5">
-          <Link to={`/preview?catalog=${catalog}&schema=${row.schema || row.table_schema}&table=${row.table || row.table_name}`}>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Eye className="h-3 w-3 text-muted-foreground" /></Button>
-          </Link>
-          <Link to={`/clone?source_catalog=${catalog}`}>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Copy className="h-3 w-3 text-muted-foreground" /></Button>
-          </Link>
-        </div>
-      ),
+      render: (_: any, row: any) => {
+        const rowCat = row.catalog || catalog;
+        return (
+          <div className="flex items-center gap-0.5">
+            <Link to={`/preview?catalog=${rowCat}&schema=${row.schema || row.table_schema}&table=${row.table || row.table_name}`}>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Eye className="h-3 w-3 text-muted-foreground" /></Button>
+            </Link>
+            <Link to={`/clone?source_catalog=${rowCat}`}>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Copy className="h-3 w-3 text-muted-foreground" /></Button>
+            </Link>
+          </div>
+        );
+      },
     },
   ];
 
@@ -651,7 +749,44 @@ export default function ExplorePage() {
                     <FolderTree className="h-3.5 w-3.5 mr-1.5" />Browser
                   </Button>
                 )}
-            <CatalogPicker catalog={catalog} onCatalogChange={setCatalog} showSchema={false} showTable={false} />
+            {/* Single / Multi mode pill — toggling resets stats so the
+                next Explore re-fetches in the new shape. */}
+            <div className="inline-flex rounded-md border border-input bg-background p-0.5 shrink-0">
+              {(["single", "multi"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    if (m === mode) return;
+                    setMode(m);
+                    try { sessionStorage.setItem("clxs-explore-mode", m); } catch {}
+                    stats.reset();
+                  }}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    mode === m ? "bg-[#E8453C] text-white" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={m === "multi"
+                    ? "Pick multiple catalogs and see aggregate stats. Per-catalog tabs (Functions/Volumes/PII) require single mode."
+                    : "Single catalog — full feature set across all tabs."}
+                >
+                  {m === "single" ? "Single" : "Multi"}
+                </button>
+              ))}
+            </div>
+            {mode === "multi" ? (
+              <CatalogPicker
+                multi
+                selectedCatalogs={selectedCatalogs}
+                onCatalogsChange={(cats) => {
+                  setSelectedCatalogs(cats);
+                  try { sessionStorage.setItem("clxs-explore-catalogs", JSON.stringify(cats)); } catch {}
+                }}
+                showSchema={false}
+                showTable={false}
+              />
+            ) : (
+              <CatalogPicker catalog={catalog} onCatalogChange={setCatalog} showSchema={false} showTable={false} />
+            )}
             {/* Fast vs Detailed stats mode. Fast = bulk information_schema
                 (1-3s any size). Detailed = per-table COUNT(*) + DESCRIBE
                 DETAIL — exact row counts but 30-90s for 500 tables. */}
@@ -671,7 +806,10 @@ export default function ExplorePage() {
               <option value="fast">Fast (1-3s)</option>
               <option value="detailed">Detailed (slow, exact)</option>
             </select>
-            <Button onClick={() => { stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" }); setActiveTab("overview"); setSchemaFilter(new Set()); }} disabled={!catalog || stats.isPending}>
+            <Button
+              onClick={runStats}
+              disabled={stats.isPending || (mode === "multi" ? selectedCatalogs.length === 0 : !catalog)}
+            >
               {stats.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
               {stats.isPending ? "Loading..." : "Explore"}
             </Button>
@@ -742,6 +880,8 @@ export default function ExplorePage() {
               { key: "pii", label: "PII Detection", icon: ShieldAlert },
               { key: "feature_store", label: `Feature Store (${featureStoreTables.length})`, icon: Layers },
               { key: "search", label: "Search", icon: Search },
+              { key: "cleanup", label: `Cleanup${staleScan.data?.findings?.length ? ` (${staleScan.data.findings.length})` : ""}`, icon: Sparkles },
+              { key: "audit", label: `Audit${permsAudit.data?.findings?.length ? ` (${permsAudit.data.findings.length})` : ""}`, icon: Key },
               ...(topColumns.length || columnUsage.data?.top_users?.length ? [{ key: "usage", label: "Column Usage", icon: Columns }] : []),
             ].map(({ key, label, icon: TabIcon }) => (
               <button key={key} onClick={() => setActiveTab(key as typeof activeTab)}
@@ -755,6 +895,245 @@ export default function ExplorePage() {
           {/* ═══ Overview Tab ═══ */}
           {activeTab === "overview" && (
             <div className="space-y-4">
+              {/* Per-catalog rollup — only in multi mode. Shows the
+                  contribution of each catalog so users can spot the
+                  outlier without scrolling the merged tables list. */}
+              {isMulti && data?.per_catalog && (() => {
+                const perCat = Object.entries(data.per_catalog) as [string, any][];
+                // Donut data — relative size contribution per catalog.
+                // Catalogs with 0 bytes (typically empty / errored) are
+                // dropped so the chart isn't dominated by zero-slices.
+                const donutData = perCat
+                  .filter(([, r]) => (r.total_size_bytes || 0) > 0)
+                  .map(([cat, r], i) => ({
+                    name: cat,
+                    value: r.total_size_bytes,
+                    color: SCHEMA_COLORS[i % SCHEMA_COLORS.length],
+                  }));
+                // Side-by-side schema rollup. Group merged
+                // schema_summaries by catalog → schemas table so users
+                // can compare which schemas live where without scrolling
+                // the flat merged list. Only the top 8 schemas per
+                // catalog (by size) are shown to keep height bounded.
+                const schemasByCatalog: Record<string, any[]> = {};
+                for (const s of data.schema_summaries || []) {
+                  const k = s.catalog || "?";
+                  if (!schemasByCatalog[k]) schemasByCatalog[k] = [];
+                  schemasByCatalog[k].push(s);
+                }
+                for (const k of Object.keys(schemasByCatalog)) {
+                  schemasByCatalog[k] = schemasByCatalog[k]
+                    .sort((a, b) => (b.total_size_bytes || 0) - (a.total_size_bytes || 0))
+                    .slice(0, 8);
+                }
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Tile 1: Per-catalog rollup cards */}
+                    <Card className="bg-card border-border lg:col-span-2">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <Database className="h-4 w-4" />Per-Catalog Rollup
+                          {data.errors?.length > 0 && (
+                            <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-500 ml-1">
+                              {data.errors.length} failed
+                            </Badge>
+                          )}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {perCat.map(([cat, r]) => {
+                            // Per-catalog $/month — converts size_bytes
+                            // to GB then applies the configured
+                            // storage price. The rollup card is
+                            // already the "outlier-spotter" surface;
+                            // adding cost makes the comparison concrete
+                            // (e.g. "prod_eu costs 4× prod_us").
+                            const catGb = (r.total_size_bytes || 0) / (1024 ** 3);
+                            const catMonthly = catGb * storagePrice;
+                            return (
+                              <div key={cat} className="border border-border rounded-md px-3 py-2 bg-background">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold text-foreground truncate">{cat}</span>
+                                  <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{r.num_tables} tables</Badge>
+                                </div>
+                                <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                                  <span>{r.total_size_display || formatBytes(r.total_size_bytes)}</span>
+                                  <span>{formatNumber(r.total_rows)} rows</span>
+                                </div>
+                                <div className="text-[11px] text-[#E8453C] mt-0.5 font-mono">
+                                  {currSymbol}{catMonthly < 1 ? catMonthly.toFixed(2) : catMonthly.toFixed(0)}/mo
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {data.errors?.length > 0 && (
+                          <div className="mt-3 space-y-1 text-xs">
+                            {data.errors.map((e: any) => (
+                              <div key={e.catalog} className="text-red-500">
+                                <span className="font-mono">{e.catalog}</span>: {e.error}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Tile 2: Per-catalog size-share donut */}
+                    <Card className="bg-card border-border">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <HardDrive className="h-4 w-4" />Size Share by Catalog
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {donutData.length === 0 ? (
+                          <p className="text-sm text-muted-foreground py-4 text-center">No size data</p>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <ResponsiveContainer width={130} height={130}>
+                              <PieChart>
+                                <Pie data={donutData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" paddingAngle={2}>
+                                  {donutData.map((s) => <Cell key={s.name} fill={s.color} />)}
+                                </Pie>
+                                <Tooltip formatter={(v: number) => formatBytes(v)} contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="flex-1 space-y-1 text-xs">
+                              {donutData.map((s) => (
+                                <div key={s.name} className="flex items-center justify-between gap-2">
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
+                                    <span className="truncate text-foreground">{s.name}</span>
+                                  </span>
+                                  <span className="text-muted-foreground shrink-0">{formatBytes(s.value)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Tile 3: Side-by-side schema rollup. Spans full
+                        width below the rollup + donut row so each
+                        catalog's top schemas read cleanly. */}
+                    <Card className="bg-card border-border lg:col-span-3">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <FolderTree className="h-4 w-4" />Top Schemas (per catalog, by size)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {Object.entries(schemasByCatalog).map(([cat, schemas]) => {
+                            const maxSize = Math.max(1, ...schemas.map((s: any) => s.total_size_bytes || 0));
+                            return (
+                              <div key={cat} className="border border-border rounded-md p-3 bg-background">
+                                <div className="flex items-center justify-between mb-2">
+                                  <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{cat}</Badge>
+                                  <span className="text-[10px] text-muted-foreground">{schemas.length} schemas</span>
+                                </div>
+                                {schemas.length === 0 ? (
+                                  <p className="text-[11px] text-muted-foreground italic">No schemas with size data</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {schemas.map((s: any) => (
+                                      <div key={s.schema}>
+                                        <div className="flex items-center justify-between text-[11px] mb-0.5">
+                                          <span className="text-foreground truncate">{s.schema}</span>
+                                          <span className="text-muted-foreground shrink-0 ml-2">{formatBytes(s.total_size_bytes || 0)}</span>
+                                        </div>
+                                        <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                          <div className="h-full bg-[#E8453C] rounded-full" style={{ width: `${((s.total_size_bytes || 0) / maxSize) * 100}%` }} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Tile 4: 30-day size trend per catalog. Pulled
+                        from catalog_size_history (opportunistic snapshots
+                        written by /stats). Empty until at least 2 days
+                        of data exist; we render a hint in that case. */}
+                    {(() => {
+                      // Build a date-keyed series per catalog. Recharts
+                      // wants one row per X-axis point with one value
+                      // per series, so we pivot:
+                      //   { date: "2026-04-30", prod_us: 12345, prod_eu: 6789 }
+                      const dates = Array.from(new Set(trendRows.map((r: any) => r.snapshot_date))).sort();
+                      const cats = Array.from(new Set(trendRows.map((r: any) => r.catalog)));
+                      const seriesData = dates.map((d) => {
+                        const row: any = { date: d };
+                        for (const c of cats) {
+                          const m = trendRows.find((r: any) => r.snapshot_date === d && r.catalog === c);
+                          if (m) row[c] = (m.total_size_bytes || 0) / (1024 ** 3);
+                        }
+                        return row;
+                      });
+                      const enoughData = dates.length >= 2;
+                      return (
+                        <Card className="bg-card border-border lg:col-span-3">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                              <TrendingUp className="h-4 w-4" />Size Trend (last 30 days)
+                              {!enoughData && !trendLoading && (
+                                <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground ml-1">
+                                  needs ≥2 days of snapshots
+                                </Badge>
+                              )}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            {trendLoading ? (
+                              <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />Loading history...
+                              </div>
+                            ) : !enoughData ? (
+                              <div className="text-center py-6 text-xs text-muted-foreground">
+                                <p>Not enough history to plot a trend yet.</p>
+                                <p className="mt-1">Snapshots are recorded each time you click Explore — come back tomorrow to see growth.</p>
+                              </div>
+                            ) : (
+                              <ResponsiveContainer width="100%" height={220}>
+                                <LineChart data={seriesData} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                                  <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                                    label={{ value: "GB", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "var(--muted-foreground)" } }} />
+                                  <Tooltip
+                                    formatter={(v: number) => [`${v.toFixed(2)} GB`, ""]}
+                                    contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}
+                                  />
+                                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                                  {cats.map((c, i) => (
+                                    <Line
+                                      key={c}
+                                      type="monotone"
+                                      dataKey={c}
+                                      stroke={SCHEMA_COLORS[i % SCHEMA_COLORS.length]}
+                                      strokeWidth={2}
+                                      dot={{ r: 2 }}
+                                      activeDot={{ r: 4 }}
+                                    />
+                                  ))}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
               {/* Row 1: Charts */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Schema size donut */}
@@ -1002,7 +1381,7 @@ export default function ExplorePage() {
                           {topBySize.slice(0, 6).map((t: any, i: number) => {
                             const maxSize = topBySize[0]?.size_bytes || 1;
                             return (
-                              <div key={`${t.schema}.${t.table || t.table_name}`} className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedTable({ catalog, schema: t.schema, table: t.table || t.table_name })}>
+                              <div key={`${t.schema}.${t.table || t.table_name}`} className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedTable({ catalog: t.catalog || catalog, schema: t.schema, table: t.table || t.table_name })}>
                                 <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between mb-0.5">
@@ -1062,43 +1441,71 @@ export default function ExplorePage() {
           {/* ═══ All Tables Tab ═══ */}
           {activeTab === "tables" && (
             <DataTable data={tables} columns={tableColumns} searchable searchPlaceholder="Filter tables..." pageSize={25} emptyMessage="No tables found"
-              draggableColumns tableId="explore-tables"
-              onRowClick={(row) => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
+              draggableColumns tableId={isMulti ? "explore-tables-multi" : "explore-tables"}
+              onRowClick={(row) => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
           )}
 
           {/* ═══ Search Tab ═══ */}
-          {activeTab === "search" && (
-            <Card className="bg-card border-border">
-              <CardContent className="pt-6 space-y-4">
-                <div className="flex gap-4 items-end">
-                  <div className="flex-1">
-                    <label className="text-xs font-medium text-muted-foreground">Pattern (regex)</label>
-                    <Input placeholder="e.g. email|phone|customer" value={pattern} onChange={(e) => setPattern(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && catalog && pattern) search.mutate({ source_catalog: catalog, pattern, search_columns: searchColumns }); }} className="mt-1" />
+          {activeTab === "search" && (() => {
+            const runSearch = () => {
+              const body: any = { pattern, search_columns: searchColumns };
+              if (isMulti) body.source_catalogs = selectedCatalogs;
+              else body.source_catalog = catalog;
+              search.mutate(body);
+            };
+            const disabled = !pattern || search.isPending || (isMulti ? selectedCatalogs.length === 0 : !catalog);
+            // Backend returns `{matched_tables, matched_columns, …}` for
+            // both single and multi modes; in multi each row is also
+            // stamped with `catalog`. Render `matched_tables` first,
+            // and `matched_columns` below when search_columns=true.
+            const matchedTables: any[] = (search.data as any)?.matched_tables ?? [];
+            const matchedColumns: any[] = (search.data as any)?.matched_columns ?? [];
+            const totalMatches = matchedTables.length + matchedColumns.length;
+            return (
+              <Card className="bg-card border-border">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex gap-4 items-end">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-muted-foreground">Pattern (regex)</label>
+                      <Input placeholder="e.g. email|phone|customer" value={pattern} onChange={(e) => setPattern(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !disabled) runSearch(); }} className="mt-1" />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm pb-2"><input type="checkbox" checked={searchColumns} onChange={(e) => setSearchColumns(e.target.checked)} />Columns</label>
+                    <Button onClick={runSearch} disabled={disabled}>
+                      {search.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                      {isMulti ? `Search ${selectedCatalogs.length} catalogs` : "Search"}
+                    </Button>
                   </div>
-                  <label className="flex items-center gap-2 text-sm pb-2"><input type="checkbox" checked={searchColumns} onChange={(e) => setSearchColumns(e.target.checked)} />Columns</label>
-                  <Button onClick={() => search.mutate({ source_catalog: catalog, pattern, search_columns: searchColumns })} disabled={!catalog || !pattern || search.isPending}>
-                    {search.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}Search
-                  </Button>
-                </div>
-                {search.isError && <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg text-red-500 text-sm">{search.error?.message}</div>}
-                {search.data && Array.isArray(search.data) && search.data.length > 0 && (
-                  <>
-                    <Badge className="bg-[#E8453C] text-white text-xs">{search.data.length} matches</Badge>
-                    <DataTable data={search.data} columns={[
-                      { key: "schema", label: "Schema", sortable: true, render: (v: string, r: any) => <span className="text-xs">{v || r.table_schema || "—"}</span> },
-                      { key: "table", label: "Table", sortable: true, render: (v: string, r: any) => <span className="text-sm font-medium">{v || r.table_name || "—"}</span> },
-                      ...(searchColumns ? [{ key: "column", label: "Column", sortable: true, render: (v: string, r: any) => <Badge variant="secondary" className="text-xs font-mono">{v || r.column_name || "—"}</Badge> }] : []),
-                      { key: "table_type", label: "Type", sortable: true, render: (v: string, r: any) => typeBadge(v || r.type || r.data_type || "TABLE") },
-                    ]} searchable={false} pageSize={25} draggableColumns tableId="explore-search" />
-                  </>
-                )}
-                {!search.data && !search.isPending && (
-                  <div className="text-center py-8 text-muted-foreground"><Search className="h-8 w-8 mx-auto mb-2 opacity-30" /><p className="text-sm">Search tables and columns by regex</p></div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                  {search.isError && <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg text-red-500 text-sm">{search.error?.message}</div>}
+                  {totalMatches > 0 && (
+                    <>
+                      <Badge className="bg-[#E8453C] text-white text-xs">{totalMatches} matches</Badge>
+                      {matchedTables.length > 0 && (
+                        <DataTable data={matchedTables} columns={[
+                          ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
+                          { key: "schema", label: "Schema", sortable: true, render: (v: string, r: any) => <span className="text-xs">{v || r.table_schema || "—"}</span> },
+                          { key: "table", label: "Table", sortable: true, render: (v: string, r: any) => <span className="text-sm font-medium">{v || r.table_name || "—"}</span> },
+                          { key: "type", label: "Type", sortable: true, render: (v: string, r: any) => typeBadge(v || r.table_type || r.data_type || "TABLE") },
+                        ]} searchable={false} pageSize={25} draggableColumns tableId={isMulti ? "explore-search-tables-multi" : "explore-search-tables"} />
+                      )}
+                      {searchColumns && matchedColumns.length > 0 && (
+                        <DataTable data={matchedColumns} columns={[
+                          ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
+                          { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs">{v || "—"}</span> },
+                          { key: "table", label: "Table", sortable: true, render: (v: string) => <span className="text-sm">{v || "—"}</span> },
+                          { key: "column", label: "Column", sortable: true, render: (v: string) => <Badge variant="secondary" className="text-xs font-mono">{v || "—"}</Badge> },
+                          { key: "data_type", label: "Type", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
+                        ]} searchable={false} pageSize={25} draggableColumns tableId={isMulti ? "explore-search-cols-multi" : "explore-search-cols"} />
+                      )}
+                    </>
+                  )}
+                  {!search.data && !search.isPending && (
+                    <div className="text-center py-8 text-muted-foreground"><Search className="h-8 w-8 mx-auto mb-2 opacity-30" /><p className="text-sm">Search tables and columns by regex{isMulti ? ` across ${selectedCatalogs.length} catalogs` : ""}</p></div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* ═══ Column Usage Tab ═══ */}
           {activeTab === "usage" && columnUsage.data && (
@@ -1216,7 +1623,7 @@ export default function ExplorePage() {
               <Card className="bg-card border-border">
                 <CardContent className="py-16 text-center text-muted-foreground">
                   <Loader2 className="h-8 w-8 mx-auto mb-3 animate-spin opacity-50" />
-                  <p className="text-sm">Loading functions across all schemas...</p>
+                  <p className="text-sm">Loading functions{isMulti ? ` across ${selectedCatalogs.length} catalogs` : " across all schemas"}...</p>
                 </CardContent>
               </Card>
             ) : functionsData.length === 0 ? (
@@ -1224,11 +1631,12 @@ export default function ExplorePage() {
                 <CardContent className="py-16 text-center text-muted-foreground">
                   <FunctionSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">No user-defined functions found</p>
-                  <p className="text-xs mt-1">Functions (UDFs) defined in this catalog will appear here</p>
+                  <p className="text-xs mt-1">Functions (UDFs) defined in {isMulti ? "the selected catalogs" : "this catalog"} will appear here</p>
                 </CardContent>
               </Card>
             ) : (
               <DataTable data={functionsData} columns={[
+                ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
                 { key: "name", label: "Function", sortable: true, render: (v: string, row: any) => (
                   <div className="flex items-center gap-2">
@@ -1238,7 +1646,7 @@ export default function ExplorePage() {
                 )},
                 { key: "full_name", label: "Full Name", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground font-mono truncate">{v || "—"}</span> },
                 { key: "data_type", label: "Return Type", sortable: true, render: (v: string) => v ? <Badge variant="secondary" className="text-[10px] font-mono">{v}</Badge> : <span className="text-xs text-muted-foreground">—</span> },
-              ]} searchable searchPlaceholder="Filter functions..." pageSize={25} emptyMessage="No functions found" draggableColumns tableId="explore-functions" />
+              ]} searchable searchPlaceholder="Filter functions..." pageSize={25} emptyMessage="No functions found" draggableColumns tableId={isMulti ? "explore-functions-multi" : "explore-functions"} />
             )
           )}
 
@@ -1255,12 +1663,13 @@ export default function ExplorePage() {
               <Card className="bg-card border-border">
                 <CardContent className="py-16 text-center text-muted-foreground">
                   <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No volumes found in this catalog</p>
+                  <p className="text-sm">No volumes found{isMulti ? " in the selected catalogs" : " in this catalog"}</p>
                   <p className="text-xs mt-1">Unity Catalog volumes for file storage will appear here</p>
                 </CardContent>
               </Card>
             ) : (
               <DataTable data={volumesData} columns={[
+                ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
                 { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
                 { key: "name", label: "Volume", sortable: true, render: (v: string) => (
                   <div className="flex items-center gap-2">
@@ -1274,7 +1683,7 @@ export default function ExplorePage() {
                   </Badge>
                 )},
                 { key: "path", label: "Storage Path", sortable: false, render: (v: string) => <span className="text-xs text-muted-foreground font-mono truncate max-w-[300px] block">{v || "—"}</span> },
-              ]} searchable searchPlaceholder="Filter volumes..." pageSize={25} emptyMessage="No volumes found" draggableColumns tableId="explore-volumes" />
+              ]} searchable searchPlaceholder="Filter volumes..." pageSize={25} emptyMessage="No volumes found" draggableColumns tableId={isMulti ? "explore-volumes-multi" : "explore-volumes"} />
             )
           )}
 
@@ -1296,16 +1705,19 @@ export default function ExplorePage() {
                       onClick={() => {
                         setPiiLoading(true);
                         setPiiScanned(true);
-                        api.post("/pii-scan", { source_catalog: catalog, sample_data: false })
+                        const body = isMulti
+                          ? { source_catalogs: selectedCatalogs, sample_data: false }
+                          : { source_catalog: catalog, sample_data: false };
+                        api.post("/pii-scan", body)
                           .then((res) => setPiiData(res))
                           .catch(() => setPiiData({ columns: [], error: "Scan failed" }))
                           .finally(() => setPiiLoading(false));
                       }}
-                      disabled={piiLoading || !catalog}
+                      disabled={piiLoading || (isMulti ? selectedCatalogs.length === 0 : !catalog)}
                       variant={piiScanned ? "outline" : "default"}
                     >
                       {piiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanSearch className="h-4 w-4 mr-2" />}
-                      {piiScanned ? "Re-scan" : "Scan Catalog"}
+                      {piiScanned ? "Re-scan" : (isMulti ? `Scan ${selectedCatalogs.length} catalogs` : "Scan Catalog")}
                     </Button>
                   </div>
                 </CardContent>
@@ -1332,9 +1744,10 @@ export default function ExplorePage() {
                     </span>
                   </div>
                   <DataTable data={piiData.columns || piiData.pii_columns} columns={[
+                    ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
                     { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                     { key: "table", label: "Table", sortable: true, render: (v: string, row: any) => (
-                      <button className="text-sm font-medium text-foreground hover:text-[#E8453C] transition-colors" onClick={() => setSelectedTable({ catalog, schema: row.schema, table: v })}>
+                      <button className="text-sm font-medium text-foreground hover:text-[#E8453C] transition-colors" onClick={() => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema, table: v })}>
                         {v || "—"}
                       </button>
                     )},
@@ -1366,7 +1779,7 @@ export default function ExplorePage() {
                 <Card className="bg-card border-border">
                   <CardContent className="py-12 text-center text-muted-foreground">
                     <ShieldAlert className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm">Click "Scan Catalog" to detect PII columns</p>
+                    <p className="text-sm">Click "Scan {isMulti ? "Catalogs" : "Catalog"}" to detect PII columns</p>
                     <p className="text-xs mt-1">Checks column names and optionally samples data for patterns like SSN, email, phone, credit card, etc.</p>
                   </CardContent>
                 </Card>
@@ -1392,9 +1805,10 @@ export default function ExplorePage() {
                   </Badge>
                 </div>
                 <DataTable data={featureStoreTables} columns={[
+                  ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
                   { key: "schema", label: "Schema", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
                   { key: "table", label: "Feature Table", sortable: true, render: (v: string, row: any) => (
-                    <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
+                    <button className="flex items-center gap-2 hover:text-[#E8453C] transition-colors text-left" onClick={() => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema || row.table_schema, table: v || row.table_name })}>
                       <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <span className="text-sm font-medium text-foreground hover:text-[#E8453C]">{v || row.table_name || "—"}</span>
                     </button>
@@ -1404,7 +1818,7 @@ export default function ExplorePage() {
                   { key: "num_columns", label: "Features", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
                   { key: "table_type", label: "Type", sortable: true, render: (v: string, row: any) => typeBadge(v || row.type || "TABLE") },
                 ]} searchable searchPlaceholder="Filter feature tables..." pageSize={25} emptyMessage="No feature tables found"
-                  onRowClick={(row) => setSelectedTable({ catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
+                  onRowClick={(row) => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema || row.table_schema, table: row.table || row.table_name })} />
               </div>
             )
           )}
@@ -1562,6 +1976,728 @@ export default function ExplorePage() {
               </div>
             )
           )}
+
+          {/* ═══ Cleanup Tab ═══ */}
+          {activeTab === "cleanup" && (() => {
+            // Helpers scoped to the Cleanup tab body. Keep them inline so
+            // unrelated tabs aren't paying the cost of re-rendering them.
+            const findings: any[] = staleScan.data?.findings ?? [];
+            const summary = staleScan.data?.summary ?? {};
+            const errs: any[] = staleScan.data?.errors ?? [];
+            const filtered = findings.filter((f) => {
+              if (staleFilter === "never_accessed") return f.never_accessed;
+              if (staleFilter === "stale") return f.is_stale;
+              if (staleFilter === "no_stats") return !f.has_stats;
+              if (staleFilter === "high_only") return f.risk_level === "HIGH";
+              if (staleFilter === "small_files") return f.has_small_files;
+              return true;
+            });
+            // Stable key per row across single+multi modes — multi rows
+            // carry catalog; single rows fall back to the active catalog.
+            const rowKey = (f: any) => `${f.catalog || catalog}.${f.schema}.${f.table}`;
+            const allSelected = filtered.length > 0 && filtered.every((f) => staleSelected.has(rowKey(f)));
+            const anySelected = staleSelected.size > 0;
+
+            const runScan = () => {
+              const body: any = {
+                days_threshold: staleDays,
+                min_size_bytes: Math.max(0, staleMinSizeMB) * 1024 * 1024,
+                check_small_files: staleCheckSmallFiles,
+              };
+              if (isMulti) body.source_catalogs = selectedCatalogs;
+              else body.source_catalog = catalog;
+              setStaleSelected(new Set());
+              staleScan.mutate(body);
+            };
+
+            // Export DROP statements for selected stale findings as a
+            // .sql file. Deliberately read-only from the app's side —
+            // user reviews + executes manually. Mirrors the prior
+            // user pick of "maintenance ops only" while still
+            // surfacing the destructive option as a workflow.
+            const exportDropScript = (rows: any[]) => {
+              if (rows.length === 0) return;
+              const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+              const groupedByCat: Record<string, any[]> = {};
+              for (const f of rows) {
+                const c = f.catalog || catalog;
+                if (!groupedByCat[c]) groupedByCat[c] = [];
+                groupedByCat[c].push(f);
+              }
+              const lines: string[] = [
+                "-- Clone-Xs Cleanup — DROP TABLE script",
+                `-- Generated: ${new Date().toISOString()}`,
+                `-- Source: /explore Cleanup tab (${rows.length} table${rows.length === 1 ? "" : "s"})`,
+                "-- REVIEW EVERY STATEMENT BEFORE EXECUTING. This script is destructive.",
+                "-- Recommended: run inside a transaction, or use UNDROP TABLE within 7 days.",
+                "",
+              ];
+              for (const [cat, fs] of Object.entries(groupedByCat)) {
+                lines.push(`-- ─── Catalog: ${cat} (${fs.length} tables) ───`);
+                for (const f of fs) {
+                  const sizeNote = f.size_display
+                    ? ` (${f.size_display}${f.never_accessed ? ", never accessed" : ""})`
+                    : "";
+                  lines.push(`-- ${f.schema}.${f.table}${sizeNote}`);
+                  lines.push(`DROP TABLE IF EXISTS \`${cat}\`.\`${f.schema}\`.\`${f.table}\`;`);
+                }
+                lines.push("");
+              }
+              const blob = new Blob([lines.join("\n")], { type: "text/sql" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `clxs-cleanup-drop-${ts}.sql`;
+              a.click();
+              URL.revokeObjectURL(url);
+            };
+
+            // Saved scan presets (localStorage). Lets users keep a few
+            // "Audit Set" / "Prod EU stale" configurations without
+            // typing days+min_size+small_files+catalogs every time.
+            // Localstorage-only for v1; durable persistence is a
+            // follow-up tied to scheduled scans.
+            type Preset = {
+              name: string;
+              mode: "single" | "multi";
+              catalog?: string;
+              catalogs?: string[];
+              days_threshold: number;
+              min_size_mb: number;
+              check_small_files: boolean;
+            };
+            const PRESETS_KEY = "clxs-cleanup-presets";
+            const loadPresets = (): Preset[] => {
+              try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || "[]"); }
+              catch { return []; }
+            };
+            const savePresets = (ps: Preset[]) => {
+              try { localStorage.setItem(PRESETS_KEY, JSON.stringify(ps)); } catch {}
+            };
+            const presets = loadPresets();
+            const saveCurrentPreset = () => {
+              const name = prompt("Name this preset (e.g. 'Prod EU stale'):");
+              if (!name?.trim()) return;
+              const next: Preset = {
+                name: name.trim(),
+                mode,
+                ...(mode === "multi" ? { catalogs: selectedCatalogs } : { catalog }),
+                days_threshold: staleDays,
+                min_size_mb: staleMinSizeMB,
+                check_small_files: staleCheckSmallFiles,
+              };
+              const others = presets.filter((p) => p.name !== next.name);
+              savePresets([...others, next]);
+            };
+            const applyPreset = (p: Preset) => {
+              setStaleDays(p.days_threshold);
+              setStaleMinSizeMB(p.min_size_mb);
+              setStaleCheckSmallFiles(p.check_small_files);
+              if (p.mode === "multi" && p.catalogs) {
+                setMode("multi");
+                setSelectedCatalogs(p.catalogs);
+                try { sessionStorage.setItem("clxs-explore-mode", "multi"); } catch {}
+                try { sessionStorage.setItem("clxs-explore-catalogs", JSON.stringify(p.catalogs)); } catch {}
+              } else if (p.catalog) {
+                setMode("single");
+                setCatalog(p.catalog);
+                try { sessionStorage.setItem("clxs-explore-mode", "single"); } catch {}
+                try { sessionStorage.setItem("clxs-explore-catalog", p.catalog); } catch {}
+              }
+            };
+            const deletePreset = (name: string) => {
+              savePresets(presets.filter((p) => p.name !== name));
+            };
+
+            const openMaintModal = (op: "OPTIMIZE" | "VACUUM", rows: any[]) => {
+              const tables = rows.map((f) => ({
+                schema: f.schema, table: f.table, catalog: f.catalog || catalog,
+              }));
+              setMaintModal({ op, tables, dryRun: null, running: true, result: null });
+              const url = op === "OPTIMIZE" ? "/optimize" : "/vacuum";
+              // Bulk maintenance ops run per source_catalog — group rows
+              // by their owning catalog so multi-mode selections work.
+              const byCat: Record<string, { schema: string; table: string }[]> = {};
+              for (const t of tables) {
+                const c = t.catalog || catalog;
+                if (!byCat[c]) byCat[c] = [];
+                byCat[c].push({ schema: t.schema, table: t.table });
+              }
+              Promise.all(Object.entries(byCat).map(([cat, ts]) =>
+                api.post(url, { source_catalog: cat, tables: ts, dry_run: true }),
+              ))
+                .then((results) => setMaintModal((m) => m && { ...m, dryRun: results, running: false }))
+                .catch((e) => setMaintModal((m) => m && { ...m, dryRun: { error: String(e?.message || e) }, running: false }));
+            };
+
+            const executeMaintModal = () => {
+              if (!maintModal) return;
+              setMaintModal({ ...maintModal, running: true });
+              const url = maintModal.op === "OPTIMIZE" ? "/optimize" : "/vacuum";
+              const byCat: Record<string, { schema: string; table: string }[]> = {};
+              for (const t of maintModal.tables) {
+                const c = t.catalog || catalog;
+                if (!byCat[c]) byCat[c] = [];
+                byCat[c].push({ schema: t.schema, table: t.table });
+              }
+              Promise.all(Object.entries(byCat).map(([cat, ts]) =>
+                api.post(url, { source_catalog: cat, tables: ts, dry_run: false }),
+              ))
+                .then((results) => {
+                  setMaintModal((m) => m && { ...m, result: results, running: false, dryRun: null });
+                  // After a successful execute, re-run the scan so the
+                  // findings table reflects the new server state. Without
+                  // this, OPTIMIZE that just collected stats would still
+                  // show "Stats? Never" on the row that triggered it,
+                  // which reads as a bug. Clear the selection too —
+                  // the rows the user just acted on may no longer be
+                  // findings, so any leftover selection would be stale.
+                  setStaleSelected(new Set());
+                  runScan();
+                })
+                .catch((e) => setMaintModal((m) => m && { ...m, result: { error: String(e?.message || e) }, running: false }));
+            };
+
+            return (
+              <div className="space-y-4">
+                {/* Scan controls */}
+                <Card className="bg-card border-border">
+                  <CardContent className="pt-6 space-y-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Stale threshold (days)</label>
+                        <Input type="number" min={1} max={90} value={staleDays}
+                          onChange={(e) => setStaleDays(Math.max(1, Math.min(90, parseInt(e.target.value) || 90)))}
+                          className="mt-1 w-28" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Min size (MB)</label>
+                        <Input type="number" min={0} value={staleMinSizeMB}
+                          onChange={(e) => setStaleMinSizeMB(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="mt-1 w-28" />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm pb-1" title="Runs DESCRIBE DETAIL on candidate tables to flag many-small-files OPTIMIZE candidates. Adds 1-3s per scan.">
+                        <input type="checkbox"
+                          checked={staleCheckSmallFiles}
+                          onChange={(e) => setStaleCheckSmallFiles(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                        <span className="text-xs">Detect small-files (slower)</span>
+                      </label>
+                      <Button onClick={runScan} disabled={staleScan.isPending || (isMulti ? selectedCatalogs.length === 0 : !catalog)}>
+                        {staleScan.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanSearch className="h-4 w-4 mr-2" />}
+                        {staleScan.isPending ? "Joining usage + stats..." : (isMulti ? `Scan ${selectedCatalogs.length} catalogs` : "Run scan")}
+                      </Button>
+                      <p className="text-xs text-muted-foreground ml-auto max-w-md">
+                        Joins per-table stats with read activity from the last 90 days
+                        (<code className="text-[10px]">system.access.audit</code>) — flags
+                        stale, never-accessed, and never-analyzed tables.
+                      </p>
+                    </div>
+                    {/* Saved scan presets — localStorage-only. Lets
+                        users keep "Prod EU stale" / "Audit set" configs
+                        without re-typing thresholds every visit. */}
+                    <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/40">
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Saved presets</span>
+                      {presets.length === 0 ? (
+                        <span className="text-[11px] text-muted-foreground italic">none yet</span>
+                      ) : (
+                        presets.map((p) => (
+                          <span key={p.name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-border bg-background">
+                            <button onClick={() => applyPreset(p)} className="hover:text-[#E8453C]" title={`Load preset: ${p.days_threshold}d, min ${p.min_size_mb} MB${p.check_small_files ? ", small-files" : ""}`}>{p.name}</button>
+                            <button onClick={() => deletePreset(p.name)} className="text-muted-foreground hover:text-red-500" title="Delete preset">
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                      <button onClick={saveCurrentPreset}
+                        disabled={isMulti ? selectedCatalogs.length === 0 : !catalog}
+                        className="text-[11px] text-[#E8453C] hover:underline disabled:opacity-50 disabled:no-underline ml-auto">
+                        Save current as preset
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {staleScan.isError && (
+                  <Card className="border-red-500/30 bg-card"><CardContent className="pt-6 text-red-500 text-sm">{staleScan.error?.message || "Scan failed"}</CardContent></Card>
+                )}
+
+                {/* Empty state — before any scan */}
+                {!staleScan.data && !staleScan.isPending && (
+                  <Card className="bg-card border-border">
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Sparkles className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">Click "Run scan" to find cleanup candidates</p>
+                      <p className="text-xs mt-1">Surfaces tables not read in the last {staleDays} days, plus tables that never had ANALYZE run.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Empty state — scan ran, nothing found */}
+                {staleScan.data && findings.length === 0 && (
+                  <Card className="bg-card border-border">
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Sparkles className="h-10 w-10 mx-auto mb-3 text-[#E8453C] opacity-70" />
+                      <p className="text-sm font-medium text-foreground">No cleanup candidates found</p>
+                      <p className="text-xs mt-1">Every table in {isMulti ? "the selected catalogs" : "this catalog"} was read recently and has up-to-date stats.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Summary cards + findings table */}
+                {staleScan.data && findings.length > 0 && (() => {
+                  // Cost rollup: convert reclaimable bytes → $/month using
+                  // the configured `price_per_gb`. The Cleanup tab's most
+                  // load-bearing FinOps signal — "if you act on these
+                  // findings, you save $X/month".
+                  const reclaimGb = (summary.total_reclaimable_bytes || 0) / (1024 ** 3);
+                  const monthlySave = reclaimGb * storagePrice;
+                  const yearlySave = monthlySave * 12;
+                  return (<>
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                      {[
+                        { label: "Findings", value: findings.length, color: "text-foreground", bg: "bg-muted/30" },
+                        { label: "HIGH", value: summary.by_risk_level?.HIGH || 0, color: "text-red-600", bg: "bg-red-500/10" },
+                        { label: "MEDIUM", value: summary.by_risk_level?.MEDIUM || 0, color: "text-amber-600", bg: "bg-amber-500/10" },
+                        { label: "LOW", value: summary.by_risk_level?.LOW || 0, color: "text-muted-foreground", bg: "bg-muted/30" },
+                        { label: "Reclaimable", value: summary.total_reclaimable_display || formatBytes(summary.total_reclaimable_bytes || 0), color: "text-[#E8453C]", bg: "bg-[#E8453C]/10" },
+                        { label: "Save / month", value: `${currSymbol}${monthlySave < 1 ? monthlySave.toFixed(2) : monthlySave.toFixed(0)}`, sub: `${currSymbol}${yearlySave < 10 ? yearlySave.toFixed(2) : yearlySave.toFixed(0)}/yr`, color: "text-[#E8453C]", bg: "bg-[#E8453C]/10" },
+                      ].map(({ label, value, sub, color, bg }: any) => (
+                        <Card key={label} className="bg-card border-border">
+                          <CardContent className="pt-4 pb-3">
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+                            <p className={`text-xl font-bold ${color} mt-1`}>{value}</p>
+                            {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+
+                    {/* Filter chips */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[
+                        { key: "all", label: `All (${findings.length})` },
+                        { key: "high_only", label: `HIGH only (${summary.by_risk_level?.HIGH || 0})` },
+                        { key: "never_accessed", label: `Never accessed (${summary.never_accessed_count || 0})` },
+                        { key: "stale", label: `Stale (${findings.filter((f) => f.is_stale).length})` },
+                        { key: "no_stats", label: `No stats (${summary.no_stats_count || 0})` },
+                        // Small-files chip only renders when the
+                        // backend ran the DESCRIBE DETAIL enrichment;
+                        // omitting it when the toggle was off avoids a
+                        // chip that would always show "(0)".
+                        ...(staleScan.data?.check_small_files
+                          ? [{ key: "small_files", label: `Small files (${summary.small_files_flagged_count || 0})` }]
+                          : []),
+                      ].map(({ key, label }) => (
+                        <button key={key} onClick={() => setStaleFilter(key as typeof staleFilter)}
+                          className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                            staleFilter === key
+                              ? "bg-[#E8453C] text-white border-[#E8453C]"
+                              : "bg-background text-muted-foreground border-border hover:text-foreground"
+                          }`}>{label}</button>
+                      ))}
+                    </div>
+
+                    {/* Per-catalog errors */}
+                    {errs.length > 0 && (
+                      <Card className="border-red-500/30 bg-card">
+                        <CardContent className="pt-4 text-xs space-y-1">
+                          <p className="font-medium text-red-500 mb-1">{errs.length} catalog(s) failed to scan:</p>
+                          {errs.map((e: any) => (
+                            <div key={e.catalog} className="text-red-500"><span className="font-mono">{e.catalog}</span>: {e.error}</div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Bulk-action toolbar */}
+                    {anySelected && (
+                      <div className="flex items-center gap-2 p-3 bg-muted/30 border border-border rounded-md">
+                        <span className="text-sm font-medium text-foreground">{staleSelected.size} selected</span>
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const rows = filtered.filter((f) => staleSelected.has(rowKey(f)));
+                          openMaintModal("OPTIMIZE", rows);
+                        }}>
+                          <Wrench className="h-3.5 w-3.5 mr-1.5" />OPTIMIZE selected
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const rows = filtered.filter((f) => staleSelected.has(rowKey(f)));
+                          openMaintModal("VACUUM", rows);
+                        }}>
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />VACUUM selected
+                        </Button>
+                        <Button size="sm" variant="outline"
+                          title="Generate a .sql file with DROP TABLE statements. The app does NOT execute drops — review and run the script manually."
+                          onClick={() => {
+                            const rows = filtered.filter((f) => staleSelected.has(rowKey(f)));
+                            exportDropScript(rows);
+                          }}>
+                          <Download className="h-3.5 w-3.5 mr-1.5" />Export DROP script
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setStaleSelected(new Set())} className="ml-auto">
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Select-all control + findings table */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{filtered.length} finding{filtered.length === 1 ? "" : "s"} {staleFilter !== "all" ? `(${staleFilter.replace("_", " ")})` : ""}</span>
+                      <button onClick={() => {
+                        if (allSelected) setStaleSelected(new Set());
+                        else setStaleSelected(new Set(filtered.map(rowKey)));
+                      }} className="text-xs text-[#E8453C] hover:underline">
+                        {allSelected ? "Deselect all" : "Select all visible"}
+                      </button>
+                    </div>
+                    <DataTable data={filtered} columns={[
+                      {
+                        key: "_select", label: "", width: "40px",
+                        render: (_: any, row: any) => (
+                          <input
+                            type="checkbox"
+                            checked={staleSelected.has(rowKey(row))}
+                            onChange={(e) => {
+                              const next = new Set(staleSelected);
+                              if (e.target.checked) next.add(rowKey(row));
+                              else next.delete(rowKey(row));
+                              setStaleSelected(next);
+                            }}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+                          />
+                        ),
+                      },
+                      ...(isMulti ? [{ key: "catalog", label: "Catalog", sortable: true, render: (v: string) => <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]">{v || "—"}</Badge> }] : []),
+                      { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v || "—"}</span> },
+                      {
+                        key: "table", label: "Table", sortable: true,
+                        render: (v: string, row: any) => (
+                          <button className="text-sm font-medium text-foreground hover:text-[#E8453C] transition-colors text-left"
+                            onClick={() => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema, table: v })}>
+                            {v || "—"}
+                          </button>
+                        ),
+                      },
+                      {
+                        key: "last_accessed", label: "Last Accessed", sortable: true,
+                        render: (v: string, row: any) => row.never_accessed
+                          ? <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-600">Never (90d)</Badge>
+                          : <span className="text-xs text-muted-foreground">{v ? `${row.days_since_access}d ago` : "—"}</span>,
+                      },
+                      { key: "query_count_window", label: "Queries (90d)", sortable: true, align: "right" as const, render: (v: number) => <span className="text-xs font-mono text-muted-foreground">{v || 0}</span> },
+                      {
+                        key: "size_bytes", label: "Size", sortable: true, align: "right" as const,
+                        render: (v: number) => v != null
+                          ? <Badge variant="outline" className={`text-[10px] font-mono ${sizeBadgeColor(v)}`}>{formatBytes(v)}</Badge>
+                          : <span className="text-xs text-muted-foreground">—</span>,
+                      },
+                      {
+                        key: "has_stats", label: "Stats?", sortable: true, align: "center" as const,
+                        render: (v: boolean) => v
+                          ? <span className="text-xs text-foreground">✓</span>
+                          : <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">Never</Badge>,
+                      },
+                      // Files column — only renders when the small-files
+                      // enrichment ran. Shows num_files plus an
+                      // amber-coloured indicator when the heuristic
+                      // flagged the row as a compaction candidate.
+                      ...(staleScan.data?.check_small_files ? [{
+                        key: "num_files", label: "Files", sortable: true, align: "right" as const,
+                        render: (v: number, row: any) => {
+                          if (v == null) return <span className="text-xs text-muted-foreground">—</span>;
+                          const small = row.has_small_files;
+                          const avgMb = row.avg_file_size_bytes ? (row.avg_file_size_bytes / (1024 * 1024)).toFixed(0) : null;
+                          return (
+                            <span className={`text-xs font-mono ${small ? "text-amber-600" : "text-muted-foreground"}`} title={avgMb ? `avg ${avgMb} MB/file` : ""}>
+                              {v.toLocaleString()}{small ? " ⚠" : ""}
+                            </span>
+                          );
+                        },
+                      }] : []),
+                      {
+                        key: "risk_level", label: "Risk", sortable: true,
+                        render: (v: string) => {
+                          const cls = v === "HIGH" ? "border-red-500/30 text-red-600 bg-red-500/5"
+                            : v === "MEDIUM" ? "border-amber-500/30 text-amber-600 bg-amber-500/5"
+                            : "border-border/30 text-muted-foreground";
+                          return <Badge variant="outline" className={`text-[10px] font-semibold ${cls}`}>{v}</Badge>;
+                        },
+                      },
+                      {
+                        // Per-finding $/mo savings — same `price_per_gb`
+                        // basis as the headline "Save / month" card.
+                        // Only meaningful when has_stats=true and the
+                        // table is MANAGED + stale (matches the
+                        // total_reclaimable_bytes contract on the
+                        // backend). Render "—" otherwise so users
+                        // don't conflate "unknown" with "$0".
+                        key: "_save_per_mo", label: "Save / mo", sortable: true, align: "right" as const,
+                        render: (_: any, row: any) => {
+                          const reclaimable = row.has_stats
+                            && row.is_stale
+                            && (row.table_type || "").toUpperCase() === "MANAGED";
+                          if (!reclaimable) return <span className="text-xs text-muted-foreground">—</span>;
+                          const monthly = ((row.size_bytes || 0) / (1024 ** 3)) * storagePrice;
+                          return <span className="text-xs font-mono text-[#E8453C]">{currSymbol}{monthly < 1 ? monthly.toFixed(2) : monthly.toFixed(0)}</span>;
+                        },
+                      },
+                      { key: "suggested_action", label: "Suggested Action", sortable: true, render: (v: string) => <span className="text-xs">{v || "—"}</span> },
+                      {
+                        key: "_actions", label: "", width: "100px",
+                        render: (_: any, row: any) => (
+                          <div className="flex items-center gap-0.5">
+                            <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="OPTIMIZE this table"
+                              onClick={() => openMaintModal("OPTIMIZE", [row])}>
+                              <Wrench className="h-3.5 w-3.5" />
+                            </button>
+                            <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="VACUUM this table"
+                              onClick={() => openMaintModal("VACUUM", [row])}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Open table drawer"
+                              onClick={() => setSelectedTable({ catalog: row.catalog || catalog, schema: row.schema, table: row.table })}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ),
+                      },
+                    ]} searchable searchPlaceholder="Filter findings..." pageSize={25} emptyMessage="No findings"
+                      draggableColumns tableId={isMulti ? "explore-cleanup-multi" : "explore-cleanup"} />
+                  </>);
+                })()}
+
+                {/* Maintenance confirm modal */}
+                {maintModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !maintModal.running && setMaintModal(null)}>
+                    <div className="bg-background border border-border rounded-lg shadow-xl max-w-2xl w-full mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                      <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {maintModal.op === "OPTIMIZE" ? <Wrench className="h-4 w-4 text-[#E8453C]" /> : <Trash2 className="h-4 w-4 text-[#E8453C]" />}
+                          <h3 className="text-sm font-semibold text-foreground">{maintModal.op} {maintModal.tables.length} table{maintModal.tables.length === 1 ? "" : "s"}</h3>
+                        </div>
+                        <button onClick={() => !maintModal.running && setMaintModal(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+                      </div>
+                      <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3">
+                        {maintModal.running && !maintModal.dryRun && !maintModal.result && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Running dry-run...
+                          </div>
+                        )}
+                        {maintModal.dryRun && !maintModal.result && (
+                          <>
+                            <p className="text-xs text-muted-foreground">Dry-run preview — no changes have been made yet. Review and confirm to execute.</p>
+                            <pre className="text-[11px] bg-muted/30 p-3 rounded font-mono whitespace-pre-wrap break-all max-h-72 overflow-y-auto">
+{JSON.stringify(maintModal.dryRun, null, 2)}
+                            </pre>
+                          </>
+                        )}
+                        {maintModal.result && (
+                          <>
+                            <p className="text-sm font-medium text-foreground">Execution result:</p>
+                            <pre className="text-[11px] bg-muted/30 p-3 rounded font-mono whitespace-pre-wrap break-all max-h-72 overflow-y-auto">
+{JSON.stringify(maintModal.result, null, 2)}
+                            </pre>
+                          </>
+                        )}
+                      </div>
+                      <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setMaintModal(null)} disabled={maintModal.running}>
+                          {maintModal.result ? "Close" : "Cancel"}
+                        </Button>
+                        {maintModal.dryRun && !maintModal.result && (
+                          <Button size="sm" onClick={executeMaintModal} disabled={maintModal.running}>
+                            {maintModal.running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                            Confirm execute
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ═══ Audit Tab ═══ */}
+          {activeTab === "audit" && (() => {
+            const findings: any[] = permsAudit.data?.findings ?? [];
+            const summary: any = permsAudit.data?.summary ?? {};
+            const errMsg: string | null = permsAudit.data?.error ?? null;
+            const filtered = findings.filter((f: any) => {
+              if (auditFilter === "critical_only") return f.risk_level === "CRITICAL";
+              if (auditFilter === "high_or_higher") return f.risk_level === "CRITICAL" || f.risk_level === "HIGH";
+              if (auditFilter === "pii_only") return f.has_pii;
+              return true;
+            });
+            const runAudit = () => {
+              if (!catalog) return;
+              permsAudit.mutate({ source_catalog: catalog, pii_intersection: auditPiiOverlay });
+            };
+            return (
+              <div className="space-y-4">
+                {/* Scan controls */}
+                <Card className="bg-card border-border">
+                  <CardContent className="pt-6">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="flex items-center gap-2 text-sm pb-1">
+                        <input type="checkbox"
+                          checked={auditPiiOverlay}
+                          onChange={(e) => setAuditPiiOverlay(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                        <span className="text-xs">Cross-reference with PII detections (slower, enables CRITICAL classifications)</span>
+                      </label>
+                      <Button onClick={runAudit} disabled={permsAudit.isPending || !catalog || isMulti}>
+                        {permsAudit.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Key className="h-4 w-4 mr-2" />}
+                        {permsAudit.isPending ? "Auditing..." : "Run audit"}
+                      </Button>
+                      {isMulti && (
+                        <span className="text-xs text-amber-600 ml-2">Audit runs per single catalog — switch to Single mode.</span>
+                      )}
+                      <p className="text-xs text-muted-foreground ml-auto max-w-md">
+                        Bulk-queries <code className="text-[10px]">information_schema.table_privileges</code>,
+                        classifies each (principal × table × privilege) tuple by risk
+                        level. PII overlay escalates findings on PII-bearing tables.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {permsAudit.isError && (
+                  <Card className="border-red-500/30 bg-card"><CardContent className="pt-6 text-red-500 text-sm">{permsAudit.error?.message || "Audit failed"}</CardContent></Card>
+                )}
+
+                {errMsg && (
+                  <Card className="border-amber-500/30 bg-card">
+                    <CardContent className="pt-6 text-amber-600 text-sm">
+                      <span className="font-medium">Bulk privilege query failed:</span> {errMsg}
+                      <p className="text-xs mt-1 text-muted-foreground">
+                        This usually means <code className="text-[10px]">information_schema.table_privileges</code> isn't accessible to the current user/warehouse.
+                        Findings list is empty. Ask a metastore admin to GRANT BROWSE on the catalog.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Empty state — before any audit */}
+                {!permsAudit.data && !permsAudit.isPending && (
+                  <Card className="bg-card border-border">
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Key className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">Click "Run audit" to surface risky GRANTs in this catalog</p>
+                      <p className="text-xs mt-1">Finds public-group access, broad ALL PRIVILEGES grants, and (with the overlay) GRANTs touching PII-bearing tables.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Empty state — audit ran, no findings */}
+                {permsAudit.data && findings.length === 0 && !errMsg && (
+                  <Card className="bg-card border-border">
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Key className="h-10 w-10 mx-auto mb-3 text-[#E8453C] opacity-70" />
+                      <p className="text-sm font-medium text-foreground">No risky GRANTs found</p>
+                      <p className="text-xs mt-1">{summary.tables_audited || 0} tables audited, {permsAudit.data?.total_grants_scanned || 0} grant rows scanned.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Summary cards + findings */}
+                {permsAudit.data && findings.length > 0 && (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      {[
+                        { label: "Findings", value: findings.length, color: "text-foreground", bg: "bg-muted/30" },
+                        { label: "CRITICAL", value: summary.by_risk_level?.CRITICAL || 0, color: "text-red-700", bg: "bg-red-500/10" },
+                        { label: "HIGH", value: summary.by_risk_level?.HIGH || 0, color: "text-red-600", bg: "bg-red-500/10" },
+                        { label: "MEDIUM", value: summary.by_risk_level?.MEDIUM || 0, color: "text-amber-600", bg: "bg-amber-500/10" },
+                        { label: "Tables audited", value: summary.tables_audited || 0, color: "text-muted-foreground", bg: "bg-muted/30" },
+                      ].map(({ label, value, color, bg }) => (
+                        <Card key={label} className="bg-card border-border">
+                          <CardContent className="pt-4 pb-3">
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+                            <p className={`text-xl font-bold ${color} mt-1`}>{value}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+
+                    {/* Filter chips */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[
+                        { key: "all", label: `All (${findings.length})` },
+                        { key: "critical_only", label: `CRITICAL only (${summary.by_risk_level?.CRITICAL || 0})` },
+                        { key: "high_or_higher", label: `HIGH+ (${(summary.by_risk_level?.CRITICAL || 0) + (summary.by_risk_level?.HIGH || 0)})` },
+                        ...(summary.pii_overlay_applied ? [{ key: "pii_only", label: `PII tables only (${findings.filter((f: any) => f.has_pii).length})` }] : []),
+                      ].map(({ key, label }) => (
+                        <button key={key} onClick={() => setAuditFilter(key as typeof auditFilter)}
+                          className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                            auditFilter === key
+                              ? "bg-[#E8453C] text-white border-[#E8453C]"
+                              : "bg-background text-muted-foreground border-border hover:text-foreground"
+                          }`}>{label}</button>
+                      ))}
+                      {!summary.pii_overlay_applied && (
+                        <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 ml-auto">PII overlay off — re-run with overlay for CRITICAL findings</Badge>
+                      )}
+                    </div>
+
+                    {/* Findings table */}
+                    <DataTable data={filtered} columns={[
+                      {
+                        key: "risk_level", label: "Risk", sortable: true,
+                        render: (v: string) => {
+                          const cls = v === "CRITICAL" ? "border-red-700/40 text-red-700 bg-red-500/10"
+                            : v === "HIGH" ? "border-red-500/30 text-red-600 bg-red-500/5"
+                            : v === "MEDIUM" ? "border-amber-500/30 text-amber-600 bg-amber-500/5"
+                            : "border-border/30 text-muted-foreground";
+                          return <Badge variant="outline" className={`text-[10px] font-semibold ${cls}`}>{v}</Badge>;
+                        },
+                      },
+                      { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v}</span> },
+                      {
+                        key: "table", label: "Table", sortable: true,
+                        render: (v: string, row: any) => (
+                          <button className="text-sm font-medium text-foreground hover:text-[#E8453C] transition-colors text-left"
+                            onClick={() => setSelectedTable({ catalog, schema: row.schema, table: v })}>
+                            {v}
+                          </button>
+                        ),
+                      },
+                      {
+                        key: "principal", label: "Principal", sortable: true,
+                        render: (v: string, row: any) => (
+                          <div className="flex items-center gap-1.5">
+                            {row.principal_type === "public_group" && <ShieldAlert className="h-3 w-3 text-red-600" />}
+                            <span className="text-xs font-mono">{v}</span>
+                            <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">{row.principal_type}</Badge>
+                          </div>
+                        ),
+                      },
+                      {
+                        key: "privileges", label: "Privileges", sortable: false,
+                        render: (privs: string[]) => (
+                          <div className="flex flex-wrap gap-1">
+                            {privs.slice(0, 3).map((p: string) => (
+                              <Badge key={p} variant="outline" className="text-[10px] font-mono">{p}</Badge>
+                            ))}
+                            {privs.length > 3 && <span className="text-[10px] text-muted-foreground">+{privs.length - 3}</span>}
+                          </div>
+                        ),
+                      },
+                      {
+                        key: "has_pii", label: "PII?", sortable: true, align: "center" as const,
+                        render: (v: boolean, row: any) => v
+                          ? <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-600" title={row.pii_columns?.join(", ")}>{row.pii_columns?.length || "✓"}</Badge>
+                          : <span className="text-xs text-muted-foreground">—</span>,
+                      },
+                      { key: "suggested_action", label: "Suggested Action", sortable: true, render: (v: string) => <span className="text-xs">{v}</span> },
+                    ]} searchable searchPlaceholder="Filter audit findings..." pageSize={25} emptyMessage="No findings match the current filter"
+                      draggableColumns tableId="explore-audit" />
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
 

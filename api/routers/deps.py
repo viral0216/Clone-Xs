@@ -10,6 +10,17 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+
+class FunctionsMultiRequest(BaseModel):
+    """Multi-catalog UDF listing — fans the per-catalog query out.
+
+    The single-catalog `GET /functions/{catalog}` is unchanged; this is
+    a sibling for callers (e.g. the Catalog Explorer's Multi mode) that
+    need to merge UDFs across N catalogs in one round-trip.
+    """
+    catalogs: list[str]
+    warehouse_id: str | None = None
+
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
@@ -27,31 +38,35 @@ def _validate_catalog(catalog: str) -> str:
 
 @router.get("/functions/{catalog}")
 async def list_functions(catalog: str, client=Depends(get_db_client)):
-    catalog = _validate_catalog(catalog)
     """List all user-defined functions across all schemas in a catalog."""
+    catalog = _validate_catalog(catalog)
+    from src.functions_listing import list_functions_for_catalog
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     try:
-        rows = execute_sql(client, wid, f"""
-            SELECT routine_catalog, routine_schema, routine_name, routine_type,
-                   data_type, routine_definition
-            FROM {catalog}.information_schema.routines
-            WHERE routine_type = 'FUNCTION'
-            AND routine_schema NOT IN ('information_schema', '__internal')
-            ORDER BY routine_schema, routine_name
-        """)
-        return [
-            {
-                "name": r.get("routine_name", ""),
-                "schema": r.get("routine_schema", ""),
-                "full_name": f"{catalog}.{r.get('routine_schema', '')}.{r.get('routine_name', '')}",
-                "data_type": r.get("data_type", ""),
-                "definition": (r.get("routine_definition", "") or "")[:200],
-            }
-            for r in rows
-        ]
+        return list_functions_for_catalog(client, wid, catalog)
     except Exception:
         return []
+
+
+@router.post("/functions/multi", summary="List UDFs across multiple catalogs")
+async def list_functions_multi_endpoint(
+    req: FunctionsMultiRequest, client=Depends(get_db_client),
+):
+    """List UDFs across multiple catalogs.
+
+    Fans the per-catalog query out across N catalogs in parallel, stamps
+    each row with its owning `catalog`, and surfaces per-catalog errors
+    instead of aborting on the first failure (mirrors `/stats` multi).
+    """
+    if not req.catalogs:
+        raise HTTPException(status_code=400, detail="`catalogs` must be non-empty")
+    for c in req.catalogs:
+        _validate_catalog(c)
+    from src.functions_listing import list_functions_multi
+    config = await get_app_config()
+    wid = req.warehouse_id or config.get("sql_warehouse_id", "")
+    return list_functions_multi(client, wid, req.catalogs)
 
 
 @router.get("/views/{catalog}")

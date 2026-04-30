@@ -61,8 +61,19 @@ async def rollback(req: RollbackRequest, client=Depends(get_db_client)):
 
 @router.post("/pii-scan")
 async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
-    """Scan catalog for PII columns."""
-    from src.pii_detection import scan_catalog_for_pii
+    """Scan catalog(s) for PII columns.
+
+    Single mode (`source_catalog: str`): runs the existing
+    `scan_catalog_for_pii` pipeline (column-name + optional sampling +
+    optional UC-tag detection).
+
+    Multi mode (`source_catalogs: list[str]`): fans the same scan out
+    across the listed catalogs in parallel (max 3 concurrent — PII
+    sampling is heavier than stats). Returns one merged response with
+    each detection stamped with its owning catalog, a worst-case rollup
+    risk level, and a per-catalog block. One catalog's failure doesn't
+    abort — the response carries an `errors` list.
+    """
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
 
@@ -72,7 +83,22 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         pii_config.update(req.pii_config)
 
     state_catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    result = scan_catalog_for_pii(
+
+    if req.source_catalogs:
+        from src.pii_multi import scan_catalogs_for_pii_multi
+        return scan_catalogs_for_pii_multi(
+            client, wid, req.source_catalogs, req.exclude_schemas,
+            sample_data=req.sample_data, max_workers=req.max_workers,
+            pii_config=pii_config or None,
+            read_uc_tags=req.read_uc_tags,
+            save_history=True,
+            state_catalog=state_catalog,
+            schema_filter=req.schema_filter,
+            table_filter=req.table_filter,
+        )
+
+    from src.pii_detection import scan_catalog_for_pii
+    return scan_catalog_for_pii(
         client, wid, req.source_catalog, req.exclude_schemas,
         sample_data=req.sample_data, max_workers=req.max_workers,
         pii_config=pii_config or None,
@@ -82,7 +108,6 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         schema_filter=req.schema_filter,
         table_filter=req.table_filter,
     )
-    return result
 
 
 @router.get("/pii-patterns")

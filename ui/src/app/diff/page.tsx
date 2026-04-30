@@ -126,17 +126,38 @@ export default function DiffPage() {
   const diffData = diffJob?.data as any;
   const valData = valJob?.data as any;
 
-  // Summary counts
+  // The presence/absence diff sections live under the canonical
+  // object-type keys. The /diff-detail response also carries top-level
+  // fields like `drift`, `summary`, `source_catalog`, `drift_errors` —
+  // exclude those from the iteration so DiffSection only sees the
+  // shape it expects.
+  const OBJECT_TYPE_KEYS = ["schemas", "tables", "views", "functions", "volumes"];
   const summaryItems = diffData
-    ? Object.entries(diffData).map(([key, val]: [string, any]) => ({
-        label: key.charAt(0).toUpperCase() + key.slice(1),
-        onlySource: val?.only_in_source?.length || 0,
-        onlyDest: val?.only_in_dest?.length || 0,
-        inBoth: val?.in_both?.length || 0,
-      }))
+    ? OBJECT_TYPE_KEYS
+        .filter((k) => diffData[k])
+        .map((k) => ({
+          label: k.charAt(0).toUpperCase() + k.slice(1),
+          onlySource: diffData[k]?.only_in_source?.length || 0,
+          onlyDest: diffData[k]?.only_in_dest?.length || 0,
+          inBoth: diffData[k]?.in_both?.length || 0,
+        }))
     : [];
 
   const totalDiffs = summaryItems.reduce((s, i) => s + i.onlySource + i.onlyDest, 0);
+  const drift: any[] = diffData?.drift ?? [];
+  const driftSummary: any = diffData?.summary ?? {};
+  const driftErrors: any[] = diffData?.drift_errors ?? [];
+
+  // Format a signed byte delta for the size column. Negative deltas
+  // (dest smaller than source) read as "-1.2 GB"; positive as "+1.2 GB".
+  const formatBytesSigned = (n: number): string => {
+    if (!n) return "0 B";
+    const abs = Math.abs(n);
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.min(units.length - 1, Math.floor(Math.log(abs) / Math.log(1024)));
+    const v = (abs / Math.pow(1024, i)).toFixed(i > 1 ? 2 : 0);
+    return `${n < 0 ? "-" : "+"}${v} ${units[i]}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -169,7 +190,7 @@ export default function DiffPage() {
               showTable={false}
             />
             <Button
-              onClick={() => runDiff({ source, dest }, () => api.post("/diff", { source_catalog: source, destination_catalog: dest }))}
+              onClick={() => runDiff({ source, dest }, () => api.post("/diff-detail", { source_catalog: source, destination_catalog: dest }))}
               disabled={!source || !dest || isDiffRunning}
             >
               {isDiffRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
@@ -230,17 +251,126 @@ export default function DiffPage() {
         </Card>
       )}
 
-      {/* Diff Detail Sections */}
+      {/* Diff Detail Sections — presence/absence per object type */}
       {diffData && (
         <div className="space-y-4">
-          {Object.entries(diffData).map(([key, val]) => (
+          {OBJECT_TYPE_KEYS.filter((k) => diffData[k]).map((key) => (
             <DiffSection
               key={key}
               title={key.charAt(0).toUpperCase() + key.slice(1)}
-              data={val}
+              data={diffData[key]}
             />
           ))}
         </div>
+      )}
+
+      {/* Drifted Tables — common tables that differ in column shape or
+          size. Powered by /diff-detail's `drift` block. Renders only
+          when there's signal; the presence/absence sections above cover
+          the in-source-only / in-dest-only cases separately. */}
+      {diffData && drift.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <GitCompare className="h-5 w-5 text-[#E8453C]" />
+                Drifted Tables ({drift.length})
+              </span>
+              <div className="flex gap-2 text-xs">
+                <Badge variant="outline">+{driftSummary.columns_added || 0} cols</Badge>
+                <Badge variant="outline">-{driftSummary.columns_removed || 0} cols</Badge>
+                <Badge variant="outline">{driftSummary.type_changes || 0} type changes</Badge>
+                <Badge variant="outline" className={driftSummary.total_size_delta_bytes > 0 ? "border-amber-500/30 text-amber-600" : driftSummary.total_size_delta_bytes < 0 ? "border-[#E8453C]/30 text-[#E8453C]" : ""}>
+                  {formatBytesSigned(driftSummary.total_size_delta_bytes || 0)} total
+                </Badge>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              data={drift}
+              columns={[
+                { key: "schema", label: "Schema", sortable: true, render: (v: string) => <span className="text-xs text-muted-foreground">{v}</span> },
+                { key: "table", label: "Table", sortable: true, render: (v: string) => <span className="text-sm font-medium">{v}</span> },
+                {
+                  key: "columns_only_in_source", label: "Removed cols", sortable: true, align: "right" as const,
+                  render: (cols: string[]) => cols?.length
+                    ? <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-600">-{cols.length}</Badge>
+                    : <span className="text-xs text-muted-foreground">—</span>,
+                },
+                {
+                  key: "columns_only_in_dest", label: "Added cols", sortable: true, align: "right" as const,
+                  render: (cols: string[]) => cols?.length
+                    ? <Badge variant="outline" className="text-[10px] border-foreground/30 text-foreground">+{cols.length}</Badge>
+                    : <span className="text-xs text-muted-foreground">—</span>,
+                },
+                {
+                  key: "column_type_changes", label: "Type changes", sortable: true, align: "right" as const,
+                  render: (changes: any[]) => changes?.length
+                    ? <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">{changes.length}</Badge>
+                    : <span className="text-xs text-muted-foreground">—</span>,
+                },
+                {
+                  key: "size_delta_bytes", label: "Size Δ", sortable: true, align: "right" as const,
+                  render: (v: number) => <span className={`text-xs font-mono ${v > 0 ? "text-amber-600" : v < 0 ? "text-[#E8453C]" : "text-muted-foreground"}`}>{formatBytesSigned(v || 0)}</span>,
+                },
+                {
+                  key: "row_delta", label: "Row Δ", sortable: true, align: "right" as const,
+                  render: (v: number) => <span className={`text-xs font-mono ${v > 0 ? "text-amber-600" : v < 0 ? "text-[#E8453C]" : "text-muted-foreground"}`}>{(v ?? 0) >= 0 ? "+" : ""}{(v ?? 0).toLocaleString()}</span>,
+                },
+                {
+                  key: "_detail", label: "Detail", width: "300px",
+                  render: (_: any, row: any) => {
+                    // Inline expandable detail — show the actual column
+                    // names that drifted instead of just counts. Keeps
+                    // the Drifted Tables view actionable without a modal.
+                    const removed = row.columns_only_in_source || [];
+                    const added = row.columns_only_in_dest || [];
+                    const changes = row.column_type_changes || [];
+                    return (
+                      <div className="text-[10px] space-y-0.5 max-w-[300px]">
+                        {removed.length > 0 && (
+                          <div className="text-red-600 truncate" title={removed.join(", ")}>
+                            <Minus className="h-2.5 w-2.5 inline mr-0.5" />{removed.slice(0, 3).join(", ")}{removed.length > 3 ? `… +${removed.length - 3}` : ""}
+                          </div>
+                        )}
+                        {added.length > 0 && (
+                          <div className="text-foreground truncate" title={added.join(", ")}>
+                            <Plus className="h-2.5 w-2.5 inline mr-0.5" />{added.slice(0, 3).join(", ")}{added.length > 3 ? `… +${added.length - 3}` : ""}
+                          </div>
+                        )}
+                        {changes.length > 0 && (
+                          <div className="text-amber-600 truncate" title={changes.map((c: any) => `${c.column}: ${c.source_type} → ${c.dest_type}`).join("; ")}>
+                            <AlertCircle className="h-2.5 w-2.5 inline mr-0.5" />{changes.slice(0, 2).map((c: any) => c.column).join(", ")}{changes.length > 2 ? `… +${changes.length - 2}` : ""}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  },
+                },
+              ] as Column[]}
+              searchable
+              searchPlaceholder="Filter drifted tables..."
+              pageSize={25}
+              emptyMessage="No drifted tables"
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Drift errors — only rendered if either bulk metadata query
+          failed. Presence/absence diff still surfaces above. */}
+      {diffData && driftErrors.length > 0 && (
+        <Card className="border-red-500/30">
+          <CardContent className="pt-4 text-xs space-y-1">
+            <p className="font-medium text-red-600">{driftErrors.length} drift query failed (presence/absence still shown above):</p>
+            {driftErrors.map((e: any) => (
+              <div key={`${e.side}.${e.catalog}`} className="text-red-600">
+                <span className="font-mono">{e.side} ({e.catalog})</span>: {e.error}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {/* Validate Results */}

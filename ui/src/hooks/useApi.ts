@@ -462,6 +462,16 @@ export function useValidate() {
   });
 }
 
+/** Build the sessionStorage cache key for a stats response.
+ * Single-catalog: `clxs-stats-<catalog>-<mode>`.
+ * Multi-catalog: `clxs-stats-multi-<sorted,csv>-<mode>` — sorted so
+ * `[a,b]` and `[b,a]` share a slot. */
+function statsCacheKey(catalogs: string[], mode: "fast" | "detailed"): string {
+  if (catalogs.length === 1) return `clxs-stats-${catalogs[0]}-${mode}`;
+  const sorted = [...catalogs].sort((a, b) => a.localeCompare(b)).join(",");
+  return `clxs-stats-multi-${sorted}-${mode}`;
+}
+
 export function useStats() {
   return useMutation({
     // `fast=true` (default) hits the bulk-information_schema path on the
@@ -469,35 +479,62 @@ export function useStats() {
     // back to the per-table COUNT(*) + DESCRIBE DETAIL path which is
     // exact but 30-90s on a 500-table catalog. Cache key includes the
     // mode so switching between fast / detailed doesn't return stale.
-    mutationFn: async (req: { source_catalog: string; warehouse_id?: string; fast?: boolean }) => {
+    //
+    // Multi-catalog: pass `source_catalogs: string[]` instead of (or
+    // alongside an empty) `source_catalog`. The server's /stats route
+    // detects the plural field and fans out via `catalog_stats_multi`.
+    mutationFn: async (req: {
+      source_catalog?: string;
+      source_catalogs?: string[];
+      warehouse_id?: string;
+      fast?: boolean;
+    }) => {
       const fast = req.fast ?? true;
       const result = await api.post("/stats", { ...req, fast });
       const mode = fast ? "fast" : "detailed";
-      try {
-        sessionStorage.setItem(
-          `clxs-stats-${req.source_catalog}-${mode}`,
-          JSON.stringify(result),
-        );
-      } catch {}
+      let cats: string[];
+      if (req.source_catalogs && req.source_catalogs.length > 0) {
+        cats = req.source_catalogs;
+      } else if (req.source_catalog) {
+        cats = [req.source_catalog];
+      } else {
+        cats = [];
+      }
+      if (cats.length > 0) {
+        try {
+          sessionStorage.setItem(statsCacheKey(cats, mode), JSON.stringify(result));
+        } catch {}
+      }
       return result;
     },
   });
 }
 
-/** Load cached stats for a catalog (survives page navigation).
+/** Load cached stats for one or more catalogs (survives page navigation).
  * Falls back across modes — preferring whichever the caller asks for, but
- * accepting the other if that's all sessionStorage has. */
-export function getCachedStats(catalog: string, fast: boolean = true): any | null {
+ * accepting the other if that's all sessionStorage has. Pass either a
+ * single catalog string (legacy) or an array for multi-catalog lookups. */
+export function getCachedStats(
+  catalogOrCatalogs: string | string[],
+  fast: boolean = true,
+): any {
   try {
+    const cats = Array.isArray(catalogOrCatalogs)
+      ? catalogOrCatalogs
+      : [catalogOrCatalogs];
+    if (cats.length === 0) return null;
     const preferredMode = fast ? "fast" : "detailed";
     const fallbackMode = fast ? "detailed" : "fast";
-    const primary = sessionStorage.getItem(`clxs-stats-${catalog}-${preferredMode}`);
+    const primary = sessionStorage.getItem(statsCacheKey(cats, preferredMode));
     if (primary) return JSON.parse(primary);
-    // Fallback to the other mode + the legacy unsuffixed key for backwards compat
-    const alt = sessionStorage.getItem(`clxs-stats-${catalog}-${fallbackMode}`);
+    const alt = sessionStorage.getItem(statsCacheKey(cats, fallbackMode));
     if (alt) return JSON.parse(alt);
-    const legacy = sessionStorage.getItem(`clxs-stats-${catalog}`);
-    return legacy ? JSON.parse(legacy) : null;
+    // Legacy unsuffixed key only ever existed for single-catalog
+    if (cats.length === 1) {
+      const legacy = sessionStorage.getItem(`clxs-stats-${cats[0]}`);
+      if (legacy) return JSON.parse(legacy);
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -519,6 +556,37 @@ export function usePiiScan() {
   return useMutation({
     mutationFn: (req: { source_catalog: string; no_exit_code?: boolean }) =>
       api.post("/pii-scan", req),
+  });
+}
+
+/** Permissions audit on the Catalog Explorer's Audit tab. Optional
+ * `pii_intersection` runs a PII scan inline so findings on PII tables
+ * escalate one risk level. */
+export function usePermissionsAudit() {
+  return useMutation({
+    mutationFn: (req: {
+      source_catalog: string;
+      warehouse_id?: string;
+      pii_intersection?: boolean;
+    }) => api.post("/permissions-audit", req),
+  });
+}
+
+/** Stale & orphan table detection on the Catalog Explorer's Cleanup tab.
+ * Single mode (`source_catalog`) or multi (`source_catalogs`); the
+ * server's /stale-scan dispatches accordingly. No sessionStorage cache
+ * — findings are time-sensitive, so re-scan each time. */
+export function useStaleScan() {
+  return useMutation({
+    mutationFn: (req: {
+      source_catalog?: string;
+      source_catalogs?: string[];
+      warehouse_id?: string;
+      days_threshold?: number;
+      min_age_days?: number;
+      min_size_bytes?: number;
+      check_small_files?: boolean;
+    }) => api.post("/stale-scan", req),
   });
 }
 

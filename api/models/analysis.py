@@ -10,6 +10,16 @@ class CatalogRequest(BaseModel):
     source_catalog: str
     warehouse_id: str | None = None
     exclude_schemas: list[str] = ["information_schema", "default"]
+    # When true, the `/stats` endpoint serves the fast path (one bulk
+    # information_schema query, ~1-3s for any catalog size). Default
+    # false keeps the existing detailed path (per-table COUNT(*) and
+    # DESCRIBE DETAIL — exact row counts, num_files, last_modified —
+    # but 30-90s on a 500-table catalog). The Catalog Explorer page
+    # passes fast=true so the page loads instantly; the "Detailed"
+    # toggle drops back to fast=false for users who need the extra
+    # fields. Other endpoints inheriting from CatalogRequest ignore
+    # this field — it's only consulted by the /stats route.
+    fast: bool = False
 
 
 class CatalogPairRequest(BaseModel):

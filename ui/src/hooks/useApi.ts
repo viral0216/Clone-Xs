@@ -464,20 +464,40 @@ export function useValidate() {
 
 export function useStats() {
   return useMutation({
-    mutationFn: async (req: { source_catalog: string; warehouse_id?: string }) => {
-      const result = await api.post("/stats", req);
-      // Cache in sessionStorage for page navigation persistence
-      try { sessionStorage.setItem(`clxs-stats-${req.source_catalog}`, JSON.stringify(result)); } catch {}
+    // `fast=true` (default) hits the bulk-information_schema path on the
+    // server — ~1-3s for any catalog size. Pass `fast: false` to fall
+    // back to the per-table COUNT(*) + DESCRIBE DETAIL path which is
+    // exact but 30-90s on a 500-table catalog. Cache key includes the
+    // mode so switching between fast / detailed doesn't return stale.
+    mutationFn: async (req: { source_catalog: string; warehouse_id?: string; fast?: boolean }) => {
+      const fast = req.fast ?? true;
+      const result = await api.post("/stats", { ...req, fast });
+      const mode = fast ? "fast" : "detailed";
+      try {
+        sessionStorage.setItem(
+          `clxs-stats-${req.source_catalog}-${mode}`,
+          JSON.stringify(result),
+        );
+      } catch {}
       return result;
     },
   });
 }
 
-/** Load cached stats for a catalog (survives page navigation) */
-export function getCachedStats(catalog: string): any | null {
+/** Load cached stats for a catalog (survives page navigation).
+ * Falls back across modes — preferring whichever the caller asks for, but
+ * accepting the other if that's all sessionStorage has. */
+export function getCachedStats(catalog: string, fast: boolean = true): any | null {
   try {
-    const cached = sessionStorage.getItem(`clxs-stats-${catalog}`);
-    return cached ? JSON.parse(cached) : null;
+    const preferredMode = fast ? "fast" : "detailed";
+    const fallbackMode = fast ? "detailed" : "fast";
+    const primary = sessionStorage.getItem(`clxs-stats-${catalog}-${preferredMode}`);
+    if (primary) return JSON.parse(primary);
+    // Fallback to the other mode + the legacy unsuffixed key for backwards compat
+    const alt = sessionStorage.getItem(`clxs-stats-${catalog}-${fallbackMode}`);
+    if (alt) return JSON.parse(alt);
+    const legacy = sessionStorage.getItem(`clxs-stats-${catalog}`);
+    return legacy ? JSON.parse(legacy) : null;
   } catch { return null; }
 }
 

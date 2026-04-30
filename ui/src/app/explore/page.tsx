@@ -398,11 +398,21 @@ export default function ExplorePage() {
   const search = useSearch();
   const stats = useStats();
   const columnUsage = useColumnUsage();
+  // Fast vs Detailed stats mode. Fast (default) uses one bulk
+  // information_schema query — completes in 1-3s for any catalog size.
+  // Detailed runs the per-table COUNT(*) + DESCRIBE DETAIL pipeline —
+  // exact row counts / num_files / last_modified, but 30-90s on a
+  // 500-table catalog. Persisted in sessionStorage so the user's pick
+  // survives page navigation.
+  const [statsMode, setStatsMode] = useState<"fast" | "detailed">(() => {
+    try { return (sessionStorage.getItem("clxs-stats-mode") as "fast" | "detailed") || "fast"; }
+    catch { return "fast"; }
+  });
 
   // Auto-load stats for persisted catalog on mount
   useEffect(() => {
     if (catalog && !stats.data && !stats.isPending) {
-      stats.mutate({ source_catalog: catalog });
+      stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" });
     }
   }, []);
 
@@ -411,7 +421,7 @@ export default function ExplorePage() {
     try { sessionStorage.setItem("clxs-explore-catalog", cat); } catch {}
     setSchemaFilter(new Set());
     setActiveTab("overview");
-    stats.mutate({ source_catalog: cat });
+    stats.mutate({ source_catalog: cat, fast: statsMode === "fast" });
     // Reset lazy-loaded data
     setFunctionsData([]);
     setVolumesData([]);
@@ -642,7 +652,26 @@ export default function ExplorePage() {
                   </Button>
                 )}
             <CatalogPicker catalog={catalog} onCatalogChange={setCatalog} showSchema={false} showTable={false} />
-            <Button onClick={() => { stats.mutate({ source_catalog: catalog }); setActiveTab("overview"); setSchemaFilter(new Set()); }} disabled={!catalog || stats.isPending}>
+            {/* Fast vs Detailed stats mode. Fast = bulk information_schema
+                (1-3s any size). Detailed = per-table COUNT(*) + DESCRIBE
+                DETAIL — exact row counts but 30-90s for 500 tables. */}
+            <select
+              className="h-9 px-2 text-sm bg-background border border-input rounded-md"
+              value={statsMode}
+              onChange={(e) => {
+                const next = e.target.value as "fast" | "detailed";
+                setStatsMode(next);
+                try { sessionStorage.setItem("clxs-stats-mode", next); } catch {}
+              }}
+              disabled={stats.isPending}
+              title={statsMode === "fast"
+                ? "Fast: ~1-3s. Sizes / row counts come from ANALYZE TABLE stats; tables without analyze show '—'."
+                : "Detailed: 30-90s for 500 tables. Exact row counts via COUNT(*); num_files / last_modified via DESCRIBE DETAIL."}
+            >
+              <option value="fast">Fast (1-3s)</option>
+              <option value="detailed">Detailed (slow, exact)</option>
+            </select>
+            <Button onClick={() => { stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" }); setActiveTab("overview"); setSchemaFilter(new Set()); }} disabled={!catalog || stats.isPending}>
               {stats.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
               {stats.isPending ? "Loading..." : "Explore"}
             </Button>

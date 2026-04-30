@@ -1,6 +1,8 @@
 """Pydantic models for the Demo Data Generator."""
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class DemoDataRequest(BaseModel):
@@ -23,3 +25,58 @@ class DemoDataRequest(BaseModel):
     start_date: str = Field(default="2020-01-01", description="Data start date (YYYY-MM-DD)")
     end_date: str = Field(default="2025-01-01", description="Data end date (YYYY-MM-DD)")
     dest_catalog: str | None = Field(default=None, description="If set, clone the generated catalog to this destination")
+    # When true: create catalog, schemas, tables, views, UDFs, volumes, and
+    # column masks — but skip every INSERT/UPDATE/DELETE. Drops generation
+    # time from minutes/hours to seconds; useful for verifying DDL templates,
+    # CI smoke runs, and YAML custom-industry validation.
+    schema_only: bool = Field(default=False, description="DDL only — skip data INSERT statements")
+    # Realistic-data toggle. When True, the generator rewrites the small
+    # static pools embedded in INSERT expressions (e.g. "James", "Mary", and
+    # `concat('patient',id,'@example.com')`) to sample from Faker-generated
+    # locale-aware pools. Off by default to preserve existing test fixtures
+    # that match the legacy values.
+    realistic_data: bool = Field(default=False, description="Use Faker for realistic synthetic names/emails/phones")
+    locale: str = Field(default="en_US", description="Faker locale (e.g. en_US, en_GB, de_DE) — used when realistic_data=True")
+    seed: int | None = Field(default=None, description="Seed for deterministic Faker output. None = non-deterministic.")
+    # Referential integrity audit. After generation, the orchestrator runs a
+    # sampled LEFT JOIN orphan check across the FK relationship registry and
+    # surfaces the report on the result. Skipped automatically when
+    # schema_only=True.
+    validate_referential_integrity: bool = Field(default=True, description="Run a post-generation FK orphan audit")
+    # Theme 2 (DQ profiles + ML labels). `dq_profile` is a named bundle of
+    # null/dup/outlier rates ('clean', 'realistic', 'dirty'); see
+    # `src/demo_anomalies.py:DQ_PROFILES`. `anomaly_rate` drives the
+    # positive-class proportion on labeled training columns
+    # (`is_fraud`/`churn_risk`/`is_anomaly`) added when `inject_anomalies`
+    # is true.
+    dq_profile: str = Field(default="realistic", description="DQ noise profile: clean | realistic | dirty")
+    anomaly_rate: float = Field(default=0.02, description="Positive-class rate for labeled training columns (0.0..1.0)")
+    inject_anomalies: bool = Field(default=True, description="Add labeled training columns (is_fraud, churn_risk, is_anomaly)")
+    # Theme 4 — custom industry YAML templates. Each entry is the path to
+    # a YAML file matching the schema documented in
+    # ``src/demo_industry_loader.py``. The orchestrator validates and
+    # merges these on top of the built-in INDUSTRIES dict at run start.
+    custom_industries: list[str] | None = Field(default=None, description="Paths to YAML industry templates")
+    # Data modeling pattern. "flat" (default) preserves today's behaviour —
+    # only the original per-industry schema is generated. "star_schema"
+    # additionally builds a `<industry>_star` schema with fct_/dim_ tables
+    # following DBT-style naming. Future: data_vault_2 / one_big_table /
+    # snowflake — see src/demo_models.py STAR_SCHEMA_REGISTRY for the v1
+    # registry surface.
+    data_model: Literal["flat", "star_schema"] = Field(default="flat", description="Data modeling pattern overlay")
+
+    @field_validator("dq_profile")
+    @classmethod
+    def _dq_profile_must_be_known(cls, v: str) -> str:
+        # Lazy-import to avoid a load-time dep on src.* from api.models.
+        from src.demo_anomalies import DQ_PROFILES
+        if v not in DQ_PROFILES:
+            raise ValueError(f"dq_profile must be one of {sorted(DQ_PROFILES)}, got {v!r}")
+        return v
+
+    @field_validator("anomaly_rate")
+    @classmethod
+    def _anomaly_rate_in_range(cls, v: float) -> float:
+        if not 0 <= v <= 1:
+            raise ValueError(f"anomaly_rate must be in [0.0, 1.0], got {v}")
+        return v

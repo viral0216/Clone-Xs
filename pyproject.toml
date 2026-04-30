@@ -26,6 +26,12 @@ dependencies = [
     "databricks-sdk>=0.20.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
+    # Locale-aware synthetic data for the Demo Data Generator. Used to build
+    # name / email / phone / address pools at generation time; the Faker
+    # output is embedded in the generated SQL as `element_at(array(...))`
+    # literals, so realistic-looking values land in target tables without
+    # requiring any client-side row materialisation.
+    "faker>=20.0",
 ]
 
 [project.optional-dependencies]

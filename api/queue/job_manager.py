@@ -354,6 +354,16 @@ class JobManager:
                     create_volumes=config.get("create_volumes", True),
                     start_date=config.get("start_date", "2020-01-01"),
                     end_date=config.get("end_date", "2025-01-01"),
+                    schema_only=config.get("schema_only", False),
+                    realistic_data=config.get("realistic_data", False),
+                    locale=config.get("locale", "en_US"),
+                    seed=config.get("seed"),
+                    validate_referential_integrity=config.get("validate_referential_integrity", True),
+                    dq_profile=config.get("dq_profile", "realistic"),
+                    anomaly_rate=config.get("anomaly_rate", 0.02),
+                    inject_anomalies=config.get("inject_anomalies", True),
+                    custom_industries=config.get("custom_industries"),
+                    data_model=config.get("data_model", "flat"),
                     progress_dict=self.jobs[job_id]["progress"],
                 )
             elif job_type == "reconciliation-batch":

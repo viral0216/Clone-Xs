@@ -176,10 +176,39 @@ async def generate_demo_data(
     config["start_date"] = req.start_date
     config["end_date"] = req.end_date
     config["dest_catalog"] = req.dest_catalog
+    config["schema_only"] = req.schema_only
+    config["realistic_data"] = req.realistic_data
+    config["locale"] = req.locale
+    config["seed"] = req.seed
+    config["validate_referential_integrity"] = req.validate_referential_integrity
+    config["dq_profile"] = req.dq_profile
+    config["anomaly_rate"] = req.anomaly_rate
+    config["inject_anomalies"] = req.inject_anomalies
+    config["custom_industries"] = req.custom_industries
+    config["data_model"] = req.data_model
     if req.warehouse_id:
         config["sql_warehouse_id"] = req.warehouse_id
     job_id = await jm.submit_job("demo-data", config, client)
     return {"job_id": job_id, "status": "queued", "message": "Demo data generation submitted"}
+
+
+@router.post("/demo-data/preview")
+async def preview_demo_data(req: DemoDataRequest):
+    """Compute the per-industry row count / size / cost / duration estimate
+    for a DemoDataRequest — without submitting a job.
+
+    Used by the /demo-data UI to power the live preview tile so users can
+    see how large a 1.0-scale generation will be before committing to it.
+    Cheap (pure arithmetic, no Databricks calls), so it's fine to call on
+    every form change (the UI debounces by 500ms).
+    """
+    from src.demo_generator import preview_demo_catalog
+    config = {
+        "industries": req.industries,
+        "scale_factor": req.scale_factor,
+        "schema_only": req.schema_only,
+    }
+    return preview_demo_catalog(config)
 
 
 @router.delete("/demo-data/{catalog_name}")

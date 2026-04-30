@@ -149,10 +149,61 @@ export default function DemoDataPage() {
   const [ucBestPractices, setUcBestPractices] = useState(true);
   const [createFunctions, setCreateFunctions] = useState(true);
   const [createVolumes, setCreateVolumes] = useState(true);
+  // schema_only: when true, the backend creates DDL (catalog/schemas/tables/
+  // views/UDFs/volumes) without running any INSERT statements. Cuts a 60-min
+  // generation down to seconds — perfect for verifying DDL templates, CI
+  // smoke runs, or YAML custom-industry validation.
+  const [schemaOnly, setSchemaOnly] = useState(false);
+  // Theme 1 (Realism): when on, the backend rewrites the small static
+  // name/email/phone pools embedded in INSERT expressions to sample from
+  // Faker-generated, locale-aware pools. `seed` makes the output
+  // deterministic across runs (handy for screenshot demos).
+  const [realisticData, setRealisticData] = useState(false);
+  const [locale, setLocale] = useState("en_US");
+  const [seed, setSeed] = useState<string>("");
+  // Theme 2 (DQ profiles + ML labels). dq_profile is a named bundle of
+  // null/dup/outlier rates; anomaly_rate is the positive-class rate for
+  // labeled training columns (is_fraud / churn_risk / is_anomaly).
+  const [dqProfile, setDqProfile] = useState<"clean" | "realistic" | "dirty">("realistic");
+  const [anomalyRate, setAnomalyRate] = useState<number>(0.02);
+  const [injectAnomalies, setInjectAnomalies] = useState(true);
+  // Data modeling pattern overlay. "flat" preserves today's behaviour;
+  // "star_schema" additionally generates `<industry>_star` schemas with
+  // fct_/dim_ tables following DBT-style naming (DV2/OBT/Snowflake later).
+  const [dataModel, setDataModel] = useState<"flat" | "star_schema">("flat");
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(true);
   const [industryDetailOpen, setIndustryDetailOpen] = useState(false);
+  // Theme 4 — server-computed per-industry preview. Lazily fetched from
+  // POST /generate/demo-data/preview when the user clicks "Refresh"
+  // (default off so a stale form doesn't keep hammering the API).
+  const [livePreview, setLivePreview] = useState<{
+    per_industry: Array<{ industry: string; tables: number; rows: number; estimated_bytes: number; estimated_duration_seconds: number }>;
+    total_rows: number;
+    total_gb: number;
+    estimated_duration_seconds: number;
+    estimated_cost_usd: { monthly_storage: number; one_time_compute: number; first_month_total: number };
+  } | null>(null);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+
+  const fetchLivePreview = async () => {
+    if (selectedIndustries.length === 0) return;
+    setLivePreviewLoading(true);
+    try {
+      const res = await api.post("/generate/demo-data/preview", {
+        catalog_name: catalogName.trim() || "demo_preview",
+        industries: selectedIndustries,
+        scale_factor: Number.parseFloat(scaleFactor),
+        schema_only: schemaOnly,
+      });
+      setLivePreview(res);
+    } catch (e: any) {
+      toast.error(`Preview failed: ${e?.message || e}`);
+    } finally {
+      setLivePreviewLoading(false);
+    }
+  };
   const [expandedIndustries, setExpandedIndustries] = useState<Set<string>>(new Set());
   const [cleanupLoading, setCleanupLoading] = useState(false);
 
@@ -255,7 +306,20 @@ export default function DemoDataPage() {
         uc_best_practices: ucBestPractices,
         create_functions: createFunctions,
         create_volumes: createVolumes,
+        schema_only: schemaOnly,
+        realistic_data: realisticData,
+        locale,
       };
+      // Seed is optional — only send when the user typed a number, otherwise
+      // omit so the backend gets None and the Faker output is non-deterministic.
+      const seedNum = seed.trim() ? Number.parseInt(seed.trim(), 10) : Number.NaN;
+      if (!Number.isNaN(seedNum)) body.seed = seedNum;
+      // Theme 2 — DQ profile + anomaly rate. Always sent so the backend
+      // can validate them; defaults match server-side defaults.
+      body.dq_profile = dqProfile;
+      body.anomaly_rate = anomalyRate;
+      body.inject_anomalies = injectAnomalies;
+      body.data_model = dataModel;
       if (owner.trim()) body.owner = owner.trim();
       if (storageLocation.trim()) body.storage_location = storageLocation.trim();
       if (startDate) body.start_date = startDate;
@@ -550,6 +614,148 @@ export default function DemoDataPage() {
             </p>
           </div>
 
+          {/* Schema-only — DDL without INSERTs. Cuts generation from
+              minutes/hours to seconds for DDL-template verification. */}
+          <div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={schemaOnly}
+                onChange={(e) => setSchemaOnly(e.target.checked)}
+                disabled={isRunning}
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span className="text-sm font-medium">Schema only (DDL, skip data INSERTs)</span>
+              <InfoDot hint="Create catalog, schemas, tables, views, UDFs and volumes — but skip every INSERT. Generation completes in seconds. Useful for verifying DDL templates and CI smoke runs." />
+            </label>
+            <p className="text-xs text-muted-foreground mt-1 ml-6">
+              Skips data generation entirely. The result has 0 rows but every table / view / UDF DDL is created.
+            </p>
+          </div>
+
+          {/* Theme 2 — DQ profile + ML anomaly labels.
+              dq_profile picks a named bundle of null/dup/outlier rates;
+              anomaly_rate drives the positive-class rate on labeled
+              training columns (is_fraud / churn_risk / is_anomaly). */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FieldLabel hint="Named bundle of data quality noise. 'clean' injects nothing (perfect for tutorials/screenshots). 'realistic' (default) is small-but-noticeable. 'dirty' makes DQ dashboards meaningful.">
+                <span className="text-sm font-medium">DQ profile</span>
+                <select
+                  className="mt-1 h-9 w-full px-2 text-sm bg-background border border-input rounded-md"
+                  value={dqProfile}
+                  onChange={(e) => setDqProfile(e.target.value as "clean" | "realistic" | "dirty")}
+                  disabled={isRunning}
+                >
+                  <option value="clean">clean — no DQ noise</option>
+                  <option value="realistic">realistic — 5% null, 1% dup (default)</option>
+                  <option value="dirty">dirty — 15% null, 5% dup (exercises DQ tools)</option>
+                </select>
+              </FieldLabel>
+              <FieldLabel hint="Positive-class rate for labeled training columns added to fact tables. 0.02 = 2% (typical for unbalanced ML demos). Set to 0 to disable; or untick the checkbox below.">
+                <span className="text-sm font-medium">Anomaly rate</span>
+                <Input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={anomalyRate}
+                  onChange={(e) => {
+                    const v = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(v)) setAnomalyRate(Math.max(0, Math.min(1, v)));
+                  }}
+                  disabled={isRunning || !injectAnomalies}
+                  className="mt-1 h-9 text-sm"
+                />
+              </FieldLabel>
+            </div>
+            <label className="flex items-center gap-2 text-xs cursor-pointer select-none ml-1">
+              <input
+                type="checkbox"
+                checked={injectAnomalies}
+                onChange={(e) => setInjectAnomalies(e.target.checked)}
+                disabled={isRunning}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span>Add labeled training columns (<code>is_fraud</code> on financial.transactions, <code>churn_risk</code> on telecom.subscribers, <code>is_anomaly</code> on healthcare.encounters &amp; manufacturing.sensor_readings)</span>
+            </label>
+          </div>
+
+          {/* Theme: data modeling pattern overlay. "flat" preserves
+              today's behaviour. "star_schema" generates additional
+              `<industry>_star` schemas with fct_/dim_ tables (DBT-style
+              naming) layered on top of the flat data. Future: Data
+              Vault 2.0, One Big Table, Snowflake. */}
+          <div>
+            <FieldLabel hint="How the generated data is laid out. 'Flat' = the existing per-industry schema. 'Star Schema' = adds `<industry>_star` schemas with fact/dim tables (DBT-style fct_*/dim_* naming) materialised via CTAS on top of the flat data.">
+              <span className="text-sm font-medium">Data modeling pattern</span>
+              <select
+                className="mt-1 h-9 w-full px-2 text-sm bg-background border border-input rounded-md"
+                value={dataModel}
+                onChange={(e) => setDataModel(e.target.value as "flat" | "star_schema")}
+                disabled={isRunning}
+              >
+                <option value="flat">Flat — single per-industry schema (default)</option>
+                <option value="star_schema">Star Schema — adds &lt;industry&gt;_star with fct_/dim_ tables</option>
+              </select>
+            </FieldLabel>
+            {dataModel === "star_schema" && (
+              <p className="text-xs text-muted-foreground mt-1 ml-1">
+                Star Schema overlay materialises a calendar dim, conformed dims with surrogate keys, and fact tables joined to dims. Layered on top of the flat tables (~5% extra time). DBT-style naming: <code>fct_*</code> / <code>dim_*</code>. Skipped on schema-only.
+              </p>
+            )}
+          </div>
+
+          {/* Realistic data (Faker) — when enabled, name/email/phone columns
+              sample from locale-aware Faker pools instead of the legacy
+              hardcoded "James"/"Mary"/"patient1@example.com" pools. */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={realisticData}
+                onChange={(e) => setRealisticData(e.target.checked)}
+                disabled={isRunning}
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span className="text-sm font-medium">Realistic data (Faker)</span>
+              <InfoDot hint="Replace the small static name / email / phone pools with locale-aware Faker output. Off by default to preserve test fixtures matching legacy values." />
+            </label>
+            {realisticData && (
+              <div className="ml-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <FieldLabel hint="Faker locale code. en_US for American names, en_GB for British, de_DE for German, etc.">
+                  <span className="text-xs">Locale</span>
+                  <select
+                    className="mt-1 h-8 w-full px-2 text-sm bg-background border border-input rounded-md"
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value)}
+                    disabled={isRunning}
+                  >
+                    <option value="en_US">en_US — American English</option>
+                    <option value="en_GB">en_GB — British English</option>
+                    <option value="de_DE">de_DE — German</option>
+                    <option value="fr_FR">fr_FR — French</option>
+                    <option value="es_ES">es_ES — Spanish</option>
+                    <option value="ja_JP">ja_JP — Japanese</option>
+                    <option value="zh_CN">zh_CN — Simplified Chinese</option>
+                    <option value="hi_IN">hi_IN — Hindi (India)</option>
+                  </select>
+                </FieldLabel>
+                <FieldLabel hint="Optional integer seed for deterministic Faker output. Same seed → same generated names across runs. Leave blank for non-deterministic.">
+                  <span className="text-xs">Seed (optional)</span>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 42"
+                    value={seed}
+                    onChange={(e) => setSeed(e.target.value)}
+                    disabled={isRunning}
+                    className="mt-1 h-8 text-sm"
+                  />
+                </FieldLabel>
+              </div>
+            )}
+          </div>
+
           {/* Medallion Architecture */}
           <div>
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -649,6 +855,48 @@ export default function DemoDataPage() {
               )}
               {submitting ? "Submitting..." : isRunning ? "Generating..." : "Generate Demo Data"}
             </Button>
+            {/* Theme 4 — Export config as JSON. Round-trippable: paste back
+                into POST /generate/demo-data to reproduce the exact form
+                state. Useful for reusing presets across machines / sharing
+                a "Sales Demo Mk II" config in a Slack thread. */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                const config = {
+                  catalog_name: catalogName,
+                  industries: selectedIndustries,
+                  scale_factor: Number.parseFloat(scaleFactor),
+                  owner: owner || undefined,
+                  storage_location: storageLocation || undefined,
+                  start_date: startDate,
+                  end_date: endDate,
+                  dest_catalog: destCatalog || undefined,
+                  drop_existing: dropExisting,
+                  medallion,
+                  uc_best_practices: ucBestPractices,
+                  create_functions: createFunctions,
+                  create_volumes: createVolumes,
+                  schema_only: schemaOnly,
+                  realistic_data: realisticData,
+                  locale,
+                  seed: seed.trim() ? Number.parseInt(seed.trim(), 10) : undefined,
+                  dq_profile: dqProfile,
+                  anomaly_rate: anomalyRate,
+                  inject_anomalies: injectAnomalies,
+                };
+                const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `${(catalogName || "demo").trim()}-config.json`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                toast.success("Config exported");
+              }}
+              disabled={!catalogName.trim() || selectedIndustries.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export JSON
+            </Button>
             {(isComplete || isFailed) && (
               <Button variant="outline" onClick={handleReset}>
                 <RefreshCw className="h-4 w-4 mr-2" />
@@ -729,6 +977,52 @@ export default function DemoDataPage() {
                     <p className="text-xs text-muted-foreground">Est. Compute ({industriesCount} industries x {scale} scale x 50)</p>
                   </div>
                 </div>
+              </div>
+
+              {/* Theme 4 — Server-computed per-industry breakdown. Toggle via
+                  "Get accurate preview" button so we don't hit the endpoint on
+                  every keystroke. The numbers here come from the same
+                  `preview_demo_catalog` helper the orchestrator uses internally,
+                  so they're closer to actual generation reality than the
+                  client-side static estimates above. */}
+              <div className="border-t pt-3 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Per-industry breakdown</div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={fetchLivePreview}
+                    disabled={livePreviewLoading || isRunning || selectedIndustries.length === 0}
+                  >
+                    {livePreviewLoading ? "Estimating…" : livePreview ? "Refresh" : "Get accurate preview"}
+                  </Button>
+                </div>
+                {livePreview && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      {livePreview.per_industry.map((p) => (
+                        <div key={p.industry} className="flex items-center justify-between bg-white dark:bg-gray-900 rounded px-3 py-2 shadow-sm">
+                          <div className="font-medium capitalize">{p.industry.replaceAll("_", " ")}</div>
+                          <div className="text-muted-foreground">
+                            {p.tables} tables · {formatNumber(p.rows)} rows · {(p.estimated_bytes / (1024 ** 3)).toFixed(2)} GB · ~{p.estimated_duration_seconds.toFixed(0)}s
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground pt-1">
+                      <span>
+                        Total: <strong className="text-foreground">{formatNumber(livePreview.total_rows)}</strong> rows ·
+                        <strong className="text-foreground"> {livePreview.total_gb.toFixed(2)} GB</strong> ·
+                        ~<strong className="text-foreground">{(livePreview.estimated_duration_seconds / 60).toFixed(1)} min</strong>
+                      </span>
+                      <span>
+                        First-month cost: <strong className="text-foreground">${livePreview.estimated_cost_usd.first_month_total.toFixed(2)}</strong>
+                        {" "}({" "}${livePreview.estimated_cost_usd.monthly_storage.toFixed(2)} storage + ${livePreview.estimated_cost_usd.one_time_compute.toFixed(2)} compute)
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           )}
@@ -918,10 +1212,15 @@ export default function DemoDataPage() {
                 <div className="bg-[#0d1117] text-gray-300 rounded-lg p-3 overflow-x-auto text-xs font-mono max-h-[400px] overflow-y-auto">
                   {logs.map((line: string, i: number) => (
                     <div key={i} className={`whitespace-pre-wrap leading-relaxed ${
+                      // Reserve red shades for actual ERRORs. In-progress
+                      // "Creating …" / "Generating …" lines render cyan so
+                      // users don't mistake them for failures (the brand
+                      // red used elsewhere is the same hue as the ERROR
+                      // colour, which was confusing).
                       line.includes("ERROR") ? "text-red-400" :
                       line.includes("WARNING") ? "text-gray-400" :
                       line.includes("done") || line.includes("Created") || line.includes("created") ? "text-gray-300" :
-                      line.includes("Creating") || line.includes("Generating") ? "text-[#E8453C]" : ""
+                      line.includes("Creating") || line.includes("Generating") ? "text-cyan-400" : ""
                     }`}>
                       {line}
                     </div>
@@ -1023,6 +1322,102 @@ export default function DemoDataPage() {
                 <p className="text-xs text-muted-foreground mt-1">Duration</p>
               </div>
             </div>
+
+            {/* Theme 4 — FK relationship diagram. The orchestrator's
+                referential-integrity audit (Theme 3) emits per-FK orphan
+                counts; render them as a compact list so users can see at
+                a glance which dim/fact joins are clean and which have
+                drift. Hidden when the audit was skipped (schema_only) or
+                turned off via validate_referential_integrity=False. */}
+            {result.referential_integrity?.details && (
+              <div className="mt-4 border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Foreign-key integrity audit</div>
+                  <span className="text-xs text-muted-foreground">
+                    {result.referential_integrity.orphan_free}/{result.referential_integrity.checks_run} FKs orphan-free
+                    {result.referential_integrity.with_orphans > 0 && (
+                      <span className="ml-2 text-amber-700 dark:text-amber-400">
+                        · {result.referential_integrity.with_orphans} with orphans
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.referential_integrity.details.map((d: any, i: number) => {
+                    const ok = !d.error && (d.orphans ?? 0) === 0;
+                    const skipped = !!d.error;
+                    return (
+                      <div key={`${d.industry}-${d.child}-${d.fk}-${i}`} className="flex items-center justify-between bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5">
+                        <span className="font-mono text-[11px]">
+                          {d.industry}.{d.child}.{d.fk} → {d.parent}.{d.parent_pk}
+                        </span>
+                        {skipped ? (
+                          <span className="text-muted-foreground text-[10px]">skipped</span>
+                        ) : ok ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 text-[10px]">✓ {d.child_sampled?.toLocaleString()} sampled</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 text-[10px]" title={d.parent_has_row_filter ? `Row filter on ${d.parent} likely — filtered-but-real rows appear as orphans for non-admins` : undefined}>
+                            {d.orphans?.toLocaleString()} orphans ({d.orphan_pct}%)
+                            {d.parent_has_row_filter && <span className="ml-1 opacity-70">(row filter)</span>}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Theme 2 — labeled training columns rollup. Surfaces what
+                ML target columns were added and at what positive-class
+                rate, so the demo is self-describing. */}
+            {result.anomalies && result.anomalies.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <div className="text-sm font-medium mb-2">Labeled training columns</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.anomalies.map((a: any, i: number) => (
+                    <div key={`anom-${a.industry}-${a.table}-${a.column}-${i}`} className="bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5 font-mono text-[11px]">
+                      <span className="text-emerald-600 dark:text-emerald-400">+ </span>
+                      {a.industry}.{a.table}.{a.column}
+                      <span className="text-muted-foreground"> ({a.sql_type}, ~{(a.anomaly_rate * 100).toFixed(1)}% positive)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Star Schema modeling layer rollup — per-industry schema +
+                fact / dim counts. Hidden when data_model="flat" (no key on
+                result), and on per-industry skipped/error entries we
+                annotate the row instead of dropping it (signals that the
+                user picked an industry without a registry entry). */}
+            {result.star_schema?.per_industry && (
+              <div className="mt-4 border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Star Schema modeling layer</div>
+                  <span className="text-xs text-muted-foreground">
+                    {result.star_schema.facts_created} facts + {result.star_schema.dims_created} dims across {result.star_schema.schemas_created?.length ?? 0} schemas
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.star_schema.per_industry.map((s: any, i: number) => (
+                    <div key={`star-${s.industry}-${i}`} className="bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5 font-mono text-[11px]">
+                      {s.error ? (
+                        <span className="text-red-500">✗ {s.industry}: {s.error}</span>
+                      ) : s.skipped ? (
+                        <span className="text-muted-foreground">— {s.industry}: skipped ({s.reason})</span>
+                      ) : (
+                        <>
+                          <span className="text-emerald-600 dark:text-emerald-400">✓ </span>
+                          <span className="font-medium">{s.schema}</span>
+                          <span className="text-muted-foreground"> · {s.facts_created} facts · {s.dims_created} dims</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -9,6 +9,59 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Demo Data Generator: Star Schema modeling layer
+
+### Added
+- **New `data_model` field on `DemoDataRequest`** (`Literal["flat", "star_schema"]`, default `flat`). When set to `star_schema`, the orchestrator builds a `<industry>_star` schema **on top of** the existing flat industry tables (CTAS materialisation, ~5% extra runtime), with fact / dimension tables following Kimball conventions and DBT-style naming.
+- **New module [`src/demo_models.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_models.py)** — `STAR_SCHEMA_REGISTRY` covering all 10 built-in industries (healthcare, financial, retail, telecom, manufacturing, energy, education, real_estate, logistics, insurance), plus `generate_star_schema(client, warehouse_id, catalog, industry, …)` and `generate_star_schemas_for_industries(...)`.
+- **Naming conventions (DBT-style)**: schemas as `<industry>_star`; facts as `fct_<entity>` (e.g. `fct_claims`, `fct_transactions`, `fct_order_items`); dims as `dim_<entity>` (e.g. `dim_patient`, `dim_customer`, `dim_product`); surrogate keys as `<entity>_sk` (BIGINT generated via `row_number()`); audit cols on dims (`valid_from`, `valid_to`, `is_current`).
+- **Universal `dim_date`** per Star schema, generated via `sequence(date(start_date), date(end_date), interval 1 day)` plus year/quarter/month/week/day_of_week/is_weekend columns.
+- **Derived dims** — extracted from fact-column DISTINCT values where the flat layer doesn't have a corresponding dim table (e.g. `dim_diagnosis` from `claims.diagnosis_code`).
+- **Fact CTAS preserves original FK columns** alongside the new surrogate keys, so the fact remains queryable without dim joins; users choose which keys to use depending on demo style.
+- **`schema_only=True` produces empty-shell DDL** for the Star layer too — tables exist with the right shape (including SCD2 audit columns) but zero rows. Generation completes in seconds.
+- **Result shape additions**: when `data_model="star_schema"`, the run summary gains `data_model`, `star_schema.schemas_created`, `star_schema.facts_created`, `star_schema.dims_created`, and `star_schema.per_industry` blocks.
+- **/demo-data UI**: new "Data modeling pattern" dropdown (Flat / Star Schema) with an inline explainer card; completion summary renders a "Star Schema modeling layer" panel listing per-industry schemas and fact/dim counts.
+- **Per-industry failure isolation**: one industry's CTAS failure doesn't abort the rest — `per_industry[i].error` carries the failure reason while other industries' Star schemas land normally.
+- **`docs/docs/guide/demo-data.md` — new "Data modeling patterns" section** covering layout, naming conventions, per-industry coverage matrix, the CTAS algorithm, sample query, and known trade-offs (storage cost, SCD2 history scope).
+
+### Tested
+- 15 unit tests in `tests/test_demo_models.py` covering: registry shape (all 10 industries present, fct_/dim_ prefixes, FK references resolve), conformed dim CTAS (surrogate key + audit cols), derived dim CTAS (DISTINCT), fact CTAS (LEFT JOINs each registered dim, pass-through when no FKs), unknown-industry skip, schema_only DDL-only path, multi-industry orchestration with per-industry failure isolation.
+- 2 orchestrator integration tests (`data_model="flat"` is a no-op; `data_model="star_schema"` attaches the result block).
+
+### Out of scope (deferred)
+- **Data Vault 2.0** (h_/l_/s_ tables with hash keys + load metadata)
+- **One Big Table** (denormalised wide tables)
+- **Snowflake** (normalised dim hierarchies)
+- **SCD2 row history** (v1 dims have audit columns but a single row per business key — real history infrastructure deferred)
+
+---
+
+## Unreleased — Demo Data Generator enhancements (4-theme batch)
+
+### Added
+- **Theme 1 — Realism (Faker)**: new `src/demo_faker.py` builds locale-aware name / email / phone / SSN pools at generation time and embeds them as SQL `array(...)` literals. `realistic_data: true` on `DemoDataRequest` rewrites the legacy `'James'`/`'Mary'`/`'patient1@example.com'`/`'555-XXXXXXX'` patterns. Per-locale (`en_US`, `en_GB`, `de_DE`, `fr_FR`, `ja_JP`, `zh_CN`, `hi_IN`) + optional `seed` for deterministic output.
+- **Theme 2 — DQ profiles + ML training labels**: new `src/demo_anomalies.py` with named profiles (`clean`/`realistic`/`dirty`) controlling null/dup/outlier rates, and `inject_labeled_anomalies` adding `is_fraud` (financial.transactions), `churn_risk` (telecom.subscribers), `is_anomaly` (healthcare.encounters + manufacturing.sensor_readings) at a configurable `anomaly_rate`. Surfaces an `anomalies` block on the result for the UI to render.
+- **Theme 3 — Referential integrity audit**: new `_FK_RELATIONSHIPS` registry + `_validate_referential_integrity` runs sampled `LEFT JOIN ... WHERE parent.pk IS NULL` checks across registered FKs after generation. Surfaces an `referential_integrity` block with per-FK orphan counts on the result. Skipped on `schema_only=true` and when `validate_referential_integrity=false`.
+- **Theme 4 — UI insight + extensibility**:
+  - `schema_only: true` skips every INSERT/UPDATE/DELETE — DDL-only generation completes in seconds for CI smoke + DDL-template verification. Volumes still create as DDL but skip the sample CSV writes.
+  - New `POST /api/generate/demo-data/preview` returns per-industry row/size/cost/duration estimates without submitting a job. The /demo-data UI surfaces this as a "Per-industry breakdown" tile alongside the existing static estimate.
+  - "Export JSON" button on /demo-data downloads the form state as a round-trippable preset.
+  - FK relationship diagram on the result panel visualises the audit's per-FK orphan-free / orphan rows.
+  - New `src/demo_industry_loader.py` parses YAML custom industry templates, validates the schema (fail-fast on malformed YAML, missing keys, reserved names), merges into the runtime `INDUSTRIES` dict for the run duration. Pass paths via `custom_industries` on `DemoDataRequest`.
+- **`api/models/demo.py`**: 9 new optional fields (`schema_only`, `realistic_data`, `locale`, `seed`, `validate_referential_integrity`, `dq_profile`, `anomaly_rate`, `inject_anomalies`, `custom_industries`) with field validators. All defaults preserve existing behaviour — pre-batch callers see no shape change.
+- **/demo-data UI**: locale dropdown + seed input, DQ-profile dropdown + anomaly-rate slider + inject-anomalies toggle, schema-only checkbox, Per-industry breakdown tile, Export JSON button, FK integrity audit panel + Labeled training columns rollup on the completion summary.
+- **Faker dep**: `faker>=20.0` added to `pyproject.toml` `dependencies`. Imported lazily — only fires when `realistic_data=true`.
+
+### Tested
+- 13 new tests in `tests/test_demo_industry_loader.py` (valid YAML, missing files, malformed YAML, missing required keys, reserved-name rejection, table-shape validation, duplicate detection, base-not-mutated invariant)
+- 19 new tests in `tests/test_demo_anomalies.py` (DQ profile rates, clean=no-op, dirty>realistic, ALTER+UPDATE shape, anomaly_rate validation, orchestrator surfaces `anomalies` block)
+- 9 new tests in `tests/test_demo_referential_integrity.py` (registry shape, sampled LEFT JOIN, orphan counts, per-FK failure isolation, orchestrator opt-out paths)
+- 15 new tests in `tests/test_demo_faker.py` (pool shapes, determinism, locale, idempotent substitution, missing-dep error)
+- 7 new tests in `tests/test_router_generate_preview.py` (helper edge cases + endpoint validation)
+- 1 new test in `tests/test_demo_generator.py` (schema_only skips INSERTs)
+
+---
+
 ## Unreleased — Continuous sync executor (Feature 6)
 
 ### Added

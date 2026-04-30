@@ -1125,8 +1125,11 @@ function TargetConnectionDialog({
     // For edit mode, blank-but-masked secrets stay null so backend keeps existing.
     const payload: TargetConnection = { ...form };
     if (mode === "edit") {
-      if (payload.token === "***" || !payload.token) payload.token = null;
-      if (payload.client_secret === "***" || !payload.client_secret) payload.client_secret = null;
+      // `undefined` (not null) keeps the field absent in the JSON payload —
+      // signals the backend to retain the existing stored secret rather than
+      // overwriting with empty.
+      if (payload.token === "***" || !payload.token) payload.token = undefined;
+      if (payload.client_secret === "***" || !payload.client_secret) payload.client_secret = undefined;
     }
     onSave(payload);
   };

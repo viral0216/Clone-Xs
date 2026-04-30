@@ -105,14 +105,26 @@ async def schema_drift(req: SchemaDriftRequest, client=Depends(get_db_client)):
 async def catalog_stats(req: CatalogRequest, client=Depends(get_db_client)):
     """Get catalog statistics — sizes, row counts, file counts, and top tables.
 
-    Runs `COUNT(*)`, `DESCRIBE DETAIL`, and column metadata queries in parallel
-    across all tables. Returns per-schema breakdown and top 10 by size/rows.
+    With `fast=false` (default): runs `COUNT(*)`, `DESCRIBE DETAIL`, and
+    column metadata queries in parallel across all tables. Returns
+    per-schema breakdown and top 10 by size / rows. Slow on large
+    catalogs (~30-90s for 500 tables) but exact.
+
+    With `fast=true`: serves the bulk `information_schema` path —
+    same response shape, ~1-3 second latency for any catalog size.
+    Row counts and sizes come from `spark.sql.statistics.numRows` /
+    `totalSize` table properties; tables without `ANALYZE TABLE` stats
+    return `null` for those fields. The Catalog Explorer page uses
+    `fast=true` by default and offers a "Detailed" toggle for the slow
+    path.
     """
-    from src.stats import catalog_stats
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
-    return result
+    if req.fast:
+        from src.stats_fast import catalog_stats_fast
+        return catalog_stats_fast(client, wid, req.source_catalog, req.exclude_schemas)
+    from src.stats import catalog_stats
+    return catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
 
 
 @router.post("/search", summary="Search tables and columns")

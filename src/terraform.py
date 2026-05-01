@@ -103,10 +103,14 @@ def generate_terraform(
             tf_config["resource"][resource_type] = {}
         tf_config["resource"][resource_type][resource_name] = resource_config
 
-    # Write output
+    # Write output. Trailing newline keeps the file POSIX-clean and
+    # stops the pre-commit `end-of-file-fixer` hook from re-modifying
+    # the file every time Terraform is re-generated for the same
+    # catalog (which would otherwise block the next commit).
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(tf_config, f, indent=2)
+        f.write("\n")
 
     total = len(resources)
     logger.info(f"Terraform config generated: {output_path} ({total} resources)")

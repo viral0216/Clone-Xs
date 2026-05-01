@@ -6203,6 +6203,9 @@ def _save_clone_template(catalog_name, industries):
     try:
         with open(filepath, "w") as f:
             json.dump(template, f, indent=2)
+            # Trailing newline keeps end-of-file-fixer happy on re-runs
+            # — same fix as src/terraform.py for `*.tf.json`.
+            f.write("\n")
         logger.info(f"    Clone template saved: {filepath}")
     except Exception as e:
         logger.warning(f"    Could not save clone template: {e}")

@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,10 +12,14 @@ import { toast } from "sonner";
 import { CheckSquare, CheckCircle2, XCircle } from "lucide-react";
 
 export default function ApprovalsPage() {
-  const [certs, setCerts] = useState<any[]>([]);
+  const [certs, setCerts] = usePersistedState<any[]>("gov-approvals-certs", []);
   const [notes, setNotes] = useState<Record<string, string>>({});
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (certs && certs.length > 0) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function load() { try { const d = await api.get("/governance/certifications"); setCerts((Array.isArray(d) ? d : []).filter(c => c.status === "pending_review")); } catch {} }
 
   async function handleAction(certId: string, action: string) {

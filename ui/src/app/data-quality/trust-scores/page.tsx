@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,12 +36,12 @@ function scoreBadge(score: number) {
 }
 
 export default function TrustScoresPage() {
-  const [catalog, setCatalog] = useState("");
+  const [catalog, setCatalog] = usePersistedState<string>("dq-trust-scores-catalog", "");
   const [loading, setLoading] = useState(false);
   const [computing, setComputing] = useState(false);
-  const [scores, setScores] = useState<any[]>([]);
+  const [scores, setScores] = usePersistedState<any[]>("dq-trust-scores", []);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [trend, setTrend] = useState<any[]>([]);
+  const [trend, setTrend] = usePersistedState<any[]>("dq-trust-scores-trend", []);
   const [trendLoading, setTrendLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

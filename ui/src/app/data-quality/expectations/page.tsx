@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,9 @@ interface RunResult {
 
 export default function ExpectationSuitesPage() {
   const [loading, setLoading] = useState(true);
-  const [suites, setSuites] = useState<Suite[]>([]);
+  const [suites, setSuites] = usePersistedState<Suite[]>("dq-expectations-suites", []);
   const [runningSuiteId, setRunningSuiteId] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<RunResult | null>(null);
+  const [runResult, setRunResult] = usePersistedState<RunResult | null>("dq-expectations-run-result", null);
 
   // Create form state
   const [showCreate, setShowCreate] = useState(false);
@@ -63,7 +64,11 @@ export default function ExpectationSuitesPage() {
     }
   }
 
-  useEffect(() => { loadSuites(); }, []);
+  useEffect(() => {
+    if (suites && suites.length > 0) { setLoading(false); return; }
+    loadSuites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function runSuite(suite: Suite) {
     setRunningSuiteId(suite.id);

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,9 @@ function formatDollars(amount: number) {
 export default function COPQPage() {
   const [loading, setLoading] = useState(false);
   const [computing, setComputing] = useState(false);
-  const [summary, setSummary] = useState<any>(null);
-  const [byTable, setByTable] = useState<any[]>([]);
-  const [trends, setTrends] = useState<any[]>([]);
+  const [summary, setSummary] = usePersistedState<any>("copq-summary", null);
+  const [byTable, setByTable] = usePersistedState<any[]>("copq-by-table", []);
+  const [trends, setTrends] = usePersistedState<any[]>("copq-trends", []);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState({
@@ -85,7 +86,9 @@ export default function COPQPage() {
   }
 
   useEffect(() => {
+    if (summary || (byTable && byTable.length > 0) || (trends && trends.length > 0)) return;
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const totalCost = summary?.total_cost ?? 0;

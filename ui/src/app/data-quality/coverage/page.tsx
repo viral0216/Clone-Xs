@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,11 +41,11 @@ function CheckIcon({ value }: { value: boolean }) {
 }
 
 export default function CoveragePage() {
-  const [catalog, setCatalog] = useState("");
+  const [catalog, setCatalog] = usePersistedState<string>("dq-coverage-catalog", "");
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [coverage, setCoverage] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>(null);
+  const [coverage, setCoverage] = usePersistedState<any[]>("dq-coverage-data", []);
+  const [summary, setSummary] = usePersistedState<any>("dq-coverage-summary", null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadCoverage() {

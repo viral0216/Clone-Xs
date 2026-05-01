@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,24 +23,24 @@ function confidenceBadge(confidence: number | string) {
 
 export default function NLRulesPage() {
   // Single rule mode
-  const [nlInput, setNlInput] = useState("");
-  const [tableFqn, setTableFqn] = useState("");
+  const [nlInput, setNlInput] = usePersistedState<string>("nl-rules-input", "");
+  const [tableFqn, setTableFqn] = usePersistedState<string>("nl-rules-table-fqn", "");
   const [parsing, setParsing] = useState(false);
-  const [parsedRule, setParsedRule] = useState<any>(null);
+  const [parsedRule, setParsedRule] = usePersistedState<any>("nl-rules-parsed", null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   // Batch mode
   const [batchMode, setBatchMode] = useState(false);
-  const [batchInput, setBatchInput] = useState("");
+  const [batchInput, setBatchInput] = usePersistedState<string>("nl-rules-batch-input", "");
   const [batchParsing, setBatchParsing] = useState(false);
-  const [batchResults, setBatchResults] = useState<any[]>([]);
+  const [batchResults, setBatchResults] = usePersistedState<any[]>("nl-rules-batch-results", []);
 
   // Explain mode
   const [explainMode, setExplainMode] = useState(false);
   const [ruleJson, setRuleJson] = useState("");
   const [explaining, setExplaining] = useState(false);
-  const [explanation, setExplanation] = useState<string | null>(null);
+  const [explanation, setExplanation] = usePersistedState<string | null>("nl-rules-explanation", null);
 
   const [error, setError] = useState<string | null>(null);
 

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect, useRef } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,10 +104,10 @@ const SOURCE_BADGE_COLORS: Record<string, string> = {
 
 export default function IncidentsPage() {
   const [loading, setLoading] = useState(true);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [filter, setFilter] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [incidents, setIncidents] = usePersistedState<Incident[]>("dq-incidents-list", []);
+  const [filter, setFilter] = usePersistedState<string>("dq-incidents-filter", "");
+  const [severityFilter, setSeverityFilter] = usePersistedState<string>("dq-incidents-severity", "all");
+  const [sourceFilter, setSourceFilter] = usePersistedState<string>("dq-incidents-source", "all");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -136,7 +137,11 @@ export default function IncidentsPage() {
     }
   }
 
-  useEffect(() => { loadIncidents(); }, []);
+  useEffect(() => {
+    if (incidents && incidents.length > 0) { setLoading(false); return; }
+    loadIncidents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-refresh
   useEffect(() => {

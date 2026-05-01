@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useCallback } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,11 +66,11 @@ function scoreBg(score: number) {
 /* ── Component ────────────────────────────────────────── */
 
 export default function ReportsPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [table, setTable] = useState("");
+  const [catalog, setCatalog] = usePersistedState<string>("dq-reports-catalog", "");
+  const [schema, setSchema] = usePersistedState<string>("dq-reports-schema", "");
+  const [table, setTable] = usePersistedState<string>("dq-reports-table", "");
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<ReportData | null>(null);
+  const [report, setReport] = usePersistedState<ReportData | null>("dq-reports-report", null);
 
   /* ── Generate report ───────────────────────────────── */
 

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,16 +40,23 @@ function healthIndicator(passRate: number) {
 
 export default function OwnershipPage() {
   const [loading, setLoading] = useState(true);
-  const [slaRules, setSlaRules] = useState<any[]>([]);
-  const [slaStatus, setSlaStatus] = useState<any>({});
-  const [certifications, setCertifications] = useState<any[]>([]);
-  const [glossary, setGlossary] = useState<any[]>([]);
-  const [searchFilter, setSearchFilter] = useState("");
+  const [slaRules, setSlaRules] = usePersistedState<any[]>("dq-ownership-sla-rules", []);
+  const [slaStatus, setSlaStatus] = usePersistedState<any>("dq-ownership-sla-status", {});
+  const [certifications, setCertifications] = usePersistedState<any[]>("dq-ownership-certs", []);
+  const [glossary, setGlossary] = usePersistedState<any[]>("dq-ownership-glossary", []);
+  const [searchFilter, setSearchFilter] = usePersistedState<string>("dq-ownership-search", "");
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
 
   /* ── Load data ─────────────────────────────────────── */
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    if ((slaRules && slaRules.length > 0) || (certifications && certifications.length > 0)) {
+      setLoading(false);
+      return;
+    }
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadAll() {
     setLoading(true);

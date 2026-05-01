@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,15 +40,15 @@ function statusBadge(s: string) {
 }
 
 export default function AlertRoutingPage() {
-  const [tab, setTab] = useState<Tab>("Inbox");
+  const [tab, setTab] = usePersistedState<Tab>("dq-alert-routing-tab", "Inbox");
   const [loading, setLoading] = useState(true);
 
   // Inbox
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = usePersistedState<any[]>("dq-alert-routing-alerts", []);
   const [actioning, setActioning] = useState<string | null>(null);
 
   // Routing Rules
-  const [rules, setRules] = useState<any[]>([]);
+  const [rules, setRules] = usePersistedState<any[]>("dq-alert-routing-rules", []);
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [ruleForm, setRuleForm] = useState({
     table_pattern: "",
@@ -58,14 +59,22 @@ export default function AlertRoutingPage() {
   });
 
   // Digests
-  const [digests, setDigests] = useState<any[]>([]);
+  const [digests, setDigests] = usePersistedState<any[]>("dq-alert-routing-digests", []);
   const [showDigestForm, setShowDigestForm] = useState(false);
   const [digestForm, setDigestForm] = useState({ recipient: "", frequency: "daily" });
 
   // Analytics
-  const [analytics, setAnalytics] = useState<any>(null);
+  const [analytics, setAnalytics] = usePersistedState<any>("dq-alert-routing-analytics", null);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    if ((alerts && alerts.length > 0) || (rules && rules.length > 0)
+        || (digests && digests.length > 0) || analytics) {
+      setLoading(false);
+      return;
+    }
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadAll() {
     setLoading(true);

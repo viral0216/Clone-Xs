@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ const CRON_PRESETS = [
 ];
 
 export default function ReconSchedulesPage() {
-  const [schedules, setSchedules] = useState<any[]>([]);
+  const [schedules, setSchedules] = usePersistedState<any[]>("dq-recon-schedules", []);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
@@ -38,7 +39,11 @@ export default function ReconSchedulesPage() {
   const [tableFilter, setTableFilter] = useState("");
   const [keyColumns, setKeyColumns] = useState("");
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (schedules && schedules.length > 0) { setLoading(false); return; }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     setLoading(true);

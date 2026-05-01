@@ -1197,13 +1197,38 @@ export default function SqlWorkbench({ embedded = false }: { embedded?: boolean 
     toast.success("Share link copied to clipboard");
   }
 
-  // Load shared query from URL hash on mount
+  // Load shared query from URL hash on mount.
+  //   #q=<base64> or #q=<base64>&run=1
+  // The optional &run=1 fires runQuery() once the SQL has been loaded — used
+  // by deep-links from elsewhere in the app (e.g. "Query latest rows" on the
+  // demo-data streaming card) so the user doesn't have to click Run.
+  const autoRunOnMountRef = useRef(false);
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash.startsWith("#q=")) {
-      try { const decoded = decodeURIComponent(atob(hash.slice(3))); if (decoded) setSql(decoded); } catch {}
+    if (!hash.startsWith("#q=")) return;
+    const body = hash.slice(3);
+    const [encoded, ...rest] = body.split("&");
+    try {
+      const decoded = decodeURIComponent(atob(encoded));
+      if (decoded) setSql(decoded);
+    } catch { return; }
+    if (rest.some((kv) => kv === "run=1" || kv.startsWith("run=1"))) {
+      autoRunOnMountRef.current = true;
     }
+    // Clean the hash so a refresh doesn't auto-run again.
+    try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch {}
   }, []);
+
+  // Fire the auto-run after the SQL state has actually been set. We can't
+  // call runQuery() inline in the hash-parsing effect above because runQuery
+  // closes over `sql` — at that point it's still the previous value.
+  useEffect(() => {
+    if (!autoRunOnMountRef.current) return;
+    if (!sql.trim()) return;
+    autoRunOnMountRef.current = false;
+    runQuery();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sql]);
 
   // ── Schema diagram data ────────────────────────────────────────────────────
   const [schemaTables, setSchemaTables] = useState<{ name: string; columns: string[] }[]>([]);

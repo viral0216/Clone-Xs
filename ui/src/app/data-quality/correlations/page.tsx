@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,8 +30,10 @@ function scoreBadge(score: number) {
 export default function CorrelationsPage() {
   const [loading, setLoading] = useState(false);
   const [correlating, setCorrelating] = useState(false);
-  const [groups, setGroups] = useState<any[]>([]);
-  const [rootCauses, setRootCauses] = useState<any[]>([]);
+  // Analysis results persist across navigation — re-running is opt-in via the
+  // Refresh / Run Correlation buttons.
+  const [groups, setGroups] = usePersistedState<any[]>("dq-correlations-groups", []);
+  const [rootCauses, setRootCauses] = usePersistedState<any[]>("dq-correlations-root-causes", []);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +66,11 @@ export default function CorrelationsPage() {
   }
 
   useEffect(() => {
+    // Skip auto-load if cached results from a previous visit are still in
+    // sessionStorage. The Refresh button re-fires loadData() on demand.
+    if ((groups && groups.length > 0) || (rootCauses && rootCauses.length > 0)) return;
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function toggleGroup(groupId: string) {

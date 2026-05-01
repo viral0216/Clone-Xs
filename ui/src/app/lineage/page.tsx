@@ -9,6 +9,7 @@ import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import { useShowExports, usePersistedNumber } from "@/hooks/useSettings";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   GitBranch, Search, ArrowRight, ArrowLeft, Loader2, Database,
   ArrowUpRight, ArrowDownRight, Columns, Info, Layers, Download,
@@ -340,20 +341,22 @@ function exportCSV(entries: LineageEntry[], filename: string) {
 
 // ─── Main Page ───
 export default function LineagePage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [table, setTable] = useState("");
+  // Form inputs + lineage response persist across navigation so the user can
+  // navigate away and return to the same trace without re-running it.
+  const [catalog, setCatalog] = usePersistedState<string>("lineage-catalog", "");
+  const [schema, setSchema] = usePersistedState<string>("lineage-schema", "");
+  const [table, setTable] = usePersistedState<string>("lineage-table", "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [searched, setSearched] = useState(false);
-  const [response, setResponse] = useState<LineageResponse | null>(null);
-  const [tab, setTab] = useState<"graph" | "all" | "upstream" | "downstream" | "columns" | "stats">("graph");
-  const [depth, setDepth] = useState(1);
+  const [searched, setSearched] = usePersistedState<boolean>("lineage-searched", false);
+  const [response, setResponse] = usePersistedState<LineageResponse | null>("lineage-response", null);
+  const [tab, setTab] = usePersistedState<"graph" | "all" | "upstream" | "downstream" | "columns" | "stats">("lineage-tab", "graph");
+  const [depth, setDepth] = usePersistedState<number>("lineage-depth", 1);
   const showExports = useShowExports();
   const [graphHeight, setGraphHeight] = usePersistedNumber("clxs-lineage-graph-height", 420);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [colUsage, setColUsage] = useState<any>(null);
+  const [dateFrom, setDateFrom] = usePersistedState<string>("lineage-date-from", "");
+  const [dateTo, setDateTo] = usePersistedState<string>("lineage-date-to", "");
+  const [colUsage, setColUsage] = usePersistedState<any>("lineage-col-usage", null);
   const [colUsageLoading, setColUsageLoading] = useState(false);
 
   const trace = async () => {

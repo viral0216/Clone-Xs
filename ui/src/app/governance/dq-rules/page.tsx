@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,14 +16,18 @@ const RULE_TYPES = ["not_null", "unique", "range", "regex", "custom_sql", "fresh
 const SEVERITIES = ["critical", "warning", "info"];
 
 export default function DQRulesPage() {
-  const [rules, setRules] = useState<any[]>([]);
+  const [rules, setRules] = usePersistedState<any[]>("gov-dq-rules", []);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [running, setRunning] = useState(false);
-  const [runResults, setRunResults] = useState<any[]>([]);
+  const [runResults, setRunResults] = usePersistedState<any[]>("gov-dq-rules-run-results", []);
   const [form, setForm] = useState({ name: "", table_fqn: "", column: "", rule_type: "not_null", expression: "", params: {}, threshold: 0, severity: "warning", schedule: "manual" });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (rules && rules.length > 0) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function load() { setLoading(true); try { const d = await api.get("/governance/dq/rules"); setRules(Array.isArray(d) ? d : []); } catch {} setLoading(false); }
 
   async function addRule() {

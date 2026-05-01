@@ -1323,7 +1323,7 @@ export default function DemoDataPage() {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {isRunning && <Loader2 className="h-5 w-5 text-[#E8453C] animate-spin" />}
-                {isComplete && <CheckCircle2 className="h-5 w-5 text-foreground" />}
+                {isComplete && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                 {isFailed && <XCircle className="h-5 w-5 text-red-600" />}
                 Job Progress
               </div>
@@ -1954,7 +1954,7 @@ export default function DemoDataPage() {
               <Card className="bg-card border-border">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center gap-2">
-                    {streamingJob.status === "completed" ? <CheckCircle2 className="h-4 w-4 text-[#E8453C]" />
+                    {streamingJob.status === "completed" ? <CheckCircle2 className="h-4 w-4 text-green-500" />
                       : streamingJob.status === "failed" ? <XCircle className="h-4 w-4 text-red-500" />
                       : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                     <span className="text-sm font-medium">
@@ -2045,10 +2045,31 @@ export default function DemoDataPage() {
                   {/* Bronze status — only shown when result has landed */}
                   {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (
                     <div className="border-t border-border pt-2 mt-2 text-xs">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-[#E8453C] inline mr-1" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline mr-1" />
                       Bronze streaming table created: <code className="text-[11px] bg-muted/50 px-1 rounded">{streamingJob.result.bronze_table_fqn}</code>
-                      <a href={`/preview?catalog=${streamCatalog}&schema=${streamSchema}&table=bronze_${streamProfile}`}
-                        className="text-[#E8453C] hover:underline ml-2">
+                      <a
+                        href={(() => {
+                          // Deep-link into Data Lab with a pre-filled SELECT against the bronze
+                          // table and run=1 so the workbench fires the query immediately on
+                          // arrival. Pull catalog/schema/profile off the job result rather than
+                          // the form state — the form fields can be empty by the time the user
+                          // clicks (e.g. after a fresh load that hydrated the job from
+                          // sessionStorage but didn't restore the form), which used to produce
+                          // SELECT * FROM ``.`iot`.`bronze_…`.
+                          const r = streamingJob.result || {};
+                          const cat = r.catalog || streamCatalog;
+                          const sch = r.schema || streamSchema;
+                          const prof = r.profile || streamProfile;
+                          const fqn = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
+                          // captured_at is the per-event timestamp populated by every device
+                          // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
+                          // across atm_transaction, smart_meter, car_obd2, etc.
+                          const sql = `SELECT * FROM ${fqn} ORDER BY captured_at DESC LIMIT 100`;
+                          const encoded = btoa(encodeURIComponent(sql));
+                          return `/data-lab#q=${encoded}&run=1`;
+                        })()}
+                        className="text-[#E8453C] hover:underline ml-2"
+                      >
                         Query latest rows →
                       </a>
                     </div>
@@ -2305,7 +2326,7 @@ export default function DemoDataPage() {
               ) : (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-[#E8453C]" />
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
                     Job created
                   </div>
                   <dl className="text-xs space-y-1.5">

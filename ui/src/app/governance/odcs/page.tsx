@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +27,12 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ODCSContractsPage() {
   const navigate = useNavigate();
-  const [contracts, setContracts] = useState<any[]>([]);
+  // Contracts list + filters + last generation result persist across nav.
+  const [contracts, setContracts] = usePersistedState<any[]>("odcs-contracts", []);
   const [loading, setLoading] = useState(true);
-  const [filterDomain, setFilterDomain] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [filterDomain, setFilterDomain] = usePersistedState<string>("odcs-filter-domain", "");
+  const [filterStatus, setFilterStatus] = usePersistedState<string>("odcs-filter-status", "");
+  const [searchQuery, setSearchQuery] = usePersistedState<string>("odcs-search", "");
   const [showImport, setShowImport] = useState(false);
   const [yamlContent, setYamlContent] = useState("");
   const [importing, setImporting] = useState(false);
@@ -51,9 +53,17 @@ export default function ODCSContractsPage() {
     include_history: true,
   });
   const [generating, setGenerating] = useState(false);
-  const [genResult, setGenResult] = useState<any>(null);
+  const [genResult, setGenResult] = usePersistedState<any>("odcs-gen-result", null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // Skip auto-load if cache already populated — reduces unnecessary requeries.
+    if (contracts && contracts.length > 0) {
+      setLoading(false);
+      return;
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     setLoading(true);

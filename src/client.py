@@ -611,13 +611,30 @@ def list_tables_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[
         return []
 
 
+def _normalize_format(fmt) -> str | None:
+    """Normalise a Databricks SDK ``DataSourceFormat`` enum to its string value.
+
+    The SDK returns this field as an enum (``DataSourceFormat.DELTA``);
+    every consumer in Clone-Xs treats it as a string (``.upper()``,
+    equality comparison against ``"DELTA"``, etc.). We normalise here at
+    the boundary so downstream code doesn't have to type-check.
+
+    Handles three shapes the field can have across SDK versions and the
+    REST fallback path: enum, plain string, or None.
+    """
+    if fmt is None:
+        return None
+    # Enum has `.value`; plain string falls back to itself via the default.
+    return getattr(fmt, "value", fmt)
+
+
 def _list_tables_inner(client: WorkspaceClient, catalog: str, schema: str) -> list[dict]:
     try:
         return [
             {
                 "table_name": t.name,
                 "table_type": t.table_type.value if t.table_type else "UNKNOWN",
-                "data_source_format": getattr(t, "data_source_format", None),
+                "data_source_format": _normalize_format(getattr(t, "data_source_format", None)),
             }
             for t in client.tables.list(catalog_name=catalog, schema_name=schema)
             if t.name
@@ -767,7 +784,7 @@ def _get_table_info_inner(client: WorkspaceClient, full_name: str) -> dict | Non
             "table_type": t.table_type.value if t.table_type else "UNKNOWN",
             "columns": columns,
             "storage_location": getattr(t, "storage_location", ""),
-            "data_source_format": getattr(t, "data_source_format", ""),
+            "data_source_format": _normalize_format(getattr(t, "data_source_format", None)) or "",
             "owner": getattr(t, "owner", ""),
             "comment": getattr(t, "comment", ""),
             "properties": dict(t.properties) if t.properties else {},

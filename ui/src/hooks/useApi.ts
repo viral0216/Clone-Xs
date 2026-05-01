@@ -572,6 +572,38 @@ export function usePermissionsAudit() {
   });
 }
 
+/** Start a streaming-emission demo job. Spawns a background job that
+ * writes JSON event batches to a UC Volume on a tunable cadence,
+ * optionally also creating a DBSQL streaming Bronze table that
+ * consumes the Volume via Auto Loader. Returns `{job_id}` — poll
+ * `/api/jobs/{job_id}` for live progress (events_emitted, files_written). */
+export function useStreamingEmit() {
+  return useMutation({
+    mutationFn: (req: {
+      catalog: string;
+      schema: string;
+      profile: "generic_sensor" | "industrial_machine" | "car_obd2";
+      events_per_batch?: number;
+      interval_seconds?: number;
+      total_duration_seconds?: number;
+      num_devices?: number;
+      auto_create_bronze?: boolean;
+      bronze_refresh_minutes?: number;
+      warehouse_id?: string;
+    }) => api.post("/generate/demo-data/streaming", req),
+  });
+}
+
+/** Stop a running streaming-emission job. The runner sleeps in short
+ * slices so the stop request lands within ~0.5 s regardless of the
+ * configured emission interval. */
+export function useStreamingStop() {
+  return useMutation({
+    mutationFn: (req: { job_id: string }) =>
+      api.post(`/generate/demo-data/streaming/${req.job_id}/stop`, {}),
+  });
+}
+
 /** Stale & orphan table detection on the Catalog Explorer's Cleanup tab.
  * Single mode (`source_catalog`) or multi (`source_catalogs`); the
  * server's /stale-scan dispatches accordingly. No sessionStorage cache

@@ -334,6 +334,20 @@ class JobManager:
                 except Exception:
                     pass
                 result = {"output_path": output, "content": content, "format": fmt}
+            elif job_type == "streaming-emit":
+                from src.demo_streaming import run_streaming_emission
+                # Live progress + stop flag are read by the runner via
+                # the closures below. The stop flag is flipped by
+                # POST /demo-data/streaming/{job_id}/stop on the route
+                # side; the runner checks it every ~0.5s.
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = run_streaming_emission(
+                    client, config["sql_warehouse_id"], config,
+                    progress_dict=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
                 # Use the job dict's "progress" key for live progress updates

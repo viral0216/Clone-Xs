@@ -80,3 +80,39 @@ class DemoDataRequest(BaseModel):
         if not 0 <= v <= 1:
             raise ValueError(f"anomaly_rate must be in [0.0, 1.0], got {v}")
         return v
+
+
+class StreamingEmissionRequest(BaseModel):
+    """Request to start a file-based streaming emission to a UC Volume.
+
+    The runner emits JSON event batches at `interval_seconds` cadence
+    for `total_duration_seconds`. Each batch is one file under
+    `/Volumes/<catalog>/<schema>/events_volume/<profile>/`. Optionally
+    creates a streaming Bronze Delta table consuming the Volume via
+    Auto Loader. See `src/demo_streaming.py` for the device profile
+    registry and emission semantics.
+    """
+    model_config = {"populate_by_name": True}
+
+    catalog: str = Field(..., description="Target catalog (created if missing)")
+    # Pydantic reserves `.schema` on BaseModel — use `schema_name`
+    # internally and accept `schema` from the wire via the alias.
+    schema_name: str = Field(..., alias="schema", description="Target schema")
+    profile: Literal["generic_sensor", "industrial_machine", "car_obd2"] = Field(
+        ..., description="Built-in device profile",
+    )
+    events_per_batch: int = Field(default=100, ge=1, le=10000)
+    interval_seconds: float = Field(default=5.0, ge=0.1, le=300.0)
+    # 1-hour cap on v1 — bounds the maximum demo session length and
+    # limits storage growth in shared workspaces.
+    total_duration_seconds: int = Field(default=60, ge=1, le=3600)
+    num_devices: int | None = Field(
+        default=None, ge=1, le=100000,
+        description="Override the profile's default device count",
+    )
+    warehouse_id: str | None = Field(default=None, description="Override SQL warehouse ID")
+    # Auto Loader Bronze: when true, runs CREATE OR REFRESH STREAMING
+    # TABLE so files land in a Delta table automatically. Requires
+    # DBSQL Serverless on the warehouse + CREATE TABLE on the schema.
+    auto_create_bronze: bool = Field(default=False)
+    bronze_refresh_minutes: int = Field(default=5, ge=1, le=60)

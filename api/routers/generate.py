@@ -4,7 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.demo import DemoDataRequest
+from api.models.demo import DemoDataRequest, StreamingEmissionRequest
 from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
@@ -209,6 +209,80 @@ async def preview_demo_data(req: DemoDataRequest):
         "schema_only": req.schema_only,
     }
     return preview_demo_catalog(config)
+
+
+@router.post("/demo-data/streaming", summary="Start streaming demo emission")
+async def start_streaming_emission(
+    req: StreamingEmissionRequest,
+    client=Depends(get_db_client),
+    jm: JobManager = Depends(get_job_manager),
+):
+    """Start a background streaming-emission job.
+
+    Spawns the file-based emitter (one JSON file per batch into a UC
+    Volume on the configured cadence) plus, optionally, an Auto Loader
+    Bronze streaming table that consumes the Volume into a Delta table.
+
+    Returns immediately with a `job_id` the UI can poll via the
+    standard `/api/jobs/{job_id}` endpoint. Use `POST /demo-data/
+    streaming/{job_id}/stop` to interrupt early — the runner sleeps in
+    short slices, so a Stop request lands within ~0.5 s.
+    """
+    config = dict(await get_app_config())
+    config["catalog"] = req.catalog
+    config["schema"] = req.schema_name
+    config["profile"] = req.profile
+    config["events_per_batch"] = req.events_per_batch
+    config["interval_seconds"] = req.interval_seconds
+    config["total_duration_seconds"] = req.total_duration_seconds
+    config["num_devices"] = req.num_devices
+    config["auto_create_bronze"] = req.auto_create_bronze
+    config["bronze_refresh_minutes"] = req.bronze_refresh_minutes
+    if req.warehouse_id:
+        config["sql_warehouse_id"] = req.warehouse_id
+    job_id = await jm.submit_job("streaming-emit", config, client)
+    return {"job_id": job_id, "status": "queued", "message": "Streaming emission submitted"}
+
+
+@router.post("/demo-data/streaming/{job_id}/stop", summary="Stop a streaming emission job")
+async def stop_streaming_emission(
+    job_id: str, jm: JobManager = Depends(get_job_manager),
+):
+    """Request a streaming-emit job to stop at its next tick.
+
+    Idempotent — flipping the flag twice is harmless. The runner
+    checks the flag every ~0.5 s during sleep and at the top of each
+    tick, so latency-to-stop is bounded regardless of `interval_seconds`.
+    Returns 404 if the job_id isn't known to this process.
+    """
+    if job_id not in jm.jobs:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+    jm.jobs[job_id]["stop_requested"] = True
+    return {"job_id": job_id, "stop_requested": True}
+
+
+@router.get("/demo-data/streaming/auto-loader-sql", summary="Get the Auto Loader SQL snippet")
+async def get_streaming_auto_loader_sql(
+    catalog: str, schema: str, profile: str, refresh_minutes: int = 5,
+):
+    """Return the copy-paste DBSQL snippet for a streaming Bronze table
+    over the events Volume. Used by the UI's Auto Loader panel so users
+    can run the CREATE TABLE manually if `auto_create_bronze` failed
+    (e.g., DBSQL Serverless not enabled) or wasn't requested."""
+    from src.demo_streaming import DEVICE_PROFILES, get_auto_loader_sql
+    if profile not in DEVICE_PROFILES:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown profile {profile!r}; valid: {list(DEVICE_PROFILES)}",
+        )
+    return {
+        "sql": get_auto_loader_sql(catalog, schema, profile, refresh_minutes),
+        "profile": profile,
+        "table_fqn": f"{catalog}.{schema}.bronze_{profile}",
+        "volume_path": f"/Volumes/{catalog}/{schema}/events_volume/{profile}/",
+    }
 
 
 @router.delete("/demo-data/{catalog_name}")

@@ -11,10 +11,11 @@ import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import FieldLabel, { InfoDot } from "@/components/FieldLabel";
 import { useCurrency } from "@/hooks/useSettings";
+import { useStreamingEmit, useStreamingStop } from "@/hooks/useApi";
 import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
-  ClipboardCopy, Check, Download,
+  ClipboardCopy, Check, Download, Radio, StopCircle,
 } from "lucide-react";
 
 const INDUSTRIES = ["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"] as const;
@@ -274,6 +275,25 @@ export default function DemoDataPage() {
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Streaming-emission card state. Independent from the batch form
+  // above — has its own catalog/schema/profile inputs and its own
+  // job lifecycle. Re-uses the same /api/jobs/{id} polling endpoint
+  // by tracking `streamingJobId` and pulling the same job dict.
+  const [streamingOpen, setStreamingOpen] = useState(false);
+  const [streamCatalog, setStreamCatalog] = useState("");
+  const [streamSchema, setStreamSchema] = useState("iot");
+  const [streamProfile, setStreamProfile] = useState<"generic_sensor" | "industrial_machine" | "car_obd2">("generic_sensor");
+  const [streamEventsPerBatch, setStreamEventsPerBatch] = useState(100);
+  const [streamIntervalSeconds, setStreamIntervalSeconds] = useState(5);
+  const [streamDurationSeconds, setStreamDurationSeconds] = useState(60);
+  const [streamAutoCreateBronze, setStreamAutoCreateBronze] = useState(false);
+  const [streamBronzeRefreshMinutes, setStreamBronzeRefreshMinutes] = useState(5);
+  const [streamingJobId, setStreamingJobId] = useState<string | null>(null);
+  const [streamingJob, setStreamingJob] = useState<any>(null);
+  const streamingPollRef = useRef<NodeJS.Timeout | null>(null);
+  const streamingEmit = useStreamingEmit();
+  const streamingStop = useStreamingStop();
+
   const toggleIndustry = (industry: string) => {
     setSelectedIndustries((prev) =>
       prev.includes(industry)
@@ -367,6 +387,83 @@ export default function DemoDataPage() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [jobId]);
+
+  // Poll the streaming job — separate effect so the two job lifecycles
+  // don't interfere. Uses the same /clone/{id} endpoint since the
+  // JobManager surfaces all job types through it.
+  useEffect(() => {
+    if (!streamingJobId) return;
+    const poll = async () => {
+      try {
+        const data = await api.get(`/clone/${streamingJobId}`);
+        setStreamingJob(data);
+        if (data.status === "completed" || data.status === "failed") {
+          if (streamingPollRef.current) clearInterval(streamingPollRef.current);
+          if (data.status === "completed") {
+            toast.success("Streaming emission completed");
+          } else {
+            toast.error(data.error || "Streaming emission failed");
+          }
+        }
+      } catch {
+        // ignore transient errors
+      }
+    };
+    poll();
+    streamingPollRef.current = setInterval(poll, 2000);
+    return () => {
+      if (streamingPollRef.current) clearInterval(streamingPollRef.current);
+    };
+  }, [streamingJobId]);
+
+  const handleStartStreaming = async () => {
+    if (!streamCatalog.trim() || !streamSchema.trim()) {
+      toast.error("Catalog and schema are required");
+      return;
+    }
+    try {
+      setStreamingJob(null);
+      setStreamingJobId(null);
+      const res = await streamingEmit.mutateAsync({
+        catalog: streamCatalog.trim(),
+        schema: streamSchema.trim(),
+        profile: streamProfile,
+        events_per_batch: streamEventsPerBatch,
+        interval_seconds: streamIntervalSeconds,
+        total_duration_seconds: streamDurationSeconds,
+        auto_create_bronze: streamAutoCreateBronze,
+        bronze_refresh_minutes: streamBronzeRefreshMinutes,
+      });
+      if (res?.job_id) {
+        setStreamingJobId(res.job_id);
+        toast.success(`Streaming emission started (Job ${res.job_id})`);
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const handleStopStreaming = async () => {
+    if (!streamingJobId) return;
+    try {
+      await streamingStop.mutateAsync({ job_id: streamingJobId });
+      toast.success("Stop requested — runner will halt at next tick");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  // Built once and shown verbatim in the Auto Loader panel below.
+  // Same shape as the SQL the auto-create path executes — keeping
+  // the two in sync makes manual re-runs predictable.
+  const autoLoaderSnippet = (
+    `CREATE OR REFRESH STREAMING TABLE \`${streamCatalog || "<catalog>"}\`.\`${streamSchema || "<schema>"}\`.\`bronze_${streamProfile}\`\n` +
+    `SCHEDULE EVERY ${streamBronzeRefreshMinutes} MINUTES\n` +
+    `AS SELECT * FROM STREAM read_files(\n` +
+    `  '/Volumes/${streamCatalog || "<catalog>"}/${streamSchema || "<schema>"}/events_volume/${streamProfile}/',\n` +
+    `  format => 'json'\n` +
+    `);`
+  );
 
   // Auto-scroll logs
   useEffect(() => {
@@ -1421,6 +1518,181 @@ export default function DemoDataPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ─── Streaming emission card ─── */}
+      <Card className="bg-card border-border">
+        <CardHeader className="cursor-pointer" onClick={() => setStreamingOpen((v) => !v)}>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Radio className="h-4 w-4 text-[#E8453C]" />
+            Streaming emission (IoT demo)
+            <Badge variant="outline" className="text-[10px] ml-1">Beta</Badge>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {streamingOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </span>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Continuously emit JSON event batches to a UC Volume — Auto Loader / DLT consumes the files.
+            Choose a built-in device profile or auto-create a streaming Bronze Delta table.
+          </p>
+        </CardHeader>
+        {streamingOpen && (
+          <CardContent className="space-y-4">
+            {/* Profile + target */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <FieldLabel>Device profile</FieldLabel>
+                <select className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md mt-1"
+                  value={streamProfile}
+                  onChange={(e) => setStreamProfile(e.target.value as typeof streamProfile)}>
+                  <option value="generic_sensor">Generic IoT Sensor</option>
+                  <option value="industrial_machine">Industrial Machine</option>
+                  <option value="car_obd2">Car OBD-II</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Catalog</FieldLabel>
+                <Input value={streamCatalog} onChange={(e) => setStreamCatalog(e.target.value)}
+                  placeholder="main" className="mt-1" />
+              </div>
+              <div>
+                <FieldLabel>Schema</FieldLabel>
+                <Input value={streamSchema} onChange={(e) => setStreamSchema(e.target.value)}
+                  placeholder="iot" className="mt-1" />
+              </div>
+            </div>
+
+            {/* Cadence */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <FieldLabel>Events per batch</FieldLabel>
+                <Input type="number" min={1} max={10000} value={streamEventsPerBatch}
+                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))}
+                  className="mt-1" />
+              </div>
+              <div>
+                <FieldLabel>Interval (seconds)</FieldLabel>
+                <Input type="number" min={1} max={300} value={streamIntervalSeconds}
+                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))}
+                  className="mt-1" />
+              </div>
+              <div>
+                <FieldLabel>Total duration (seconds, max 3600)</FieldLabel>
+                <Input type="number" min={1} max={3600} value={streamDurationSeconds}
+                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))}
+                  className="mt-1" />
+              </div>
+            </div>
+
+            {/* Auto-create Bronze toggle */}
+            <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                  checked={streamAutoCreateBronze}
+                  onChange={(e) => setStreamAutoCreateBronze(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                <span className="font-medium">Auto-create streaming Bronze table</span>
+              </label>
+              <p className="text-[11px] text-muted-foreground mt-1.5 ml-6">
+                Runs <code className="text-[10px] bg-muted/50 px-1 rounded">CREATE OR REFRESH STREAMING TABLE</code> so events
+                land in <code className="text-[10px] bg-muted/50 px-1 rounded">bronze_{streamProfile}</code> automatically.
+                Requires DBSQL Serverless. Falls back to "snippet only" if unavailable.
+              </p>
+              {streamAutoCreateBronze && (
+                <div className="mt-2 ml-6 flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Refresh every</span>
+                  <Input type="number" min={1} max={60} value={streamBronzeRefreshMinutes}
+                    onChange={(e) => setStreamBronzeRefreshMinutes(Math.max(1, Math.min(60, parseInt(e.target.value) || 5)))}
+                    className="w-20 h-7 text-xs" />
+                  <span className="text-xs text-muted-foreground">minutes</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              <Button onClick={handleStartStreaming}
+                disabled={streamingEmit.isPending || (!!streamingJob && streamingJob.status === "running")}>
+                {streamingEmit.isPending
+                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  : <Play className="h-4 w-4 mr-2" />}
+                Start streaming
+              </Button>
+              {streamingJob?.status === "running" && (
+                <Button variant="outline" onClick={handleStopStreaming}
+                  disabled={streamingStop.isPending}>
+                  <StopCircle className="h-4 w-4 mr-2" />Stop
+                </Button>
+              )}
+            </div>
+
+            {/* Live progress */}
+            {streamingJob && (
+              <Card className="bg-card border-border">
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {streamingJob.status === "completed" ? <CheckCircle2 className="h-4 w-4 text-[#E8453C]" />
+                      : streamingJob.status === "failed" ? <XCircle className="h-4 w-4 text-red-500" />
+                      : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <span className="text-sm font-medium">
+                      {streamingJob.status === "running" ? "Emitting..."
+                        : streamingJob.status === "completed" ? "Completed"
+                        : streamingJob.status === "failed" ? "Failed"
+                        : streamingJob.status}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-auto">Job {streamingJobId}</span>
+                  </div>
+                  {streamingJob.progress && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                      <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{streamingJob.progress.events_emitted ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{streamingJob.progress.files_written ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Elapsed:</span> <span className="font-mono">{streamingJob.progress.elapsed_seconds ?? 0}s</span></div>
+                    </div>
+                  )}
+                  {streamingJob.progress?.current_batch_path && (
+                    <div className="text-[11px] text-muted-foreground font-mono truncate" title={streamingJob.progress.current_batch_path}>
+                      Latest: {streamingJob.progress.current_batch_path}
+                    </div>
+                  )}
+                  {/* Bronze status — only shown when result has landed */}
+                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (
+                    <div className="border-t border-border pt-2 mt-2 text-xs">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[#E8453C] inline mr-1" />
+                      Bronze streaming table created: <code className="text-[11px] bg-muted/50 px-1 rounded">{streamingJob.result.bronze_table_fqn}</code>
+                      <a href={`/preview?catalog=${streamCatalog}&schema=${streamSchema}&table=bronze_${streamProfile}`}
+                        className="text-[#E8453C] hover:underline ml-2">
+                        Query latest rows →
+                      </a>
+                    </div>
+                  )}
+                  {streamingJob.result?.bronze_status === "failed" && (
+                    <div className="border-t border-border pt-2 mt-2 text-xs text-amber-600">
+                      <XCircle className="h-3.5 w-3.5 inline mr-1" />
+                      Bronze auto-create failed: {streamingJob.result.bronze_error}. The Volume files still landed — run the SQL below manually after enabling DBSQL Serverless.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Auto Loader SQL snippet — always visible so users see the
+                target shape upfront and can run it manually if they
+                didn't opt into auto-create or it failed. */}
+            <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Auto Loader SQL (copy-paste into DBSQL)</span>
+                <Button size="sm" variant="ghost" onClick={() => {
+                  navigator.clipboard?.writeText(autoLoaderSnippet);
+                  toast.success("Copied to clipboard");
+                }}>
+                  <ClipboardCopy className="h-3.5 w-3.5 mr-1" />Copy
+                </Button>
+              </div>
+              <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre">{autoLoaderSnippet}</pre>
+            </div>
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }

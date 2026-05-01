@@ -9,6 +9,34 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Demo Data Generator: streaming emission for IoT (file-based to UC Volume)
+
+### Added
+- **New "Streaming emission" card on `/demo-data`** — file-based IoT event emission for three built-in device profiles (`generic_sensor`, `industrial_machine`, `car_obd2`). The runner spawns as a background job that drops JSON event batches into a UC Volume on a configurable cadence (events-per-batch × interval-seconds × total-duration-seconds). Auto Loader / DLT consumes the files; this is the path 90% of Databricks customers use to onboard streams. UI shows live progress (events emitted / files written / current batch path) and the canonical Auto Loader SQL snippet for copy-paste.
+- **New module [`src/demo_streaming.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_streaming.py)** (~330 LOC) — `DEVICE_PROFILES` registry + per-profile event generators (stateful, so values jitter around stable per-device baselines), `emit_batch`, `write_batch_to_volume` (uploads JSON via `client.files.upload`), `run_streaming_emission` (the loop), and `create_bronze_streaming_table`.
+- **Auto-create Bronze streaming table** (opt-in checkbox) — when enabled, the runner additionally executes `CREATE OR REFRESH STREAMING TABLE <catalog>.<schema>.bronze_<profile> SCHEDULE EVERY N MINUTES AS SELECT * FROM STREAM read_files('/Volumes/.../events_volume/<profile>/', format => 'json')`. Runs on existing DBSQL serverless — no cluster or DLT pipeline. Failure isolation: if Serverless isn't enabled or `CREATE TABLE` is denied, the runner captures the error and continues file emission; UI shows an amber warning + falls back to the manual SQL snippet so the user can run it themselves after upgrading.
+- **New endpoints** in `api/routers/generate.py`:
+  - `POST /demo-data/streaming` — submits a `streaming-emit` job, returns `{job_id}`.
+  - `POST /demo-data/streaming/{job_id}/stop` — flips the runner's `stop_requested` flag (idempotent; runner sleeps in 0.5s slices so latency-to-stop is bounded).
+  - `GET /demo-data/streaming/auto-loader-sql?catalog=…&schema=…&profile=…` — returns the canonical SQL snippet so the UI panel and the auto-create path emit identical DDL.
+- **`StreamingEmissionRequest`** in `api/models/demo.py` — Pydantic model with `Literal` profile validator, range-clamped `events_per_batch` (1..10000), `interval_seconds` (0.1..300), `total_duration_seconds` (1..3600 — 1-hour cap for v1), `auto_create_bronze`, `bronze_refresh_minutes` (1..60).
+- **`useStreamingEmit` + `useStreamingStop` hooks** (`ui/src/hooks/useApi.ts`) — TanStack Query mutations matching the existing demo-data-generator hook shape.
+- **Live progress integration**: the existing `JobManager._run_job` mutation pattern is reused — runner writes `events_emitted`, `files_written`, `current_batch_path`, `elapsed_seconds`, `ticks` to `self.jobs[job_id]["progress"]` each tick; UI polls `/api/jobs/{id}` every 2s and renders the dict.
+
+### Tested
+- 23 new tests in `tests/test_demo_streaming.py`: registry shape, per-profile event-shape + value-range invariants, `emit_batch` round-robin behaviour, `write_batch_to_volume` path construction + JSON serialisation, `run_streaming_emission` honouring `total_duration_seconds` (mocked clock) + `stop_check` early termination, unknown-profile defense-in-depth ValueError, `create_bronze_streaming_table` SQL shape + DBSQL-Serverless failure isolation, `get_auto_loader_sql` matching runner-emitted DDL, request-model validators, and four endpoint dispatch tests (start, stop, stop-404, auto-loader-sql).
+- All other tests preserved.
+
+### Out of scope (deferred follow-ups)
+- **YAML-loadable custom device profiles** — the three profiles are built-in. Custom YAML profiles can come via the existing `demo_industry_loader` pattern.
+- **Direct Kafka / Event Hubs emission** — file-based via Volume covers the common case.
+- **Spark Structured Streaming `rate` source** — needs a running cluster.
+- **Silver/Gold downstream tables** — Bronze only; cleansing/aggregation is customer-specific.
+- **Format options beyond JSON** — `client.files.upload` is content-agnostic, so CSV/Parquet are easy follow-ups.
+- **Realistic Faker data** for VINs / lat-lng — v1 uses simple random with plausible ranges; the existing `realistic_data` flag could be hooked in.
+
+---
+
 ## Unreleased — Cleanup tab: small-files detection, DROP-script export, saved presets, per-finding cost
 
 Closes the four deferred items from the original Cleanup tab batch:

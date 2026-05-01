@@ -8,6 +8,7 @@ pytest.importorskip("fastapi")
 
 # ── GET /api/auth/status ──────────────────────────────────────────────────────
 
+
 def test_auth_status_unauthenticated(client):
     """Without session or headers, returns unauthenticated."""
     resp = client.get("/api/auth/status")
@@ -17,6 +18,7 @@ def test_auth_status_unauthenticated(client):
 
 
 # ── POST /api/auth/login ─────────────────────────────────────────────────────
+
 
 @patch("api.routers.auth.ensure_authenticated")
 @patch("api.routers.auth.get_client")
@@ -28,12 +30,19 @@ def test_login_success(mock_clear, mock_get_client, mock_ensure, client):
     mock_client.current_user.me.return_value = me
     mock_client.config.host = "https://test.azuredatabricks.net"
     mock_get_client.return_value = mock_client
-    mock_ensure.return_value = {"user": "test@example.com", "host": "https://test.azuredatabricks.net", "auth_method": "pat"}
-
-    resp = client.post("/api/auth/login", json={
+    mock_ensure.return_value = {
+        "user": "test@example.com",
         "host": "https://test.azuredatabricks.net",
-        "token": "dapi_test_token",
-    })
+        "auth_method": "pat",
+    }
+
+    resp = client.post(
+        "/api/auth/login",
+        json={
+            "host": "https://test.azuredatabricks.net",
+            "token": "dapi_test_token",
+        },
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["authenticated"] is True
@@ -47,6 +56,7 @@ def test_login_missing_fields(client):
 
 # ── POST /api/auth/logout ────────────────────────────────────────────────────
 
+
 @patch("src.auth.clear_cache")
 def test_logout(mock_clear, client):
     resp = client.post("/api/auth/logout")
@@ -55,6 +65,7 @@ def test_logout(mock_clear, client):
 
 # ── GET /api/auth/env-vars ────────────────────────────────────────────────────
 
+
 def test_env_vars(client):
     resp = client.get("/api/auth/env-vars")
     assert resp.status_code == 200
@@ -62,6 +73,7 @@ def test_env_vars(client):
 
 
 # ── GET /api/auth/warehouses ──────────────────────────────────────────────────
+
 
 def test_list_warehouses(client, mock_workspace_client):
     resp = client.get("/api/auth/warehouses")
@@ -72,6 +84,7 @@ def test_list_warehouses(client, mock_workspace_client):
 
 # ── POST /api/auth/test-warehouse ─────────────────────────────────────────────
 
+
 @patch("src.client.execute_sql", return_value=[{"1": 1}])
 def test_test_warehouse(mock_sql, client):
     resp = client.post("/api/auth/test-warehouse", json={"warehouse_id": "wh-123"})
@@ -80,6 +93,7 @@ def test_test_warehouse(mock_sql, client):
 
 # ── GET /api/auth/volumes ─────────────────────────────────────────────────────
 
+
 @patch("src.serverless.list_volumes", return_value=[])
 def test_list_volumes(mock_vols, client):
     resp = client.get("/api/auth/volumes")
@@ -87,6 +101,7 @@ def test_list_volumes(mock_vols, client):
 
 
 # ── POST /api/auth/azure-login ────────────────────────────────────────────────
+
 
 @patch("shutil.which", return_value=None)
 def test_azure_login_no_cli(mock_which, client):
@@ -97,6 +112,7 @@ def test_azure_login_no_cli(mock_which, client):
 
 # ── GET /api/auth/azure/tenants ───────────────────────────────────────────────
 
+
 @patch("src.auth.list_tenants", return_value=[])
 def test_azure_tenants(mock_tenants, client):
     resp = client.get("/api/auth/azure/tenants")
@@ -104,6 +120,7 @@ def test_azure_tenants(mock_tenants, client):
 
 
 # ── GET /api/auth/azure/subscriptions ─────────────────────────────────────────
+
 
 def test_azure_subscriptions_missing_param(client):
     resp = client.get("/api/auth/azure/subscriptions")
@@ -113,12 +130,14 @@ def test_azure_subscriptions_missing_param(client):
 
 # ── GET /api/auth/azure/workspaces ────────────────────────────────────────────
 
+
 def test_azure_workspaces_missing_param(client):
     resp = client.get("/api/auth/azure/workspaces")
     assert resp.status_code in (200, 400, 422)
 
 
 # ── POST /api/auth/azure/connect ──────────────────────────────────────────────
+
 
 @patch("src.auth.clear_cache")
 def test_azure_connect(mock_clear, client):
@@ -129,6 +148,7 @@ def test_azure_connect(mock_clear, client):
 
 # ── GET /api/auth/auto-login ─────────────────────────────────────────────────
 
+
 @patch("src.auth.is_databricks_app", return_value=False)
 def test_auto_login_not_dbx_app(mock_is_app, client):
     resp = client.get("/api/auth/auto-login")
@@ -137,6 +157,7 @@ def test_auto_login_not_dbx_app(mock_is_app, client):
 
 # ── POST /api/auth/oauth-login ───────────────────────────────────────────────
 
+
 def test_oauth_login(client):
     resp = client.post("/api/auth/oauth-login", json={"host": "https://test.azuredatabricks.net"})
     assert resp.status_code in (200, 400, 401, 500)
@@ -144,10 +165,14 @@ def test_oauth_login(client):
 
 # ── POST /api/auth/service-principal ──────────────────────────────────────────
 
+
 def test_service_principal_login(client):
-    resp = client.post("/api/auth/service-principal", json={
-        "host": "https://test.azuredatabricks.net",
-        "client_id": "test-id",
-        "client_secret": "test-secret",
-    })
+    resp = client.post(
+        "/api/auth/service-principal",
+        json={
+            "host": "https://test.azuredatabricks.net",
+            "client_id": "test-id",
+            "client_secret": "test-secret",
+        },
+    )
     assert resp.status_code in (200, 400, 401, 500)

@@ -58,11 +58,13 @@ def build_dependency_graph(
                 deps = _extract_table_references(definition, catalog)
                 for dep in deps:
                     if dep != fqn:  # Skip self-references
-                        edges.append({
-                            "source": fqn,
-                            "target": dep,
-                            "edge_type": "depends_on",
-                        })
+                        edges.append(
+                            {
+                                "source": fqn,
+                                "target": dep,
+                                "edge_type": "depends_on",
+                            }
+                        )
                         # Ensure target node exists
                         if dep not in nodes:
                             nodes[dep] = {
@@ -81,12 +83,16 @@ def build_dependency_graph(
         reverse_adjacency.setdefault(edge["target"], []).append(edge["source"])
 
     # Find root tables (no dependencies)
-    root_tables = [fqn for fqn, info in nodes.items()
-                   if fqn not in adjacency and info["type"] == "TABLE"]
+    root_tables = [
+        fqn for fqn, info in nodes.items() if fqn not in adjacency and info["type"] == "TABLE"
+    ]
 
     # Find leaf views (nothing depends on them)
-    leaf_views = [fqn for fqn, info in nodes.items()
-                  if fqn not in reverse_adjacency and info["type"] == "VIEW"]
+    leaf_views = [
+        fqn
+        for fqn, info in nodes.items()
+        if fqn not in reverse_adjacency and info["type"] == "VIEW"
+    ]
 
     graph = {
         "catalog": catalog,
@@ -115,8 +121,7 @@ def _extract_table_references(sql_text: str, default_catalog: str) -> list[str]:
 
     # Pattern: three-part name (catalog.schema.table)
     three_part = re.findall(
-        r'(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))',
-        sql_text
+        r"(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))", sql_text
     )
     for match in three_part:
         cat = match[0] or match[1]
@@ -126,7 +131,7 @@ def _extract_table_references(sql_text: str, default_catalog: str) -> list[str]:
 
     # Pattern: two-part name (schema.table) — prepend default catalog
     two_part = re.findall(
-        r'(?:FROM|JOIN|TABLE)\s+(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))',
+        r"(?:FROM|JOIN|TABLE)\s+(?:`([^`]+)`|(\w+))\.(?:`([^`]+)`|(\w+))",
         sql_text,
         re.IGNORECASE,
     )

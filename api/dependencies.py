@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from fastapi import Depends, Header, HTTPException, Request
 
 from src.auth import get_client
-from src.config import load_config, load_config_cached
+from src.config import load_config_cached
 
 # Context variable set by middleware — holds the UI-selected warehouse ID
 _warehouse_ctx: ContextVar[str | None] = ContextVar("warehouse_ctx", default=None)
@@ -63,16 +63,19 @@ async def get_db_client(creds: tuple = Depends(get_credentials)):
         # 1. Try session-based client first (Azure/OAuth/SP)
         if session_id:
             from api.routers.auth import get_session_client
+
             client = get_session_client(session_id)
             if client:
                 return client
             # Session expired — fall through to PAT/env if available, otherwise fail
             from src.auth import is_databricks_app
+
             if (not host or not token) and not is_databricks_app():
                 raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
 
         # 2. Databricks App runtime
         from src.auth import is_databricks_app
+
         if is_databricks_app():
             return get_client()
 
@@ -106,6 +109,7 @@ async def get_rest_client(client=Depends(get_db_client)):
     that can be used as a fallback when SDK methods fail.
     """
     from src.rest_api_client import get_rest_client as _get_rest
+
     return _get_rest(client)
 
 

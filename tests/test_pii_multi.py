@@ -38,8 +38,7 @@ class TestMultiFanout:
                 for i in range(pii_count)
             ],
             "suggested_masking_config": {
-                f"s.t.c{i}": {"pii_type": "EMAIL", "masking": "hash"}
-                for i in range(pii_count)
+                f"s.t.c{i}": {"pii_type": "EMAIL", "masking": "hash"} for i in range(pii_count)
             },
         }
 
@@ -71,7 +70,7 @@ class TestMultiFanout:
         """Top-level risk is the worst across catalogs — one HIGH
         catalog plus one LOW catalog rolls up as HIGH."""
         results = {
-            "main":    self._per_catalog_result("main", 1, "LOW"),
+            "main": self._per_catalog_result("main", 1, "LOW"),
             "samples": self._per_catalog_result("samples", 15, "HIGH"),
         }
         mock_scan.side_effect = lambda *a, **kw: results[a[2]]
@@ -97,10 +96,12 @@ class TestMultiFanout:
         """A failing catalog (auth, missing) is captured in `errors[]`
         and reported as risk_level=UNKNOWN in `per_catalog`; the rest
         still surface."""
+
         def stub(_client, _wid, catalog, *_a, **_kw):
             if catalog == "broken":
                 raise RuntimeError("PERMISSION_DENIED on broken")
             return self._per_catalog_result(catalog, 2, "LOW")
+
         mock_scan.side_effect = stub
 
         result = scan_catalogs_for_pii_multi(MagicMock(), "wh", ["main", "broken"])
@@ -118,31 +119,51 @@ class TestEndpointDispatch:
     """`/pii-scan` accepts both shapes via the extended PIIScanRequest."""
 
     def test_source_catalogs_routes_to_multi(self, client):
-        with patch("src.pii_multi.scan_catalogs_for_pii_multi") as mock_multi, \
-             patch("src.pii_detection.scan_catalog_for_pii") as mock_single:
+        with (
+            patch("src.pii_multi.scan_catalogs_for_pii_multi") as mock_multi,
+            patch("src.pii_detection.scan_catalog_for_pii") as mock_single,
+        ):
             mock_multi.return_value = {
-                "scan_ids": [], "catalogs": ["main", "samples"],
-                "summary": {"total_columns_scanned": 0, "pii_columns_found": 0,
-                            "risk_level": "NONE", "by_pii_type": {}},
-                "columns": [], "suggested_masking_config": {},
-                "per_catalog": {}, "errors": [],
+                "scan_ids": [],
+                "catalogs": ["main", "samples"],
+                "summary": {
+                    "total_columns_scanned": 0,
+                    "pii_columns_found": 0,
+                    "risk_level": "NONE",
+                    "by_pii_type": {},
+                },
+                "columns": [],
+                "suggested_masking_config": {},
+                "per_catalog": {},
+                "errors": [],
             }
-            resp = client.post("/api/pii-scan", json={
-                "source_catalogs": ["main", "samples"],
-            })
+            resp = client.post(
+                "/api/pii-scan",
+                json={
+                    "source_catalogs": ["main", "samples"],
+                },
+            )
             assert resp.status_code == 200
             assert mock_multi.called
             assert not mock_single.called
 
     def test_source_catalog_only_routes_to_single(self, client):
         """Existing single-catalog clients continue to work unchanged."""
-        with patch("src.pii_multi.scan_catalogs_for_pii_multi") as mock_multi, \
-             patch("src.pii_detection.scan_catalog_for_pii") as mock_single:
+        with (
+            patch("src.pii_multi.scan_catalogs_for_pii_multi") as mock_multi,
+            patch("src.pii_detection.scan_catalog_for_pii") as mock_single,
+        ):
             mock_single.return_value = {
-                "scan_id": "x", "summary": {"catalog": "main", "pii_columns_found": 0,
-                                            "risk_level": "NONE", "by_pii_type": {},
-                                            "total_columns_scanned": 0},
-                "columns": [], "suggested_masking_config": {},
+                "scan_id": "x",
+                "summary": {
+                    "catalog": "main",
+                    "pii_columns_found": 0,
+                    "risk_level": "NONE",
+                    "by_pii_type": {},
+                    "total_columns_scanned": 0,
+                },
+                "columns": [],
+                "suggested_masking_config": {},
             }
             resp = client.post("/api/pii-scan", json={"source_catalog": "main"})
             assert resp.status_code == 200

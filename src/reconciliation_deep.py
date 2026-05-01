@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 
 def _get_spark():
     from src.spark_session import get_spark
+
     spark = get_spark()
     if spark is None:
-        raise RuntimeError("Spark session not available. Configure a cluster or enable serverless first.")
+        raise RuntimeError(
+            "Spark session not available. Configure a cluster or enable serverless first."
+        )
     return spark
 
 
@@ -33,16 +36,25 @@ def detect_key_columns(client, catalog: str, schema: str, table_name: str) -> li
     if client:
         try:
             from src.client import get_table_info_sdk
+
             info = get_table_info_sdk(client, f"{catalog}.{schema}.{table_name}")
             if info and info.get("columns"):
-                pk_cols = [c["column_name"] for c in info["columns"]
-                           if c.get("is_primary_key") or c.get("constraint") == "PRIMARY KEY"]
+                pk_cols = [
+                    c["column_name"]
+                    for c in info["columns"]
+                    if c.get("is_primary_key") or c.get("constraint") == "PRIMARY KEY"
+                ]
                 if pk_cols:
                     return pk_cols
 
                 col_names = [c["column_name"] for c in info["columns"]]
-                candidates = [c for c in col_names if c.lower() in ("id", f"{table_name.lower()}_id")
-                              or c.lower().endswith("_key") or c.lower().endswith("_pk")]
+                candidates = [
+                    c
+                    for c in col_names
+                    if c.lower() in ("id", f"{table_name.lower()}_id")
+                    or c.lower().endswith("_key")
+                    or c.lower().endswith("_pk")
+                ]
                 if candidates:
                     return candidates[:3]
         except Exception as e:
@@ -53,8 +65,13 @@ def detect_key_columns(client, catalog: str, schema: str, table_name: str) -> li
         spark = _get_spark()
         fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
         col_names = spark.table(fqn).columns
-        candidates = [c for c in col_names if c.lower() in ("id", f"{table_name.lower()}_id")
-                      or c.lower().endswith("_key") or c.lower().endswith("_pk")]
+        candidates = [
+            c
+            for c in col_names
+            if c.lower() in ("id", f"{table_name.lower()}_id")
+            or c.lower().endswith("_key")
+            or c.lower().endswith("_pk")
+        ]
         if candidates:
             return candidates[:3]
     except Exception as e:
@@ -93,8 +110,14 @@ def get_table_preview(
         dst_df = spark.table(f"{dest_catalog}.{schema}.{table_name}")
 
         # Column metadata
-        src_cols = [{"name": f.name, "type": str(f.dataType), "nullable": f.nullable} for f in src_df.schema.fields]
-        dst_cols = [{"name": f.name, "type": str(f.dataType), "nullable": f.nullable} for f in dst_df.schema.fields]
+        src_cols = [
+            {"name": f.name, "type": str(f.dataType), "nullable": f.nullable}
+            for f in src_df.schema.fields
+        ]
+        dst_cols = [
+            {"name": f.name, "type": str(f.dataType), "nullable": f.nullable}
+            for f in dst_df.schema.fields
+        ]
         result["source_columns"] = src_cols
         result["dest_columns"] = dst_cols
 
@@ -106,14 +129,42 @@ def get_table_preview(
             if col["name"] in dst_map:
                 dst_col = dst_map[col["name"]]
                 if col["type"] == dst_col["type"]:
-                    match_status.append({"column": col["name"], "status": "match", "source_type": col["type"], "dest_type": dst_col["type"]})
+                    match_status.append(
+                        {
+                            "column": col["name"],
+                            "status": "match",
+                            "source_type": col["type"],
+                            "dest_type": dst_col["type"],
+                        }
+                    )
                 else:
-                    match_status.append({"column": col["name"], "status": "type_mismatch", "source_type": col["type"], "dest_type": dst_col["type"]})
+                    match_status.append(
+                        {
+                            "column": col["name"],
+                            "status": "type_mismatch",
+                            "source_type": col["type"],
+                            "dest_type": dst_col["type"],
+                        }
+                    )
             else:
-                match_status.append({"column": col["name"], "status": "missing_in_dest", "source_type": col["type"], "dest_type": None})
+                match_status.append(
+                    {
+                        "column": col["name"],
+                        "status": "missing_in_dest",
+                        "source_type": col["type"],
+                        "dest_type": None,
+                    }
+                )
         for col in dst_cols:
             if col["name"] not in src_map:
-                match_status.append({"column": col["name"], "status": "extra_in_dest", "source_type": None, "dest_type": col["type"]})
+                match_status.append(
+                    {
+                        "column": col["name"],
+                        "status": "extra_in_dest",
+                        "source_type": None,
+                        "dest_type": col["type"],
+                    }
+                )
         result["column_match"] = match_status
 
         # Row counts
@@ -185,7 +236,11 @@ def _apply_comparison_transforms(df, use_cols, comparison_options: dict):
             expr = spark_round(expr, decimal_precision)
 
         # Only replace the column if we applied any transforms
-        if ignore_nulls or (is_string and (ignore_case or ignore_whitespace)) or (is_numeric and decimal_precision > 0):
+        if (
+            ignore_nulls
+            or (is_string and (ignore_case or ignore_whitespace))
+            or (is_numeric and decimal_precision > 0)
+        ):
             df = df.withColumn(c, expr)
 
     return df
@@ -299,7 +354,9 @@ def deep_reconcile_table(
 
             # Hash non-key columns for quick comparison
             if non_key_cols:
-                nk_hash_cols = [coalesce(col(c).cast("string"), lit(_null_placeholder)) for c in non_key_cols]
+                nk_hash_cols = [
+                    coalesce(col(c).cast("string"), lit(_null_placeholder)) for c in non_key_cols
+                ]
                 src_df = src_df.withColumn("_val_hash", sha2(concat_ws("|", *nk_hash_cols), 256))
                 dst_df = dst_df.withColumn("_val_hash", sha2(concat_ws("|", *nk_hash_cols), 256))
 
@@ -342,7 +399,10 @@ def deep_reconcile_table(
             # Column-level diffs for modified rows
             if modified_df is not None and modified_count > 0:
                 diff_result = _collect_modified_diffs(
-                    modified_df, key_columns, non_key_cols, sample_diffs,
+                    modified_df,
+                    key_columns,
+                    non_key_cols,
+                    sample_diffs,
                 )
                 result["modified_sample"] = diff_result["samples"]
                 result["column_impact"] = diff_result["column_impact"]
@@ -354,18 +414,32 @@ def deep_reconcile_table(
         # Table-level checksum verification
         if use_checksum:
             try:
-                from pyspark.sql.functions import md5, concat_ws, coalesce, lit, collect_list, col as spark_col
+                from pyspark.sql.functions import (
+                    md5,
+                    concat_ws,
+                    coalesce,
+                    lit,
+                    collect_list,
+                    col as spark_col,
+                )
+
                 src_raw = spark.table(f"{source_catalog}.{schema}.{table_name}")
                 dst_raw = spark.table(f"{dest_catalog}.{schema}.{table_name}")
                 common_cols = sorted(set(src_raw.columns) & set(dst_raw.columns))
                 if common_cols:
-                    hash_exprs = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
-                    src_hash = src_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh")).select(
-                        md5(concat_ws(",", collect_list("rh"))).alias("th")
-                    ).collect()[0]["th"]
-                    dst_hash = dst_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh")).select(
-                        md5(concat_ws(",", collect_list("rh"))).alias("th")
-                    ).collect()[0]["th"]
+                    hash_exprs = [
+                        coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols
+                    ]
+                    src_hash = (
+                        src_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh"))
+                        .select(md5(concat_ws(",", collect_list("rh"))).alias("th"))
+                        .collect()[0]["th"]
+                    )
+                    dst_hash = (
+                        dst_raw.select(md5(concat_ws("|", *hash_exprs)).alias("rh"))
+                        .select(md5(concat_ws(",", collect_list("rh"))).alias("th"))
+                        .collect()[0]["th"]
+                    )
                     result["source_checksum"] = src_hash
                     result["dest_checksum"] = dst_hash
                     result["checksum_match"] = src_hash == dst_hash
@@ -393,7 +467,10 @@ def _collect_sample(df, limit: int) -> list[dict]:
 
 
 def _collect_modified_diffs(
-    modified_df, key_columns: list[str], non_key_cols: list[str], limit: int,
+    modified_df,
+    key_columns: list[str],
+    non_key_cols: list[str],
+    limit: int,
 ) -> dict:
     """For modified rows, identify which columns differ between source and dest.
 
@@ -450,8 +527,14 @@ def deep_reconcile_catalog(
     # Single table
     if schema_name and table_name:
         detail = deep_reconcile_table(
-            source_catalog, dest_catalog, schema_name, table_name,
-            key_columns, include_columns, ignore_columns, sample_diffs,
+            source_catalog,
+            dest_catalog,
+            schema_name,
+            table_name,
+            key_columns,
+            include_columns,
+            ignore_columns,
+            sample_diffs,
             use_checksum=use_checksum,
             comparison_options=comparison_options,
         )
@@ -461,19 +544,31 @@ def deep_reconcile_catalog(
         if schema_name:
             schemas = [schema_name]
         else:
-            schemas = _list_schemas_spark(spark, dest_catalog, exclude=["information_schema", "default"])
+            schemas = _list_schemas_spark(
+                spark, dest_catalog, exclude=["information_schema", "default"]
+            )
 
         details = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
         for sch in schemas:
             tables = _list_tables_spark(spark, dest_catalog, sch)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
                     executor.submit(
-                        deep_reconcile_table, source_catalog, dest_catalog,
-                        sch, t, key_columns, include_columns, ignore_columns, sample_diffs,
-                        use_checksum, comparison_options,
-                    ): t for t in tables
+                        deep_reconcile_table,
+                        source_catalog,
+                        dest_catalog,
+                        sch,
+                        t,
+                        key_columns,
+                        include_columns,
+                        ignore_columns,
+                        sample_diffs,
+                        use_checksum,
+                        comparison_options,
+                    ): t
+                    for t in tables
                 }
                 for future in as_completed(futures):
                     details.append(future.result())
@@ -506,6 +601,7 @@ def deep_reconcile_catalog(
 # Statistical Comparison
 # ---------------------------------------------------------------------------
 
+
 def compute_statistical_comparison(
     source_catalog: str,
     dest_catalog: str,
@@ -530,13 +626,24 @@ def compute_statistical_comparison(
         Dict with per-column statistical comparison and deltas.
     """
     from pyspark.sql.functions import (
-        col, count, countDistinct, min as spark_min, max as spark_max,
-        mean as spark_mean, stddev as spark_stddev, percentile_approx,
+        col,
+        count,
+        countDistinct,
+        min as spark_min,
+        max as spark_max,
+        mean as spark_mean,
+        stddev as spark_stddev,
+        percentile_approx,
         desc,
     )
     from pyspark.sql.types import (
-        IntegerType, LongType, FloatType, DoubleType, DecimalType,
-        ShortType, ByteType,
+        IntegerType,
+        LongType,
+        FloatType,
+        DoubleType,
+        DecimalType,
+        ShortType,
+        ByteType,
     )
 
     spark = _get_spark()
@@ -562,7 +669,15 @@ def compute_statistical_comparison(
             use_cols = common
 
         src_schema_map = {f.name: f.dataType for f in src_df.schema.fields}
-        numeric_types = (IntegerType, LongType, FloatType, DoubleType, DecimalType, ShortType, ByteType)
+        numeric_types = (
+            IntegerType,
+            LongType,
+            FloatType,
+            DoubleType,
+            DecimalType,
+            ShortType,
+            ByteType,
+        )
 
         src_count = src_df.count()
         dst_count = dst_df.count()
@@ -577,24 +692,32 @@ def compute_statistical_comparison(
 
             if is_numeric:
                 # Numeric statistics for source
-                src_stats = src_df.select(
-                    spark_min(col(c)).alias("min"),
-                    spark_max(col(c)).alias("max"),
-                    spark_mean(col(c)).alias("mean"),
-                    spark_stddev(col(c)).alias("stddev"),
-                    percentile_approx(col(c), [0.25, 0.50, 0.75, 0.95]).alias("percentiles"),
-                    count(col(c)).alias("non_null_count"),
-                ).collect()[0].asDict()
+                src_stats = (
+                    src_df.select(
+                        spark_min(col(c)).alias("min"),
+                        spark_max(col(c)).alias("max"),
+                        spark_mean(col(c)).alias("mean"),
+                        spark_stddev(col(c)).alias("stddev"),
+                        percentile_approx(col(c), [0.25, 0.50, 0.75, 0.95]).alias("percentiles"),
+                        count(col(c)).alias("non_null_count"),
+                    )
+                    .collect()[0]
+                    .asDict()
+                )
 
                 # Numeric statistics for dest
-                dst_stats = dst_df.select(
-                    spark_min(col(c)).alias("min"),
-                    spark_max(col(c)).alias("max"),
-                    spark_mean(col(c)).alias("mean"),
-                    spark_stddev(col(c)).alias("stddev"),
-                    percentile_approx(col(c), [0.25, 0.50, 0.75, 0.95]).alias("percentiles"),
-                    count(col(c)).alias("non_null_count"),
-                ).collect()[0].asDict()
+                dst_stats = (
+                    dst_df.select(
+                        spark_min(col(c)).alias("min"),
+                        spark_max(col(c)).alias("max"),
+                        spark_mean(col(c)).alias("mean"),
+                        spark_stddev(col(c)).alias("stddev"),
+                        percentile_approx(col(c), [0.25, 0.50, 0.75, 0.95]).alias("percentiles"),
+                        count(col(c)).alias("non_null_count"),
+                    )
+                    .collect()[0]
+                    .asDict()
+                )
 
                 # Convert non-serializable values
                 for stats in (src_stats, dst_stats):
@@ -658,14 +781,20 @@ def compute_statistical_comparison(
                 # Top 5 values by frequency
                 src_top5 = [
                     {"value": str(row[c]), "count": row["cnt"]}
-                    for row in src_df.groupBy(c).agg(count("*").alias("cnt"))
-                        .orderBy(desc("cnt")).limit(5).collect()
+                    for row in src_df.groupBy(c)
+                    .agg(count("*").alias("cnt"))
+                    .orderBy(desc("cnt"))
+                    .limit(5)
+                    .collect()
                     if row[c] is not None
                 ]
                 dst_top5 = [
                     {"value": str(row[c]), "count": row["cnt"]}
-                    for row in dst_df.groupBy(c).agg(count("*").alias("cnt"))
-                        .orderBy(desc("cnt")).limit(5).collect()
+                    for row in dst_df.groupBy(c)
+                    .agg(count("*").alias("cnt"))
+                    .orderBy(desc("cnt"))
+                    .limit(5)
+                    .collect()
                     if row[c] is not None
                 ]
 
@@ -699,6 +828,7 @@ def compute_statistical_comparison(
 # ---------------------------------------------------------------------------
 # Incremental Reconciliation (Delta Change Data Feed)
 # ---------------------------------------------------------------------------
+
 
 def deep_reconcile_incremental(
     source_catalog: str,
@@ -782,12 +912,8 @@ def deep_reconcile_incremental(
         dst_cdf = _read_cdf(dst_fqn)
 
         # Filter to inserts and updates only (skip deletes for comparison)
-        src_changes = src_cdf.filter(
-            col("_change_type").isin("insert", "update_postimage")
-        )
-        dst_changes = dst_cdf.filter(
-            col("_change_type").isin("insert", "update_postimage")
-        )
+        src_changes = src_cdf.filter(col("_change_type").isin("insert", "update_postimage"))
+        dst_changes = dst_cdf.filter(col("_change_type").isin("insert", "update_postimage"))
 
         # Drop CDF metadata columns for comparison
         cdf_meta_cols = {"_change_type", "_commit_version", "_commit_timestamp"}
@@ -859,7 +985,9 @@ def deep_reconcile_incremental(
             non_key_cols = [c for c in use_cols if c not in key_columns]
 
             if non_key_cols:
-                nk_hash_cols = [coalesce(col(c).cast("string"), lit(_null_placeholder)) for c in non_key_cols]
+                nk_hash_cols = [
+                    coalesce(col(c).cast("string"), lit(_null_placeholder)) for c in non_key_cols
+                ]
                 src_df = src_df.withColumn("_val_hash", sha2(concat_ws("|", *nk_hash_cols), 256))
                 dst_df = dst_df.withColumn("_val_hash", sha2(concat_ws("|", *nk_hash_cols), 256))
 
@@ -897,7 +1025,10 @@ def deep_reconcile_incremental(
 
             if modified_df is not None and modified_count > 0:
                 diff_result = _collect_modified_diffs(
-                    modified_df, key_columns, non_key_cols, sample_diffs,
+                    modified_df,
+                    key_columns,
+                    non_key_cols,
+                    sample_diffs,
                 )
                 result["modified_sample"] = diff_result["samples"]
                 result["column_impact"] = diff_result["column_impact"]

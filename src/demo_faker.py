@@ -88,8 +88,9 @@ def _array_sql(values: list[str]) -> str:
 
 
 @lru_cache(maxsize=128)
-def first_name_pool_sql(locale: str = "en_US", seed: int | None = None,
-                        size: int = _DEFAULT_POOL_SIZE) -> str:
+def first_name_pool_sql(
+    locale: str = "en_US", seed: int | None = None, size: int = _DEFAULT_POOL_SIZE
+) -> str:
     """SQL `array('Alice','Bob',…)` literal of `size` first names in locale."""
     f = get_faker(locale, seed)
     names = list({f.first_name() for _ in range(size * 2)})[:size]
@@ -97,24 +98,25 @@ def first_name_pool_sql(locale: str = "en_US", seed: int | None = None,
 
 
 @lru_cache(maxsize=128)
-def last_name_pool_sql(locale: str = "en_US", seed: int | None = None,
-                       size: int = _DEFAULT_POOL_SIZE) -> str:
+def last_name_pool_sql(
+    locale: str = "en_US", seed: int | None = None, size: int = _DEFAULT_POOL_SIZE
+) -> str:
     f = get_faker(locale, seed)
     names = list({f.last_name() for _ in range(size * 2)})[:size]
     return _array_sql(names or ["Smith"])
 
 
 @lru_cache(maxsize=128)
-def city_pool_sql(locale: str = "en_US", seed: int | None = None,
-                  size: int = 200) -> str:
+def city_pool_sql(locale: str = "en_US", seed: int | None = None, size: int = 200) -> str:
     f = get_faker(locale, seed)
     cities = list({f.city() for _ in range(size * 2)})[:size]
     return _array_sql(cities or ["Springfield"])
 
 
 @lru_cache(maxsize=128)
-def email_pool_sql(locale: str = "en_US", seed: int | None = None,
-                   size: int = _DEFAULT_POOL_SIZE) -> str:
+def email_pool_sql(
+    locale: str = "en_US", seed: int | None = None, size: int = _DEFAULT_POOL_SIZE
+) -> str:
     """Email pool — Faker uses RFC-5322-valid synthetic emails by default
     (e.g. `bob.smith@example.org`). Beats the legacy
     `patient1@example.com` pattern for screenshot demos."""
@@ -124,8 +126,7 @@ def email_pool_sql(locale: str = "en_US", seed: int | None = None,
 
 
 @lru_cache(maxsize=128)
-def phone_pool_sql(locale: str = "en_US", seed: int | None = None,
-                   size: int = 500) -> str:
+def phone_pool_sql(locale: str = "en_US", seed: int | None = None, size: int = 500) -> str:
     """Phone pool — Faker produces locale-correct format (e.g. en_US uses
     NANP `(555) 123-4567`, en_GB uses `+44 20 7946 0958`)."""
     f = get_faker(locale, seed)
@@ -140,6 +141,7 @@ def ssn_pool_sql(seed: int | None = None, size: int = _DEFAULT_POOL_SIZE) -> str
     of locale (SSN is US-specific; non-US locales should use a different
     national-id field)."""
     import random
+
     rng = random.Random(seed)
     ssns = []
     seen = set()
@@ -152,8 +154,7 @@ def ssn_pool_sql(seed: int | None = None, size: int = _DEFAULT_POOL_SIZE) -> str
 
 
 @lru_cache(maxsize=128)
-def street_address_pool_sql(locale: str = "en_US", seed: int | None = None,
-                            size: int = 500) -> str:
+def street_address_pool_sql(locale: str = "en_US", seed: int | None = None, size: int = 500) -> str:
     f = get_faker(locale, seed)
     addrs = list({f.street_address().replace("\n", " ") for _ in range(size * 2)})[:size]
     return _array_sql(addrs or ["1 Main St"])
@@ -170,12 +171,10 @@ def _sample_expr(pool_sql: str) -> str:
     the comma count in the array literal."""
     # The array literal always opens with `array(`; count commas inside
     # to derive the size. Cheaper than re-parsing.
-    inner = pool_sql[len("array("):-1]
+    inner = pool_sql[len("array(") : -1]
     # `inner` is `'a','b','c'` — element count is comma_count + 1
     elements = inner.count(",") + 1 if inner else 1
-    return (
-        f"element_at({pool_sql},cast(floor(rand()*{elements})+1 as INT))"
-    )
+    return f"element_at({pool_sql},cast(floor(rand()*{elements})+1 as INT))"
 
 
 # Patterns that legacy INDUSTRIES insert_expr templates use. Each tuple is
@@ -205,9 +204,7 @@ _LAST_NAME_RE_2 = re.compile(
     r"element_at\(array\(\s*'Chen'\s*,\s*'Patel'[^)]+\)\s*,\s*cast\(floor\(rand\(\)\*\d+\)\+1 as INT\)\)"
 )
 # Email pattern: concat('<word>',id,'@example.com')
-_EMAIL_RE = re.compile(
-    r"concat\('[a-z_]+',\s*id\s*,\s*'@example\.com'\)"
-)
+_EMAIL_RE = re.compile(r"concat\('[a-z_]+',\s*id\s*,\s*'@example\.com'\)")
 # Phone pattern: concat('555-',lpad(cast(floor(rand()*9999999) as STRING),7,'0'))
 _PHONE_RE = re.compile(
     r"concat\('555-',\s*lpad\(cast\(floor\(rand\(\)\*9999999\) as STRING\),\s*7\s*,\s*'0'\)\)"
@@ -215,7 +212,9 @@ _PHONE_RE = re.compile(
 
 
 def apply_faker_substitutions(
-    insert_expr: str, locale: str = "en_US", seed: int | None = None,
+    insert_expr: str,
+    locale: str = "en_US",
+    seed: int | None = None,
 ) -> str:
     """Rewrite a single INSERT expression to use Faker-driven pools.
 

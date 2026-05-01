@@ -46,7 +46,9 @@ def _row_count(client: WorkspaceClient, warehouse_id: str, fqn: str) -> int | No
         return None
 
 
-def _checksum(client: WorkspaceClient, warehouse_id: str, fqn: str, columns: list[str]) -> str | None:
+def _checksum(
+    client: WorkspaceClient, warehouse_id: str, fqn: str, columns: list[str]
+) -> str | None:
     """SHA-256 over a deterministic hash of concatenated column values.
 
     Relies on xxhash64 → SHA256 ordering-agnostic sum. Not cryptographic
@@ -67,12 +69,15 @@ def _checksum(client: WorkspaceClient, warehouse_id: str, fqn: str, columns: lis
         return None
 
 
-def _get_hashable_columns(client: WorkspaceClient, catalog: str, schema: str, table: str) -> list[str]:
+def _get_hashable_columns(
+    client: WorkspaceClient, catalog: str, schema: str, table: str
+) -> list[str]:
     """Columns suitable for hashing — exclude arrays, maps, structs (harder to cast to string uniformly)."""
     try:
         info = client.tables.get(full_name=f"{catalog}.{schema}.{table}")
         return [
-            c.name for c in (info.columns or [])
+            c.name
+            for c in (info.columns or [])
             if c.name and str(getattr(c, "type_name", "")).upper() not in ("ARRAY", "MAP", "STRUCT")
         ]
     except Exception as e:
@@ -140,8 +145,12 @@ def reconcile_cross_metastore(
         if use_checksum and entry["match"]:
             cols = _get_hashable_columns(source_client, source_catalog, schema, table)
             if cols:
-                entry["source_checksum"] = _checksum(source_client, source_warehouse_id, src_fqn, cols)
-                entry["target_checksum"] = _checksum(target_client, target_warehouse_id, dst_fqn, cols)
+                entry["source_checksum"] = _checksum(
+                    source_client, source_warehouse_id, src_fqn, cols
+                )
+                entry["target_checksum"] = _checksum(
+                    target_client, target_warehouse_id, dst_fqn, cols
+                )
                 if entry["source_checksum"] != entry["target_checksum"]:
                     entry["match"] = False
                     entry["error"] = "checksum mismatch"
@@ -165,9 +174,7 @@ def reconcile_cross_metastore(
     else:
         status = "partial"
 
-    logger.info(
-        f"Reconciliation {status.upper()}: {matched}/{total} tables match, {errors} errors"
-    )
+    logger.info(f"Reconciliation {status.upper()}: {matched}/{total} tables match, {errors} errors")
     return {
         "status": status,
         "table_count": total,

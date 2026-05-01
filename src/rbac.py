@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RbacRule:
     """A single RBAC rule."""
+
     principals: list[str]
     allowed_sources: list[str] = field(default_factory=lambda: [".*"])
     allowed_destinations: list[str] = field(default_factory=lambda: [".*"])
@@ -43,14 +44,16 @@ def load_rbac_policy(policy_path: str) -> list[RbacRule]:
 
     rules = []
     for rule_data in data.get("rules", []):
-        rules.append(RbacRule(
-            principals=rule_data.get("principals", []),
-            allowed_sources=rule_data.get("allowed_sources", [".*"]),
-            allowed_destinations=rule_data.get("allowed_destinations", [".*"]),
-            allowed_schemas=rule_data.get("allowed_schemas", [".*"]),
-            allowed_operations=rule_data.get("allowed_operations", ["*"]),
-            deny=rule_data.get("deny", False),
-        ))
+        rules.append(
+            RbacRule(
+                principals=rule_data.get("principals", []),
+                allowed_sources=rule_data.get("allowed_sources", [".*"]),
+                allowed_destinations=rule_data.get("allowed_destinations", [".*"]),
+                allowed_schemas=rule_data.get("allowed_schemas", [".*"]),
+                allowed_operations=rule_data.get("allowed_operations", ["*"]),
+                deny=rule_data.get("deny", False),
+            )
+        )
 
     logger.info(f"Loaded {len(rules)} RBAC rules from {path}")
     return rules
@@ -117,8 +120,8 @@ def check_permission(
                 return {
                     "allowed": False,
                     "reason": f"Denied by rule {i + 1}: "
-                              f"user '{user}' is denied access to "
-                              f"source='{source_catalog}' or dest='{dest_catalog}'",
+                    f"user '{user}' is denied access to "
+                    f"source='{source_catalog}' or dest='{dest_catalog}'",
                     "matched_rule": i,
                 }
 
@@ -206,15 +209,17 @@ def list_policies(policy_path: str = "~/.clone-xs/rbac_policy.yaml") -> list[dic
     rules = load_rbac_policy(policy_path)
     result = []
     for i, rule in enumerate(rules):
-        result.append({
-            "index": i,
-            "principals": rule.principals,
-            "allowed_sources": rule.allowed_sources,
-            "allowed_destinations": rule.allowed_destinations,
-            "allowed_schemas": rule.allowed_schemas,
-            "allowed_operations": rule.allowed_operations,
-            "deny": rule.deny,
-        })
+        result.append(
+            {
+                "index": i,
+                "principals": rule.principals,
+                "allowed_sources": rule.allowed_sources,
+                "allowed_destinations": rule.allowed_destinations,
+                "allowed_schemas": rule.allowed_schemas,
+                "allowed_operations": rule.allowed_operations,
+                "deny": rule.deny,
+            }
+        )
     return result
 
 

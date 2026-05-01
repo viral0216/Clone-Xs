@@ -48,10 +48,16 @@ class TestSaveMetricsDelta:
 
         client = MagicMock()
         metrics = {
-            "metrics": {"failed": 0, "total_tables": 5, "successful": 5,
-                        "failure_rate": 0, "throughput_tables_per_min": 1,
-                        "avg_table_clone_seconds": 1, "total_row_count": 0,
-                        "total_size_bytes": 0},
+            "metrics": {
+                "failed": 0,
+                "total_tables": 5,
+                "successful": 5,
+                "failure_rate": 0,
+                "throughput_tables_per_min": 1,
+                "avg_table_clone_seconds": 1,
+                "total_row_count": 0,
+                "total_size_bytes": 0,
+            },
             "duration_seconds": 10,
         }
         save_metrics_delta(client, "wh-1", metrics, "cat.sch.tbl")
@@ -65,10 +71,16 @@ class TestSaveMetricsDelta:
 
         client = MagicMock()
         metrics = {
-            "metrics": {"failed": 2, "total_tables": 10, "successful": 8,
-                        "failure_rate": 20, "throughput_tables_per_min": 1,
-                        "avg_table_clone_seconds": 1, "total_row_count": 0,
-                        "total_size_bytes": 0},
+            "metrics": {
+                "failed": 2,
+                "total_tables": 10,
+                "successful": 8,
+                "failure_rate": 20,
+                "throughput_tables_per_min": 1,
+                "avg_table_clone_seconds": 1,
+                "total_row_count": 0,
+                "total_size_bytes": 0,
+            },
             "duration_seconds": 10,
         }
         save_metrics_delta(client, "wh-1", metrics, "cat.sch.tbl")
@@ -83,10 +95,16 @@ class TestSaveMetricsDelta:
         client = MagicMock()
         metrics = {
             "error": "Something went wrong",
-            "metrics": {"failed": 0, "total_tables": 0, "successful": 0,
-                        "failure_rate": 0, "throughput_tables_per_min": 0,
-                        "avg_table_clone_seconds": 0, "total_row_count": 0,
-                        "total_size_bytes": 0},
+            "metrics": {
+                "failed": 0,
+                "total_tables": 0,
+                "successful": 0,
+                "failure_rate": 0,
+                "throughput_tables_per_min": 0,
+                "avg_table_clone_seconds": 0,
+                "total_row_count": 0,
+                "total_size_bytes": 0,
+            },
             "duration_seconds": 0,
         }
         save_metrics_delta(client, "wh-1", metrics, "cat.sch.tbl")

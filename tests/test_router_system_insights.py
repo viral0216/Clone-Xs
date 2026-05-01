@@ -13,7 +13,9 @@ def test_billing_usage(client):
 
 
 def test_optimization_recs(client):
-    with patch("src.system_insights.query_predictive_optimization", return_value={"recommendations": []}):
+    with patch(
+        "src.system_insights.query_predictive_optimization", return_value={"recommendations": []}
+    ):
         resp = client.post("/api/system-insights/optimization", json={})
         assert resp.status_code == 200
 

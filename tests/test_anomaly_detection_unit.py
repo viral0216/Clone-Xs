@@ -3,9 +3,7 @@
 from unittest.mock import patch, MagicMock
 
 
-SCHEMA_PATCH = patch(
-    "src.anomaly_detection._get_schema", return_value="clone_audit.data_quality"
-)
+SCHEMA_PATCH = patch("src.anomaly_detection._get_schema", return_value="clone_audit.data_quality")
 
 
 @SCHEMA_PATCH
@@ -21,8 +19,13 @@ class TestRecordMetric:
         mock_query.return_value = []  # no history
 
         result = record_metric(
-            "cat.sch.tbl", "col1", "null_pct", 5.0,
-            client=MagicMock(), warehouse_id="wh-1", config={},
+            "cat.sch.tbl",
+            "col1",
+            "null_pct",
+            5.0,
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
 
         assert result["z_score"] == 0.0
@@ -47,8 +50,13 @@ class TestRecordMetric:
         ]
 
         result = record_metric(
-            "cat.sch.tbl", "col1", "avg_length", 10.0,
-            client=MagicMock(), warehouse_id="wh-1", config={},
+            "cat.sch.tbl",
+            "col1",
+            "avg_length",
+            10.0,
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
 
         # All values identical → stddev=0 → z_score=0
@@ -67,8 +75,13 @@ class TestRecordMetric:
         ]
 
         result = record_metric(
-            "cat.sch.tbl", "col1", "row_count", 100.0,
-            client=MagicMock(), warehouse_id="wh-1", config={},
+            "cat.sch.tbl",
+            "col1",
+            "row_count",
+            100.0,
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
 
         assert result["is_anomaly"] is True
@@ -92,8 +105,13 @@ class TestRecordMetric:
         test_value = mean + 2.5 * stddev
 
         result = record_metric(
-            "cat.sch.tbl", "col1", "metric", test_value,
-            client=MagicMock(), warehouse_id="wh-1", config={},
+            "cat.sch.tbl",
+            "col1",
+            "metric",
+            test_value,
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
 
         assert result["severity"] == "warning"
@@ -108,9 +126,7 @@ class TestRecordMetric:
 class TestRecordMetricsBatch:
     """Tests for record_metrics_batch."""
 
-    def test_batch_insert_multiple_metrics(
-        self, mock_run, mock_query, mock_batch, mock_schema
-    ):
+    def test_batch_insert_multiple_metrics(self, mock_run, mock_query, mock_batch, mock_schema):
         from src.anomaly_detection import record_metrics_batch
 
         mock_query.return_value = []  # no history for any metric
@@ -120,24 +136,25 @@ class TestRecordMetricsBatch:
             {"table_fqn": "c.s.t", "column_name": "b", "metric_name": "null_pct", "value": 2.0},
         ]
         results = record_metrics_batch(
-            metrics, client=MagicMock(), warehouse_id="wh-1", config={},
+            metrics,
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
 
         assert len(results) == 2
         # ensure_tables run_sql + batch INSERT run_sql
-        insert_calls = [
-            c for c in mock_run.call_args_list
-            if "INSERT INTO" in str(c)
-        ]
+        insert_calls = [c for c in mock_run.call_args_list if "INSERT INTO" in str(c)]
         assert len(insert_calls) >= 1
 
-    def test_batch_empty_returns_empty(
-        self, mock_run, mock_query, mock_batch, mock_schema
-    ):
+    def test_batch_empty_returns_empty(self, mock_run, mock_query, mock_batch, mock_schema):
         from src.anomaly_detection import record_metrics_batch
 
         results = record_metrics_batch(
-            [], client=MagicMock(), warehouse_id="wh-1", config={},
+            [],
+            client=MagicMock(),
+            warehouse_id="wh-1",
+            config={},
         )
         assert results == []
 

@@ -72,7 +72,9 @@ def query_predictive_optimization(
         logger.info(f"Retrieved {len(results)} optimization recommendations")
         return results
     except Exception as e:
-        logger.debug(f"system.storage.predictive_optimization_operations_history not available: {e}")
+        logger.debug(
+            f"system.storage.predictive_optimization_operations_history not available: {e}"
+        )
         return []
 
 
@@ -107,17 +109,23 @@ def query_job_run_timeline(
             elif run.state and run.state.life_cycle_state:
                 status = str(run.state.life_cycle_state.value)
 
-            results.append({
-                "job_id": run.job_id,
-                "run_id": run.run_id,
-                "job_name": job_name,
-                "status": status,
-                "start_time": datetime.fromtimestamp(start_ms / 1000).isoformat() if start_ms else None,
-                "end_time": datetime.fromtimestamp(end_ms / 1000).isoformat() if end_ms else None,
-                "duration_seconds": round(duration_s) if duration_s else None,
-                "triggered_by": str(run.trigger) if run.trigger else None,
-                "creator_user_name": run.creator_user_name,
-            })
+            results.append(
+                {
+                    "job_id": run.job_id,
+                    "run_id": run.run_id,
+                    "job_name": job_name,
+                    "status": status,
+                    "start_time": datetime.fromtimestamp(start_ms / 1000).isoformat()
+                    if start_ms
+                    else None,
+                    "end_time": datetime.fromtimestamp(end_ms / 1000).isoformat()
+                    if end_ms
+                    else None,
+                    "duration_seconds": round(duration_s) if duration_s else None,
+                    "triggered_by": str(run.trigger) if run.trigger else None,
+                    "creator_user_name": run.creator_user_name,
+                }
+            )
 
             if len(results) >= 500:
                 break
@@ -141,7 +149,8 @@ def query_table_lineage(
     # Get all tables in the catalog to query lineage for
     try:
         schemas = [
-            s.name for s in client.schemas.list(catalog_name=catalog)
+            s.name
+            for s in client.schemas.list(catalog_name=catalog)
             if s.name not in ("information_schema", "default")
         ]
     except Exception as e:
@@ -164,25 +173,29 @@ def query_table_lineage(
                         },
                     )
                     # Parse upstream lineage
-                    for upstream in (response.get("upstreams") or []):
+                    for upstream in response.get("upstreams") or []:
                         table_info = upstream.get("tableInfo", {})
-                        results.append({
-                            "source_table": table_info.get("name", ""),
-                            "target_table": table.full_name,
-                            "source_type": upstream.get("entityType", ""),
-                            "target_type": "TABLE",
-                            "event_time": None,
-                        })
+                        results.append(
+                            {
+                                "source_table": table_info.get("name", ""),
+                                "target_table": table.full_name,
+                                "source_type": upstream.get("entityType", ""),
+                                "target_type": "TABLE",
+                                "event_time": None,
+                            }
+                        )
                     # Parse downstream lineage
-                    for downstream in (response.get("downstreams") or []):
+                    for downstream in response.get("downstreams") or []:
                         table_info = downstream.get("tableInfo", {})
-                        results.append({
-                            "source_table": table.full_name,
-                            "target_table": table_info.get("name", ""),
-                            "source_type": "TABLE",
-                            "target_type": downstream.get("entityType", ""),
-                            "event_time": None,
-                        })
+                        results.append(
+                            {
+                                "source_table": table.full_name,
+                                "target_table": table_info.get("name", ""),
+                                "source_type": "TABLE",
+                                "target_type": downstream.get("entityType", ""),
+                                "event_time": None,
+                            }
+                        )
                 except Exception:
                     continue
         except Exception:
@@ -231,6 +244,7 @@ def query_storage_usage(
 # SDK-only data sources (no SQL)
 # ---------------------------------------------------------------------------
 
+
 def query_warehouse_health(client: WorkspaceClient) -> dict:
     """Get SQL warehouse health and configuration via SDK.
 
@@ -256,9 +270,17 @@ def query_warehouse_health(client: WorkspaceClient) -> dict:
             warehouses.append(info)
 
             if auto_stop == 0:
-                warnings.append({"warehouse": wh.name, "issue": "Auto-stop disabled", "severity": "high"})
+                warnings.append(
+                    {"warehouse": wh.name, "issue": "Auto-stop disabled", "severity": "high"}
+                )
             elif auto_stop > 120:
-                warnings.append({"warehouse": wh.name, "issue": f"Auto-stop set to {auto_stop} mins (>2h)", "severity": "medium"})
+                warnings.append(
+                    {
+                        "warehouse": wh.name,
+                        "issue": f"Auto-stop set to {auto_stop} mins (>2h)",
+                        "severity": "medium",
+                    }
+                )
 
         running = sum(1 for w in warehouses if w["state"] and "RUNNING" in str(w["state"]).upper())
         stopped = sum(1 for w in warehouses if w["state"] and "STOPPED" in str(w["state"]).upper())
@@ -287,21 +309,28 @@ def query_cluster_health(client: WorkspaceClient, max_events: int = 100) -> dict
         for c in client.clusters.list():
             autoscale = None
             if c.autoscale:
-                autoscale = {"min_workers": c.autoscale.min_workers, "max_workers": c.autoscale.max_workers}
+                autoscale = {
+                    "min_workers": c.autoscale.min_workers,
+                    "max_workers": c.autoscale.max_workers,
+                }
 
-            clusters.append({
-                "cluster_id": c.cluster_id,
-                "cluster_name": c.cluster_name,
-                "state": str(c.state) if c.state else None,
-                "node_type_id": c.node_type_id,
-                "autoscale": autoscale,
-                "num_workers": c.num_workers,
-                "spark_version": c.spark_version,
-                "creator_user_name": c.creator_user_name,
-            })
+            clusters.append(
+                {
+                    "cluster_id": c.cluster_id,
+                    "cluster_name": c.cluster_name,
+                    "state": str(c.state) if c.state else None,
+                    "node_type_id": c.node_type_id,
+                    "autoscale": autoscale,
+                    "num_workers": c.num_workers,
+                    "spark_version": c.spark_version,
+                    "creator_user_name": c.creator_user_name,
+                }
+            )
 
         running = sum(1 for c in clusters if c["state"] and "RUNNING" in str(c["state"]).upper())
-        terminated = sum(1 for c in clusters if c["state"] and "TERMINATED" in str(c["state"]).upper())
+        terminated = sum(
+            1 for c in clusters if c["state"] and "TERMINATED" in str(c["state"]).upper()
+        )
         pending = sum(1 for c in clusters if c["state"] and "PENDING" in str(c["state"]).upper())
 
         # Fetch events for running clusters only
@@ -312,27 +341,36 @@ def query_cluster_health(client: WorkspaceClient, max_events: int = 100) -> dict
             if c["state"] and "RUNNING" in str(c["state"]).upper():
                 try:
                     events_resp = client.clusters.events(cluster_id=c["cluster_id"], limit=20)
-                    for ev in (events_resp.events or []):
-                        recent_events.append({
-                            "cluster_name": c["cluster_name"],
-                            "type": str(ev.type) if ev.type else None,
-                            "timestamp": str(ev.timestamp) if ev.timestamp else None,
-                            "details": str(ev.details)[:200] if ev.details else None,
-                        })
+                    for ev in events_resp.events or []:
+                        recent_events.append(
+                            {
+                                "cluster_name": c["cluster_name"],
+                                "type": str(ev.type) if ev.type else None,
+                                "timestamp": str(ev.timestamp) if ev.timestamp else None,
+                                "details": str(ev.details)[:200] if ev.details else None,
+                            }
+                        )
                         event_count += 1
                         if event_count >= max_events:
                             break
                 except Exception:
                     continue
 
-        logger.info(f"Retrieved {len(clusters)} clusters ({running} running), {len(recent_events)} events")
+        logger.info(
+            f"Retrieved {len(clusters)} clusters ({running} running), {len(recent_events)} events"
+        )
     except Exception as e:
         logger.debug(f"Clusters API not available: {e}")
         return {"clusters": [], "summary": {}, "recent_events": [], "error": str(e)}
 
     return {
         "clusters": clusters,
-        "summary": {"total": len(clusters), "running": running, "terminated": terminated, "pending": pending},
+        "summary": {
+            "total": len(clusters),
+            "running": running,
+            "terminated": terminated,
+            "pending": pending,
+        },
         "recent_events": recent_events,
     }
 
@@ -343,12 +381,14 @@ def query_dlt_pipeline_health(client: WorkspaceClient, max_events_per_pipeline: 
     events = []
     try:
         for p in client.pipelines.list_pipelines():
-            pipelines.append({
-                "pipeline_id": p.pipeline_id,
-                "name": p.name,
-                "state": str(p.state) if p.state else None,
-                "creator_user_name": getattr(p, "creator_user_name", None),
-            })
+            pipelines.append(
+                {
+                    "pipeline_id": p.pipeline_id,
+                    "name": p.name,
+                    "state": str(p.state) if p.state else None,
+                    "creator_user_name": getattr(p, "creator_user_name", None),
+                }
+            )
 
             if len(pipelines) >= 200:
                 break
@@ -364,13 +404,15 @@ def query_dlt_pipeline_health(client: WorkspaceClient, max_events_per_pipeline: 
                     for ev in client.pipelines.list_pipeline_events(
                         pipeline_id=p["pipeline_id"], max_results=max_events_per_pipeline
                     ):
-                        events.append({
-                            "pipeline_name": p["name"],
-                            "event_type": ev.event_type,
-                            "level": str(ev.level) if ev.level else None,
-                            "message": str(ev.message)[:200] if ev.message else None,
-                            "timestamp": str(ev.timestamp) if ev.timestamp else None,
-                        })
+                        events.append(
+                            {
+                                "pipeline_name": p["name"],
+                                "event_type": ev.event_type,
+                                "level": str(ev.level) if ev.level else None,
+                                "message": str(ev.message)[:200] if ev.message else None,
+                                "timestamp": str(ev.timestamp) if ev.timestamp else None,
+                            }
+                        )
                 except Exception:
                     continue
 
@@ -412,8 +454,12 @@ def query_query_performance(
     except Exception as e:
         logger.warning(f"system.query.history not available: {e}")
         return {
-            "queries": [], "summary": {}, "slowest": [],
-            "by_warehouse": [], "by_user": [], "by_statement_type": [],
+            "queries": [],
+            "summary": {},
+            "slowest": [],
+            "by_warehouse": [],
+            "by_user": [],
+            "by_statement_type": [],
             "error": str(e),
         }
 
@@ -522,19 +568,33 @@ def query_query_performance(
         by_user = execute_sql(client, warehouse_id, user_sql)
         by_statement_type = execute_sql(client, warehouse_id, statement_type_sql)
 
-        summary = summary_rows[0] if summary_rows else {
-            "total_queries": 0, "avg_duration_ms": 0, "p95_duration_ms": 0,
-            "failure_rate": 0, "total_read_bytes": 0, "avg_read_bytes": 0,
-        }
+        summary = (
+            summary_rows[0]
+            if summary_rows
+            else {
+                "total_queries": 0,
+                "avg_duration_ms": 0,
+                "p95_duration_ms": 0,
+                "failure_rate": 0,
+                "total_read_bytes": 0,
+                "avg_read_bytes": 0,
+            }
+        )
 
         slowest = queries[:10]
 
-        logger.info(f"Retrieved {len(queries)} queries from system.query.history (last {days} days)")
+        logger.info(
+            f"Retrieved {len(queries)} queries from system.query.history (last {days} days)"
+        )
     except Exception as e:
         logger.warning(f"system.query.history query failed: {e}")
         return {
-            "queries": [], "summary": {}, "slowest": [],
-            "by_warehouse": [], "by_user": [], "by_statement_type": [],
+            "queries": [],
+            "summary": {},
+            "slowest": [],
+            "by_warehouse": [],
+            "by_user": [],
+            "by_statement_type": [],
             "error": str(e),
         }
 
@@ -592,25 +652,31 @@ def query_sql_alerts(client: WorkspaceClient) -> list[dict]:
     try:
         # Try alerts_v2 first
         for a in client.alerts_v2.list_alerts():
-            alerts.append({
-                "id": a.id,
-                "display_name": getattr(a, "display_name", None) or getattr(a, "name", None),
-                "state": str(a.state) if a.state else None,
-                "owner_user_name": getattr(a, "owner_user_name", None),
-                "lifecycle_state": str(getattr(a, "lifecycle_state", None)) or None,
-                "query_id": getattr(a, "query_id", None),
-            })
+            alerts.append(
+                {
+                    "id": a.id,
+                    "display_name": getattr(a, "display_name", None) or getattr(a, "name", None),
+                    "state": str(a.state) if a.state else None,
+                    "owner_user_name": getattr(a, "owner_user_name", None),
+                    "lifecycle_state": str(getattr(a, "lifecycle_state", None)) or None,
+                    "query_id": getattr(a, "query_id", None),
+                }
+            )
         logger.info(f"Retrieved {len(alerts)} SQL alerts via alerts_v2")
     except Exception:
         # Fallback to legacy alerts API
         try:
             for a in client.alerts.list():
-                alerts.append({
-                    "id": a.id,
-                    "display_name": a.name,
-                    "state": str(a.state) if a.state else None,
-                    "owner_user_name": getattr(a, "user", {}).get("name") if hasattr(a, "user") else None,
-                })
+                alerts.append(
+                    {
+                        "id": a.id,
+                        "display_name": a.name,
+                        "state": str(a.state) if a.state else None,
+                        "owner_user_name": getattr(a, "user", {}).get("name")
+                        if hasattr(a, "user")
+                        else None,
+                    }
+                )
             logger.info(f"Retrieved {len(alerts)} SQL alerts via legacy API")
         except Exception as e:
             logger.debug(f"Alerts API not available: {e}")
@@ -618,11 +684,15 @@ def query_sql_alerts(client: WorkspaceClient) -> list[dict]:
 
 
 def query_table_usage_summary(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, days: int = 90,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    days: int = 90,
 ) -> list[dict]:
     """Get table access patterns by delegating to usage_analysis module."""
     try:
         from src.usage_analysis import query_table_access_patterns
+
         return query_table_access_patterns(client, warehouse_id, catalog, days)
     except Exception as e:
         logger.debug(f"Table usage analysis not available: {e}")
@@ -630,7 +700,10 @@ def query_table_usage_summary(
 
 
 def get_system_insights_summary(
-    client: WorkspaceClient, warehouse_id: str, catalog: str = "", days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str = "",
+    days: int = 30,
     job_name_filter: str = "",
 ) -> dict:
     """Get a unified summary from all available sources.
@@ -649,7 +722,9 @@ def get_system_insights_summary(
     # Compute summary stats
     total_dbus = sum(float(r.get("usage_quantity", 0) or 0) for r in billing)
     total_jobs = len(job_runs)
-    failed_jobs = sum(1 for r in job_runs if str(r.get("status", "")).upper() in ("FAILED", "ERROR"))
+    failed_jobs = sum(
+        1 for r in job_runs if str(r.get("status", "")).upper() in ("FAILED", "ERROR")
+    )
     total_storage_bytes = sum(int(r.get("storage_in_bytes", 0) or 0) for r in storage)
 
     return {
@@ -667,12 +742,14 @@ def get_system_insights_summary(
         "lineage": lineage,
         "storage": storage,
         "available_sources": [
-            s for s, d in [
+            s
+            for s, d in [
                 ("billing", billing),
                 ("optimization", optimization),
                 ("job_runs", job_runs),
                 ("lineage", lineage),
                 ("storage", storage),
-            ] if d
+            ]
+            if d
         ],
     }

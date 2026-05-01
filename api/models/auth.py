@@ -34,5 +34,3 @@ class ServicePrincipalRequest(BaseModel):
     client_secret: str
     tenant_id: str | None = None  # Required for Azure AD SP
     auth_type: str = "databricks"  # "databricks" or "azure"
-
-

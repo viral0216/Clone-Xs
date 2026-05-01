@@ -63,8 +63,14 @@ def search_tables_multi(
     with ThreadPoolExecutor(max_workers=parallelism) as executor:
         futures = {
             executor.submit(
-                search_tables, client, warehouse_id, cat, pattern,
-                exclude_schemas, None, search_columns,
+                search_tables,
+                client,
+                warehouse_id,
+                cat,
+                pattern,
+                exclude_schemas,
+                None,
+                search_columns,
             ): cat
             for cat in catalogs
         }

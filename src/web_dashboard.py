@@ -13,8 +13,7 @@ def launch_dashboard(config_path: str = "config/clone_config.yaml", port: int = 
         import streamlit  # noqa: F401
     except ImportError:
         logger.error(
-            "Streamlit is required for the web dashboard. "
-            "Install it with: pip install streamlit"
+            "Streamlit is required for the web dashboard. Install it with: pip install streamlit"
         )
         sys.exit(1)
 
@@ -32,7 +31,7 @@ def create_dashboard_app_script() -> str:
     return _DASHBOARD_APP_CODE
 
 
-_DASHBOARD_APP_CODE = '''
+_DASHBOARD_APP_CODE = """
 import json
 import os
 import sys
@@ -455,4 +454,4 @@ with tab7:
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Clone-Xs** v0.5.0")
 st.sidebar.markdown("[Documentation](./HOWTO.md) | [GitHub](#)")
-'''
+"""

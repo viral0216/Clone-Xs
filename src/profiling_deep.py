@@ -10,7 +10,19 @@ from src.client import execute_sql, get_table_info_sdk
 
 logger = logging.getLogger(__name__)
 
-NUMERIC_TYPES = {"INT", "INTEGER", "LONG", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "SHORT", "BYTE", "SMALLINT", "TINYINT"}
+NUMERIC_TYPES = {
+    "INT",
+    "INTEGER",
+    "LONG",
+    "BIGINT",
+    "DOUBLE",
+    "FLOAT",
+    "DECIMAL",
+    "SHORT",
+    "BYTE",
+    "SMALLINT",
+    "TINYINT",
+}
 DATE_TYPES = {"DATE", "TIMESTAMP"}
 STRING_TYPES = {"STRING", "VARCHAR", "CHAR"}
 
@@ -61,7 +73,9 @@ def deep_profile_table(
         if not table_info or not table_info.get("columns"):
             result["error"] = "Could not retrieve column metadata"
             return result
-        columns = [{"name": c["column_name"], "type": c["data_type"]} for c in table_info["columns"]]
+        columns = [
+            {"name": c["column_name"], "type": c["data_type"]} for c in table_info["columns"]
+        ]
     except Exception as e:
         result["error"] = f"Metadata error: {e}"
         return result
@@ -128,6 +142,7 @@ def deep_profile_table(
     # Step 2: Top-N values for string columns (parallel)
     string_cols = [c for c in columns if _is_string(c["type"])]
     if string_cols:
+
         def _fetch_top_n(col_info):
             cn = col_info["name"]
             sql = (
@@ -137,7 +152,14 @@ def deep_profile_table(
             )
             try:
                 rows = execute_sql(client, warehouse_id, sql)
-                return cn, [{"value": r["value"], "freq": int(r["freq"]), "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0} for r in rows]
+                return cn, [
+                    {
+                        "value": r["value"],
+                        "freq": int(r["freq"]),
+                        "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0,
+                    }
+                    for r in rows
+                ]
             except Exception as e:
                 logger.warning(f"Top-N query failed for {cn}: {e}")
                 return cn, []
@@ -152,6 +174,7 @@ def deep_profile_table(
     # Step 3: Histograms for numeric columns (parallel)
     numeric_cols = [c for c in columns if _is_numeric(c["type"])]
     if numeric_cols:
+
         def _fetch_histogram(col_info):
             cn = col_info["name"]
             p = col_profiles.get(cn, {})
@@ -168,8 +191,12 @@ def deep_profile_table(
             try:
                 rows = execute_sql(client, warehouse_id, sql)
                 return cn, [
-                    {"bucket": int(r.get("bucket", 0)), "freq": int(r["freq"]),
-                     "range_min": r.get("bucket_min"), "range_max": r.get("bucket_max")}
+                    {
+                        "bucket": int(r.get("bucket", 0)),
+                        "freq": int(r["freq"]),
+                        "range_min": r.get("bucket_min"),
+                        "range_max": r.get("bucket_max"),
+                    }
                     for r in rows
                 ]
             except Exception as e:
@@ -184,8 +211,11 @@ def deep_profile_table(
                     col_profiles[cn]["histogram"] = hist
 
     # Also fetch top-N for low-cardinality numeric columns
-    low_card_numeric = [c for c in numeric_cols if col_profiles.get(c["name"], {}).get("distinct_count", 999) <= 30]
+    low_card_numeric = [
+        c for c in numeric_cols if col_profiles.get(c["name"], {}).get("distinct_count", 999) <= 30
+    ]
     if low_card_numeric:
+
         def _fetch_numeric_top_n(col_info):
             cn = col_info["name"]
             sql = (
@@ -195,7 +225,14 @@ def deep_profile_table(
             )
             try:
                 rows = execute_sql(client, warehouse_id, sql)
-                return cn, [{"value": r["value"], "freq": int(r["freq"]), "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0} for r in rows]
+                return cn, [
+                    {
+                        "value": r["value"],
+                        "freq": int(r["freq"]),
+                        "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0,
+                    }
+                    for r in rows
+                ]
             except Exception:
                 return cn, []
 
@@ -334,7 +371,11 @@ def deep_profile_sql(
             )
             rows = execute_sql(client, warehouse_id, top_sql)
             col_profiles[cn]["top_values"] = [
-                {"value": r["value"], "freq": int(r["freq"]), "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0}
+                {
+                    "value": r["value"],
+                    "freq": int(r["freq"]),
+                    "pct": round(int(r["freq"]) / row_count * 100, 2) if row_count else 0,
+                }
                 for r in rows
             ]
         except Exception:
@@ -359,8 +400,12 @@ def deep_profile_sql(
             )
             rows = execute_sql(client, warehouse_id, hist_sql)
             col_profiles[cn]["histogram"] = [
-                {"bucket": int(r.get("bucket", 0)), "freq": int(r["freq"]),
-                 "range_min": r.get("bucket_min"), "range_max": r.get("bucket_max")}
+                {
+                    "bucket": int(r.get("bucket", 0)),
+                    "freq": int(r["freq"]),
+                    "range_min": r.get("bucket_min"),
+                    "range_max": r.get("bucket_max"),
+                }
                 for r in rows
             ]
         except Exception:

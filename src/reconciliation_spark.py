@@ -14,9 +14,12 @@ logger = logging.getLogger(__name__)
 def _get_spark():
     """Get the shared Spark session, raising a clear error if unavailable."""
     from src.spark_session import get_spark
+
     spark = get_spark()
     if spark is None:
-        raise RuntimeError("Spark session not available. Configure a cluster or enable serverless first.")
+        raise RuntimeError(
+            "Spark session not available. Configure a cluster or enable serverless first."
+        )
     return spark
 
 
@@ -94,12 +97,20 @@ def validate_table_spark(
             src_cols = [coalesce(col(c).cast("string"), lit("NULL")) for c in src_df.columns]
             dst_cols = [coalesce(col(c).cast("string"), lit("NULL")) for c in dst_df.columns]
 
-            src_df.select(md5(concat_ws("|", *src_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
-            dst_df.select(md5(concat_ws("|", *dst_cols)).alias("h")).groupBy().agg({"h": "count"}).collect()
+            src_df.select(md5(concat_ws("|", *src_cols)).alias("h")).groupBy().agg(
+                {"h": "count"}
+            ).collect()
+            dst_df.select(md5(concat_ws("|", *dst_cols)).alias("h")).groupBy().agg(
+                {"h": "count"}
+            ).collect()
 
             # Simple checksum: sort hashes and compare
-            src_checksums = sorted([r[0] for r in src_df.select(md5(concat_ws("|", *src_cols))).limit(1000).collect()])
-            dst_checksums = sorted([r[0] for r in dst_df.select(md5(concat_ws("|", *dst_cols))).limit(1000).collect()])
+            src_checksums = sorted(
+                [r[0] for r in src_df.select(md5(concat_ws("|", *src_cols))).limit(1000).collect()]
+            )
+            dst_checksums = sorted(
+                [r[0] for r in dst_df.select(md5(concat_ws("|", *dst_cols))).limit(1000).collect()]
+            )
             result["checksum_match"] = src_checksums == dst_checksums
             if not result["checksum_match"]:
                 result["match"] = False
@@ -135,8 +146,12 @@ def validate_catalog_spark(
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    validate_table_spark, source_catalog, dest_catalog,
-                    schema, table, use_checksum,
+                    validate_table_spark,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    table,
+                    use_checksum,
                 ): table
                 for table in tables
             }
@@ -164,7 +179,9 @@ def validate_catalog_spark(
 # ── Column-Level Reconciliation ──────────────────────────────────────────────
 
 
-def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, table_name: str, use_checksum: bool = False) -> dict:
+def compare_table_spark(
+    source_catalog: str, dest_catalog: str, schema: str, table_name: str, use_checksum: bool = False
+) -> dict:
     """Compare column schemas of a single table via Spark."""
     spark = _get_spark()
     result = {
@@ -181,8 +198,12 @@ def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, tab
         src_fqn = f"`{source_catalog}`.`{schema}`.`{table_name}`"
         dst_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
 
-        src_schema = {f.name: (str(f.dataType), f.nullable) for f in spark.table(src_fqn).schema.fields}
-        dst_schema = {f.name: (str(f.dataType), f.nullable) for f in spark.table(dst_fqn).schema.fields}
+        src_schema = {
+            f.name: (str(f.dataType), f.nullable) for f in spark.table(src_fqn).schema.fields
+        }
+        dst_schema = {
+            f.name: (str(f.dataType), f.nullable) for f in spark.table(dst_fqn).schema.fields
+        }
 
         added_in_source = [c for c in src_schema if c not in dst_schema]
         removed_from_source = [c for c in dst_schema if c not in src_schema]
@@ -210,24 +231,42 @@ def compare_table_spark(source_catalog: str, dest_catalog: str, schema: str, tab
             "has_drift": has_drift,
         }
         if has_drift:
-            result["issues"].append(f"{len(added_in_source)} added, {len(removed_from_source)} removed, {len(modified)} modified")
+            result["issues"].append(
+                f"{len(added_in_source)} added, {len(removed_from_source)} removed, {len(modified)} modified"
+            )
 
         # Checksum verification via Spark
         if use_checksum:
             try:
-                from pyspark.sql.functions import md5, concat_ws, coalesce, lit, collect_list, col as spark_col
+                from pyspark.sql.functions import (
+                    md5,
+                    concat_ws,
+                    coalesce,
+                    lit,
+                    collect_list,
+                    col as spark_col,
+                )
+
                 src_df = spark.table(src_fqn)
                 dst_df = spark.table(dst_fqn)
                 common_cols = sorted(set(src_df.columns) & set(dst_df.columns))
                 if common_cols:
-                    hash_exprs_src = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
-                    hash_exprs_dst = [coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols]
-                    src_hash = src_df.select(md5(concat_ws("|", *hash_exprs_src)).alias("row_hash")).select(
-                        md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash")
-                    ).collect()[0]["tbl_hash"]
-                    dst_hash = dst_df.select(md5(concat_ws("|", *hash_exprs_dst)).alias("row_hash")).select(
-                        md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash")
-                    ).collect()[0]["tbl_hash"]
+                    hash_exprs_src = [
+                        coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols
+                    ]
+                    hash_exprs_dst = [
+                        coalesce(spark_col(c).cast("string"), lit("")) for c in common_cols
+                    ]
+                    src_hash = (
+                        src_df.select(md5(concat_ws("|", *hash_exprs_src)).alias("row_hash"))
+                        .select(md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash"))
+                        .collect()[0]["tbl_hash"]
+                    )
+                    dst_hash = (
+                        dst_df.select(md5(concat_ws("|", *hash_exprs_dst)).alias("row_hash"))
+                        .select(md5(concat_ws(",", collect_list("row_hash"))).alias("tbl_hash"))
+                        .collect()[0]["tbl_hash"]
+                    )
                     result["source_checksum"] = src_hash
                     result["dest_checksum"] = dst_hash
                     result["checksum_match"] = src_hash == dst_hash
@@ -261,13 +300,19 @@ def compare_catalogs_spark(
         tables = _list_tables_spark(spark, dest_catalog, schema)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(compare_table_spark, source_catalog, dest_catalog, schema, t, use_checksum): t
+                executor.submit(
+                    compare_table_spark, source_catalog, dest_catalog, schema, t, use_checksum
+                ): t
                 for t in tables
             }
             for future in as_completed(futures):
                 all_details.append(future.result())
 
-    tables_ok = sum(1 for d in all_details if not d["issues"] and (not d["schema_diff"] or not d["schema_diff"]["has_drift"]))
+    tables_ok = sum(
+        1
+        for d in all_details
+        if not d["issues"] and (not d["schema_diff"] or not d["schema_diff"]["has_drift"])
+    )
     tables_with_issues = len(all_details) - tables_ok
 
     return {
@@ -301,8 +346,13 @@ def profile_table_spark(catalog: str, schema: str, table_name: str) -> dict:
         profile["row_count"] = row_count
 
         from pyspark.sql.functions import (
-            count, countDistinct, col, avg as spark_avg,
-            min as spark_min, max as spark_max, length,
+            count,
+            countDistinct,
+            col,
+            avg as spark_avg,
+            min as spark_min,
+            max as spark_max,
+            length,
         )
         from pyspark.sql.types import StringType, NumericType, DateType, TimestampType
 
@@ -322,7 +372,9 @@ def profile_table_spark(catalog: str, schema: str, table_name: str) -> dict:
                 ).collect()[0]
 
                 col_info["null_count"] = stats["null_count"]
-                col_info["null_pct"] = round((stats["null_count"] / row_count) * 100, 2) if row_count > 0 else 0
+                col_info["null_pct"] = (
+                    round((stats["null_count"] / row_count) * 100, 2) if row_count > 0 else 0
+                )
                 col_info["distinct_count"] = stats["distinct"]
 
                 # Type-specific stats
@@ -334,7 +386,9 @@ def profile_table_spark(catalog: str, schema: str, table_name: str) -> dict:
                     ).collect()[0]
                     col_info["min"] = num_stats["min_val"]
                     col_info["max"] = num_stats["max_val"]
-                    col_info["avg"] = float(num_stats["avg_val"]) if num_stats["avg_val"] is not None else None
+                    col_info["avg"] = (
+                        float(num_stats["avg_val"]) if num_stats["avg_val"] is not None else None
+                    )
                 elif isinstance(field.dataType, StringType):
                     str_stats = df.select(
                         spark_min(length(col(field.name))).alias("min_len"),
@@ -343,7 +397,9 @@ def profile_table_spark(catalog: str, schema: str, table_name: str) -> dict:
                     ).collect()[0]
                     col_info["min_length"] = str_stats["min_len"]
                     col_info["max_length"] = str_stats["max_len"]
-                    col_info["avg_length"] = float(str_stats["avg_len"]) if str_stats["avg_len"] is not None else None
+                    col_info["avg_length"] = (
+                        float(str_stats["avg_len"]) if str_stats["avg_len"] is not None else None
+                    )
                 elif isinstance(field.dataType, (DateType, TimestampType)):
                     dt_stats = df.select(
                         spark_min(col(field.name)).alias("min_val"),

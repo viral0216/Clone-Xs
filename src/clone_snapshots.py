@@ -47,7 +47,8 @@ def ensure_snapshot_table(client: WorkspaceClient, warehouse_id: str, config: di
 
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             snapshot_id    STRING,
@@ -66,13 +67,16 @@ def ensure_snapshot_table(client: WorkspaceClient, warehouse_id: str, config: di
 
 
 def _enumerate_tables(
-    client: WorkspaceClient, warehouse_id: str, source_catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
     exclude_schemas: list[str] | None,
 ) -> list[tuple[str, str]]:
     """Return (schema, table) pairs for MANAGED + EXTERNAL Delta tables."""
     excl = ", ".join(f"'{s}'" for s in (exclude_schemas or ["information_schema", "default"]))
     rows = execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"""
         SELECT table_schema, table_name
         FROM {source_catalog}.information_schema.tables
@@ -84,12 +88,17 @@ def _enumerate_tables(
 
 
 def _capture_table_detail(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table: str,
 ) -> dict:
     """DESCRIBE DETAIL one table to capture current version + size. Best-effort."""
     try:
-        rows = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table}`")
+        rows = execute_sql(
+            client, warehouse_id, f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table}`"
+        )
         if rows:
             r = rows[0]
             return {
@@ -104,8 +113,12 @@ def _capture_table_detail(
 
 
 def create_snapshot(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
-    *, source_catalog: str, name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    *,
+    source_catalog: str,
+    name: str,
     description: str | None = None,
     created_by: str | None = None,
     exclude_schemas: list[str] | None = None,
@@ -138,7 +151,8 @@ def create_snapshot(
     safe_by = (created_by or "").replace("'", "''")
     safe_json = row["tables_json"].replace("'", "''")
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"""
         INSERT INTO {fqn} VALUES (
             '{snapshot_id}', '{name}', '{source_catalog}', '{safe_desc}',
@@ -156,14 +170,18 @@ def create_snapshot(
 
 
 def list_snapshots(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
-    *, source_catalog: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    *,
+    source_catalog: str | None = None,
 ) -> list[dict]:
     """List all snapshots, newest first. Optionally filter by source catalog."""
     fqn = ensure_snapshot_table(client, warehouse_id, config)
     where = f"WHERE source_catalog = '{source_catalog}'" if source_catalog else ""
     rows = execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"""
         SELECT snapshot_id, name, source_catalog, description,
                captured_at, created_by, table_count, total_bytes
@@ -176,12 +194,16 @@ def list_snapshots(
 
 
 def get_snapshot(
-    client: WorkspaceClient, warehouse_id: str, config: dict, snapshot_id: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    snapshot_id: str,
 ) -> dict | None:
     """Return full snapshot including parsed tables list, or None if missing."""
     fqn = ensure_snapshot_table(client, warehouse_id, config)
     rows = execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"SELECT * FROM {fqn} WHERE snapshot_id = '{snapshot_id}' LIMIT 1",
     )
     if not rows:
@@ -195,19 +217,26 @@ def get_snapshot(
 
 
 def delete_snapshot(
-    client: WorkspaceClient, warehouse_id: str, config: dict, snapshot_id: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    snapshot_id: str,
 ) -> bool:
     """Remove a snapshot row. Returns True if anything was deleted."""
     fqn = ensure_snapshot_table(client, warehouse_id, config)
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"DELETE FROM {fqn} WHERE snapshot_id = '{snapshot_id}'",
     )
     return True
 
 
 def resolve_snapshot_timestamp(
-    client: WorkspaceClient, warehouse_id: str, config: dict, snapshot_id: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    snapshot_id: str,
 ) -> str | None:
     """Look up a snapshot's captured timestamp for use as `as_of_timestamp`.
 

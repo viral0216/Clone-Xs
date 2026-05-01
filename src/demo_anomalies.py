@@ -64,9 +64,7 @@ def get_dq_profile(name: str) -> dict[str, float]:
     """Return the named profile or raise ValueError. Helpful error message
     so the JobManager can surface it back to the UI."""
     if name not in DQ_PROFILES:
-        raise ValueError(
-            f"Unknown dq_profile '{name}'. Valid: {sorted(DQ_PROFILES)}"
-        )
+        raise ValueError(f"Unknown dq_profile '{name}'. Valid: {sorted(DQ_PROFILES)}")
     return DQ_PROFILES[name]
 
 
@@ -166,22 +164,20 @@ def inject_labeled_anomalies(
         )
         # Simpler form — separates by sql type to avoid the nested CASE
         if sql_type.upper() == "BOOLEAN":
-            update_sql = (
-                f"UPDATE {fqn} SET `{col}` = ({init_expr})"
-            )
+            update_sql = f"UPDATE {fqn} SET `{col}` = ({init_expr})"
         else:
-            update_sql = (
-                f"UPDATE {fqn} SET `{col}` = {init_expr}"
-            )
+            update_sql = f"UPDATE {fqn} SET `{col}` = {init_expr}"
         try:
             execute_sql_fn(client, warehouse_id, update_sql)
-            added.append({
-                "industry": industry,
-                "table": table,
-                "column": col,
-                "sql_type": sql_type,
-                "anomaly_rate": anomaly_rate,
-            })
+            added.append(
+                {
+                    "industry": industry,
+                    "table": table,
+                    "column": col,
+                    "sql_type": sql_type,
+                    "anomaly_rate": anomaly_rate,
+                }
+            )
             logger.info(
                 f"  Anomaly column: {industry}.{table}.{col} ({sql_type}) "
                 f"populated at rate ~{anomaly_rate:.1%}"

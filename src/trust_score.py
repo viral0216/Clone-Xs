@@ -61,6 +61,7 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
 
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -70,12 +71,16 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
         ("trust_score_config", _CONFIG_DDL, "Trust score dimension weights"),
     ]:
         try:
-            _run_sql(f"""
+            _run_sql(
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{tbl} ({ddl})
                 USING DELTA
                 COMMENT 'Clone-Xs: {comment}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """, client, warehouse_id)
+            """,
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not create {schema}.{tbl}: {e}")
 
@@ -87,7 +92,9 @@ def get_weights(client=None, warehouse_id: str = "", config: dict = None) -> dic
     try:
         rows = _query_sql(
             f"SELECT dimension, weight FROM {schema}.trust_score_config ORDER BY dimension",
-            limit=20, client=client, warehouse_id=warehouse_id,
+            limit=20,
+            client=client,
+            warehouse_id=warehouse_id,
         )
         if rows and len(rows) >= 4:
             return {r["dimension"]: float(r["weight"]) for r in rows}
@@ -96,8 +103,13 @@ def get_weights(client=None, warehouse_id: str = "", config: dict = None) -> dic
     return dict(DEFAULT_WEIGHTS)
 
 
-def update_weights(weights: dict, updated_by: str = "system",
-                   client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def update_weights(
+    weights: dict,
+    updated_by: str = "system",
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+) -> dict:
     """Update dimension weights."""
     config = config or {}
     schema = _get_schema(config)
@@ -112,11 +124,17 @@ def update_weights(weights: dict, updated_by: str = "system",
 
     values = []
     for dim, w in weights.items():
-        values.append(f"('{uuid.uuid4().hex[:12]}', '{_esc(dim)}', {w}, '{now}', '{_esc(updated_by)}')")
+        values.append(
+            f"('{uuid.uuid4().hex[:12]}', '{_esc(dim)}', {w}, '{now}', '{_esc(updated_by)}')"
+        )
 
     if values:
         try:
-            _run_sql(f"INSERT INTO {schema}.trust_score_config VALUES {', '.join(values)}", client, warehouse_id)
+            _run_sql(
+                f"INSERT INTO {schema}.trust_score_config VALUES {', '.join(values)}",
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not update weights: {e}")
 
@@ -127,11 +145,16 @@ def _compute_dq_score(table_fqn: str, client, warehouse_id, config) -> float:
     """DQ pass rate from governance.dq_results (latest per rule)."""
     gov_schema = get_schema_fqn(config, "governance")
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             SELECT passed, failure_rate FROM {gov_schema}.dq_results
             WHERE table_fqn = '{_esc(table_fqn)}'
             ORDER BY executed_at DESC
-        """, limit=50, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=50,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         if not rows:
             return 50.0  # no checks = neutral score
         passed = sum(1 for r in rows if r.get("passed"))
@@ -144,11 +167,16 @@ def _compute_freshness_score(table_fqn: str, client, warehouse_id, config) -> fl
     """Score based on how recently the table was updated."""
     dq_schema = _get_schema(config)
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             SELECT hours_since_update, is_stale FROM {dq_schema}.freshness_history
             WHERE table_fqn = '{_esc(table_fqn)}'
             ORDER BY checked_at DESC
-        """, limit=1, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=1,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         if not rows:
             return 50.0
         hours = float(rows[0].get("hours_since_update", 24))
@@ -165,11 +193,16 @@ def _compute_anomaly_score(table_fqn: str, client, warehouse_id, config) -> floa
     """Score inversely related to recent anomaly count."""
     dq_schema = _get_schema(config)
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             SELECT COUNT(*) as cnt FROM {dq_schema}.metric_baselines
             WHERE table_fqn = '{_esc(table_fqn)}' AND is_anomaly = true
               AND measured_at >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
-        """, limit=1, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=1,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         if not rows:
             return 100.0
         cnt = int(rows[0].get("cnt", 0))
@@ -183,14 +216,20 @@ def _compute_schema_stability_score(table_fqn: str, client, warehouse_id, config
     """Score based on absence of schema drift events."""
     # Check Delta history for schema changes in last 30 days
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             DESCRIBE HISTORY {table_fqn}
-        """, limit=30, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=30,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         schema_changes = sum(
-            1 for r in (rows or [])
-            if "SET TBLPROPERTIES" in str(r.get("operation", "")) or
-               "CHANGE COLUMN" in str(r.get("operation", "")) or
-               "ADD COLUMNS" in str(r.get("operation", ""))
+            1
+            for r in (rows or [])
+            if "SET TBLPROPERTIES" in str(r.get("operation", ""))
+            or "CHANGE COLUMN" in str(r.get("operation", ""))
+            or "ADD COLUMNS" in str(r.get("operation", ""))
         )
         return max(0, min(100, 100 - (schema_changes * 15)))
     except Exception:
@@ -201,11 +240,16 @@ def _compute_pii_score(table_fqn: str, client, warehouse_id, config) -> float:
     """Score based on PII scan coverage."""
     pii_schema = get_schema_fqn(config, "pii")
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             SELECT scan_id FROM {pii_schema}.pii_scans
             WHERE table_fqn = '{_esc(table_fqn)}'
             ORDER BY scanned_at DESC
-        """, limit=1, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=1,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         return 100.0 if rows else 30.0  # scanned = good, unscanned = risk
     except Exception:
         return 50.0
@@ -215,10 +259,15 @@ def _compute_lineage_score(table_fqn: str, client, warehouse_id, config) -> floa
     """Score based on lineage documentation."""
     lineage_schema = get_schema_fqn(config, "lineage")
     try:
-        rows = _query_sql(f"""
+        rows = _query_sql(
+            f"""
             SELECT edge_id FROM {lineage_schema}.clone_lineage
             WHERE source_table = '{_esc(table_fqn)}' OR destination_table = '{_esc(table_fqn)}'
-        """, limit=5, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=5,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         return 100.0 if rows else 40.0
     except Exception:
         return 50.0
@@ -241,7 +290,9 @@ def compute_trust_score(
         "dq": _compute_dq_score(table_fqn, client, warehouse_id, config),
         "freshness": _compute_freshness_score(table_fqn, client, warehouse_id, config),
         "anomaly": _compute_anomaly_score(table_fqn, client, warehouse_id, config),
-        "schema_stability": _compute_schema_stability_score(table_fqn, client, warehouse_id, config),
+        "schema_stability": _compute_schema_stability_score(
+            table_fqn, client, warehouse_id, config
+        ),
         "pii": _compute_pii_score(table_fqn, client, warehouse_id, config),
         "lineage": _compute_lineage_score(table_fqn, client, warehouse_id, config),
     }
@@ -254,17 +305,22 @@ def compute_trust_score(
     record_id = uuid.uuid4().hex[:12]
 
     import json
+
     dims_json = _esc(json.dumps({k: round(v, 2) for k, v in scores.items()}))
 
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.trust_scores VALUES (
                 '{record_id}', '{_esc(table_fqn)}', {overall},
-                {scores['dq']}, {scores['freshness']}, {scores['anomaly']},
-                {scores['schema_stability']}, {scores['pii']}, {scores['lineage']},
+                {scores["dq"]}, {scores["freshness"]}, {scores["anomaly"]},
+                {scores["schema_stability"]}, {scores["pii"]}, {scores["lineage"]},
                 '{dims_json}', '{now}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not store trust score: {e}")
 
@@ -296,18 +352,23 @@ def compute_trust_scores_for_catalog(
         where += f" AND table_schema = '{_esc(schema_filter)}'"
 
     try:
-        tables = _query_sql(f"""
+        tables = _query_sql(
+            f"""
             SELECT table_catalog, table_schema, table_name
             FROM {catalog}.information_schema.tables
             {where} AND table_type = 'MANAGED'
             ORDER BY table_schema, table_name
-        """, limit=500, client=client, warehouse_id=warehouse_id)
+        """,
+            limit=500,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not list tables: {e}")
         return []
 
     results = []
-    for t in (tables or []):
+    for t in tables or []:
         fqn = f"{t['table_catalog']}.{t['table_schema']}.{t['table_name']}"
         try:
             score = compute_trust_score(fqn, client, warehouse_id, config)
@@ -334,13 +395,21 @@ def get_trust_scores(
         where = f"WHERE table_fqn LIKE '{_esc(catalog)}.%'"
 
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT * FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY table_fqn ORDER BY computed_at DESC) as rn
                 FROM {schema}.trust_scores {where}
             ) WHERE rn = 1
             ORDER BY overall_score ASC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query trust scores: {e}")
         return []
@@ -357,11 +426,19 @@ def get_trust_score_history(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT * FROM {schema}.trust_scores
             WHERE table_fqn = '{_esc(table_fqn)}'
             ORDER BY computed_at DESC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query trust score history: {e}")
         return []

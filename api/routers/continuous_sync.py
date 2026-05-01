@@ -29,6 +29,7 @@ class StartRequest(BaseModel):
     """Submit a continuous-sync stream to Databricks. Same shape as PlanRequest;
     the executor calls `build_streaming_plan` internally and submits the
     resulting job spec."""
+
     source_catalog: str
     destination_catalog: str
     tables: list[str] | None = None

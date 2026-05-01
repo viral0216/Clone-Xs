@@ -1,7 +1,7 @@
 """Data Product Catalog & Marketplace API endpoints."""
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from api.dependencies import get_db_client, get_app_config
 
@@ -50,6 +50,7 @@ async def list_products(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import list_products
+
     return list_products(status, domain, client, wid, config)
 
 
@@ -58,6 +59,7 @@ async def create_product(req: CreateProductRequest, client=Depends(get_db_client
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import create_product
+
     return create_product(**req.model_dump(), client=client, warehouse_id=wid, config=config)
 
 
@@ -66,6 +68,7 @@ async def get_product(product_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import get_product
+
     return get_product(product_id, client, wid, config)
 
 
@@ -74,6 +77,7 @@ async def update_product(product_id: str, req: UpdateProductRequest, client=Depe
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import update_product
+
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     return update_product(product_id, updates, client, wid, config)
 
@@ -83,6 +87,7 @@ async def delete_product(product_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import delete_product
+
     delete_product(product_id, client, wid, config)
     return {"status": "deleted"}
 
@@ -92,6 +97,7 @@ async def publish_product(product_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import publish_product
+
     return publish_product(product_id, client, wid, config)
 
 
@@ -100,8 +106,17 @@ async def subscribe(product_id: str, req: SubscribeRequest, client=Depends(get_d
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import subscribe
-    return subscribe(product_id, req.subscriber_team, req.subscriber_email,
-                     req.use_case, req.notification_prefs, client, wid, config)
+
+    return subscribe(
+        product_id,
+        req.subscriber_team,
+        req.subscriber_email,
+        req.use_case,
+        req.notification_prefs,
+        client,
+        wid,
+        config,
+    )
 
 
 @router.get("/{product_id}/subscribers", summary="List subscribers")
@@ -109,4 +124,5 @@ async def get_subscribers(product_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.data_products import get_subscribers
+
     return get_subscribers(product_id, client, wid, config)

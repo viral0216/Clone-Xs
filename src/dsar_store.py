@@ -9,9 +9,16 @@ from src.client import execute_sql
 logger = logging.getLogger(__name__)
 
 DSAR_STATUSES = [
-    "received", "discovering", "analyzed", "approved",
-    "exporting", "exported", "delivered", "completed",
-    "failed", "cancelled",
+    "received",
+    "discovering",
+    "analyzed",
+    "approved",
+    "exporting",
+    "exported",
+    "delivered",
+    "completed",
+    "failed",
+    "cancelled",
 ]
 
 STATUS_TRANSITIONS = {
@@ -29,8 +36,16 @@ STATUS_TRANSITIONS = {
 class DSARStore:
     """Delta table store for DSAR request lifecycle, actions, and exports."""
 
-    def __init__(self, client, warehouse_id: str, state_catalog: str | None = None, state_schema: str | None = None, config: dict | None = None):
+    def __init__(
+        self,
+        client,
+        warehouse_id: str,
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
+    ):
         from src.table_registry import get_catalog, get_schema_fqn
+
         cfg = config or {}
         state_catalog = state_catalog or get_catalog(cfg)
         schema_fqn = get_schema_fqn(cfg, "dsar")
@@ -45,10 +60,16 @@ class DSARStore:
 
     def init_tables(self) -> None:
         from src.catalog_utils import ensure_catalog_and_schema
-        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        ensure_catalog_and_schema(
+            self.client, self.warehouse_id, self.state_catalog, self.state_schema
+        )
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._requests_table} (
                     request_id STRING NOT NULL,
                     subject_type STRING NOT NULL,
@@ -73,12 +94,16 @@ class DSARStore:
                 ) USING DELTA
                 COMMENT 'DSAR / GDPR Article 15 access request lifecycle'
                 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._requests_table}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._actions_table} (
                     action_id STRING NOT NULL,
                     request_id STRING NOT NULL,
@@ -95,12 +120,16 @@ class DSARStore:
                 ) USING DELTA
                 COMMENT 'DSAR per-table discovery and export actions'
                 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._actions_table}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._exports_table} (
                     export_id STRING NOT NULL,
                     request_id STRING NOT NULL,
@@ -114,7 +143,8 @@ class DSARStore:
                 ) USING DELTA
                 COMMENT 'DSAR exported data files'
                 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true', 'delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._exports_table}: {e}")
 
@@ -147,20 +177,30 @@ class DSARStore:
         if status == "completed":
             sets.append(f"completed_at = '{now}'")
         if kwargs.get("error_message"):
-            sets.append(f"error_message = '{kwargs['error_message'].replace(chr(39), chr(92)+chr(39))}'")
+            sets.append(
+                f"error_message = '{kwargs['error_message'].replace(chr(39), chr(92) + chr(39))}'"
+            )
         if kwargs.get("discovery_json"):
-            sets.append(f"discovery_json = '{kwargs['discovery_json'].replace(chr(39), chr(92)+chr(39))}'")
+            sets.append(
+                f"discovery_json = '{kwargs['discovery_json'].replace(chr(39), chr(92) + chr(39))}'"
+            )
         if kwargs.get("affected_tables") is not None:
             sets.append(f"affected_tables = {kwargs['affected_tables']}")
         if kwargs.get("affected_rows") is not None:
             sets.append(f"affected_rows = {kwargs['affected_rows']}")
-        execute_sql(self.client, self.warehouse_id,
-                    f"UPDATE {self._requests_table} SET {', '.join(sets)} WHERE request_id = '{request_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._requests_table} SET {', '.join(sets)} WHERE request_id = '{request_id}'",
+        )
 
     def get_request(self, request_id: str) -> dict | None:
         try:
-            rows = execute_sql(self.client, self.warehouse_id,
-                               f"SELECT * FROM {self._requests_table} WHERE request_id = '{request_id}'")
+            rows = execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"SELECT * FROM {self._requests_table} WHERE request_id = '{request_id}'",
+            )
             return rows[0] if rows else None
         except Exception:
             return None
@@ -168,33 +208,44 @@ class DSARStore:
     def list_requests(self, status: str | None = None, limit: int = 50) -> list[dict]:
         where = f"WHERE status = '{status}'" if status else ""
         try:
-            return execute_sql(self.client, self.warehouse_id,
-                               f"SELECT * FROM {self._requests_table} {where} ORDER BY created_at DESC LIMIT {limit}")
+            return execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"SELECT * FROM {self._requests_table} {where} ORDER BY created_at DESC LIMIT {limit}",
+            )
         except Exception:
             return []
 
     def get_overdue_requests(self) -> list[dict]:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         try:
-            return execute_sql(self.client, self.warehouse_id, f"""
+            return execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 SELECT * FROM {self._requests_table}
                 WHERE deadline < '{now}' AND status NOT IN ('completed', 'cancelled')
                 ORDER BY deadline ASC
-            """)
+            """,
+            )
         except Exception:
             return []
 
     def get_dashboard_stats(self) -> dict:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         try:
-            rows = execute_sql(self.client, self.warehouse_id, f"""
+            rows = execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 SELECT COUNT(*) AS total,
                     SUM(CASE WHEN status IN ('received','analyzed') THEN 1 ELSE 0 END) AS pending,
                     SUM(CASE WHEN status IN ('discovering','approved','exporting') THEN 1 ELSE 0 END) AS in_progress,
                     SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
                     SUM(CASE WHEN deadline < '{now}' AND status NOT IN ('completed','cancelled') THEN 1 ELSE 0 END) AS overdue
                 FROM {self._requests_table}
-            """)
+            """,
+            )
             return rows[0] if rows else {}
         except Exception:
             return {}
@@ -202,44 +253,58 @@ class DSARStore:
     def save_action(self, **kwargs) -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 INSERT INTO {self._actions_table}
                 (action_id, request_id, action_type, catalog, schema_name, table_name,
                  column_name, rows_found, status, executed_at, duration_seconds, error_message)
                 VALUES ('{kwargs["action_id"]}', '{kwargs["request_id"]}', '{kwargs["action_type"]}',
-                        '{kwargs.get("catalog","")}', '{kwargs.get("schema_name","")}',
-                        '{kwargs.get("table_name","")}', '{kwargs.get("column_name","")}',
-                        {kwargs.get("rows_found",0)}, '{kwargs.get("status","completed")}',
-                        '{now}', {kwargs.get("duration_seconds",0)},
+                        '{kwargs.get("catalog", "")}', '{kwargs.get("schema_name", "")}',
+                        '{kwargs.get("table_name", "")}', '{kwargs.get("column_name", "")}',
+                        {kwargs.get("rows_found", 0)}, '{kwargs.get("status", "completed")}',
+                        '{now}', {kwargs.get("duration_seconds", 0)},
                         {f"'{kwargs['error_message']}'" if kwargs.get("error_message") else "NULL"})
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to save DSAR action: {e}")
 
     def save_export(self, **kwargs) -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 INSERT INTO {self._exports_table}
                 (export_id, request_id, format, file_path, file_size_bytes, total_rows, total_tables, generated_at, generated_by)
-                VALUES ('{kwargs["export_id"]}', '{kwargs["request_id"]}', '{kwargs.get("format","csv")}',
-                        '{kwargs.get("file_path","")}', {kwargs.get("file_size_bytes",0)},
-                        {kwargs.get("total_rows",0)}, {kwargs.get("total_tables",0)},
-                        '{now}', '{kwargs.get("generated_by","")}')
-            """)
+                VALUES ('{kwargs["export_id"]}', '{kwargs["request_id"]}', '{kwargs.get("format", "csv")}',
+                        '{kwargs.get("file_path", "")}', {kwargs.get("file_size_bytes", 0)},
+                        {kwargs.get("total_rows", 0)}, {kwargs.get("total_tables", 0)},
+                        '{now}', '{kwargs.get("generated_by", "")}')
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to save DSAR export: {e}")
 
     def get_actions(self, request_id: str) -> list[dict]:
         try:
-            return execute_sql(self.client, self.warehouse_id,
-                               f"SELECT * FROM {self._actions_table} WHERE request_id = '{request_id}' ORDER BY executed_at")
+            return execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"SELECT * FROM {self._actions_table} WHERE request_id = '{request_id}' ORDER BY executed_at",
+            )
         except Exception:
             return []
 
     def get_exports(self, request_id: str) -> list[dict]:
         try:
-            return execute_sql(self.client, self.warehouse_id,
-                               f"SELECT * FROM {self._exports_table} WHERE request_id = '{request_id}' ORDER BY generated_at DESC")
+            return execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"SELECT * FROM {self._exports_table} WHERE request_id = '{request_id}' ORDER BY generated_at DESC",
+            )
         except Exception:
             return []

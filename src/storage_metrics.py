@@ -12,7 +12,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, execute_sql_cached, get_max_parallel_queries, list_schemas_sdk, list_tables_sdk
+from src.client import (
+    execute_sql,
+    execute_sql_cached,
+    get_max_parallel_queries,
+    list_schemas_sdk,
+    list_tables_sdk,
+)
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -22,14 +28,14 @@ def _format_bytes(size: int) -> str:
     """Format bytes as human-readable string."""
     if size < 1024:
         return f"{size} B"
-    elif size < 1024 ** 2:
+    elif size < 1024**2:
         return f"{size / 1024:.1f} KB"
-    elif size < 1024 ** 3:
-        return f"{size / 1024 ** 2:.1f} MB"
-    elif size < 1024 ** 4:
-        return f"{size / 1024 ** 3:.2f} GB"
+    elif size < 1024**3:
+        return f"{size / 1024**2:.1f} MB"
+    elif size < 1024**4:
+        return f"{size / 1024**3:.2f} GB"
     else:
-        return f"{size / 1024 ** 4:.2f} TB"
+        return f"{size / 1024**4:.2f} TB"
 
 
 def _pct(part: int, total: int) -> float:
@@ -92,15 +98,17 @@ def get_table_storage_metrics(
             files = _safe_int(d.get("numFiles"))
             if size > 0 or files > 0:
                 describe_succeeded = True
-                metrics.update({
-                    "total_bytes": size,
-                    "total_display": _format_bytes(size),
-                    "num_total_files": files,
-                    "active_bytes": size,
-                    "active_display": _format_bytes(size),
-                    "active_pct": 100.0 if size > 0 else 0.0,
-                    "num_active_files": files,
-                })
+                metrics.update(
+                    {
+                        "total_bytes": size,
+                        "total_display": _format_bytes(size),
+                        "num_total_files": files,
+                        "active_bytes": size,
+                        "active_display": _format_bytes(size),
+                        "active_pct": 100.0 if size > 0 else 0.0,
+                        "num_active_files": files,
+                    }
+                )
     except Exception as e:
         logger.debug(f"DESCRIBE DETAIL failed for {fqn}: {e}")
         metrics["error"] = str(e)
@@ -109,7 +117,8 @@ def get_table_storage_metrics(
     if deep_analyze:
         try:
             rows = execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 f"ANALYZE TABLE {fqn} COMPUTE STORAGE METRICS",
             )
             if rows:
@@ -130,23 +139,25 @@ def get_table_storage_metrics(
                 time_travel = data.get("time_travel_bytes", 0)
 
                 if total > 0 or active > 0:
-                    metrics.update({
-                        "total_bytes": total,
-                        "total_display": _format_bytes(total),
-                        "num_total_files": data.get("num_total_files", 0),
-                        "active_bytes": active,
-                        "active_display": _format_bytes(active),
-                        "active_pct": _pct(active, total),
-                        "num_active_files": data.get("num_active_files", 0),
-                        "vacuumable_bytes": vacuumable,
-                        "vacuumable_display": _format_bytes(vacuumable),
-                        "vacuumable_pct": _pct(vacuumable, total),
-                        "num_vacuumable_files": data.get("num_vacuumable_files", 0),
-                        "time_travel_bytes": time_travel,
-                        "time_travel_display": _format_bytes(time_travel),
-                        "time_travel_pct": _pct(time_travel, total),
-                        "num_time_travel_files": data.get("num_time_travel_files", 0),
-                    })
+                    metrics.update(
+                        {
+                            "total_bytes": total,
+                            "total_display": _format_bytes(total),
+                            "num_total_files": data.get("num_total_files", 0),
+                            "active_bytes": active,
+                            "active_display": _format_bytes(active),
+                            "active_pct": _pct(active, total),
+                            "num_active_files": data.get("num_active_files", 0),
+                            "vacuumable_bytes": vacuumable,
+                            "vacuumable_display": _format_bytes(vacuumable),
+                            "vacuumable_pct": _pct(vacuumable, total),
+                            "num_vacuumable_files": data.get("num_vacuumable_files", 0),
+                            "time_travel_bytes": time_travel,
+                            "time_travel_display": _format_bytes(time_travel),
+                            "time_travel_pct": _pct(time_travel, total),
+                            "num_time_travel_files": data.get("num_time_travel_files", 0),
+                        }
+                    )
         except Exception as e:
             logger.debug(f"ANALYZE TABLE failed for {fqn}: {e}")
             if not describe_succeeded:
@@ -168,7 +179,9 @@ def _process_schema_storage_metrics(
     max_workers = max_workers or get_max_parallel_queries()
 
     if table_filter:
-        result = get_table_storage_metrics(client, warehouse_id, catalog, schema, table_filter, deep_analyze=deep_analyze)
+        result = get_table_storage_metrics(
+            client, warehouse_id, catalog, schema, table_filter, deep_analyze=deep_analyze
+        )
         return schema, [result]
 
     all_tables = list_tables_sdk(client, catalog, schema)
@@ -181,7 +194,13 @@ def _process_schema_storage_metrics(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                get_table_storage_metrics, client, warehouse_id, catalog, schema, t["table_name"], deep_analyze=deep_analyze,
+                get_table_storage_metrics,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                t["table_name"],
+                deep_analyze=deep_analyze,
             ): t["table_name"]
             for t in tables
         }
@@ -281,20 +300,22 @@ def catalog_storage_metrics_fast(
     schema_summaries = []
     for schema_name, tables in sorted(schema_map.items()):
         s_total = sum(t["total_bytes"] for t in tables)
-        schema_summaries.append({
-            "schema": schema_name,
-            "num_tables": len(tables),
-            "total_bytes": s_total,
-            "total_display": _format_bytes(s_total),
-            "active_bytes": s_total,
-            "active_display": _format_bytes(s_total),
-            "vacuumable_bytes": 0,
-            "vacuumable_display": "0 B",
-            "vacuumable_pct": 0.0,
-            "time_travel_bytes": 0,
-            "time_travel_display": "0 B",
-            "time_travel_pct": 0.0,
-        })
+        schema_summaries.append(
+            {
+                "schema": schema_name,
+                "num_tables": len(tables),
+                "total_bytes": s_total,
+                "total_display": _format_bytes(s_total),
+                "active_bytes": s_total,
+                "active_display": _format_bytes(s_total),
+                "vacuumable_bytes": 0,
+                "vacuumable_display": "0 B",
+                "vacuumable_pct": 0.0,
+                "time_travel_bytes": 0,
+                "time_travel_display": "0 B",
+                "time_travel_pct": 0.0,
+            }
+        )
 
     total_bytes = sum(t["total_bytes"] for t in all_tables)
 
@@ -360,17 +381,35 @@ def catalog_storage_metrics(
         if fast_result is not None:
             logger.info(f"Used fast system table path: {fast_result['num_tables']} tables")
             return fast_result
-        logger.warning("Fast path failed — returning empty result. Use deep_analyze=True for per-table metrics.")
+        logger.warning(
+            "Fast path failed — returning empty result. Use deep_analyze=True for per-table metrics."
+        )
         # Don't fall through to per-table DESCRIBE DETAIL — that's too expensive for default loads
         return {
-            "catalog": catalog, "num_schemas": 0, "num_tables": 0,
-            "total_bytes": 0, "total_display": "0 B", "num_total_files": 0,
-            "active_bytes": 0, "active_display": "0 B", "active_pct": 0.0, "num_active_files": 0,
-            "vacuumable_bytes": 0, "vacuumable_display": "0 B", "vacuumable_pct": 0.0, "num_vacuumable_files": 0,
-            "time_travel_bytes": 0, "time_travel_display": "0 B", "time_travel_pct": 0.0, "num_time_travel_files": 0,
-            "schema_summaries": [], "tables": [],
-            "top_tables_by_vacuumable": [], "top_tables_by_total": [],
-            "num_errors": 0, "errors": [],
+            "catalog": catalog,
+            "num_schemas": 0,
+            "num_tables": 0,
+            "total_bytes": 0,
+            "total_display": "0 B",
+            "num_total_files": 0,
+            "active_bytes": 0,
+            "active_display": "0 B",
+            "active_pct": 0.0,
+            "num_active_files": 0,
+            "vacuumable_bytes": 0,
+            "vacuumable_display": "0 B",
+            "vacuumable_pct": 0.0,
+            "num_vacuumable_files": 0,
+            "time_travel_bytes": 0,
+            "time_travel_display": "0 B",
+            "time_travel_pct": 0.0,
+            "num_time_travel_files": 0,
+            "schema_summaries": [],
+            "tables": [],
+            "top_tables_by_vacuumable": [],
+            "top_tables_by_total": [],
+            "num_errors": 0,
+            "errors": [],
             "runtime_error": "Could not query information_schema.tables. Use the Deep Analyze button for per-table metrics.",
         }
 
@@ -392,8 +431,14 @@ def catalog_storage_metrics(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                _process_schema_storage_metrics, client, warehouse_id, catalog,
-                schema, table_filter if schema == schema_filter else None, max_workers, deep_analyze,
+                _process_schema_storage_metrics,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                table_filter if schema == schema_filter else None,
+                max_workers,
+                deep_analyze,
             ): schema
             for schema in schemas
         }
@@ -406,20 +451,22 @@ def catalog_storage_metrics(
             s_active = sum(t["active_bytes"] for t in schema_tables)
             s_vacuumable = sum(t["vacuumable_bytes"] for t in schema_tables)
             s_time_travel = sum(t["time_travel_bytes"] for t in schema_tables)
-            schema_summaries.append({
-                "schema": schema_name,
-                "num_tables": len(schema_tables),
-                "total_bytes": s_total,
-                "total_display": _format_bytes(s_total),
-                "active_bytes": s_active,
-                "active_display": _format_bytes(s_active),
-                "vacuumable_bytes": s_vacuumable,
-                "vacuumable_display": _format_bytes(s_vacuumable),
-                "vacuumable_pct": _pct(s_vacuumable, s_total),
-                "time_travel_bytes": s_time_travel,
-                "time_travel_display": _format_bytes(s_time_travel),
-                "time_travel_pct": _pct(s_time_travel, s_total),
-            })
+            schema_summaries.append(
+                {
+                    "schema": schema_name,
+                    "num_tables": len(schema_tables),
+                    "total_bytes": s_total,
+                    "total_display": _format_bytes(s_total),
+                    "active_bytes": s_active,
+                    "active_display": _format_bytes(s_active),
+                    "vacuumable_bytes": s_vacuumable,
+                    "vacuumable_display": _format_bytes(s_vacuumable),
+                    "vacuumable_pct": _pct(s_vacuumable, s_total),
+                    "time_travel_bytes": s_time_travel,
+                    "time_travel_display": _format_bytes(s_time_travel),
+                    "time_travel_pct": _pct(s_time_travel, s_total),
+                }
+            )
             progress.update(success=True)
 
     progress.stop()
@@ -473,8 +520,7 @@ def catalog_storage_metrics(
     errors = [t for t in all_tables if t.get("error")]
     summary["num_errors"] = len(errors)
     summary["errors"] = [
-        {"schema": t["schema"], "table": t["table"], "error": t["error"]}
-        for t in errors
+        {"schema": t["schema"], "table": t["table"], "error": t["error"]} for t in errors
     ]
 
     # If ALL tables errored, surface the first error as a top-level message
@@ -496,8 +542,12 @@ def catalog_storage_metrics(
     logger.info(f"  Tables:           {summary['num_tables']}")
     logger.info(f"  Total storage:    {summary['total_display']} ({total_files} files)")
     logger.info(f"  Active data:      {summary['active_display']} ({summary['active_pct']}%)")
-    logger.info(f"  Vacuumable:       {summary['vacuumable_display']} ({summary['vacuumable_pct']}%)")
-    logger.info(f"  Time travel:      {summary['time_travel_display']} ({summary['time_travel_pct']}%)")
+    logger.info(
+        f"  Vacuumable:       {summary['vacuumable_display']} ({summary['vacuumable_pct']}%)"
+    )
+    logger.info(
+        f"  Time travel:      {summary['time_travel_display']} ({summary['time_travel_pct']}%)"
+    )
 
     if schema_summaries:
         logger.info("\n  Per-schema breakdown:")

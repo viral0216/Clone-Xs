@@ -9,16 +9,22 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_audit_table(
-    client: WorkspaceClient, warehouse_id: str,
-    audit_catalog: str, audit_schema: str, audit_table: str = "clone_audit_log",
+    client: WorkspaceClient,
+    warehouse_id: str,
+    audit_catalog: str,
+    audit_schema: str,
+    audit_table: str = "clone_audit_log",
     dry_run: bool = False,
 ) -> str:
     """Create the audit log table if it doesn't exist. Returns full table name."""
     full_name = f"`{audit_catalog}`.`{audit_schema}`.`{audit_table}`"
 
-    execute_sql(client, warehouse_id,
-                f"CREATE SCHEMA IF NOT EXISTS `{audit_catalog}`.`{audit_schema}`",
-                dry_run=dry_run)
+    execute_sql(
+        client,
+        warehouse_id,
+        f"CREATE SCHEMA IF NOT EXISTS `{audit_catalog}`.`{audit_schema}`",
+        dry_run=dry_run,
+    )
 
     sql = f"""
         CREATE TABLE IF NOT EXISTS {full_name} (
@@ -54,7 +60,8 @@ def ensure_audit_table(
 
 
 def write_audit_log(
-    client: WorkspaceClient, warehouse_id: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
     audit_table: str,
     summary: dict,
     config: dict,
@@ -62,14 +69,18 @@ def write_audit_log(
 ) -> None:
     """Write a clone operation record to the audit log table."""
     from src.client import utc_now
+
     now = utc_now()
     clone_id = f"clone_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
     total_errors = len(summary.get("errors", []))
     error_details = "; ".join(summary.get("errors", []))[:4000]  # Truncate for column
-    status = "SUCCESS" if total_errors == 0 and all(
-        summary[t]["failed"] == 0 for t in ("tables", "views", "functions", "volumes")
-    ) else "FAILED"
+    status = (
+        "SUCCESS"
+        if total_errors == 0
+        and all(summary[t]["failed"] == 0 for t in ("tables", "views", "functions", "volumes"))
+        else "FAILED"
+    )
 
     duration = summary.get("duration_seconds", 0) or 0
 
@@ -80,24 +91,24 @@ def write_audit_log(
         INSERT INTO {audit_table} VALUES (
             '{clone_id}',
             TIMESTAMP '{now}',
-            '{config['source_catalog']}',
-            '{config['destination_catalog']}',
-            '{config['clone_type']}',
-            '{config['load_type']}',
-            {str(config.get('dry_run', False)).lower()},
-            {summary['schemas_processed']},
-            {summary['tables']['success']},
-            {summary['tables']['failed']},
-            {summary['tables']['skipped']},
-            {summary['views']['success']},
-            {summary['views']['failed']},
-            {summary['views']['skipped']},
-            {summary['functions']['success']},
-            {summary['functions']['failed']},
-            {summary['functions']['skipped']},
-            {summary['volumes']['success']},
-            {summary['volumes']['failed']},
-            {summary['volumes']['skipped']},
+            '{config["source_catalog"]}',
+            '{config["destination_catalog"]}',
+            '{config["clone_type"]}',
+            '{config["load_type"]}',
+            {str(config.get("dry_run", False)).lower()},
+            {summary["schemas_processed"]},
+            {summary["tables"]["success"]},
+            {summary["tables"]["failed"]},
+            {summary["tables"]["skipped"]},
+            {summary["views"]["success"]},
+            {summary["views"]["failed"]},
+            {summary["views"]["skipped"]},
+            {summary["functions"]["success"]},
+            {summary["functions"]["failed"]},
+            {summary["functions"]["skipped"]},
+            {summary["volumes"]["success"]},
+            {summary["volumes"]["failed"]},
+            {summary["volumes"]["skipped"]},
             {total_errors},
             '{error_details}',
             '{status}',
@@ -107,14 +118,18 @@ def write_audit_log(
 
     try:
         execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Audit log written: {clone_id} ({status}, {duration:.0f}s)")
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}Audit log written: {clone_id} ({status}, {duration:.0f}s)"
+        )
     except Exception as e:
         logger.error(f"Failed to write audit log: {e}")
 
 
 def get_audit_history(
-    client: WorkspaceClient, warehouse_id: str,
-    audit_table: str, limit: int = 20,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    audit_table: str,
+    limit: int = 20,
 ) -> list[dict]:
     """Get recent audit log entries."""
     sql = f"""

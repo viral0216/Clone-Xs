@@ -207,7 +207,7 @@ def _gen_wind_turbine(state: dict, seq: int, now: datetime) -> dict:
     d = devices[seq % len(devices)]
     wind = max(0.0, d["wind_baseline"] + random.uniform(-3.0, 3.0))
     rpm = max(0.0, wind * 2.5 + random.uniform(-2.0, 2.0))
-    power_kw = max(0.0, min(d["rated_kw"], wind ** 2 * d["rated_kw"] / 144.0))
+    power_kw = max(0.0, min(d["rated_kw"], wind**2 * d["rated_kw"] / 144.0))
     fault = None
     if random.random() < 0.005:
         fault = random.choice(["F101_BRAKE", "F202_YAW_DRIVE", "F305_GEARBOX_TEMP"])
@@ -299,10 +299,24 @@ def _gen_clickstream(state: dict, seq: int, now: datetime) -> dict:
     if d["session_seq"] >= 30:
         d["session_id"] = f"sess-{random.randint(10**8, 10**9 - 1)}"
         d["session_seq"] = 0
-    pages = ["/home", "/products", "/products/abc", "/products/xyz",
-             "/cart", "/checkout", "/account", "/search?q=demo", "/blog/post-1"]
-    referrers = ["", "https://google.com", "https://bing.com",
-                 "https://twitter.com/share", "https://example.com/blog"]
+    pages = [
+        "/home",
+        "/products",
+        "/products/abc",
+        "/products/xyz",
+        "/cart",
+        "/checkout",
+        "/account",
+        "/search?q=demo",
+        "/blog/post-1",
+    ]
+    referrers = [
+        "",
+        "https://google.com",
+        "https://bing.com",
+        "https://twitter.com/share",
+        "https://example.com/blog",
+    ]
     # Weighted event type — page_view dominates, conversion funnel rare.
     et = random.choices(
         ["page_view", "click", "scroll", "submit", "purchase"],
@@ -321,116 +335,134 @@ def _gen_clickstream(state: dict, seq: int, now: datetime) -> dict:
 
 
 def _init_state_generic_sensor(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"sensor-{i:05d}",
-            "temp_mean": random.uniform(15.0, 30.0),
-            "hum_mean": random.uniform(30.0, 70.0),
-            "press_mean": random.uniform(1000.0, 1020.0),
-            "vib_mean": random.uniform(0.05, 0.5),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"sensor-{i:05d}",
+                "temp_mean": random.uniform(15.0, 30.0),
+                "hum_mean": random.uniform(30.0, 70.0),
+                "press_mean": random.uniform(1000.0, 1020.0),
+                "vib_mean": random.uniform(0.05, 0.5),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_industrial_machine(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"machine-{i:04d}",
-            "rpm_mean": random.uniform(1500.0, 3500.0),
-            "oil_mean": random.uniform(40.0, 60.0),
-            "coolant_mean": random.uniform(70.0, 90.0),
-            "tool_wear_pct": random.uniform(0.0, 30.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"machine-{i:04d}",
+                "rpm_mean": random.uniform(1500.0, 3500.0),
+                "oil_mean": random.uniform(40.0, 60.0),
+                "coolant_mean": random.uniform(70.0, 90.0),
+                "tool_wear_pct": random.uniform(0.0, 30.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_car_obd2(num_devices: int) -> dict:
     """Random VIN-shaped IDs (17 chars, alphanumeric, no I/O/Q). Real
     VINs follow ISO 3779 — these are demo-shape only, not valid VINs."""
     vin_chars = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
-    return {"devices": [
-        {
-            "id": "".join(random.choice(vin_chars) for _ in range(17)),
-            "speed_kmh": random.uniform(0.0, 100.0),
-            "fuel_level_pct": random.uniform(20.0, 95.0),
-            "lat": random.uniform(37.7, 37.8),   # SF-ish bounding box
-            "lng": random.uniform(-122.5, -122.4),
-        }
-        for _ in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": "".join(random.choice(vin_chars) for _ in range(17)),
+                "speed_kmh": random.uniform(0.0, 100.0),
+                "fuel_level_pct": random.uniform(20.0, 95.0),
+                "lat": random.uniform(37.7, 37.8),  # SF-ish bounding box
+                "lng": random.uniform(-122.5, -122.4),
+            }
+            for _ in range(num_devices)
+        ]
+    }
 
 
 def _init_state_smart_meter(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"meter-{i:06d}",
-            "kwh_cumulative": random.uniform(1000.0, 50000.0),
-            "voltage_mean": random.uniform(220.0, 240.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"meter-{i:06d}",
+                "kwh_cumulative": random.uniform(1000.0, 50000.0),
+                "voltage_mean": random.uniform(220.0, 240.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_wearable_health(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"wearable-{i:05d}",
-            "hr_baseline": random.uniform(60.0, 85.0),
-            "steps_cumulative": random.randint(0, 5000),
-            "calories": random.uniform(0.0, 500.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"wearable-{i:05d}",
+                "hr_baseline": random.uniform(60.0, 85.0),
+                "steps_cumulative": random.randint(0, 5000),
+                "calories": random.uniform(0.0, 500.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_pos_terminal(num_devices: int) -> dict:
     """Each terminal is permanently assigned to one store — joins to a
     store-dimension stay stable across batches."""
-    return {"devices": [
-        {
-            "id": f"pos-{i:05d}",
-            "store_id": f"store-{random.randint(1, 50):04d}",
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"pos-{i:05d}",
+                "store_id": f"store-{random.randint(1, 50):04d}",
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_wind_turbine(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"turbine-{i:04d}",
-            "wind_baseline": random.uniform(4.0, 12.0),
-            "rated_kw": random.choice([1500.0, 2000.0, 2500.0, 3000.0]),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"turbine-{i:04d}",
+                "wind_baseline": random.uniform(4.0, 12.0),
+                "rated_kw": random.choice([1500.0, 2000.0, 2500.0, 3000.0]),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_atm_transaction(num_devices: int) -> dict:
     """NYC-ish bounding box for ATM lat/lng — keeps fraud-geo demos
     visually coherent on a city-scale map."""
-    return {"devices": [
-        {
-            "id": f"atm-{i:05d}",
-            "lat": round(random.uniform(40.5, 40.9), 6),
-            "lng": round(random.uniform(-74.05, -73.85), 6),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"atm-{i:05d}",
+                "lat": round(random.uniform(40.5, 40.9), 6),
+                "lng": round(random.uniform(-74.05, -73.85), 6),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_server_metrics(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"host-{i:04d}",
-            "cpu_baseline": random.uniform(20.0, 60.0),
-            "mem_baseline": random.uniform(8.0, 24.0),
-            "mem_total_gb": random.choice([16.0, 32.0, 64.0, 128.0]),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"host-{i:04d}",
+                "cpu_baseline": random.uniform(20.0, 60.0),
+                "mem_baseline": random.uniform(8.0, 24.0),
+                "mem_total_gb": random.choice([16.0, 32.0, 64.0, 128.0]),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_clickstream(num_devices: int) -> dict:
@@ -445,16 +477,18 @@ def _init_state_clickstream(num_devices: int) -> dict:
         "Mozilla/5.0 (Macintosh) Firefox/121.0",
     ]
     device_types = ["desktop", "mobile", "tablet"]
-    return {"devices": [
-        {
-            "id": f"user-{i:06d}",
-            "session_id": f"sess-{random.randint(10**8, 10**9 - 1)}",
-            "session_seq": 0,
-            "user_agent": random.choice(user_agents),
-            "device_type": random.choice(device_types),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"user-{i:06d}",
+                "session_id": f"sess-{random.randint(10**8, 10**9 - 1)}",
+                "session_seq": 0,
+                "user_agent": random.choice(user_agents),
+                "device_type": random.choice(device_types),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 # Registry. Each entry has the human display name, the per-event
@@ -650,7 +684,10 @@ def emit_batch(profile_name: str, state: dict, batch_size: int, base_seq: int = 
 
 
 def write_batch_to_volume(
-    client: WorkspaceClient, volume_path: str, batch: list[dict], seq: int,
+    client: WorkspaceClient,
+    volume_path: str,
+    batch: list[dict],
+    seq: int,
 ) -> str:
     """Write one batch of events as a JSON file to the Volume.
 
@@ -672,8 +709,11 @@ def write_batch_to_volume(
 
 
 def create_bronze_streaming_table(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
     refresh_minutes: int = 5,
     volume: str = "events_volume",
 ) -> dict:
@@ -735,8 +775,12 @@ def create_bronze_streaming_table(
 
 
 def _ensure_direct_bronze_table(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
+    table_name: str,
 ) -> str:
     """Create catalog + schema + Delta table if missing for direct-to-table
     streaming. Returns the fully-qualified table name.
@@ -752,7 +796,8 @@ def _ensure_direct_bronze_table(
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     comment = DEVICE_PROFILES[profile]["comment"]
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"CREATE TABLE IF NOT EXISTS {fqn} ({col_ddl}) "
         f"USING DELTA COMMENT 'Streaming demo events — {comment}'",
     )
@@ -776,8 +821,11 @@ def _format_sql_value(v: Any) -> str:
 
 
 def insert_batch_direct(
-    client: WorkspaceClient, warehouse_id: str,
-    table_fqn: str, profile: str, batch: list[dict],
+    client: WorkspaceClient,
+    warehouse_id: str,
+    table_fqn: str,
+    profile: str,
+    batch: list[dict],
 ) -> int:
     """INSERT one batch of events into the bronze table via DBSQL.
 
@@ -789,8 +837,7 @@ def insert_batch_direct(
     col_names = [name for name, _ in DEVICE_PROFILES[profile]["columns"]]
     col_list = ", ".join(f"`{c}`" for c in col_names)
     rows_sql = ", ".join(
-        "(" + ", ".join(_format_sql_value(row.get(c)) for c in col_names) + ")"
-        for row in batch
+        "(" + ", ".join(_format_sql_value(row.get(c)) for c in col_names) + ")" for row in batch
     )
     sql = f"INSERT INTO {table_fqn} ({col_list}) VALUES {rows_sql}"
     execute_sql(client, warehouse_id, sql)
@@ -801,8 +848,11 @@ def insert_batch_direct(
 
 
 def _ensure_events_volume(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
     volume: str = "events_volume",
 ) -> str:
     """Create the catalog + schema + Volume if missing. Returns the
@@ -815,7 +865,8 @@ def _ensure_events_volume(
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     comment = DEVICE_PROFILES[profile]["comment"]
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}` "
         f"COMMENT 'Streaming demo events — {comment}'",
     )
@@ -824,7 +875,9 @@ def _ensure_events_volume(
 
 
 def run_streaming_emission(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
     progress_dict: dict | None = None,
     stop_check: Callable[[], bool] | None = None,
 ) -> dict:
@@ -896,11 +949,18 @@ def run_streaming_emission(
     bronze_refresh_minutes = int(config.get("bronze_refresh_minutes", 5))
     if destination == "direct_table":
         direct_table_fqn = _ensure_direct_bronze_table(
-            client, warehouse_id, catalog, schema, profile, bronze_table,
+            client,
+            warehouse_id,
+            catalog,
+            schema,
+            profile,
+            bronze_table,
         )
         logger.info(f"Direct-to-table mode: writing to {direct_table_fqn}")
     else:
-        volume_path = _ensure_events_volume(client, warehouse_id, catalog, schema, profile, volume=volume)
+        volume_path = _ensure_events_volume(
+            client, warehouse_id, catalog, schema, profile, volume=volume
+        )
         if destination == "volume_bronze":
             bronze_pending = True
 
@@ -929,7 +989,11 @@ def run_streaming_emission(
             batch = emit_batch(profile, state, events_per_batch, base_seq=events_emitted)
             if destination == "direct_table":
                 rows_inserted += insert_batch_direct(
-                    client, warehouse_id, direct_table_fqn, profile, batch,
+                    client,
+                    warehouse_id,
+                    direct_table_fqn,
+                    profile,
+                    batch,
                 )
                 last_path = direct_table_fqn
             else:
@@ -948,22 +1012,28 @@ def run_streaming_emission(
         # warehouse on every tick.
         if bronze_pending and files_written > 0:
             bronze_info = create_bronze_streaming_table(
-                client, warehouse_id, catalog, schema, profile,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                profile,
                 refresh_minutes=bronze_refresh_minutes,
                 volume=volume,
             )
             bronze_pending = False
 
         ticks += 1
-        progress.update({
-            "events_emitted": events_emitted,
-            "files_written": files_written,
-            "rows_inserted": rows_inserted,
-            "current_batch_path": last_path,
-            "elapsed_seconds": round(elapsed, 2),
-            "ticks": ticks,
-            "stopped": False,
-        })
+        progress.update(
+            {
+                "events_emitted": events_emitted,
+                "files_written": files_written,
+                "rows_inserted": rows_inserted,
+                "current_batch_path": last_path,
+                "elapsed_seconds": round(elapsed, 2),
+                "ticks": ticks,
+                "stopped": False,
+            }
+        )
 
         # Sleep in small slices so a Stop request lands quickly even
         # when interval_seconds is large (e.g. 60s).
@@ -999,8 +1069,11 @@ def run_streaming_emission(
 
 
 def get_auto_loader_sql(
-    catalog: str, schema: str, profile: str,
-    refresh_minutes: int = 5, volume: str = "events_volume",
+    catalog: str,
+    schema: str,
+    profile: str,
+    refresh_minutes: int = 5,
+    volume: str = "events_volume",
 ) -> str:
     """Build the copy-paste SQL the UI shows for the Auto Loader Bronze
     table — kept in one place so the UI snippet and the auto-create

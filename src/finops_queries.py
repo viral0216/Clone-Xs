@@ -30,6 +30,7 @@ _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Local file cache ─────────────────────────────────────────────────
 
+
 def _cache_get(key: str, ttl: int = _CACHE_TTL):
     """Read from local JSON cache if fresh."""
     path = _CACHE_DIR / f"{key}.json"
@@ -69,8 +70,11 @@ def _safe_int(v) -> int:
 
 # ── Billing + Cost ───────────────────────────────────────────────────
 
+
 def query_billing_cost(
-    client: WorkspaceClient, warehouse_id: str, days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 30,
 ) -> dict:
     """Query billing.usage JOIN list_prices for actual dollar costs.
 
@@ -107,8 +111,16 @@ def query_billing_cost(
         rows = execute_sql_cached(client, warehouse_id, sql, ttl=_CACHE_TTL)
     except Exception as e:
         logger.warning(f"Billing cost query failed: {e}")
-        return {"error": str(e), "daily_trend": [], "total_cost": 0, "total_dbus": 0,
-                "by_sku": [], "by_product": [], "by_warehouse": [], "by_user": []}
+        return {
+            "error": str(e),
+            "daily_trend": [],
+            "total_cost": 0,
+            "total_dbus": 0,
+            "by_sku": [],
+            "by_product": [],
+            "by_warehouse": [],
+            "by_user": [],
+        }
 
     # Aggregate rows into breakdowns
     daily = {}
@@ -155,7 +167,7 @@ def query_billing_cost(
 
     # Round values
     for m in [daily, sku_map, product_map, warehouse_map, user_map]:
-        for v in (m.values() if isinstance(m, dict) else []):
+        for v in m.values() if isinstance(m, dict) else []:
             if isinstance(v, dict):
                 v["cost"] = round(v.get("cost", 0), 2)
                 v["dbus"] = round(v.get("dbus", 0), 2)
@@ -178,6 +190,7 @@ def query_billing_cost(
 
 
 # ── Warehouses ───────────────────────────────────────────────────────
+
 
 def query_warehouses(client: WorkspaceClient, warehouse_id: str) -> dict:
     """Query system.compute.warehouses for latest state of each warehouse."""
@@ -224,19 +237,23 @@ def query_warehouses(client: WorkspaceClient, warehouse_id: str) -> dict:
         warehouses.append(wh)
 
         if wh["auto_stop_minutes"] == 0:
-            warnings.append({
-                "warehouse_id": wh["warehouse_id"],
-                "name": wh["name"],
-                "severity": "warning",
-                "message": f"Warehouse '{wh['name']}' has auto-stop disabled — may incur idle costs",
-            })
+            warnings.append(
+                {
+                    "warehouse_id": wh["warehouse_id"],
+                    "name": wh["name"],
+                    "severity": "warning",
+                    "message": f"Warehouse '{wh['name']}' has auto-stop disabled — may incur idle costs",
+                }
+            )
         if wh["auto_stop_minutes"] > 120:
-            warnings.append({
-                "warehouse_id": wh["warehouse_id"],
-                "name": wh["name"],
-                "severity": "info",
-                "message": f"Warehouse '{wh['name']}' auto-stop is {wh['auto_stop_minutes']}m — consider reducing to save costs",
-            })
+            warnings.append(
+                {
+                    "warehouse_id": wh["warehouse_id"],
+                    "name": wh["name"],
+                    "severity": "info",
+                    "message": f"Warehouse '{wh['name']}' auto-stop is {wh['auto_stop_minutes']}m — consider reducing to save costs",
+                }
+            )
 
     result = {
         "warehouses": warehouses,
@@ -250,8 +267,11 @@ def query_warehouses(client: WorkspaceClient, warehouse_id: str) -> dict:
 
 # ── Warehouse Events ─────────────────────────────────────────────────
 
+
 def query_warehouse_events(
-    client: WorkspaceClient, warehouse_id: str, days: int = 7,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 7,
 ) -> list[dict]:
     """Query system.compute.warehouse_events for start/stop/scale events."""
     cache_key = f"finops_wh_events_{days}d"
@@ -279,18 +299,22 @@ def query_warehouse_events(
         logger.warning(f"Warehouse events query failed: {e}")
         return []
 
-    result = [{
-        "warehouse_id": r.get("warehouse_id", ""),
-        "event_type": r.get("event_type", ""),
-        "event_time": str(r.get("event_time", "")),
-        "cluster_count": _safe_int(r.get("cluster_count")),
-    } for r in rows]
+    result = [
+        {
+            "warehouse_id": r.get("warehouse_id", ""),
+            "event_type": r.get("event_type", ""),
+            "event_time": str(r.get("event_time", "")),
+            "cluster_count": _safe_int(r.get("cluster_count")),
+        }
+        for r in rows
+    ]
 
     _cache_set(cache_key, result)
     return result
 
 
 # ── Clusters ─────────────────────────────────────────────────────────
+
 
 def query_clusters(client: WorkspaceClient, warehouse_id: str) -> dict:
     """Query system.compute.clusters for latest state of each cluster."""
@@ -319,20 +343,22 @@ def query_clusters(client: WorkspaceClient, warehouse_id: str) -> dict:
 
     clusters = []
     for r in rows:
-        clusters.append({
-            "cluster_id": r.get("cluster_id", ""),
-            "cluster_name": r.get("cluster_name", ""),
-            "owned_by": r.get("owned_by", ""),
-            "driver_node_type": r.get("driver_node_type", ""),
-            "worker_node_type": r.get("worker_node_type", ""),
-            "worker_count": _safe_int(r.get("worker_count")),
-            "min_autoscale_workers": _safe_int(r.get("min_autoscale_workers")),
-            "max_autoscale_workers": _safe_int(r.get("max_autoscale_workers")),
-            "auto_termination_minutes": _safe_int(r.get("auto_termination_minutes")),
-            "dbr_version": r.get("dbr_version", ""),
-            "cluster_source": r.get("cluster_source", ""),
-            "change_time": str(r.get("change_time", "")),
-        })
+        clusters.append(
+            {
+                "cluster_id": r.get("cluster_id", ""),
+                "cluster_name": r.get("cluster_name", ""),
+                "owned_by": r.get("owned_by", ""),
+                "driver_node_type": r.get("driver_node_type", ""),
+                "worker_node_type": r.get("worker_node_type", ""),
+                "worker_count": _safe_int(r.get("worker_count")),
+                "min_autoscale_workers": _safe_int(r.get("min_autoscale_workers")),
+                "max_autoscale_workers": _safe_int(r.get("max_autoscale_workers")),
+                "auto_termination_minutes": _safe_int(r.get("auto_termination_minutes")),
+                "dbr_version": r.get("dbr_version", ""),
+                "cluster_source": r.get("cluster_source", ""),
+                "change_time": str(r.get("change_time", "")),
+            }
+        )
 
     result = {
         "clusters": clusters,
@@ -345,8 +371,11 @@ def query_clusters(client: WorkspaceClient, warehouse_id: str) -> dict:
 
 # ── Node Utilization ─────────────────────────────────────────────────
 
+
 def query_node_utilization(
-    client: WorkspaceClient, warehouse_id: str, days: int = 7,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 7,
 ) -> list[dict]:
     """Query system.compute.node_timeline for CPU/memory utilization.
 
@@ -381,15 +410,18 @@ def query_node_utilization(
         logger.warning(f"Node utilization query failed: {e}")
         return []
 
-    result = [{
-        "cluster_id": r.get("cluster_id", ""),
-        "date": str(r.get("date", ""))[:10],
-        "avg_cpu_pct": _safe_float(r.get("avg_cpu_pct")),
-        "avg_mem_pct": _safe_float(r.get("avg_mem_pct")),
-        "max_cpu_pct": _safe_float(r.get("max_cpu_pct")),
-        "max_mem_pct": _safe_float(r.get("max_mem_pct")),
-        "sample_count": _safe_int(r.get("sample_count")),
-    } for r in rows]
+    result = [
+        {
+            "cluster_id": r.get("cluster_id", ""),
+            "date": str(r.get("date", ""))[:10],
+            "avg_cpu_pct": _safe_float(r.get("avg_cpu_pct")),
+            "avg_mem_pct": _safe_float(r.get("avg_mem_pct")),
+            "max_cpu_pct": _safe_float(r.get("max_cpu_pct")),
+            "max_mem_pct": _safe_float(r.get("max_mem_pct")),
+            "sample_count": _safe_int(r.get("sample_count")),
+        }
+        for r in rows
+    ]
 
     _cache_set(cache_key, result)
     return result
@@ -397,8 +429,11 @@ def query_node_utilization(
 
 # ── Query Stats ──────────────────────────────────────────────────────
 
+
 def query_query_stats(
-    client: WorkspaceClient, warehouse_id: str, days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 30,
 ) -> dict:
     """Query system.query.history for performance stats.
 
@@ -510,8 +545,11 @@ def query_query_stats(
 
 # ── Storage (information_schema) ─────────────────────────────────────
 
+
 def query_storage(
-    client: WorkspaceClient, warehouse_id: str, catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
 ) -> dict:
     """Query {catalog}.information_schema.tables for table sizes.
 
@@ -541,8 +579,14 @@ def query_storage(
             rows = []
     except Exception as e:
         logger.warning(f"Storage info_schema query failed: {e}")
-        return {"catalog": catalog, "tables": [], "schema_summaries": [],
-                "total_bytes": 0, "num_tables": 0, "error": str(e)}
+        return {
+            "catalog": catalog,
+            "tables": [],
+            "schema_summaries": [],
+            "total_bytes": 0,
+            "num_tables": 0,
+            "error": str(e),
+        }
 
     tables = []
     schema_map = {}
@@ -585,8 +629,11 @@ def query_storage(
 
 # ── Recommendations ──────────────────────────────────────────────────
 
+
 def query_recommendations(
-    client: WorkspaceClient, warehouse_id: str, catalog: str = "",
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str = "",
 ) -> dict:
     """Combined recommendations from predictive optimization + warehouse warnings."""
     cache_key = f"finops_recommendations_{catalog or 'all'}"
@@ -636,11 +683,13 @@ def query_recommendations(
             avg_cpu = ca["cpu_sum"] / max(ca["samples"], 1)
             avg_mem = ca["mem_sum"] / max(ca["samples"], 1)
             if avg_cpu < 15 and avg_mem < 25:
-                recommendations.append({
-                    "cluster_id": cid,
-                    "severity": "warning",
-                    "message": f"Cluster {cid[:12]}... is underutilized (avg CPU {avg_cpu:.0f}%, mem {avg_mem:.0f}%) — consider downsizing",
-                })
+                recommendations.append(
+                    {
+                        "cluster_id": cid,
+                        "severity": "warning",
+                        "message": f"Cluster {cid[:12]}... is underutilized (avg CPU {avg_cpu:.0f}%, mem {avg_mem:.0f}%) — consider downsizing",
+                    }
+                )
     except Exception:
         pass
 
@@ -657,8 +706,11 @@ def query_recommendations(
 
 # ── Cost per Query ───────────────────────────────────────────────────
 
+
 def query_cost_per_query(
-    client: WorkspaceClient, warehouse_id: str, days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 30,
 ) -> dict:
     """Attribute cost to individual queries, excluding idle warehouse time.
 
@@ -777,10 +829,24 @@ def query_cost_per_query(
             rows = []
     except Exception as e:
         logger.warning(f"Query cost attribution failed: {e}")
-        return {"queries": [], "summary": {}, "by_user": [], "by_statement_type": [], "idle": {}, "error": str(e)}
+        return {
+            "queries": [],
+            "summary": {},
+            "by_user": [],
+            "by_statement_type": [],
+            "idle": {},
+            "error": str(e),
+        }
 
     # Get idle cost breakdown
-    idle = {"idle_cost": 0, "active_cost": 0, "total_warehouse_cost": 0, "idle_hours": 0, "active_hours": 0, "total_hours": 0}
+    idle = {
+        "idle_cost": 0,
+        "active_cost": 0,
+        "total_warehouse_cost": 0,
+        "idle_hours": 0,
+        "active_hours": 0,
+        "total_hours": 0,
+    }
     try:
         idle_rows = execute_sql_cached(client, warehouse_id, idle_sql, ttl=_CACHE_TTL)
         if idle_rows and isinstance(idle_rows, list) and idle_rows[0]:
@@ -809,21 +875,23 @@ def query_cost_per_query(
         stmt_type = r.get("statement_type") or "OTHER"
         total_cost += cost
 
-        queries.append({
-            "statement_id": r.get("statement_id", ""),
-            "query_text": r.get("query_text", ""),
-            "executed_by": user,
-            "warehouse_id": r.get("warehouse_id", ""),
-            "start_time": str(r.get("start_time", "")),
-            "total_duration_ms": _safe_int(r.get("total_duration_ms")),
-            "execution_duration_ms": _safe_int(r.get("execution_duration_ms")),
-            "status": r.get("status", ""),
-            "statement_type": stmt_type,
-            "read_bytes": _safe_int(r.get("read_bytes")),
-            "produced_rows": _safe_int(r.get("produced_rows")),
-            "estimated_cost": round(cost, 4),
-            "estimated_dbus": round(dbus, 4),
-        })
+        queries.append(
+            {
+                "statement_id": r.get("statement_id", ""),
+                "query_text": r.get("query_text", ""),
+                "executed_by": user,
+                "warehouse_id": r.get("warehouse_id", ""),
+                "start_time": str(r.get("start_time", "")),
+                "total_duration_ms": _safe_int(r.get("total_duration_ms")),
+                "execution_duration_ms": _safe_int(r.get("execution_duration_ms")),
+                "status": r.get("status", ""),
+                "statement_type": stmt_type,
+                "read_bytes": _safe_int(r.get("read_bytes")),
+                "produced_rows": _safe_int(r.get("produced_rows")),
+                "estimated_cost": round(cost, 4),
+                "estimated_dbus": round(dbus, 4),
+            }
+        )
 
         u = user_map.setdefault(user, {"user": user, "cost": 0, "count": 0})
         u["cost"] += cost
@@ -856,8 +924,11 @@ def query_cost_per_query(
 
 # ── Cost per Job ─────────────────────────────────────────────────────
 
+
 def query_cost_per_job(
-    client: WorkspaceClient, warehouse_id: str, days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    days: int = 30,
 ) -> dict:
     """Attribute cost to jobs using billing.usage where job_id IS NOT NULL."""
     cache_key = f"finops_job_costs_{days}d"
@@ -910,17 +981,19 @@ def query_cost_per_job(
         product = r.get("product") or "Unknown"
         total_cost += cost
 
-        jobs.append({
-            "job_id": r.get("job_id", ""),
-            "job_name": r.get("job_name") or r.get("job_id", ""),
-            "run_as": user,
-            "product": product,
-            "active_days": _safe_int(r.get("active_days")),
-            "total_dbus": round(dbus, 2),
-            "total_cost": round(cost, 2),
-            "first_run": str(r.get("first_run", "")),
-            "last_run": str(r.get("last_run", "")),
-        })
+        jobs.append(
+            {
+                "job_id": r.get("job_id", ""),
+                "job_name": r.get("job_name") or r.get("job_id", ""),
+                "run_as": user,
+                "product": product,
+                "active_days": _safe_int(r.get("active_days")),
+                "total_dbus": round(dbus, 2),
+                "total_cost": round(cost, 2),
+                "first_run": str(r.get("first_run", "")),
+                "last_run": str(r.get("last_run", "")),
+            }
+        )
 
         u = user_map.setdefault(user, {"user": user, "cost": 0, "count": 0})
         u["cost"] += cost
@@ -951,6 +1024,7 @@ def query_cost_per_job(
 
 
 # ── System Table Access Check ────────────────────────────────────────
+
 
 def check_system_tables(client: WorkspaceClient, warehouse_id: str) -> dict:
     """Probe which system tables are accessible."""

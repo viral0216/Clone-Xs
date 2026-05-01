@@ -67,20 +67,24 @@ def send_slack_notification(webhook_url: str, summary: dict, config: dict) -> bo
     # Add duration if available
     duration = summary.get("duration_seconds")
     if duration:
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Duration:* {_format_duration(duration)}"},
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Duration:* {_format_duration(duration)}"},
+            }
+        )
 
     errors = summary.get("errors", [])
     if errors:
         error_text = "\n".join(f"- {e}" for e in errors[:5])
         if len(errors) > 5:
             error_text += f"\n... and {len(errors) - 5} more"
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Errors:*\n{error_text}"},
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Errors:*\n{error_text}"},
+            }
+        )
 
     breakdown_lines = []
     for obj_type in ("tables", "views", "functions", "volumes"):
@@ -89,10 +93,15 @@ def send_slack_notification(webhook_url: str, summary: dict, config: dict) -> bo
             f"  {obj_type.capitalize():12s}: "
             f"{stats['success']} ok / {stats['failed']} fail / {stats['skipped']} skip"
         )
-    blocks.append({
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": f"*Breakdown:*\n```{chr(10).join(breakdown_lines)}```"},
-    })
+    blocks.append(
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Breakdown:*\n```{chr(10).join(breakdown_lines)}```",
+            },
+        }
+    )
 
     payload = json.dumps({"blocks": blocks}).encode("utf-8")
 
@@ -133,8 +142,7 @@ def send_webhook_notification(
         "total_skipped": info["total_skipped"],
         "duration_seconds": summary.get("duration_seconds"),
         "breakdown": {
-            obj_type: summary[obj_type]
-            for obj_type in ("tables", "views", "functions", "volumes")
+            obj_type: summary[obj_type] for obj_type in ("tables", "views", "functions", "volumes")
         },
         "errors": summary.get("errors", []),
     }
@@ -222,7 +230,9 @@ def send_email_notification(
     """Send clone summary via email."""
     info = _build_summary_text(summary, config)
 
-    subject = f"Unity Catalog Clone {info['status']}{info['mode']}: {info['source']} -> {info['dest']}"
+    subject = (
+        f"Unity Catalog Clone {info['status']}{info['mode']}: {info['source']} -> {info['dest']}"
+    )
 
     body_lines = [
         f"Unity Catalog Clone Report{info['mode']}",
@@ -247,10 +257,12 @@ def send_email_notification(
             f"{stats['success']} success, {stats['failed']} failed, {stats['skipped']} skipped"
         )
 
-    body_lines.extend([
-        "",
-        f"Total: {info['total_success']} success, {info['total_failed']} failed, {info['total_skipped']} skipped",
-    ])
+    body_lines.extend(
+        [
+            "",
+            f"Total: {info['total_success']} success, {info['total_failed']} failed, {info['total_skipped']} skipped",
+        ]
+    )
 
     errors = summary.get("errors", [])
     if errors:

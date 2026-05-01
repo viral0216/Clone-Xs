@@ -9,8 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 def generate_compliance_report(
-    client, warehouse_id: str, config: dict,
-    from_date: str | None = None, to_date: str | None = None,
+    client,
+    warehouse_id: str,
+    config: dict,
+    from_date: str | None = None,
+    to_date: str | None = None,
     output_dir: str = "reports/compliance",
     output_format: str = "all",
 ) -> dict:
@@ -26,7 +29,9 @@ def generate_compliance_report(
             "to_date": to_date,
             "clone_xs_version": "0.4.0",
         },
-        "clone_operations_summary": _gather_audit_data(client, warehouse_id, config, from_date, to_date),
+        "clone_operations_summary": _gather_audit_data(
+            client, warehouse_id, config, from_date, to_date
+        ),
         "pii_handling": _gather_pii_data(client, warehouse_id, config),
         "permission_audit": _gather_permission_data(client, warehouse_id, config),
         "data_lineage": _gather_lineage_data(client, warehouse_id, config, from_date, to_date),
@@ -64,8 +69,9 @@ def _get_user(client) -> str:
         return "unknown"
 
 
-def _gather_audit_data(client, warehouse_id: str, config: dict,
-                       from_date: str | None, to_date: str | None) -> dict:
+def _gather_audit_data(
+    client, warehouse_id: str, config: dict, from_date: str | None, to_date: str | None
+) -> dict:
     """Query audit trail for clone operations."""
     from src.client import execute_sql
 
@@ -107,12 +113,14 @@ def _gather_pii_data(client, warehouse_id: str, config: dict) -> dict:
     """Gather PII detection and masking data."""
     try:
         from src.pii_detection import detect_pii_by_column_names
+
         dest = config.get("destination_catalog", "")
         if not dest:
             return {"available": False, "message": "No destination catalog configured"}
 
-        findings = detect_pii_by_column_names(client, warehouse_id, dest,
-                                               config.get("exclude_schemas", []))
+        findings = detect_pii_by_column_names(
+            client, warehouse_id, dest, config.get("exclude_schemas", [])
+        )
 
         masking_rules = config.get("masking_rules", [])
         masked_columns = {r.get("column", "") for r in masking_rules} if masking_rules else set()
@@ -152,8 +160,9 @@ def _gather_permission_data(client, warehouse_id: str, config: dict) -> dict:
         return {"available": False, "message": str(e)}
 
 
-def _gather_lineage_data(client, warehouse_id: str, config: dict,
-                         from_date: str | None, to_date: str | None) -> dict:
+def _gather_lineage_data(
+    client, warehouse_id: str, config: dict, from_date: str | None, to_date: str | None
+) -> dict:
     """Gather data lineage information."""
     from src.client import execute_sql
 
@@ -190,7 +199,9 @@ def _gather_validation_data(client, warehouse_id: str, config: dict) -> dict:
     return {
         "available": config.get("validate_after_clone", False),
         "checksum_enabled": config.get("validate_checksum", False),
-        "message": "Validation data from latest clone operation" if config.get("validate_after_clone") else "Validation not enabled",
+        "message": "Validation data from latest clone operation"
+        if config.get("validate_after_clone")
+        else "Validation not enabled",
     }
 
 
@@ -268,58 +279,58 @@ th {{ background: #f0f0f0; font-weight: 600; }}
 <body>
 <div class="container">
 <h1>Compliance Report</h1>
-<p class="meta">Generated: {meta.get('generated_at', '')} | By: {meta.get('generated_by', '')} | Period: {meta.get('from_date', 'all')} to {meta.get('to_date', 'present')}</p>
+<p class="meta">Generated: {meta.get("generated_at", "")} | By: {meta.get("generated_by", "")} | Period: {meta.get("from_date", "all")} to {meta.get("to_date", "present")}</p>
 
 <h2>Clone Operations</h2>
 """
     if ops.get("available"):
         html += f"""
 <div class="stats-grid">
-<div class="stat-card"><div class="stat">{ops.get('total_operations', 0)}</div><div class="stat-label">Total Operations</div></div>
-<div class="stat-card"><div class="stat">{ops.get('successful', 0)}</div><div class="stat-label">Successful</div></div>
-<div class="stat-card"><div class="stat">{ops.get('failed', 0)}</div><div class="stat-label">Failed</div></div>
+<div class="stat-card"><div class="stat">{ops.get("total_operations", 0)}</div><div class="stat-label">Total Operations</div></div>
+<div class="stat-card"><div class="stat">{ops.get("successful", 0)}</div><div class="stat-label">Successful</div></div>
+<div class="stat-card"><div class="stat">{ops.get("failed", 0)}</div><div class="stat-label">Failed</div></div>
 </div>"""
     else:
-        html += f'<p>{ops.get("message", "Not available")}</p>'
+        html += f"<p>{ops.get('message', 'Not available')}</p>"
 
     html += "<h2>PII Handling</h2>"
     if pii.get("available"):
         html += f"""
 <div class="stats-grid">
-<div class="stat-card"><div class="stat">{pii.get('total_pii_columns', 0)}</div><div class="stat-label">PII Columns Detected</div></div>
-<div class="stat-card"><div class="stat">{pii.get('masking_rules_applied', 0)}</div><div class="stat-label">Masking Rules Applied</div></div>
-<div class="stat-card"><div class="stat">{pii.get('unmasked_pii_warnings', 0)}</div><div class="stat-label">Unmasked PII Warnings</div></div>
+<div class="stat-card"><div class="stat">{pii.get("total_pii_columns", 0)}</div><div class="stat-label">PII Columns Detected</div></div>
+<div class="stat-card"><div class="stat">{pii.get("masking_rules_applied", 0)}</div><div class="stat-label">Masking Rules Applied</div></div>
+<div class="stat-card"><div class="stat">{pii.get("unmasked_pii_warnings", 0)}</div><div class="stat-label">Unmasked PII Warnings</div></div>
 </div>"""
         if pii.get("unmasked"):
             html += '<p><span class="badge badge-warning">Warning</span> The following PII columns have no masking rules:</p><ul>'
             for u in pii["unmasked"]:
-                html += f'<li>{u.get("column", "?")} ({u.get("pii_type", "?")})</li>'
+                html += f"<li>{u.get('column', '?')} ({u.get('pii_type', '?')})</li>"
             html += "</ul>"
     else:
-        html += f'<p>{pii.get("message", "Not available")}</p>'
+        html += f"<p>{pii.get('message', 'Not available')}</p>"
 
     html += "<h2>Permission Audit</h2>"
     if perms.get("available"):
-        html += f'<p>Catalog: <strong>{perms.get("catalog", "")}</strong> | Total grants: {perms.get("total_grants", 0)}</p>'
+        html += f"<p>Catalog: <strong>{perms.get('catalog', '')}</strong> | Total grants: {perms.get('total_grants', 0)}</p>"
         if perms.get("grants"):
             html += "<table><tr><th>Principal</th><th>Privilege</th></tr>"
             for g in perms["grants"][:30]:
-                html += f'<tr><td>{g.get("Principal", g.get("principal", ""))}</td><td>{g.get("ActionType", g.get("privilege", ""))}</td></tr>'
+                html += f"<tr><td>{g.get('Principal', g.get('principal', ''))}</td><td>{g.get('ActionType', g.get('privilege', ''))}</td></tr>"
             html += "</table>"
     else:
-        html += f'<p>{perms.get("message", "Not available")}</p>'
+        html += f"<p>{perms.get('message', 'Not available')}</p>"
 
     html += "<h2>Data Lineage</h2>"
     if lineage.get("available"):
-        html += f'<p>Total lineage records: {lineage.get("total_records", 0)}</p>'
+        html += f"<p>Total lineage records: {lineage.get('total_records', 0)}</p>"
     else:
-        html += f'<p>{lineage.get("message", "Not available")}</p>'
+        html += f"<p>{lineage.get('message', 'Not available')}</p>"
 
     html += "<h2>Validation</h2>"
     html += f'<p>Validation enabled: <span class="badge {"badge-success" if validation.get("available") else "badge-warning"}">'
-    html += f'{"Yes" if validation.get("available") else "No"}</span></p>'
+    html += f"{'Yes' if validation.get('available') else 'No'}</span></p>"
     html += f'<p>Checksum validation: <span class="badge {"badge-info" if validation.get("checksum_enabled") else "badge-warning"}">'
-    html += f'{"Enabled" if validation.get("checksum_enabled") else "Disabled"}</span></p>'
+    html += f"{'Enabled' if validation.get('checksum_enabled') else 'Disabled'}</span></p>"
 
     html += """
 <hr>
@@ -336,6 +347,7 @@ def apply_retention_policy(report_dir: str, retention_days: int) -> int:
         return 0
 
     import time
+
     cutoff = time.time() - (retention_days * 86400)
     deleted = 0
 

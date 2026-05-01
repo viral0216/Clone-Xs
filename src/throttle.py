@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ThrottleProfile:
     """Defines resource limits for clone operations."""
+
     name: str
     max_concurrent_deep_clones: int
     max_tables_per_minute: int

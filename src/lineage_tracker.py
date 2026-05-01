@@ -9,13 +9,16 @@ from src.client import execute_sql
 logger = logging.getLogger(__name__)
 
 
-def ensure_lineage_table(client, warehouse_id: str, lineage_catalog: str = "clone_audit", config: dict | None = None) -> str:
+def ensure_lineage_table(
+    client, warehouse_id: str, lineage_catalog: str = "clone_audit", config: dict | None = None
+) -> str:
     """Create the lineage tracking table if it doesn't exist.
 
     Returns:
         Fully qualified table name.
     """
     from src.table_registry import get_catalog, get_schema_fqn, get_table_fqn
+
     cfg = config or {}
     if config:
         catalog = get_catalog(cfg)
@@ -28,6 +31,7 @@ def ensure_lineage_table(client, warehouse_id: str, lineage_catalog: str = "clon
         fqn = f"{catalog}.{schema}.clone_lineage"
 
     from src.catalog_utils import ensure_catalog_and_schema
+
     ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
@@ -83,6 +87,7 @@ def record_lineage(
 ) -> None:
     """Record a single lineage entry for a cloned object."""
     import uuid
+
     if config:
         lineage_catalog = config.get("audit_trail", {}).get("catalog", lineage_catalog)
     fqn = f"{lineage_catalog}.lineage.clone_lineage"
@@ -137,9 +142,15 @@ def record_batch_lineage(
     count = 0
     for obj in cloned_objects:
         record_lineage(
-            client, warehouse_id, operation_id,
-            source_catalog, obj["schema"], obj["table"],
-            dest_catalog, obj["schema"], obj["table"],
+            client,
+            warehouse_id,
+            operation_id,
+            source_catalog,
+            obj["schema"],
+            obj["table"],
+            dest_catalog,
+            obj["schema"],
+            obj["table"],
             object_type=obj.get("object_type", "TABLE"),
             clone_type=clone_type,
             clone_status=obj.get("status", "success"),

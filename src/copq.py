@@ -52,6 +52,7 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
     schema = _get_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -60,11 +61,15 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
         ("copq_config", _CONFIG_DDL, "COPQ cost assumptions"),
     ]:
         try:
-            _run_sql(f"""
+            _run_sql(
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{tbl} ({ddl})
                 USING DELTA COMMENT 'Clone-Xs: {comment}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """, client, warehouse_id)
+            """,
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not create {tbl}: {e}")
 
@@ -73,8 +78,12 @@ def get_copq_config(client=None, warehouse_id: str = "", config: dict = None) ->
     config = config or {}
     schema = _get_schema(config)
     try:
-        rows = _query_sql(f"SELECT key, value FROM {schema}.copq_config",
-                          limit=20, client=client, warehouse_id=warehouse_id)
+        rows = _query_sql(
+            f"SELECT key, value FROM {schema}.copq_config",
+            limit=20,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         if rows:
             return {r["key"]: float(r["value"]) for r in rows}
     except Exception:
@@ -82,7 +91,9 @@ def get_copq_config(client=None, warehouse_id: str = "", config: dict = None) ->
     return dict(DEFAULT_CONFIG)
 
 
-def update_copq_config(new_config: dict, client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def update_copq_config(
+    new_config: dict, client=None, warehouse_id: str = "", config: dict = None
+) -> dict:
     config = config or {}
     schema = _get_schema(config)
     ensure_tables(client, warehouse_id, config)
@@ -94,7 +105,9 @@ def update_copq_config(new_config: dict, client=None, warehouse_id: str = "", co
     values = [f"('{_esc(k)}', {v}, '{now}')" for k, v in new_config.items()]
     if values:
         try:
-            _run_sql(f"INSERT INTO {schema}.copq_config VALUES {', '.join(values)}", client, warehouse_id)
+            _run_sql(
+                f"INSERT INTO {schema}.copq_config VALUES {', '.join(values)}", client, warehouse_id
+            )
         except Exception as e:
             logger.warning(f"Could not update COPQ config: {e}")
     return new_config
@@ -117,17 +130,26 @@ def record_copq_event(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     eid = uuid.uuid4().hex[:12]
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.copq_events VALUES (
                 '{eid}', '{_esc(table_fqn)}', '{_esc(event_type)}',
                 {estimated_cost}, {compute_cost}, {human_hours},
                 '{_esc(details)}', '{now}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not record COPQ event: {e}")
-    return {"event_id": eid, "table_fqn": table_fqn, "event_type": event_type,
-            "estimated_cost": estimated_cost, "created_at": now}
+    return {
+        "event_id": eid,
+        "table_fqn": table_fqn,
+        "event_type": event_type,
+        "estimated_cost": estimated_cost,
+        "created_at": now,
+    }
 
 
 def compute_copq_from_dq(client=None, warehouse_id: str = "", config: dict = None) -> list[dict]:
@@ -139,32 +161,60 @@ def compute_copq_from_dq(client=None, warehouse_id: str = "", config: dict = Non
 
     # DQ rule failures -> pipeline reruns
     try:
-        rows = _query_sql(f"""
+        rows = (
+            _query_sql(
+                f"""
             SELECT table_fqn, COUNT(*) as failures FROM {gov_schema}.dq_results
             WHERE passed = false AND executed_at >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
             GROUP BY table_fqn
-        """, limit=500, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=500,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
         for r in rows:
             cost = int(r["failures"]) * copq_cfg.get("per_rerun_cost", 25)
-            ev = record_copq_event(r["table_fqn"], "dq_failure", cost,
-                                   details=f"{r['failures']} DQ failures in 30d",
-                                   client=client, warehouse_id=warehouse_id, config=config)
+            ev = record_copq_event(
+                r["table_fqn"],
+                "dq_failure",
+                cost,
+                details=f"{r['failures']} DQ failures in 30d",
+                client=client,
+                warehouse_id=warehouse_id,
+                config=config,
+            )
             events.append(ev)
     except Exception:
         pass
 
     # SLA breaches
     try:
-        rows = _query_sql(f"""
+        rows = (
+            _query_sql(
+                f"""
             SELECT table_fqn, COUNT(*) as breaches FROM {gov_schema}.sla_checks
             WHERE passed = false AND checked_at >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
             GROUP BY table_fqn
-        """, limit=500, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=500,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
         for r in rows:
             cost = int(r["breaches"]) * copq_cfg.get("sla_breach_penalty", 500)
-            ev = record_copq_event(r["table_fqn"], "sla_breach", cost,
-                                   details=f"{r['breaches']} SLA breaches in 30d",
-                                   client=client, warehouse_id=warehouse_id, config=config)
+            ev = record_copq_event(
+                r["table_fqn"],
+                "sla_breach",
+                cost,
+                details=f"{r['breaches']} SLA breaches in 30d",
+                client=client,
+                warehouse_id=warehouse_id,
+                config=config,
+            )
             events.append(ev)
     except Exception:
         pass
@@ -182,17 +232,33 @@ def get_copq_summary(
     config = config or {}
     schema = _get_schema(config)
     try:
-        rows = _query_sql(f"""
+        rows = (
+            _query_sql(
+                f"""
             SELECT event_type, SUM(estimated_cost) as total_cost, COUNT(*) as event_count
             FROM {schema}.copq_events
             WHERE created_at >= DATEADD(DAY, -{days}, CURRENT_TIMESTAMP())
             GROUP BY event_type
-        """, limit=20, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=20,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
 
         total = sum(float(r.get("total_cost", 0)) for r in rows)
-        breakdown = {r["event_type"]: {"cost": float(r["total_cost"]), "count": int(r["event_count"])} for r in rows}
+        breakdown = {
+            r["event_type"]: {"cost": float(r["total_cost"]), "count": int(r["event_count"])}
+            for r in rows
+        }
 
-        return {"total_cost": round(total, 2), "period_days": days, "breakdown": breakdown, "categories": len(breakdown)}
+        return {
+            "total_cost": round(total, 2),
+            "period_days": days,
+            "breakdown": breakdown,
+            "categories": len(breakdown),
+        }
     except Exception as e:
         logger.warning(f"Could not compute COPQ summary: {e}")
         return {"total_cost": 0, "period_days": days, "breakdown": {}, "categories": 0}
@@ -209,12 +275,20 @@ def get_copq_by_table(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT table_fqn, SUM(estimated_cost) as total_cost, COUNT(*) as events
             FROM {schema}.copq_events
             WHERE created_at >= DATEADD(DAY, -{days}, CURRENT_TIMESTAMP())
             GROUP BY table_fqn ORDER BY total_cost DESC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query COPQ by table: {e}")
         return []
@@ -230,12 +304,20 @@ def get_copq_trends(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT DATE_TRUNC('week', created_at) as week, SUM(estimated_cost) as cost, COUNT(*) as events
             FROM {schema}.copq_events
             WHERE created_at >= DATEADD(DAY, -{days}, CURRENT_TIMESTAMP())
             GROUP BY DATE_TRUNC('week', created_at) ORDER BY week
-        """, limit=52, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=52,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query COPQ trends: {e}")
         return []

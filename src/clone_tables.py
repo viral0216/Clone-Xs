@@ -10,7 +10,11 @@ from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.log_formatter import (
     dim,
-    OK, FAIL, SKIP, WARN, ARROW,
+    OK,
+    FAIL,
+    SKIP,
+    WARN,
+    ARROW,
 )
 from src.permissions import copy_table_permissions, update_ownership
 from src.rollback import record_object, get_table_version, record_table_version
@@ -20,7 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_tables(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
     order_by_size: str | None = None,
 ) -> list[dict]:
     """List all tables in a schema, optionally ordered by size.
@@ -44,7 +51,11 @@ def get_tables(
 
 
 def _get_table_size(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> int:
     """Get table size in bytes for ordering. Returns 0 on error."""
     sql = f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table_name}`"
@@ -117,10 +128,7 @@ def _format_tbl_properties(props: dict[str, str] | None) -> str:
     """
     if not props:
         return ""
-    pairs = [
-        f"{k} = '{str(v).replace(chr(39), chr(39) * 2)}'"
-        for k, v in props.items()
-    ]
+    pairs = [f"{k} = '{str(v).replace(chr(39), chr(39) * 2)}'" for k, v in props.items()]
     return f" TBLPROPERTIES ({', '.join(pairs)})"
 
 
@@ -168,7 +176,9 @@ def clone_table(
     if force_reclone:
         try:
             execute_sql(client, warehouse_id, f"DROP TABLE IF EXISTS {dest}", dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{WARN} Dropped table for re-clone: {dest}")
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{WARN} Dropped table for re-clone: {dest}"
+            )
         except Exception as e:
             logger.warning(f"{WARN} Failed to drop table {dest} for re-clone: {e}")
 
@@ -177,7 +187,9 @@ def clone_table(
         sql = f"CREATE TABLE IF NOT EXISTS {dest} LIKE {source}"
         try:
             execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}")
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}"
+            )
             return True, None
         except Exception as e:
             logger.error(f"{FAIL} Failed to create empty table {dest}: {e}")
@@ -223,7 +235,8 @@ def clone_table(
         if where_clause and clone_type == "DEEP" and tbl_properties and not dry_run:
             try:
                 execute_sql(
-                    client, warehouse_id,
+                    client,
+                    warehouse_id,
                     f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
                     dry_run=dry_run,
                 )
@@ -238,7 +251,9 @@ def clone_table(
                 time_travel = f" VERSION AS OF {as_of_version}"
             tt_info = f", {time_travel.strip()}" if time_travel else ""
         filter_info = f", WHERE {where_clause}" if (where_clause and clone_type == "DEEP") else ""
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}")
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}"
+        )
         return True, metrics
     except Exception as e:
         if "No pipeline was present" in str(e):
@@ -282,16 +297,27 @@ def _clone_single_table(
         dest_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
         try:
             pre_version = get_table_version(client, warehouse_id, dest_fqn)
-            record_table_version(rollback_log, dest_fqn, pre_version, existed=pre_version is not None)
+            record_table_version(
+                rollback_log, dest_fqn, pre_version, existed=pre_version is not None
+            )
         except Exception:
             pass  # Don't block clone if version recording fails
 
     success, metrics = clone_table(
-        client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
-        clone_type, dry_run=dry_run,
-        as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
-        where_clause=where_clause, force_reclone=force_reclone,
-        schema_only=schema_only, tbl_properties=tbl_properties,
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        schema,
+        table_name,
+        clone_type,
+        dry_run=dry_run,
+        as_of_timestamp=as_of_timestamp,
+        as_of_version=as_of_version,
+        where_clause=where_clause,
+        force_reclone=force_reclone,
+        schema_only=schema_only,
+        tbl_properties=tbl_properties,
     )
 
     if not success:
@@ -305,38 +331,64 @@ def _clone_single_table(
 
     if copy_ownership and not dry_run:
         update_ownership(
-            client, SecurableType.TABLE,
+            client,
+            SecurableType.TABLE,
             f"{source_catalog}.{schema}.{table_name}",
             f"{dest_catalog}.{schema}.{table_name}",
         )
 
     if copy_tags and not dry_run:
         copy_table_tags(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_properties and not dry_run:
         copy_table_properties(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_security and not dry_run:
         copy_table_security(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_constraints and not dry_run:
         copy_table_constraints(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_comments and not dry_run:
         copy_table_comments(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
@@ -396,8 +448,7 @@ def clone_tables_in_schema(
     # we can roll up per-format counters in the result without changing the
     # tables_to_clone list shape (still a list of names).
     format_by_name = {
-        row["table_name"]: (row.get("data_source_format") or "DELTA").upper()
-        for row in tables
+        row["table_name"]: (row.get("data_source_format") or "DELTA").upper() for row in tables
     }
     results = {
         "success": 0,
@@ -471,13 +522,17 @@ def clone_tables_in_schema(
             continue
 
         if load_type == "INCREMENTAL" and table_name in existing:
-            logger.info(f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}")
+            logger.info(
+                f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}"
+            )
             results["skipped"] += 1
             _bump("skipped")
             continue
 
         if resumed_tables and table_name in resumed_tables:
-            logger.info(f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}")
+            logger.info(
+                f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}"
+            )
             results["skipped"] += 1
             _bump("skipped")
             continue
@@ -500,12 +555,27 @@ def clone_tables_in_schema(
             futures = {
                 executor.submit(
                     _clone_single_table,
-                    client, warehouse_id, source_catalog, dest_catalog, schema,
-                    tname, clone_type, dry_run,
-                    copy_permissions, copy_ownership, copy_tags, copy_properties,
-                    copy_security, copy_constraints, copy_comments, rollback_log,
-                    as_of_timestamp, as_of_version,
-                    _resolve_where_clause(tname), force_reclone, schema_only,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    tname,
+                    clone_type,
+                    dry_run,
+                    copy_permissions,
+                    copy_ownership,
+                    copy_tags,
+                    copy_properties,
+                    copy_security,
+                    copy_constraints,
+                    copy_comments,
+                    rollback_log,
+                    as_of_timestamp,
+                    as_of_version,
+                    _resolve_where_clause(tname),
+                    force_reclone,
+                    schema_only,
                     tbl_properties,
                 ): tname
                 for tname in tables_to_clone
@@ -523,12 +593,27 @@ def clone_tables_in_schema(
     else:
         for tname in tables_to_clone:
             _, success, metrics = _clone_single_table(
-                client, warehouse_id, source_catalog, dest_catalog, schema,
-                tname, clone_type, dry_run,
-                copy_permissions, copy_ownership, copy_tags, copy_properties,
-                copy_security, copy_constraints, copy_comments, rollback_log,
-                as_of_timestamp, as_of_version,
-                _resolve_where_clause(tname), force_reclone, schema_only,
+                client,
+                warehouse_id,
+                source_catalog,
+                dest_catalog,
+                schema,
+                tname,
+                clone_type,
+                dry_run,
+                copy_permissions,
+                copy_ownership,
+                copy_tags,
+                copy_properties,
+                copy_security,
+                copy_constraints,
+                copy_comments,
+                rollback_log,
+                as_of_timestamp,
+                as_of_version,
+                _resolve_where_clause(tname),
+                force_reclone,
+                schema_only,
                 tbl_properties,
             )
             _add_metrics(metrics)

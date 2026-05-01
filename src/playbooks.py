@@ -55,6 +55,7 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
     schema = _get_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -63,17 +64,28 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
         ("playbook_executions", _EXECUTIONS_DDL, "Playbook execution history"),
     ]:
         try:
-            _run_sql(f"""
+            _run_sql(
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{tbl} ({ddl})
                 USING DELTA COMMENT 'Clone-Xs: {comment}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """, client, warehouse_id)
+            """,
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not create {tbl}: {e}")
 
 
 TRIGGER_TYPES = ["dq_failure", "anomaly", "sla_breach", "freshness_stale", "schema_drift"]
-ACTION_TYPES = ["run_dq_check", "create_incident", "send_notification", "run_custom_sql", "tag_table", "disable_table"]
+ACTION_TYPES = [
+    "run_dq_check",
+    "create_incident",
+    "send_notification",
+    "run_custom_sql",
+    "tag_table",
+    "disable_table",
+]
 
 TEMPLATES = [
     {
@@ -83,7 +95,10 @@ TEMPLATES = [
         "conditions": [{"field": "failure_rate", "operator": ">", "value": 0.1}],
         "actions": [
             {"type": "create_incident", "params": {"severity": "critical"}},
-            {"type": "send_notification", "params": {"channel": "slack", "message": "Critical DQ failure detected"}},
+            {
+                "type": "send_notification",
+                "params": {"channel": "slack", "message": "Critical DQ failure detected"},
+            },
         ],
     },
     {
@@ -93,7 +108,10 @@ TEMPLATES = [
         "conditions": [],
         "actions": [
             {"type": "run_dq_check", "params": {"scope": "table"}},
-            {"type": "send_notification", "params": {"channel": "email", "message": "Anomaly detected, re-running checks"}},
+            {
+                "type": "send_notification",
+                "params": {"channel": "email", "message": "Anomaly detected, re-running checks"},
+            },
         ],
     },
     {
@@ -113,7 +131,10 @@ TEMPLATES = [
         "conditions": [],
         "actions": [
             {"type": "tag_table", "params": {"tag": "stale_data", "value": "true"}},
-            {"type": "send_notification", "params": {"channel": "slack", "message": "Table has gone stale"}},
+            {
+                "type": "send_notification",
+                "params": {"channel": "slack", "message": "Table has gone stale"},
+            },
         ],
     },
 ]
@@ -139,43 +160,67 @@ def create_playbook(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.playbooks VALUES (
                 '{pid}', '{_esc(name)}', '{_esc(description)}',
                 '{_esc(trigger_type)}', '{_esc(json.dumps(trigger_config or {}))}',
                 '{_esc(json.dumps(conditions or []))}', '{_esc(json.dumps(actions or []))}',
                 true, {max_executions_per_hour}, '{_esc(created_by)}', '{now}', '{now}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not create playbook: {e}")
 
-    return {"playbook_id": pid, "name": name, "trigger_type": trigger_type,
-            "enabled": True, "created_at": now}
+    return {
+        "playbook_id": pid,
+        "name": name,
+        "trigger_type": trigger_type,
+        "enabled": True,
+        "created_at": now,
+    }
 
 
 def list_playbooks(client=None, warehouse_id: str = "", config: dict = None) -> list[dict]:
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"SELECT * FROM {schema}.playbooks ORDER BY created_at DESC",
-                          limit=100, client=client, warehouse_id=warehouse_id) or []
+        return (
+            _query_sql(
+                f"SELECT * FROM {schema}.playbooks ORDER BY created_at DESC",
+                limit=100,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception:
         return []
 
 
-def get_playbook(playbook_id: str, client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def get_playbook(
+    playbook_id: str, client=None, warehouse_id: str = "", config: dict = None
+) -> dict:
     config = config or {}
     schema = _get_schema(config)
     try:
-        rows = _query_sql(f"SELECT * FROM {schema}.playbooks WHERE playbook_id = '{_esc(playbook_id)}'",
-                          limit=1, client=client, warehouse_id=warehouse_id)
+        rows = _query_sql(
+            f"SELECT * FROM {schema}.playbooks WHERE playbook_id = '{_esc(playbook_id)}'",
+            limit=1,
+            client=client,
+            warehouse_id=warehouse_id,
+        )
         return rows[0] if rows else {}
     except Exception:
         return {}
 
 
-def update_playbook(playbook_id: str, updates: dict, client=None, warehouse_id: str = "", config: dict = None) -> dict:
+def update_playbook(
+    playbook_id: str, updates: dict, client=None, warehouse_id: str = "", config: dict = None
+) -> dict:
     config = config or {}
     schema = _get_schema(config)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -190,8 +235,11 @@ def update_playbook(playbook_id: str, updates: dict, client=None, warehouse_id: 
         elif k == "max_executions_per_hour":
             sets.append(f"max_executions_per_hour = {int(v)}")
     try:
-        _run_sql(f"UPDATE {schema}.playbooks SET {', '.join(sets)} WHERE playbook_id = '{_esc(playbook_id)}'",
-                 client, warehouse_id)
+        _run_sql(
+            f"UPDATE {schema}.playbooks SET {', '.join(sets)} WHERE playbook_id = '{_esc(playbook_id)}'",
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not update playbook: {e}")
     return get_playbook(playbook_id, client, warehouse_id, config)
@@ -201,7 +249,11 @@ def delete_playbook(playbook_id: str, client=None, warehouse_id: str = "", confi
     config = config or {}
     schema = _get_schema(config)
     try:
-        _run_sql(f"DELETE FROM {schema}.playbooks WHERE playbook_id = '{_esc(playbook_id)}'", client, warehouse_id)
+        _run_sql(
+            f"DELETE FROM {schema}.playbooks WHERE playbook_id = '{_esc(playbook_id)}'",
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not delete playbook: {e}")
 
@@ -225,7 +277,11 @@ def execute_playbook(
     actions_taken = []
 
     try:
-        actions = json.loads(playbook.get("actions", "[]")) if isinstance(playbook.get("actions"), str) else playbook.get("actions", [])
+        actions = (
+            json.loads(playbook.get("actions", "[]"))
+            if isinstance(playbook.get("actions"), str)
+            else playbook.get("actions", [])
+        )
     except Exception:
         actions = []
 
@@ -237,7 +293,13 @@ def execute_playbook(
         params = action.get("params", {})
         try:
             if action_type == "send_notification":
-                actions_taken.append({"type": "send_notification", "status": "sent", "channel": params.get("channel", "")})
+                actions_taken.append(
+                    {
+                        "type": "send_notification",
+                        "status": "sent",
+                        "channel": params.get("channel", ""),
+                    }
+                )
             elif action_type == "create_incident":
                 actions_taken.append({"type": "create_incident", "status": "created"})
             elif action_type == "run_dq_check":
@@ -258,18 +320,27 @@ def execute_playbook(
 
     # Record execution
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.playbook_executions VALUES (
                 '{eid}', '{_esc(playbook_id)}', '{_esc(playbook.get("name", ""))}',
                 '{_esc(json.dumps(trigger_event or {}))}', '{_esc(json.dumps(actions_taken))}',
                 '{status}', '{_esc(error_msg)}', '{now}', '{now}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception:
         pass
 
-    return {"execution_id": eid, "playbook_id": playbook_id, "status": status,
-            "actions_taken": actions_taken, "started_at": now}
+    return {
+        "execution_id": eid,
+        "playbook_id": playbook_id,
+        "status": status,
+        "actions_taken": actions_taken,
+        "started_at": now,
+    }
 
 
 def get_execution_history(
@@ -283,9 +354,17 @@ def get_execution_history(
     schema = _get_schema(config)
     where = f"WHERE playbook_id = '{_esc(playbook_id)}'" if playbook_id else ""
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT * FROM {schema}.playbook_executions {where} ORDER BY started_at DESC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception:
         return []
 

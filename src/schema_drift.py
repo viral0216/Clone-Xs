@@ -7,12 +7,17 @@ from src.client import execute_sql
 logger = logging.getLogger(__name__)
 
 # Severity levels for drift changes
-SEVERITY_BREAKING = "BREAKING"    # Will likely break downstream queries
-SEVERITY_CAUTION = "CAUTION"      # May cause issues, needs review
-SEVERITY_INFO = "INFO"            # Safe / cosmetic change
+SEVERITY_BREAKING = "BREAKING"  # Will likely break downstream queries
+SEVERITY_CAUTION = "CAUTION"  # May cause issues, needs review
+SEVERITY_INFO = "INFO"  # Safe / cosmetic change
 
 
-def classify_severity(change_type: str, field: str | None = None, source_val: str | None = None, dest_val: str | None = None) -> str:
+def classify_severity(
+    change_type: str,
+    field: str | None = None,
+    source_val: str | None = None,
+    dest_val: str | None = None,
+) -> str:
     """Classify the severity of a schema change."""
     if change_type == "removed":
         return SEVERITY_BREAKING
@@ -88,13 +93,17 @@ def compare_table_schema(
                     diffs[field] = {
                         "source": src_col.get(field),
                         "dest": dst_col.get(field),
-                        "severity": classify_severity("modified", field, src_col.get(field), dst_col.get(field)),
+                        "severity": classify_severity(
+                            "modified", field, src_col.get(field), dst_col.get(field)
+                        ),
                     }
             if diffs:
                 # Table-level severity is the worst among all field diffs
                 severities = [v["severity"] for v in diffs.values()]
-                worst = SEVERITY_BREAKING if SEVERITY_BREAKING in severities else (
-                    SEVERITY_CAUTION if SEVERITY_CAUTION in severities else SEVERITY_INFO
+                worst = (
+                    SEVERITY_BREAKING
+                    if SEVERITY_BREAKING in severities
+                    else (SEVERITY_CAUTION if SEVERITY_CAUTION in severities else SEVERITY_INFO)
                 )
                 modified.append({"column": name, "differences": diffs, "severity": worst})
 
@@ -124,7 +133,9 @@ def compare_table_schema(
     }
 
 
-def _list_schemas(client: WorkspaceClient, warehouse_id: str, catalog: str, exclude: list[str]) -> list[str]:
+def _list_schemas(
+    client: WorkspaceClient, warehouse_id: str, catalog: str, exclude: list[str]
+) -> list[str]:
     """List schemas in a catalog, excluding system schemas."""
     exclude_clause = ",".join(f"'{s}'" for s in exclude)
     sql = f"""
@@ -136,7 +147,9 @@ def _list_schemas(client: WorkspaceClient, warehouse_id: str, catalog: str, excl
     return [r["schema_name"] for r in rows]
 
 
-def _list_tables(client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str) -> list[str]:
+def _list_tables(
+    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str
+) -> list[str]:
     """List managed/external table names in a schema."""
     sql = f"""
         SELECT table_name
@@ -197,7 +210,12 @@ def detect_schema_drift(
         for table_name in common_tables:
             try:
                 drift = compare_table_schema(
-                    client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    table_name,
                 )
                 if drift["has_drift"]:
                     column_drifts.append(drift)

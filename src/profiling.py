@@ -64,12 +64,12 @@ def profile_table(
         stat_parts.append(
             f"SUM(CASE WHEN `{col_name}` IS NULL THEN 1 ELSE 0 END) AS `{col_name}__nulls`"
         )
-        stat_parts.append(
-            f"COUNT(DISTINCT `{col_name}`) AS `{col_name}__distinct`"
-        )
+        stat_parts.append(f"COUNT(DISTINCT `{col_name}`) AS `{col_name}__distinct`")
 
         # Min/max for numeric and date types
-        if any(t in data_type for t in ("INT", "LONG", "DOUBLE", "FLOAT", "DECIMAL", "SHORT", "BYTE")):
+        if any(
+            t in data_type for t in ("INT", "LONG", "DOUBLE", "FLOAT", "DECIMAL", "SHORT", "BYTE")
+        ):
             stat_parts.append(f"MIN(`{col_name}`) AS `{col_name}__min`")
             stat_parts.append(f"MAX(`{col_name}`) AS `{col_name}__max`")
             stat_parts.append(f"AVG(CAST(`{col_name}` AS DOUBLE)) AS `{col_name}__avg`")
@@ -109,7 +109,9 @@ def profile_table(
             col_profile["null_pct"] = round(col_profile["null_count"] / row_count * 100, 2)
 
         # Type-specific stats
-        if any(t in data_type for t in ("INT", "LONG", "DOUBLE", "FLOAT", "DECIMAL", "SHORT", "BYTE")):
+        if any(
+            t in data_type for t in ("INT", "LONG", "DOUBLE", "FLOAT", "DECIMAL", "SHORT", "BYTE")
+        ):
             col_profile["min"] = stats.get(f"{col_name}__min")
             col_profile["max"] = stats.get(f"{col_name}__max")
             col_profile["avg"] = stats.get(f"{col_name}__avg")
@@ -169,7 +171,12 @@ def profile_catalog(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                profile_table, client, warehouse_id, catalog, schema, table_name,
+                profile_table,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                table_name,
             ): (schema, table_name)
             for schema, table_name in all_tables
         }
@@ -196,13 +203,13 @@ def profile_catalog(
     logger.info(f"  Total rows:      {summary['total_rows']:,}")
     for p in all_profiles:
         high_null = [
-            c["column_name"] for c in p["columns"]
+            c["column_name"]
+            for c in p["columns"]
             if c.get("null_pct") is not None and c["null_pct"] > 50
         ]
         if high_null:
             logger.warning(
-                f"  {p['schema']}.{p['table']}: "
-                f"high null columns (>50%): {', '.join(high_null)}"
+                f"  {p['schema']}.{p['table']}: high null columns (>50%): {', '.join(high_null)}"
             )
     logger.info("=" * 60)
 

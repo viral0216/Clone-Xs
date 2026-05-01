@@ -16,7 +16,9 @@ try:
         SESSION_TTL_SECONDS,
     )
 except ImportError:
-    pytest.skip("fastapi not installed (install with: pip install -e '.[web]')", allow_module_level=True)
+    pytest.skip(
+        "fastapi not installed (install with: pip install -e '.[web]')", allow_module_level=True
+    )
 
 
 def _clear_sessions():

@@ -21,8 +21,7 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
         from slack_bolt.adapter.socket_mode import SocketModeHandler
     except ImportError:
         logger.error(
-            "slack-bolt is required for the Slack bot. "
-            "Install with: pip install slack-bolt"
+            "slack-bolt is required for the Slack bot. Install with: pip install slack-bolt"
         )
         sys.exit(1)
 
@@ -37,6 +36,7 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
         sys.exit(1)
 
     from src.config import load_config
+
     config = load_config(config_path)
 
     app = App(token=bot_token)
@@ -59,6 +59,7 @@ def start_slack_bot(config_path: str = "config/clone_config.yaml"):
             say(_status_message(config))
         elif subcommand == "templates":
             from src.clone_templates import list_templates
+
             templates = list_templates()
             msg = "*Available Templates:*\n"
             for t in templates:
@@ -139,10 +140,16 @@ def _handle_clone(say, user, args, config):
         if idx + 1 < len(args):
             template = args[idx + 1]
 
-    clone_config = {**config, "source_catalog": source, "destination_catalog": dest, "dry_run": dry_run}
+    clone_config = {
+        **config,
+        "source_catalog": source,
+        "destination_catalog": dest,
+        "dry_run": dry_run,
+    }
 
     if template:
         from src.clone_templates import apply_template
+
         try:
             clone_config = apply_template(clone_config, template)
         except ValueError as e:
@@ -164,6 +171,7 @@ def _handle_clone(say, user, args, config):
         try:
             from src.client import get_workspace_client
             from src.clone_catalog import clone_catalog
+
             client = get_workspace_client()
             summary = clone_catalog(client, clone_config)
 
@@ -202,9 +210,13 @@ def _handle_diff(say, user, args, config):
         try:
             from src.client import get_workspace_client
             from src.diff import compare_catalogs
+
             client = get_workspace_client()
             diff = compare_catalogs(
-                client, config["sql_warehouse_id"], source, dest,
+                client,
+                config["sql_warehouse_id"],
+                source,
+                dest,
                 config.get("exclude_schemas", []),
             )
             if diff.get("in_sync"):
@@ -234,10 +246,13 @@ def _handle_preflight(say, user, config):
         try:
             from src.client import get_workspace_client
             from src.preflight import run_preflight
+
             client = get_workspace_client()
             result = run_preflight(
-                client, config["sql_warehouse_id"],
-                config["source_catalog"], config["destination_catalog"],
+                client,
+                config["sql_warehouse_id"],
+                config["source_catalog"],
+                config["destination_catalog"],
             )
             if result["ready"]:
                 say(":white_check_mark: All pre-flight checks passed!")
@@ -263,9 +278,12 @@ def _handle_cost_estimate(say, user, args, config):
         try:
             from src.client import get_workspace_client
             from src.clone_cost_estimator import estimate_clone_cost
+
             client = get_workspace_client()
             result = estimate_clone_cost(
-                client, config["sql_warehouse_id"], source,
+                client,
+                config["sql_warehouse_id"],
+                source,
                 config.get("exclude_schemas", []),
             )
             cost = result["cost_estimate"]
@@ -292,9 +310,12 @@ def _handle_pii_scan(say, user, args, config):
         try:
             from src.client import get_workspace_client
             from src.pii_detection import scan_catalog_for_pii
+
             client = get_workspace_client()
             result = scan_catalog_for_pii(
-                client, config["sql_warehouse_id"], catalog,
+                client,
+                config["sql_warehouse_id"],
+                catalog,
                 config.get("exclude_schemas", []),
             )
             if result["total_pii_columns"] == 0:

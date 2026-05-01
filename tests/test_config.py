@@ -16,12 +16,14 @@ def _write_config(config_dict: dict) -> str:
 
 
 def test_load_valid_config():
-    path = _write_config({
-        "source_catalog": "src_cat",
-        "destination_catalog": "dst_cat",
-        "clone_type": "DEEP",
-        "sql_warehouse_id": "abc123",
-    })
+    path = _write_config(
+        {
+            "source_catalog": "src_cat",
+            "destination_catalog": "dst_cat",
+            "clone_type": "DEEP",
+            "sql_warehouse_id": "abc123",
+        }
+    )
     try:
         config = load_config(path)
         assert config["source_catalog"] == "src_cat"
@@ -34,10 +36,12 @@ def test_load_valid_config():
 
 
 def test_load_config_missing_keys_get_defaults():
-    path = _write_config({
-        "source_catalog": "src_cat",
-        # Missing destination_catalog, clone_type, sql_warehouse_id — should get defaults
-    })
+    path = _write_config(
+        {
+            "source_catalog": "src_cat",
+            # Missing destination_catalog, clone_type, sql_warehouse_id — should get defaults
+        }
+    )
     try:
         config = load_config(path)
         assert config["source_catalog"] == "src_cat"
@@ -49,12 +53,14 @@ def test_load_config_missing_keys_get_defaults():
 
 
 def test_load_config_invalid_clone_type():
-    path = _write_config({
-        "source_catalog": "src_cat",
-        "destination_catalog": "dst_cat",
-        "clone_type": "INVALID",
-        "sql_warehouse_id": "abc123",
-    })
+    path = _write_config(
+        {
+            "source_catalog": "src_cat",
+            "destination_catalog": "dst_cat",
+            "clone_type": "INVALID",
+            "sql_warehouse_id": "abc123",
+        }
+    )
     try:
         with pytest.raises(ValueError, match="Invalid clone_type"):
             load_config(path)
@@ -63,12 +69,14 @@ def test_load_config_invalid_clone_type():
 
 
 def test_load_config_shallow():
-    path = _write_config({
-        "source_catalog": "src_cat",
-        "destination_catalog": "dst_cat",
-        "clone_type": "shallow",
-        "sql_warehouse_id": "abc123",
-    })
+    path = _write_config(
+        {
+            "source_catalog": "src_cat",
+            "destination_catalog": "dst_cat",
+            "clone_type": "shallow",
+            "sql_warehouse_id": "abc123",
+        }
+    )
     try:
         config = load_config(path)
         assert config["clone_type"] == "SHALLOW"

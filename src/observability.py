@@ -57,7 +57,9 @@ class ObservabilityService:
 
     def get_summary(self) -> dict:
         """Get stat card values: pass rates, counts, totals."""
-        lookback = (datetime.now(timezone.utc) - timedelta(hours=self.issue_lookback_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        lookback = (
+            datetime.now(timezone.utc) - timedelta(hours=self.issue_lookback_hours)
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         freshness = self._safe_query(f"""
             SELECT COUNT(*) AS total,
@@ -113,14 +115,18 @@ class ObservabilityService:
             "dq_rate": round(d_passed / d_total * 100, 1) if d_total > 0 else 100.0,
             "anomaly_total": a_total,
             "anomaly_count": a_anomalies,
-            "anomaly_rate": round((a_total - a_anomalies) / a_total * 100, 1) if a_total > 0 else 100.0,
+            "anomaly_rate": round((a_total - a_anomalies) / a_total * 100, 1)
+            if a_total > 0
+            else 100.0,
             "volume_rate": 100.0,  # placeholder — volume health derived from anomaly absence
             "lookback_hours": self.issue_lookback_hours,
         }
 
     def get_top_issues(self, limit: int = 10) -> list[dict]:
         """Get the most critical current issues across all categories."""
-        lookback = (datetime.now(timezone.utc) - timedelta(hours=self.issue_lookback_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        lookback = (
+            datetime.now(timezone.utc) - timedelta(hours=self.issue_lookback_hours)
+        ).strftime("%Y-%m-%d %H:%M:%S")
         issues = []
 
         # Freshness failures
@@ -130,14 +136,16 @@ class ObservabilityService:
             WHERE is_stale = true AND checked_at >= '{lookback}'
             ORDER BY checked_at DESC LIMIT {limit}
         """)
-        for r in (stale or []):
-            issues.append({
-                "category": "freshness",
-                "severity": "warning",
-                "table": r.get("table_fqn", ""),
-                "message": f"Stale data — {r.get('hours_since_update', '?')} hours since last update",
-                "time": str(r.get("checked_at", "")),
-            })
+        for r in stale or []:
+            issues.append(
+                {
+                    "category": "freshness",
+                    "severity": "warning",
+                    "table": r.get("table_fqn", ""),
+                    "message": f"Stale data — {r.get('hours_since_update', '?')} hours since last update",
+                    "time": str(r.get("checked_at", "")),
+                }
+            )
 
         # SLA violations
         sla_fail = self._safe_query(f"""
@@ -146,14 +154,16 @@ class ObservabilityService:
             WHERE passed = false AND checked_at >= '{lookback}'
             ORDER BY checked_at DESC LIMIT {limit}
         """)
-        for r in (sla_fail or []):
-            issues.append({
-                "category": "sla",
-                "severity": "critical",
-                "table": r.get("table_fqn", ""),
-                "message": f"SLA violation — {r.get('metric', 'unknown')}",
-                "time": str(r.get("checked_at", "")),
-            })
+        for r in sla_fail or []:
+            issues.append(
+                {
+                    "category": "sla",
+                    "severity": "critical",
+                    "table": r.get("table_fqn", ""),
+                    "message": f"SLA violation — {r.get('metric', 'unknown')}",
+                    "time": str(r.get("checked_at", "")),
+                }
+            )
 
         # DQ failures
         dq_fail = self._safe_query(f"""
@@ -162,14 +172,16 @@ class ObservabilityService:
             WHERE passed = false AND executed_at >= '{lookback}'
             ORDER BY executed_at DESC LIMIT {limit}
         """)
-        for r in (dq_fail or []):
-            issues.append({
-                "category": "dq",
-                "severity": "warning",
-                "table": r.get("table_fqn", ""),
-                "message": f"DQ check failed — {r.get('rule_name', 'unknown')}",
-                "time": str(r.get("executed_at", "")),
-            })
+        for r in dq_fail or []:
+            issues.append(
+                {
+                    "category": "dq",
+                    "severity": "warning",
+                    "table": r.get("table_fqn", ""),
+                    "message": f"DQ check failed — {r.get('rule_name', 'unknown')}",
+                    "time": str(r.get("executed_at", "")),
+                }
+            )
 
         # Sort by severity (critical first) then recency
         severity_order = {"critical": 0, "warning": 1, "info": 2}
@@ -182,43 +194,72 @@ class ObservabilityService:
         start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
         if metric == "freshness":
-            return self._safe_query(f"""
+            return (
+                self._safe_query(f"""
                 SELECT DATE(checked_at) AS day,
                        COUNT(*) AS total,
                        SUM(CASE WHEN is_stale = false THEN 1 ELSE 0 END) AS passed
                 FROM {self._freshness_table}
                 WHERE checked_at >= '{start}'
                 GROUP BY DATE(checked_at) ORDER BY day
-            """) or []
+            """)
+                or []
+            )
         elif metric == "sla":
-            return self._safe_query(f"""
+            return (
+                self._safe_query(f"""
                 SELECT DATE(checked_at) AS day,
                        COUNT(*) AS total,
                        SUM(CASE WHEN passed = true THEN 1 ELSE 0 END) AS passed
                 FROM {self._sla_checks_table}
                 WHERE checked_at >= '{start}'
                 GROUP BY DATE(checked_at) ORDER BY day
-            """) or []
+            """)
+                or []
+            )
         elif metric == "dq":
-            return self._safe_query(f"""
+            return (
+                self._safe_query(f"""
                 SELECT DATE(executed_at) AS day,
                        COUNT(*) AS total,
                        SUM(CASE WHEN passed = true THEN 1 ELSE 0 END) AS passed
                 FROM {self._dq_results_table}
                 WHERE executed_at >= '{start}'
                 GROUP BY DATE(executed_at) ORDER BY day
-            """) or []
+            """)
+                or []
+            )
         return []
 
     def get_category_breakdown(self, summary: dict | None = None) -> dict:
         """Per-category health percentages."""
         s = summary or self.get_summary()
         return {
-            "freshness": {"rate": s["freshness_rate"], "label": "Data Freshness", "weight": self.weights.get("freshness", 0.25)},
-            "volume": {"rate": s["volume_rate"], "label": "Volume Health", "weight": self.weights.get("volume", 0.15)},
-            "anomaly": {"rate": s["anomaly_rate"], "label": "Anomaly Free", "weight": self.weights.get("anomaly", 0.20)},
-            "sla": {"rate": s["sla_rate"], "label": "SLA Compliance", "weight": self.weights.get("sla", 0.25)},
-            "dq": {"rate": s["dq_rate"], "label": "Data Quality", "weight": self.weights.get("dq", 0.15)},
+            "freshness": {
+                "rate": s["freshness_rate"],
+                "label": "Data Freshness",
+                "weight": self.weights.get("freshness", 0.25),
+            },
+            "volume": {
+                "rate": s["volume_rate"],
+                "label": "Volume Health",
+                "weight": self.weights.get("volume", 0.15),
+            },
+            "anomaly": {
+                "rate": s["anomaly_rate"],
+                "label": "Anomaly Free",
+                "weight": self.weights.get("anomaly", 0.20),
+            },
+            "sla": {
+                "rate": s["sla_rate"],
+                "label": "SLA Compliance",
+                "weight": self.weights.get("sla", 0.25),
+            },
+            "dq": {
+                "rate": s["dq_rate"],
+                "label": "Data Quality",
+                "weight": self.weights.get("dq", 0.15),
+            },
         }
 
     def _compute_health_score(self, summary: dict) -> int:

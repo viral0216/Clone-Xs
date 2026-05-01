@@ -16,7 +16,9 @@ class CloneHistory:
         self.config = config
 
     def list_operations(
-        self, limit: int = 20, source_catalog: str | None = None,
+        self,
+        limit: int = 20,
+        source_catalog: str | None = None,
         status: str | None = None,
     ) -> list[dict]:
         """Query historical clone operations from audit trail."""
@@ -99,11 +101,13 @@ class CloneHistory:
             val1 = op1.get(field)
             val2 = op2.get(field)
             if val1 != val2:
-                result["changes"].append({
-                    "field": label,
-                    "old_value": val1,
-                    "new_value": val2,
-                })
+                result["changes"].append(
+                    {
+                        "field": label,
+                        "old_value": val1,
+                        "new_value": val2,
+                    }
+                )
 
         return result
 
@@ -155,6 +159,8 @@ class CloneHistory:
             lines.append("  No differences found.")
         else:
             for change in diff["changes"]:
-                lines.append(f"  ~ {change['field']}: {change['old_value']} -> {change['new_value']}")
+                lines.append(
+                    f"  ~ {change['field']}: {change['old_value']} -> {change['new_value']}"
+                )
 
         return "\n".join(lines)

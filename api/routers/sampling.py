@@ -31,20 +31,33 @@ class CompareSampleRequest(BaseModel):
 async def sample_table(req: SampleRequest, client=Depends(get_db_client)):
     """Get sample rows from a table."""
     from src.sampling import sample_table
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     rows = sample_table(client, wid, req.catalog, req.schema_name, req.table_name, req.limit)
-    return {"catalog": req.catalog, "schema": req.schema_name, "table": req.table_name, "rows": rows}
+    return {
+        "catalog": req.catalog,
+        "schema": req.schema_name,
+        "table": req.table_name,
+        "rows": rows,
+    }
 
 
 @router.post("/sample/compare")
 async def compare_samples(req: CompareSampleRequest, client=Depends(get_db_client)):
     """Compare sample rows between source and destination tables."""
     from src.sampling import compare_samples
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = compare_samples(
-        client, wid, req.source_catalog, req.destination_catalog,
-        req.schema_name, req.table_name, req.limit, req.order_by,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
+        req.schema_name,
+        req.table_name,
+        req.limit,
+        req.order_by,
     )
     return result

@@ -67,6 +67,7 @@ def record_lineage_to_uc(
     execute_sql(client, warehouse_id, create_sql, dry_run=dry_run)
 
     from src.client import utc_now
+
     now = utc_now()
     insert_sql = f"""
         INSERT INTO {table} VALUES (
@@ -109,6 +110,7 @@ def record_lineage_batch(
     execute_sql(client, warehouse_id, create_sql, dry_run=dry_run)
 
     from src.client import utc_now, sql_escape
+
     now = utc_now()
     value_rows = []
     for e in entries:
@@ -120,13 +122,17 @@ def record_lineage_batch(
         )
 
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(value_rows), batch_size):
-        batch = value_rows[i:i + batch_size]
+        batch = value_rows[i : i + batch_size]
         try:
-            execute_sql(client, warehouse_id,
-                        f"INSERT INTO {table} VALUES {', '.join(batch)}",
-                        dry_run=dry_run)
+            execute_sql(
+                client,
+                warehouse_id,
+                f"INSERT INTO {table} VALUES {', '.join(batch)}",
+                dry_run=dry_run,
+            )
         except Exception as e:
             logger.warning(f"Failed to batch-insert lineage: {e}")
 

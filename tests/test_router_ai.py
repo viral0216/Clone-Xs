@@ -22,32 +22,44 @@ def test_ai_status(client):
 
 def test_ai_summarize(client):
     with patch("api.routers.ai._get_service", return_value=_mock_unavailable_service()):
-        resp = client.post("/api/ai/summarize", json={
-            "context_type": "dashboard",
-            "data": {"key": "value"},
-        })
+        resp = client.post(
+            "/api/ai/summarize",
+            json={
+                "context_type": "dashboard",
+                "data": {"key": "value"},
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_ai_clone_builder(client):
     with patch("api.routers.ai._get_service", return_value=_mock_unavailable_service()):
-        resp = client.post("/api/ai/clone-builder", json={
-            "query": "clone catalog A to catalog B",
-        })
+        resp = client.post(
+            "/api/ai/clone-builder",
+            json={
+                "query": "clone catalog A to catalog B",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_ai_dq_suggestions(client):
     with patch("api.routers.ai._get_service", return_value=_mock_unavailable_service()):
-        resp = client.post("/api/ai/dq-suggestions", json={
-            "profiling_results": {"columns": []},
-        })
+        resp = client.post(
+            "/api/ai/dq-suggestions",
+            json={
+                "profiling_results": {"columns": []},
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_ai_pii_remediation(client):
     with patch("api.routers.ai._get_service", return_value=_mock_unavailable_service()):
-        resp = client.post("/api/ai/pii-remediation", json={
-            "scan_results": {"findings": []},
-        })
+        resp = client.post(
+            "/api/ai/pii-remediation",
+            json={
+                "scan_results": {"findings": []},
+            },
+        )
     assert resp.status_code in (200, 422)

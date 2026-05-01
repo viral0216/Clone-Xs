@@ -3,7 +3,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql, get_max_parallel_queries, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
+from src.client import (
+    execute_sql,
+    get_max_parallel_queries,
+    list_schemas_sdk,
+    list_tables_sdk,
+    get_table_info_sdk,
+)
 from src.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -158,13 +164,15 @@ def catalog_stats(
 
             schema_size = sum(t["size_bytes"] or 0 for t in schema_tables)
             schema_rows = sum(t["row_count"] or 0 for t in schema_tables)
-            schema_summaries.append({
-                "schema": schema_name,
-                "num_tables": len(schema_tables),
-                "total_size_bytes": schema_size,
-                "total_size_display": _format_bytes(schema_size),
-                "total_rows": schema_rows,
-            })
+            schema_summaries.append(
+                {
+                    "schema": schema_name,
+                    "num_tables": len(schema_tables),
+                    "total_size_bytes": schema_size,
+                    "total_size_display": _format_bytes(schema_size),
+                    "total_rows": schema_rows,
+                }
+            )
             progress.update(success=True)
 
     progress.stop()
@@ -231,11 +239,11 @@ def _format_bytes(size: int) -> str:
     """Format bytes as human-readable string."""
     if size < 1024:
         return f"{size} B"
-    elif size < 1024 ** 2:
+    elif size < 1024**2:
         return f"{size / 1024:.1f} KB"
-    elif size < 1024 ** 3:
-        return f"{size / 1024 ** 2:.1f} MB"
-    elif size < 1024 ** 4:
-        return f"{size / 1024 ** 3:.2f} GB"
+    elif size < 1024**3:
+        return f"{size / 1024**2:.1f} MB"
+    elif size < 1024**4:
+        return f"{size / 1024**3:.2f} GB"
     else:
-        return f"{size / 1024 ** 4:.2f} TB"
+        return f"{size / 1024**4:.2f} TB"

@@ -10,7 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 def query_table_access_patterns(
-    client, warehouse_id: str, catalog: str, days: int = 90, limit: int = 500,
+    client,
+    warehouse_id: str,
+    catalog: str,
+    days: int = 90,
+    limit: int = 500,
 ) -> list[dict]:
     """Query system tables for table access patterns.
 
@@ -72,9 +76,7 @@ def _parse_query_history(query_rows: list[dict], catalog: str) -> list[dict]:
     import re
 
     table_counts: dict[str, dict] = {}
-    pattern = re.compile(
-        rf"`?{re.escape(catalog)}`?\.`?(\w+)`?\.`?(\w+)`?", re.IGNORECASE
-    )
+    pattern = re.compile(rf"`?{re.escape(catalog)}`?\.`?(\w+)`?\.`?(\w+)`?", re.IGNORECASE)
 
     for row in query_rows:
         sql = row.get("statement_text", "")
@@ -96,12 +98,14 @@ def _parse_query_history(query_rows: list[dict], catalog: str) -> list[dict]:
 
     results = []
     for fqn, data in table_counts.items():
-        results.append({
-            "table_name": fqn,
-            "query_count": data["query_count"],
-            "last_accessed": data["last_accessed"],
-            "distinct_users": len(data["users"]),
-        })
+        results.append(
+            {
+                "table_name": fqn,
+                "query_count": data["query_count"],
+                "last_accessed": data["last_accessed"],
+                "distinct_users": len(data["users"]),
+            }
+        )
 
     results.sort(key=lambda x: x["query_count"], reverse=True)
     return results
@@ -134,12 +138,16 @@ def analyze_usage(access_data: list[dict], days_threshold: int = 30) -> dict:
         "frequently_used": frequently,
         "occasionally_used": occasionally,
         "rarely_used": rarely,
-        "most_queried": sorted(access_data, key=lambda x: x.get("query_count", 0), reverse=True)[:10],
+        "most_queried": sorted(access_data, key=lambda x: x.get("query_count", 0), reverse=True)[
+            :10
+        ],
         "least_queried": sorted(access_data, key=lambda x: x.get("query_count", 0))[:10],
     }
 
 
-def get_all_tables(client, warehouse_id: str, catalog: str, exclude_schemas: list[str]) -> list[str]:
+def get_all_tables(
+    client, warehouse_id: str, catalog: str, exclude_schemas: list[str]
+) -> list[str]:
     """Get all table FQNs in a catalog."""
     exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
     sql = f"""
@@ -153,8 +161,12 @@ def get_all_tables(client, warehouse_id: str, catalog: str, exclude_schemas: lis
 
 
 def recommend_skip_tables(
-    client, warehouse_id: str, catalog: str,
-    exclude_schemas: list[str], days: int = 90, days_threshold: int = 30,
+    client,
+    warehouse_id: str,
+    catalog: str,
+    exclude_schemas: list[str],
+    days: int = 90,
+    days_threshold: int = 30,
 ) -> list[str]:
     """Return list of tables unused for N days, recommended to skip in clone."""
     access_data = query_table_access_patterns(client, warehouse_id, catalog, days)

@@ -13,20 +13,23 @@ def list_serving_endpoints(client: WorkspaceClient) -> list[dict]:
     try:
         endpoints = client.serving_endpoints.list()
         for ep in endpoints:
-            results.append({
-                "name": ep.name,
-                "state": str(ep.state.ready) if ep.state else None,
-                "creator": ep.creator,
-                "creation_timestamp": ep.creation_timestamp,
-                "last_updated_timestamp": ep.last_updated_timestamp,
-            })
+            results.append(
+                {
+                    "name": ep.name,
+                    "state": str(ep.state.ready) if ep.state else None,
+                    "creator": ep.creator,
+                    "creation_timestamp": ep.creation_timestamp,
+                    "last_updated_timestamp": ep.last_updated_timestamp,
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list serving endpoints: {e}")
     return results
 
 
 def export_endpoint_config(
-    client: WorkspaceClient, endpoint_name: str,
+    client: WorkspaceClient,
+    endpoint_name: str,
 ) -> dict | None:
     """Export a serving endpoint's full configuration."""
     try:
@@ -41,16 +44,18 @@ def export_endpoint_config(
 
         if ep.config:
             served_entities = []
-            for se in (ep.config.served_entities or []):
-                served_entities.append({
-                    "name": se.name,
-                    "entity_name": se.entity_name,
-                    "entity_version": se.entity_version,
-                    "workload_size": se.workload_size,
-                    "scale_to_zero_enabled": se.scale_to_zero_enabled,
-                    "workload_type": str(se.workload_type) if se.workload_type else None,
-                    "environment_vars": se.environment_vars,
-                })
+            for se in ep.config.served_entities or []:
+                served_entities.append(
+                    {
+                        "name": se.name,
+                        "entity_name": se.entity_name,
+                        "entity_version": se.entity_version,
+                        "workload_size": se.workload_size,
+                        "scale_to_zero_enabled": se.scale_to_zero_enabled,
+                        "workload_type": str(se.workload_type) if se.workload_type else None,
+                        "environment_vars": se.environment_vars,
+                    }
+                )
 
             traffic_config = None
             if ep.config.traffic_config and ep.config.traffic_config.routes:

@@ -42,10 +42,10 @@ class TestFormatBytes:
         assert _format_bytes(5 * 1024 * 1024) == "5.0 MB"
 
     def test_gigabytes(self):
-        assert _format_bytes(3 * 1024 ** 3) == "3.00 GB"
+        assert _format_bytes(3 * 1024**3) == "3.00 GB"
 
     def test_terabytes(self):
-        assert _format_bytes(2 * 1024 ** 4) == "2.00 TB"
+        assert _format_bytes(2 * 1024**4) == "2.00 TB"
 
 
 # ---------------------------------------------------------------------------
@@ -90,9 +90,17 @@ class TestBulkSqlShape:
                 raise RuntimeError("permission denied on table_properties")
             # Fallback query: returns minimal rows
             return [
-                {"table_schema": "s", "table_name": "t", "table_type": "MANAGED",
-                 "comment": None, "created": None, "last_altered": None,
-                 "num_columns": 0, "size_bytes": None, "row_count": None},
+                {
+                    "table_schema": "s",
+                    "table_name": "t",
+                    "table_type": "MANAGED",
+                    "comment": None,
+                    "created": None,
+                    "last_altered": None,
+                    "num_columns": 0,
+                    "size_bytes": None,
+                    "row_count": None,
+                },
             ]
 
         mock_sql.side_effect = flaky
@@ -121,35 +129,48 @@ class TestSummaryShape:
         # Two schemas, four tables; Two have stats, two don't.
         return [
             {
-                "table_schema": "bronze", "table_name": "events",
-                "table_type": "MANAGED", "comment": "Raw events",
-                "created": "2024-01-01", "last_altered": "2024-12-01",
+                "table_schema": "bronze",
+                "table_name": "events",
+                "table_type": "MANAGED",
+                "comment": "Raw events",
+                "created": "2024-01-01",
+                "last_altered": "2024-12-01",
                 "num_columns": 8,
-                "size_bytes": 5 * 1024 ** 3,    # 5 GB
+                "size_bytes": 5 * 1024**3,  # 5 GB
                 "row_count": 100_000_000,
             },
             {
-                "table_schema": "bronze", "table_name": "users",
-                "table_type": "MANAGED", "comment": None,
-                "created": "2024-01-01", "last_altered": "2024-11-15",
+                "table_schema": "bronze",
+                "table_name": "users",
+                "table_type": "MANAGED",
+                "comment": None,
+                "created": "2024-01-01",
+                "last_altered": "2024-11-15",
                 "num_columns": 12,
-                "size_bytes": 2 * 1024 ** 3,    # 2 GB
+                "size_bytes": 2 * 1024**3,  # 2 GB
                 "row_count": 5_000_000,
             },
             {
-                "table_schema": "silver", "table_name": "events_clean",
-                "table_type": "MANAGED", "comment": None,
-                "created": "2024-02-01", "last_altered": None,
+                "table_schema": "silver",
+                "table_name": "events_clean",
+                "table_type": "MANAGED",
+                "comment": None,
+                "created": "2024-02-01",
+                "last_altered": None,
                 "num_columns": 8,
-                "size_bytes": None,             # un-analyzed
+                "size_bytes": None,  # un-analyzed
                 "row_count": None,
             },
             {
-                "table_schema": "silver", "table_name": "no_stats",
-                "table_type": "MANAGED", "comment": None,
-                "created": None, "last_altered": None,
+                "table_schema": "silver",
+                "table_name": "no_stats",
+                "table_type": "MANAGED",
+                "comment": None,
+                "created": None,
+                "last_altered": None,
                 "num_columns": 0,
-                "size_bytes": None, "row_count": None,
+                "size_bytes": None,
+                "row_count": None,
             },
         ]
 
@@ -158,7 +179,7 @@ class TestSummaryShape:
         assert out["catalog"] == "main"
         assert out["num_schemas"] == 2
         assert out["num_tables"] == 4
-        assert out["total_size_bytes"] == 7 * 1024 ** 3   # 5 GB + 2 GB
+        assert out["total_size_bytes"] == 7 * 1024**3  # 5 GB + 2 GB
         assert out["total_rows"] == 105_000_000
         assert out["stats_mode"] == "fast"
 
@@ -167,7 +188,7 @@ class TestSummaryShape:
         bronze = next(s for s in out["schema_summaries"] if s["schema"] == "bronze")
         silver = next(s for s in out["schema_summaries"] if s["schema"] == "silver")
         assert bronze["num_tables"] == 2
-        assert bronze["total_size_bytes"] == 7 * 1024 ** 3
+        assert bronze["total_size_bytes"] == 7 * 1024**3
         assert bronze["total_rows"] == 105_000_000
         # Silver tables are un-analyzed → totals are 0 (None coerced via or-0)
         assert silver["num_tables"] == 2
@@ -202,15 +223,23 @@ class TestSummaryShape:
         out = _build_summary("main", self._bulk_rows()[:1])  # just 'events'
         rec = out["tables"][0]
         for required_key in (
-            "schema", "table", "table_type",
-            "row_count", "size_bytes", "size_display",
-            "num_columns", "num_files", "last_modified", "format",
-            "comment", "error",
+            "schema",
+            "table",
+            "table_type",
+            "row_count",
+            "size_bytes",
+            "size_display",
+            "num_columns",
+            "num_files",
+            "last_modified",
+            "format",
+            "comment",
+            "error",
         ):
             assert required_key in rec, f"missing key: {required_key}"
         assert rec["size_display"] == "5.00 GB"
-        assert rec["num_files"] is None       # unique to fast path
-        assert rec["format"] is None          # unique to fast path
+        assert rec["num_files"] is None  # unique to fast path
+        assert rec["format"] is None  # unique to fast path
 
     def test_empty_catalog_is_clean_zeros(self):
         out = _build_summary("main", [])
@@ -236,27 +265,37 @@ class TestEndpointDispatch:
         """POST /stats with fast=true should route to
         src.stats_fast.catalog_stats_fast — patch the entry point and
         confirm it was reached."""
-        with patch("src.stats_fast.catalog_stats_fast") as mock_fast, \
-             patch("src.stats.catalog_stats") as mock_slow:
+        with (
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+            patch("src.stats.catalog_stats") as mock_slow,
+        ):
             mock_fast.return_value = {"stats_mode": "fast", "num_tables": 0}
             mock_slow.return_value = {"num_tables": 0}
-            resp = client.post("/api/stats", json={
-                "source_catalog": "main",
-                "fast": True,
-            })
+            resp = client.post(
+                "/api/stats",
+                json={
+                    "source_catalog": "main",
+                    "fast": True,
+                },
+            )
             assert resp.status_code == 200
             assert mock_fast.called
             assert not mock_slow.called
 
     def test_fast_false_calls_slow_path(self, client):
-        with patch("src.stats_fast.catalog_stats_fast") as mock_fast, \
-             patch("src.stats.catalog_stats") as mock_slow:
+        with (
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+            patch("src.stats.catalog_stats") as mock_slow,
+        ):
             mock_fast.return_value = {"stats_mode": "fast", "num_tables": 0}
             mock_slow.return_value = {"num_tables": 0}
-            resp = client.post("/api/stats", json={
-                "source_catalog": "main",
-                "fast": False,
-            })
+            resp = client.post(
+                "/api/stats",
+                json={
+                    "source_catalog": "main",
+                    "fast": False,
+                },
+            )
             assert resp.status_code == 200
             assert mock_slow.called
             assert not mock_fast.called
@@ -265,8 +304,10 @@ class TestEndpointDispatch:
         """Backwards-compat: existing callers that don't pass `fast`
         get the slow path (fast: bool = False default). Catalog Explorer
         UI explicitly opts in to fast."""
-        with patch("src.stats_fast.catalog_stats_fast") as mock_fast, \
-             patch("src.stats.catalog_stats") as mock_slow:
+        with (
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+            patch("src.stats.catalog_stats") as mock_slow,
+        ):
             mock_fast.return_value = {"stats_mode": "fast", "num_tables": 0}
             mock_slow.return_value = {"num_tables": 0}
             resp = client.post("/api/stats", json={"source_catalog": "main"})

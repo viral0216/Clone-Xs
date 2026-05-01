@@ -19,7 +19,9 @@ def test_get_function_details_extracts_ddl(mock_sql):
 @patch("src.clone_functions.execute_sql")
 def test_get_function_details_skips_spark_config(mock_sql):
     mock_sql.return_value = [
-        {"function_desc": "spark.databricks.sql.functions.aiFunctions.createBatchSessionOnExecutor=false"},
+        {
+            "function_desc": "spark.databricks.sql.functions.aiFunctions.createBatchSessionOnExecutor=false"
+        },
     ]
     ddl = get_function_details(MagicMock(), "wh", "cat", "s", "fn")
     assert ddl == ""
@@ -63,12 +65,18 @@ def test_clone_function_invalid_ddl(mock_details):
 @patch("src.clone_functions.clone_function")
 def test_clone_functions_in_schema(mock_clone, mock_list):
     mock_list.return_value = [
-        {"function_name": "fn1"}, {"function_name": "fn2"},
+        {"function_name": "fn1"},
+        {"function_name": "fn2"},
     ]
     mock_clone.side_effect = [True, False]
 
     result = clone_functions_in_schema(
-        MagicMock(), "wh", "src", "dst", "schema1", "FULL",
+        MagicMock(),
+        "wh",
+        "src",
+        "dst",
+        "schema1",
+        "FULL",
     )
     assert result["success"] == 1
     assert result["failed"] == 1
@@ -86,7 +94,12 @@ def test_clone_functions_incremental(mock_clone, mock_list):
     mock_clone.return_value = True
 
     result = clone_functions_in_schema(
-        MagicMock(), "wh", "src", "dst", "s", "INCREMENTAL",
+        MagicMock(),
+        "wh",
+        "src",
+        "dst",
+        "s",
+        "INCREMENTAL",
     )
     assert result["skipped"] == 1
     assert result["success"] == 1

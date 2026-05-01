@@ -22,15 +22,21 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Reusable building blocks
 # ---------------------------------------------------------------------------
 
+
 class ODCSCustomProperty(BaseModel):
     """Key-value custom property usable at any level."""
+
     property: str = Field(..., description="Property name")
     value: Any = Field(..., description="Property value (string, number, list, etc.)")
 
 
 class ODCSReference(BaseModel):
     """Authoritative definition / external reference."""
-    type: str = Field(default="", description="Reference type: canonical, businessDefinition, videoTutorial, privacy-statement, transformationImplementation, implementation")
+
+    type: str = Field(
+        default="",
+        description="Reference type: canonical, businessDefinition, videoTutorial, privacy-statement, transformationImplementation, implementation",
+    )
     url: str = Field(default="", description="URL to the reference")
     description: str = Field(default="", description="Human-readable description")
 
@@ -39,8 +45,10 @@ class ODCSReference(BaseModel):
 # Description
 # ---------------------------------------------------------------------------
 
+
 class ODCSDescription(BaseModel):
     """Contract-level description block."""
+
     purpose: str = Field(default="", description="Intended purpose of the data")
     limitations: str = Field(default="", description="Technical, compliance, and legal limitations")
     usage: str = Field(default="", description="Recommended usage")
@@ -52,17 +60,29 @@ class ODCSDescription(BaseModel):
 # Quality
 # ---------------------------------------------------------------------------
 
+
 class ODCSQualityRule(BaseModel):
     """Data quality rule — can appear at contract, schema-object, or property level."""
+
     id: str = Field(default="", description="Unique rule identifier")
     name: str = Field(default="", description="Short descriptive name")
     description: str = Field(default="", description="Detailed explanation")
     type: str = Field(default="library", description="library, text, sql, custom")
-    metric: str = Field(default="", description="Library metric: nullValues, missingValues, invalidValues, duplicateValues, rowCount")
-    dimension: str = Field(default="", description="Quality dimension: accuracy, completeness, conformity, consistency, coverage, timeliness, uniqueness")
+    metric: str = Field(
+        default="",
+        description="Library metric: nullValues, missingValues, invalidValues, duplicateValues, rowCount",
+    )
+    dimension: str = Field(
+        default="",
+        description="Quality dimension: accuracy, completeness, conformity, consistency, coverage, timeliness, uniqueness",
+    )
     method: str = Field(default="", description="Validation method, e.g. reconciliation")
-    severity: str = Field(default="error", description="Failure severity: critical, error, warning, info")
-    businessImpact: str = Field(default="", description="Impact description: operational, financial, regulatory")
+    severity: str = Field(
+        default="error", description="Failure severity: critical, error, warning, info"
+    )
+    businessImpact: str = Field(
+        default="", description="Impact description: operational, financial, regulatory"
+    )
 
     # Comparison operators (only one should be set per rule)
     mustBe: Optional[Union[float, int]] = Field(default=None)
@@ -72,15 +92,25 @@ class ODCSQualityRule(BaseModel):
     mustBeLessThan: Optional[Union[float, int]] = Field(default=None)
     mustBeLessOrEqualTo: Optional[Union[float, int]] = Field(default=None)
     mustBeBetween: Optional[list[Union[float, int]]] = Field(default=None, description="[min, max]")
-    mustNotBeBetween: Optional[list[Union[float, int]]] = Field(default=None, description="[min, max]")
+    mustNotBeBetween: Optional[list[Union[float, int]]] = Field(
+        default=None, description="[min, max]"
+    )
 
     # SQL / custom type fields
     query: str = Field(default="", description="SQL query (required for type=sql)")
-    engine: str = Field(default="", description="Engine name (required for type=custom, e.g. soda, great_expectations, dbt, dqx)")
-    implementation: str = Field(default="", description="Non-parsed code block for custom implementations")
+    engine: str = Field(
+        default="",
+        description="Engine name (required for type=custom, e.g. soda, great_expectations, dbt, dqx)",
+    )
+    implementation: str = Field(
+        default="", description="Non-parsed code block for custom implementations"
+    )
 
     # Arguments for library metrics
-    arguments: Optional[dict[str, Any]] = Field(default=None, description="Metric-specific parameters: validValues, pattern, missingValues, properties")
+    arguments: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Metric-specific parameters: validValues, pattern, missingValues, properties",
+    )
     unit: str = Field(default="", description="Unit: rows or percent")
 
     # Scheduling
@@ -88,8 +118,12 @@ class ODCSQualityRule(BaseModel):
     schedule: str = Field(default="", description="Schedule expression, e.g. cron: '0 20 * * *'")
 
     # DQX integration
-    dqx_function: str = Field(default="", description="DQX check function name, e.g. is_not_null, is_in_range")
-    dqx_arguments: Optional[dict[str, Any]] = Field(default=None, description="DQX check function arguments")
+    dqx_function: str = Field(
+        default="", description="DQX check function name, e.g. is_not_null, is_in_range"
+    )
+    dqx_arguments: Optional[dict[str, Any]] = Field(
+        default=None, description="DQX check function arguments"
+    )
     dqx_criticality: str = Field(default="error", description="DQX criticality: error or warn")
 
     tags: list[str] = Field(default_factory=list)
@@ -100,10 +134,14 @@ class ODCSQualityRule(BaseModel):
 # Schema — Properties (columns) and Objects (tables/views)
 # ---------------------------------------------------------------------------
 
+
 class ODCSRelationship(BaseModel):
     """Relationship definition (e.g. foreign key)."""
+
     type: str = Field(default="foreignKey", description="Relationship type")
-    from_: list[str] = Field(default_factory=list, alias="from", description="Source columns (dot notation)")
+    from_: list[str] = Field(
+        default_factory=list, alias="from", description="Source columns (dot notation)"
+    )
     to: list[str] = Field(default_factory=list, description="Target columns (dot notation)")
     customProperties: list[ODCSCustomProperty] = Field(default_factory=list)
 
@@ -112,36 +150,62 @@ class ODCSRelationship(BaseModel):
 
 class ODCSProperty(BaseModel):
     """Schema property (column) definition."""
+
     id: str = Field(default="", description="Unique property identifier")
     name: str = Field(..., description="Column name")
     physicalName: str = Field(default="", description="Physical column name in the data source")
     businessName: str = Field(default="", description="Business-facing column name")
-    logicalType: str = Field(default="string", description="Logical type: string, date, timestamp, time, number, integer, object, array, boolean")
-    physicalType: str = Field(default="", description="Physical data type, e.g. VARCHAR(255), DOUBLE, INT")
-    logicalTypeOptions: Optional[dict[str, Any]] = Field(default=None, description="Type-specific metadata: format, min, max, timezone, pattern, etc.")
+    logicalType: str = Field(
+        default="string",
+        description="Logical type: string, date, timestamp, time, number, integer, object, array, boolean",
+    )
+    physicalType: str = Field(
+        default="", description="Physical data type, e.g. VARCHAR(255), DOUBLE, INT"
+    )
+    logicalTypeOptions: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Type-specific metadata: format, min, max, timezone, pattern, etc.",
+    )
     description: str = Field(default="")
     required: bool = Field(default=False, description="Whether null values are allowed")
     unique: bool = Field(default=False, description="Whether values must be unique")
     primaryKey: bool = Field(default=False, description="Whether this is a primary key column")
-    primaryKeyPosition: int = Field(default=-1, description="Position in composite primary key (-1 = not a PK)")
+    primaryKeyPosition: int = Field(
+        default=-1, description="Position in composite primary key (-1 = not a PK)"
+    )
     partitioned: bool = Field(default=False, description="Whether column is used for partitioning")
-    partitionKeyPosition: int = Field(default=-1, description="Position in partition key (-1 = not partitioned)")
-    classification: str = Field(default="", description="Confidentiality: public, internal, restricted, confidential")
-    criticalDataElement: bool = Field(default=False, description="Whether this is a Critical Data Element")
-    encryptedName: str = Field(default="", description="Name of the encrypted version of this column")
-    transformSourceObjects: list[str] = Field(default_factory=list, description="Source objects used in transformation")
+    partitionKeyPosition: int = Field(
+        default=-1, description="Position in partition key (-1 = not partitioned)"
+    )
+    classification: str = Field(
+        default="", description="Confidentiality: public, internal, restricted, confidential"
+    )
+    criticalDataElement: bool = Field(
+        default=False, description="Whether this is a Critical Data Element"
+    )
+    encryptedName: str = Field(
+        default="", description="Name of the encrypted version of this column"
+    )
+    transformSourceObjects: list[str] = Field(
+        default_factory=list, description="Source objects used in transformation"
+    )
     transformLogic: str = Field(default="", description="SQL or transformation logic")
-    transformDescription: str = Field(default="", description="Business-friendly transformation description")
+    transformDescription: str = Field(
+        default="", description="Business-friendly transformation description"
+    )
     examples: list[str] = Field(default_factory=list, description="Example values")
     tags: list[str] = Field(default_factory=list)
     authoritativeDefinitions: list[ODCSReference] = Field(default_factory=list)
-    quality: list[ODCSQualityRule] = Field(default_factory=list, description="Column-level quality rules")
+    quality: list[ODCSQualityRule] = Field(
+        default_factory=list, description="Column-level quality rules"
+    )
     relationships: list[ODCSRelationship] = Field(default_factory=list)
     customProperties: list[ODCSCustomProperty] = Field(default_factory=list)
 
 
 class ODCSSchemaObject(BaseModel):
     """Schema object (table, view, topic, file)."""
+
     id: str = Field(default="", description="Unique object identifier")
     name: str = Field(..., description="Object name")
     physicalName: str = Field(default="", description="Physical name in the data source")
@@ -149,11 +213,15 @@ class ODCSSchemaObject(BaseModel):
     businessName: str = Field(default="", description="Business-facing name")
     description: str = Field(default="")
     tags: list[str] = Field(default_factory=list)
-    dataGranularityDescription: str = Field(default="", description="Granularity level of data in this object")
+    dataGranularityDescription: str = Field(
+        default="", description="Granularity level of data in this object"
+    )
     authoritativeDefinitions: list[ODCSReference] = Field(default_factory=list)
     relationships: list[ODCSRelationship] = Field(default_factory=list)
     properties: list[ODCSProperty] = Field(default_factory=list, description="Columns / properties")
-    quality: list[ODCSQualityRule] = Field(default_factory=list, description="Object-level quality rules")
+    quality: list[ODCSQualityRule] = Field(
+        default_factory=list, description="Object-level quality rules"
+    )
     customProperties: list[ODCSCustomProperty] = Field(default_factory=list)
 
 
@@ -161,8 +229,10 @@ class ODCSSchemaObject(BaseModel):
 # Support & Communication
 # ---------------------------------------------------------------------------
 
+
 class ODCSSupportChannel(BaseModel):
     """Support / communication channel."""
+
     channel: str = Field(..., description="Channel name or identifier")
     tool: str = Field(default="", description="Tool: slack, email, teams, jira, etc.")
     url: str = Field(default="", description="URL or mailto link")
@@ -175,8 +245,10 @@ class ODCSSupportChannel(BaseModel):
 # Pricing
 # ---------------------------------------------------------------------------
 
+
 class ODCSPrice(BaseModel):
     """Data pricing information."""
+
     priceAmount: float = Field(default=0.0, description="Price amount")
     priceCurrency: str = Field(default="USD", description="ISO currency code")
     priceUnit: str = Field(default="", description="Pricing unit: megabyte, record, query, etc.")
@@ -186,8 +258,10 @@ class ODCSPrice(BaseModel):
 # Team
 # ---------------------------------------------------------------------------
 
+
 class ODCSTeamMember(BaseModel):
     """Team member definition."""
+
     username: str = Field(..., description="Username or email")
     role: str = Field(default="", description="Role in the team")
     description: str = Field(default="")
@@ -198,6 +272,7 @@ class ODCSTeamMember(BaseModel):
 
 class ODCSTeam(BaseModel):
     """Team owning the data contract."""
+
     name: str = Field(default="", description="Team name")
     description: str = Field(default="")
     members: list[ODCSTeamMember] = Field(default_factory=list)
@@ -207,8 +282,10 @@ class ODCSTeam(BaseModel):
 # Roles
 # ---------------------------------------------------------------------------
 
+
 class ODCSRole(BaseModel):
     """Access role definition."""
+
     role: str = Field(..., description="Role name / identifier")
     access: str = Field(default="read", description="Access level: read, write")
     firstLevelApprovers: str = Field(default="", description="First-level approver(s)")
@@ -219,15 +296,24 @@ class ODCSRole(BaseModel):
 # SLA Properties
 # ---------------------------------------------------------------------------
 
+
 class ODCSSLAProperty(BaseModel):
     """Service-level agreement property."""
+
     id: str = Field(default="", description="Unique SLA property identifier")
-    property: str = Field(..., description="SLA property: latency, availability, throughput, errorRate, generalAvailability, endOfSupport, endOfLife, retention, frequency, timeOfAvailability, timeToDetect, timeToNotify, timeToRepair")
+    property: str = Field(
+        ...,
+        description="SLA property: latency, availability, throughput, errorRate, generalAvailability, endOfSupport, endOfLife, retention, frequency, timeOfAvailability, timeToDetect, timeToNotify, timeToRepair",
+    )
     value: Any = Field(..., description="Agreement value")
     valueExt: Optional[Any] = Field(default=None, description="Extended agreement value")
-    unit: str = Field(default="", description="ISO unit: d/day/days, h/hour/hours, m/min/minutes, y/yr/years")
+    unit: str = Field(
+        default="", description="ISO unit: d/day/days, h/hour/hours, m/min/minutes, y/yr/years"
+    )
     element: str = Field(default="", description="Target element(s) using dot notation")
-    driver: str = Field(default="", description="SLA importance: regulatory, analytics, operational")
+    driver: str = Field(
+        default="", description="SLA importance: regulatory, analytics, operational"
+    )
     description: str = Field(default="")
     scheduler: str = Field(default="", description="Scheduler tool name")
     schedule: str = Field(default="", description="Schedule expression")
@@ -237,13 +323,20 @@ class ODCSSLAProperty(BaseModel):
 # Infrastructure & Servers
 # ---------------------------------------------------------------------------
 
+
 class ODCSServer(BaseModel):
     """Server / infrastructure definition."""
+
     server: str = Field(..., description="Server identifier")
     id: str = Field(default="", description="Unique server ID")
-    type: str = Field(default="custom", description="Server type: databricks, postgres, snowflake, bigquery, kafka, s3, mysql, oracle, redshift, trino, custom, etc.")
+    type: str = Field(
+        default="custom",
+        description="Server type: databricks, postgres, snowflake, bigquery, kafka, s3, mysql, oracle, redshift, trino, custom, etc.",
+    )
     description: str = Field(default="")
-    environment: str = Field(default="", description="Deployment environment: prod, dev, staging, uat")
+    environment: str = Field(
+        default="", description="Deployment environment: prod, dev, staging, uat"
+    )
     roles: list[str] = Field(default_factory=list, description="Access roles for this server")
 
     # Common connection fields (type-specific, all optional)
@@ -280,10 +373,14 @@ class ODCSContract(BaseModel):
     # --- Fundamentals (required) ---
     apiVersion: str = Field(default="v3.1.0", description="ODCS standard version")
     kind: str = Field(default="DataContract", description="Document kind")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique contract identifier (UUID)")
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()), description="Unique contract identifier (UUID)"
+    )
     name: str = Field(default="", description="Contract name")
     version: str = Field(default="1.0.0", description="Contract version (semver)")
-    status: str = Field(default="draft", description="Status: proposed, draft, active, deprecated, retired")
+    status: str = Field(
+        default="draft", description="Status: proposed, draft, active, deprecated, retired"
+    )
 
     # --- Fundamentals (optional) ---
     tenant: str = Field(default="", description="Tenant / organization")
@@ -294,7 +391,9 @@ class ODCSContract(BaseModel):
     contractCreatedTs: str = Field(default="", description="Contract creation timestamp (ISO 8601)")
 
     # --- Schema ---
-    schema_: list[ODCSSchemaObject] = Field(default_factory=list, alias="schema", description="Schema objects (tables, views, etc.)")
+    schema_: list[ODCSSchemaObject] = Field(
+        default_factory=list, alias="schema", description="Schema objects (tables, views, etc.)"
+    )
 
     # --- References ---
     authoritativeDefinitions: list[ODCSReference] = Field(default_factory=list)
@@ -372,10 +471,12 @@ class ODCSContract(BaseModel):
 # API Request / Response models
 # ---------------------------------------------------------------------------
 
+
 class ODCSContractCreate(BaseModel):
     """Request body for creating a new ODCS contract.
     id and contractCreatedTs are auto-generated if not provided.
     """
+
     apiVersion: str = Field(default="v3.1.0")
     kind: str = Field(default="DataContract")
     id: str = Field(default="")
@@ -403,6 +504,7 @@ class ODCSContractCreate(BaseModel):
 
 class ODCSContractUpdate(BaseModel):
     """Partial update model — all fields optional."""
+
     name: Optional[str] = None
     version: Optional[str] = None
     status: Optional[str] = None
@@ -427,26 +529,37 @@ class ODCSContractUpdate(BaseModel):
 
 class ODCSImportRequest(BaseModel):
     """Request body for importing a contract from YAML."""
+
     yaml_content: str = Field(..., description="ODCS YAML document content")
 
 
 class ODCSGenerateRequest(BaseModel):
     """Request body for generating a contract from a UC table."""
+
     table_fqn: str = Field(..., description="Fully qualified table name: catalog.schema.table")
-    include_quality_rules: bool = Field(default=True, description="Auto-generate quality rules from column metadata")
-    include_dqx_profiling: bool = Field(default=False, description="Run DQX Profiler for data-driven quality rules (slower)")
+    include_quality_rules: bool = Field(
+        default=True, description="Auto-generate quality rules from column metadata"
+    )
+    include_dqx_profiling: bool = Field(
+        default=False, description="Run DQX Profiler for data-driven quality rules (slower)"
+    )
     include_lineage: bool = Field(default=True, description="Query system.access lineage tables")
     include_sla: bool = Field(default=True, description="Compute freshness and frequency SLA")
     include_tags: bool = Field(default=True, description="Read UC tags (table + column)")
     include_properties: bool = Field(default=True, description="Read TBLPROPERTIES")
     include_masks: bool = Field(default=True, description="Read column mask policies")
     include_row_filters: bool = Field(default=True, description="Read row filter policies → roles")
-    include_history: bool = Field(default=True, description="Read table history for retention/frequency")
-    auto_save: bool = Field(default=False, description="Automatically save to Delta after generation")
+    include_history: bool = Field(
+        default=True, description="Read table history for retention/frequency"
+    )
+    auto_save: bool = Field(
+        default=False, description="Automatically save to Delta after generation"
+    )
 
 
 class ODCSGenerateSchemaRequest(BaseModel):
     """Request body for generating contracts for all tables in a schema."""
+
     catalog: str = Field(..., description="Catalog name")
     schema_name: str = Field(..., description="Schema name")
     include_quality_rules: bool = Field(default=True)
@@ -459,8 +572,11 @@ class ODCSGenerateSchemaRequest(BaseModel):
 
 class ODCSGenerateCatalogRequest(BaseModel):
     """Request body for generating contracts for all tables in a catalog."""
+
     catalog: str = Field(..., description="Catalog name")
-    exclude_schemas: list[str] = Field(default=["information_schema"], description="Schemas to exclude")
+    exclude_schemas: list[str] = Field(
+        default=["information_schema"], description="Schemas to exclude"
+    )
     include_quality_rules: bool = Field(default=True)
     include_dqx_profiling: bool = Field(default=False)
     include_lineage: bool = Field(default=True)
@@ -470,6 +586,7 @@ class ODCSGenerateCatalogRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _strip_empty(obj: Any) -> Any:
     """Recursively remove empty strings, empty lists, and None values for cleaner YAML."""

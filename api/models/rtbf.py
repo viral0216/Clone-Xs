@@ -6,7 +6,17 @@ from pydantic import BaseModel
 
 
 class RTBFSubmitRequest(BaseModel):
-    subject_type: Literal["email", "customer_id", "ssn", "phone", "name", "national_id", "passport", "credit_card", "custom"] = "email"
+    subject_type: Literal[
+        "email",
+        "customer_id",
+        "ssn",
+        "phone",
+        "name",
+        "national_id",
+        "passport",
+        "credit_card",
+        "custom",
+    ] = "email"
     subject_value: str
     subject_column: str | None = None
     requester_email: str

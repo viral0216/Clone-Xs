@@ -96,102 +96,125 @@ def evaluate_policies(
             sizes = table_sizes or _get_table_sizes(client, warehouse_id, source, config)
             for table_fqn, size_gb in sizes.items():
                 if size_gb > float(value):
-                    violations.append(PolicyViolation(
-                        name,
-                        f"Table {table_fqn} is {size_gb:.1f} GB (max: {value} GB)",
-                        severity,
-                    ))
+                    violations.append(
+                        PolicyViolation(
+                            name,
+                            f"Table {table_fqn} is {size_gb:.1f} GB (max: {value} GB)",
+                            severity,
+                        )
+                    )
 
         elif name == "max_total_size_gb" and value is not None:
             sizes = table_sizes or _get_table_sizes(client, warehouse_id, source, config)
             total = sum(sizes.values())
             if total > float(value):
-                violations.append(PolicyViolation(
-                    name,
-                    f"Total catalog size is {total:.1f} GB (max: {value} GB)",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        f"Total catalog size is {total:.1f} GB (max: {value} GB)",
+                        severity,
+                    )
+                )
 
         elif name == "max_tables" and value is not None:
             sizes = table_sizes or _get_table_sizes(client, warehouse_id, source, config)
             if len(sizes) > int(value):
-                violations.append(PolicyViolation(
-                    name,
-                    f"Catalog has {len(sizes)} tables (max: {value})",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        f"Catalog has {len(sizes)} tables (max: {value})",
+                        severity,
+                    )
+                )
 
         elif name == "blocked_schemas" and value:
             include = config.get("include_schemas", [])
             for blocked in value:
                 if not include or blocked in include:
-                    violations.append(PolicyViolation(
-                        name,
-                        f"Schema '{blocked}' is blocked by policy",
-                        severity,
-                    ))
+                    violations.append(
+                        PolicyViolation(
+                            name,
+                            f"Schema '{blocked}' is blocked by policy",
+                            severity,
+                        )
+                    )
 
         elif name == "blocked_tables_regex" and value:
             sizes = table_sizes or _get_table_sizes(client, warehouse_id, source, config)
             pattern = re.compile(value)
             for table_fqn in sizes:
                 if pattern.search(table_fqn):
-                    violations.append(PolicyViolation(
-                        name,
-                        f"Table {table_fqn} matches blocked pattern: {value}",
-                        severity,
-                    ))
+                    violations.append(
+                        PolicyViolation(
+                            name,
+                            f"Table {table_fqn} matches blocked pattern: {value}",
+                            severity,
+                        )
+                    )
 
         elif name == "deny_shallow_clone" and value:
             if config.get("clone_type", "DEEP").upper() == "SHALLOW":
-                violations.append(PolicyViolation(
-                    name,
-                    "Shallow clones are not allowed by policy",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        "Shallow clones are not allowed by policy",
+                        severity,
+                    )
+                )
 
         elif name == "deny_cross_workspace" and value:
             if config.get("dest_workspace"):
-                violations.append(PolicyViolation(
-                    name,
-                    "Cross-workspace clones are not allowed by policy",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        "Cross-workspace clones are not allowed by policy",
+                        severity,
+                    )
+                )
 
         elif name == "require_rollback" and value:
             if not config.get("enable_rollback"):
-                violations.append(PolicyViolation(
-                    name,
-                    "Rollback must be enabled (--enable-rollback)",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        "Rollback must be enabled (--enable-rollback)",
+                        severity,
+                    )
+                )
 
         elif name == "require_validation" and value:
             if not config.get("validate_after_clone"):
-                violations.append(PolicyViolation(
-                    name,
-                    "Post-clone validation must be enabled (--validate)",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        "Post-clone validation must be enabled (--validate)",
+                        severity,
+                    )
+                )
 
         elif name == "require_dry_run_first" and value:
             if not config.get("dry_run") and not config.get("dry_run_completed"):
-                violations.append(PolicyViolation(
-                    name,
-                    "A dry run must be completed before performing a real clone",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        "A dry run must be completed before performing a real clone",
+                        severity,
+                    )
+                )
 
         elif name == "allowed_clone_hours" and value:
             from datetime import datetime, timezone
+
             now_utc = datetime.now(timezone.utc).hour
             start, end = value.get("start", 0), value.get("end", 24)
             if not (start <= now_utc < end):
-                violations.append(PolicyViolation(
-                    name,
-                    f"Cloning is only allowed between {start}:00-{end}:00 UTC (current: {now_utc}:00)",
-                    severity,
-                ))
+                violations.append(
+                    PolicyViolation(
+                        name,
+                        f"Cloning is only allowed between {start}:00-{end}:00 UTC (current: {now_utc}:00)",
+                        severity,
+                    )
+                )
 
     return violations
 
@@ -261,6 +284,6 @@ def _get_table_sizes(client, warehouse_id: str, catalog: str, config: dict) -> d
         if include and schema not in include:
             continue
         fqn = f"{catalog}.{schema}.{row['table_name']}"
-        sizes[fqn] = int(row.get("size_bytes") or 0) / (1024 ** 3)
+        sizes[fqn] = int(row.get("size_bytes") or 0) / (1024**3)
 
     return sizes

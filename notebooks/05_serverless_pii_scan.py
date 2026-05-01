@@ -38,7 +38,9 @@ WAREHOUSE_ID = "SERVERLESS"
 from src.pii_scanner import scan_catalog_pii
 
 results = scan_catalog_pii(
-    client, WAREHOUSE_ID, CATALOG,
+    client,
+    WAREHOUSE_ID,
+    CATALOG,
     exclude_schemas=["information_schema", "default"],
     sample_rows=100,
 )
@@ -49,8 +51,10 @@ print(f"  Columns scanned: {results.get('columns_scanned', 0)}")
 print(f"  PII found:       {results.get('pii_count', 0)}")
 
 if results.get("findings"):
-    print(f"\nFindings:")
+    print("\nFindings:")
     for f in results["findings"][:20]:
-        print(f"  {f['schema']}.{f['table']}.{f['column']} — {f['pii_type']} (confidence: {f.get('confidence', 'N/A')})")
+        print(
+            f"  {f['schema']}.{f['table']}.{f['column']} — {f['pii_type']} (confidence: {f.get('confidence', 'N/A')})"
+        )
 else:
     print("\nNo PII detected.")

@@ -44,7 +44,9 @@ clone_type = dbutils.widgets.get("clone_type")
 dry_run = dbutils.widgets.get("dry_run") == "True"
 run_validation = dbutils.widgets.get("run_validation") == "Yes"
 max_workers = int(dbutils.widgets.get("max_workers"))
-exclude_schemas = [s.strip() for s in dbutils.widgets.get("exclude_schemas").split(",") if s.strip()]
+exclude_schemas = [
+    s.strip() for s in dbutils.widgets.get("exclude_schemas").split(",") if s.strip()
+]
 
 print(f"Source:      {source_catalog}")
 print(f"Destination: {dest_catalog}")
@@ -96,9 +98,15 @@ from src.preflight import run_preflight
 
 preflight = run_preflight(client, config)
 
-print(f"Preflight: {preflight['passed']} passed, {preflight['warnings']} warnings, {preflight['failed']} failed")
+print(
+    f"Preflight: {preflight['passed']} passed, {preflight['warnings']} warnings, {preflight['failed']} failed"
+)
 for check in preflight["checks"]:
-    status = "PASS" if check["status"] == "passed" else ("WARN" if check["status"] == "warning" else "FAIL")
+    status = (
+        "PASS"
+        if check["status"] == "passed"
+        else ("WARN" if check["status"] == "warning" else "FAIL")
+    )
     print(f"  [{status}] {check['name']}: {check.get('message', '')}")
 
 if preflight["failed"] > 0:
@@ -119,7 +127,7 @@ print(f"Estimated size:  {estimate['total_size_display']}")
 print(f"Estimated cost:  ${estimate['estimated_monthly_cost']:.2f}/month")
 print(f"Total tables:    {estimate['total_tables']}")
 if clone_type == "SHALLOW":
-    print(f"Shallow clone — no additional storage cost")
+    print("Shallow clone — no additional storage cost")
 
 # COMMAND ----------
 
@@ -138,11 +146,13 @@ print(f"\nClone {'Preview' if dry_run else 'Summary'}:")
 print(f"  Schemas processed: {summary.get('schemas_processed', 0)}")
 for obj_type in ("tables", "views", "functions", "volumes"):
     stats = summary.get(obj_type, {})
-    print(f"  {obj_type.capitalize():12s}: {stats.get('success', 0)} success, {stats.get('failed', 0)} failed")
+    print(
+        f"  {obj_type.capitalize():12s}: {stats.get('success', 0)} success, {stats.get('failed', 0)} failed"
+    )
 print(f"  Duration: {summary.get('duration_seconds', 'N/A')}s")
 
 if summary.get("errors"):
-    print(f"\n  Errors:")
+    print("\n  Errors:")
     for err in summary["errors"][:10]:
         print(f"    - {err}")
 
@@ -167,16 +177,21 @@ if run_validation and not dry_run:
         if not table_name:
             continue
         result = validate_table(
-            client, "SERVERLESS",
-            source_catalog, dest_catalog,
-            "bronze", table_name,
+            client,
+            "SERVERLESS",
+            source_catalog,
+            dest_catalog,
+            "bronze",
+            table_name,
         )
         status = "MATCH" if result.get("match") else "MISMATCH"
         if result.get("match"):
             matched += 1
         else:
             mismatched += 1
-        print(f"  [{status}] bronze.{table_name}: source={result['source_count']} dest={result['dest_count']}")
+        print(
+            f"  [{status}] bronze.{table_name}: source={result['source_count']} dest={result['dest_count']}"
+        )
 
     print(f"\nValidation: {matched} matched, {mismatched} mismatched")
 elif dry_run:

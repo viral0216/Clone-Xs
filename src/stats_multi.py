@@ -90,7 +90,11 @@ def catalog_stats_multi(
     with ThreadPoolExecutor(max_workers=parallelism) as executor:
         futures = {
             executor.submit(
-                _per_catalog, client, warehouse_id, cat, exclude_schemas,
+                _per_catalog,
+                client,
+                warehouse_id,
+                cat,
+                exclude_schemas,
             ): cat
             for cat in catalogs
         }

@@ -59,21 +59,40 @@ def clone_volume(
         return True
     except Exception as e:
         if "LOCATION_OVERLAP" in str(e):
-            logger.info(f"Skipping volume {volume_name}: external volume location overlaps with source (expected for cross-catalog clones)")
+            logger.info(
+                f"Skipping volume {volume_name}: external volume location overlaps with source (expected for cross-catalog clones)"
+            )
             return False
         logger.error(f"Failed to create volume {dest}: {e}")
         return False
 
 
 def _clone_single_volume(
-    client, warehouse_id, source_catalog, dest_catalog, schema,
-    vol_name, vol_type, storage_location, comment,
-    dry_run, copy_permissions, copy_ownership, rollback_log,
+    client,
+    warehouse_id,
+    source_catalog,
+    dest_catalog,
+    schema,
+    vol_name,
+    vol_type,
+    storage_location,
+    comment,
+    dry_run,
+    copy_permissions,
+    copy_ownership,
+    rollback_log,
 ) -> tuple[str, bool]:
     """Clone a single volume with post-clone operations. Returns (name, success)."""
     success = clone_volume(
-        client, warehouse_id, dest_catalog, schema, vol_name,
-        vol_type, storage_location, comment, dry_run=dry_run,
+        client,
+        warehouse_id,
+        dest_catalog,
+        schema,
+        vol_name,
+        vol_type,
+        storage_location,
+        comment,
+        dry_run=dry_run,
     )
     if success:
         if rollback_log and not dry_run:
@@ -82,7 +101,8 @@ def _clone_single_volume(
             copy_volume_permissions(client, source_catalog, dest_catalog, schema, vol_name)
         if copy_ownership and not dry_run:
             update_ownership(
-                client, SecurableType.VOLUME,
+                client,
+                SecurableType.VOLUME,
                 f"{source_catalog}.{schema}.{vol_name}",
                 f"{dest_catalog}.{schema}.{vol_name}",
             )
@@ -126,12 +146,19 @@ def clone_volumes_in_schema(
             futures = {
                 executor.submit(
                     _clone_single_volume,
-                    client, warehouse_id, source_catalog, dest_catalog, schema,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
                     v["volume_name"],
                     v.get("volume_type", "MANAGED"),
                     v.get("storage_location"),
                     v.get("comment"),
-                    dry_run, copy_permissions, copy_ownership, rollback_log,
+                    dry_run,
+                    copy_permissions,
+                    copy_ownership,
+                    rollback_log,
                 ): v["volume_name"]
                 for v in vols_to_clone
             }
@@ -144,12 +171,19 @@ def clone_volumes_in_schema(
     else:
         for v in vols_to_clone:
             _, success = _clone_single_volume(
-                client, warehouse_id, source_catalog, dest_catalog, schema,
+                client,
+                warehouse_id,
+                source_catalog,
+                dest_catalog,
+                schema,
                 v["volume_name"],
                 v.get("volume_type", "MANAGED"),
                 v.get("storage_location"),
                 v.get("comment"),
-                dry_run, copy_permissions, copy_ownership, rollback_log,
+                dry_run,
+                copy_permissions,
+                copy_ownership,
+                rollback_log,
             )
             if success:
                 results["success"] += 1

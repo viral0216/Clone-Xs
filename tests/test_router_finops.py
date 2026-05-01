@@ -1,4 +1,5 @@
 """Smoke tests for the finops router."""
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -65,7 +66,10 @@ def test_azure_status(client):
 
 
 def test_save_azure_config(client):
-    resp = client.post("/api/finops/azure/config", json={
-        "subscription_id": "sub-123",
-    })
+    resp = client.post(
+        "/api/finops/azure/config",
+        json={
+            "subscription_id": "sub-123",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)

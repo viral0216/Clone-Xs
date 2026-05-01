@@ -56,8 +56,16 @@ _REQUIRED_TABLE_KEYS = {"name", "rows", "ddl_cols", "insert_expr"}
 # Reject industry names that would clash with built-ins. Easier to refuse
 # than to wonder why your "healthcare" YAML didn't take effect.
 _RESERVED_NAMES = {
-    "healthcare", "financial", "retail", "telecom", "manufacturing",
-    "energy", "education", "real_estate", "logistics", "insurance",
+    "healthcare",
+    "financial",
+    "retail",
+    "telecom",
+    "manufacturing",
+    "energy",
+    "education",
+    "real_estate",
+    "logistics",
+    "insurance",
 }
 
 
@@ -143,7 +151,8 @@ def load_yaml_industries(paths: list[str | Path]) -> dict[str, dict[str, Any]]:
 
 
 def merge_into_industries(
-    base: dict[str, dict], custom: dict[str, dict],
+    base: dict[str, dict],
+    custom: dict[str, dict],
 ) -> dict[str, dict]:
     """Return a new dict that overlays `custom` on top of `base`.
 
@@ -155,7 +164,6 @@ def merge_into_industries(
     overlap = set(custom) & set(base)
     if overlap:
         raise ValueError(
-            f"Custom industries {sorted(overlap)} clash with built-ins; "
-            f"these names are reserved"
+            f"Custom industries {sorted(overlap)} clash with built-ins; these names are reserved"
         )
     return {**base, **custom}

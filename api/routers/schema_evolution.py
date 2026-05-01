@@ -61,8 +61,12 @@ async def detect(
     wid = _wh(config)
     try:
         return detect_schema_changes(
-            client, wid, req.source_catalog, req.destination_catalog,
-            req.schema_name, req.table_name,
+            client,
+            wid,
+            req.source_catalog,
+            req.destination_catalog,
+            req.schema_name,
+            req.table_name,
         )
     except Exception as e:
         raise HTTPException(500, f"Detect failed: {e}")
@@ -83,9 +87,14 @@ async def apply(
     wid = _wh(config)
     try:
         return apply_schema_evolution(
-            client, wid, req.destination_catalog, req.schema_name,
-            req.table_name, req.changes,
-            dry_run=req.dry_run, drop_removed=req.drop_removed,
+            client,
+            wid,
+            req.destination_catalog,
+            req.schema_name,
+            req.table_name,
+            req.changes,
+            dry_run=req.dry_run,
+            drop_removed=req.drop_removed,
         )
     except Exception as e:
         raise HTTPException(500, f"Apply failed: {e}")
@@ -106,9 +115,13 @@ async def evolve_catalog(
     wid = _wh(config)
     try:
         return evolve_catalog_schema(
-            client, wid, req.source_catalog, req.destination_catalog,
+            client,
+            wid,
+            req.source_catalog,
+            req.destination_catalog,
             exclude_schemas=req.exclude_schemas,
-            dry_run=req.dry_run, drop_removed=req.drop_removed,
+            dry_run=req.dry_run,
+            drop_removed=req.drop_removed,
             max_workers=req.max_workers,
         )
     except Exception as e:

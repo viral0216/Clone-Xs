@@ -48,7 +48,11 @@ def monitor_once(
     # Schema drift check
     if check_drift:
         drift = detect_schema_drift(
-            client, warehouse_id, source_catalog, dest_catalog, exclude_schemas,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            exclude_schemas,
         )
         result["drift"] = {
             "tables_with_drift": drift["tables_with_drift"],
@@ -59,7 +63,11 @@ def monitor_once(
     # Row count check
     if check_counts:
         count_mismatches = _check_row_counts(
-            client, warehouse_id, source_catalog, dest_catalog, exclude_schemas,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            exclude_schemas,
         )
         result["count_mismatches"] = count_mismatches
         if count_mismatches:
@@ -92,23 +100,27 @@ def _check_row_counts(
         table = row["table_name"]
         try:
             src_rows = execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 f"SELECT COUNT(*) AS cnt FROM `{source_catalog}`.`{schema}`.`{table}`",
             )
             dst_rows = execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 f"SELECT COUNT(*) AS cnt FROM `{dest_catalog}`.`{schema}`.`{table}`",
             )
             src_count = int(src_rows[0]["cnt"]) if src_rows else None
             dst_count = int(dst_rows[0]["cnt"]) if dst_rows else None
 
             if src_count is not None and dst_count is not None and src_count != dst_count:
-                mismatches.append({
-                    "schema": schema,
-                    "table": table,
-                    "source_count": src_count,
-                    "dest_count": dst_count,
-                })
+                mismatches.append(
+                    {
+                        "schema": schema,
+                        "table": table,
+                        "source_count": src_count,
+                        "dest_count": dst_count,
+                    }
+                )
         except Exception:
             pass
 
@@ -145,8 +157,13 @@ def monitor_loop(
         logger.info(f"--- Monitor check #{iteration} ---")
 
         result = monitor_once(
-            client, warehouse_id, source_catalog, dest_catalog, exclude_schemas,
-            check_drift=check_drift, check_counts=check_counts,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            exclude_schemas,
+            check_drift=check_drift,
+            check_counts=check_counts,
         )
 
         if result["in_sync"]:
@@ -159,7 +176,9 @@ def monitor_loop(
                     f"Extra in dest: {result['diff']['extra_in_dest']}"
                 )
             if result.get("drift"):
-                logger.warning(f"  Tables with schema drift: {result['drift']['tables_with_drift']}")
+                logger.warning(
+                    f"  Tables with schema drift: {result['drift']['tables_with_drift']}"
+                )
 
             if on_out_of_sync:
                 try:

@@ -55,7 +55,9 @@ class TestFormatPlan:
             "clone_type": "DEEP",
             "load_type": "FULL",
             "sql_summary": {"total_statements": 1, "by_category": {"CLONE": 1}},
-            "sql_statements": [{"sql": "CREATE TABLE t DEEP CLONE s", "category": "CLONE", "timestamp": 0.1}],
+            "sql_statements": [
+                {"sql": "CREATE TABLE t DEEP CLONE s", "category": "CLONE", "timestamp": 0.1}
+            ],
             "clone_summary": {"schemas_processed": 1},
             "cost_estimate": None,
             "generated_at": "2024-01-01",
@@ -73,5 +75,6 @@ class TestFormatPlan:
         }
         output = format_plan_json(plan)
         import json
+
         parsed = json.loads(output)
         assert parsed["source_catalog"] == "src"

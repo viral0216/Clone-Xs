@@ -87,6 +87,7 @@ async def natural_language_to_sql(
 ):
     """Convert natural language to SQL using the selected AI model."""
     from src.ai_service import get_ai_service
+
     svc = get_ai_service()
 
     if not svc.is_available(x_databricks_model):
@@ -105,20 +106,31 @@ async def natural_language_to_sql(
     if request.catalog:
         try:
             from src.client import execute_sql
+
             config = await get_app_config()
             wid = config.get("sql_warehouse_id", "")
-            schemas = execute_sql(client, wid, f"SELECT schema_name FROM {request.catalog}.information_schema.schemata LIMIT 50")
+            schemas = execute_sql(
+                client,
+                wid,
+                f"SELECT schema_name FROM {request.catalog}.information_schema.schemata LIMIT 50",
+            )
             schema_names = [s.get("schema_name", s.get("SCHEMA_NAME", "")) for s in schemas]
             context += f"\nAvailable schemas in {request.catalog}: {', '.join(schema_names)}"
             if request.schema_name:
-                tables = execute_sql(client, wid, f"SELECT table_name FROM {request.catalog}.information_schema.tables WHERE table_schema = '{request.schema_name}' LIMIT 50")
+                tables = execute_sql(
+                    client,
+                    wid,
+                    f"SELECT table_name FROM {request.catalog}.information_schema.tables WHERE table_schema = '{request.schema_name}' LIMIT 50",
+                )
                 table_names = [t.get("table_name", t.get("TABLE_NAME", "")) for t in tables]
                 context += f"\nTables in {request.catalog}.{request.schema_name}: {', '.join(table_names[:30])}"
         except Exception:
             pass  # metadata fetch failed, continue without it
 
     try:
-        sql = svc._call_llm(system_prompt, context, max_tokens=512, endpoint_name=x_databricks_model, client=client)
+        sql = svc._call_llm(
+            system_prompt, context, max_tokens=512, endpoint_name=x_databricks_model, client=client
+        )
         sql = sql.strip()
         if sql.startswith("```"):
             sql = sql.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -156,10 +168,20 @@ async def execute_natural_language(
     # Inject metadata
     if request.catalog:
         try:
-            schemas = execute_sql(client, wid, f"SELECT schema_name FROM {request.catalog}.information_schema.schemata LIMIT 50")
-            context += f"\nAvailable schemas: {', '.join(s.get('schema_name', '') for s in schemas)}"
+            schemas = execute_sql(
+                client,
+                wid,
+                f"SELECT schema_name FROM {request.catalog}.information_schema.schemata LIMIT 50",
+            )
+            context += (
+                f"\nAvailable schemas: {', '.join(s.get('schema_name', '') for s in schemas)}"
+            )
             if request.schema_name:
-                tables = execute_sql(client, wid, f"SELECT table_name FROM {request.catalog}.information_schema.tables WHERE table_schema = '{request.schema_name}' LIMIT 50")
+                tables = execute_sql(
+                    client,
+                    wid,
+                    f"SELECT table_name FROM {request.catalog}.information_schema.tables WHERE table_schema = '{request.schema_name}' LIMIT 50",
+                )
                 context += f"\nTables: {', '.join(t.get('table_name', '') for t in tables[:30])}"
         except Exception:
             pass
@@ -167,7 +189,9 @@ async def execute_natural_language(
     sql = ""
     try:
         # Step 1: Generate SQL (use authenticated client for Databricks model serving)
-        sql = svc._call_llm(system_prompt, context, max_tokens=512, endpoint_name=x_databricks_model, client=client)
+        sql = svc._call_llm(
+            system_prompt, context, max_tokens=512, endpoint_name=x_databricks_model, client=client
+        )
         sql = sql.strip()
         if sql.startswith("```"):
             sql = sql.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -179,13 +203,27 @@ async def execute_natural_language(
         explanation = f"Query returned {len(rows)} rows."
         try:
             if len(rows) > 0:
-                explain_prompt = "Summarize these SQL results in 1-2 sentences. Be specific with numbers."
+                explain_prompt = (
+                    "Summarize these SQL results in 1-2 sentences. Be specific with numbers."
+                )
                 explain_context = f"Question: {request.question}\nResults ({len(rows)} rows): {json.dumps(rows[:5], default=str)}"
-                explanation = svc._call_llm(explain_prompt, explain_context, max_tokens=150, endpoint_name=x_databricks_model, client=client)
+                explanation = svc._call_llm(
+                    explain_prompt,
+                    explain_context,
+                    max_tokens=150,
+                    endpoint_name=x_databricks_model,
+                    client=client,
+                )
         except Exception:
             pass
 
-        return {"sql": sql, "results": rows, "row_count": len(rows), "explanation": explanation, "question": request.question}
+        return {
+            "sql": sql,
+            "results": rows,
+            "row_count": len(rows),
+            "explanation": explanation,
+            "question": request.question,
+        }
     except Exception as e:
         logger.exception("Execute NL query failed")
         return {"error": str(e), "sql": sql}
@@ -209,7 +247,9 @@ async def genie_query(
             timeout=30,
         )
         if r.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Genie API error: {r.status_code} — {r.text[:200]}")
+            raise HTTPException(
+                status_code=502, detail=f"Genie API error: {r.status_code} — {r.text[:200]}"
+            )
 
         data = r.json()
         conversation_id = data.get("conversation_id", "")
@@ -217,6 +257,7 @@ async def genie_query(
 
         # Poll for result
         import time
+
         for _ in range(30):
             time.sleep(1)
             poll = req.get(
@@ -231,7 +272,11 @@ async def genie_query(
             if status == "COMPLETED":
                 # Extract SQL and results
                 attachments = msg.get("attachments", [])
-                result = {"question": request.question, "conversation_id": conversation_id, "status": "completed"}
+                result = {
+                    "question": request.question,
+                    "conversation_id": conversation_id,
+                    "status": "completed",
+                }
                 for att in attachments:
                     if att.get("type") == "QUERY":
                         result["sql"] = att.get("query", {}).get("query", "")
@@ -256,6 +301,7 @@ async def ai_chat(
 ):
     """Multi-turn chat with the AI model about data."""
     from src.ai_service import get_ai_service
+
     svc = get_ai_service()
 
     if not svc.is_available(x_databricks_model):
@@ -268,12 +314,16 @@ async def ai_chat(
         "Be concise and specific."
     )
 
-    history = "\n\n".join([f"{'User' if m.role == 'user' else 'Assistant'}: {m.content}" for m in request.messages])
+    history = "\n\n".join(
+        [f"{'User' if m.role == 'user' else 'Assistant'}: {m.content}" for m in request.messages]
+    )
     if request.catalog:
         history = f"Context: catalog={request.catalog}, schema={request.schema_name}\n\n{history}"
 
     try:
-        response = svc._call_llm(system_prompt, history, max_tokens=1024, endpoint_name=x_databricks_model, client=client)
+        response = svc._call_llm(
+            system_prompt, history, max_tokens=1024, endpoint_name=x_databricks_model, client=client
+        )
         return {"response": response}
     except Exception as e:
         return {"error": str(e), "response": ""}

@@ -87,7 +87,7 @@ def _build_html_report(data: dict) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clone Report - {data['source_catalog']} to {data['destination_catalog']}</title>
+    <title>Clone Report - {data["source_catalog"]} to {data["destination_catalog"]}</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                max-width: 900px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }}
@@ -124,17 +124,17 @@ def _build_html_report(data: dict) -> str:
 
     <div class="meta">
         <div class="meta-item"><span class="meta-label">Source Catalog</span>
-            <span class="meta-value">{data['source_catalog']}</span></div>
+            <span class="meta-value">{data["source_catalog"]}</span></div>
         <div class="meta-item"><span class="meta-label">Destination Catalog</span>
-            <span class="meta-value">{data['destination_catalog']}</span></div>
+            <span class="meta-value">{data["destination_catalog"]}</span></div>
         <div class="meta-item"><span class="meta-label">Clone Type</span>
-            <span class="meta-value">{data['clone_type']}</span></div>
+            <span class="meta-value">{data["clone_type"]}</span></div>
         <div class="meta-item"><span class="meta-label">Load Type</span>
-            <span class="meta-value">{data['load_type']}</span></div>
+            <span class="meta-value">{data["load_type"]}</span></div>
         <div class="meta-item"><span class="meta-label">Timestamp</span>
-            <span class="meta-value">{data['timestamp']}</span></div>
+            <span class="meta-value">{data["timestamp"]}</span></div>
         <div class="meta-item"><span class="meta-label">Schemas Processed</span>
-            <span class="meta-value">{summary.get('schemas_processed', 0)}</span></div>
+            <span class="meta-value">{summary.get("schemas_processed", 0)}</span></div>
     </div>
 
     <span class="{status_class}">{status_text}</span>

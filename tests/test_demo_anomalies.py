@@ -88,7 +88,11 @@ class TestDqInjectionUsesProfile:
         client = MagicMock()
         with patch("src.demo_generator.execute_sql") as mock_sql:
             _inject_data_quality_issues(
-                client, "wid", "test_cat", "financial", self._industry_def(),
+                client,
+                "wid",
+                "test_cat",
+                "financial",
+                self._industry_def(),
                 dq_profile="clean",
             )
         assert mock_sql.call_count == 0
@@ -99,7 +103,11 @@ class TestDqInjectionUsesProfile:
         client = MagicMock()
         with patch("src.demo_generator.execute_sql") as mock_sql:
             _inject_data_quality_issues(
-                client, "wid", "test_cat", "financial", self._industry_def(),
+                client,
+                "wid",
+                "test_cat",
+                "financial",
+                self._industry_def(),
                 dq_profile="realistic",
             )
         emitted = [str(c.args[2]) for c in mock_sql.call_args_list]
@@ -114,7 +122,11 @@ class TestDqInjectionUsesProfile:
         client = MagicMock()
         with patch("src.demo_generator.execute_sql") as mock_sql:
             _inject_data_quality_issues(
-                client, "wid", "test_cat", "financial", self._industry_def(),
+                client,
+                "wid",
+                "test_cat",
+                "financial",
+                self._industry_def(),
                 dq_profile="dirty",
             )
         emitted = " ".join(str(c.args[2]) for c in mock_sql.call_args_list)
@@ -125,7 +137,11 @@ class TestDqInjectionUsesProfile:
         client = MagicMock()
         with pytest.raises(ValueError, match="Unknown dq_profile"):
             _inject_data_quality_issues(
-                client, "wid", "test_cat", "financial", self._industry_def(),
+                client,
+                "wid",
+                "test_cat",
+                "financial",
+                self._industry_def(),
                 dq_profile="bogus",
             )
 
@@ -280,7 +296,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["financial"],
             scale_factor=0.001,
             batch_size=5000,
@@ -303,7 +321,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["financial"],
             scale_factor=0.001,
             batch_size=5000,
@@ -327,7 +347,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["financial"],
             scale_factor=0.001,
             batch_size=5000,

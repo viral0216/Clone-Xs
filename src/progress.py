@@ -109,8 +109,12 @@ class ProgressTracker:
             # Color-coded stats
             if _IS_TTY:
                 ok_s = f"\033[32m{self.completed}ok\033[0m"
-                fail_s = f"\033[31m{self.failed}fail\033[0m" if self.failed else f"{self.failed}fail"
-                skip_s = f"\033[33m{self.skipped}skip\033[0m" if self.skipped else f"{self.skipped}skip"
+                fail_s = (
+                    f"\033[31m{self.failed}fail\033[0m" if self.failed else f"{self.failed}fail"
+                )
+                skip_s = (
+                    f"\033[33m{self.skipped}skip\033[0m" if self.skipped else f"{self.skipped}skip"
+                )
             else:
                 ok_s = f"{self.completed}ok"
                 fail_s = f"{self.failed}fail"
@@ -200,8 +204,16 @@ class SchemaProgressTracker:
             done = self._tables_done + self._tables_failed + self._tables_skipped
             if _IS_TTY:
                 ok = f"\033[32m{self._tables_done}ok\033[0m"
-                fl = f"\033[31m{self._tables_failed}fail\033[0m" if self._tables_failed else f"{self._tables_failed}fail"
-                sk = f"\033[33m{self._tables_skipped}skip\033[0m" if self._tables_skipped else f"{self._tables_skipped}skip"
+                fl = (
+                    f"\033[31m{self._tables_failed}fail\033[0m"
+                    if self._tables_failed
+                    else f"{self._tables_failed}fail"
+                )
+                sk = (
+                    f"\033[33m{self._tables_skipped}skip\033[0m"
+                    if self._tables_skipped
+                    else f"{self._tables_skipped}skip"
+                )
             else:
                 ok = f"{self._tables_done}ok"
                 fl = f"{self._tables_failed}fail"

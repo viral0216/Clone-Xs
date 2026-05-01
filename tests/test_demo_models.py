@@ -33,11 +33,20 @@ class TestRegistry:
         entry — that's the contract behind the v1 'all 10 industries'
         scope decision."""
         from src.demo_generator import INDUSTRIES
+
         # Custom YAML industries can be added at runtime, so only assert
         # that the 10 hardcoded ones are covered.
         builtin = {
-            "healthcare", "financial", "retail", "telecom", "manufacturing",
-            "energy", "education", "real_estate", "logistics", "insurance",
+            "healthcare",
+            "financial",
+            "retail",
+            "telecom",
+            "manufacturing",
+            "energy",
+            "education",
+            "real_estate",
+            "logistics",
+            "insurance",
         }
         for industry in builtin:
             assert industry in STAR_SCHEMA_REGISTRY, f"missing Star Schema registry for {industry}"
@@ -96,8 +105,12 @@ class TestGenerateStarSchema:
     def test_dim_date_uses_configured_date_range(self, mock_sql):
         client = MagicMock()
         generate_star_schema(
-            client, "wid", "test_cat", "healthcare",
-            start_date="2022-01-01", end_date="2022-12-31",
+            client,
+            "wid",
+            "test_cat",
+            "healthcare",
+            start_date="2022-01-01",
+            end_date="2022-12-31",
         )
         # The dim_date CTAS must contain the configured date range
         sqls = " ".join(str(c.args[2]) for c in mock_sql.call_args_list)
@@ -169,7 +182,11 @@ class TestGenerateStarSchema:
         generate_star_schema(client, "wid", "test_cat", "financial")
         # fct_loan_payments has no FK links in the registry
         ctas = next(
-            (str(c.args[2]) for c in mock_sql.call_args_list if "fct_loan_payments" in str(c.args[2])),
+            (
+                str(c.args[2])
+                for c in mock_sql.call_args_list
+                if "fct_loan_payments" in str(c.args[2])
+            ),
             None,
         )
         assert ctas is not None
@@ -212,12 +229,17 @@ class TestGenerateStarSchemasForIndustries:
     def test_iterates_all_listed_industries(self, mock_sql):
         client = MagicMock()
         report = generate_star_schemas_for_industries(
-            client, "wid", "test_cat", ["healthcare", "financial", "retail"],
+            client,
+            "wid",
+            "test_cat",
+            ["healthcare", "financial", "retail"],
         )
         assert report["data_model"] == "star_schema"
         assert len(report["per_industry"]) == 3
         assert {r["industry"] for r in report["per_industry"]} == {
-            "healthcare", "financial", "retail"
+            "healthcare",
+            "financial",
+            "retail",
         }
         assert report["facts_created"] >= 9  # ~3 facts each at minimum
 
@@ -233,10 +255,14 @@ class TestGenerateStarSchemasForIndustries:
             # Fail any SQL touching financial — others succeed
             if "financial" in sql.lower() and "create schema" not in sql.lower():
                 raise RuntimeError("CTAS failed mid-run")
+
         mock_sql.side_effect = flaky
 
         report = generate_star_schemas_for_industries(
-            client, "wid", "test_cat", ["healthcare", "financial", "retail"],
+            client,
+            "wid",
+            "test_cat",
+            ["healthcare", "financial", "retail"],
         )
         # Two should succeed, one should report an error
         errors = [r for r in report["per_industry"] if "error" in r]
@@ -264,7 +290,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.001,
             batch_size=5000,
@@ -282,7 +310,10 @@ class TestOrchestratorIntegration:
     @patch("src.demo_generator.execute_sql")
     @patch("src.demo_models.execute_sql")
     def test_data_model_star_schema_attaches_block(
-        self, mock_models_sql, mock_sql, mock_parallel,
+        self,
+        mock_models_sql,
+        mock_sql,
+        mock_parallel,
     ):
         """data_model="star_schema" must attach `data_model` and `star_schema`
         keys to the result, with per_industry shape the UI expects."""
@@ -291,7 +322,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.001,
             batch_size=5000,

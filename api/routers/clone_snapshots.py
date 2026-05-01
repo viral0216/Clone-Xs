@@ -8,7 +8,7 @@ point the snapshot was taken.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.dependencies import get_app_config, get_db_client
@@ -53,7 +53,9 @@ async def create(
 
     try:
         row = _create(
-            client, wid, config,
+            client,
+            wid,
+            config,
             source_catalog=req.source_catalog,
             name=req.name,
             description=req.description,

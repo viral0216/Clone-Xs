@@ -80,8 +80,11 @@ def selective_reclone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Ensure target catalog/schemas exist so the per-table CLONE has somewhere
     # to land. No-ops when they already do.
     create_catalog_if_not_exists(
-        client, warehouse_id, dest,
-        dry_run=dry_run, location=config.get("location", "") or "",
+        client,
+        warehouse_id,
+        dest,
+        dry_run=dry_run,
+        location=config.get("location", "") or "",
     )
     schemas = get_schemas(client, warehouse_id, source, exclude_schemas, include_schemas)
 
@@ -96,40 +99,53 @@ def selective_reclone_catalog(client: WorkspaceClient, config: dict) -> dict:
         total_drifted += len(drifted)
         if not drifted:
             logger.info(f"{SKIP} {SCHEMA} Schema {bold(schema)} in sync — 0 drifted tables")
-            all_results.append({
-                "schema": schema,
-                "tables": {
-                    "success": 0, "failed": 0, "skipped": 0,
-                    "bytes_copied": 0, "files_copied": 0,
-                    "source_table_size": 0, "source_num_of_files": 0,
-                    "formats": {},
-                },
-                "views": {"success": 0, "failed": 0, "skipped": 0},
-                "functions": {"success": 0, "failed": 0, "skipped": 0},
-                "volumes": {"success": 0, "failed": 0, "skipped": 0},
-                "duration_seconds": round(time.time() - schema_start, 2),
-            })
+            all_results.append(
+                {
+                    "schema": schema,
+                    "tables": {
+                        "success": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "bytes_copied": 0,
+                        "files_copied": 0,
+                        "source_table_size": 0,
+                        "source_num_of_files": 0,
+                        "formats": {},
+                    },
+                    "views": {"success": 0, "failed": 0, "skipped": 0},
+                    "functions": {"success": 0, "failed": 0, "skipped": 0},
+                    "volumes": {"success": 0, "failed": 0, "skipped": 0},
+                    "duration_seconds": round(time.time() - schema_start, 2),
+                }
+            )
             continue
 
         logger.info(
-            f"{SCHEMA} Schema {bold(schema)}: {len(drifted)} drifted "
-            f"{_drift_breakdown(drifted)}"
+            f"{SCHEMA} Schema {bold(schema)}: {len(drifted)} drifted {_drift_breakdown(drifted)}"
         )
 
         tables_result = _reclone_drifted_in_schema(
-            client, warehouse_id, source, dest, schema, drifted, config,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            schema,
+            drifted,
+            config,
         )
         # `_build_summary` expects per-schema results with object-type keys
         # nested (`tables: {...}`), matching the shape `process_schema` emits.
         # The no-drift branch above uses the same shape.
-        all_results.append({
-            "schema": schema,
-            "tables": tables_result,
-            "views": {"success": 0, "failed": 0, "skipped": 0},
-            "functions": {"success": 0, "failed": 0, "skipped": 0},
-            "volumes": {"success": 0, "failed": 0, "skipped": 0},
-            "duration_seconds": round(time.time() - schema_start, 2),
-        })
+        all_results.append(
+            {
+                "schema": schema,
+                "tables": tables_result,
+                "views": {"success": 0, "failed": 0, "skipped": 0},
+                "functions": {"success": 0, "failed": 0, "skipped": 0},
+                "volumes": {"success": 0, "failed": 0, "skipped": 0},
+                "duration_seconds": round(time.time() - schema_start, 2),
+            }
+        )
 
     summary = _build_summary(all_results)
     summary["duration_seconds"] = round(time.time() - start, 2)
@@ -177,9 +193,13 @@ def _reclone_drifted_in_schema(
     }
 
     results = {
-        "success": 0, "failed": 0, "skipped": 0,
-        "bytes_copied": 0, "files_copied": 0,
-        "source_table_size": 0, "source_num_of_files": 0,
+        "success": 0,
+        "failed": 0,
+        "skipped": 0,
+        "bytes_copied": 0,
+        "files_copied": 0,
+        "source_table_size": 0,
+        "source_num_of_files": 0,
         "formats": {},
     }
 
@@ -198,17 +218,27 @@ def _reclone_drifted_in_schema(
 
     parallel = max(1, int(config.get("parallel_tables", 1) or 1))
     args_for = lambda tname: (  # noqa: E731 — readability over a one-shot helper
-        client, warehouse_id, source_catalog, dest_catalog, schema, tname,
-        config.get("clone_type", "DEEP"), config.get("dry_run", False),
-        config.get("copy_permissions", False), config.get("copy_ownership", False),
-        config.get("copy_tags", False), config.get("copy_properties", False),
-        config.get("copy_security", False), config.get("copy_constraints", False),
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        schema,
+        tname,
+        config.get("clone_type", "DEEP"),
+        config.get("dry_run", False),
+        config.get("copy_permissions", False),
+        config.get("copy_ownership", False),
+        config.get("copy_tags", False),
+        config.get("copy_properties", False),
+        config.get("copy_security", False),
+        config.get("copy_constraints", False),
         config.get("copy_comments", False),
         None,  # rollback_log handled at orchestrator level if needed
-        config.get("as_of_timestamp"), config.get("as_of_version"),
+        config.get("as_of_timestamp"),
+        config.get("as_of_version"),
         None,  # where_clause not applicable for selective
         True,  # force_reclone — that's the whole point of selective
-        False, # schema_only off
+        False,  # schema_only off
         config.get("clone_tbl_properties"),
     )
 
@@ -216,10 +246,7 @@ def _reclone_drifted_in_schema(
 
     if parallel > 1 and len(drifted_names) > 1:
         with ThreadPoolExecutor(max_workers=parallel) as executor:
-            futures = {
-                executor.submit(_clone_single_table, *args_for(t)): t
-                for t in drifted_names
-            }
+            futures = {executor.submit(_clone_single_table, *args_for(t)): t for t in drifted_names}
             for f in as_completed(futures):
                 tname, success, metrics = f.result()
                 _add(metrics, tname, success)

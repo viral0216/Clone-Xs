@@ -246,4 +246,5 @@ def app(mock_workspace_client, mock_app_config):
 def client(app):
     """HTTPX TestClient wrapping the FastAPI app."""
     from fastapi.testclient import TestClient
+
     return TestClient(app, raise_server_exceptions=False)

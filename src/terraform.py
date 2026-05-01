@@ -128,7 +128,7 @@ def generate_pulumi(
         "import pulumi",
         "import pulumi_databricks as databricks",
         "",
-        f'# Catalog: {catalog}',
+        f"# Catalog: {catalog}",
         f'catalog = databricks.Catalog("{_tf_name(catalog)}",',
         f'    name="{catalog}",',
         '    comment="Managed by Pulumi",',
@@ -148,13 +148,15 @@ def generate_pulumi(
         schema_name = schema_row["schema_name"]
         var_name = _tf_name(f"schema_{schema_name}")
 
-        lines.extend([
-            f'{var_name} = databricks.Schema("{_tf_name(catalog)}_{schema_name}",',
-            '    catalog_name=catalog.name,',
-            f'    name="{schema_name}",',
-            ")",
-            "",
-        ])
+        lines.extend(
+            [
+                f'{var_name} = databricks.Schema("{_tf_name(catalog)}_{schema_name}",',
+                "    catalog_name=catalog.name,",
+                f'    name="{schema_name}",',
+                ")",
+                "",
+            ]
+        )
 
     # Write output
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

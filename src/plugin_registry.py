@@ -74,11 +74,13 @@ class PluginRegistry:
             if filename.endswith(".py") and not filename.startswith("_"):
                 filepath = os.path.join(self.plugin_dir, filename)
                 info = self._get_plugin_info(filepath)
-                installed.append({
-                    "name": filename.replace(".py", ""),
-                    "file": filepath,
-                    **info,
-                })
+                installed.append(
+                    {
+                        "name": filename.replace(".py", ""),
+                        "file": filepath,
+                        **info,
+                    }
+                )
 
         return installed
 
@@ -113,6 +115,7 @@ class PluginRegistry:
         if source_path:
             # Install from local file
             import shutil
+
             shutil.copy2(source_path, dest_path)
             logger.info(f"Plugin '{plugin_name}' installed from {source_path}")
         else:
@@ -209,27 +212,31 @@ def list_plugins() -> list[dict]:
     # Built-in plugins
     for entry in BUILTIN_REGISTRY:
         pid = entry["name"]
-        plugins.append({
-            "id": pid,
-            "name": entry["name"],
-            "description": entry.get("description", ""),
-            "version": entry.get("version", "1.0.0"),
-            "type": "built-in",
-            "enabled": state.get(pid, {}).get("enabled", False),
-        })
+        plugins.append(
+            {
+                "id": pid,
+                "name": entry["name"],
+                "description": entry.get("description", ""),
+                "version": entry.get("version", "1.0.0"),
+                "type": "built-in",
+                "enabled": state.get(pid, {}).get("enabled", False),
+            }
+        )
 
     # Installed plugins
     registry = PluginRegistry()
     for entry in registry.list_installed():
         pid = entry["name"]
-        plugins.append({
-            "id": pid,
-            "name": entry["name"],
-            "description": entry.get("description", ""),
-            "version": entry.get("version", "unknown"),
-            "type": "installed",
-            "enabled": state.get(pid, {}).get("enabled", False),
-        })
+        plugins.append(
+            {
+                "id": pid,
+                "name": entry["name"],
+                "description": entry.get("description", ""),
+                "version": entry.get("version", "unknown"),
+                "type": "installed",
+                "enabled": state.get(pid, {}).get("enabled", False),
+            }
+        )
 
     return plugins
 

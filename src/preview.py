@@ -8,16 +8,24 @@ logger = logging.getLogger(__name__)
 
 
 def preview_comparison(
-    client, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
-    schema: str, table_name: str,
-    limit: int = 10, order_by: str | None = None,
+    client,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
+    limit: int = 10,
+    order_by: str | None = None,
 ) -> dict:
     """Fetch sample rows from source and dest, return structured comparison."""
     order_clause = f"ORDER BY `{order_by}`" if order_by else ""
 
-    source_sql = f"SELECT * FROM `{source_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
-    dest_sql = f"SELECT * FROM `{dest_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    source_sql = (
+        f"SELECT * FROM `{source_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    )
+    dest_sql = (
+        f"SELECT * FROM `{dest_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    )
 
     try:
         source_rows = execute_sql(client, warehouse_id, source_sql)
@@ -38,11 +46,13 @@ def preview_comparison(
         src_row = source_rows[i] if i < len(source_rows) else None
         dst_row = dest_rows[i] if i < len(dest_rows) else None
         if src_row != dst_row:
-            differences.append({
-                "row_index": i,
-                "source": src_row,
-                "destination": dst_row,
-            })
+            differences.append(
+                {
+                    "row_index": i,
+                    "source": src_row,
+                    "destination": dst_row,
+                }
+            )
 
     return {
         "schema": schema,
@@ -92,15 +102,14 @@ def format_side_by_side(comparison: dict) -> str:
             col_widths[col] = max_width
 
         # Header
-        header = " | ".join(col.ljust(col_widths[col])[:col_widths[col]] for col in columns)
+        header = " | ".join(col.ljust(col_widths[col])[: col_widths[col]] for col in columns)
         lines.append(f"\n  Source ({comparison['source_rows']} rows):")
         lines.append(f"  {header}")
         lines.append(f"  {'-' * len(header)}")
 
         for row in source_data[:10]:
             row_str = " | ".join(
-                str(row.get(col, "")).ljust(col_widths[col])[:col_widths[col]]
-                for col in columns
+                str(row.get(col, "")).ljust(col_widths[col])[: col_widths[col]] for col in columns
             )
             lines.append(f"  {row_str}")
 
@@ -113,7 +122,7 @@ def format_side_by_side(comparison: dict) -> str:
             for col in columns:
                 val = str(row.get(col, ""))
                 src_val = str(source_data[i].get(col, "")) if i < len(source_data) else ""
-                padded = val.ljust(col_widths[col])[:col_widths[col]]
+                padded = val.ljust(col_widths[col])[: col_widths[col]]
                 if val != src_val:
                     row_str_parts.append(f"{RED}{padded}{RESET}")
                 else:
@@ -137,10 +146,13 @@ def format_side_by_side(comparison: dict) -> str:
 
 
 def preview_catalog(
-    client, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
+    client,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
     exclude_schemas: list[str],
-    limit: int = 5, max_tables: int = 20,
+    limit: int = 5,
+    max_tables: int = 20,
     order_by: str | None = None,
 ) -> list[dict]:
     """Preview all tables across catalogs."""
@@ -157,9 +169,14 @@ def preview_catalog(
     results = []
     for row in tables:
         comparison = preview_comparison(
-            client, warehouse_id, source_catalog, dest_catalog,
-            row["table_schema"], row["table_name"],
-            limit=limit, order_by=order_by,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            row["table_schema"],
+            row["table_name"],
+            limit=limit,
+            order_by=order_by,
         )
         results.append(comparison)
 

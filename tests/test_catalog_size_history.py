@@ -28,7 +28,6 @@ _CONFIG_NO_AUDIT = {"audit_trail": {}}
 
 
 class TestRecordSnapshot:
-
     @patch("src.catalog_size_history.execute_sql")
     def test_idempotent_by_date_and_catalog(self, mock_sql):
         """re-recording the same day issues a DELETE + INSERT so we
@@ -36,9 +35,14 @@ class TestRecordSnapshot:
         First call sets up the schema/table; second call (same day)
         deletes + inserts."""
         record_snapshot(
-            MagicMock(), "wh", _CONFIG_OK,
-            catalog="prod_us", num_tables=10, num_schemas=2,
-            total_size_bytes=1_000_000_000, total_rows=5_000_000,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
+            catalog="prod_us",
+            num_tables=10,
+            num_schemas=2,
+            total_size_bytes=1_000_000_000,
+            total_rows=5_000_000,
         )
         sqls = [c.args[2] for c in mock_sql.call_args_list]
         # Joined for easy substring match — order is CREATE SCHEMA,
@@ -63,9 +67,14 @@ class TestRecordSnapshot:
         mock_sql.side_effect = RuntimeError("warehouse is offline")
         # Must not raise.
         record_snapshot(
-            MagicMock(), "wh", _CONFIG_OK,
-            catalog="prod_us", num_tables=1, num_schemas=1,
-            total_size_bytes=100, total_rows=10,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
+            catalog="prod_us",
+            num_tables=1,
+            num_schemas=1,
+            total_size_bytes=100,
+            total_rows=10,
         )
 
     def test_no_audit_catalog_logs_and_returns(self):
@@ -74,9 +83,14 @@ class TestRecordSnapshot:
         failure, since neither is actionable from the caller's side."""
         # Must not raise.
         record_snapshot(
-            MagicMock(), "wh", _CONFIG_NO_AUDIT,
-            catalog="x", num_tables=0, num_schemas=0,
-            total_size_bytes=0, total_rows=0,
+            MagicMock(),
+            "wh",
+            _CONFIG_NO_AUDIT,
+            catalog="x",
+            num_tables=0,
+            num_schemas=0,
+            total_size_bytes=0,
+            total_rows=0,
         )
 
 
@@ -90,10 +104,15 @@ class TestRecordFromStats:
         """Single-catalog response: top-level `catalog` + aggregate
         totals. One snapshot recorded for that catalog."""
         record_snapshots_from_stats(
-            MagicMock(), "wh", _CONFIG_OK,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
             {
-                "catalog": "main", "num_tables": 5, "num_schemas": 2,
-                "total_size_bytes": 1_000, "total_rows": 100,
+                "catalog": "main",
+                "num_tables": 5,
+                "num_schemas": 2,
+                "total_size_bytes": 1_000,
+                "total_rows": 100,
             },
         )
         assert mock_rec.call_count == 1
@@ -107,12 +126,24 @@ class TestRecordFromStats:
         per catalog in that block, regardless of the merged top-level
         totals (which sum across catalogs and would be misleading)."""
         record_snapshots_from_stats(
-            MagicMock(), "wh", _CONFIG_OK,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
             {
                 "catalog": "main,samples",  # comma-joined fallback id
                 "per_catalog": {
-                    "main":    {"num_tables": 5, "num_schemas": 1, "total_size_bytes": 100, "total_rows": 10},
-                    "samples": {"num_tables": 3, "num_schemas": 1, "total_size_bytes": 200, "total_rows": 20},
+                    "main": {
+                        "num_tables": 5,
+                        "num_schemas": 1,
+                        "total_size_bytes": 100,
+                        "total_rows": 10,
+                    },
+                    "samples": {
+                        "num_tables": 3,
+                        "num_schemas": 1,
+                        "total_size_bytes": 200,
+                        "total_rows": 20,
+                    },
                 },
             },
         )
@@ -127,7 +158,9 @@ class TestRecordFromStats:
         `catalog` field. Don't try to record a single snapshot for
         "a,b,c" — that would corrupt the history table."""
         record_snapshots_from_stats(
-            MagicMock(), "wh", _CONFIG_OK,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
             {"catalog": "main,samples", "num_tables": 8, "total_size_bytes": 0},
         )
         assert mock_rec.call_count == 0
@@ -139,7 +172,6 @@ class TestRecordFromStats:
 
 
 class TestGetHistory:
-
     def test_no_audit_catalog_returns_empty(self):
         """get_history must never raise — UI handles `[]` as "no
         history yet", which is also the correct answer when audit_trail
@@ -163,8 +195,11 @@ class TestGetHistory:
         the filters is dropped (e.g. user picks 7 days but gets 30)."""
         mock_sql.return_value = []
         get_history(
-            MagicMock(), "wh", _CONFIG_OK,
-            catalogs=["main", "samples"], days=7,
+            MagicMock(),
+            "wh",
+            _CONFIG_OK,
+            catalogs=["main", "samples"],
+            days=7,
         )
         sql = mock_sql.call_args.args[2]
         assert "snapshot_date >=" in sql
@@ -190,9 +225,15 @@ class TestEndpointDispatch:
         result shape `{rows, days}` so the UI can branch on either."""
         with patch("src.catalog_size_history.get_history") as mock_get:
             mock_get.return_value = [
-                {"snapshot_date": "2026-04-30", "catalog": "main",
-                 "num_tables": 5, "num_schemas": 1, "total_size_bytes": 100,
-                 "total_rows": 10, "captured_at": "2026-04-30T12:00:00"},
+                {
+                    "snapshot_date": "2026-04-30",
+                    "catalog": "main",
+                    "num_tables": 5,
+                    "num_schemas": 1,
+                    "total_size_bytes": 100,
+                    "total_rows": 10,
+                    "captured_at": "2026-04-30T12:00:00",
+                },
             ]
             resp = client.get("/api/catalog-size-history?catalogs=main&days=7")
             assert resp.status_code == 200

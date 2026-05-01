@@ -54,15 +54,17 @@ def build_manifest(
     clone agree on a hash.
     """
     sensitive_keys = {
-        "token", "client_secret", "password", "_api_managed_logs",
-        "_tables_progress", "_auth", "target_workspace",
+        "token",
+        "client_secret",
+        "password",
+        "_api_managed_logs",
+        "_tables_progress",
+        "_auth",
+        "target_workspace",
     }
     clean_config = {k: v for k, v in (config or {}).items() if k not in sensitive_keys}
     # Keep the result summary — counts + durations, not per-object logs.
-    clean_result = {
-        k: v for k, v in (result or {}).items()
-        if k not in ("logs", "run_url")
-    }
+    clean_result = {k: v for k, v in (result or {}).items() if k not in ("logs", "run_url")}
     return {
         "manifest_version": 1,
         "job_id": job_id or "",

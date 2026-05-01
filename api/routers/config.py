@@ -53,7 +53,9 @@ async def config_diff(req: ConfigDiffRequest):
     # Transform {added, removed, changed} → flat array for the UI
     differences = []
     for key, vals in raw.get("changed", {}).items():
-        differences.append({"key": key, "value_a": vals["old"], "value_b": vals["new"], "changed": True})
+        differences.append(
+            {"key": key, "value_a": vals["old"], "value_b": vals["new"], "changed": True}
+        )
     for key, val in raw.get("added", {}).items():
         differences.append({"key": key, "value_a": None, "value_b": val, "changed": True})
     for key, val in raw.get("removed", {}).items():
@@ -81,6 +83,7 @@ async def save_audit_settings(req: dict):
         return {"status": "saved"}
     except Exception as e:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -117,6 +120,7 @@ async def set_performance(req: dict):
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
         # Apply to running process immediately
         from src.client import set_max_parallel_queries
+
         if "max_parallel_queries" in req:
             set_max_parallel_queries(int(req["max_parallel_queries"]))
         invalidate_config_cache()
@@ -139,7 +143,11 @@ async def set_pricing(req: dict):
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
         invalidate_config_cache()
-        return {"status": "saved", "price_per_gb": raw.get("price_per_gb"), "currency": raw.get("currency")}
+        return {
+            "status": "saved",
+            "price_per_gb": raw.get("price_per_gb"),
+            "currency": raw.get("currency"),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

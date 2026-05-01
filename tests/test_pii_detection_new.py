@@ -92,9 +92,24 @@ class TestDetectPiiByColumnNames:
     @patch("src.pii_detection.execute_sql")
     def test_detects_pii_columns(self, mock_sql):
         mock_sql.return_value = [
-            {"table_schema": "hr", "table_name": "employees", "column_name": "email", "data_type": "STRING"},
-            {"table_schema": "hr", "table_name": "employees", "column_name": "ssn", "data_type": "STRING"},
-            {"table_schema": "hr", "table_name": "employees", "column_name": "department", "data_type": "STRING"},
+            {
+                "table_schema": "hr",
+                "table_name": "employees",
+                "column_name": "email",
+                "data_type": "STRING",
+            },
+            {
+                "table_schema": "hr",
+                "table_name": "employees",
+                "column_name": "ssn",
+                "data_type": "STRING",
+            },
+            {
+                "table_schema": "hr",
+                "table_name": "employees",
+                "column_name": "department",
+                "data_type": "STRING",
+            },
         ]
 
         result = detect_pii_by_column_names(MagicMock(), "wh-123", "my_catalog")
@@ -107,8 +122,18 @@ class TestDetectPiiByColumnNames:
     @patch("src.pii_detection.execute_sql")
     def test_excludes_schemas(self, mock_sql):
         mock_sql.return_value = [
-            {"table_schema": "excluded", "table_name": "t1", "column_name": "email", "data_type": "STRING"},
-            {"table_schema": "included", "table_name": "t2", "column_name": "phone", "data_type": "STRING"},
+            {
+                "table_schema": "excluded",
+                "table_name": "t1",
+                "column_name": "email",
+                "data_type": "STRING",
+            },
+            {
+                "table_schema": "included",
+                "table_name": "t2",
+                "column_name": "phone",
+                "data_type": "STRING",
+            },
         ]
 
         result = detect_pii_by_column_names(

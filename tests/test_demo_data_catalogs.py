@@ -54,10 +54,12 @@ class TestListEndpoint:
             _mock_catalog("demo_quick"),
         ]
         with _config_patch(), patch("src.client.execute_sql") as mock_sql:
+
             def stub(_c, _w, sql, *_a, **_kw):
                 if "main" in sql:
                     return [{"num_schemas": 5, "num_tables": 100, "num_demo_tables": 0}]
                 return [{"num_schemas": 3, "num_tables": 50, "num_demo_tables": 12}]
+
             mock_sql.side_effect = stub
             resp = client.get("/api/generate/demo-data/catalogs")
             assert resp.status_code == 200, resp.text
@@ -80,10 +82,12 @@ class TestListEndpoint:
             _mock_catalog("demo_two"),
         ]
         with _config_patch(), patch("src.client.execute_sql") as mock_sql:
+
             def stub(_c, _w, sql, *_a, **_kw):
                 if "plain" in sql:
                     return [{"num_schemas": 1, "num_tables": 1, "num_demo_tables": 0}]
                 return [{"num_schemas": 1, "num_tables": 5, "num_demo_tables": 5}]
+
             mock_sql.side_effect = stub
             resp = client.get("/api/generate/demo-data/catalogs?demo_only=true")
             assert resp.status_code == 200, resp.text
@@ -102,10 +106,12 @@ class TestListEndpoint:
             _mock_catalog("denied"),
         ]
         with _config_patch(), patch("src.client.execute_sql") as mock_sql:
+
             def stub(_c, _w, sql, *_a, **_kw):
                 if "denied" in sql:
                     raise RuntimeError("PERMISSION_DENIED on information_schema")
                 return [{"num_schemas": 1, "num_tables": 1, "num_demo_tables": 0}]
+
             mock_sql.side_effect = stub
             resp = client.get("/api/generate/demo-data/catalogs")
             assert resp.status_code == 200

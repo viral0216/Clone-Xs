@@ -218,8 +218,15 @@ class TestRTBFManager:
         call_log = []
         responses = {
             "update_status": None,
-            "get_request": [{"request_id": "req-1", "subject_type": "email", "subject_column": None,
-                             "scope_catalogs": "[]", "status": "discovering"}],
+            "get_request": [
+                {
+                    "request_id": "req-1",
+                    "subject_type": "email",
+                    "subject_column": None,
+                    "scope_catalogs": "[]",
+                    "status": "discovering",
+                }
+            ],
         }
 
         # Use a single mock that routes by SQL content
@@ -234,16 +241,24 @@ class TestRTBFManager:
             if "DISTINCT dest_catalog" in sql:
                 return [{"dest_catalog": "dst_cat"}]
             if "information_schema.columns" in sql:
-                return [{"table_schema": "pub", "table_name": "cust",
-                          "column_name": "email_address", "data_type": "STRING"}]
+                return [
+                    {
+                        "table_schema": "pub",
+                        "table_name": "cust",
+                        "column_name": "email_address",
+                        "data_type": "STRING",
+                    }
+                ]
             if "pii_detections" in sql:
                 return []
             if "COUNT(*)" in sql:
                 return [{"cnt": 42}]
             return []
 
-        with patch("src.rtbf_store.execute_sql", side_effect=smart_sql), \
-             patch("src.rtbf.execute_sql", side_effect=smart_sql):
+        with (
+            patch("src.rtbf_store.execute_sql", side_effect=smart_sql),
+            patch("src.rtbf.execute_sql", side_effect=smart_sql),
+        ):
             result = self.mgr.discover_subject("req-1", "user@example.com")
 
         assert result["total_tables"] >= 1
@@ -252,19 +267,35 @@ class TestRTBFManager:
     @patch("src.rtbf.execute_sql")
     @patch("src.rtbf_store.execute_sql")
     def test_analyze_impact(self, mock_store_sql, mock_rtbf_sql):
-        mock_store_sql.return_value = [{
-            "request_id": "req-1",
-            "subject_type": "email",
-            "status": "analyzed",
-            "strategy": "delete",
-            "deadline": "2025-04-28",
-            "affected_tables": 2,
-            "affected_rows": 100,
-            "discovery_json": json.dumps([
-                {"catalog": "cat1", "schema": "s1", "table": "t1", "column": "email", "row_count": 50},
-                {"catalog": "cat2", "schema": "s2", "table": "t2", "column": "email", "row_count": 50},
-            ]),
-        }]
+        mock_store_sql.return_value = [
+            {
+                "request_id": "req-1",
+                "subject_type": "email",
+                "status": "analyzed",
+                "strategy": "delete",
+                "deadline": "2025-04-28",
+                "affected_tables": 2,
+                "affected_rows": 100,
+                "discovery_json": json.dumps(
+                    [
+                        {
+                            "catalog": "cat1",
+                            "schema": "s1",
+                            "table": "t1",
+                            "column": "email",
+                            "row_count": 50,
+                        },
+                        {
+                            "catalog": "cat2",
+                            "schema": "s2",
+                            "table": "t2",
+                            "column": "email",
+                            "row_count": 50,
+                        },
+                    ]
+                ),
+            }
+        ]
         result = self.mgr.analyze_impact("req-1")
         assert result["total_tables"] == 2
         assert result["total_rows"] == 100
@@ -275,12 +306,24 @@ class TestRTBFManager:
     def test_execute_deletion_dry_run(self, mock_store_sql, mock_rtbf_sql):
         mock_store_sql.side_effect = [
             # get_request
-            [{
-                "request_id": "req-1", "status": "approved", "strategy": "delete",
-                "discovery_json": json.dumps([
-                    {"catalog": "cat1", "schema": "s1", "table": "t1", "column": "email", "row_count": 10},
-                ]),
-            }],
+            [
+                {
+                    "request_id": "req-1",
+                    "status": "approved",
+                    "strategy": "delete",
+                    "discovery_json": json.dumps(
+                        [
+                            {
+                                "catalog": "cat1",
+                                "schema": "s1",
+                                "table": "t1",
+                                "column": "email",
+                                "row_count": 10,
+                            },
+                        ]
+                    ),
+                }
+            ],
         ]
 
         result = self.mgr.execute_deletion("req-1", "user@example.com", dry_run=True)
@@ -293,12 +336,23 @@ class TestRTBFManager:
     def test_verify_deletion_all_clear(self, mock_store_sql, mock_rtbf_sql):
         mock_store_sql.side_effect = [
             # get_request
-            [{
-                "request_id": "req-1", "status": "vacuumed",
-                "discovery_json": json.dumps([
-                    {"catalog": "cat1", "schema": "s1", "table": "t1", "column": "email", "row_count": 10},
-                ]),
-            }],
+            [
+                {
+                    "request_id": "req-1",
+                    "status": "vacuumed",
+                    "discovery_json": json.dumps(
+                        [
+                            {
+                                "catalog": "cat1",
+                                "schema": "s1",
+                                "table": "t1",
+                                "column": "email",
+                                "row_count": 10,
+                            },
+                        ]
+                    ),
+                }
+            ],
             # update_request_status (verifying)
             None,
             # save_action
@@ -316,12 +370,23 @@ class TestRTBFManager:
     @patch("src.rtbf_store.execute_sql")
     def test_verify_deletion_finds_remaining(self, mock_store_sql, mock_rtbf_sql):
         mock_store_sql.side_effect = [
-            [{
-                "request_id": "req-1", "status": "vacuumed",
-                "discovery_json": json.dumps([
-                    {"catalog": "cat1", "schema": "s1", "table": "t1", "column": "email", "row_count": 10},
-                ]),
-            }],
+            [
+                {
+                    "request_id": "req-1",
+                    "status": "vacuumed",
+                    "discovery_json": json.dumps(
+                        [
+                            {
+                                "catalog": "cat1",
+                                "schema": "s1",
+                                "table": "t1",
+                                "column": "email",
+                                "row_count": 10,
+                            },
+                        ]
+                    ),
+                }
+            ],
             None,  # update_request_status (verifying)
             None,  # save_action
             None,  # update_request_status (failed)
@@ -362,12 +427,22 @@ class TestSubjectTypePatterns:
     """Verify subject type patterns are well-formed."""
 
     def test_all_subject_types_have_patterns(self):
-        expected_types = ["email", "phone", "ssn", "name", "customer_id", "national_id", "passport", "credit_card"]
+        expected_types = [
+            "email",
+            "phone",
+            "ssn",
+            "name",
+            "customer_id",
+            "national_id",
+            "passport",
+            "credit_card",
+        ]
         for st in expected_types:
             assert st in SUBJECT_TYPE_PATTERNS, f"Missing patterns for subject type '{st}'"
 
     def test_patterns_are_valid_regex(self):
         import re
+
         for st, patterns in SUBJECT_TYPE_PATTERNS.items():
             for p in patterns:
                 re.compile(p)  # Should not raise
@@ -381,29 +456,57 @@ class TestCertificateGeneration:
     def test_generate_certificate_creates_files(self, mock_store_sql, mock_rtbf_sql, tmp_path):
         client = MagicMock()
         client.current_user.me.return_value = MagicMock(user_name="admin", display_name="Admin")
-        mgr = RTBFManager(client, "wh-1", config={
-            "audit_trail": {"catalog": "audit_cat"},
-            "rtbf": {"certificate_output_dir": str(tmp_path)},
-        })
+        mgr = RTBFManager(
+            client,
+            "wh-1",
+            config={
+                "audit_trail": {"catalog": "audit_cat"},
+                "rtbf": {"certificate_output_dir": str(tmp_path)},
+            },
+        )
 
         mock_store_sql.side_effect = [
             # get_request
-            [{
-                "request_id": "req-1", "subject_type": "email",
-                "subject_value_hash": "abc123", "legal_basis": "GDPR",
-                "strategy": "delete", "status": "verified",
-                "created_at": "2025-03-01", "completed_at": "2025-03-15",
-                "deadline": "2025-04-01", "updated_at": "2025-03-15",
-                "affected_tables": 2, "affected_rows": 50,
-            }],
+            [
+                {
+                    "request_id": "req-1",
+                    "subject_type": "email",
+                    "subject_value_hash": "abc123",
+                    "legal_basis": "GDPR",
+                    "strategy": "delete",
+                    "status": "verified",
+                    "created_at": "2025-03-01",
+                    "completed_at": "2025-03-15",
+                    "deadline": "2025-04-01",
+                    "updated_at": "2025-03-15",
+                    "affected_tables": 2,
+                    "affected_rows": 50,
+                }
+            ],
             # get_actions
             [
-                {"action_id": "a1", "action_type": "delete", "catalog": "c1",
-                 "schema_name": "s1", "table_name": "t1", "column_name": "email",
-                 "rows_affected": 25, "status": "completed", "executed_at": "2025-03-15"},
-                {"action_id": "a2", "action_type": "verify", "catalog": "c1",
-                 "schema_name": "s1", "table_name": "t1", "column_name": "email",
-                 "rows_affected": 0, "status": "completed", "executed_at": "2025-03-15"},
+                {
+                    "action_id": "a1",
+                    "action_type": "delete",
+                    "catalog": "c1",
+                    "schema_name": "s1",
+                    "table_name": "t1",
+                    "column_name": "email",
+                    "rows_affected": 25,
+                    "status": "completed",
+                    "executed_at": "2025-03-15",
+                },
+                {
+                    "action_id": "a2",
+                    "action_type": "verify",
+                    "catalog": "c1",
+                    "schema_name": "s1",
+                    "table_name": "t1",
+                    "column_name": "email",
+                    "rows_affected": 0,
+                    "status": "completed",
+                    "executed_at": "2025-03-15",
+                },
             ],
             # save_certificate
             None,
@@ -420,6 +523,7 @@ class TestCertificateGeneration:
 
         # Verify files exist
         import os
+
         assert os.path.exists(result["paths"]["json"])
         assert os.path.exists(result["paths"]["html"])
 

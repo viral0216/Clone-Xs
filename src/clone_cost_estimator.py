@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 # Databricks pricing defaults (USD)
 DEFAULT_STORAGE_PRICE_PER_GB = 0.023  # $/GB/month (cloud storage)
-DEFAULT_DBU_PRICE_SERVERLESS = 0.70   # $/DBU for serverless SQL
-DEFAULT_DBU_PRICE_CLASSIC = 0.22      # $/DBU for classic SQL warehouse
+DEFAULT_DBU_PRICE_SERVERLESS = 0.70  # $/DBU for serverless SQL
+DEFAULT_DBU_PRICE_CLASSIC = 0.22  # $/DBU for classic SQL warehouse
 
 
 def estimate_clone_cost(
@@ -94,7 +94,7 @@ def estimate_clone_cost(
             total_tables += 1
             total_size_bytes += size
 
-    total_size_gb = total_size_bytes / (1024 ** 3)
+    total_size_gb = total_size_bytes / (1024**3)
 
     # Storage cost (only for deep clone — shallow clone uses zero-copy)
     storage_price = custom_storage_price or DEFAULT_STORAGE_PRICE_PER_GB
@@ -106,7 +106,9 @@ def estimate_clone_cost(
     # Compute cost estimate
     # Rough heuristic: ~1 DBU per 10 GB read + written for deep clone
     dbu_price = custom_dbu_price or (
-        DEFAULT_DBU_PRICE_SERVERLESS if warehouse_type == "serverless" else DEFAULT_DBU_PRICE_CLASSIC
+        DEFAULT_DBU_PRICE_SERVERLESS
+        if warehouse_type == "serverless"
+        else DEFAULT_DBU_PRICE_CLASSIC
     )
     if clone_type.upper() == "DEEP":
         estimated_dbus = max(1, total_size_gb / 10) * 2  # read + write
@@ -145,12 +147,14 @@ def estimate_clone_cost(
     }
 
     for schema_name, info in sorted(schemas.items()):
-        schema_gb = info["size_bytes"] / (1024 ** 3)
+        schema_gb = info["size_bytes"] / (1024**3)
         result["per_schema"][schema_name] = {
             "tables": info["tables"],
             "views": info["views"],
             "size_gb": round(schema_gb, 2),
-            "storage_cost_usd": round(schema_gb * storage_price, 2) if clone_type.upper() == "DEEP" else 0.0,
+            "storage_cost_usd": round(schema_gb * storage_price, 2)
+            if clone_type.upper() == "DEEP"
+            else 0.0,
         }
 
     # Print summary
@@ -162,7 +166,9 @@ def estimate_clone_cost(
     logger.info(f"Total schemas:     {len(schemas)}")
     logger.info(f"Total tables:      {total_tables}")
     logger.info(f"Total views:       {total_views}")
-    logger.info(f"Total size:        {_format_bytes(total_size_bytes)} ({round(total_size_gb, 2)} GB)")
+    logger.info(
+        f"Total size:        {_format_bytes(total_size_bytes)} ({round(total_size_gb, 2)} GB)"
+    )
     logger.info("-" * 60)
     logger.info(f"Storage cost:      ${monthly_storage_cost:.2f}/month")
     logger.info(f"Compute cost:      ${compute_cost:.2f} (one-time, ~{estimated_dbus:.1f} DBUs)")
@@ -175,7 +181,9 @@ def estimate_clone_cost(
     logger.info("")
     logger.info("Per-schema breakdown:")
     for name, info in sorted(result["per_schema"].items(), key=lambda x: -x[1]["size_gb"]):
-        logger.info(f"  {name}: {info['tables']} tables, {info['size_gb']} GB, ${info['storage_cost_usd']:.2f}/mo")
+        logger.info(
+            f"  {name}: {info['tables']} tables, {info['size_gb']} GB, ${info['storage_cost_usd']:.2f}/mo"
+        )
 
     return result
 

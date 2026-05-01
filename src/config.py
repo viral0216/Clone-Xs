@@ -10,7 +10,9 @@ _CONFIG_CACHE_TTL = 60  # seconds
 _config_lock = threading.Lock()
 
 
-def load_config_cached(config_path: str = "config/clone_config.yaml", profile: str | None = None) -> dict:
+def load_config_cached(
+    config_path: str = "config/clone_config.yaml", profile: str | None = None
+) -> dict:
     """Load config with in-memory caching (60s TTL). Thread-safe."""
     key = (config_path, profile or "")
     now = time.time()
@@ -42,6 +44,7 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     The returned dict conforms to :class:`src.types.CloneConfig` (TypedDict).
     """
     import os
+
     if not os.path.exists(config_path):
         raw = {}
     else:
@@ -116,31 +119,37 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
 
     # Run logs — enabled by default, saves to Delta after every operation
     config.setdefault("save_run_logs", True)
-    config.setdefault("audit_trail", {
-        "catalog": "clone_audit",
-        "schema": "logs",
-        "table": "clone_operations",
-    })
+    config.setdefault(
+        "audit_trail",
+        {
+            "catalog": "clone_audit",
+            "schema": "logs",
+            "table": "clone_operations",
+        },
+    )
 
     # Centralised table locations — single source of truth for all internal tables
-    config.setdefault("tables", {
-        "catalog": config.get("audit_trail", {}).get("catalog", "clone_audit"),
-        "schemas": {
-            "logs": config.get("audit_trail", {}).get("schema", "logs"),
-            "metrics": "metrics",
-            "governance": "governance",
-            "reconciliation": "reconciliation",
-            "data_quality": "data_quality",
-            "lineage": "lineage",
-            "pii": "pii",
-            "rtbf": "rtbf",
-            "dsar": "dsar",
-            "mdm": "mdm",
-            "pipelines": "pipelines",
-            "data_contracts": "data_contracts",
-            "state": "state",
+    config.setdefault(
+        "tables",
+        {
+            "catalog": config.get("audit_trail", {}).get("catalog", "clone_audit"),
+            "schemas": {
+                "logs": config.get("audit_trail", {}).get("schema", "logs"),
+                "metrics": "metrics",
+                "governance": "governance",
+                "reconciliation": "reconciliation",
+                "data_quality": "data_quality",
+                "lineage": "lineage",
+                "pii": "pii",
+                "rtbf": "rtbf",
+                "dsar": "dsar",
+                "mdm": "mdm",
+                "pipelines": "pipelines",
+                "data_contracts": "data_contracts",
+                "state": "state",
+            },
         },
-    })
+    )
 
     # PII detection settings
     config.setdefault("pii_detection", None)

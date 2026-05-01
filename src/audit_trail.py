@@ -30,6 +30,7 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     schema = schema_fqn.split(".", 1)[1]
 
     from src.catalog_utils import ensure_catalog_and_schema
+
     ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
     # Create table
     create_sql = f"""
@@ -85,11 +86,17 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
         ("source_num_of_files", "BIGINT"),
     ]
     try:
-        existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
+        existing = {
+            r["col_name"].lower()
+            for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}")
+            if r.get("col_name")
+        }
         for col_name, col_type in new_columns:
             if col_name.lower() not in existing:
                 try:
-                    execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
+                    execute_sql(
+                        client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}"
+                    )
                 except Exception as e:
                     logger.warning("Failed to add audit column '%s' to %s: %s", col_name, fqn, e)
     except Exception as e:
@@ -172,11 +179,23 @@ def log_operation_complete(
         tables_failed = summary.get("failed", 0) or summary.get("tables_failed", 0)
 
     views_info = summary.get("views", {})
-    views_cloned = views_info.get("cloned", 0) or views_info.get("success", 0) if isinstance(views_info, dict) else 0
+    views_cloned = (
+        views_info.get("cloned", 0) or views_info.get("success", 0)
+        if isinstance(views_info, dict)
+        else 0
+    )
     funcs_info = summary.get("functions", {})
-    functions_cloned = funcs_info.get("cloned", 0) or funcs_info.get("success", 0) if isinstance(funcs_info, dict) else 0
+    functions_cloned = (
+        funcs_info.get("cloned", 0) or funcs_info.get("success", 0)
+        if isinstance(funcs_info, dict)
+        else 0
+    )
     vols_info = summary.get("volumes", {})
-    volumes_cloned = vols_info.get("cloned", 0) or vols_info.get("success", 0) if isinstance(vols_info, dict) else 0
+    volumes_cloned = (
+        vols_info.get("cloned", 0) or vols_info.get("success", 0)
+        if isinstance(vols_info, dict)
+        else 0
+    )
 
     # New columns
     tables_skipped = 0
@@ -194,7 +213,9 @@ def log_operation_complete(
     source_table_size = int(summary.get("source_table_size", 0) or 0)
     source_num_of_files = int(summary.get("source_num_of_files", 0) or 0)
 
-    status = "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
+    status = (
+        "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
+    )
     summary_json = json.dumps(summary).replace("'", "''")
     error_msg = (error_message or "").replace("'", "''")
 
@@ -220,10 +241,7 @@ def log_operation_complete(
     """
     try:
         execute_sql(client, warehouse_id, sql)
-        logger.info(
-            f"Audit: operation {operation_id} completed — "
-            f"{status}, {duration:.1f}s"
-        )
+        logger.info(f"Audit: operation {operation_id} completed — {status}, {duration:.1f}s")
     except Exception as e:
         logger.warning(f"Failed to write audit completion log: {e}")
 

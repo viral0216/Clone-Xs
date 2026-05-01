@@ -13,6 +13,7 @@ from src.rollback import (
 
 # ── create_rollback_log ──────────────────────────────────────────────
 
+
 def test_create_rollback_log():
     config = {
         "source_catalog": "prod",
@@ -31,13 +32,23 @@ def test_create_rollback_log():
 
 # ── record_object ────────────────────────────────────────────────────
 
+
 def test_record_object():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump({
-            "source_catalog": "src",
-            "destination_catalog": "dst",
-            "created_objects": {"tables": [], "views": [], "schemas": [], "functions": [], "volumes": []},
-        }, f)
+        json.dump(
+            {
+                "source_catalog": "src",
+                "destination_catalog": "dst",
+                "created_objects": {
+                    "tables": [],
+                    "views": [],
+                    "schemas": [],
+                    "functions": [],
+                    "volumes": [],
+                },
+            },
+            f,
+        )
         path = f.name
 
     try:
@@ -56,6 +67,7 @@ def test_record_object():
 
 # ── list_rollback_logs ───────────────────────────────────────────────
 
+
 def test_list_rollback_logs():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a valid rollback log
@@ -63,8 +75,13 @@ def test_list_rollback_logs():
             "source_catalog": "prod",
             "destination_catalog": "staging",
             "timestamp": "2026-03-14T12:00:00",
-            "created_objects": {"tables": ["t1", "t2"], "views": [], "schemas": ["s1"],
-                        "functions": [], "volumes": []},
+            "created_objects": {
+                "tables": ["t1", "t2"],
+                "views": [],
+                "schemas": ["s1"],
+                "functions": [],
+                "volumes": [],
+            },
         }
         log_path = os.path.join(tmpdir, "rollback_staging_20260314_120000.json")
         with open(log_path, "w") as f:
@@ -78,6 +95,7 @@ def test_list_rollback_logs():
 
 
 # ── rollback ─────────────────────────────────────────────────────────
+
 
 @patch("src.rollback.execute_sql")
 def test_rollback_drops_objects(mock_sql):

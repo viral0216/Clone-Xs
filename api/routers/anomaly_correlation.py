@@ -11,6 +11,7 @@ async def get_correlation_groups(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.anomaly_correlation import get_correlation_groups
+
     return get_correlation_groups(client, wid, config)
 
 
@@ -19,6 +20,7 @@ async def get_correlation_detail(group_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.anomaly_correlation import get_correlation_detail
+
     return get_correlation_detail(group_id, client, wid, config)
 
 
@@ -30,6 +32,7 @@ async def correlate(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.anomaly_correlation import correlate_anomalies
+
     return correlate_anomalies(time_window_minutes, client, wid, config)
 
 
@@ -38,4 +41,5 @@ async def get_root_causes(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.anomaly_correlation import get_root_causes
+
     return get_root_causes(client, wid, config)

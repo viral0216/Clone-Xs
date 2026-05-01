@@ -181,6 +181,7 @@ if results["failed"]:
 '''
 
     import os
+
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w") as f:
         f.write(notebook_content)
@@ -226,29 +227,33 @@ def submit_distributed_clone(
         if cluster_id:
             run = client.jobs.submit(
                 run_name=f"Distributed Clone: {source} -> {dest}",
-                tasks=[{
-                    "task_key": "distributed_clone",
-                    "existing_cluster_id": cluster_id,
-                    "notebook_task": {
-                        "notebook_path": notebook_path,
-                    },
-                }],
+                tasks=[
+                    {
+                        "task_key": "distributed_clone",
+                        "existing_cluster_id": cluster_id,
+                        "notebook_task": {
+                            "notebook_path": notebook_path,
+                        },
+                    }
+                ],
             )
         else:
             run = client.jobs.submit(
                 run_name=f"Distributed Clone: {source} -> {dest}",
-                tasks=[{
-                    "task_key": "distributed_clone",
-                    "new_cluster": {
-                        "spark_version": "14.3.x-scala2.12",
-                        "num_workers": config.get("max_workers", 8),
-                        "node_type_id": "i3.xlarge",
-                        "data_security_mode": "SINGLE_USER",
-                    },
-                    "notebook_task": {
-                        "notebook_path": notebook_path,
-                    },
-                }],
+                tasks=[
+                    {
+                        "task_key": "distributed_clone",
+                        "new_cluster": {
+                            "spark_version": "14.3.x-scala2.12",
+                            "num_workers": config.get("max_workers", 8),
+                            "node_type_id": "i3.xlarge",
+                            "data_security_mode": "SINGLE_USER",
+                        },
+                        "notebook_task": {
+                            "notebook_path": notebook_path,
+                        },
+                    }
+                ],
             )
 
         logger.info(f"Job submitted! Run ID: {run.run_id}")

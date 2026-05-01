@@ -181,7 +181,12 @@ class TestSyncChangedTable:
         mock_history.return_value = [{"version": "10"}]
 
         result = sync_changed_table(
-            MagicMock(), "wh", "src", "dst", "s1", "t1",
+            MagicMock(),
+            "wh",
+            "src",
+            "dst",
+            "s1",
+            "t1",
             clone_type="DEEP",
         )
 
@@ -201,7 +206,12 @@ class TestSyncChangedTable:
         mock_history.return_value = [{"version": "10"}]
 
         result = sync_changed_table(
-            MagicMock(), "wh", "src", "dst", "s1", "t1",
+            MagicMock(),
+            "wh",
+            "src",
+            "dst",
+            "s1",
+            "t1",
             clone_type="SHALLOW",
         )
 
@@ -212,7 +222,12 @@ class TestSyncChangedTable:
     @patch("src.incremental_sync.execute_sql", side_effect=Exception("clone error"))
     def test_clone_failure_returns_false(self, mock_sql):
         result = sync_changed_table(
-            MagicMock(), "wh", "src", "dst", "s1", "t1",
+            MagicMock(),
+            "wh",
+            "src",
+            "dst",
+            "s1",
+            "t1",
             clone_type="SHALLOW",
         )
         assert result is False
@@ -220,8 +235,14 @@ class TestSyncChangedTable:
     @patch("src.incremental_sync.execute_sql")
     def test_dry_run_does_not_save_version(self, mock_sql):
         result = sync_changed_table(
-            MagicMock(), "wh", "src", "dst", "s1", "t1",
-            clone_type="SHALLOW", dry_run=True,
+            MagicMock(),
+            "wh",
+            "src",
+            "dst",
+            "s1",
+            "t1",
+            clone_type="SHALLOW",
+            dry_run=True,
         )
         assert result is True
         # save_sync_version should not be called during dry run

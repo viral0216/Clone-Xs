@@ -9,11 +9,15 @@ pytest.importorskip("fastapi")
 # Preflight
 # ---------------------------------------------------------------------------
 
+
 def test_preflight(client):
-    resp = client.post("/api/preflight", json={
-        "source_catalog": "src",
-        "destination_catalog": "dst",
-    })
+    resp = client.post(
+        "/api/preflight",
+        json={
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -21,15 +25,19 @@ def test_preflight(client):
 # Rollback
 # ---------------------------------------------------------------------------
 
+
 def test_list_rollback_logs(client):
     resp = client.get("/api/rollback/logs")
     assert resp.status_code == 200
 
 
 def test_rollback(client):
-    resp = client.post("/api/rollback", json={
-        "log_file": "some_log.json",
-    })
+    resp = client.post(
+        "/api/rollback",
+        json={
+            "log_file": "some_log.json",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -37,10 +45,14 @@ def test_rollback(client):
 # PII
 # ---------------------------------------------------------------------------
 
+
 def test_pii_scan(client):
-    resp = client.post("/api/pii-scan", json={
-        "source_catalog": "test_catalog",
-    })
+    resp = client.post(
+        "/api/pii-scan",
+        json={
+            "source_catalog": "test_catalog",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -65,21 +77,27 @@ def test_pii_scan_diff(client):
 
 
 def test_pii_tag(client):
-    resp = client.post("/api/pii-tag", json={
-        "source_catalog": "test_catalog",
-    })
+    resp = client.post(
+        "/api/pii-tag",
+        json={
+            "source_catalog": "test_catalog",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
 def test_pii_remediation_update(client):
-    resp = client.post("/api/pii-remediation", json={
-        "catalog": "test_catalog",
-        "schema_name": "default",
-        "table_name": "users",
-        "column_name": "email",
-        "pii_type": "EMAIL",
-        "status": "mitigated",
-    })
+    resp = client.post(
+        "/api/pii-remediation",
+        json={
+            "catalog": "test_catalog",
+            "schema_name": "default",
+            "table_name": "users",
+            "column_name": "email",
+            "pii_type": "EMAIL",
+            "status": "mitigated",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -92,17 +110,22 @@ def test_pii_remediation_get(client):
 # Sync
 # ---------------------------------------------------------------------------
 
+
 def test_sync(client):
-    resp = client.post("/api/sync", json={
-        "source_catalog": "src",
-        "destination_catalog": "dst",
-    })
+    resp = client.post(
+        "/api/sync",
+        json={
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
 # ---------------------------------------------------------------------------
 # Catalogs / Schemas / Tables
 # ---------------------------------------------------------------------------
+
 
 def test_list_catalogs(client):
     resp = client.get("/api/catalogs")
@@ -138,6 +161,7 @@ def test_table_info(client):
 # Audit
 # ---------------------------------------------------------------------------
 
+
 def test_audit_log(client):
     resp = client.get("/api/audit")
     assert resp.status_code == 200
@@ -167,17 +191,22 @@ def test_audit_job_log(client):
 # Compliance
 # ---------------------------------------------------------------------------
 
+
 def test_compliance_report(client):
-    resp = client.post("/api/compliance", json={
-        "catalog": "test_catalog",
-        "report_type": "data_governance",
-    })
+    resp = client.post(
+        "/api/compliance",
+        json={
+            "catalog": "test_catalog",
+            "report_type": "data_governance",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
 # ---------------------------------------------------------------------------
 # Templates
 # ---------------------------------------------------------------------------
+
 
 def test_list_templates(client):
     resp = client.get("/api/templates")
@@ -188,18 +217,22 @@ def test_list_templates(client):
 # Schedule
 # ---------------------------------------------------------------------------
 
+
 def test_list_schedules(client):
     resp = client.get("/api/schedule")
     assert resp.status_code == 200
 
 
 def test_create_schedule(client):
-    resp = client.post("/api/schedule", json={
-        "name": "nightly-clone",
-        "source_catalog": "src",
-        "destination_catalog": "dst",
-        "cron": "0 0 * * *",
-    })
+    resp = client.post(
+        "/api/schedule",
+        json={
+            "name": "nightly-clone",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "cron": "0 0 * * *",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -222,12 +255,16 @@ def test_delete_schedule(client):
 # Multi-clone
 # ---------------------------------------------------------------------------
 
+
 def test_multi_clone(client):
-    resp = client.post("/api/multi-clone", json={
-        "source_catalog": "src",
-        "destinations": [{"catalog": "dst1"}, {"catalog": "dst2"}],
-        "clone_type": "DEEP",
-    })
+    resp = client.post(
+        "/api/multi-clone",
+        json={
+            "source_catalog": "src",
+            "destinations": [{"catalog": "dst1"}, {"catalog": "dst2"}],
+            "clone_type": "DEEP",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -235,10 +272,14 @@ def test_multi_clone(client):
 # Lineage
 # ---------------------------------------------------------------------------
 
+
 def test_lineage(client):
-    resp = client.post("/api/lineage", json={
-        "catalog": "test_catalog",
-    })
+    resp = client.post(
+        "/api/lineage",
+        json={
+            "catalog": "test_catalog",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -246,12 +287,16 @@ def test_lineage(client):
 # Impact
 # ---------------------------------------------------------------------------
 
+
 def test_impact_analysis(client):
-    resp = client.post("/api/impact", json={
-        "catalog": "test_catalog",
-        "schema": "default",
-        "table": "test_table",
-    })
+    resp = client.post(
+        "/api/impact",
+        json={
+            "catalog": "test_catalog",
+            "schema": "default",
+            "table": "test_table",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -259,13 +304,17 @@ def test_impact_analysis(client):
 # Preview
 # ---------------------------------------------------------------------------
 
+
 def test_preview_data(client):
-    resp = client.post("/api/preview", json={
-        "source_catalog": "src",
-        "dest_catalog": "dst",
-        "schema": "default",
-        "table": "test_table",
-    })
+    resp = client.post(
+        "/api/preview",
+        json={
+            "source_catalog": "src",
+            "dest_catalog": "dst",
+            "schema": "default",
+            "table": "test_table",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -273,10 +322,14 @@ def test_preview_data(client):
 # Execute SQL
 # ---------------------------------------------------------------------------
 
+
 def test_execute_sql(client):
-    resp = client.post("/api/execute-sql", json={
-        "sql": "SELECT 1",
-    })
+    resp = client.post(
+        "/api/execute-sql",
+        json={
+            "sql": "SELECT 1",
+        },
+    )
     assert resp.status_code in (200, 400, 500)
 
 
@@ -289,17 +342,24 @@ def test_execute_sql_missing(client):
 # Warehouse
 # ---------------------------------------------------------------------------
 
+
 def test_warehouse_start(client):
-    resp = client.post("/api/warehouse/start", json={
-        "warehouse_id": "wh-123",
-    })
+    resp = client.post(
+        "/api/warehouse/start",
+        json={
+            "warehouse_id": "wh-123",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
 def test_warehouse_stop(client):
-    resp = client.post("/api/warehouse/stop", json={
-        "warehouse_id": "wh-123",
-    })
+    resp = client.post(
+        "/api/warehouse/stop",
+        json={
+            "warehouse_id": "wh-123",
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -307,19 +367,23 @@ def test_warehouse_stop(client):
 # RBAC
 # ---------------------------------------------------------------------------
 
+
 def test_list_rbac_policies(client):
     resp = client.get("/api/rbac/policies")
     assert resp.status_code == 200
 
 
 def test_create_rbac_policy(client):
-    resp = client.post("/api/rbac/policies", json={
-        "principals": ["admin@example.com"],
-        "allowed_sources": [".*"],
-        "allowed_destinations": [".*"],
-        "allowed_operations": ["*"],
-        "deny": False,
-    })
+    resp = client.post(
+        "/api/rbac/policies",
+        json={
+            "principals": ["admin@example.com"],
+            "allowed_sources": [".*"],
+            "allowed_destinations": [".*"],
+            "allowed_operations": ["*"],
+            "deny": False,
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -332,16 +396,20 @@ def test_delete_rbac_policy(client):
 # Plugins
 # ---------------------------------------------------------------------------
 
+
 def test_list_plugins(client):
     resp = client.get("/api/plugins")
     assert resp.status_code == 200
 
 
 def test_toggle_plugin(client):
-    resp = client.post("/api/plugins/toggle", json={
-        "name": "my-plugin",
-        "enabled": True,
-    })
+    resp = client.post(
+        "/api/plugins/toggle",
+        json={
+            "name": "my-plugin",
+            "enabled": True,
+        },
+    )
     assert resp.status_code in (200, 500)
 
 
@@ -359,6 +427,7 @@ def test_disable_plugin(client):
 # Monitor Metrics
 # ---------------------------------------------------------------------------
 
+
 def test_monitor_metrics(client):
     resp = client.get("/api/monitor/metrics")
     assert resp.status_code == 200
@@ -367,6 +436,7 @@ def test_monitor_metrics(client):
 # ---------------------------------------------------------------------------
 # Notifications
 # ---------------------------------------------------------------------------
+
 
 def test_notifications(client):
     resp = client.get("/api/notifications")
@@ -377,6 +447,7 @@ def test_notifications(client):
 # Catalog Health
 # ---------------------------------------------------------------------------
 
+
 def test_catalog_health(client):
     resp = client.get("/api/catalog-health")
     assert resp.status_code == 200
@@ -385,6 +456,7 @@ def test_catalog_health(client):
 # ---------------------------------------------------------------------------
 # Cache
 # ---------------------------------------------------------------------------
+
 
 def test_cache_stats(client):
     resp = client.get("/api/cache/stats")

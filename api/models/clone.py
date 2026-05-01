@@ -70,7 +70,9 @@ class TargetWorkspace(BaseModel):
         if self.auth_method == "pat" and not self.token:
             raise ValueError("target token is required for PAT auth")
         if self.auth_method == "service_principal" and not (self.client_id and self.client_secret):
-            raise ValueError("target client_id and client_secret are required for service_principal auth")
+            raise ValueError(
+                "target client_id and client_secret are required for service_principal auth"
+            )
         if self.auth_method == "profile" and not self.profile:
             raise ValueError("target profile name is required for profile auth")
         if not (self.warehouse_id or "").strip():
@@ -100,7 +102,9 @@ class TargetWorkspaceConnect(BaseModel):
         if self.auth_method == "pat" and not self.token:
             raise ValueError("target token is required for PAT auth")
         if self.auth_method == "service_principal" and not (self.client_id and self.client_secret):
-            raise ValueError("target client_id and client_secret are required for service_principal auth")
+            raise ValueError(
+                "target client_id and client_secret are required for service_principal auth"
+            )
         if self.auth_method == "profile" and not self.profile:
             raise ValueError("target profile name is required for profile auth")
         return self
@@ -168,6 +172,18 @@ class CloneRequest(BaseModel):
     # The masked-data exposure window is bounded by the clone job itself
     # (no external reader sees the table before the UPDATE commits).
     auto_mask_pii: bool = False
+    # Run a column-level DQ comparison after each schema clones — row count
+    # plus per-column NULL counts on source vs target. When the max drift
+    # across any cloned table exceeds `dq_drift_rollback_pct` AND
+    # `auto_rollback_on_failure` is True, the existing rollback path
+    # (Delta RESTORE) reverts the destination. Adds one extra warehouse
+    # round-trip per cloned table; expect a few seconds per 100 tables.
+    compare_dq_after_clone: bool = False
+    # Drift threshold as a percent (0–100). Defaults to a relatively
+    # tight 5% — the same default used by row-count validation
+    # (`rollback_threshold`) so operators have one mental model for
+    # what "acceptable drift" means.
+    dq_drift_rollback_pct: float = 5.0
     # Cross-workspace object-type toggles. Effective only when target_workspace
     # is set; same-workspace clone_catalog.py does not read these.
     clone_views: bool = True

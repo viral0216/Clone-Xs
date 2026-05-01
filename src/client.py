@@ -38,6 +38,7 @@ def _get_spark_safe():
     """Try to get a Spark session; return None if unavailable."""
     try:
         from src.spark_session import get_spark_safe
+
         return get_spark_safe()
     except Exception:
         return None
@@ -52,7 +53,9 @@ def _row_to_dict(row) -> dict:
     return d
 
 
-def query_sql(sql: str, limit: int = 1000, client: WorkspaceClient | None = None, warehouse_id: str = "") -> list[dict]:
+def query_sql(
+    sql: str, limit: int = 1000, client: WorkspaceClient | None = None, warehouse_id: str = ""
+) -> list[dict]:
     """Execute a SELECT query via Spark (preferred) or SQL warehouse (fallback).
 
     Returns rows as a list of dicts, truncated to *limit*.
@@ -89,9 +92,14 @@ def run_sql(sql: str, client: WorkspaceClient | None = None, warehouse_id: str =
 
 # Errors that should NOT trigger a REST API fallback (permanent failures)
 _PERMANENT_ERROR_PHRASES = [
-    "was not found", "not found", "does not exist",
-    "permission denied", "unauthorized", "forbidden",
-    "not authenticated", "invalid token",
+    "was not found",
+    "not found",
+    "does not exist",
+    "permission denied",
+    "unauthorized",
+    "forbidden",
+    "not authenticated",
+    "invalid token",
 ]
 
 
@@ -110,6 +118,7 @@ def with_rest_fallback(rest_method_name: str):
     Args:
         rest_method_name: Method name on DatabricksRestClient to call as fallback.
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(client: WorkspaceClient, *args, **kwargs):
@@ -120,6 +129,7 @@ def with_rest_fallback(rest_method_name: str):
                     raise
                 try:
                     from src.rest_api_client import get_rest_client
+
                     rest_client = get_rest_client(client)
                     rest_func = getattr(rest_client, rest_method_name, None)
                     if rest_func is None:
@@ -134,8 +144,11 @@ def with_rest_fallback(rest_method_name: str):
                 except Exception as rest_err:
                     logger.warning(f"REST fallback {rest_method_name} also failed: {rest_err}")
                     raise sdk_err  # Raise original SDK error
+
         return wrapper
+
     return decorator
+
 
 # Default retry policy (3 retries, exponential backoff starting at 2s, factor 2x)
 _default_retry = RetryPolicy(max_retries=3, base_delay=2.0, backoff_factor=2.0)
@@ -291,9 +304,11 @@ def get_workspace_client(
         Configured WorkspaceClient instance.
     """
     from src.env import get_databricks_host, get_databricks_token
+
     host = host or get_databricks_host() or None
     token = token or get_databricks_token() or None
     from src.auth import get_client
+
     return get_client(host, token, profile)
 
 
@@ -347,19 +362,31 @@ def execute_sql(
         except Exception as e:
             err_msg = str(e).lower()
             # Permanent errors — don't retry (warehouse not found, auth failures, etc.)
-            if any(phrase in err_msg for phrase in [
-                "was not found", "not found", "does not exist",
-                "permission denied", "unauthorized", "forbidden",
-                "invalid warehouse", "no warehouse",
-                "not a valid endpoint", "invalid endpoint",
-            ]):
+            if any(
+                phrase in err_msg
+                for phrase in [
+                    "was not found",
+                    "not found",
+                    "does not exist",
+                    "permission denied",
+                    "unauthorized",
+                    "forbidden",
+                    "invalid warehouse",
+                    "no warehouse",
+                    "not a valid endpoint",
+                    "invalid endpoint",
+                ]
+            ):
                 logger.error(f"SQL execution failed (non-retryable): {e}")
                 raise
             # Session expired — clear cached client so next retry creates a fresh session
             if "session_id is no longer usable" in err_msg or "inactivity_timeout" in err_msg:
-                logger.warning("Databricks session expired (inactivity timeout), refreshing client...")
+                logger.warning(
+                    "Databricks session expired (inactivity timeout), refreshing client..."
+                )
                 try:
                     from src.auth import clear_cache, get_client
+
                     clear_cache()
                     client = get_client(host=client.config.host)
                 except Exception:
@@ -406,7 +433,9 @@ def table_exists(client: WorkspaceClient, warehouse_id: str, fqn: str) -> bool:
         raise
 
 
-def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl: int = 120) -> list[dict]:
+def execute_sql_cached(
+    client: WorkspaceClient, warehouse_id: str, sql: str, ttl: int = 120
+) -> list[dict]:
     """Execute SQL with caching for read-only queries (SELECT, SHOW, DESCRIBE).
 
     Non-read queries pass through to execute_sql without caching.
@@ -418,6 +447,7 @@ def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl
         return execute_sql(client, warehouse_id, sql)
 
     from src.metadata_cache import MISSING as _MISSING, metadata_cache
+
     key = ("sql_cache", warehouse_id, normalized)
     cached = metadata_cache.get(key)
     if cached is not _MISSING:
@@ -440,11 +470,15 @@ def _execute_sql_once(client: WorkspaceClient, warehouse_id: str, sql: str) -> l
     except RuntimeError as e:
         if "Inline byte limit exceeded" in str(e) or "INLINE" in str(e):
             logger.info("Result too large for INLINE, retrying with EXTERNAL_LINKS")
-            return _execute_sql_with_disposition(client, warehouse_id, sql, Disposition.EXTERNAL_LINKS)
+            return _execute_sql_with_disposition(
+                client, warehouse_id, sql, Disposition.EXTERNAL_LINKS
+            )
         raise
 
 
-def _execute_sql_with_disposition(client: WorkspaceClient, warehouse_id: str, sql: str, disposition) -> list[dict]:
+def _execute_sql_with_disposition(
+    client: WorkspaceClient, warehouse_id: str, sql: str, disposition
+) -> list[dict]:
     """Execute SQL with specified disposition (INLINE or EXTERNAL_LINKS)."""
     from databricks.sdk.service.sql import Format
 
@@ -482,6 +516,7 @@ def _execute_sql_with_disposition(client: WorkspaceClient, warehouse_id: str, sq
     elif response.result and response.result.external_links:
         # EXTERNAL_LINKS: download chunks from URLs
         import httpx
+
         for link in response.result.external_links:
             try:
                 resp = httpx.get(link.external_link, timeout=60)
@@ -513,7 +548,10 @@ def _execute_sql_with_disposition(client: WorkspaceClient, warehouse_id: str, sq
 # SDK-based metadata helpers — no SQL warehouse required
 # ──────────────────────────────────────────────────────────────────
 
-def list_schemas_sdk(client: WorkspaceClient, catalog: str, exclude: list[str] | None = None) -> list[str]:
+
+def list_schemas_sdk(
+    client: WorkspaceClient, catalog: str, exclude: list[str] | None = None
+) -> list[str]:
     """List schema names in a catalog using the SDK (no SQL warehouse needed).
 
     Falls back to REST API if the SDK call fails.
@@ -544,6 +582,7 @@ def _list_schemas_inner(client: WorkspaceClient, catalog: str) -> list[str]:
         # REST API fallback
         try:
             from src.rest_api_client import get_rest_client
+
             logger.info(f"SDK schemas.list failed ({sdk_err}), falling back to REST API")
             rest = get_rest_client(client)
             return [s.get("name", "") for s in rest.list_schemas(catalog) if s.get("name")]
@@ -588,6 +627,7 @@ def _list_tables_inner(client: WorkspaceClient, catalog: str, schema: str) -> li
             raise
         try:
             from src.rest_api_client import get_rest_client
+
             logger.info(f"SDK tables.list failed ({sdk_err}), falling back to REST API")
             rest = get_rest_client(client)
             return [
@@ -618,7 +658,9 @@ def list_views_sdk(client: WorkspaceClient, catalog: str, schema: str) -> list[d
         result = [
             {
                 "table_name": t.name,
-                "view_definition": getattr(t, "view_text", "") or getattr(t, "view_definition", "") or "",
+                "view_definition": getattr(t, "view_text", "")
+                or getattr(t, "view_definition", "")
+                or "",
             }
             for t in client.tables.list(catalog_name=catalog, schema_name=schema)
             if t.name and t.table_type and t.table_type.value == "VIEW"
@@ -635,7 +677,9 @@ def list_functions_sdk(client: WorkspaceClient, catalog: str, schema: str) -> li
 
     Returns list of dicts with: function_name, full_name, data_type.
     """
-    logger.debug("SDK REST API call: list_functions(%s.%s) — not a warehouse query", catalog, schema)
+    logger.debug(
+        "SDK REST API call: list_functions(%s.%s) — not a warehouse query", catalog, schema
+    )
     key = ("functions", catalog, schema)
     cached = _cache.get(key)
     if cached is not _MISSING:
@@ -709,12 +753,14 @@ def _get_table_info_inner(client: WorkspaceClient, full_name: str) -> dict | Non
         columns = []
         if t.columns:
             for c in t.columns:
-                columns.append({
-                    "column_name": c.name,
-                    "data_type": c.type_text or str(c.type_name) if c.type_name else "",
-                    "comment": getattr(c, "comment", ""),
-                    "nullable": getattr(c, "nullable", True),
-                })
+                columns.append(
+                    {
+                        "column_name": c.name,
+                        "data_type": c.type_text or str(c.type_name) if c.type_name else "",
+                        "comment": getattr(c, "comment", ""),
+                        "nullable": getattr(c, "nullable", True),
+                    }
+                )
         return {
             "name": t.name,
             "full_name": t.full_name,
@@ -733,6 +779,7 @@ def _get_table_info_inner(client: WorkspaceClient, full_name: str) -> dict | Non
             raise
         try:
             from src.rest_api_client import get_rest_client
+
             logger.info(f"SDK tables.get failed ({sdk_err}), falling back to REST API")
             rest = get_rest_client(client)
             t = rest.get_table(full_name)
@@ -789,7 +836,9 @@ def _get_catalog_info_inner(client: WorkspaceClient, catalog: str) -> dict | Non
             "name": c.name,
             "owner": getattr(c, "owner", ""),
             "comment": getattr(c, "comment", ""),
-            "storage_root": getattr(c, "storage_root", None) or getattr(c, "storage_location", None) or "",
+            "storage_root": getattr(c, "storage_root", None)
+            or getattr(c, "storage_location", None)
+            or "",
             "properties": dict(c.properties) if c.properties else {},
         }
     except Exception as sdk_err:
@@ -797,6 +846,7 @@ def _get_catalog_info_inner(client: WorkspaceClient, catalog: str) -> dict | Non
             raise
         try:
             from src.rest_api_client import get_rest_client
+
             logger.info(f"SDK catalogs.get failed ({sdk_err}), falling back to REST API")
             rest = get_rest_client(client)
             c = rest.get_catalog(catalog)
@@ -826,6 +876,7 @@ def delete_table_sdk(client: WorkspaceClient, full_name: str) -> bool:
             return False
         try:
             from src.rest_api_client import get_rest_client
+
             logger.info(f"SDK tables.delete failed ({sdk_err}), falling back to REST API")
             rest = get_rest_client(client)
             rest.delete_table(full_name)

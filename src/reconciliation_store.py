@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _get_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "reconciliation")
 
 
@@ -57,8 +58,6 @@ _DETAILS_DDL = """
 """
 
 
-
-
 def ensure_reconciliation_tables(client=None, warehouse_id: str = "", config: dict = None):
     """Create reconciliation Delta tables if they don't exist."""
     config = config or {}
@@ -66,18 +65,26 @@ def ensure_reconciliation_tables(client=None, warehouse_id: str = "", config: di
 
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
-    for tbl_name, cols in [("reconciliation_runs", _RUNS_DDL), ("reconciliation_details", _DETAILS_DDL)]:
+    for tbl_name, cols in [
+        ("reconciliation_runs", _RUNS_DDL),
+        ("reconciliation_details", _DETAILS_DDL),
+    ]:
         try:
-            _run_sql(f"""
+            _run_sql(
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{tbl_name} ({cols})
                 USING DELTA
                 COMMENT 'Clone-Xs Reconciliation: {tbl_name}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """, client, warehouse_id)
+            """,
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not create {schema}.{tbl_name}: {e}")
 
@@ -114,7 +121,8 @@ def store_reconciliation_result(
 
     # Insert run summary
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.reconciliation_runs VALUES (
                 '{run_id}',
                 '{_esc(run_type)}',
@@ -123,61 +131,74 @@ def store_reconciliation_result(
                 '{_esc(schema_name)}',
                 '{_esc(table_name)}',
                 '{_esc(execution_mode)}',
-                {result.get('total_tables', 0)},
-                {result.get('matched', 0)},
-                {result.get('mismatched', 0)},
-                {result.get('errors', 0)},
+                {result.get("total_tables", 0)},
+                {result.get("matched", 0)},
+                {result.get("mismatched", 0)},
+                {result.get("errors", 0)},
                 {str(use_checksum).lower()},
                 {max_workers},
                 {duration_seconds:.2f},
                 '{now}',
                 ''
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not store reconciliation run: {e}")
 
     # Insert details in batches
     details = result.get("details", [])
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(details), batch_size):
-        batch = details[i:i + batch_size]
+        batch = details[i : i + batch_size]
         values = []
         for r in batch:
             src_count = r.get("source_count")
             dst_count = r.get("dest_count")
-            delta = (src_count or 0) - (dst_count or 0) if src_count is not None and dst_count is not None else 0
+            delta = (
+                (src_count or 0) - (dst_count or 0)
+                if src_count is not None and dst_count is not None
+                else 0
+            )
             values.append(f"""(
                 '{run_id}',
                 '{_esc(r.get("schema", ""))}',
                 '{_esc(r.get("table", ""))}',
-                {src_count if src_count is not None else 'NULL'},
-                {dst_count if dst_count is not None else 'NULL'},
+                {src_count if src_count is not None else "NULL"},
+                {dst_count if dst_count is not None else "NULL"},
                 {delta},
                 {str(r.get("match", False)).lower()},
-                {str(r.get("checksum_match")).lower() if r.get("checksum_match") is not None else 'NULL'},
-                {f"'{_esc(r.get('error', ''))}'" if r.get("error") else 'NULL'},
+                {str(r.get("checksum_match")).lower() if r.get("checksum_match") is not None else "NULL"},
+                {f"'{_esc(r.get('error', ''))}'" if r.get("error") else "NULL"},
                 '{now}'
             )""")
 
         if values:
             try:
-                _run_sql(f"""
-                    INSERT INTO {schema}.reconciliation_details VALUES {', '.join(values)}
-                """, client, warehouse_id)
+                _run_sql(
+                    f"""
+                    INSERT INTO {schema}.reconciliation_details VALUES {", ".join(values)}
+                """,
+                    client,
+                    warehouse_id,
+                )
             except Exception as e:
                 logger.warning(f"Could not store reconciliation details batch: {e}")
 
     try:
         from src.spark_session import get_spark
+
         storage_mode = "Spark" if get_spark() else "SQL Warehouse"
     except Exception:
         storage_mode = "SQL Warehouse"
-    logger.info(f"Stored reconciliation run {run_id} via {storage_mode}: {len(details)} table results")
+    logger.info(
+        f"Stored reconciliation run {run_id} via {storage_mode}: {len(details)} table results"
+    )
     return run_id
-
-
 
 
 def get_reconciliation_history(

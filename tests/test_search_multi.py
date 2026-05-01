@@ -24,15 +24,22 @@ class TestMultiFanout:
         """Every merged table/column row is stamped with its catalog so
         the UI's Search-tab rendering can show a catalog column without
         a second round-trip."""
+
         def stub(_client, _wid, catalog, _pat, _excl, _incl, _cols):
             return {
                 "matched_tables": [{"schema": "s", "table": f"t_{catalog}", "type": "MANAGED"}],
                 "matched_columns": [{"schema": "s", "table": "t", "column": "c"}],
             }
+
         mock_search.side_effect = stub
 
         result = search_tables_multi(
-            MagicMock(), "wh", ["main", "samples"], "pat", [], search_columns=True,
+            MagicMock(),
+            "wh",
+            ["main", "samples"],
+            "pat",
+            [],
+            search_columns=True,
         )
         assert {t["catalog"] for t in result["matched_tables"]} == {"main", "samples"}
         assert {c["catalog"] for c in result["matched_columns"]} == {"main", "samples"}
@@ -41,13 +48,18 @@ class TestMultiFanout:
     def test_per_catalog_rollup_counts_separately(self, mock_search):
         """`per_catalog[cat]` carries `tables` + `columns` separately so
         the UI summary panel can show "main: 5 tables, 12 columns"."""
+
         def stub(_client, _wid, catalog, _pat, _excl, _incl, _cols):
             if catalog == "main":
                 return {
-                    "matched_tables": [{"schema": "s", "table": "t1"}, {"schema": "s", "table": "t2"}],
+                    "matched_tables": [
+                        {"schema": "s", "table": "t1"},
+                        {"schema": "s", "table": "t2"},
+                    ],
                     "matched_columns": [{"schema": "s", "table": "t", "column": "c"}],
                 }
             return {"matched_tables": [], "matched_columns": []}
+
         mock_search.side_effect = stub
 
         result = search_tables_multi(MagicMock(), "wh", ["main", "samples"], "x", [])
@@ -58,6 +70,7 @@ class TestMultiFanout:
     def test_failure_isolation(self, mock_search):
         """One catalog raising during search must not abort the whole
         multi request — the rest's matches still come through."""
+
         def stub(_client, _wid, catalog, _pat, _excl, _incl, _cols):
             if catalog == "broken":
                 raise RuntimeError("schema list failed")
@@ -65,6 +78,7 @@ class TestMultiFanout:
                 "matched_tables": [{"schema": "s", "table": "ok"}],
                 "matched_columns": [],
             }
+
         mock_search.side_effect = stub
 
         result = search_tables_multi(MagicMock(), "wh", ["main", "broken"], "x", [])
@@ -82,32 +96,48 @@ class TestEndpointDispatch:
     """`/search` accepts both single + multi shapes via SearchRequest."""
 
     def test_source_catalogs_routes_to_multi(self, client):
-        with patch("src.search_multi.search_tables_multi") as mock_multi, \
-             patch("src.search.search_tables") as mock_single:
+        with (
+            patch("src.search_multi.search_tables_multi") as mock_multi,
+            patch("src.search.search_tables") as mock_single,
+        ):
             mock_multi.return_value = {
-                "matched_tables": [], "matched_columns": [],
-                "per_catalog": {}, "errors": [], "catalogs": ["main", "samples"],
+                "matched_tables": [],
+                "matched_columns": [],
+                "per_catalog": {},
+                "errors": [],
+                "catalogs": ["main", "samples"],
                 "pattern": "x",
             }
-            resp = client.post("/api/search", json={
-                "source_catalogs": ["main", "samples"],
-                "pattern": "x",
-            })
+            resp = client.post(
+                "/api/search",
+                json={
+                    "source_catalogs": ["main", "samples"],
+                    "pattern": "x",
+                },
+            )
             assert resp.status_code == 200
             assert mock_multi.called
             assert not mock_single.called
 
     def test_source_catalog_only_routes_to_single(self, client):
         """Existing single-catalog callers continue to work unchanged."""
-        with patch("src.search_multi.search_tables_multi") as mock_multi, \
-             patch("src.search.search_tables") as mock_single:
+        with (
+            patch("src.search_multi.search_tables_multi") as mock_multi,
+            patch("src.search.search_tables") as mock_single,
+        ):
             mock_single.return_value = {
-                "matched_tables": [], "matched_columns": [], "pattern": "x", "catalog": "main",
-            }
-            resp = client.post("/api/search", json={
-                "source_catalog": "main",
+                "matched_tables": [],
+                "matched_columns": [],
                 "pattern": "x",
-            })
+                "catalog": "main",
+            }
+            resp = client.post(
+                "/api/search",
+                json={
+                    "source_catalog": "main",
+                    "pattern": "x",
+                },
+            )
             assert resp.status_code == 200
             assert mock_single.called
             assert not mock_multi.called

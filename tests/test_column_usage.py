@@ -10,11 +10,17 @@ from src.column_usage import (
 
 # ---------- query_column_usage ----------
 
+
 @patch("src.column_usage.execute_sql")
 def test_query_column_usage_happy(mock_sql):
     mock_sql.return_value = [
-        {"column_name": "id", "table_name": "cat.s.t", "usage_count": 10,
-         "downstream_count": 2, "last_used": "2025-01-01"},
+        {
+            "column_name": "id",
+            "table_name": "cat.s.t",
+            "usage_count": 10,
+            "downstream_count": 2,
+            "last_used": "2025-01-01",
+        },
     ]
     rows = query_column_usage(MagicMock(), "wh-1", "cat")
     assert len(rows) == 1
@@ -37,6 +43,7 @@ def test_query_column_usage_system_table_unavailable(mock_sql):
 
 
 # ---------- query_column_users ----------
+
 
 @patch("src.column_usage.execute_sql")
 def test_query_column_users_happy(mock_sql):
@@ -70,6 +77,7 @@ def test_query_column_users_system_table_unavailable(mock_sql):
 
 # ---------- query_column_stats_fallback ----------
 
+
 @patch("src.column_usage.execute_sql")
 def test_query_column_stats_fallback_happy(mock_sql):
     mock_sql.return_value = [
@@ -87,6 +95,7 @@ def test_query_column_stats_fallback_failure(mock_sql):
 
 
 # ---------- get_column_usage_summary ----------
+
 
 @patch("src.column_usage.query_column_stats_fallback")
 @patch("src.column_usage.query_column_usage")
@@ -107,12 +116,20 @@ def test_get_column_usage_summary_fast_path(mock_lineage, mock_fallback):
 @patch("src.column_usage.query_column_usage")
 def test_get_column_usage_summary_full_mode(mock_lineage, mock_users):
     mock_lineage.return_value = [
-        {"column_name": "id", "table_name": "cat.s.t", "usage_count": 5,
-         "downstream_count": 1, "last_used": "2025-01-01"},
+        {
+            "column_name": "id",
+            "table_name": "cat.s.t",
+            "usage_count": 5,
+            "downstream_count": 1,
+            "last_used": "2025-01-01",
+        },
     ]
     mock_users.return_value = {"columns": [], "top_users": []}
     result = get_column_usage_summary(
-        MagicMock(), "wh-1", "cat", use_system_tables=True,
+        MagicMock(),
+        "wh-1",
+        "cat",
+        use_system_tables=True,
     )
     assert len(result["top_columns"]) == 1
     assert result["top_columns"][0]["lineage_count"] == 5

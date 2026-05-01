@@ -18,6 +18,7 @@ router = APIRouter()
 def _get_manager(client, config):
     """Instantiate an RTBFManager from client and config."""
     from src.rtbf import RTBFManager
+
     wid = config.get("sql_warehouse_id", "")
     return RTBFManager(client, wid, config=config)
 
@@ -27,6 +28,7 @@ def _get_wid(config, override: str | None = None) -> str:
 
 
 # ── Submit ────────────────────────────────────────────────────────────────
+
 
 @router.post("/requests")
 async def submit_rtbf_request(req: RTBFSubmitRequest, client=Depends(get_db_client)):
@@ -52,6 +54,7 @@ async def submit_rtbf_request(req: RTBFSubmitRequest, client=Depends(get_db_clie
 
 
 # ── List / Get ────────────────────────────────────────────────────────────
+
 
 @router.get("/requests")
 async def list_rtbf_requests(
@@ -115,9 +118,12 @@ async def get_rtbf_actions(request_id: str, client=Depends(get_db_client)):
 
 # ── Status Updates ────────────────────────────────────────────────────────
 
+
 @router.put("/requests/{request_id}/status")
 async def update_rtbf_status(
-    request_id: str, body: RTBFStatusUpdate, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFStatusUpdate,
+    client=Depends(get_db_client),
 ):
     """Update RTBF request status (approve, hold, cancel)."""
     config = await get_app_config()
@@ -137,9 +143,12 @@ async def update_rtbf_status(
 
 # ── Discover (async job) ──────────────────────────────────────────────────
 
+
 @router.post("/requests/{request_id}/discover")
 async def discover_subject(
-    request_id: str, body: RTBFExecuteRequest, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFExecuteRequest,
+    client=Depends(get_db_client),
     job_manager=Depends(get_job_manager),
 ):
     """Run subject discovery across all cloned catalogs (async job)."""
@@ -155,6 +164,7 @@ async def discover_subject(
 
 # ── Impact Analysis ───────────────────────────────────────────────────────
 
+
 @router.get("/requests/{request_id}/impact")
 async def get_impact_analysis(request_id: str, client=Depends(get_db_client)):
     """Get impact analysis for an RTBF request."""
@@ -168,9 +178,12 @@ async def get_impact_analysis(request_id: str, client=Depends(get_db_client)):
 
 # ── Execute Deletion (async job) ──────────────────────────────────────────
 
+
 @router.post("/requests/{request_id}/execute")
 async def execute_deletion(
-    request_id: str, body: RTBFExecuteRequest, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFExecuteRequest,
+    client=Depends(get_db_client),
     job_manager=Depends(get_job_manager),
 ):
     """Execute RTBF deletion/anonymization across all affected tables (async job)."""
@@ -179,8 +192,10 @@ async def execute_deletion(
     def _run():
         mgr = _get_manager(client, config)
         return mgr.execute_deletion(
-            request_id, body.subject_value,
-            strategy=body.strategy, dry_run=body.dry_run,
+            request_id,
+            body.subject_value,
+            strategy=body.strategy,
+            dry_run=body.dry_run,
         )
 
     job_id = job_manager.submit_job(_run, label=f"rtbf-execute-{request_id[:8]}")
@@ -189,9 +204,12 @@ async def execute_deletion(
 
 # ── VACUUM (async job) ────────────────────────────────────────────────────
 
+
 @router.post("/requests/{request_id}/vacuum")
 async def vacuum_tables(
-    request_id: str, body: RTBFVacuumRequest, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFVacuumRequest,
+    client=Depends(get_db_client),
     job_manager=Depends(get_job_manager),
 ):
     """VACUUM all affected tables to physically remove Delta history (async job)."""
@@ -207,9 +225,12 @@ async def vacuum_tables(
 
 # ── Verify (async job) ────────────────────────────────────────────────────
 
+
 @router.post("/requests/{request_id}/verify")
 async def verify_deletion(
-    request_id: str, body: RTBFVerifyRequest, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFVerifyRequest,
+    client=Depends(get_db_client),
     job_manager=Depends(get_job_manager),
 ):
     """Verify that all subject data has been removed (async job)."""
@@ -225,9 +246,12 @@ async def verify_deletion(
 
 # ── Certificate ───────────────────────────────────────────────────────────
 
+
 @router.post("/requests/{request_id}/certificate")
 async def generate_certificate(
-    request_id: str, body: RTBFCertificateRequest, client=Depends(get_db_client),
+    request_id: str,
+    body: RTBFCertificateRequest,
+    client=Depends(get_db_client),
 ):
     """Generate a GDPR-compliant deletion certificate."""
     config = await get_app_config()
@@ -259,6 +283,7 @@ async def download_certificate(
 ):
     """Download deletion certificate as a file."""
     from fastapi.responses import Response
+
     config = await get_app_config()
     mgr = _get_manager(client, config)
     cert = mgr.store.get_certificate(request_id)
@@ -266,9 +291,19 @@ async def download_certificate(
         raise HTTPException(status_code=404, detail="No certificate found")
     if format == "html":
         content = cert.get("html_report", "")
-        return Response(content=content, media_type="text/html",
-                        headers={"Content-Disposition": f"attachment; filename=rtbf_certificate_{request_id[:8]}.html"})
+        return Response(
+            content=content,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f"attachment; filename=rtbf_certificate_{request_id[:8]}.html"
+            },
+        )
     else:
         content = cert.get("json_report", "{}")
-        return Response(content=content, media_type="application/json",
-                        headers={"Content-Disposition": f"attachment; filename=rtbf_certificate_{request_id[:8]}.json"})
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=rtbf_certificate_{request_id[:8]}.json"
+            },
+        )

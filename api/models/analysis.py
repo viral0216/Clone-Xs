@@ -7,13 +7,13 @@ from pydantic import BaseModel, Field, model_validator
 # Shared validator message — all "single OR multi" request models reject
 # requests where neither `source_catalog` nor `source_catalogs` is set.
 _NEITHER_CATALOG_MSG = (
-    "either `source_catalog` (single) or `source_catalogs` "
-    "(list) must be provided"
+    "either `source_catalog` (single) or `source_catalogs` (list) must be provided"
 )
 
 
 class CatalogRequest(BaseModel):
     """Base request for operations on a single catalog."""
+
     source_catalog: str
     warehouse_id: str | None = None
     exclude_schemas: list[str] = ["information_schema", "default"]
@@ -54,6 +54,7 @@ class StatsRequest(CatalogRequest):
 
 class CatalogPairRequest(BaseModel):
     """Base request for operations comparing two catalogs."""
+
     source_catalog: str
     destination_catalog: str
     warehouse_id: str | None = None
@@ -62,6 +63,7 @@ class CatalogPairRequest(BaseModel):
 
 class SchemaDriftRequest(CatalogPairRequest):
     """Request for schema drift detection with optional schema/table filtering."""
+
     model_config = {"populate_by_name": True}
     schema_name: str | None = Field(None, alias="schema")
     table: str | None = None
@@ -81,6 +83,7 @@ class SearchRequest(CatalogRequest):
     `src.search_multi.search_tables_multi`. The merged response stamps
     each match with its owning `catalog`.
     """
+
     # Optional in multi mode. The validator below requires at least one of
     # `source_catalog` / `source_catalogs` to be set.
     source_catalog: str = ""
@@ -115,7 +118,9 @@ class EstimateRequest(CatalogRequest):
 class StorageMetricsRequest(CatalogRequest):
     schema_filter: str | None = None
     table_filter: str | None = None
-    deep_analyze: bool = False  # When True, runs ANALYZE TABLE (expensive); default uses DESCRIBE DETAIL (fast)
+    deep_analyze: bool = (
+        False  # When True, runs ANALYZE TABLE (expensive); default uses DESCRIBE DETAIL (fast)
+    )
 
 
 class PermissionsAuditRequest(CatalogRequest):
@@ -127,6 +132,7 @@ class PermissionsAuditRequest(CatalogRequest):
     holds SELECT on a PII table). Skipping the overlay is faster but
     surfaces only the structural risk.
     """
+
     # Inherits source_catalog from CatalogRequest (required, single).
     pii_intersection: bool = False
 
@@ -142,6 +148,7 @@ class StaleScanRequest(CatalogRequest):
     is stamped with its owning `catalog`; per-catalog rollups live
     under `per_catalog`.
     """
+
     # Optional in multi mode. The validator below requires at least one
     # of `source_catalog` / `source_catalogs` to be set.
     source_catalog: str = ""
@@ -172,6 +179,7 @@ class StaleScanRequest(CatalogRequest):
 
 class TableMaintenanceRequest(BaseModel):
     """Request to run OPTIMIZE or VACUUM on selected tables."""
+
     source_catalog: str
     warehouse_id: str | None = None
     tables: list[dict] | None = None  # [{"schema": "x", "table": "y"}]
@@ -182,6 +190,7 @@ class TableMaintenanceRequest(BaseModel):
 
 class TableProfileRequest(BaseModel):
     """Request for deep-profiling a single table."""
+
     table_fqn: str
     warehouse_id: str | None = None
     sample_limit: int = 0
@@ -191,6 +200,7 @@ class TableProfileRequest(BaseModel):
 
 class ResultsProfileRequest(BaseModel):
     """Request for deep-profiling arbitrary SQL query results."""
+
     sql: str
     warehouse_id: str | None = None
     top_n: int = 10

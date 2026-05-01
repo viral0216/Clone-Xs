@@ -78,6 +78,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
+# Databricks notebook source files use runtime-injected globals (spark, dbutils)
+# and IPython magics (%pip, %sql) that aren't valid standalone Python — they're
+# linted by Databricks itself, not ruff. force-exclude is required so the
+# excludes apply even when pre-commit passes file paths explicitly.
+extend-exclude = ["notebooks"]
+force-exclude = true
 
 [tool.ruff.lint.per-file-ignores]
 "api/main.py" = ["E402"]  # imports after app = FastAPI() for router registration

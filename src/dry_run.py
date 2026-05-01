@@ -17,11 +17,13 @@ class SqlCapture:
 
     def capture(self, sql: str, category: str = "unknown"):
         """Record a SQL statement."""
-        self.statements.append({
-            "sql": sql.strip(),
-            "category": classify_sql(sql),
-            "timestamp": time.time() - self._start_time,
-        })
+        self.statements.append(
+            {
+                "sql": sql.strip(),
+                "category": classify_sql(sql),
+                "timestamp": time.time() - self._start_time,
+            }
+        )
 
     def get_summary(self) -> dict:
         """Get summary of captured statements."""
@@ -60,7 +62,11 @@ def classify_sql(sql: str) -> str:
         return "ALTER"
     elif sql_upper.startswith("DROP"):
         return "DROP"
-    elif sql_upper.startswith("SELECT") or sql_upper.startswith("SHOW") or sql_upper.startswith("DESCRIBE"):
+    elif (
+        sql_upper.startswith("SELECT")
+        or sql_upper.startswith("SHOW")
+        or sql_upper.startswith("DESCRIBE")
+    ):
         return "READ"
     elif sql_upper.startswith("UPDATE"):
         return "UPDATE"
@@ -102,8 +108,10 @@ def build_execution_plan(client, config: dict) -> dict:
     cost_estimate = None
     try:
         from src.clone_cost_estimator import estimate_clone_cost
+
         cost_estimate = estimate_clone_cost(
-            client, config["sql_warehouse_id"],
+            client,
+            config["sql_warehouse_id"],
             config["source_catalog"],
             config.get("exclude_schemas", []),
             config.get("clone_type", "DEEP"),
@@ -215,20 +223,20 @@ th {{ background: #f0f0f0; font-weight: 600; }}
 <body>
 <div class="container">
 <h1>Clone Execution Plan</h1>
-<p class="meta">Generated: {plan['generated_at']}</p>
+<p class="meta">Generated: {plan["generated_at"]}</p>
 
 <h2>Configuration</h2>
 <table>
-<tr><th>Source</th><td>{plan['source_catalog']}</td></tr>
-<tr><th>Destination</th><td>{plan['destination_catalog']}</td></tr>
-<tr><th>Clone Type</th><td>{plan['clone_type']}</td></tr>
-<tr><th>Load Type</th><td>{plan['load_type']}</td></tr>
+<tr><th>Source</th><td>{plan["source_catalog"]}</td></tr>
+<tr><th>Destination</th><td>{plan["destination_catalog"]}</td></tr>
+<tr><th>Clone Type</th><td>{plan["clone_type"]}</td></tr>
+<tr><th>Load Type</th><td>{plan["load_type"]}</td></tr>
 </table>
 
 <h2>Summary</h2>
 <table>
-<tr><th>Total SQL Statements</th><td>{summary['total_statements']}</td></tr>
-<tr><th>Schemas</th><td>{cs.get('schemas_processed', 0)}</td></tr>
+<tr><th>Total SQL Statements</th><td>{summary["total_statements"]}</td></tr>
+<tr><th>Schemas</th><td>{cs.get("schemas_processed", 0)}</td></tr>
 </table>
 
 <h2>SQL by Category</h2>
@@ -244,7 +252,13 @@ th {{ background: #f0f0f0; font-weight: 600; }}
 """
     for stmt in plan["sql_statements"]:
         cat = stmt["category"]
-        badge_class = "badge-create" if "CREATE" in cat or "CLONE" in cat else "badge-grant" if cat == "GRANT" else "badge-read"
+        badge_class = (
+            "badge-create"
+            if "CREATE" in cat or "CLONE" in cat
+            else "badge-grant"
+            if cat == "GRANT"
+            else "badge-read"
+        )
         sql_escaped = stmt["sql"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         html += f'<div><span class="badge {badge_class}">{cat}</span></div>\n'
         html += f'<div class="sql">{sql_escaped}</div>\n'
@@ -260,7 +274,9 @@ def format_plan_sql(plan: dict) -> str:
     """Format execution plan as a .sql file with all statements."""
     lines = []
     lines.append("-- Clone-Xs Execution Plan")
-    lines.append(f"-- Source: {plan['source_catalog']} -> Destination: {plan['destination_catalog']}")
+    lines.append(
+        f"-- Source: {plan['source_catalog']} -> Destination: {plan['destination_catalog']}"
+    )
     lines.append(f"-- Clone Type: {plan['clone_type']}")
     lines.append(f"-- Generated: {plan['generated_at']}")
     lines.append(f"-- Total statements: {plan['sql_summary']['total_statements']}")

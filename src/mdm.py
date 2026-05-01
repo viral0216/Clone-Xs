@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 # ---- Fuzzy Matching Utilities ----
 
+
 def _jaro_winkler(s1: str, s2: str) -> float:
     """Jaro-Winkler similarity (0.0 to 1.0)."""
     if s1 == s2:
@@ -70,7 +71,9 @@ def _levenshtein_ratio(s1: str, s2: str) -> float:
     for i in range(1, len1 + 1):
         for j in range(1, len2 + 1):
             cost = 0 if s1[i - 1] == s2[j - 1] else 1
-            matrix[i][j] = min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost)
+            matrix[i][j] = min(
+                matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost
+            )
     distance = matrix[len1][len2]
     return 1.0 - distance / max(len1, len2)
 
@@ -80,7 +83,26 @@ def _soundex(s: str) -> str:
     if not s:
         return ""
     s = s.upper()
-    codes = {"B": "1", "F": "1", "P": "1", "V": "1", "C": "2", "G": "2", "J": "2", "K": "2", "Q": "2", "S": "2", "X": "2", "Z": "2", "D": "3", "T": "3", "L": "4", "M": "5", "N": "5", "R": "6"}
+    codes = {
+        "B": "1",
+        "F": "1",
+        "P": "1",
+        "V": "1",
+        "C": "2",
+        "G": "2",
+        "J": "2",
+        "K": "2",
+        "Q": "2",
+        "S": "2",
+        "X": "2",
+        "Z": "2",
+        "D": "3",
+        "T": "3",
+        "L": "4",
+        "M": "5",
+        "N": "5",
+        "R": "6",
+    }
     result = s[0]
     prev = codes.get(s[0], "0")
     for ch in s[1:]:
@@ -96,7 +118,21 @@ def _normalize(s: str) -> str:
     if not s:
         return ""
     s = s.lower().strip()
-    for suffix in [" llc", " ltd", " inc", " corp", " corporation", " co", " company", " plc", " gmbh", " ag", " sa", " sas", " bv"]:
+    for suffix in [
+        " llc",
+        " ltd",
+        " inc",
+        " corp",
+        " corporation",
+        " co",
+        " company",
+        " plc",
+        " gmbh",
+        " ag",
+        " sa",
+        " sas",
+        " bv",
+    ]:
         if s.endswith(suffix):
             s = s[: -len(suffix)].strip()
     return s
@@ -105,27 +141,45 @@ def _normalize(s: str) -> str:
 # ---- Match Functions ----
 
 MATCH_FUNCTIONS = {
-    "exact": lambda a, b: 1.0 if a and b and str(a).strip().lower() == str(b).strip().lower() else 0.0,
-    "fuzzy_jaro_winkler": lambda a, b: _jaro_winkler(str(a).lower(), str(b).lower()) if a and b else 0.0,
-    "fuzzy_levenshtein": lambda a, b: _levenshtein_ratio(str(a).lower(), str(b).lower()) if a and b else 0.0,
+    "exact": lambda a, b: 1.0
+    if a and b and str(a).strip().lower() == str(b).strip().lower()
+    else 0.0,
+    "fuzzy_jaro_winkler": lambda a, b: _jaro_winkler(str(a).lower(), str(b).lower())
+    if a and b
+    else 0.0,
+    "fuzzy_levenshtein": lambda a, b: _levenshtein_ratio(str(a).lower(), str(b).lower())
+    if a and b
+    else 0.0,
     "soundex": lambda a, b: 1.0 if a and b and _soundex(str(a)) == _soundex(str(b)) else 0.0,
-    "normalized": lambda a, b: 1.0 if _normalize(str(a)) == _normalize(str(b)) else _levenshtein_ratio(_normalize(str(a)), _normalize(str(b))) if a and b else 0.0,
-    "numeric": lambda a, b: 1.0 if a and b and "".join(c for c in str(a) if c.isdigit()) == "".join(c for c in str(b) if c.isdigit()) else 0.0,
+    "normalized": lambda a, b: 1.0
+    if _normalize(str(a)) == _normalize(str(b))
+    else _levenshtein_ratio(_normalize(str(a)), _normalize(str(b)))
+    if a and b
+    else 0.0,
+    "numeric": lambda a, b: 1.0
+    if a
+    and b
+    and "".join(c for c in str(a) if c.isdigit()) == "".join(c for c in str(b) if c.isdigit())
+    else 0.0,
 }
 
 # ---- Survivorship Strategies ----
+
 
 def _survive_most_trusted(values: list[tuple[str, float]]) -> str:
     """Pick value from source with highest trust score."""
     return max(values, key=lambda x: x[1])[0] if values else ""
 
+
 def _survive_most_recent(values: list[tuple[str, str]]) -> str:
     """Pick value from most recently ingested source."""
     return max(values, key=lambda x: x[1])[0] if values else ""
 
+
 def _survive_most_complete(values: list[tuple[str, dict]]) -> str:
     """Pick value from source with fewest nulls."""
     return min(values, key=lambda x: sum(1 for v in x[1].values() if not v))[0] if values else ""
+
 
 def _survive_longest(values: list[str]) -> str:
     """Pick the longest non-empty value."""
@@ -140,7 +194,9 @@ class MDMManager:
         self.warehouse_id = warehouse_id
         self.config = config
         catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
-        self.store = MDMStore(client, warehouse_id, state_catalog=catalog, state_schema="mdm", config=self.config)
+        self.store = MDMStore(
+            client, warehouse_id, state_catalog=catalog, state_schema="mdm", config=self.config
+        )
 
     def init_tables(self) -> dict:
         self.store.init_tables()
@@ -148,9 +204,19 @@ class MDMManager:
 
     # ---- Entity CRUD ----
 
-    def create_entity(self, entity_type: str, display_name: str, attributes: dict, created_by: str = "") -> dict:
+    def create_entity(
+        self, entity_type: str, display_name: str, attributes: dict, created_by: str = ""
+    ) -> dict:
         entity_id = str(uuid.uuid4())
-        self.store.upsert_entity(entity_id, entity_type, display_name, attributes, source_count=0, confidence_score=1.0, created_by=created_by)
+        self.store.upsert_entity(
+            entity_id,
+            entity_type,
+            display_name,
+            attributes,
+            source_count=0,
+            confidence_score=1.0,
+            created_by=created_by,
+        )
         return {"entity_id": entity_id, "entity_type": entity_type, "display_name": display_name}
 
     def get_entities(self, entity_type: str = None, status: str = None, limit: int = 100) -> list:
@@ -165,7 +231,15 @@ class MDMManager:
         entity = self.store.get_entity(entity_id)
         if not entity:
             return {"error": "Entity not found"}
-        self.store.upsert_entity(entity_id, entity.get("entity_type", ""), display_name, attributes, entity.get("source_count", 0), entity.get("confidence_score", 0), entity.get("status", "active"))
+        self.store.upsert_entity(
+            entity_id,
+            entity.get("entity_type", ""),
+            display_name,
+            attributes,
+            entity.get("source_count", 0),
+            entity.get("confidence_score", 0),
+            entity.get("status", "active"),
+        )
         return {"entity_id": entity_id, "updated": True}
 
     def delete_entity(self, entity_id: str) -> dict:
@@ -174,13 +248,25 @@ class MDMManager:
 
     # ---- Source Record Ingestion ----
 
-    def ingest_source_records(self, catalog: str, schema: str, table: str, entity_type: str, key_column: str, trust_score: float = 1.0) -> dict:
+    def ingest_source_records(
+        self,
+        catalog: str,
+        schema: str,
+        table: str,
+        entity_type: str,
+        key_column: str,
+        trust_score: float = 1.0,
+    ) -> dict:
         """Ingest records from a Unity Catalog table as source records."""
         fqn = f"{catalog}.{schema}.{table}"
         source_system = f"{catalog}.{schema}"
 
         # Get column names
-        cols = execute_sql(self.client, self.warehouse_id, f"SELECT column_name FROM {catalog}.information_schema.columns WHERE table_catalog = '{catalog}' AND table_schema = '{schema}' AND table_name = '{table}' ORDER BY ordinal_position")
+        cols = execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"SELECT column_name FROM {catalog}.information_schema.columns WHERE table_catalog = '{catalog}' AND table_schema = '{schema}' AND table_name = '{table}' ORDER BY ordinal_position",
+        )
         col_names = [c["column_name"] for c in cols]
         if key_column not in col_names:
             return {"error": f"Key column '{key_column}' not found in {fqn}"}
@@ -195,7 +281,16 @@ class MDMManager:
                 continue
             attrs = {k: str(v) for k, v in row.items() if v is not None}
             source_record_id = str(uuid.uuid4())
-            self.store.insert_source_record(source_record_id, None, entity_type, source_system, fqn, source_key, attrs, trust_score)
+            self.store.insert_source_record(
+                source_record_id,
+                None,
+                entity_type,
+                source_system,
+                fqn,
+                source_key,
+                attrs,
+                trust_score,
+            )
             count += 1
 
         logger.info(f"Ingested {count} source records from {fqn}")
@@ -203,7 +298,9 @@ class MDMManager:
 
     # ---- Duplicate Detection ----
 
-    def detect_duplicates(self, entity_type: str, auto_merge_threshold: float = 95.0, review_threshold: float = 80.0) -> dict:
+    def detect_duplicates(
+        self, entity_type: str, auto_merge_threshold: float = 95.0, review_threshold: float = 80.0
+    ) -> dict:
         """Run matching rules against unmatched source records to find duplicates."""
         rules = self.store.get_rules(entity_type)
         enabled_rules = [r for r in rules if r.get("enabled")]
@@ -224,15 +321,32 @@ class MDMManager:
                 score, matched = self._compute_match_score(records[i], records[j], enabled_rules)
                 if score >= review_threshold:
                     pair_id = str(uuid.uuid4())
-                    name_a = records[i].get("attributes", {}).get("name", records[i].get("source_key", ""))
-                    name_b = records[j].get("attributes", {}).get("name", records[j].get("source_key", ""))
+                    name_a = (
+                        records[i]
+                        .get("attributes", {})
+                        .get("name", records[i].get("source_key", ""))
+                    )
+                    name_b = (
+                        records[j]
+                        .get("attributes", {})
+                        .get("name", records[j].get("source_key", ""))
+                    )
                     if isinstance(name_a, dict):
                         name_a = str(name_a)
                     if isinstance(name_b, dict):
                         name_b = str(name_b)
 
                     status = "auto_merged" if score >= auto_merge_threshold else "pending"
-                    self.store.insert_match_pair(pair_id, entity_type, records[i]["source_record_id"], records[j]["source_record_id"], str(name_a), str(name_b), score, matched)
+                    self.store.insert_match_pair(
+                        pair_id,
+                        entity_type,
+                        records[i]["source_record_id"],
+                        records[j]["source_record_id"],
+                        str(name_a),
+                        str(name_b),
+                        score,
+                        matched,
+                    )
 
                     if status == "auto_merged":
                         self._auto_merge(pair_id, records[i], records[j], score)
@@ -241,26 +355,42 @@ class MDMManager:
                         # Create stewardship task for manual review
                         task_id = str(uuid.uuid4())
                         priority = "high" if score >= 90 else "medium"
-                        self.store.insert_task(task_id, "duplicate_review", entity_type, f"Potential duplicate ({score:.0f}% match): {name_a} ↔ {name_b}", priority, related_pair_id=pair_id)
+                        self.store.insert_task(
+                            task_id,
+                            "duplicate_review",
+                            entity_type,
+                            f"Potential duplicate ({score:.0f}% match): {name_a} ↔ {name_b}",
+                            priority,
+                            related_pair_id=pair_id,
+                        )
                         for_review += 1
 
                     pairs_found += 1
 
-        return {"pairs_found": pairs_found, "auto_merged": auto_merged, "for_review": for_review, "records_compared": len(records)}
+        return {
+            "pairs_found": pairs_found,
+            "auto_merged": auto_merged,
+            "for_review": for_review,
+            "records_compared": len(records),
+        }
 
-    def _compute_match_score(self, record_a: dict, record_b: dict, rules: list) -> tuple[float, str]:
+    def _compute_match_score(
+        self, record_a: dict, record_b: dict, rules: list
+    ) -> tuple[float, str]:
         """Compute weighted match score between two source records."""
         attrs_a = record_a.get("attributes", {})
         attrs_b = record_b.get("attributes", {})
         if isinstance(attrs_a, str):
             try:
                 import json
+
                 attrs_a = json.loads(attrs_a)
             except Exception:
                 attrs_a = {}
         if isinstance(attrs_b, str):
             try:
                 import json
+
                 attrs_b = json.loads(attrs_b)
             except Exception:
                 attrs_b = {}
@@ -314,10 +444,20 @@ class MDMManager:
             vb = attrs_b.get(k, "")
             merged[k] = va if va else vb
 
-        display_name = merged.get("name", merged.get("display_name", record_a.get("source_key", "")))
+        display_name = merged.get(
+            "name", merged.get("display_name", record_a.get("source_key", ""))
+        )
         entity_type = record_a.get("entity_type", "")
 
-        self.store.upsert_entity(entity_id, entity_type, str(display_name), merged, source_count=2, confidence_score=score / 100, created_by="auto_merge")
+        self.store.upsert_entity(
+            entity_id,
+            entity_type,
+            str(display_name),
+            merged,
+            source_count=2,
+            confidence_score=score / 100,
+            created_by="auto_merge",
+        )
         self.store.link_source_to_entity(record_a["source_record_id"], entity_id)
         self.store.link_source_to_entity(record_b["source_record_id"], entity_id)
 
@@ -364,9 +504,20 @@ class MDMManager:
 
     # ---- Matching Rules ----
 
-    def create_rule(self, entity_type: str, name: str, field: str, match_type: str, weight: float = 1.0, threshold: float = 0.8, enabled: bool = True) -> dict:
+    def create_rule(
+        self,
+        entity_type: str,
+        name: str,
+        field: str,
+        match_type: str,
+        weight: float = 1.0,
+        threshold: float = 0.8,
+        enabled: bool = True,
+    ) -> dict:
         rule_id = str(uuid.uuid4())
-        self.store.upsert_rule(rule_id, entity_type, name, field, match_type, weight, threshold, enabled)
+        self.store.upsert_rule(
+            rule_id, entity_type, name, field, match_type, weight, threshold, enabled
+        )
         return {"rule_id": rule_id, "name": name}
 
     def delete_rule(self, rule_id: str) -> dict:
@@ -378,12 +529,23 @@ class MDMManager:
     def create_hierarchy(self, name: str, entity_type: str) -> dict:
         hierarchy_id = str(uuid.uuid4())
         root_node_id = str(uuid.uuid4())
-        self.store.insert_hierarchy_node(hierarchy_id, name, entity_type, root_node_id, None, None, name, 0, f"/{name}")
+        self.store.insert_hierarchy_node(
+            hierarchy_id, name, entity_type, root_node_id, None, None, name, 0, f"/{name}"
+        )
         return {"hierarchy_id": hierarchy_id, "name": name, "root_node_id": root_node_id}
 
-    def add_node(self, hierarchy_id: str, entity_id: str | None, label: str, parent_node_id: str, level: int = 1) -> dict:
+    def add_node(
+        self,
+        hierarchy_id: str,
+        entity_id: str | None,
+        label: str,
+        parent_node_id: str,
+        level: int = 1,
+    ) -> dict:
         node_id = str(uuid.uuid4())
-        self.store.insert_hierarchy_node(hierarchy_id, "", "", node_id, parent_node_id, entity_id, label, level, "")
+        self.store.insert_hierarchy_node(
+            hierarchy_id, "", "", node_id, parent_node_id, entity_id, label, level, ""
+        )
         return {"node_id": node_id, "hierarchy_id": hierarchy_id}
 
     # ---- Dashboard ----

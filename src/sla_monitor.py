@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _get_sla_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "governance")
 
 
@@ -25,6 +26,7 @@ def ensure_sla_tables(client, warehouse_id, config):
     schema = _get_sla_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -53,12 +55,16 @@ def ensure_sla_tables(client, warehouse_id, config):
 
     for table_name, cols in tables.items():
         try:
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({cols})
                 USING DELTA
                 COMMENT 'Clone-Xs SLA: {table_name}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Could not create {schema}.{table_name}: {e}")
 
@@ -67,20 +73,25 @@ def ensure_sla_tables(client, warehouse_id, config):
 # SLA Rules
 # ---------------------------------------------------------------------------
 
+
 def create_sla_rule(client, warehouse_id, config, rule: dict, user: str = "") -> dict:
     """Create a new SLA rule."""
     schema = _get_sla_schema(config)
     sla_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {schema}.sla_rules
         VALUES ('{sla_id}', '{_esc(rule["table_fqn"])}', '{rule["metric"]}',
                 {rule.get("threshold_hours", 24)}, {rule.get("threshold_value", 0)},
                 '{rule.get("severity", "warning")}', '{_esc(rule.get("owner_team", ""))}',
                 '{_esc(rule.get("notification_channel", ""))}',
                 true, '{_esc(user)}', '{now}')
-    """)
+    """,
+    )
     return {"sla_id": sla_id, "table_fqn": rule["table_fqn"], "status": "created"}
 
 
@@ -88,8 +99,9 @@ def list_sla_rules(client, warehouse_id, config) -> list[dict]:
     """List all SLA rules."""
     schema = _get_sla_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.sla_rules ORDER BY table_fqn")
+        rows = execute_sql(
+            client, warehouse_id, f"SELECT * FROM {schema}.sla_rules ORDER BY table_fqn"
+        )
         return [{k: _parse_val(v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
@@ -119,12 +131,14 @@ def check_sla(client, warehouse_id, config) -> list[dict]:
 
     # Batch insert check results
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(value_rows), batch_size):
-        batch = value_rows[i:i + batch_size]
+        batch = value_rows[i : i + batch_size]
         try:
-            execute_sql(client, warehouse_id,
-                        f"INSERT INTO {schema}.sla_checks VALUES {', '.join(batch)}")
+            execute_sql(
+                client, warehouse_id, f"INSERT INTO {schema}.sla_checks VALUES {', '.join(batch)}"
+            )
         except Exception as e:
             logger.warning(f"Could not store SLA checks batch: {e}")
 
@@ -148,8 +162,11 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
                     last_modified = detail[0].get("lastModified", "")
                     if last_modified:
                         # Parse and compute hours
-                        hours_rows = execute_sql(client, warehouse_id,
-                            f"SELECT datediff(hour, timestamp '{last_modified}', current_timestamp()) AS hours_ago")
+                        hours_rows = execute_sql(
+                            client,
+                            warehouse_id,
+                            f"SELECT datediff(hour, timestamp '{last_modified}', current_timestamp()) AS hours_ago",
+                        )
                         hours = int(hours_rows[0]["hours_ago"]) if hours_rows else 9999
                     else:
                         hours = 9999
@@ -188,9 +205,14 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
         elif metric == "schema_stability":
             # Check if schema has changed in the last N hours
             try:
-                history = execute_sql(client, warehouse_id,
-                    f"DESCRIBE HISTORY {table_fqn} LIMIT 10")
-                schema_changes = [h for h in history if h.get("operation") in ("CHANGE COLUMN", "ADD COLUMN", "DROP COLUMN")]
+                history = execute_sql(
+                    client, warehouse_id, f"DESCRIBE HISTORY {table_fqn} LIMIT 10"
+                )
+                schema_changes = [
+                    h
+                    for h in history
+                    if h.get("operation") in ("CHANGE COLUMN", "ADD COLUMN", "DROP COLUMN")
+                ]
                 recent_changes = len(schema_changes)
             except Exception:
                 recent_changes = 0
@@ -210,19 +232,25 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
             # Check null rate across all columns — SLA threshold is max allowed null %
             threshold_pct = float(rule.get("threshold_value", 5.0))
             try:
-                catalog = table_fqn.split('.')[0]
-                cols_result = execute_sql(client, warehouse_id,
+                catalog = table_fqn.split(".")[0]
+                cols_result = execute_sql(
+                    client,
+                    warehouse_id,
                     f"SELECT column_name FROM {catalog}.information_schema.columns "
                     f"WHERE table_catalog = '{catalog}' "
                     f"AND table_schema = '{table_fqn.split('.')[1]}' "
-                    f"AND table_name = '{table_fqn.split('.')[2]}'")
+                    f"AND table_name = '{table_fqn.split('.')[2]}'",
+                )
                 columns = [c["column_name"] for c in cols_result] if cols_result else []
 
                 if not columns:
                     raise ValueError("No columns found")
 
                 # Compute null rate for each column
-                null_exprs = [f"SUM(CASE WHEN `{c}` IS NULL THEN 1 ELSE 0 END) AS `null_{c}`" for c in columns[:50]]
+                null_exprs = [
+                    f"SUM(CASE WHEN `{c}` IS NULL THEN 1 ELSE 0 END) AS `null_{c}`"
+                    for c in columns[:50]
+                ]
                 count_sql = f"SELECT COUNT(*) AS total, {', '.join(null_exprs)} FROM {table_fqn}"
                 result_rows = execute_sql(client, warehouse_id, count_sql)
 
@@ -237,7 +265,11 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
                             pct = round(nulls / total * 100, 2)
                             null_rates[c] = pct
                             max_null_pct = max(max_null_pct, pct)
-                        avg_null_pct = round(sum(null_rates.values()) / len(null_rates), 2) if null_rates else 0
+                        avg_null_pct = (
+                            round(sum(null_rates.values()) / len(null_rates), 2)
+                            if null_rates
+                            else 0
+                        )
                     else:
                         avg_null_pct = 0
                         max_null_pct = 0
@@ -274,12 +306,16 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
                 recon_catalog = rule.get("catalog", "clone_audit")
                 recon_schema = f"{recon_catalog}.reconciliation"
 
-                rows = execute_sql(client, warehouse_id, f"""
+                rows = execute_sql(
+                    client,
+                    warehouse_id,
+                    f"""
                     SELECT source_count, dest_count, delta_count, match
                     FROM {recon_schema}.reconciliation_details
                     WHERE table_name = '{_esc(table_fqn.rsplit(".", 1)[-1])}'
                     ORDER BY executed_at DESC LIMIT 1
-                """)
+                """,
+                )
 
                 if rows:
                     row = rows[0]
@@ -287,7 +323,11 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
                     dst = int(row.get("dest_count", 0))
                     matched = str(row.get("match", "false")).lower() == "true"
                     if src > 0:
-                        match_rate = round(min(src, dst) / max(src, dst) * 100, 2) if max(src, dst) > 0 else 0
+                        match_rate = (
+                            round(min(src, dst) / max(src, dst) * 100, 2)
+                            if max(src, dst) > 0
+                            else 0
+                        )
                     else:
                         match_rate = 100.0 if matched else 0.0
                 else:
@@ -307,15 +347,28 @@ def _check_single_sla(client, warehouse_id, rule: dict) -> dict:
             }
 
         else:
-            return {"sla_id": rule["sla_id"], "table_fqn": table_fqn, "metric": metric,
-                    "current_value": 0, "threshold": 0, "passed": True, "severity": "info",
-                    "details": {"error": f"Unknown metric: {metric}"}}
+            return {
+                "sla_id": rule["sla_id"],
+                "table_fqn": table_fqn,
+                "metric": metric,
+                "current_value": 0,
+                "threshold": 0,
+                "passed": True,
+                "severity": "info",
+                "details": {"error": f"Unknown metric: {metric}"},
+            }
 
     except Exception as e:
-        return {"sla_id": rule["sla_id"], "table_fqn": table_fqn, "metric": metric,
-                "current_value": 0, "threshold": 0, "passed": False,
-                "severity": rule.get("severity", "warning"),
-                "details": {"error": str(e)}}
+        return {
+            "sla_id": rule["sla_id"],
+            "table_fqn": table_fqn,
+            "metric": metric,
+            "current_value": 0,
+            "threshold": 0,
+            "passed": False,
+            "severity": rule.get("severity", "warning"),
+            "details": {"error": str(e)},
+        }
 
 
 def get_sla_status(client, warehouse_id, config) -> dict:
@@ -323,7 +376,10 @@ def get_sla_status(client, warehouse_id, config) -> dict:
     schema = _get_sla_schema(config)
     try:
         # Get latest check per SLA rule
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT sc.*, sr.owner_team, sr.notification_channel
             FROM {schema}.sla_checks sc
             JOIN {schema}.sla_rules sr ON sc.sla_id = sr.sla_id
@@ -332,7 +388,8 @@ def get_sla_status(client, warehouse_id, config) -> dict:
                 WHERE sc2.sla_id = sc.sla_id
             )
             ORDER BY sc.passed, sc.severity
-        """)
+        """,
+        )
         checks = [{k: _parse_val(v) for k, v in r.items()} for r in rows]
         passed = sum(1 for c in checks if c.get("passed"))
         failed = len(checks) - passed
@@ -351,13 +408,17 @@ def get_sla_status(client, warehouse_id, config) -> dict:
 # Data Contracts
 # ---------------------------------------------------------------------------
 
+
 def create_contract(client, warehouse_id, config, contract: dict, user: str = "") -> dict:
     """Create a new data contract."""
     schema = _get_sla_schema(config)
     contract_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {schema}.data_contracts
         VALUES ('{contract_id}', '{_esc(contract["name"])}', '{_esc(contract["table_fqn"])}',
                 '{_esc(contract.get("producer_team", ""))}',
@@ -368,7 +429,8 @@ def create_contract(client, warehouse_id, config, contract: dict, user: str = ""
                 {contract.get("row_count_min", 0)}, {contract.get("row_count_max", 0)},
                 '{contract.get("effective_date", now[:10])}', '{contract.get("status", "draft")}',
                 '{_esc(user)}', '{now}', '{now}')
-    """)
+    """,
+    )
     return {"contract_id": contract_id, "name": contract["name"], "status": "created"}
 
 
@@ -376,8 +438,9 @@ def list_contracts(client, warehouse_id, config) -> list[dict]:
     """List all data contracts."""
     schema = _get_sla_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.data_contracts ORDER BY name")
+        rows = execute_sql(
+            client, warehouse_id, f"SELECT * FROM {schema}.data_contracts ORDER BY name"
+        )
         result = []
         for r in rows:
             item = {k: _parse_val(v) for k, v in r.items()}
@@ -397,8 +460,11 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
     """Validate a data contract against the actual table."""
     schema = _get_sla_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.data_contracts WHERE contract_id = '{_esc(contract_id)}'")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT * FROM {schema}.data_contracts WHERE contract_id = '{_esc(contract_id)}'",
+        )
         if not rows:
             return {"error": "Contract not found"}
 
@@ -410,20 +476,25 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
         try:
             expected = json.loads(contract.get("expected_columns", "[]"))
             if expected:
-                cat = table_fqn.split('.')[0]
-                actual_cols = execute_sql(client, warehouse_id,
+                cat = table_fqn.split(".")[0]
+                actual_cols = execute_sql(
+                    client,
+                    warehouse_id,
                     f"SELECT column_name, data_type FROM {cat}.information_schema.columns "
                     f"WHERE table_catalog = '{cat}' "
                     f"AND table_schema = '{table_fqn.split('.')[1]}' "
-                    f"AND table_name = '{table_fqn.split('.')[2]}'")
+                    f"AND table_name = '{table_fqn.split('.')[2]}'",
+                )
                 actual_names = {c["column_name"] for c in actual_cols}
                 for exp_col in expected:
                     if exp_col.get("name") not in actual_names:
-                        violations.append({
-                            "type": "missing_column",
-                            "column": exp_col["name"],
-                            "expected_type": exp_col.get("type", ""),
-                        })
+                        violations.append(
+                            {
+                                "type": "missing_column",
+                                "column": exp_col["name"],
+                                "expected_type": exp_col.get("type", ""),
+                            }
+                        )
         except Exception as e:
             violations.append({"type": "schema_check_error", "error": str(e)})
 
@@ -432,15 +503,20 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
             sla_hours = int(contract.get("freshness_sla_hours", 24))
             detail = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL {table_fqn}")
             if detail and detail[0].get("lastModified"):
-                hours_rows = execute_sql(client, warehouse_id,
-                    f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours")
+                hours_rows = execute_sql(
+                    client,
+                    warehouse_id,
+                    f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours",
+                )
                 hours = int(hours_rows[0]["hours"]) if hours_rows else 9999
                 if hours > sla_hours:
-                    violations.append({
-                        "type": "freshness_breach",
-                        "current_hours": hours,
-                        "sla_hours": sla_hours,
-                    })
+                    violations.append(
+                        {
+                            "type": "freshness_breach",
+                            "current_hours": hours,
+                            "sla_hours": sla_hours,
+                        }
+                    )
         except Exception:
             pass
 
@@ -449,12 +525,18 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
             min_rows = int(contract.get("row_count_min", 0))
             max_rows = int(contract.get("row_count_max", 0))
             if min_rows > 0 or max_rows > 0:
-                count_rows = execute_sql(client, warehouse_id, f"SELECT count(*) AS cnt FROM {table_fqn}")
+                count_rows = execute_sql(
+                    client, warehouse_id, f"SELECT count(*) AS cnt FROM {table_fqn}"
+                )
                 count = int(count_rows[0]["cnt"]) if count_rows else 0
                 if min_rows > 0 and count < min_rows:
-                    violations.append({"type": "row_count_below_min", "actual": count, "expected_min": min_rows})
+                    violations.append(
+                        {"type": "row_count_below_min", "actual": count, "expected_min": min_rows}
+                    )
                 if max_rows > 0 and count > max_rows:
-                    violations.append({"type": "row_count_above_max", "actual": count, "expected_max": max_rows})
+                    violations.append(
+                        {"type": "row_count_above_max", "actual": count, "expected_max": max_rows}
+                    )
         except Exception:
             pass
 
@@ -474,6 +556,7 @@ def validate_contract(client, warehouse_id, config, contract_id: str) -> dict:
 # Compliance Trend
 # ---------------------------------------------------------------------------
 
+
 def get_sla_compliance_trend(client, warehouse_id, config, days: int = 30) -> list[dict]:
     """Get daily SLA compliance percentage over time.
 
@@ -481,7 +564,10 @@ def get_sla_compliance_trend(client, warehouse_id, config, days: int = 30) -> li
     """
     schema = _get_sla_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT DATE(checked_at) AS check_date,
                    COUNT(*) AS total_checks,
                    SUM(CASE WHEN passed = true THEN 1 ELSE 0 END) AS passed_checks
@@ -489,18 +575,21 @@ def get_sla_compliance_trend(client, warehouse_id, config, days: int = 30) -> li
             WHERE checked_at >= CURRENT_DATE() - INTERVAL {days} DAY
             GROUP BY DATE(checked_at)
             ORDER BY check_date
-        """)
+        """,
+        )
         trend = []
-        for r in (rows or []):
+        for r in rows or []:
             total = int(r.get("total_checks", 0))
             passed = int(r.get("passed_checks", 0))
             pct = round(passed / total * 100, 1) if total > 0 else 100.0
-            trend.append({
-                "date": str(r.get("check_date", "")),
-                "total_checks": total,
-                "passed_checks": passed,
-                "compliance_pct": pct,
-            })
+            trend.append(
+                {
+                    "date": str(r.get("check_date", "")),
+                    "total_checks": total,
+                    "passed_checks": passed,
+                    "compliance_pct": pct,
+                }
+            )
         return trend
     except Exception as e:
         logger.warning(f"Could not query SLA compliance trend: {e}")
@@ -510,8 +599,9 @@ def get_sla_compliance_trend(client, warehouse_id, config, days: int = 30) -> li
 def delete_sla_rule(client, warehouse_id, config, sla_id: str):
     """Delete an SLA rule by ID."""
     schema = _get_sla_schema(config)
-    execute_sql(client, warehouse_id,
-        f"DELETE FROM {schema}.sla_rules WHERE sla_id = '{_esc(sla_id)}'")
+    execute_sql(
+        client, warehouse_id, f"DELETE FROM {schema}.sla_rules WHERE sla_id = '{_esc(sla_id)}'"
+    )
 
 
 # ---------------------------------------------------------------------------

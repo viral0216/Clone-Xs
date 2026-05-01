@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ── Result model ──────────────────────────────────────────────────────
 
+
 @dataclass
 class AzureCostResult:
     daily_trend: list[dict] = field(default_factory=list)
@@ -70,8 +71,12 @@ def get_arm_token(tenant_id: str = "", session_auth_method: str = "", session_cl
     if session_auth_method == "service-principal" and session_client:
         try:
             config = session_client.config
-            client_id = getattr(config, "azure_client_id", None) or getattr(config, "client_id", None)
-            client_secret = getattr(config, "azure_client_secret", None) or getattr(config, "client_secret", None)
+            client_id = getattr(config, "azure_client_id", None) or getattr(
+                config, "client_id", None
+            )
+            client_secret = getattr(config, "azure_client_secret", None) or getattr(
+                config, "client_secret", None
+            )
             sp_tenant = tenant_id or getattr(config, "azure_tenant_id", None) or ""
 
             if client_id and client_secret and sp_tenant:
@@ -95,13 +100,22 @@ def get_arm_token(tenant_id: str = "", session_auth_method: str = "", session_cl
             logger.warning("Failed to get ARM token via service principal: %s", e)
 
     # Strategy 2: Azure CLI (works if user ran az login — either in-app or externally)
-    cmd = ["az", "account", "get-access-token", "--resource", "https://management.azure.com/", "-o", "json"]
+    cmd = [
+        "az",
+        "account",
+        "get-access-token",
+        "--resource",
+        "https://management.azure.com/",
+        "-o",
+        "json",
+    ]
     if tenant_id:
         cmd.extend(["--tenant", tenant_id])
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             import json
+
             data = json.loads(result.stdout)
             token = data["accessToken"]
             _arm_token_cache[cache_key] = (token, time.time() + 3000)
@@ -122,6 +136,7 @@ def get_arm_token(tenant_id: str = "", session_auth_method: str = "", session_cl
 
 
 # ── Query payloads ────────────────────────────────────────────────────
+
 
 def _daily_cost_body(days: int) -> dict:
     start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00+00:00")
@@ -209,8 +224,12 @@ def _top_resources_body(days: int) -> dict:
 
 # ── API call ──────────────────────────────────────────────────────────
 
+
 def _query_cost_management(
-    token: str, subscription_id: str, resource_group: str, body: dict,
+    token: str,
+    subscription_id: str,
+    resource_group: str,
+    body: dict,
     timeout: int = 30,
 ) -> dict:
     """Query Azure Cost Management API with retry on 429."""
@@ -263,6 +282,7 @@ def _parse_date(raw_date) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────
 
+
 def query_azure_costs(
     subscription_id: str,
     resource_group: str = "",
@@ -292,7 +312,9 @@ def query_azure_costs(
 
     # 1. Daily trend
     try:
-        raw = _query_cost_management(token, subscription_id, resource_group, _daily_cost_body(days), timeout)
+        raw = _query_cost_management(
+            token, subscription_id, resource_group, _daily_cost_body(days), timeout
+        )
         columns, rows = _parse_response(raw)
         cost_idx = columns.index("Cost") if "Cost" in columns else 0
         date_idx = columns.index("UsageDate") if "UsageDate" in columns else -1
@@ -313,7 +335,9 @@ def query_azure_costs(
 
     # 2. Service breakdown
     try:
-        raw = _query_cost_management(token, subscription_id, resource_group, _service_breakdown_body(days), timeout)
+        raw = _query_cost_management(
+            token, subscription_id, resource_group, _service_breakdown_body(days), timeout
+        )
         columns, rows = _parse_response(raw)
         cost_idx = columns.index("Cost") if "Cost" in columns else 0
         svc_idx = columns.index("MeterCategory") if "MeterCategory" in columns else -1
@@ -334,7 +358,9 @@ def query_azure_costs(
     # 3. Resource group breakdown
     try:
         if not resource_group:
-            raw = _query_cost_management(token, subscription_id, "", _rg_breakdown_body(days), timeout)
+            raw = _query_cost_management(
+                token, subscription_id, "", _rg_breakdown_body(days), timeout
+            )
             columns, rows = _parse_response(raw)
             cost_idx = columns.index("Cost") if "Cost" in columns else 0
             rg_idx = columns.index("ResourceGroupName") if "ResourceGroupName" in columns else -1
@@ -351,7 +377,9 @@ def query_azure_costs(
 
     # 4. Databricks-specific costs
     try:
-        raw = _query_cost_management(token, subscription_id, resource_group, _databricks_cost_body(days), timeout)
+        raw = _query_cost_management(
+            token, subscription_id, resource_group, _databricks_cost_body(days), timeout
+        )
         columns, rows = _parse_response(raw)
         cost_idx = columns.index("Cost") if "Cost" in columns else 0
         date_idx = columns.index("UsageDate") if "UsageDate" in columns else -1
@@ -366,8 +394,14 @@ def query_azure_costs(
             dbr_subcats[subcat] = dbr_subcats.get(subcat, 0) + cost
             date_str = _parse_date(row[date_idx]) if date_idx >= 0 and row[date_idx] else ""
             dbr_daily[date_str] = dbr_daily.get(date_str, 0) + cost
-        dbr_trend = sorted([{"date": d, "cost": round(c, 2)} for d, c in dbr_daily.items()], key=lambda x: x["date"])
-        dbr_subcat_list = sorted([{"sub_category": k, "cost": round(v, 2)} for k, v in dbr_subcats.items()], key=lambda x: -x["cost"])
+        dbr_trend = sorted(
+            [{"date": d, "cost": round(c, 2)} for d, c in dbr_daily.items()],
+            key=lambda x: x["date"],
+        )
+        dbr_subcat_list = sorted(
+            [{"sub_category": k, "cost": round(v, 2)} for k, v in dbr_subcats.items()],
+            key=lambda x: -x["cost"],
+        )
         for s in dbr_subcat_list:
             s["pct"] = round(s["cost"] * 100 / (dbr_total or 1), 1)
         databricks_costs = {
@@ -384,7 +418,9 @@ def query_azure_costs(
 
     # 5. Top resources
     try:
-        raw = _query_cost_management(token, subscription_id, resource_group, _top_resources_body(days), timeout)
+        raw = _query_cost_management(
+            token, subscription_id, resource_group, _top_resources_body(days), timeout
+        )
         columns, rows = _parse_response(raw)
         cost_idx = columns.index("Cost") if "Cost" in columns else 0
         res_idx = columns.index("ResourceId") if "ResourceId" in columns else -1
@@ -396,10 +432,14 @@ def query_azure_costs(
             if cost > 0.01:
                 parts = resource_id.split("/")
                 name = parts[-1] if parts else resource_id
-                top_resources.append({
-                    "resource_id": resource_id, "resource_name": name,
-                    "service": category, "cost": round(cost, 2),
-                })
+                top_resources.append(
+                    {
+                        "resource_id": resource_id,
+                        "resource_name": name,
+                        "service": category,
+                        "cost": round(cost, 2),
+                    }
+                )
         top_resources.sort(key=lambda x: -x["cost"])
         top_resources = top_resources[:30]
     except Exception as e:

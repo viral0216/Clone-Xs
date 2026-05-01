@@ -90,8 +90,10 @@ class Dashboard:
 
             lines = []
             lines.append("")
-            lines.append(f"  Clone Dashboard  |  Elapsed: {elapsed_str}  |  "
-                         f"Schemas: {done}/{total_schemas} done, {running} running, {pending} pending")
+            lines.append(
+                f"  Clone Dashboard  |  Elapsed: {elapsed_str}  |  "
+                f"Schemas: {done}/{total_schemas} done, {running} running, {pending} pending"
+            )
             lines.append("  " + "-" * 78)
 
             # Status indicators

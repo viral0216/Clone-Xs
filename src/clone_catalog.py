@@ -9,8 +9,22 @@ from databricks.sdk.service.catalog import SecurableType
 
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, set_rate_limit
 from src.log_formatter import (
-    header, divider, stat_line, kv, bold, bold_green, bold_red, bold_yellow,
-    cyan, OK, FAIL, WARN, ARROW, SCHEMA, CATALOG, CLOCK,
+    header,
+    divider,
+    stat_line,
+    kv,
+    bold,
+    bold_green,
+    bold_red,
+    bold_yellow,
+    cyan,
+    OK,
+    FAIL,
+    WARN,
+    ARROW,
+    SCHEMA,
+    CATALOG,
+    CLOCK,
 )
 from src.clone_functions import clone_functions_in_schema
 from src.clone_tables import clone_tables_in_schema
@@ -89,7 +103,7 @@ def get_schemas(
         # Fallback: the SDK call may return [] if the catalog doesn't exist
         raise RuntimeError(
             f"Catalog '{catalog}' not found or has no schemas. Verify the catalog exists and you have access.\n"
-            f"List available catalogs: clxs run-sql --sql \"SHOW CATALOGS\""
+            f'List available catalogs: clxs run-sql --sql "SHOW CATALOGS"'
         )
     return schemas
 
@@ -126,8 +140,11 @@ def _filter_schemas_by_tags(
 
 
 def create_catalog_if_not_exists(
-    client: WorkspaceClient, warehouse_id: str, catalog_name: str,
-    dry_run: bool = False, location: str = "",
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog_name: str,
+    dry_run: bool = False,
+    location: str = "",
 ) -> None:
     """Create the destination catalog if it doesn't exist."""
     if dry_run:
@@ -157,7 +174,8 @@ def create_catalog_if_not_exists(
         # Set owner via SQL (works even when SDK update fails)
         try:
             execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 f"ALTER CATALOG `{catalog_name}` SET OWNER TO `{current_user}`",
             )
             logger.info(f"Set catalog owner: {catalog_name} -> {current_user}")
@@ -171,7 +189,8 @@ def create_catalog_if_not_exists(
 
         # Grant full access
         execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_name}` TO `{current_user}`",
         )
         logger.info(f"Granted ALL PRIVILEGES on {catalog_name} to {current_user}")
@@ -180,14 +199,18 @@ def create_catalog_if_not_exists(
 
 
 def create_schema_if_not_exists(
-    client: WorkspaceClient, warehouse_id: str, catalog_name: str, schema_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog_name: str,
+    schema_name: str,
     dry_run: bool = False,
 ) -> None:
     """Create a schema in the destination catalog if it doesn't exist."""
     sql = f"CREATE SCHEMA IF NOT EXISTS `{catalog_name}`.`{schema_name}`"
     execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Ensured schema exists: {catalog_name}.{schema_name}")
-
+    logger.info(
+        f"{'[DRY RUN] ' if dry_run else ''}Ensured schema exists: {catalog_name}.{schema_name}"
+    )
 
 
 def process_schema(
@@ -204,6 +227,7 @@ def process_schema(
     clone_type = config["clone_type"]
     load_type = config["load_type"]
     exclude_tables = config["exclude_tables"]
+    exclude_schemas = config.get("exclude_schemas", [])
     dry_run = config["dry_run"]
     copy_permissions = config["copy_permissions"]
     copy_ownership = config["copy_ownership"]
@@ -251,8 +275,10 @@ def process_schema(
         # Copy schema ownership
         if copy_ownership and not dry_run:
             update_ownership(
-                client, SecurableType.SCHEMA,
-                f"{source}.{schema}", f"{dest}.{schema}",
+                client,
+                SecurableType.SCHEMA,
+                f"{source}.{schema}",
+                f"{dest}.{schema}",
             )
 
         # Copy schema tags
@@ -262,15 +288,32 @@ def process_schema(
         # Clone tables
         logger.info(f"  {SCHEMA} Cloning tables in schema: {bold(schema)}")
         schema_results["tables"] = clone_tables_in_schema(
-            client, warehouse_id, source, dest, schema, clone_type, exclude_tables, load_type,
-            dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
-            copy_tags=copy_tags, copy_properties=copy_properties, copy_security=copy_security,
-            copy_constraints=copy_constraints, copy_comments=copy_comments,
-            rollback_log=rollback_log, parallel_tables=parallel_tables,
-            include_tables_regex=include_tables_regex, exclude_tables_regex=exclude_tables_regex,
-            resumed_tables=resumed_tables, order_by_size=order_by_size,
-            as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
-            force_reclone=force_reclone, where_clauses=where_clause,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            schema,
+            clone_type,
+            exclude_tables,
+            load_type,
+            dry_run=dry_run,
+            copy_permissions=copy_permissions,
+            copy_ownership=copy_ownership,
+            copy_tags=copy_tags,
+            copy_properties=copy_properties,
+            copy_security=copy_security,
+            copy_constraints=copy_constraints,
+            copy_comments=copy_comments,
+            rollback_log=rollback_log,
+            parallel_tables=parallel_tables,
+            include_tables_regex=include_tables_regex,
+            exclude_tables_regex=exclude_tables_regex,
+            resumed_tables=resumed_tables,
+            order_by_size=order_by_size,
+            as_of_timestamp=as_of_timestamp,
+            as_of_version=as_of_version,
+            force_reclone=force_reclone,
+            where_clauses=where_clause,
             schema_only=config.get("schema_only", False),
             tables_progress=config.get("_tables_progress"),
             tbl_properties=config.get("clone_tbl_properties"),
@@ -289,8 +332,11 @@ def process_schema(
         # populates the cache; subsequent schemas read it.
         if config.get("auto_mask_pii") and "_auto_pii_rules" not in config:
             from src.masking import build_pii_masking_rules
+
             auto_pii_rules = build_pii_masking_rules(
-                client, warehouse_id, source,
+                client,
+                warehouse_id,
+                source,
                 exclude_schemas=exclude_schemas,
             )
             config["_auto_pii_rules"] = auto_pii_rules
@@ -302,6 +348,7 @@ def process_schema(
 
         if (manual_rules or auto_pii_rules) and not dry_run:
             from src.masking import apply_masking_rules
+
             # Get all tables that were just cloned
             tables = list_tables_sdk(client, dest, schema)
             tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
@@ -309,57 +356,123 @@ def process_schema(
                 # Filter auto rules to this specific (schema, table); manual
                 # rules apply broadly so they're concatenated as-is.
                 table_rules = list(manual_rules) + [
-                    r for r in auto_pii_rules
+                    r
+                    for r in auto_pii_rules
                     if r.get("schema") == schema and r.get("table") == row["table_name"]
                 ]
                 if table_rules:
                     apply_masking_rules(
-                        client, warehouse_id, dest, schema, row["table_name"],
-                        table_rules, dry_run=dry_run,
+                        client,
+                        warehouse_id,
+                        dest,
+                        schema,
+                        row["table_name"],
+                        table_rules,
+                        dry_run=dry_run,
+                    )
+
+        # Column-level DQ comparison (row count + per-column NULL counts).
+        # Complements the post-clone validation step (which only checks
+        # row counts catalog-wide) with a finer signal that catches mid-
+        # clone drift. Result is stashed in `_dq_comparisons` on the
+        # config so the catalog-level rollback evaluator can read it.
+        if config.get("compare_dq_after_clone") and not dry_run:
+            from src.clone_dq_compare import compare_schema_dq
+
+            tables_for_dq = list_tables_sdk(client, dest, schema)
+            tables_for_dq = [t for t in tables_for_dq if t["table_type"] in ("MANAGED", "EXTERNAL")]
+            if tables_for_dq:
+                schema_dq = compare_schema_dq(
+                    client,
+                    warehouse_id,
+                    source_catalog=source,
+                    dest_catalog=dest,
+                    schema=schema,
+                    table_names=[t["table_name"] for t in tables_for_dq],
+                    max_workers=int(config.get("max_workers", 4)),
+                )
+                schema_results["dq_comparison"] = schema_dq
+                config.setdefault("_dq_comparisons", []).extend(schema_dq.get("comparisons", []))
+                if schema_dq.get("max_drift_pct", 0) > 0:
+                    logger.info(
+                        f"  {SCHEMA} DQ comparison for {bold(schema)}: "
+                        f"{schema_dq['tables_compared']} tables, "
+                        f"max drift {schema_dq['max_drift_pct']}%"
                     )
 
         # Record lineage for tables
         lineage_config = config.get("lineage")
         if lineage_config and not dry_run:
             from src.lineage import record_lineage_batch
+
             tables = list_tables_sdk(client, dest, schema)
             tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             entries = [
-                {"source": source, "dest": dest, "schema": schema,
-                 "object_name": row["table_name"], "object_type": "TABLE",
-                 "clone_type": clone_type}
+                {
+                    "source": source,
+                    "dest": dest,
+                    "schema": schema,
+                    "object_name": row["table_name"],
+                    "object_type": "TABLE",
+                    "clone_type": clone_type,
+                }
                 for row in tables
             ]
             if entries:
                 record_lineage_batch(
-                    client, warehouse_id,
-                    lineage_config["catalog"], lineage_config["schema"],
-                    entries, dry_run=dry_run,
+                    client,
+                    warehouse_id,
+                    lineage_config["catalog"],
+                    lineage_config["schema"],
+                    entries,
+                    dry_run=dry_run,
                 )
 
         # Clone views (after tables, since views may depend on tables)
         logger.info(f"  {SCHEMA} Cloning views in schema: {bold(schema)}")
         schema_results["views"] = clone_views_in_schema(
-            client, warehouse_id, source, dest, schema, load_type,
-            dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            schema,
+            load_type,
+            dry_run=dry_run,
+            copy_permissions=copy_permissions,
+            copy_ownership=copy_ownership,
             rollback_log=rollback_log,
-            include_regex=include_tables_regex, exclude_regex=exclude_tables_regex,
+            include_regex=include_tables_regex,
+            exclude_regex=exclude_tables_regex,
         )
 
         # Clone functions
         logger.info(f"  {SCHEMA} Cloning functions in schema: {bold(schema)}")
         schema_results["functions"] = clone_functions_in_schema(
-            client, warehouse_id, source, dest, schema, load_type,
-            dry_run=dry_run, copy_permissions=copy_permissions,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            schema,
+            load_type,
+            dry_run=dry_run,
+            copy_permissions=copy_permissions,
             rollback_log=rollback_log,
-            include_regex=include_tables_regex, exclude_regex=exclude_tables_regex,
+            include_regex=include_tables_regex,
+            exclude_regex=exclude_tables_regex,
         )
 
         # Clone volumes
         logger.info(f"  {SCHEMA} Cloning volumes in schema: {bold(schema)}")
         schema_results["volumes"] = clone_volumes_in_schema(
-            client, warehouse_id, source, dest, schema, load_type,
-            dry_run=dry_run, copy_permissions=copy_permissions, copy_ownership=copy_ownership,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            schema,
+            load_type,
+            dry_run=dry_run,
+            copy_permissions=copy_permissions,
+            copy_ownership=copy_ownership,
             rollback_log=rollback_log,
         )
 
@@ -393,6 +506,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
 
     # Configure max parallel queries
     from src.client import set_max_parallel_queries
+
     max_pq = config.get("max_parallel_queries", 10)
     set_max_parallel_queries(max_pq)
 
@@ -401,11 +515,13 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # RBAC check (#16)
     if config.get("rbac_enabled") and not dry_run:
         from src.rbac import enforce_rbac
+
         enforce_rbac(client, config)
 
     # Approval check (#17)
     if not dry_run:
         from src.approval import needs_approval, submit_approval_request, wait_for_approval
+
         if needs_approval(config):
             request_id = submit_approval_request(client, config)
             timeout = config.get("approval_timeout_hours", 24)
@@ -415,6 +531,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Impact analysis (#15)
     if config.get("impact_check_before_clone") and not dry_run:
         from src.impact_analysis import analyze_impact
+
         impact = analyze_impact(client, warehouse_id, dest, config)
         if impact.get("risk_level") == "high":
             logger.warning(
@@ -425,6 +542,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # DQ Gate — block clone if data quality checks fail
     if config.get("dq_gate", {}).get("enabled") and not dry_run:
         from src.dq_gate import check_clone_dq_gate
+
         gate_result = check_clone_dq_gate(client, warehouse_id, config)
         if not gate_result.get("passed"):
             raise RuntimeError(f"Clone blocked by DQ gate: {gate_result.get('reason')}")
@@ -434,6 +552,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Config lint (#12)
     if config.get("auto_lint"):
         from src.config_lint import lint_config, lint_has_errors, format_lint_results
+
         lint_results = lint_config(config)
         if lint_has_errors(lint_results):
             logger.error(f"Config validation failed:\n{format_lint_results(lint_results)}")
@@ -443,6 +562,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     throttle_setting = config.get("throttle")
     if throttle_setting:
         from src.throttle import resolve_throttle, apply_throttle_profile
+
         profile = resolve_throttle(config)
         if profile:
             apply_throttle_profile(profile, config)
@@ -452,12 +572,14 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     metrics_collector = None
     if config.get("metrics_enabled"):
         from src.metrics import init_metrics
+
         metrics_collector = init_metrics(config)
 
     # Checkpoint init (#13)
     checkpoint_manager = None
     if config.get("checkpoint_enabled") and not dry_run:
         from src.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(
             config,
             interval_tables=config.get("checkpoint_interval_tables", 50),
@@ -468,8 +590,12 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if config.get("skip_unused") and not dry_run:
         try:
             from src.usage_analysis import recommend_skip_tables
+
             unused = recommend_skip_tables(
-                client, warehouse_id, source, exclude_schemas,
+                client,
+                warehouse_id,
+                source,
+                exclude_schemas,
                 days=config.get("usage_analysis_days", 90),
                 days_threshold=config.get("usage_unused_threshold_days", 30),
             )
@@ -491,15 +617,20 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     pm = None
     if config.get("plugins"):
         from src.plugin_system import PluginManager
+
         pm = PluginManager()
         pm.load_plugins_from_config(config)
         config = pm.run_on_clone_start(config, client, warehouse_id)
 
     mode = f"{bold_yellow('[DRY RUN]')} " if dry_run else ""
     logger.info(f"{mode}{CATALOG} Starting catalog clone: {bold(source)} {ARROW} {bold(dest)}")
-    logger.info(kv("Clone type", config['clone_type']) + "  " + kv("Load type", config['load_type']))
+    logger.info(
+        kv("Clone type", config["clone_type"]) + "  " + kv("Load type", config["load_type"])
+    )
     if dry_run:
-        logger.info(f"  {WARN} {bold_yellow('DRY RUN MODE')} — no write operations will be executed")
+        logger.info(
+            f"  {WARN} {bold_yellow('DRY RUN MODE')} — no write operations will be executed"
+        )
 
     # Initialize rollback log
     rollback_log = None
@@ -518,8 +649,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     run_pre_clone_hooks(client, warehouse_id, config, dry_run=dry_run)
 
     # Step 1: Create destination catalog
-    create_catalog_if_not_exists(client, warehouse_id, dest, dry_run=dry_run,
-                                 location=config.get("catalog_location", ""))
+    create_catalog_if_not_exists(
+        client, warehouse_id, dest, dry_run=dry_run, location=config.get("catalog_location", "")
+    )
     if rollback_log:
         record_object(rollback_log, "catalog", f"`{dest}`")
 
@@ -535,7 +667,10 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
 
     # Step 3: Get all schemas from source
     schemas = get_schemas(
-        client, warehouse_id, source, exclude_schemas,
+        client,
+        warehouse_id,
+        source,
+        exclude_schemas,
         include=include_schemas if include_schemas else None,
     )
 
@@ -552,16 +687,21 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if snapshot_id and not config.get("as_of_timestamp") and not config.get("as_of_version"):
         try:
             from src.clone_snapshots import resolve_snapshot_timestamp
+
             snap_ts = resolve_snapshot_timestamp(client, warehouse_id, config, snapshot_id)
             if snap_ts:
                 config["as_of_timestamp"] = snap_ts
-                logger.info(f"{CATALOG} Cloning from snapshot {snapshot_id} (captured_at={snap_ts})")
+                logger.info(
+                    f"{CATALOG} Cloning from snapshot {snapshot_id} (captured_at={snap_ts})"
+                )
             else:
                 logger.warning(f"Snapshot {snapshot_id} not found — ignoring source_snapshot_id")
         except Exception as e:
             logger.warning(f"Could not resolve snapshot {snapshot_id}: {e}")
 
-    logger.info(f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}")
+    logger.info(
+        f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}"
+    )
 
     # Pre-count tables per schema so the progress bar has a catalog-level denominator
     # and we can emit a meaningful startup summary. Best-effort — on failure we
@@ -569,6 +709,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     tables_total = 0
     try:
         from src.client import list_tables_sdk
+
         for _s in schemas:
             try:
                 tables_total += len(list_tables_sdk(client, source, _s) or [])
@@ -584,7 +725,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         )
 
     # Step 4: Process schemas in parallel with progress tracking
-    progress = SchemaProgressTracker(schemas, show_progress=show_progress, tables_total=tables_total)
+    progress = SchemaProgressTracker(
+        schemas, show_progress=show_progress, tables_total=tables_total
+    )
     progress.start()
     # Stash on config so process_schema → clone_tables_in_schema can bump live
     config["_tables_progress"] = progress
@@ -594,6 +737,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if show_progress and sys.stderr.isatty() and len(schemas) > 1:
         try:
             from src.dashboard import Dashboard
+
             dashboard = Dashboard(schemas)
             dashboard.start()
         except Exception:
@@ -613,6 +757,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     quiesce_snapshots = []
     if config.get("quiesce_source") and not dry_run:
         from src.quiesce import quiesce_source_schemas
+
         quiesce_snapshots = quiesce_source_schemas(client, source, schemas)
 
     all_results = []
@@ -620,7 +765,12 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    process_schema, client, config, schema, rollback_log, completed_objects,
+                    process_schema,
+                    client,
+                    config,
+                    schema,
+                    rollback_log,
+                    completed_objects,
                 ): schema
                 for schema in schemas
             }
@@ -684,6 +834,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         # snapshots list (quiesce_source disabled or dry-run) is a no-op.
         if quiesce_snapshots:
             from src.quiesce import restore_source_grants
+
             restore_source_grants(client, quiesce_snapshots)
 
     progress.stop()
@@ -713,20 +864,27 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
             dest_type = config.get("metrics_destination", "delta")
             if dest_type == "json":
                 from src.metrics import save_metrics_json
+
                 path = config.get("metrics_output_path", f"reports/metrics_{dest}.json")
                 save_metrics_json(metrics_summary, path)
             elif dest_type == "prometheus":
                 from src.metrics import save_metrics_prometheus
+
                 path = config.get("metrics_output_path", f"reports/metrics_{dest}.txt")
                 save_metrics_prometheus(metrics_summary, path)
             elif dest_type == "webhook":
                 webhook_url = config.get("metrics_webhook_url")
                 if webhook_url:
                     from src.metrics import save_metrics_webhook
+
                     save_metrics_webhook(metrics_summary, webhook_url)
             elif dest_type == "delta" and not dry_run:
                 from src.metrics import save_metrics_delta
-                table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+
+                table_fqn = config.get(
+                    "metrics_table",
+                    f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics",
+                )
                 save_metrics_delta(client, warehouse_id, metrics_summary, table_fqn)
         except Exception as e:
             logger.warning(f"Failed to save metrics: {e}")
@@ -734,20 +892,53 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Step 6: Post-clone validation
     if config.get("validate_after_clone") and not dry_run:
         from src.validation import validate_catalog
+
         logger.info("Running post-clone validation...")
         use_checksum = config.get("validate_checksum", False)
         validation = validate_catalog(
-            client, warehouse_id, source, dest, exclude_schemas, max_workers,
+            client,
+            warehouse_id,
+            source,
+            dest,
+            exclude_schemas,
+            max_workers,
             use_checksum=use_checksum,
         )
         summary["validation"] = validation
 
-        # Auto-rollback on validation failure
+        # Auto-rollback on validation failure or DQ drift
         if config.get("auto_rollback_on_failure") and rollback_log:
             from src.validation import evaluate_threshold
+
             threshold = config.get("rollback_threshold", 5.0)
             eval_result = evaluate_threshold(validation, threshold)
             summary["validation_evaluation"] = eval_result
+
+            # DQ drift evaluation reuses the validation/rollback shape so
+            # operator-facing semantics stay consistent — same threshold
+            # mental model, same rollback path.
+            dq_comparisons = config.get("_dq_comparisons") or []
+            if config.get("compare_dq_after_clone") and dq_comparisons:
+                from src.clone_dq_compare import evaluate_dq_drift
+
+                dq_threshold = float(config.get("dq_drift_rollback_pct", threshold))
+                dq_eval = evaluate_dq_drift(dq_comparisons, dq_threshold)
+                summary["dq_drift_evaluation"] = dq_eval
+                # OR-combine: either signal failing trips rollback. We rebuild
+                # eval_result so the existing rollback branch below sees a
+                # combined verdict and can log a meaningful reason.
+                if not dq_eval["passed"]:
+                    eval_result = {
+                        "passed": False,
+                        "mismatch_pct": max(
+                            float(eval_result.get("mismatch_pct", 0)),
+                            float(dq_eval.get("max_drift_pct", 0)),
+                        ),
+                        "failed_checks": (
+                            eval_result.get("failed_checks", [])
+                            + [f"dq_drift>{dq_threshold}%: {len(dq_eval['failed_tables'])} tables"]
+                        ),
+                    }
 
             if not eval_result["passed"]:
                 logger.warning(
@@ -755,6 +946,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
                     f"Triggering auto-rollback..."
                 )
                 from src.rollback import rollback as do_rollback
+
                 rollback_result = do_rollback(client, warehouse_id, rollback_log)
                 summary["auto_rollback"] = {
                     "triggered": True,
@@ -779,6 +971,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if not dry_run:
         try:
             from src.audit_trail import ensure_audit_table, log_operation_complete
+
             ensure_audit_table(client, warehouse_id, config)
         except Exception as e:
             logger.warning(f"Failed to write audit log: {e}")
@@ -802,7 +995,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     webhook_config = config.get("webhook")
     if webhook_config:
         send_webhook_notification(
-            webhook_config["url"], summary, config,
+            webhook_config["url"],
+            summary,
+            config,
             headers=webhook_config.get("headers"),
         )
 
@@ -824,7 +1019,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if pm:
         try:
             if summary.get("errors"):
-                pm.run_on_clone_error(config, RuntimeError("; ".join(summary["errors"])), client, warehouse_id)
+                pm.run_on_clone_error(
+                    config, RuntimeError("; ".join(summary["errors"])), client, warehouse_id
+                )
             else:
                 pm.run_on_clone_complete(config, summary, client, warehouse_id)
         except Exception as e:
@@ -838,6 +1035,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if ttl_str and not dry_run:
         try:
             from src.ttl_manager import TTLManager, parse_ttl_string
+
             ttl_days = parse_ttl_string(ttl_str)
             ttl_mgr = TTLManager(client, warehouse_id)
             ttl_mgr.init_ttl_table()
@@ -851,6 +1049,7 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         try:
             from src.run_logs import save_run_log
             import uuid
+
             job_record = {
                 "job_id": str(uuid.uuid4())[:8],
                 "job_type": "clone",
@@ -871,10 +1070,19 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         # Also log to audit trail (clone_operations table)
         try:
             from src.audit_trail import log_operation_start, log_operation_complete
-            log_operation_start(client, warehouse_id, config, job_record["job_id"], operation_type="clone")
-            log_operation_complete(client, warehouse_id, config, job_record["job_id"],
-                                   summary, datetime.fromtimestamp(clone_start),
-                                   error_message=job_record.get("error"))
+
+            log_operation_start(
+                client, warehouse_id, config, job_record["job_id"], operation_type="clone"
+            )
+            log_operation_complete(
+                client,
+                warehouse_id,
+                config,
+                job_record["job_id"],
+                summary,
+                datetime.fromtimestamp(clone_start),
+                error_message=job_record.get("error"),
+            )
         except Exception as e:
             logger.debug(f"Could not save audit trail to Delta: {e}")
 
@@ -936,7 +1144,7 @@ def _print_summary(summary: dict, source: str, dest: str, dry_run: bool = False)
     title = f"{mode}CLONE SUMMARY: {source} {ARROW} {dest}"
     logger.info(header(title))
 
-    logger.info(kv("Schemas processed", bold(str(summary['schemas_processed']))))
+    logger.info(kv("Schemas processed", bold(str(summary["schemas_processed"]))))
 
     duration = summary.get("duration_seconds")
     if duration:
@@ -946,9 +1154,14 @@ def _print_summary(summary: dict, source: str, dest: str, dry_run: bool = False)
     logger.info(divider())
     for obj_type in ("tables", "views", "functions", "volumes"):
         stats = summary[obj_type]
-        logger.info(stat_line(
-            obj_type.capitalize(), stats["success"], stats["failed"], stats["skipped"],
-        ))
+        logger.info(
+            stat_line(
+                obj_type.capitalize(),
+                stats["success"],
+                stats["failed"],
+                stats["skipped"],
+            )
+        )
 
     if summary["errors"]:
         logger.info(divider())

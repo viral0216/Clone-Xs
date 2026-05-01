@@ -21,10 +21,14 @@ class TestNeedsApproval:
         assert not needs_approval({"approval_required": False})
 
     def test_regex_match(self):
-        assert needs_approval({"approval_required": "prod_.*", "destination_catalog": "prod_catalog"})
+        assert needs_approval(
+            {"approval_required": "prod_.*", "destination_catalog": "prod_catalog"}
+        )
 
     def test_regex_no_match(self):
-        assert not needs_approval({"approval_required": "prod_.*", "destination_catalog": "dev_catalog"})
+        assert not needs_approval(
+            {"approval_required": "prod_.*", "destination_catalog": "dev_catalog"}
+        )
 
     def test_not_configured(self):
         assert not needs_approval({})
@@ -34,6 +38,7 @@ class TestApprovalWorkflow:
     def test_submit_and_approve(self):
         # Use a temp directory
         import src.approval as mod
+
         original_dir = mod.APPROVAL_DIR
         mod.APPROVAL_DIR = tempfile.mkdtemp()
         try:
@@ -69,6 +74,7 @@ class TestApprovalWorkflow:
 
     def test_deny_request(self):
         import src.approval as mod
+
         original_dir = mod.APPROVAL_DIR
         mod.APPROVAL_DIR = tempfile.mkdtemp()
         try:

@@ -52,7 +52,9 @@ def _history_fqn(config: dict) -> tuple[str, str, str]:
 
 
 def ensure_history_table(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
 ) -> str:
     """Create the catalog_size_history Delta table if it doesn't exist.
 
@@ -64,7 +66,8 @@ def ensure_history_table(
     fqn = f"`{catalog}`.`{schema}`.`{table}`"
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             snapshot_date    DATE,
@@ -81,8 +84,11 @@ def ensure_history_table(
 
 
 def record_snapshot(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
-    *, catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    *,
+    catalog: str,
     num_tables: int,
     num_schemas: int,
     total_size_bytes: int,
@@ -102,11 +108,13 @@ def record_snapshot(
         # MERGE INTO would be cleaner but requires a USING source which
         # is more SQL than this read-mostly path is worth.
         execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"DELETE FROM {fqn} WHERE snapshot_date = DATE'{today}' AND catalog = '{catalog}'",
         )
         execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"""
             INSERT INTO {fqn} VALUES (
                 DATE'{today}', '{catalog}', {int(num_tables)}, {int(num_schemas)},
@@ -123,7 +131,10 @@ def record_snapshot(
 
 
 def record_snapshots_from_stats(
-    client: WorkspaceClient, warehouse_id: str, config: dict, stats_response: dict,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    stats_response: dict,
 ) -> None:
     """Convenience wrapper: take a `catalog_stats_fast` (single) or
     `catalog_stats_multi` response dict and record a snapshot per
@@ -139,7 +150,9 @@ def record_snapshots_from_stats(
         if per_catalog:
             for cat, r in per_catalog.items():
                 record_snapshot(
-                    client, warehouse_id, config,
+                    client,
+                    warehouse_id,
+                    config,
                     catalog=cat,
                     num_tables=int(r.get("num_tables", 0) or 0),
                     num_schemas=int(r.get("num_schemas", 0) or 0),
@@ -152,7 +165,9 @@ def record_snapshots_from_stats(
         if not cat or "," in cat:  # multi response uses comma-joined fallback
             return
         record_snapshot(
-            client, warehouse_id, config,
+            client,
+            warehouse_id,
+            config,
             catalog=cat,
             num_tables=int(stats_response.get("num_tables", 0) or 0),
             num_schemas=int(stats_response.get("num_schemas", 0) or 0),
@@ -164,8 +179,12 @@ def record_snapshots_from_stats(
 
 
 def get_history(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
-    *, catalogs: list[str] | None = None, days: int = 30,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    *,
+    catalogs: list[str] | None = None,
+    days: int = 30,
 ) -> list[dict]:
     """Read back per-catalog daily snapshots over the last `days` days.
 
@@ -201,7 +220,7 @@ def get_history(
         SELECT snapshot_date, catalog, num_tables, num_schemas,
                total_size_bytes, total_rows, captured_at
         FROM {fqn}
-        WHERE {' AND '.join(where)}
+        WHERE {" AND ".join(where)}
         ORDER BY catalog, snapshot_date
     """
     try:

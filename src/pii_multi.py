@@ -89,11 +89,18 @@ def scan_catalogs_for_pii_multi(
 
     def _scan_one(cat: str) -> dict:
         return scan_catalog_for_pii(
-            client, warehouse_id, cat, exclude_schemas,
-            sample_data=sample_data, max_workers=max_workers,
-            pii_config=pii_config, read_uc_tags=read_uc_tags,
-            save_history=save_history, state_catalog=state_catalog,
-            schema_filter=schema_filter, table_filter=table_filter,
+            client,
+            warehouse_id,
+            cat,
+            exclude_schemas,
+            sample_data=sample_data,
+            max_workers=max_workers,
+            pii_config=pii_config,
+            read_uc_tags=read_uc_tags,
+            save_history=save_history,
+            state_catalog=state_catalog,
+            schema_filter=schema_filter,
+            table_filter=table_filter,
         )
 
     with ThreadPoolExecutor(max_workers=parallelism) as executor:

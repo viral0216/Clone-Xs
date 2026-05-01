@@ -66,6 +66,8 @@ export const cloneOptionHints: Record<string, string> = {
     "Auto-detect PII columns from existing Unity Catalog tags and mask them on the destination using strategies like email_mask (for EMAIL), hash (SSN/CREDIT_CARD), or partial (PHONE). Masking runs as a post-clone UPDATE so destination Delta history is preserved.",
   enable_retry:
     "Auto-retry the clone job on transient failures (network errors, throttling, 5xx). Bounded by max_retries (default 3). Logical errors like schema mismatch never retry.",
+  compare_dq_after_clone:
+    "Run a column-level DQ comparison (row count + per-column NULL counts) on each cloned table. When max drift exceeds dq_drift_rollback_pct AND auto_rollback_on_failure is enabled, the destination is reverted via Delta RESTORE. Adds one warehouse round-trip per cloned table.",
   generate_report:
     "Emit an HTML audit report summarising what was cloned, mismatches, and timings.",
   show_progress:

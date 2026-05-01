@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from api.queue.job_manager import JobManager
 from api.routers import (
     analysis,
+    approval,
     auth,
     clone,
     config,
@@ -30,6 +31,7 @@ from api.routers import (
 async def lifespan(app: FastAPI):
     """Start/stop the job manager with the app. Run non-blocking startup checks."""
     import logging
+
     logger = logging.getLogger("clone-xs.startup")
 
     app.state.job_manager = JobManager(max_concurrent=2)
@@ -37,10 +39,12 @@ async def lifespan(app: FastAPI):
     # Apply config-driven performance settings at startup
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
 
         # Sync parallel queries and rate limit from config
         from src.client import set_max_parallel_queries, set_rate_limit
+
         max_pq = int(config.get("max_parallel_queries", 10))
         set_max_parallel_queries(max_pq)
         max_rps = float(config.get("max_rps", 0))
@@ -52,16 +56,22 @@ async def lifespan(app: FastAPI):
         catalog = config.get("audit_trail", {}).get("catalog", "")
         if catalog:
             from src.table_registry import TABLE_SECTIONS
-            expected_schemas = {s["schema"] for s in TABLE_SECTIONS if not s.get("schema_from_config")}
+
+            expected_schemas = {
+                s["schema"] for s in TABLE_SECTIONS if not s.get("schema_from_config")
+            }
             logger.info(f"Audit catalog: {catalog} | Expected schemas: {sorted(expected_schemas)}")
         else:
-            logger.warning("No audit_trail.catalog configured — table init may fail. Set it in Settings.")
+            logger.warning(
+                "No audit_trail.catalog configured — table init may fail. Set it in Settings."
+            )
     except Exception as e:
         logger.warning(f"Startup config check failed: {e}")
 
     # Start monitoring scheduler if previously enabled
     try:
         from src.monitoring_scheduler import start_scheduler
+
         start_scheduler(app)
     except Exception as e:
         logger.warning(f"Could not start monitoring scheduler: {e}")
@@ -71,6 +81,7 @@ async def lifespan(app: FastAPI):
     # Stop monitoring scheduler on shutdown
     try:
         from src.monitoring_scheduler import stop_scheduler
+
         stop_scheduler()
     except Exception:
         pass
@@ -80,13 +91,13 @@ async def lifespan(app: FastAPI):
 _CUSTOM_DOCS_HTML = (
     '<!DOCTYPE html><html lang="en"><head>'
     '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
-    '<title>Clone → Xs API</title>'
+    "<title>Clone → Xs API</title>"
     '<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css">'
-    '</head><body>'
+    "</head><body>"
     '<div id="cx-header"></div>'
     '<div id="swagger-ui"></div>'
     '<script src="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-bundle.js"></script>'
-    '<script>'
+    "<script>"
     'document.getElementById("cx-header").innerHTML = `'
     '<div style="background:linear-gradient(135deg,#1B3139,#0F1419);border-bottom:1px solid rgba(255,255,255,0.1);padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100">'
     '<div style="display:flex;align-items:center;gap:12px">'
@@ -100,110 +111,110 @@ _CUSTOM_DOCS_HTML = (
     '<a href="/" style="color:#A0A0A0;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px">Web UI</a>'
     '<a href="/redoc" style="color:#A0A0A0;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px">ReDoc</a>'
     '<a href="https://github.com/viral0216/clone-xs" target="_blank" style="color:#A0A0A0;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px">GitHub</a>'
-    '</div></div>`;'
-    'SwaggerUIBundle({'
+    "</div></div>`;"
+    "SwaggerUIBundle({"
     '  url:"/openapi.json",'
     '  dom_id:"#swagger-ui",'
-    '  presets:[SwaggerUIBundle.presets.apis,SwaggerUIBundle.SwaggerUIStandalonePreset],'
+    "  presets:[SwaggerUIBundle.presets.apis,SwaggerUIBundle.SwaggerUIStandalonePreset],"
     '  layout:"BaseLayout",'
-    '  deepLinking:true,'
-    '  filter:true,'
+    "  deepLinking:true,"
+    "  filter:true,"
     '  docExpansion:"list",'
-    '  defaultModelsExpandDepth:0,'
-    '  defaultModelExpandDepth:2,'
-    '  tryItOutEnabled:false,'
-    '  persistAuthorization:true,'
+    "  defaultModelsExpandDepth:0,"
+    "  defaultModelExpandDepth:2,"
+    "  tryItOutEnabled:false,"
+    "  persistAuthorization:true,"
     '  syntaxHighlight:{activated:true,theme:"monokai"}'
-    '});'
+    "});"
     # Inject dark theme CSS after Swagger UI renders
     'const s=document.createElement("style");'
-    's.textContent=`'
+    "s.textContent=`"
     'body{margin:0;background:#1C1C1C;color:#E0E0E0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}'
-    '.swagger-ui .topbar{display:none!important}'
-    '.swagger-ui{background:#1C1C1C!important;max-width:1200px;margin:0 auto;padding:0 24px}'
-    '.swagger-ui .info{margin:24px 0 16px}'
-    '.swagger-ui .info .title{color:#E0E0E0!important;font-size:0!important;height:0;overflow:hidden}'
-    '.swagger-ui .info .title small{display:none}'
-    '.swagger-ui .info .description,.swagger-ui .info .description p{color:#A0A0A0!important}'
-    '.swagger-ui .info .description h2,.swagger-ui .info .description h3{color:#E0E0E0!important}'
-    '.swagger-ui .info .description code{background:#3C3C3C!important;color:#FF6C37!important;padding:2px 6px;border-radius:4px}'
-    '.swagger-ui .info .description a,.swagger-ui .markdown a{color:#FF6C37!important}'
-    '.swagger-ui .info .description pre{background:#2C2C2C!important;border:1px solid #404040!important;border-radius:8px!important}'
-    '.swagger-ui .opblock-tag-section{margin-bottom:4px}'
-    '.swagger-ui .opblock-tag{color:#E0E0E0!important;border-bottom:1px solid #404040!important;padding:12px 16px!important;margin:0!important;font-size:15px!important;background:#2C2C2C!important;border-radius:8px 8px 0 0!important}'
-    '.swagger-ui .opblock-tag:hover{background:#3C3C3C!important}'
-    '.swagger-ui .opblock-tag small{color:#707070!important}'
-    '.swagger-ui .opblock-tag svg{fill:#707070!important}'
-    '.swagger-ui .opblock-tag a,.swagger-ui .opblock-tag a span{color:#707070!important}'
-    '.swagger-ui .opblock{border:1px solid #404040!important;border-radius:8px!important;margin:4px 0!important;background:#252525!important;box-shadow:none!important}'
-    '.swagger-ui .opblock .opblock-summary{border:none!important;padding:8px 16px!important}'
-    '.swagger-ui .opblock .opblock-summary-method{border-radius:6px!important;font-size:12px!important;font-weight:700!important;min-width:70px!important;padding:6px 0!important;text-align:center!important}'
-    '.swagger-ui .opblock .opblock-summary-path{color:#E0E0E0!important;font-size:14px!important;font-weight:500!important}'
-    '.swagger-ui .opblock .opblock-summary-description{color:#A0A0A0!important;font-size:13px!important}'
-    '.swagger-ui .opblock-get{border-color:rgba(97,175,254,0.3)!important}'
-    '.swagger-ui .opblock-get .opblock-summary-method{background:#61AFFE!important}'
-    '.swagger-ui .opblock-get.is-open .opblock-summary{border-bottom:1px solid rgba(97,175,254,0.2)!important}'
-    '.swagger-ui .opblock-post{border-color:rgba(73,204,144,0.3)!important}'
-    '.swagger-ui .opblock-post .opblock-summary-method{background:#49CC90!important}'
-    '.swagger-ui .opblock-post.is-open .opblock-summary{border-bottom:1px solid rgba(73,204,144,0.2)!important}'
-    '.swagger-ui .opblock-put{border-color:rgba(252,161,48,0.3)!important}'
-    '.swagger-ui .opblock-put .opblock-summary-method{background:#FCA130!important}'
-    '.swagger-ui .opblock-put.is-open .opblock-summary{border-bottom:1px solid rgba(252,161,48,0.2)!important}'
-    '.swagger-ui .opblock-delete{border-color:rgba(249,62,62,0.3)!important}'
-    '.swagger-ui .opblock-delete .opblock-summary-method{background:#F93E3E!important}'
-    '.swagger-ui .opblock-delete.is-open .opblock-summary{border-bottom:1px solid rgba(249,62,62,0.2)!important}'
-    '.swagger-ui .opblock-body{background:#252525!important}'
-    '.swagger-ui .opblock-body pre{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}'
-    '.swagger-ui .opblock-description-wrapper,.swagger-ui .opblock-description-wrapper p{color:#A0A0A0!important}'
-    '.swagger-ui .opblock-external-docs-wrapper a{color:#FF6C37!important}'
-    '.swagger-ui .parameters-col_name{color:#E0E0E0!important}'
-    '.swagger-ui .parameters-col_description{color:#A0A0A0!important}'
-    '.swagger-ui .parameters-col_description input,.swagger-ui .parameters-col_description select,.swagger-ui .parameters-col_description textarea,.swagger-ui .body-param textarea{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}'
-    '.swagger-ui table thead tr td,.swagger-ui table thead tr th{color:#707070!important;border-bottom:1px solid #404040!important}'
-    '.swagger-ui table tbody tr td{color:#E0E0E0!important;border-bottom:1px solid #404040!important}'
-    '.swagger-ui .parameter__name{color:#E0E0E0!important}'
-    '.swagger-ui .parameter__name.required::after{color:#F93E3E!important}'
-    '.swagger-ui .parameter__type{color:#707070!important}'
-    '.swagger-ui section.models{border:1px solid #404040!important;border-radius:8px!important;background:#2C2C2C!important}'
-    '.swagger-ui section.models h4{color:#E0E0E0!important}'
-    '.swagger-ui section.models .model-container{background:#252525!important;border-radius:6px!important;margin:4px 0!important}'
-    '.swagger-ui .model,.swagger-ui .model-title{color:#E0E0E0!important}'
-    '.swagger-ui .model .property{color:#A0A0A0!important}'
-    '.swagger-ui .model .property.primitive{color:#FF6C37!important}'
-    '.swagger-ui .btn{border-radius:6px!important;font-weight:600!important;font-size:13px!important}'
-    '.swagger-ui .btn.execute{background:#FF6C37!important;color:white!important;border:none!important}'
-    '.swagger-ui .btn.execute:hover{background:#FF8C5A!important}'
-    '.swagger-ui .btn.cancel{background:#3C3C3C!important;color:#E0E0E0!important}'
-    '.swagger-ui .btn.authorize{color:#FF6C37!important;border-color:#FF6C37!important}'
-    '.swagger-ui .try-out__btn{color:#E0E0E0!important;border-color:#404040!important}'
-    '.swagger-ui .try-out__btn:hover{background:#3C3C3C!important}'
-    '.swagger-ui .responses-inner{background:transparent!important}'
-    '.swagger-ui .response-col_status{color:#E0E0E0!important}'
-    '.swagger-ui .response-col_description{color:#A0A0A0!important}'
-    '.swagger-ui .scheme-container{background:#2C2C2C!important;border-radius:8px!important;padding:12px 16px!important;margin:8px 0!important;box-shadow:none!important}'
-    '.swagger-ui .scheme-container select{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}'
-    '.swagger-ui .scheme-container label{color:#707070!important}'
-    '.swagger-ui select{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important}'
-    '.swagger-ui .opblock-section-header{background:#2C2C2C!important}'
-    '.swagger-ui .opblock-section-header h4{color:#E0E0E0!important}'
-    '.swagger-ui .opblock-section-header label{color:#707070!important}'
-    '.swagger-ui .highlight-code .microlight{background:#1C1C1C!important;color:#E0E0E0!important}'
-    '.swagger-ui .markdown p,.swagger-ui .markdown li,.swagger-ui .renderedMarkdown p{color:#A0A0A0!important}'
-    '.swagger-ui .expand-operation svg{fill:#707070!important}'
-    '.swagger-ui .copy-to-clipboard{background:#3C3C3C!important}'
-    '.swagger-ui .copy-to-clipboard button{background:transparent!important}'
-    '.swagger-ui .filter .operation-filter-input{background:#2C2C2C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:8px!important;padding:8px 12px!important}'
-    '.swagger-ui .dialog-ux .modal-ux{background:#2C2C2C!important;border:1px solid #404040!important;border-radius:12px!important}'
-    '.swagger-ui .dialog-ux .modal-ux-header h3{color:#E0E0E0!important}'
-    '.swagger-ui .dialog-ux .modal-ux-content{color:#A0A0A0!important}'
-    '.swagger-ui .dialog-ux .modal-ux-content input{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important}'
-    '::-webkit-scrollbar{width:8px;height:8px}'
-    '::-webkit-scrollbar-track{background:#1C1C1C}'
-    '::-webkit-scrollbar-thumb{background:#3C3C3C;border-radius:4px}'
-    '::-webkit-scrollbar-thumb:hover{background:#555}'
-    '@media(max-width:768px){#cx-header>div{flex-direction:column!important;gap:8px!important}.swagger-ui{padding:0 12px}}'
-    '`;document.head.appendChild(s);'
-    '</script></body></html>'
+    ".swagger-ui .topbar{display:none!important}"
+    ".swagger-ui{background:#1C1C1C!important;max-width:1200px;margin:0 auto;padding:0 24px}"
+    ".swagger-ui .info{margin:24px 0 16px}"
+    ".swagger-ui .info .title{color:#E0E0E0!important;font-size:0!important;height:0;overflow:hidden}"
+    ".swagger-ui .info .title small{display:none}"
+    ".swagger-ui .info .description,.swagger-ui .info .description p{color:#A0A0A0!important}"
+    ".swagger-ui .info .description h2,.swagger-ui .info .description h3{color:#E0E0E0!important}"
+    ".swagger-ui .info .description code{background:#3C3C3C!important;color:#FF6C37!important;padding:2px 6px;border-radius:4px}"
+    ".swagger-ui .info .description a,.swagger-ui .markdown a{color:#FF6C37!important}"
+    ".swagger-ui .info .description pre{background:#2C2C2C!important;border:1px solid #404040!important;border-radius:8px!important}"
+    ".swagger-ui .opblock-tag-section{margin-bottom:4px}"
+    ".swagger-ui .opblock-tag{color:#E0E0E0!important;border-bottom:1px solid #404040!important;padding:12px 16px!important;margin:0!important;font-size:15px!important;background:#2C2C2C!important;border-radius:8px 8px 0 0!important}"
+    ".swagger-ui .opblock-tag:hover{background:#3C3C3C!important}"
+    ".swagger-ui .opblock-tag small{color:#707070!important}"
+    ".swagger-ui .opblock-tag svg{fill:#707070!important}"
+    ".swagger-ui .opblock-tag a,.swagger-ui .opblock-tag a span{color:#707070!important}"
+    ".swagger-ui .opblock{border:1px solid #404040!important;border-radius:8px!important;margin:4px 0!important;background:#252525!important;box-shadow:none!important}"
+    ".swagger-ui .opblock .opblock-summary{border:none!important;padding:8px 16px!important}"
+    ".swagger-ui .opblock .opblock-summary-method{border-radius:6px!important;font-size:12px!important;font-weight:700!important;min-width:70px!important;padding:6px 0!important;text-align:center!important}"
+    ".swagger-ui .opblock .opblock-summary-path{color:#E0E0E0!important;font-size:14px!important;font-weight:500!important}"
+    ".swagger-ui .opblock .opblock-summary-description{color:#A0A0A0!important;font-size:13px!important}"
+    ".swagger-ui .opblock-get{border-color:rgba(97,175,254,0.3)!important}"
+    ".swagger-ui .opblock-get .opblock-summary-method{background:#61AFFE!important}"
+    ".swagger-ui .opblock-get.is-open .opblock-summary{border-bottom:1px solid rgba(97,175,254,0.2)!important}"
+    ".swagger-ui .opblock-post{border-color:rgba(73,204,144,0.3)!important}"
+    ".swagger-ui .opblock-post .opblock-summary-method{background:#49CC90!important}"
+    ".swagger-ui .opblock-post.is-open .opblock-summary{border-bottom:1px solid rgba(73,204,144,0.2)!important}"
+    ".swagger-ui .opblock-put{border-color:rgba(252,161,48,0.3)!important}"
+    ".swagger-ui .opblock-put .opblock-summary-method{background:#FCA130!important}"
+    ".swagger-ui .opblock-put.is-open .opblock-summary{border-bottom:1px solid rgba(252,161,48,0.2)!important}"
+    ".swagger-ui .opblock-delete{border-color:rgba(249,62,62,0.3)!important}"
+    ".swagger-ui .opblock-delete .opblock-summary-method{background:#F93E3E!important}"
+    ".swagger-ui .opblock-delete.is-open .opblock-summary{border-bottom:1px solid rgba(249,62,62,0.2)!important}"
+    ".swagger-ui .opblock-body{background:#252525!important}"
+    ".swagger-ui .opblock-body pre{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}"
+    ".swagger-ui .opblock-description-wrapper,.swagger-ui .opblock-description-wrapper p{color:#A0A0A0!important}"
+    ".swagger-ui .opblock-external-docs-wrapper a{color:#FF6C37!important}"
+    ".swagger-ui .parameters-col_name{color:#E0E0E0!important}"
+    ".swagger-ui .parameters-col_description{color:#A0A0A0!important}"
+    ".swagger-ui .parameters-col_description input,.swagger-ui .parameters-col_description select,.swagger-ui .parameters-col_description textarea,.swagger-ui .body-param textarea{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}"
+    ".swagger-ui table thead tr td,.swagger-ui table thead tr th{color:#707070!important;border-bottom:1px solid #404040!important}"
+    ".swagger-ui table tbody tr td{color:#E0E0E0!important;border-bottom:1px solid #404040!important}"
+    ".swagger-ui .parameter__name{color:#E0E0E0!important}"
+    ".swagger-ui .parameter__name.required::after{color:#F93E3E!important}"
+    ".swagger-ui .parameter__type{color:#707070!important}"
+    ".swagger-ui section.models{border:1px solid #404040!important;border-radius:8px!important;background:#2C2C2C!important}"
+    ".swagger-ui section.models h4{color:#E0E0E0!important}"
+    ".swagger-ui section.models .model-container{background:#252525!important;border-radius:6px!important;margin:4px 0!important}"
+    ".swagger-ui .model,.swagger-ui .model-title{color:#E0E0E0!important}"
+    ".swagger-ui .model .property{color:#A0A0A0!important}"
+    ".swagger-ui .model .property.primitive{color:#FF6C37!important}"
+    ".swagger-ui .btn{border-radius:6px!important;font-weight:600!important;font-size:13px!important}"
+    ".swagger-ui .btn.execute{background:#FF6C37!important;color:white!important;border:none!important}"
+    ".swagger-ui .btn.execute:hover{background:#FF8C5A!important}"
+    ".swagger-ui .btn.cancel{background:#3C3C3C!important;color:#E0E0E0!important}"
+    ".swagger-ui .btn.authorize{color:#FF6C37!important;border-color:#FF6C37!important}"
+    ".swagger-ui .try-out__btn{color:#E0E0E0!important;border-color:#404040!important}"
+    ".swagger-ui .try-out__btn:hover{background:#3C3C3C!important}"
+    ".swagger-ui .responses-inner{background:transparent!important}"
+    ".swagger-ui .response-col_status{color:#E0E0E0!important}"
+    ".swagger-ui .response-col_description{color:#A0A0A0!important}"
+    ".swagger-ui .scheme-container{background:#2C2C2C!important;border-radius:8px!important;padding:12px 16px!important;margin:8px 0!important;box-shadow:none!important}"
+    ".swagger-ui .scheme-container select{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:6px!important}"
+    ".swagger-ui .scheme-container label{color:#707070!important}"
+    ".swagger-ui select{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important}"
+    ".swagger-ui .opblock-section-header{background:#2C2C2C!important}"
+    ".swagger-ui .opblock-section-header h4{color:#E0E0E0!important}"
+    ".swagger-ui .opblock-section-header label{color:#707070!important}"
+    ".swagger-ui .highlight-code .microlight{background:#1C1C1C!important;color:#E0E0E0!important}"
+    ".swagger-ui .markdown p,.swagger-ui .markdown li,.swagger-ui .renderedMarkdown p{color:#A0A0A0!important}"
+    ".swagger-ui .expand-operation svg{fill:#707070!important}"
+    ".swagger-ui .copy-to-clipboard{background:#3C3C3C!important}"
+    ".swagger-ui .copy-to-clipboard button{background:transparent!important}"
+    ".swagger-ui .filter .operation-filter-input{background:#2C2C2C!important;color:#E0E0E0!important;border:1px solid #404040!important;border-radius:8px!important;padding:8px 12px!important}"
+    ".swagger-ui .dialog-ux .modal-ux{background:#2C2C2C!important;border:1px solid #404040!important;border-radius:12px!important}"
+    ".swagger-ui .dialog-ux .modal-ux-header h3{color:#E0E0E0!important}"
+    ".swagger-ui .dialog-ux .modal-ux-content{color:#A0A0A0!important}"
+    ".swagger-ui .dialog-ux .modal-ux-content input{background:#1C1C1C!important;color:#E0E0E0!important;border:1px solid #404040!important}"
+    "::-webkit-scrollbar{width:8px;height:8px}"
+    "::-webkit-scrollbar-track{background:#1C1C1C}"
+    "::-webkit-scrollbar-thumb{background:#3C3C3C;border-radius:4px}"
+    "::-webkit-scrollbar-thumb:hover{background:#555}"
+    "@media(max-width:768px){#cx-header>div{flex-direction:column!important;gap:8px!important}.swagger-ui{padding:0 12px}}"
+    "`;document.head.appendChild(s);"
+    "</script></body></html>"
 )
 
 _api_description = """
@@ -389,7 +400,10 @@ app = FastAPI(
 )
 
 import os as _os
-_cors_origins = ["*"] if _os.getenv("CLONE_XS_RUNTIME") == "databricks-app" else ["http://localhost:3000"]
+
+_cors_origins = (
+    ["*"] if _os.getenv("CLONE_XS_RUNTIME") == "databricks-app" else ["http://localhost:3000"]
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -403,22 +417,27 @@ app.add_middleware(
 # so get_app_config() can override sql_warehouse_id from the UI selection.
 from starlette.middleware.base import BaseHTTPMiddleware
 from api.dependencies import warehouse_header_middleware
+
 app.add_middleware(BaseHTTPMiddleware, dispatch=warehouse_header_middleware)
 
 # Custom API docs with Postman-style dark theme
 from fastapi.responses import FileResponse
 import os as _os2
+
 _docs_html_path = _os2.path.join(_os2.path.dirname(__file__), "static", "docs.html")
+
 
 @app.get("/docs", include_in_schema=False)
 async def custom_api_docs():
     """Serve Postman-style API documentation."""
     return FileResponse(_docs_html_path, media_type="text/html")
 
+
 # Register routers
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(clone.router, prefix="/api/clone", tags=["clone"])
+app.include_router(approval.router, prefix="/api/approvals", tags=["approvals"])
 app.include_router(analysis.router, prefix="/api", tags=["analysis"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(generate.router, prefix="/api/generate", tags=["generate"])
@@ -429,121 +448,174 @@ app.include_router(sampling.router, prefix="/api", tags=["sampling"])
 app.include_router(deps.router, prefix="/api", tags=["dependencies"])
 
 from api.routers import governance
+
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 
 from api.routers import system_insights
+
 app.include_router(system_insights.router, prefix="/api/system-insights", tags=["system-insights"])
 
 from api.routers import ml_assets
+
 app.include_router(ml_assets.router, prefix="/api/ml-assets", tags=["ml-assets"])
 
 from api.routers import advanced_tables
+
 app.include_router(advanced_tables.router, prefix="/api/advanced-tables", tags=["advanced-tables"])
 
 from api.routers import ai
+
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 
 from api.routers import notifications
+
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 
 from api.routers import lakehouse_monitor
-app.include_router(lakehouse_monitor.router, prefix="/api/lakehouse-monitor", tags=["lakehouse-monitor"])
+
+app.include_router(
+    lakehouse_monitor.router, prefix="/api/lakehouse-monitor", tags=["lakehouse-monitor"]
+)
 
 from api.routers import federation
+
 app.include_router(federation.router, prefix="/api/federation", tags=["federation"])
 
 from api.routers import delta_sharing
+
 app.include_router(delta_sharing.router, prefix="/api/delta-sharing", tags=["delta-sharing"])
 
 from api.routers import reconciliation
+
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["reconciliation"])
 
 from api.routers import data_quality
+
 app.include_router(data_quality.router, prefix="/api/data-quality", tags=["data-quality"])
 
 from api.routers import finops
+
 app.include_router(finops.router, prefix="/api/finops", tags=["finops"])
 
 from api.routers import rtbf
+
 app.include_router(rtbf.router, prefix="/api/rtbf", tags=["rtbf"])
 
 from api.routers import dsar
+
 app.include_router(dsar.router, prefix="/api/dsar", tags=["dsar"])
 
 from api.routers import observability
+
 app.include_router(observability.router, prefix="/api/observability", tags=["observability"])
 
 from api.routers import pipeline
+
 app.include_router(pipeline.router, prefix="/api/pipelines", tags=["pipelines"])
 
 from api.routers import dlt
+
 app.include_router(dlt.router, prefix="/api/dlt", tags=["dlt"])
 
 from api.routers import mdm
+
 app.include_router(mdm.router, prefix="/api/mdm", tags=["mdm"])
 
 from api.routers import job_clone
+
 app.include_router(job_clone.router, prefix="/api/jobs", tags=["jobs"])
 
 from api.routers import ai_assistant
+
 app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-assistant"])
 
 from api.routers import notebooks
+
 app.include_router(notebooks.router, prefix="/api/notebooks", tags=["notebooks"])
 
 # ── New Feature Routers ────────────────────────────────────────────────
 from api.routers import trust_score
+
 app.include_router(trust_score.router, prefix="/api/trust-scores", tags=["trust-scores"])
 
 from api.routers import coverage
+
 app.include_router(coverage.router, prefix="/api/coverage", tags=["coverage"])
 
 from api.routers import copq
+
 app.include_router(copq.router, prefix="/api/copq", tags=["copq"])
 
 from api.routers import anomaly_correlation
-app.include_router(anomaly_correlation.router, prefix="/api/anomaly-correlations", tags=["anomaly-correlations"])
+
+app.include_router(
+    anomaly_correlation.router, prefix="/api/anomaly-correlations", tags=["anomaly-correlations"]
+)
 
 from api.routers import nl_rules
+
 app.include_router(nl_rules.router, prefix="/api/nl-rules", tags=["nl-rules"])
 
 from api.routers import playbooks
+
 app.include_router(playbooks.router, prefix="/api/playbooks", tags=["playbooks"])
 
 from api.routers import data_products
+
 app.include_router(data_products.router, prefix="/api/data-products", tags=["data-products"])
 
 from api.routers import compliance_engine
-app.include_router(compliance_engine.router, prefix="/api/compliance", tags=["compliance-automation"])
+
+app.include_router(
+    compliance_engine.router, prefix="/api/compliance", tags=["compliance-automation"]
+)
 
 from api.routers import alert_routing
+
 app.include_router(alert_routing.router, prefix="/api/alerts", tags=["alert-routing"])
 
 from api.routers import environments
+
 app.include_router(environments.router, prefix="/api/environments", tags=["environments"])
 
 from api.routers import target as target_router
+
 app.include_router(target_router.router, prefix="/api/target", tags=["target"])
 
 from api.routers import clone_snapshots as clone_snapshots_router
-app.include_router(clone_snapshots_router.router, prefix="/api/clone-snapshots", tags=["clone-snapshots"])
+
+app.include_router(
+    clone_snapshots_router.router, prefix="/api/clone-snapshots", tags=["clone-snapshots"]
+)
 
 from api.routers import schema_evolution as schema_evolution_router
-app.include_router(schema_evolution_router.router, prefix="/api/schema-evolution", tags=["schema-evolution"])
+
+app.include_router(
+    schema_evolution_router.router, prefix="/api/schema-evolution", tags=["schema-evolution"]
+)
 
 from api.routers import cross_metastore_recon as cmr_router
+
 app.include_router(cmr_router.router, prefix="/api/reconciliation", tags=["reconciliation"])
 
 from api.routers import clone_provenance as provenance_router
+
 app.include_router(provenance_router.router, prefix="/api/provenance", tags=["provenance"])
 
 from api.routers import continuous_sync as continuous_sync_router
-app.include_router(continuous_sync_router.router, prefix="/api/continuous-sync", tags=["continuous-sync"])
+
+app.include_router(
+    continuous_sync_router.router, prefix="/api/continuous-sync", tags=["continuous-sync"]
+)
 
 from api.routers import streaming_clone_generator as streaming_clone_router
-app.include_router(streaming_clone_router.router, prefix="/api/streaming-clone", tags=["streaming-clone"])
+
+app.include_router(
+    streaming_clone_router.router, prefix="/api/streaming-clone", tags=["streaming-clone"]
+)
 
 from api.routers import schedules as schedules_router
+
 app.include_router(schedules_router.router, prefix="/api/schedules", tags=["schedules"])
 
 # Serve frontend static files in production
@@ -553,8 +625,8 @@ from pathlib import Path as _Path
 # Try multiple possible locations for ui/dist/
 _project_root = _Path(__file__).resolve().parent.parent
 _candidates = [
-    _project_root / "ui" / "dist",                    # Standard: relative to api/
-    _Path.cwd() / "ui" / "dist",                      # CWD-based (Databricks App)
+    _project_root / "ui" / "dist",  # Standard: relative to api/
+    _Path.cwd() / "ui" / "dist",  # CWD-based (Databricks App)
     _Path(os.environ.get("APP_SOURCE_PATH", "")) / "ui" / "dist",  # Explicit env var
 ]
 ui_dist = None
@@ -565,6 +637,7 @@ for _c in _candidates:
 
 if ui_dist:
     import logging as _logging
+
     _logging.getLogger(__name__).info(f"Serving frontend from: {ui_dist}")
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
@@ -582,6 +655,7 @@ if ui_dist:
         return FileResponse(os.path.join(ui_dist, "index.html"))
 else:
     import logging as _logging
+
     _logging.getLogger(__name__).warning(
         f"Frontend not found. Searched: {[str(c) for c in _candidates]}. "
         "API-only mode — no UI served."

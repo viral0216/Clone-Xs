@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _get_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "reconciliation")
 
 
@@ -26,11 +27,13 @@ def ensure_alert_tables(client=None, warehouse_id: str = "", config: dict = None
 
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
-    _exec_sql(f"""
+    _exec_sql(
+        f"""
         CREATE TABLE IF NOT EXISTS {schema}.alert_rules (
             rule_id STRING,
             name STRING,
@@ -46,9 +49,13 @@ def ensure_alert_tables(client=None, warehouse_id: str = "", config: dict = None
         ) USING DELTA
         COMMENT 'Clone-Xs Reconciliation: alert_rules'
         TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-    """, client, warehouse_id)
+    """,
+        client,
+        warehouse_id,
+    )
 
-    _exec_sql(f"""
+    _exec_sql(
+        f"""
         CREATE TABLE IF NOT EXISTS {schema}.alert_history (
             alert_id STRING,
             rule_id STRING,
@@ -63,15 +70,23 @@ def ensure_alert_tables(client=None, warehouse_id: str = "", config: dict = None
         ) USING DELTA
         COMMENT 'Clone-Xs Reconciliation: alert_history'
         TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-    """, client, warehouse_id)
+    """,
+        client,
+        warehouse_id,
+    )
 
 
 def create_alert_rule(
-    client=None, warehouse_id: str = "", config: dict = None,
-    name: str = "", metric: str = "match_rate",
-    operator: str = "<", threshold: float = 95.0,
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+    name: str = "",
+    metric: str = "match_rate",
+    operator: str = "<",
+    threshold: float = 95.0,
     severity: str = "warning",
-    source_catalog: str = "", destination_catalog: str = "",
+    source_catalog: str = "",
+    destination_catalog: str = "",
     notify_channels: list[str] = None,
 ) -> dict:
     """Create a new alert rule."""
@@ -83,16 +98,26 @@ def create_alert_rule(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     channels = ",".join(notify_channels or ["email"])
 
-    _exec_sql(f"""
+    _exec_sql(
+        f"""
         INSERT INTO {schema}.alert_rules VALUES (
             '{rule_id}', '{_esc(name)}', '{_esc(metric)}', '{_esc(operator)}',
             {threshold}, '{_esc(severity)}', '{_esc(source_catalog)}',
             '{_esc(destination_catalog)}', '{_esc(channels)}', true, '{now}'
         )
-    """, client, warehouse_id)
+    """,
+        client,
+        warehouse_id,
+    )
 
-    return {"rule_id": rule_id, "name": name, "metric": metric, "operator": operator,
-            "threshold": threshold, "severity": severity}
+    return {
+        "rule_id": rule_id,
+        "name": name,
+        "metric": metric,
+        "operator": operator,
+        "threshold": threshold,
+        "severity": severity,
+    }
 
 
 def list_alert_rules(client=None, warehouse_id: str = "", config: dict = None) -> list[dict]:
@@ -100,12 +125,16 @@ def list_alert_rules(client=None, warehouse_id: str = "", config: dict = None) -
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _run_sql(f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id)
+        return _run_sql(
+            f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id
+        )
     except Exception:
         # Table may not exist yet — try to create it and retry once
         try:
             ensure_alert_tables(client, warehouse_id, config)
-            return _run_sql(f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id)
+            return _run_sql(
+                f"SELECT * FROM {schema}.alert_rules ORDER BY created_at DESC", client, warehouse_id
+            )
         except Exception:
             return []
 
@@ -114,13 +143,19 @@ def delete_alert_rule(rule_id: str, client=None, warehouse_id: str = "", config:
     """Delete an alert rule."""
     config = config or {}
     schema = _get_schema(config)
-    _exec_sql(f"DELETE FROM {schema}.alert_rules WHERE rule_id = '{_esc(rule_id)}'", client, warehouse_id)
+    _exec_sql(
+        f"DELETE FROM {schema}.alert_rules WHERE rule_id = '{_esc(rule_id)}'", client, warehouse_id
+    )
 
 
 def evaluate_alerts(
-    client=None, warehouse_id: str = "", config: dict = None,
-    run_id: str = "", result: dict = None,
-    source_catalog: str = "", destination_catalog: str = "",
+    client=None,
+    warehouse_id: str = "",
+    config: dict = None,
+    run_id: str = "",
+    result: dict = None,
+    source_catalog: str = "",
+    destination_catalog: str = "",
 ) -> list[dict]:
     """Evaluate alert rules against a reconciliation result. Returns fired alerts."""
     config = config or {}
@@ -196,28 +231,40 @@ def evaluate_alerts(
                 f"'{_esc(rule.get('severity', 'warning'))}', '{now}', false)"
             )
 
-            logger.warning(f"ALERT [{rule.get('severity', 'warning').upper()}] "
-                          f"{rule.get('name', '')}: {metric_name}={actual} {op} {threshold}")
+            logger.warning(
+                f"ALERT [{rule.get('severity', 'warning').upper()}] "
+                f"{rule.get('name', '')}: {metric_name}={actual} {op} {threshold}"
+            )
 
     # Batch insert all fired alerts
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(alert_value_rows), batch_size):
-        batch = alert_value_rows[i:i + batch_size]
+        batch = alert_value_rows[i : i + batch_size]
         try:
-            _exec_sql(f"INSERT INTO {schema}.alert_history VALUES {', '.join(batch)}",
-                      client, warehouse_id)
+            _exec_sql(
+                f"INSERT INTO {schema}.alert_history VALUES {', '.join(batch)}",
+                client,
+                warehouse_id,
+            )
         except Exception as e:
             logger.warning(f"Could not store alerts batch: {e}")
 
     return fired
 
 
-def get_alert_history(client=None, warehouse_id: str = "", config: dict = None, limit: int = 50) -> list[dict]:
+def get_alert_history(
+    client=None, warehouse_id: str = "", config: dict = None, limit: int = 50
+) -> list[dict]:
     """Get recent alert history."""
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _run_sql(f"SELECT * FROM {schema}.alert_history ORDER BY fired_at DESC LIMIT {limit}", client, warehouse_id)
+        return _run_sql(
+            f"SELECT * FROM {schema}.alert_history ORDER BY fired_at DESC LIMIT {limit}",
+            client,
+            warehouse_id,
+        )
     except Exception:
         return []

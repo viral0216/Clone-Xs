@@ -57,9 +57,7 @@ def get_schema_tags(
         return []
 
 
-def get_catalog_tags(
-    client: WorkspaceClient, warehouse_id: str, catalog: str
-) -> list[dict]:
+def get_catalog_tags(client: WorkspaceClient, warehouse_id: str, catalog: str) -> list[dict]:
     """Get tags for a catalog."""
     sql = f"""
         SELECT tag_name, tag_value
@@ -74,8 +72,11 @@ def get_catalog_tags(
 
 
 def copy_catalog_tags(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, dry_run: bool = False,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    dry_run: bool = False,
 ) -> None:
     """Copy tags from source catalog to destination catalog."""
     tags = get_catalog_tags(client, warehouse_id, source_catalog)
@@ -83,18 +84,26 @@ def copy_catalog_tags(
         return
 
     for tag in tags:
-        sql = f"ALTER CATALOG `{dest_catalog}` SET TAGS ('{tag['tag_name']}' = '{tag['tag_value']}')"
+        sql = (
+            f"ALTER CATALOG `{dest_catalog}` SET TAGS ('{tag['tag_name']}' = '{tag['tag_value']}')"
+        )
         try:
             execute_sql(client, warehouse_id, sql, dry_run=dry_run)
         except Exception as e:
             logger.error(f"Failed to set catalog tag {tag['tag_name']}: {e}")
 
-    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Copied {len(tags)} catalog tags to {dest_catalog}")
+    logger.info(
+        f"{'[DRY RUN] ' if dry_run else ''}Copied {len(tags)} catalog tags to {dest_catalog}"
+    )
 
 
 def copy_schema_tags(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, dry_run: bool = False,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    dry_run: bool = False,
 ) -> None:
     """Copy tags from source schema to destination schema."""
     tags = get_schema_tags(client, warehouse_id, source_catalog, schema)
@@ -117,8 +126,12 @@ def copy_schema_tags(
 
 
 def copy_table_tags(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy table-level and column-level tags from source to destination."""
@@ -172,15 +185,23 @@ def get_table_properties(
         rows = execute_sql(client, warehouse_id, sql)
         # Filter out internal/delta properties that shouldn't be copied
         internal_prefixes = ("delta.", "spark.", "option.", "transient_lastDdlTime")
-        return [r for r in rows if not any(str(r.get("key", "")).startswith(p) for p in internal_prefixes)]
+        return [
+            r
+            for r in rows
+            if not any(str(r.get("key", "")).startswith(p) for p in internal_prefixes)
+        ]
     except Exception as e:
         logger.debug(f"Could not fetch table properties for {schema}.{table_name}: {e}")
         return []
 
 
 def copy_table_properties(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy TBLPROPERTIES from source table to destination table."""

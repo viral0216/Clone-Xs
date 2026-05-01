@@ -105,6 +105,7 @@ def _send_approval_notification(config: dict, request: ApprovalRequest) -> None:
     if slack_url:
         try:
             import urllib.request
+
             payload = {
                 "text": (
                     f"Clone approval request {request.request_id}\n"
@@ -116,7 +117,8 @@ def _send_approval_notification(config: dict, request: ApprovalRequest) -> None:
             }
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
-                slack_url, data=data,
+                slack_url,
+                data=data,
                 headers={"Content-Type": "application/json"},
             )
             urllib.request.urlopen(req, timeout=10)

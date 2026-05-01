@@ -58,7 +58,7 @@ _SYSTEM_PROMPTS = {
     "ai_viz_suggest": (
         "You are a data visualization expert. Given column names, types, cardinality, and sample data, "
         "recommend the single best chart type from: bar, hbar, stacked, line, area, scatter, pie, radar, treemap, funnel, composed. "
-        "Return ONLY a JSON object: {\"chartType\": \"...\", \"xCol\": \"...\", \"yCol\": \"...\", \"reason\": \"...\"}. "
+        'Return ONLY a JSON object: {"chartType": "...", "xCol": "...", "yCol": "...", "reason": "..."}. '
         "No markdown, no explanation outside the JSON."
     ),
 }
@@ -85,9 +85,12 @@ class AIService:
         if self._client is None:
             try:
                 import anthropic
+
                 self._client = anthropic.Anthropic(api_key=self.api_key)
             except ImportError:
-                raise RuntimeError("anthropic package not installed. Run: pip install anthropic>=0.30.0")
+                raise RuntimeError(
+                    "anthropic package not installed. Run: pip install anthropic>=0.30.0"
+                )
         return self._client
 
     def _call_claude(self, system_prompt: str, user_message: str, max_tokens: int = 1024) -> str:
@@ -105,7 +108,9 @@ class AIService:
                 return block.text
         return response.content[0].text
 
-    def _call_databricks_model(self, endpoint_name: str, system_prompt: str, user_message: str, max_tokens: int, client) -> str:
+    def _call_databricks_model(
+        self, endpoint_name: str, system_prompt: str, user_message: str, max_tokens: int, client
+    ) -> str:
         """Call a Databricks Model Serving endpoint (OpenAI chat format)."""
         config = client.config
         host = (config.host or "").rstrip("/")
@@ -128,7 +133,9 @@ class AIService:
                 headers["Authorization"] = f"Bearer {token}"
                 has_auth = True
         if not has_auth:
-            raise RuntimeError("No authentication credentials available for Databricks. Please log in.")
+            raise RuntimeError(
+                "No authentication credentials available for Databricks. Please log in."
+            )
 
         url = f"{host}/serving-endpoints/{endpoint_name}/invocations"
         payload = {
@@ -143,16 +150,26 @@ class AIService:
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=120)
         except requests.ConnectionError:
-            raise RuntimeError(f"Cannot connect to Databricks at {host}. Check your network connection.")
+            raise RuntimeError(
+                f"Cannot connect to Databricks at {host}. Check your network connection."
+            )
         except requests.Timeout:
-            raise RuntimeError(f"Request to {endpoint_name} timed out after 120 seconds. The model may be starting up — try again.")
+            raise RuntimeError(
+                f"Request to {endpoint_name} timed out after 120 seconds. The model may be starting up — try again."
+            )
 
         if resp.status_code == 401:
-            raise RuntimeError("Authentication failed. Your session may have expired — please log in again.")
+            raise RuntimeError(
+                "Authentication failed. Your session may have expired — please log in again."
+            )
         if resp.status_code == 404:
-            raise RuntimeError(f"Serving endpoint '{endpoint_name}' not found. Check that the endpoint exists and is active.")
+            raise RuntimeError(
+                f"Serving endpoint '{endpoint_name}' not found. Check that the endpoint exists and is active."
+            )
         if resp.status_code == 429:
-            raise RuntimeError(f"Rate limited by {endpoint_name}. Please wait a moment and try again.")
+            raise RuntimeError(
+                f"Rate limited by {endpoint_name}. Please wait a moment and try again."
+            )
         if resp.status_code >= 400:
             detail = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
             raise RuntimeError(f"Model serving error ({resp.status_code}): {detail}")
@@ -170,7 +187,11 @@ class AIService:
                         if isinstance(block, dict) and block.get("type") == "text":
                             return block.get("text", "")
                     # Fallback: join all text fields
-                    return " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                    return " ".join(
+                        b.get("text", "")
+                        for b in content
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
                 return content
             if isinstance(choice, dict) and "text" in choice:
                 return choice["text"]
@@ -181,26 +202,43 @@ class AIService:
         logger.warning(f"Unexpected response format from {endpoint_name}: {list(data.keys())}")
         return str(data)
 
-    def _call_llm(self, system_prompt: str, user_message: str, max_tokens: int = 1024, endpoint_name: str = None, client=None) -> str:
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 1024,
+        endpoint_name: str = None,
+        client=None,
+    ) -> str:
         """Route to Databricks or Anthropic based on configuration."""
         if endpoint_name and client:
-            return self._call_databricks_model(endpoint_name, system_prompt, user_message, max_tokens, client)
+            return self._call_databricks_model(
+                endpoint_name, system_prompt, user_message, max_tokens, client
+            )
         return self._call_claude(system_prompt, user_message, max_tokens)
 
-    def summarize(self, context_type: str, data: dict, endpoint_name: str = None, client=None) -> str:
+    def summarize(
+        self, context_type: str, data: dict, endpoint_name: str = None, client=None
+    ) -> str:
         """Generate a narrative summary for the given context."""
         system_prompt = _SYSTEM_PROMPTS.get(context_type, _SYSTEM_PROMPTS["dashboard"])
         user_message = f"Here is the {context_type} data to analyze:\n\n{json.dumps(data, indent=2, default=str)}"
-        return self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
+        return self._call_llm(
+            system_prompt, user_message, endpoint_name=endpoint_name, client=client
+        )
 
-    def parse_clone_query(self, query: str, available_catalogs: list[str], endpoint_name: str = None, client=None) -> dict:
+    def parse_clone_query(
+        self, query: str, available_catalogs: list[str], endpoint_name: str = None, client=None
+    ) -> dict:
         """Parse a natural language clone request into structured config."""
         system_prompt = _SYSTEM_PROMPTS["clone_builder"]
         user_message = (
             f"Available catalogs: {', '.join(available_catalogs) if available_catalogs else 'unknown'}\n\n"
             f"User request: {query}"
         )
-        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
+        response = self._call_llm(
+            system_prompt, user_message, endpoint_name=endpoint_name, client=client
+        )
         try:
             text = response.strip()
             if text.startswith("```"):
@@ -209,11 +247,15 @@ class AIService:
         except (json.JSONDecodeError, IndexError):
             return {"explanation": response, "error": "Could not parse structured config"}
 
-    def suggest_dq_rules(self, profiling_results: dict, table_name: str = "", endpoint_name: str = None, client=None) -> list[dict]:
+    def suggest_dq_rules(
+        self, profiling_results: dict, table_name: str = "", endpoint_name: str = None, client=None
+    ) -> list[dict]:
         """Suggest data quality rules from profiling results."""
         system_prompt = _SYSTEM_PROMPTS["profiling"]
         user_message = f"Table: {table_name}\n\nProfiling results:\n{json.dumps(profiling_results, indent=2, default=str)}"
-        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
+        response = self._call_llm(
+            system_prompt, user_message, endpoint_name=endpoint_name, client=client
+        )
         try:
             text = response.strip()
             if text.startswith("```"):
@@ -222,11 +264,15 @@ class AIService:
         except (json.JSONDecodeError, IndexError):
             return [{"raw_response": response}]
 
-    def suggest_pii_remediation(self, scan_results: dict, endpoint_name: str = None, client=None) -> dict:
+    def suggest_pii_remediation(
+        self, scan_results: dict, endpoint_name: str = None, client=None
+    ) -> dict:
         """Suggest PII remediation actions."""
         system_prompt = _SYSTEM_PROMPTS["pii"]
         user_message = f"PII scan results:\n{json.dumps(scan_results, indent=2, default=str)}"
-        response = self._call_llm(system_prompt, user_message, endpoint_name=endpoint_name, client=client)
+        response = self._call_llm(
+            system_prompt, user_message, endpoint_name=endpoint_name, client=client
+        )
         return {"summary": response, "recommendations": []}
 
 

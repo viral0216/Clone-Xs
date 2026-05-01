@@ -108,10 +108,13 @@ class CloneAPIHandler(BaseHTTPRequestHandler):
         self._route("DELETE")
 
     def _handle_health(self, params):
-        self._send_json(200, {
-            "status": "healthy",
-            "version": "0.4.0",
-        })
+        self._send_json(
+            200,
+            {
+                "status": "healthy",
+                "version": "0.4.0",
+            },
+        )
 
     def _handle_list_clones(self, params):
         queue = _server_state.get("queue")
@@ -131,19 +134,26 @@ class CloneAPIHandler(BaseHTTPRequestHandler):
 
         # Build config from request body merged with server config
         config = {**_server_state.get("config", {})}
-        config.update({
-            "source_catalog": body.get("source_catalog", config.get("source_catalog")),
-            "destination_catalog": body.get("destination_catalog", config.get("destination_catalog")),
-            "clone_type": body.get("clone_type", config.get("clone_type", "DEEP")),
-            "dry_run": body.get("dry_run", False),
-        })
+        config.update(
+            {
+                "source_catalog": body.get("source_catalog", config.get("source_catalog")),
+                "destination_catalog": body.get(
+                    "destination_catalog", config.get("destination_catalog")
+                ),
+                "clone_type": body.get("clone_type", config.get("clone_type", "DEEP")),
+                "dry_run": body.get("dry_run", False),
+            }
+        )
 
         priority = body.get("priority", 3)
         submitted_by = body.get("submitted_by", "api")
 
         job_id = queue.submit(
-            config["source_catalog"], config["destination_catalog"],
-            config, priority=priority, submitted_by=submitted_by,
+            config["source_catalog"],
+            config["destination_catalog"],
+            config,
+            priority=priority,
+            submitted_by=submitted_by,
         )
         self._send_json(202, {"job_id": job_id, "status": "queued"})
 
@@ -172,6 +182,7 @@ class CloneAPIHandler(BaseHTTPRequestHandler):
     def _handle_diff(self, params):
         body = self._read_body()
         from src.diff import compare_catalogs
+
         client = _server_state.get("client")
         config = _server_state.get("config", {})
         warehouse_id = config.get("sql_warehouse_id", "")
@@ -186,6 +197,7 @@ class CloneAPIHandler(BaseHTTPRequestHandler):
     def _handle_validate(self, params):
         body = self._read_body()
         from src.validation import validate_catalog
+
         client = _server_state.get("client")
         config = _server_state.get("config", {})
         warehouse_id = config.get("sql_warehouse_id", "")
@@ -209,15 +221,18 @@ class CloneAPIHandler(BaseHTTPRequestHandler):
         completed = sum(1 for j in jobs if j.get("status") == "completed")
         failed = sum(1 for j in jobs if j.get("status") == "failed")
 
-        self._send_json(200, {
-            "metrics": {
-                "total_jobs": total,
-                "running": running,
-                "completed": completed,
-                "failed": failed,
-                "queued": total - running - completed - failed,
-            }
-        })
+        self._send_json(
+            200,
+            {
+                "metrics": {
+                    "total_jobs": total,
+                    "running": running,
+                    "completed": completed,
+                    "failed": failed,
+                    "queued": total - running - completed - failed,
+                }
+            },
+        )
 
 
 def start_server(
@@ -237,6 +252,7 @@ def start_server(
     # Initialize clone queue
     try:
         from src.clone_queue import CloneQueue
+
         queue = CloneQueue()
         _server_state["queue"] = queue
 

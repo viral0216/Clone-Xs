@@ -21,6 +21,7 @@ class PIIScanStore:
         config: dict | None = None,
     ):
         from src.table_registry import get_catalog, get_schema_fqn
+
         cfg = config or {}
         state_catalog = state_catalog or get_catalog(cfg)
         schema_fqn = get_schema_fqn(cfg, "pii")
@@ -36,10 +37,16 @@ class PIIScanStore:
     def init_tables(self) -> None:
         """Create the PII tracking Delta tables if they don't exist."""
         from src.catalog_utils import ensure_catalog_and_schema
-        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        ensure_catalog_and_schema(
+            self.client, self.warehouse_id, self.state_catalog, self.state_schema
+        )
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._scans_table} (
                     scan_id STRING NOT NULL,
                     catalog STRING NOT NULL,
@@ -58,12 +65,16 @@ class PIIScanStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._scans_table}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._detections_table} (
                     scan_id STRING NOT NULL,
                     catalog STRING NOT NULL,
@@ -86,12 +97,16 @@ class PIIScanStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._detections_table}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._remediation_table} (
                     catalog STRING,
                     schema_name STRING,
@@ -110,7 +125,8 @@ class PIIScanStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._remediation_table}: {e}")
 
@@ -135,9 +151,9 @@ class PIIScanStore:
          pii_columns_found, risk_level, duration_seconds, config_json, summary_json)
         VALUES (
             '{scan_id}', '{catalog}', '{now}', 'full',
-            {summary.get('total_columns_scanned', 0)},
-            {summary.get('pii_columns_found', 0)},
-            '{summary.get('risk_level', 'NONE')}',
+            {summary.get("total_columns_scanned", 0)},
+            {summary.get("pii_columns_found", 0)},
+            '{summary.get("risk_level", "NONE")}',
             {duration_seconds},
             '{config_json}',
             '{summary_json}'
@@ -153,7 +169,7 @@ class PIIScanStore:
         columns = result.get("columns", [])
         CHUNK_SIZE = 50
         for i in range(0, len(columns), CHUNK_SIZE):
-            chunk = columns[i:i + CHUNK_SIZE]
+            chunk = columns[i : i + CHUNK_SIZE]
             value_rows = []
             for d in chunk:
                 flags = json.dumps(d.get("correlation_flags", [])).replace("'", "\\\\'")
@@ -172,12 +188,14 @@ class PIIScanStore:
                 (scan_id, catalog, schema_name, table_name, column_name, data_type,
                  pii_type, detection_method, confidence, confidence_score, match_rate,
                  suggested_masking, correlation_flags, detected_at)
-                VALUES {', '.join(value_rows)}
+                VALUES {", ".join(value_rows)}
                 """
                 try:
                     execute_sql(self.client, self.warehouse_id, det_sql)
                 except Exception as e:
-                    logger.warning(f"Failed to batch-insert {len(chunk)} detections (chunk {i // CHUNK_SIZE + 1}): {e}")
+                    logger.warning(
+                        f"Failed to batch-insert {len(chunk)} detections (chunk {i // CHUNK_SIZE + 1}): {e}"
+                    )
 
     def get_scan_history(self, catalog: str, limit: int = 20) -> list[dict]:
         """Get recent scan history for a catalog."""

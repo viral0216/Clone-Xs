@@ -11,7 +11,13 @@ from databricks.sdk import WorkspaceClient
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from api.dependencies import get_db_client
-from api.models.auth import AuthStatus, LoginRequest, OAuthLoginRequest, ServicePrincipalRequest, WarehouseInfo
+from api.models.auth import (
+    AuthStatus,
+    LoginRequest,
+    OAuthLoginRequest,
+    ServicePrincipalRequest,
+    WarehouseInfo,
+)
 from src.auth import clear_cache, ensure_authenticated, get_client, is_databricks_app
 
 logger = logging.getLogger(__name__)
@@ -43,12 +49,16 @@ _sessions_lock = threading.Lock()
 def _evict_expired() -> None:
     """Remove expired sessions. Must be called with _sessions_lock held."""
     now = time.monotonic()
-    expired = [sid for sid, entry in _sessions.items() if now - entry.created_at > SESSION_TTL_SECONDS]
+    expired = [
+        sid for sid, entry in _sessions.items() if now - entry.created_at > SESSION_TTL_SECONDS
+    ]
     for sid in expired:
         del _sessions[sid]
 
 
-def create_session(client: WorkspaceClient, user: str = "", host: str = "", auth_method: str = "") -> str:
+def create_session(
+    client: WorkspaceClient, user: str = "", host: str = "", auth_method: str = ""
+) -> str:
     """Store an authenticated client with user info and return a session ID."""
     session_id = secrets.token_hex(16)
     with _sessions_lock:
@@ -57,7 +67,9 @@ def create_session(client: WorkspaceClient, user: str = "", host: str = "", auth
         if len(_sessions) >= MAX_SESSIONS:
             oldest = min(_sessions, key=lambda s: _sessions[s].created_at)
             del _sessions[oldest]
-        _sessions[session_id] = SessionEntry(client=client, user=user, host=host, auth_method=auth_method)
+        _sessions[session_id] = SessionEntry(
+            client=client, user=user, host=host, auth_method=auth_method
+        )
     return session_id
 
 
@@ -92,9 +104,11 @@ def _auto_start_warehouse(client: WorkspaceClient):
     Finds the configured warehouse (from config) or the first stopped one
     and issues a start command. Runs in a daemon thread so login is not blocked.
     """
+
     def _start():
         try:
             from src.auth import list_warehouses
+
             warehouses = list_warehouses(client)
             if not warehouses:
                 logger.debug("No warehouses found — skipping auto-start")
@@ -103,6 +117,7 @@ def _auto_start_warehouse(client: WorkspaceClient):
             # Prefer the warehouse configured in settings (clone_config.yaml)
             try:
                 from src.config import load_config
+
                 cfg = load_config()
                 configured_wid = cfg.get("sql_warehouse_id", "")
             except Exception:
@@ -113,7 +128,11 @@ def _auto_start_warehouse(client: WorkspaceClient):
                 target = next((w for w in warehouses if w["id"] == configured_wid), None)
 
             if target:
-                logger.info("Using configured default warehouse: %s (%s)", target.get("name", ""), target["id"])
+                logger.info(
+                    "Using configured default warehouse: %s (%s)",
+                    target.get("name", ""),
+                    target["id"],
+                )
 
             # Fall back to the first stopped warehouse if no default is configured
             if not target:
@@ -261,6 +280,7 @@ async def auth_status(
 async def oauth_login(req: OAuthLoginRequest):
     """Trigger browser-based OAuth login."""
     from src.auth import ensure_logged_in
+
     try:
         _username = ensure_logged_in(host=req.host, force=True)
         info = ensure_authenticated()
@@ -269,7 +289,9 @@ async def oauth_login(req: OAuthLoginRequest):
         host = info.get("host", "")
         session_id = create_session(client, user=user, host=host, auth_method="oauth-u2m")
         _auto_start_warehouse(client)
-        return AuthStatus(authenticated=True, user=user, host=host, auth_method="oauth-u2m", session_id=session_id)
+        return AuthStatus(
+            authenticated=True, user=user, host=host, auth_method="oauth-u2m", session_id=session_id
+        )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -278,6 +300,7 @@ async def oauth_login(req: OAuthLoginRequest):
 async def service_principal_login(req: ServicePrincipalRequest):
     """Authenticate with service principal credentials."""
     from databricks.sdk import WorkspaceClient
+
     try:
         clear_cache()
         if req.auth_type == "azure" and req.tenant_id:
@@ -295,9 +318,17 @@ async def service_principal_login(req: ServicePrincipalRequest):
             )
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        session_id = create_session(client, user=user, host=req.host, auth_method="service-principal")
+        session_id = create_session(
+            client, user=user, host=req.host, auth_method="service-principal"
+        )
         _auto_start_warehouse(client)
-        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="service-principal", session_id=session_id)
+        return AuthStatus(
+            authenticated=True,
+            user=user,
+            host=req.host,
+            auth_method="service-principal",
+            session_id=session_id,
+        )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -316,7 +347,9 @@ async def azure_login():
         )
 
     try:
-        subprocess.run(["az", "login", "--only-show-errors"], check=True, capture_output=True, timeout=120)
+        subprocess.run(
+            ["az", "login", "--only-show-errors"], check=True, capture_output=True, timeout=120
+        )
         return {"status": "ok", "message": "Azure login successful"}
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=408, detail="Login timed out")
@@ -331,6 +364,7 @@ async def azure_login():
 async def azure_tenants():
     """List Azure tenants."""
     from src.auth import list_tenants
+
     return list_tenants()
 
 
@@ -338,6 +372,7 @@ async def azure_tenants():
 async def azure_subscriptions(tenant_id: str = ""):
     """List Azure subscriptions (optionally filtered by tenant)."""
     from src.auth import list_subscriptions
+
     return list_subscriptions(tenant_id)
 
 
@@ -345,6 +380,7 @@ async def azure_subscriptions(tenant_id: str = ""):
 async def azure_workspaces(subscription_id: str = ""):
     """List Databricks workspaces in a subscription."""
     from src.auth import list_databricks_workspaces
+
     if not subscription_id:
         raise HTTPException(status_code=400, detail="subscription_id required")
     return list_databricks_workspaces(subscription_id)
@@ -355,6 +391,7 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
     """Connect to a Databricks workspace discovered via Azure."""
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.config import Config
+
     try:
         clear_cache()
         config = Config(host=req.host, auth_type="azure-cli")
@@ -363,7 +400,13 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
         user = me.user_name or me.display_name or ""
         session_id = create_session(client, user=user, host=req.host, auth_method="azure-cli")
         _auto_start_warehouse(client)
-        return AuthStatus(authenticated=True, user=user, host=req.host, auth_method="azure-cli", session_id=session_id)
+        return AuthStatus(
+            authenticated=True,
+            user=user,
+            host=req.host,
+            auth_method="azure-cli",
+            session_id=session_id,
+        )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -372,10 +415,15 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
 async def get_env_vars():
     """Check which Databricks environment variables are set."""
     import os
+
     vars_to_check = [
-        "DATABRICKS_HOST", "DATABRICKS_TOKEN",
-        "DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET",
-        "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID",
+        "DATABRICKS_HOST",
+        "DATABRICKS_TOKEN",
+        "DATABRICKS_CLIENT_ID",
+        "DATABRICKS_CLIENT_SECRET",
+        "AZURE_CLIENT_ID",
+        "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID",
         "DATABRICKS_CONFIG_PROFILE",
     ]
     result = {}
@@ -396,6 +444,7 @@ async def get_env_vars():
 async def list_warehouses(client=Depends(get_db_client)) -> list[WarehouseInfo]:
     """List available SQL warehouses."""
     from src.auth import list_warehouses
+
     warehouses = list_warehouses(client)
     return [WarehouseInfo(**wh) for wh in warehouses]
 
@@ -407,6 +456,7 @@ async def test_warehouse(req: dict, client=Depends(get_db_client)):
     if not warehouse_id:
         raise HTTPException(status_code=400, detail="warehouse_id is required")
     from src.client import execute_sql
+
     try:
         result = execute_sql(client, warehouse_id, "SELECT 1 AS ok", max_retries=1)
         return {"status": "ok", "message": "Warehouse is reachable", "result": result}
@@ -418,6 +468,7 @@ async def test_warehouse(req: dict, client=Depends(get_db_client)):
 async def list_volumes(client=Depends(get_db_client)):
     """List available Unity Catalog volumes."""
     from src.serverless import list_volumes as _list_volumes
+
     try:
         return _list_volumes(client)
     except Exception as e:
@@ -428,6 +479,7 @@ async def list_volumes(client=Depends(get_db_client)):
 async def logout(x_clone_session: Optional[str] = Header(None)):
     """Clear authentication cache and session."""
     from src.auth import clear_session
+
     clear_cache()
     clear_session()
     delete_session(x_clone_session)
@@ -452,12 +504,14 @@ async def list_serving_endpoints(client=Depends(get_db_client)):
                         provider = ext.provider or "custom"
             except Exception:
                 pass
-            endpoints.append({
-                "name": name,
-                "state": state,
-                "provider": provider,
-                "is_claude": "claude" in name.lower() or "anthropic" in provider.lower(),
-            })
+            endpoints.append(
+                {
+                    "name": name,
+                    "state": state,
+                    "provider": provider,
+                    "is_claude": "claude" in name.lower() or "anthropic" in provider.lower(),
+                }
+            )
         return {"success": True, "endpoints": endpoints}
     except Exception as e:
         return {"success": False, "endpoints": [], "error": str(e)}
@@ -468,6 +522,7 @@ async def list_genie_spaces(client=Depends(get_db_client)):
     """List Databricks Genie spaces for natural language SQL."""
     try:
         import requests as req
+
         config = client.config
         host = (config.host or "").rstrip("/")
         headers = {"Content-Type": "application/json"}
@@ -484,11 +539,13 @@ async def list_genie_spaces(client=Depends(get_db_client)):
         if r.status_code == 200:
             spaces = []
             for sp in r.json().get("spaces", []):
-                spaces.append({
-                    "space_id": sp.get("space_id", sp.get("id", "")),
-                    "title": sp.get("title", sp.get("name", "")),
-                    "description": sp.get("description", ""),
-                })
+                spaces.append(
+                    {
+                        "space_id": sp.get("space_id", sp.get("id", "")),
+                        "title": sp.get("title", sp.get("name", "")),
+                        "description": sp.get("description", ""),
+                    }
+                )
             return {"success": True, "spaces": spaces}
         return {"success": False, "spaces": [], "error": f"HTTP {r.status_code}"}
     except Exception as e:

@@ -26,6 +26,7 @@ async def parse_nl_rule(req: NLRuleRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.nl_rule_builder import parse_nl_rule
+
     return parse_nl_rule(req.text, req.table_fqn, client, wid, config)
 
 
@@ -34,6 +35,7 @@ async def batch_parse(req: BatchNLRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.nl_rule_builder import batch_parse
+
     return batch_parse(req.rules, req.table_fqn, client, wid, config)
 
 
@@ -42,4 +44,5 @@ async def explain_rule(req: ExplainRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.nl_rule_builder import explain_rule
+
     return {"explanation": explain_rule(req.rule, client, wid, config)}

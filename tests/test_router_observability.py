@@ -1,4 +1,5 @@
 """Smoke tests for the observability router."""
+
 import pytest
 
 pytest.importorskip("fastapi")

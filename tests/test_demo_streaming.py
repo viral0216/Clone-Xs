@@ -39,9 +39,15 @@ class TestDeviceProfiles:
 
     def test_all_profiles_present(self):
         assert set(DEVICE_PROFILES.keys()) == {
-            "generic_sensor", "industrial_machine", "car_obd2",
-            "smart_meter", "wearable_health", "pos_terminal",
-            "wind_turbine", "atm_transaction", "server_metrics",
+            "generic_sensor",
+            "industrial_machine",
+            "car_obd2",
+            "smart_meter",
+            "wearable_health",
+            "pos_terminal",
+            "wind_turbine",
+            "atm_transaction",
+            "server_metrics",
             "clickstream",
         }
 
@@ -53,6 +59,7 @@ class TestDeviceProfiles:
         ``smart_meter`` from the UI got a 422 at the API layer."""
         from typing import get_args
         from api.models.demo import StreamingEmissionRequest
+
         # Pull the Literal out of the field annotation.
         ann = StreamingEmissionRequest.model_fields["profile"].annotation
         literal_values = set(get_args(ann))
@@ -67,6 +74,7 @@ class TestDeviceProfiles:
         scheduling that profile get a notebook that crashes at runtime
         with NameError."""
         from src.demo_streaming_schedule import _PROFILE_GENERATORS_SOURCE
+
         assert set(_PROFILE_GENERATORS_SOURCE.keys()) == set(DEVICE_PROFILES.keys()), (
             "_PROFILE_GENERATORS_SOURCE missing entries — add the inlined "
             "generator source for the missing profile(s)"
@@ -97,8 +105,14 @@ class TestGenerators:
         profile = DEVICE_PROFILES["generic_sensor"]
         state = profile["init_state"](5)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"device_id", "captured_at", "temperature_c", "humidity_pct",
-                "pressure_hpa", "vibration_g"} <= set(evt.keys())
+        assert {
+            "device_id",
+            "captured_at",
+            "temperature_c",
+            "humidity_pct",
+            "pressure_hpa",
+            "vibration_g",
+        } <= set(evt.keys())
         assert 0.0 <= evt["humidity_pct"] <= 100.0  # invariant from clamp
         assert evt["vibration_g"] >= 0.0  # clamped non-negative
 
@@ -106,8 +120,15 @@ class TestGenerators:
         profile = DEVICE_PROFILES["industrial_machine"]
         state = profile["init_state"](3)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"machine_id", "captured_at", "rpm", "oil_pressure_psi",
-                "coolant_temp_c", "tool_wear_pct", "error_code"} <= set(evt.keys())
+        assert {
+            "machine_id",
+            "captured_at",
+            "rpm",
+            "oil_pressure_psi",
+            "coolant_temp_c",
+            "tool_wear_pct",
+            "error_code",
+        } <= set(evt.keys())
         # tool_wear_pct is clamped to [0, 100] in the generator.
         assert 0.0 <= evt["tool_wear_pct"] <= 100.0
 
@@ -115,8 +136,17 @@ class TestGenerators:
         profile = DEVICE_PROFILES["car_obd2"]
         state = profile["init_state"](4)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"vehicle_vin", "captured_at", "speed_kmh", "engine_rpm",
-                "coolant_temp_c", "fuel_level_pct", "lat", "lng", "dtc"} <= set(evt.keys())
+        assert {
+            "vehicle_vin",
+            "captured_at",
+            "speed_kmh",
+            "engine_rpm",
+            "coolant_temp_c",
+            "fuel_level_pct",
+            "lat",
+            "lng",
+            "dtc",
+        } <= set(evt.keys())
         # speed_kmh is clamped to [0, 140]; fuel_level_pct >= 0.
         assert 0.0 <= evt["speed_kmh"] <= 140.0
         assert evt["fuel_level_pct"] >= 0.0
@@ -128,8 +158,14 @@ class TestGenerators:
         profile = DEVICE_PROFILES["smart_meter"]
         state = profile["init_state"](5)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"meter_id", "captured_at", "kwh_cumulative",
-                "voltage_v", "current_a", "power_factor"} <= set(evt.keys())
+        assert {
+            "meter_id",
+            "captured_at",
+            "kwh_cumulative",
+            "voltage_v",
+            "current_a",
+            "power_factor",
+        } <= set(evt.keys())
         # power_factor must stay in [0.85, 1.0] per generator.
         assert 0.85 <= evt["power_factor"] <= 1.0
 
@@ -146,8 +182,15 @@ class TestGenerators:
         profile = DEVICE_PROFILES["wearable_health"]
         state = profile["init_state"](3)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"wearable_id", "captured_at", "heart_rate_bpm", "spo2_pct",
-                "steps_cumulative", "calories_burned", "alert"} <= set(evt.keys())
+        assert {
+            "wearable_id",
+            "captured_at",
+            "heart_rate_bpm",
+            "spo2_pct",
+            "steps_cumulative",
+            "calories_burned",
+            "alert",
+        } <= set(evt.keys())
         # SpO2 clamped to [85, 100].
         assert 85.0 <= evt["spo2_pct"] <= 100.0
 
@@ -155,8 +198,16 @@ class TestGenerators:
         profile = DEVICE_PROFILES["pos_terminal"]
         state = profile["init_state"](4)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"terminal_id", "store_id", "captured_at", "transaction_id",
-                "amount_usd", "payment_method", "item_count", "status"} <= set(evt.keys())
+        assert {
+            "terminal_id",
+            "store_id",
+            "captured_at",
+            "transaction_id",
+            "amount_usd",
+            "payment_method",
+            "item_count",
+            "status",
+        } <= set(evt.keys())
         assert evt["payment_method"] in {"card", "contactless", "mobile", "cash"}
         assert evt["status"] in {"approved", "declined"}
 
@@ -174,8 +225,15 @@ class TestGenerators:
         profile = DEVICE_PROFILES["wind_turbine"]
         state = profile["init_state"](4)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"turbine_id", "captured_at", "wind_speed_ms", "rotor_rpm",
-                "power_output_kw", "blade_pitch_deg", "fault_code"} <= set(evt.keys())
+        assert {
+            "turbine_id",
+            "captured_at",
+            "wind_speed_ms",
+            "rotor_rpm",
+            "power_output_kw",
+            "blade_pitch_deg",
+            "fault_code",
+        } <= set(evt.keys())
         # power_output_kw clamped to [0, rated_kw]; rated_kw is one of the
         # discrete values in init_state.
         assert evt["power_output_kw"] >= 0.0
@@ -185,9 +243,17 @@ class TestGenerators:
         profile = DEVICE_PROFILES["atm_transaction"]
         state = profile["init_state"](5)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"atm_id", "captured_at", "transaction_id", "account_hash",
-                "transaction_type", "amount_usd", "lat", "lng",
-                "is_fraud_suspected"} <= set(evt.keys())
+        assert {
+            "atm_id",
+            "captured_at",
+            "transaction_id",
+            "account_hash",
+            "transaction_type",
+            "amount_usd",
+            "lat",
+            "lng",
+            "is_fraud_suspected",
+        } <= set(evt.keys())
         assert evt["transaction_type"] in {"withdrawal", "deposit", "balance_inquiry"}
         assert isinstance(evt["is_fraud_suspected"], bool)
 
@@ -195,9 +261,17 @@ class TestGenerators:
         profile = DEVICE_PROFILES["server_metrics"]
         state = profile["init_state"](3)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"host_id", "captured_at", "cpu_pct", "mem_used_gb",
-                "mem_total_gb", "disk_used_pct", "net_in_mbps",
-                "net_out_mbps", "status"} <= set(evt.keys())
+        assert {
+            "host_id",
+            "captured_at",
+            "cpu_pct",
+            "mem_used_gb",
+            "mem_total_gb",
+            "disk_used_pct",
+            "net_in_mbps",
+            "net_out_mbps",
+            "status",
+        } <= set(evt.keys())
         assert 0.0 <= evt["cpu_pct"] <= 100.0
         assert evt["status"] in {"healthy", "warning", "critical"}
 
@@ -205,8 +279,16 @@ class TestGenerators:
         profile = DEVICE_PROFILES["clickstream"]
         state = profile["init_state"](5)
         evt = profile["generate_event"](state, 0, self._now())
-        assert {"user_id", "session_id", "captured_at", "event_type",
-                "page_url", "referrer", "user_agent", "device_type"} <= set(evt.keys())
+        assert {
+            "user_id",
+            "session_id",
+            "captured_at",
+            "event_type",
+            "page_url",
+            "referrer",
+            "user_agent",
+            "device_type",
+        } <= set(evt.keys())
         assert evt["event_type"] in {"page_view", "click", "scroll", "submit", "purchase"}
         assert evt["device_type"] in {"desktop", "mobile", "tablet"}
         assert evt["page_url"].startswith("/")
@@ -237,6 +319,7 @@ class TestGenerators:
         events = [profile["generate_event"](state, i, self._now()) for i in range(6)]
         # Group by user; assert all events for one user share user_agent.
         from collections import defaultdict
+
         by_user: dict[str, set] = defaultdict(set)
         for e in events:
             by_user[e["user_id"]].add(e["user_agent"])
@@ -248,14 +331,16 @@ class TestGenerators:
 
 
 class TestEmitAndWrite:
-
     def test_emit_batch_returns_n_events(self):
         """Caller asks for N events → gets exactly N back. Round-robin
         across devices keeps `seq` distinct so device 0 isn't always
         the first event when batches chain."""
-        events = emit_batch("generic_sensor",
-                            DEVICE_PROFILES["generic_sensor"]["init_state"](10),
-                            batch_size=25, base_seq=0)
+        events = emit_batch(
+            "generic_sensor",
+            DEVICE_PROFILES["generic_sensor"]["init_state"](10),
+            batch_size=25,
+            base_seq=0,
+        )
         assert len(events) == 25
 
     def test_emit_batch_roundrobins_devices(self):
@@ -265,6 +350,7 @@ class TestEmitAndWrite:
         state = DEVICE_PROFILES["generic_sensor"]["init_state"](3)
         events = emit_batch("generic_sensor", state, batch_size=6, base_seq=0)
         from collections import Counter
+
         counts = Counter(e["device_id"] for e in events)
         assert set(counts.values()) == {2}
 
@@ -292,10 +378,13 @@ class TestEmitAndWrite:
         `read_files(format='json')` parser depends on it."""
         import io
         import json
+
         client = MagicMock()
         write_batch_to_volume(
-            client, "/Volumes/main/iot/events_volume/x",
-            batch=[{"a": 1}, {"a": 2}], seq=0,
+            client,
+            "/Volumes/main/iot/events_volume/x",
+            batch=[{"a": 1}, {"a": 2}],
+            seq=0,
         )
         # Recover the bytes the runner uploaded.
         buf: io.BytesIO = client.files.upload.call_args.args[1]
@@ -308,7 +397,6 @@ class TestEmitAndWrite:
 
 
 class TestRunLoop:
-
     @patch("src.demo_streaming.execute_sql")
     @patch("src.demo_streaming.write_batch_to_volume")
     @patch("src.demo_streaming.time")
@@ -324,10 +412,16 @@ class TestRunLoop:
         mock_write.return_value = "/Volumes/x/y/events_volume/p/batch-1.json"
 
         result = run_streaming_emission(
-            MagicMock(), "wh",
-            {"catalog": "main", "schema": "iot", "profile": "generic_sensor",
-             "events_per_batch": 50, "interval_seconds": 2.0,
-             "total_duration_seconds": 10},
+            MagicMock(),
+            "wh",
+            {
+                "catalog": "main",
+                "schema": "iot",
+                "profile": "generic_sensor",
+                "events_per_batch": 50,
+                "interval_seconds": 2.0,
+                "total_duration_seconds": 10,
+            },
         )
         # Five ticks fired, 50 events each → 250 emitted.
         assert result["files_written"] == 5
@@ -345,15 +439,22 @@ class TestRunLoop:
         mock_write.return_value = "/Volumes/x/y/events_volume/p/batch.json"
 
         call_count = {"n": 0}
+
         def stop_after_2():
             call_count["n"] += 1
             return call_count["n"] > 4  # stop after a couple of probes
 
         result = run_streaming_emission(
-            MagicMock(), "wh",
-            {"catalog": "main", "schema": "iot", "profile": "generic_sensor",
-             "events_per_batch": 10, "interval_seconds": 1.0,
-             "total_duration_seconds": 3600},
+            MagicMock(),
+            "wh",
+            {
+                "catalog": "main",
+                "schema": "iot",
+                "profile": "generic_sensor",
+                "events_per_batch": 10,
+                "interval_seconds": 1.0,
+                "total_duration_seconds": 3600,
+            },
             stop_check=stop_after_2,
         )
         assert result["stopped"] is True
@@ -370,9 +471,14 @@ class TestRunLoop:
         mock_time.monotonic.return_value = 0.0
         with pytest.raises(ValueError, match="Unknown device profile"):
             run_streaming_emission(
-                MagicMock(), "wh",
-                {"catalog": "main", "schema": "iot", "profile": "nope",
-                 "total_duration_seconds": 1},
+                MagicMock(),
+                "wh",
+                {
+                    "catalog": "main",
+                    "schema": "iot",
+                    "profile": "nope",
+                    "total_duration_seconds": 1,
+                },
             )
 
 
@@ -380,14 +486,18 @@ class TestRunLoop:
 
 
 class TestBronzeStreamingTable:
-
     @patch("src.demo_streaming.execute_sql")
     def test_builds_create_or_refresh_streaming_table_sql(self, mock_sql):
         """The runner emits the exact SQL shape DBSQL Serverless expects.
         Test pins the keywords so accidental changes (e.g., dropping
         SCHEDULE) get caught."""
         result = create_bronze_streaming_table(
-            MagicMock(), "wh", "main", "iot", "generic_sensor", refresh_minutes=3,
+            MagicMock(),
+            "wh",
+            "main",
+            "iot",
+            "generic_sensor",
+            refresh_minutes=3,
         )
         sql = mock_sql.call_args.args[2]
         assert "CREATE OR REFRESH STREAMING TABLE" in sql
@@ -407,7 +517,11 @@ class TestBronzeStreamingTable:
             "DBSQL_SERVERLESS_REQUIRED: Streaming Tables require Serverless",
         )
         result = create_bronze_streaming_table(
-            MagicMock(), "wh", "main", "iot", "car_obd2",
+            MagicMock(),
+            "wh",
+            "main",
+            "iot",
+            "car_obd2",
         )
         assert result["status"] == "failed"
         assert "Serverless" in result["error"]
@@ -421,7 +535,6 @@ class TestBronzeStreamingTable:
 
 
 class TestAutoLoaderSql:
-
     def test_snippet_matches_runtime_sql_shape(self):
         """The UI snippet must produce identical DDL to what the
         runner executes — otherwise users running it manually would
@@ -437,35 +550,46 @@ class TestAutoLoaderSql:
 
 
 class TestRequestValidators:
-
     def test_events_per_batch_lower_bound(self):
         from api.models.demo import StreamingEmissionRequest
+
         with pytest.raises(ValueError):
             StreamingEmissionRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 events_per_batch=0,
             )
 
     def test_total_duration_capped(self):
         from api.models.demo import StreamingEmissionRequest
+
         with pytest.raises(ValueError):
             StreamingEmissionRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 total_duration_seconds=99999,
             )
 
     def test_unknown_profile_rejected(self):
         from api.models.demo import StreamingEmissionRequest
+
         with pytest.raises(ValueError):
             StreamingEmissionRequest(
-                catalog="c", schema="s", profile="not_a_profile",
+                catalog="c",
+                schema="s",
+                profile="not_a_profile",
             )
 
     def test_bronze_refresh_minutes_lower_bound(self):
         from api.models.demo import StreamingEmissionRequest
+
         with pytest.raises(ValueError):
             StreamingEmissionRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 bronze_refresh_minutes=0,
             )
 
@@ -474,20 +598,26 @@ class TestRequestValidators:
 
 
 class TestEndpointDispatch:
-
     def test_post_streaming_submits_job(self, client):
         """The route should hand off to JobManager.submit_job with
         job_type='streaming-emit' and config carrying the user's params."""
         from unittest.mock import AsyncMock
-        with patch("api.queue.job_manager.JobManager.submit_job", new_callable=AsyncMock) as mock_submit:
+
+        with patch(
+            "api.queue.job_manager.JobManager.submit_job", new_callable=AsyncMock
+        ) as mock_submit:
             mock_submit.return_value = "abc12345"
-            resp = client.post("/api/generate/demo-data/streaming", json={
-                "catalog": "main", "schema": "iot",
-                "profile": "generic_sensor",
-                "events_per_batch": 50,
-                "interval_seconds": 1.0,
-                "total_duration_seconds": 30,
-            })
+            resp = client.post(
+                "/api/generate/demo-data/streaming",
+                json={
+                    "catalog": "main",
+                    "schema": "iot",
+                    "profile": "generic_sensor",
+                    "events_per_batch": 50,
+                    "interval_seconds": 1.0,
+                    "total_duration_seconds": 30,
+                },
+            )
             assert resp.status_code == 200, resp.text
             assert resp.json()["job_id"] == "abc12345"
             assert mock_submit.called
@@ -512,10 +642,15 @@ class TestEndpointDispatch:
         """The snippet endpoint is a pure string builder — no
         Databricks call, just templating. Verifies the response shape
         the UI consumes."""
-        resp = client.get("/api/generate/demo-data/streaming/auto-loader-sql", params={
-            "catalog": "main", "schema": "iot", "profile": "car_obd2",
-            "refresh_minutes": 7,
-        })
+        resp = client.get(
+            "/api/generate/demo-data/streaming/auto-loader-sql",
+            params={
+                "catalog": "main",
+                "schema": "iot",
+                "profile": "car_obd2",
+                "refresh_minutes": 7,
+            },
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["table_fqn"] == "main.iot.bronze_car_obd2"

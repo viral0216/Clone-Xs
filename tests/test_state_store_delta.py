@@ -46,8 +46,10 @@ class TestStateStoreRecordTableClone:
         mock_sql.return_value = []
         store = StateStore(MagicMock(), "wh-123")
         store.record_table_clone(
-            "src.schema1.table1", "dst.schema1.table1",
-            status="success", row_count=1000,
+            "src.schema1.table1",
+            "dst.schema1.table1",
+            status="success",
+            row_count=1000,
         )
 
         assert mock_sql.called
@@ -59,9 +61,7 @@ class TestStateStoreRecordTableClone:
 class TestStateStoreGetSummary:
     @patch("src.state_store.execute_sql")
     def test_returns_summary(self, mock_sql):
-        mock_sql.return_value = [
-            {"total": "10", "synced": "7", "stale": "2", "failed": "1"}
-        ]
+        mock_sql.return_value = [{"total": "10", "synced": "7", "stale": "2", "failed": "1"}]
 
         store = StateStore(MagicMock(), "wh-123")
         result = store.get_summary("src_cat", "dst_cat")

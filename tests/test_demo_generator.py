@@ -21,6 +21,7 @@ from src.demo_generator import (
 # Unit Tests: _fix_fk_ranges
 # ---------------------------------------------------------------------------
 
+
 class TestFixFkRanges:
     """Tests for FK range scaling and date replacement."""
 
@@ -70,12 +71,15 @@ class TestFixFkRanges:
     def test_all_industries_have_fk_dims(self):
         """Every industry with FK relationships should have corresponding dim rows."""
         for industry in FK_RELATIONSHIPS:
-            assert industry in _FK_DIM_ROWS, f"{industry} has FK relationships but no _FK_DIM_ROWS entry"
+            assert industry in _FK_DIM_ROWS, (
+                f"{industry} has FK relationships but no _FK_DIM_ROWS entry"
+            )
 
 
 # ---------------------------------------------------------------------------
 # Unit Tests: Parameter validation
 # ---------------------------------------------------------------------------
+
 
 class TestParameterValidation:
     """Tests for input validation in generate_demo_catalog."""
@@ -132,7 +136,9 @@ class TestParameterValidation:
     def test_start_date_after_end_date(self, mock_sql):
         client = MagicMock()
         with pytest.raises(ValueError, match="must be before"):
-            generate_demo_catalog(client, "wid", "test_cat", start_date="2025-01-01", end_date="2020-01-01")
+            generate_demo_catalog(
+                client, "wid", "test_cat", start_date="2025-01-01", end_date="2020-01-01"
+            )
 
     @patch("src.demo_generator.execute_sql")
     def test_invalid_industry(self, mock_sql):
@@ -144,6 +150,7 @@ class TestParameterValidation:
 # ---------------------------------------------------------------------------
 # Unit Tests: Data coverage
 # ---------------------------------------------------------------------------
+
 
 class TestDataCoverage:
     """Tests verifying completeness of industry definitions."""
@@ -172,8 +179,18 @@ class TestDataCoverage:
 
     def test_10_industries_exist(self):
         assert len(ALL_INDUSTRIES) == 10
-        expected = {"healthcare", "financial", "retail", "telecom", "manufacturing",
-                    "energy", "education", "real_estate", "logistics", "insurance"}
+        expected = {
+            "healthcare",
+            "financial",
+            "retail",
+            "telecom",
+            "manufacturing",
+            "energy",
+            "education",
+            "real_estate",
+            "logistics",
+            "insurance",
+        }
         assert set(ALL_INDUSTRIES) == expected
 
     def test_table_comments_cover_key_tables(self):
@@ -182,10 +199,14 @@ class TestDataCoverage:
         for (ind, _), _ in TABLE_COMMENTS.items():
             industries_with_comments.add(ind)
         # At least half the industries should have comments
-        assert len(industries_with_comments) >= 5, f"Only {len(industries_with_comments)} industries have comments"
+        assert len(industries_with_comments) >= 5, (
+            f"Only {len(industries_with_comments)} industries have comments"
+        )
 
     def test_check_constraints_cover_all_industries(self):
-        assert len(CHECK_CONSTRAINTS) == 10, f"Only {len(CHECK_CONSTRAINTS)} industries have CHECK constraints"
+        assert len(CHECK_CONSTRAINTS) == 10, (
+            f"Only {len(CHECK_CONSTRAINTS)} industries have CHECK constraints"
+        )
 
     def test_fk_relationships_reference_valid_tables(self):
         """Every FK relationship should reference tables that exist in the industry definition."""
@@ -202,13 +223,15 @@ class TestDataCoverage:
             for industry_name, definition in INDUSTRIES.items():
                 for tbl in definition["tables"]:
                     if tbl["name"] == table_name:
-                        assert col_name in tbl["ddl_cols"], \
+                        assert col_name in tbl["ddl_cols"], (
                             f"Partition col '{col_name}' not in {industry_name}.{table_name} DDL"
+                        )
 
 
 # ---------------------------------------------------------------------------
 # Integration Tests: generate_demo_catalog (mocked)
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateDemoCatalog:
     """Integration tests with mocked SQL execution."""
@@ -222,7 +245,9 @@ class TestGenerateDemoCatalog:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.01,
             batch_size=5000,
@@ -248,7 +273,9 @@ class TestGenerateDemoCatalog:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.01,
             batch_size=5000,
@@ -273,7 +300,9 @@ class TestGenerateDemoCatalog:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.01,
             batch_size=5000,
@@ -296,7 +325,9 @@ class TestGenerateDemoCatalog:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.01,
             batch_size=5000,
@@ -326,7 +357,9 @@ class TestGenerateDemoCatalog:
             for q in queries or []:
                 all_sql.append(str(q).upper())
         insert_calls = [s for s in all_sql if s.lstrip().startswith("INSERT INTO")]
-        assert insert_calls == [], f"schema_only run still issued {len(insert_calls)} INSERT INTO statements"
+        assert insert_calls == [], (
+            f"schema_only run still issued {len(insert_calls)} INSERT INTO statements"
+        )
 
     @patch("src.demo_generator.execute_sql_parallel")
     @patch("src.demo_generator.execute_sql")
@@ -338,7 +371,9 @@ class TestGenerateDemoCatalog:
         progress = {}
 
         generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.01,
             batch_size=5000,
@@ -380,7 +415,9 @@ class TestQuotaFailFast:
 
         with pytest.raises(RuntimeError) as exc_info:
             generate_demo_catalog(
-                client, "wid", "test_cat",
+                client,
+                "wid",
+                "test_cat",
                 industries=["healthcare"],
                 scale_factor=0.001,
                 batch_size=5000,
@@ -420,7 +457,9 @@ class TestQuotaFailFast:
 
         with pytest.raises(RuntimeError, match="quota exceeded"):
             generate_demo_catalog(
-                client, "wid", "test_cat",
+                client,
+                "wid",
+                "test_cat",
                 industries=["healthcare"],
                 scale_factor=0.001,
                 batch_size=5000,
@@ -440,6 +479,7 @@ class TestQuotaFailFast:
 # ---------------------------------------------------------------------------
 # Integration Test: cleanup
 # ---------------------------------------------------------------------------
+
 
 class TestCleanupDemoCatalog:
     """Tests for catalog cleanup."""

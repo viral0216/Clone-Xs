@@ -5,8 +5,13 @@ import time
 
 from src.auth import (
     _load_session,
-    add_auth_args, ensure_authenticated, ensure_logged_in,
-    get_client, interactive_login, list_profiles, select_warehouse,
+    add_auth_args,
+    ensure_authenticated,
+    ensure_logged_in,
+    get_client,
+    interactive_login,
+    list_profiles,
+    select_warehouse,
 )
 from src.clone_catalog import clone_catalog
 from src.config import load_config
@@ -17,21 +22,31 @@ logger = logging.getLogger(__name__)
 def setup_logging(verbose: bool = False, log_file: str | None = None) -> None:
     """Configure logging for the CLI with optional file output."""
     from src.log_formatter import setup_color_logging
+
     setup_color_logging(verbose=verbose, log_file=log_file)
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add common arguments shared across subcommands."""
     parser.add_argument(
-        "-c", "--config",
+        "-c",
+        "--config",
         default="config/clone_config.yaml",
         help="Path to the clone config YAML file (default: config/clone_config.yaml)",
     )
     parser.add_argument("--warehouse-id", help="Override SQL warehouse ID from config")
-    parser.add_argument("--serverless", action="store_true", help="Use serverless compute instead of SQL warehouse")
-    parser.add_argument("--volume", help="UC Volume path for serverless (e.g. /Volumes/catalog/schema/volume)")
-    parser.add_argument("--max-parallel-queries", type=int, default=None,
-                        help="Max parallel SQL queries (default: 10)")
+    parser.add_argument(
+        "--serverless", action="store_true", help="Use serverless compute instead of SQL warehouse"
+    )
+    parser.add_argument(
+        "--volume", help="UC Volume path for serverless (e.g. /Volumes/catalog/schema/volume)"
+    )
+    parser.add_argument(
+        "--max-parallel-queries",
+        type=int,
+        default=None,
+        help="Max parallel SQL queries (default: 10)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
     parser.add_argument("--profile", help="Config profile to use")
     parser.add_argument("--log-file", help="Write logs to a file in addition to console")
@@ -53,6 +68,7 @@ def _save_cli_run_log(client, config, job_type, result, start_time, error=None):
     # 1. Save to run_logs table (detailed execution trace)
     try:
         from src.run_logs import save_run_log
+
         job_record = {
             "job_id": job_id,
             "job_type": job_type,
@@ -73,9 +89,17 @@ def _save_cli_run_log(client, config, job_type, result, start_time, error=None):
     # 2. Save to clone_operations table (audit trail)
     try:
         from src.audit_trail import log_operation_start, log_operation_complete
+
         log_operation_start(client, wid, config, job_id, operation_type=job_type)
-        log_operation_complete(client, wid, config, job_id, result or {}, started_dt,
-                              error_message=str(error) if error else None)
+        log_operation_complete(
+            client,
+            wid,
+            config,
+            job_id,
+            result or {},
+            started_dt,
+            error_message=str(error) if error else None,
+        )
     except Exception as e:
         logging.getLogger(__name__).debug(f"Could not save audit trail to Delta: {e}")
 
@@ -139,6 +163,7 @@ def _resolve_warehouse_id(args, config: dict, client=None) -> str:
         client = _get_auth_client(args)
     print("\n  No SQL warehouse ID provided. Discovering warehouses...")
     from src.auth import list_warehouses
+
     warehouses = list_warehouses(client)
 
     # Build options: serverless + warehouses
@@ -146,7 +171,9 @@ def _resolve_warehouse_id(args, config: dict, client=None) -> str:
     print("    1. Serverless compute (no SQL warehouse needed)")
     for i, wh in enumerate(warehouses, 2):
         state_icon = "*" if wh["state"] == "RUNNING" else " "
-        print(f"    {i}. {wh['name']:<30} {wh['size']:<12} {wh['state']:<10} {wh['type']}{state_icon}")
+        print(
+            f"    {i}. {wh['name']:<30} {wh['size']:<12} {wh['state']:<10} {wh['type']}{state_icon}"
+        )
 
     total = len(warehouses) + 1
     pick = input(f"\n  Select compute [1-{total}] (default: 1): ").strip()
@@ -157,6 +184,7 @@ def _resolve_warehouse_id(args, config: dict, client=None) -> str:
         config["sql_warehouse_id"] = "SERVERLESS"
         config["use_serverless"] = True
         from src.auth import _save_session, _load_session as _ls
+
         sess = _ls()
         _save_session(sess.get("host", ""), "SERVERLESS")
         return "SERVERLESS"
@@ -165,6 +193,7 @@ def _resolve_warehouse_id(args, config: dict, client=None) -> str:
         print(f"  Warehouse: {selected['name']} ({selected['id']})")
         config["sql_warehouse_id"] = selected["id"]
         from src.auth import _save_session, _load_session as _ls
+
         sess = _ls()
         _save_session(sess.get("host", ""), selected["id"])
         return selected["id"]
@@ -243,6 +272,7 @@ def cmd_clone(args):
     # New feature CLI overrides
     if getattr(args, "template", None):
         from src.clone_templates import apply_template
+
         config = apply_template(config, args.template)
     if getattr(args, "where", None):
         config.setdefault("where_clauses", {})
@@ -269,6 +299,7 @@ def cmd_clone(args):
         config["checkpoint_enabled"] = True
     if getattr(args, "resume_from_checkpoint", None):
         from src.checkpoint import CheckpointManager
+
         config["resume"] = args.resume_from_checkpoint
         completed = CheckpointManager.get_completed_from_checkpoint(args.resume_from_checkpoint)
         config["_checkpoint_completed"] = completed
@@ -292,15 +323,17 @@ def cmd_clone(args):
         }
 
     if not config.get("source_catalog"):
-        logger.error("Source catalog is required. Use --source <catalog_name> or set source_catalog in config.")
+        logger.error(
+            "Source catalog is required. Use --source <catalog_name> or set source_catalog in config."
+        )
         sys.exit(1)
     if not config.get("destination_catalog"):
-        logger.error("Destination catalog is required. Use --dest <catalog_name> or set destination_catalog in config.")
+        logger.error(
+            "Destination catalog is required. Use --dest <catalog_name> or set destination_catalog in config."
+        )
         sys.exit(1)
 
-    logger.info(
-        f"Cloning catalog: {config['source_catalog']} -> {config['destination_catalog']}"
-    )
+    logger.info(f"Cloning catalog: {config['source_catalog']} -> {config['destination_catalog']}")
 
     dest_ws = config.get("dest_workspace")
     if dest_ws:
@@ -314,12 +347,14 @@ def cmd_clone(args):
     # Serverless mode: submit entire clone as a single Databricks job
     if getattr(args, "serverless", False) or config.get("use_serverless"):
         from src.serverless import submit_clone_job
+
         logger.info("Serverless mode: submitting clone as a single Databricks job")
         volume_path = getattr(args, "volume", None) or config.get("volume_path")
         summary = submit_clone_job(client, config, volume_path=volume_path)
     elif (config.get("load_type") or "").upper() == "SELECTIVE":
         _resolve_warehouse_id(args, config, client)
         from src.selective_reclone import selective_reclone_catalog
+
         summary = selective_reclone_catalog(client, config)
     else:
         _resolve_warehouse_id(args, config, client)
@@ -350,8 +385,10 @@ def cmd_diff(args):
     client = _get_auth_client(args)
     start_time = time.time()
     diff = compare_catalogs(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
         config["exclude_schemas"],
     )
     print_diff(diff, config["source_catalog"], config["destination_catalog"])
@@ -392,11 +429,19 @@ def cmd_rollback(args):
     client = _get_auth_client(args)
     start_time = time.time()
     results = rollback(
-        client, config["sql_warehouse_id"], args.rollback_log_file,
+        client,
+        config["sql_warehouse_id"],
+        args.rollback_log_file,
         drop_catalog=args.drop_catalog,
     )
-    _save_cli_run_log(client, config, "rollback", results, start_time,
-                      error=f"{results['failed']} failed" if results["failed"] else None)
+    _save_cli_run_log(
+        client,
+        config,
+        "rollback",
+        results,
+        start_time,
+        error=f"{results['failed']} failed" if results["failed"] else None,
+    )
 
     if results["failed"] > 0:
         sys.exit(1)
@@ -421,9 +466,12 @@ def cmd_validate(args):
 
     client = _get_auth_client(args)
     summary = validate_catalog(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
-        config["exclude_schemas"], config["max_workers"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
+        config["exclude_schemas"],
+        config["max_workers"],
         use_checksum=args.checksum,
     )
     if summary["mismatched"] > 0 or summary["errors"] > 0:
@@ -447,7 +495,9 @@ def cmd_estimate(args):
 
     client = _get_auth_client(args)
     estimate_clone_cost(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         config["exclude_schemas"],
         include_schemas=config.get("include_schemas") or None,
         price_per_gb=args.price_per_gb,
@@ -467,14 +517,19 @@ def cmd_generate_workflow(args):
 
     if args.format == "json":
         output = generate_workflow(
-            config, output_path=args.output or "databricks_workflow.json",
-            job_name=args.job_name, cluster_id=args.cluster_id,
-            schedule_cron=args.schedule, notification_email=args.notification_email,
+            config,
+            output_path=args.output or "databricks_workflow.json",
+            job_name=args.job_name,
+            cluster_id=args.cluster_id,
+            schedule_cron=args.schedule,
+            notification_email=args.notification_email,
         )
     else:
         output = generate_workflow_yaml(
-            config, output_path=args.output or "databricks_workflow.yaml",
-            job_name=args.job_name, schedule_cron=args.schedule,
+            config,
+            output_path=args.output or "databricks_workflow.yaml",
+            job_name=args.job_name,
+            schedule_cron=args.schedule,
         )
     logger.info(f"Workflow file generated: {output}")
 
@@ -553,9 +608,12 @@ def cmd_compare(args):
     client = _get_auth_client(args)
     start_time = time.time()
     summary = compare_catalogs_deep(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
-        config["exclude_schemas"], config["max_workers"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
+        config["exclude_schemas"],
+        config["max_workers"],
     )
     _save_cli_run_log(client, config, "compare", summary, start_time)
 
@@ -582,10 +640,14 @@ def cmd_sync(args):
 
     client = _get_auth_client(args)
     results = sync_catalogs(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
-        config["exclude_schemas"], config["clone_type"],
-        dry_run=args.dry_run, drop_extra=args.drop_extra,
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
+        config["exclude_schemas"],
+        config["clone_type"],
+        dry_run=args.dry_run,
+        drop_extra=args.drop_extra,
     )
     if results["errors"]:
         sys.exit(1)
@@ -609,8 +671,11 @@ def cmd_snapshot(args):
     client = _get_auth_client(args)
     start_time = time.time()
     output = create_snapshot(
-        client, config["sql_warehouse_id"], config["source_catalog"],
-        config["exclude_schemas"], output_path=args.output,
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["exclude_schemas"],
+        output_path=args.output,
     )
     logger.info(f"Snapshot saved: {output}")
     _save_cli_run_log(client, config, "snapshot", {"output_path": output}, start_time)
@@ -636,8 +701,10 @@ def cmd_schema_drift(args):
     client = _get_auth_client(args)
     start_time = time.time()
     summary = detect_schema_drift(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
         config["exclude_schemas"],
         include_schemas=config.get("include_schemas"),
     )
@@ -650,6 +717,7 @@ def cmd_schema_drift(args):
 def cmd_init(args):
     """Execute the init (config wizard) command."""
     from src.wizard import run_wizard
+
     run_wizard(output_path=args.output)
 
 
@@ -672,13 +740,19 @@ def cmd_terraform(args):
 
     if args.format == "pulumi":
         output = generate_pulumi(
-            client, config["sql_warehouse_id"], config["source_catalog"],
-            config["exclude_schemas"], output_path=args.output or "pulumi_catalog.py",
+            client,
+            config["sql_warehouse_id"],
+            config["source_catalog"],
+            config["exclude_schemas"],
+            output_path=args.output or "pulumi_catalog.py",
         )
     else:
         output = generate_terraform(
-            client, config["sql_warehouse_id"], config["source_catalog"],
-            config["exclude_schemas"], output_path=args.output or "terraform_catalog.tf.json",
+            client,
+            config["sql_warehouse_id"],
+            config["source_catalog"],
+            config["exclude_schemas"],
+            output_path=args.output or "terraform_catalog.tf.json",
         )
     logger.info(f"IaC config generated: {output}")
 
@@ -703,12 +777,20 @@ def cmd_preflight(args):
     client = _get_auth_client(args)
     start_time = time.time()
     result = run_preflight(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
         check_write=not args.no_write_check,
     )
-    _save_cli_run_log(client, config, "preflight", result, start_time,
-                      error="Preflight checks failed" if not result["ready"] else None)
+    _save_cli_run_log(
+        client,
+        config,
+        "preflight",
+        result,
+        start_time,
+        error="Preflight checks failed" if not result["ready"] else None,
+    )
 
     if not result["ready"]:
         sys.exit(1)
@@ -731,8 +813,11 @@ def cmd_search(args):
 
     client = _get_auth_client(args)
     search_tables(
-        client, config["sql_warehouse_id"], config["source_catalog"],
-        args.pattern, config["exclude_schemas"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        args.pattern,
+        config["exclude_schemas"],
         search_columns=args.columns,
     )
 
@@ -754,7 +839,9 @@ def cmd_stats(args):
 
     client = _get_auth_client(args)
     catalog_stats(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         config["exclude_schemas"],
     )
 
@@ -776,7 +863,9 @@ def cmd_storage_metrics(args):
 
     client = _get_auth_client(args)
     catalog_storage_metrics(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         config["exclude_schemas"],
         schema_filter=args.schema,
         table_filter=args.table,
@@ -812,8 +901,11 @@ def cmd_optimize(args):
         )
 
     tables = _enumerate_tables(
-        client, wid, catalog,
-        schema_filter=args.schema, table_filter=args.table,
+        client,
+        wid,
+        catalog,
+        schema_filter=args.schema,
+        table_filter=args.table,
         exclude_schemas=config["exclude_schemas"],
     )
     run_optimize(client, wid, tables, dry_run=args.dry_run)
@@ -847,8 +939,11 @@ def cmd_vacuum(args):
         )
 
     tables = _enumerate_tables(
-        client, wid, catalog,
-        schema_filter=args.schema, table_filter=args.table,
+        client,
+        wid,
+        catalog,
+        schema_filter=args.schema,
+        table_filter=args.table,
         exclude_schemas=config["exclude_schemas"],
     )
     run_vacuum(client, wid, tables, retention_hours=args.retention_hours, dry_run=args.dry_run)
@@ -872,8 +967,11 @@ def cmd_profile(args):
     client = _get_auth_client(args)
     start_time = time.time()
     result = profile_catalog(
-        client, config["sql_warehouse_id"], config["source_catalog"],
-        config["exclude_schemas"], config["max_workers"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["exclude_schemas"],
+        config["max_workers"],
         output_path=args.output,
         include_schemas=config.get("include_schemas"),
     )
@@ -901,21 +999,27 @@ def cmd_monitor(args):
 
     if args.once:
         result = monitor_once(
-            client, config["sql_warehouse_id"],
-            config["source_catalog"], config["destination_catalog"],
+            client,
+            config["sql_warehouse_id"],
+            config["source_catalog"],
+            config["destination_catalog"],
             config["exclude_schemas"],
-            check_drift=args.check_drift, check_counts=args.check_counts,
+            check_drift=args.check_drift,
+            check_counts=args.check_counts,
         )
         if not result["in_sync"]:
             sys.exit(1)
     else:
         monitor_loop(
-            client, config["sql_warehouse_id"],
-            config["source_catalog"], config["destination_catalog"],
+            client,
+            config["sql_warehouse_id"],
+            config["source_catalog"],
+            config["destination_catalog"],
             config["exclude_schemas"],
             interval_minutes=args.interval,
             max_iterations=args.max_checks,
-            check_drift=args.check_drift, check_counts=args.check_counts,
+            check_drift=args.check_drift,
+            check_counts=args.check_counts,
         )
 
 
@@ -937,8 +1041,11 @@ def cmd_export(args):
     client = _get_auth_client(args)
     start_time = time.time()
     output = export_catalog_metadata(
-        client, config["sql_warehouse_id"], config["source_catalog"],
-        config["exclude_schemas"], output_format=args.format,
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["exclude_schemas"],
+        output_format=args.format,
         output_path=args.output,
     )
     logger.info(f"Export saved: {output}")
@@ -948,18 +1055,21 @@ def cmd_export(args):
 def cmd_config_diff(args):
     """Execute the config-diff command."""
     from src.config_diff import print_config_diff
+
     print_config_diff(args.file_a, args.file_b)
 
 
 def cmd_completion(args):
     """Execute the completion command."""
     from src.completions import install_completions
+
     install_completions(args.shell)
 
 
 def cmd_dashboard(args):
     """Launch the Streamlit web dashboard."""
     from src.web_dashboard import launch_dashboard
+
     launch_dashboard(config_path=args.config, port=args.port)
 
 
@@ -980,8 +1090,10 @@ def cmd_generate_dab(args):
         config["destination_catalog"] = args.dest
 
     generate_dab_bundle(
-        config, output_dir=args.output,
-        job_name=args.job_name, schedule_cron=args.schedule,
+        config,
+        output_dir=args.output,
+        job_name=args.job_name,
+        schedule_cron=args.schedule,
         notification_email=args.notification_email,
     )
 
@@ -1008,8 +1120,14 @@ def cmd_multi_clone(args):
     destinations = dest_config.get("destinations", [])
     start_time = time.time()
     summary = clone_to_multiple_workspaces(config, destinations, max_parallel=args.max_parallel)
-    _save_cli_run_log(None, config, "multi-clone", summary, start_time,
-                      error=f"{summary['failed']} workspaces failed" if summary["failed"] else None)
+    _save_cli_run_log(
+        None,
+        config,
+        "multi-clone",
+        summary,
+        start_time,
+        error=f"{summary['failed']} workspaces failed" if summary["failed"] else None,
+    )
 
     if summary["failed"] > 0:
         sys.exit(1)
@@ -1032,7 +1150,9 @@ def cmd_cost_estimate(args):
 
     client = _get_auth_client(args)
     estimate_clone_cost(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         config.get("exclude_schemas", []),
         clone_type=args.clone_type or config.get("clone_type", "DEEP"),
         warehouse_type=args.warehouse_type,
@@ -1058,8 +1178,12 @@ def cmd_audit(args):
         ensure_audit_table(client, config["sql_warehouse_id"], config)
     else:
         query_audit_history(
-            client, config["sql_warehouse_id"], config,
-            limit=args.limit, source_catalog=args.source, status=args.status,
+            client,
+            config["sql_warehouse_id"],
+            config,
+            limit=args.limit,
+            source_catalog=args.source,
+            status=args.status,
         )
 
 
@@ -1082,8 +1206,10 @@ def cmd_lineage(args):
         ensure_lineage_table(client, config["sql_warehouse_id"])
     else:
         query_lineage(
-            client, config["sql_warehouse_id"],
-            table_fqn=args.table, operation_id=args.operation_id,
+            client,
+            config["sql_warehouse_id"],
+            table_fqn=args.table,
+            operation_id=args.operation_id,
             limit=args.limit,
         )
 
@@ -1108,9 +1234,12 @@ def cmd_pii_scan(args):
     client = _get_auth_client(args)
     start_time = time.time()
     result = scan_catalog_for_pii(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         exclude_schemas,
-        sample_data=args.sample_data, max_workers=config.get("max_workers", 4),
+        sample_data=args.sample_data,
+        max_workers=config.get("max_workers", 4),
         pii_config=config.get("pii_detection"),
         read_uc_tags=args.read_uc_tags,
         save_history=args.save_history,
@@ -1122,8 +1251,11 @@ def cmd_pii_scan(args):
     # Apply UC tags if requested
     if args.apply_tags:
         from src.pii_tagging import apply_pii_tags
+
         tag_result = apply_pii_tags(
-            client, config["sql_warehouse_id"], config["source_catalog"],
+            client,
+            config["sql_warehouse_id"],
+            config["source_catalog"],
             result.get("columns", []),
             tag_prefix=args.tag_prefix,
             min_confidence=0.7,
@@ -1152,7 +1284,9 @@ def cmd_policy_check(args):
 
     client = _get_auth_client(args)
     passed = enforce_policies(
-        client, config["sql_warehouse_id"], config,
+        client,
+        config["sql_warehouse_id"],
+        config,
         policy_path=args.policy_file,
     )
     if not passed:
@@ -1179,14 +1313,25 @@ def cmd_schema_evolve(args):
     client = _get_auth_client(args)
     start_time = time.time()
     result = evolve_catalog_schema(
-        client, config["sql_warehouse_id"],
-        config["source_catalog"], config["destination_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
+        config["destination_catalog"],
         config.get("exclude_schemas", []),
-        dry_run=args.dry_run, drop_removed=args.drop_removed,
+        dry_run=args.dry_run,
+        drop_removed=args.drop_removed,
     )
     if not args.dry_run:
-        _save_cli_run_log(client, config, "schema-evolve", result, start_time,
-                          error=f"{result['tables_with_errors']} errors" if result["tables_with_errors"] else None)
+        _save_cli_run_log(
+            client,
+            config,
+            "schema-evolve",
+            result,
+            start_time,
+            error=f"{result['tables_with_errors']} errors"
+            if result["tables_with_errors"]
+            else None,
+        )
 
     if result["tables_with_errors"] > 0:
         sys.exit(1)
@@ -1223,9 +1368,13 @@ def cmd_incremental_sync(args):
     if not schemas:
         # Discover schemas
         from src.client import execute_sql
-        rows = execute_sql(client, wid,
+
+        rows = execute_sql(
+            client,
+            wid,
             f"SELECT schema_name FROM {source}.information_schema.schemata "
-            f"WHERE schema_name NOT IN ('information_schema', 'default')")
+            f"WHERE schema_name NOT IN ('information_schema', 'default')",
+        )
         schemas = [r["schema_name"] for r in rows]
 
     total_synced, total_failed = 0, 0
@@ -1238,8 +1387,14 @@ def cmd_incremental_sync(args):
         logger.info(f"Schema {schema}: {len(tables)} tables need sync")
         for t in tables:
             ok = sync_changed_table(
-                client, wid, source, dest, schema, t["table_name"],
-                clone_type=clone_type, dry_run=args.dry_run,
+                client,
+                wid,
+                source,
+                dest,
+                schema,
+                t["table_name"],
+                clone_type=clone_type,
+                dry_run=args.dry_run,
             )
             if ok:
                 total_synced += 1
@@ -1250,8 +1405,14 @@ def cmd_incremental_sync(args):
     logger.info(f"Incremental sync complete: {total_synced} synced, {total_failed} failed")
 
     if not args.dry_run:
-        _save_cli_run_log(client, config, "incremental_sync", result, start_time,
-                          error=f"{total_failed} tables failed" if total_failed else None)
+        _save_cli_run_log(
+            client,
+            config,
+            "incremental_sync",
+            result,
+            start_time,
+            error=f"{total_failed} tables failed" if total_failed else None,
+        )
 
     if total_failed > 0:
         sys.exit(1)
@@ -1278,10 +1439,16 @@ def cmd_sample(args):
     if args.dest:
         # Compare mode
         result = compare_samples(
-            client, wid, config["source_catalog"], args.dest,
-            args.schema, args.table, limit=args.limit,
+            client,
+            wid,
+            config["source_catalog"],
+            args.dest,
+            args.schema,
+            args.table,
+            limit=args.limit,
         )
         import json
+
         print(json.dumps(result, indent=2, default=str))
     else:
         # Preview mode
@@ -1328,6 +1495,7 @@ def cmd_view_deps(args):
 
     if args.output:
         import json
+
         result = {"views": view_deps, "functions": func_deps, "creation_order": order}
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
@@ -1337,12 +1505,17 @@ def cmd_view_deps(args):
 def cmd_slack_bot(args):
     """Start the Slack bot."""
     from src.slack_bot import start_slack_bot
+
     start_slack_bot(config_path=args.config)
 
 
 def cmd_dep_graph(args):
     """Build and display dependency graph."""
-    from src.dependency_graph import build_dependency_graph, export_dependency_graph, print_dependency_graph
+    from src.dependency_graph import (
+        build_dependency_graph,
+        export_dependency_graph,
+        print_dependency_graph,
+    )
 
     logger = logging.getLogger(__name__)
     try:
@@ -1357,7 +1530,9 @@ def cmd_dep_graph(args):
 
     client = _get_auth_client(args)
     graph = build_dependency_graph(
-        client, config["sql_warehouse_id"], config["source_catalog"],
+        client,
+        config["sql_warehouse_id"],
+        config["source_catalog"],
         config.get("exclude_schemas", []),
     )
     print_dependency_graph(graph)
@@ -1369,6 +1544,7 @@ def cmd_dep_graph(args):
 def cmd_tui(args):
     """Launch the interactive TUI."""
     from src.tui import run_tui
+
     run_tui(config_path=args.config)
 
 
@@ -1404,6 +1580,7 @@ def cmd_distributed_clone(args):
 def cmd_run_sql(args):
     """Execute an arbitrary SQL statement."""
     from src.client import execute_sql as _execute_sql
+
     logger = logging.getLogger(__name__)
     client = _get_auth_client(args)
     config = {"sql_warehouse_id": args.warehouse_id or ""}
@@ -1423,7 +1600,11 @@ def cmd_run_sql(args):
 
 def cmd_warehouse(args):
     """Manage SQL warehouse."""
-    from src.warehouse_autoscale import ensure_warehouse_running, get_warehouse_status, scale_warehouse
+    from src.warehouse_autoscale import (
+        ensure_warehouse_running,
+        get_warehouse_status,
+        scale_warehouse,
+    )
 
     logger = logging.getLogger(__name__)
     try:
@@ -1508,7 +1689,7 @@ def cmd_auth(args):
             return
         print("  Available Databricks CLI profiles:")
         print(f"  {'Name':<20} {'Host':<50} {'Auth Type'}")
-        print(f"  {'-'*20} {'-'*50} {'-'*15}")
+        print(f"  {'-' * 20} {'-' * 50} {'-' * 15}")
         for p in profiles:
             print(f"  {p['name']:<20} {p['host']:<50} {p['auth_type']}")
         return
@@ -1585,7 +1766,9 @@ def cmd_plan(args):
         statements = plan.get("sql_statements", [])
         with open(capture_sql, "w") as f:
             f.write("-- Clone-Xs Execution Plan\n")
-            f.write(f"-- Source: {config.get('source_catalog')} -> Destination: {config.get('destination_catalog')}\n")
+            f.write(
+                f"-- Source: {config.get('source_catalog')} -> Destination: {config.get('destination_catalog')}\n"
+            )
             f.write(f"-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"-- Total statements: {len(statements)}\n\n")
             for i, stmt in enumerate(statements, 1):
@@ -1616,8 +1799,11 @@ def cmd_lint(args):
 def cmd_usage_analysis(args):
     """Execute the usage analysis command."""
     from src.usage_analysis import (
-        query_table_access_patterns, analyze_usage,
-        format_usage_report, export_usage_json, recommend_skip_tables,
+        query_table_access_patterns,
+        analyze_usage,
+        format_usage_report,
+        export_usage_json,
+        recommend_skip_tables,
     )
 
     logger = logging.getLogger(__name__)
@@ -1639,8 +1825,9 @@ def cmd_usage_analysis(args):
     warehouse_id = config["sql_warehouse_id"]
 
     if args.recommend:
-        skip = recommend_skip_tables(client, warehouse_id, source,
-                                     config["exclude_schemas"], days, unused_days)
+        skip = recommend_skip_tables(
+            client, warehouse_id, source, config["exclude_schemas"], days, unused_days
+        )
         print(f"\nRecommended tables to skip ({len(skip)}):")
         for t in skip:
             print(f"  - {t}")
@@ -1682,13 +1869,28 @@ def cmd_preview(args):
     if table:
         parts = table.split(".")
         if len(parts) == 2:
-            comparison = preview_comparison(client, warehouse_id, source, dest,
-                                            parts[0], parts[1], limit=limit, order_by=order_by)
+            comparison = preview_comparison(
+                client,
+                warehouse_id,
+                source,
+                dest,
+                parts[0],
+                parts[1],
+                limit=limit,
+                order_by=order_by,
+            )
             print(format_side_by_side(comparison))
     elif getattr(args, "all", False):
         max_tables = args.max_tables
-        results = preview_catalog(client, warehouse_id, source, dest,
-                                   config["exclude_schemas"], limit=limit, max_tables=max_tables)
+        results = preview_catalog(
+            client,
+            warehouse_id,
+            source,
+            dest,
+            config["exclude_schemas"],
+            limit=limit,
+            max_tables=max_tables,
+        )
         for r in results:
             print(format_side_by_side(r))
     else:
@@ -1711,18 +1913,23 @@ def cmd_metrics(args):
     _resolve_warehouse_id(args, config, client)
 
     warehouse_id = config["sql_warehouse_id"]
-    table_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+    table_fqn = config.get(
+        "metrics_table",
+        f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics",
+    )
     limit = args.limit
     source_filter = args.source
 
     if args.init:
         from src.metrics import save_metrics_delta
+
         save_metrics_delta(client, warehouse_id, {}, table_fqn)
         print(f"Metrics table initialized: {table_fqn}")
     else:
         history = query_metrics_history(client, warehouse_id, table_fqn, source_filter, limit)
         if args.format == "json":
             import json
+
             print(json.dumps(history, indent=2, default=str))
         else:
             print(format_metrics_report(history))
@@ -1746,8 +1953,7 @@ def cmd_history(args):
 
     action = args.action
     if action == "list":
-        ops = history.list_operations(limit=args.limit,
-                                       source_catalog=args.source)
+        ops = history.list_operations(limit=args.limit, source_catalog=args.source)
         print(history.format_log(ops))
     elif action == "show":
         if not args.ids:
@@ -1756,6 +1962,7 @@ def cmd_history(args):
         op = history.show_operation(args.ids[0])
         if op:
             import json
+
             print(json.dumps(op, indent=2, default=str))
         else:
             print("Operation not found.")
@@ -1834,7 +2041,9 @@ def cmd_rbac(args):
 def cmd_approval(args):
     """Execute the approval workflow command."""
     from src.approval import (
-        approve_request, deny_request, list_pending_requests,
+        approve_request,
+        deny_request,
+        list_pending_requests,
         check_approval_status,
     )
 
@@ -1847,8 +2056,10 @@ def cmd_approval(args):
             print("No pending approval requests.")
         else:
             for r in pending:
-                print(f"  {r.request_id}: {r.source_catalog} -> {r.dest_catalog} "
-                      f"(by {r.requested_by}, {r.requested_at})")
+                print(
+                    f"  {r.request_id}: {r.source_catalog} -> {r.dest_catalog} "
+                    f"(by {r.requested_by}, {r.requested_at})"
+                )
     elif action == "approve":
         if not args.request_id:
             logger.error("Provide a request ID")
@@ -1869,6 +2080,7 @@ def cmd_approval(args):
         if req:
             import json
             from dataclasses import asdict
+
             print(json.dumps(asdict(req), indent=2, default=str))
         else:
             print("Request not found.")
@@ -1914,7 +2126,9 @@ def cmd_compliance_report(args):
     _resolve_warehouse_id(args, config, client)
 
     result = generate_compliance_report(
-        client, config["sql_warehouse_id"], config,
+        client,
+        config["sql_warehouse_id"],
+        config,
         from_date=getattr(args, "from_date", None),
         to_date=getattr(args, "to_date", None),
         output_dir=getattr(args, "output_dir", "reports/compliance"),
@@ -1952,7 +2166,9 @@ def cmd_plugin(args):
             plugins = list_plugins()
             for p in plugins:
                 status = "enabled" if p["enabled"] else "disabled"
-                print(f"  {p['id']:30s} {p['version']:10s} [{p['type']:10s}] {status:10s} {p['description']}")
+                print(
+                    f"  {p['id']:30s} {p['version']:10s} [{p['type']:10s}] {status:10s} {p['description']}"
+                )
     elif action == "enable":
         if not args.name:
             logger.error("Provide a plugin name to enable")
@@ -1981,6 +2197,7 @@ def cmd_plugin(args):
             logger.error("Provide a plugin name")
             sys.exit(1)
         import json
+
         info = registry.info(args.name)
         print(json.dumps(info, indent=2, default=str))
     elif action == "update":
@@ -2062,7 +2279,9 @@ def cmd_demo_data(args):
     # Handle cleanup mode
     if getattr(args, "cleanup", False):
         result = cleanup_demo_catalog(client, config["sql_warehouse_id"], catalog_name)
-        print(f"\nCatalog '{catalog_name}' cleaned up: {result['schemas_dropped']} schemas, {result['tables_dropped']} objects dropped")
+        print(
+            f"\nCatalog '{catalog_name}' cleaned up: {result['schemas_dropped']} schemas, {result['tables_dropped']} objects dropped"
+        )
         if result["errors"]:
             for err in result["errors"]:
                 print(f"  Error: {err}")
@@ -2070,14 +2289,20 @@ def cmd_demo_data(args):
     industries = args.industry if args.industry else None
     scale_factor = args.scale if hasattr(args, "scale") else 1.0
     batch_size_val = args.batch_size if hasattr(args, "batch_size") else 5_000_000
-    max_workers_val = args.max_workers if hasattr(args, "max_workers") and args.max_workers else config.get("max_workers", 4)
+    max_workers_val = (
+        args.max_workers
+        if hasattr(args, "max_workers") and args.max_workers
+        else config.get("max_workers", 4)
+    )
     storage_loc = getattr(args, "storage_location", None)
     drop_existing = getattr(args, "drop_existing", False)
     medallion = not getattr(args, "no_medallion", False)
     owner = getattr(args, "owner", None)
 
     result = generate_demo_catalog(
-        client, config["sql_warehouse_id"], catalog_name,
+        client,
+        config["sql_warehouse_id"],
+        catalog_name,
         industries=industries,
         owner=owner,
         scale_factor=scale_factor,
@@ -2095,6 +2320,7 @@ def cmd_demo_data(args):
     if dest_catalog and result.get("catalog"):
         logger.info(f"Cloning {catalog_name} → {dest_catalog}...")
         from src.clone_catalog import clone_catalog
+
         clone_config = dict(config)
         clone_config["source_catalog"] = catalog_name
         clone_config["destination_catalog"] = dest_catalog
@@ -2102,11 +2328,13 @@ def cmd_demo_data(args):
         clone_config["load_type"] = "FULL"
         try:
             clone_result = clone_catalog(client, clone_config)
-            print(f"\nCloned to {dest_catalog}: {clone_result.get('tables', {}).get('success', 0)} tables")
+            print(
+                f"\nCloned to {dest_catalog}: {clone_result.get('tables', {}).get('success', 0)} tables"
+            )
         except Exception as e:
             print(f"\nClone to {dest_catalog} failed: {e}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Demo catalog '{result['catalog']}' generated successfully!")
     print(f"  Industries: {', '.join(result['industries'])}")
     print(f"  Schemas:    {result['schemas_created']}")
@@ -2119,7 +2347,7 @@ def cmd_demo_data(args):
         print(f"  Errors:     {len(result['errors'])}")
         for err in result["errors"]:
             print(f"    - {err}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def cmd_rtbf(args):
@@ -2136,11 +2364,14 @@ def cmd_rtbf(args):
     _resolve_warehouse_id(args, config, client)
 
     from src.rtbf import RTBFManager
+
     mgr = RTBFManager(client, config["sql_warehouse_id"], config=config)
 
     action = getattr(args, "rtbf_action", None)
     if not action:
-        print("Usage: clxs rtbf {init|submit|discover|impact|execute|vacuum|verify|certificate|list|status|approve|cancel|overdue}")
+        print(
+            "Usage: clxs rtbf {init|submit|discover|impact|execute|vacuum|verify|certificate|list|status|approve|cancel|overdue}"
+        )
         sys.exit(1)
 
     if action == "init":
@@ -2169,7 +2400,9 @@ def cmd_rtbf(args):
         result = mgr.discover_subject(args.request_id, args.subject_value)
         print(f"Discovery complete: {result['total_tables']} tables, {result['total_rows']} rows")
         for t in result.get("affected_tables", []):
-            print(f"  {t['catalog']}.{t['schema']}.{t['table']}.{t['column']} — {t['row_count']} rows")
+            print(
+                f"  {t['catalog']}.{t['schema']}.{t['table']}.{t['column']} — {t['row_count']} rows"
+            )
 
     elif action == "impact":
         result = mgr.analyze_impact(args.request_id)
@@ -2182,12 +2415,15 @@ def cmd_rtbf(args):
 
     elif action == "execute":
         result = mgr.execute_deletion(
-            args.request_id, args.subject_value,
+            args.request_id,
+            args.subject_value,
             strategy=getattr(args, "strategy", None),
             dry_run=getattr(args, "dry_run", False),
         )
         prefix = "[DRY RUN] " if result.get("dry_run") else ""
-        print(f"{prefix}Execution complete: {result['total_rows_affected']} rows affected across {result['total_tables']} tables")
+        print(
+            f"{prefix}Execution complete: {result['total_rows_affected']} rows affected across {result['total_tables']} tables"
+        )
         for a in result.get("actions", []):
             if "error" in a:
                 print(f"  FAILED: {a['table']} — {a['error']}")
@@ -2195,8 +2431,12 @@ def cmd_rtbf(args):
                 print(f"  {a['table']}.{a['column']} — {a.get('rows_affected', '?')} rows")
 
     elif action == "vacuum":
-        result = mgr.execute_vacuum(args.request_id, retention_hours=getattr(args, "retention_hours", None))
-        print(f"VACUUM complete: {result['tables_vacuumed']} tables vacuumed, {result['tables_failed']} failed")
+        result = mgr.execute_vacuum(
+            args.request_id, retention_hours=getattr(args, "retention_hours", None)
+        )
+        print(
+            f"VACUUM complete: {result['tables_vacuumed']} tables vacuumed, {result['tables_failed']} failed"
+        )
 
     elif action == "verify":
         result = mgr.verify_deletion(args.request_id, args.subject_value)
@@ -2210,7 +2450,9 @@ def cmd_rtbf(args):
             sys.exit(1)
 
     elif action == "certificate":
-        result = mgr.generate_certificate(args.request_id, output_dir=getattr(args, "output_dir", None))
+        result = mgr.generate_certificate(
+            args.request_id, output_dir=getattr(args, "output_dir", None)
+        )
         print("Certificate generated:")
         print(f"  ID:             {result['certificate_id']}")
         print(f"  Tables:         {result['tables_processed']}")
@@ -2232,9 +2474,11 @@ def cmd_rtbf(args):
             print(f"{'ID':<38} {'Type':<12} {'Status':<20} {'Tables':<8} {'Deadline'}")
             print("-" * 100)
             for r in requests:
-                print(f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
-                      f"{r.get('status', ''):<20} {r.get('affected_tables', 0):<8} "
-                      f"{r.get('deadline', '')}")
+                print(
+                    f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
+                    f"{r.get('status', ''):<20} {r.get('affected_tables', 0):<8} "
+                    f"{r.get('deadline', '')}"
+                )
 
     elif action == "status":
         req = mgr.get_request(args.request_id)
@@ -2242,7 +2486,9 @@ def cmd_rtbf(args):
             print(f"Request {args.request_id} not found.")
             sys.exit(1)
         print(f"Request:     {req.get('request_id')}")
-        print(f"Subject:     {req.get('subject_type')} (hash: {str(req.get('subject_value_hash', ''))[:16]}...)")
+        print(
+            f"Subject:     {req.get('subject_type')} (hash: {str(req.get('subject_value_hash', ''))[:16]}...)"
+        )
         print(f"Status:      {req.get('status')}")
         print(f"Strategy:    {req.get('strategy')}")
         print(f"Created:     {req.get('created_at')}")
@@ -2268,8 +2514,10 @@ def cmd_rtbf(args):
             print(f"{'ID':<38} {'Type':<12} {'Status':<20} {'Deadline'}")
             print("-" * 90)
             for r in overdue:
-                print(f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
-                      f"{r.get('status', ''):<20} {r.get('deadline', '')}")
+                print(
+                    f"{r.get('request_id', ''):<38} {r.get('subject_type', ''):<12} "
+                    f"{r.get('status', ''):<20} {r.get('deadline', '')}"
+                )
 
     else:
         print(f"Unknown RTBF action: {action}")
@@ -2278,15 +2526,19 @@ def cmd_rtbf(args):
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the CLI. Separated for testability."""
-    parser = argparse.ArgumentParser(
-        description="Unity Catalog clone utility for Databricks."
-    )
+    parser = argparse.ArgumentParser(description="Unity Catalog clone utility for Databricks.")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # --- auth command ---
     auth_parser = subparsers.add_parser("auth", help="Check authentication status")
-    auth_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
-    auth_parser.add_argument("--list-profiles", action="store_true", help="List available CLI profiles from ~/.databrickscfg")
+    auth_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose/debug logging"
+    )
+    auth_parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List available CLI profiles from ~/.databrickscfg",
+    )
     add_auth_args(auth_parser)
     auth_parser.set_defaults(func=cmd_auth)
 
@@ -2297,50 +2549,115 @@ def build_parser() -> argparse.ArgumentParser:
     clone_parser.add_argument("--dest", help="Override destination catalog name")
     clone_parser.add_argument("--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type")
     clone_parser.add_argument(
-        "--load-type", choices=["FULL", "INCREMENTAL", "SELECTIVE"],
+        "--load-type",
+        choices=["FULL", "INCREMENTAL", "SELECTIVE"],
         help="Load type. SELECTIVE re-clones only tables that have drifted between source and target.",
     )
     clone_parser.add_argument("--max-workers", type=int, help="Max parallel workers for schemas")
-    clone_parser.add_argument("--no-permissions", action="store_true", help="Skip copying permissions")
+    clone_parser.add_argument(
+        "--no-permissions", action="store_true", help="Skip copying permissions"
+    )
     clone_parser.add_argument("--no-ownership", action="store_true", help="Skip copying ownership")
     clone_parser.add_argument("--no-tags", action="store_true", help="Skip copying tags")
-    clone_parser.add_argument("--no-properties", action="store_true", help="Skip copying table properties")
-    clone_parser.add_argument("--no-security", action="store_true", help="Skip copying row/column security")
-    clone_parser.add_argument("--no-constraints", action="store_true", help="Skip copying CHECK constraints")
-    clone_parser.add_argument("--no-comments", action="store_true", help="Skip copying table/column comments")
-    clone_parser.add_argument("--dry-run", action="store_true", help="Preview without executing writes")
+    clone_parser.add_argument(
+        "--no-properties", action="store_true", help="Skip copying table properties"
+    )
+    clone_parser.add_argument(
+        "--no-security", action="store_true", help="Skip copying row/column security"
+    )
+    clone_parser.add_argument(
+        "--no-constraints", action="store_true", help="Skip copying CHECK constraints"
+    )
+    clone_parser.add_argument(
+        "--no-comments", action="store_true", help="Skip copying table/column comments"
+    )
+    clone_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview without executing writes"
+    )
     clone_parser.add_argument("--include-schemas", nargs="+", help="Only clone these schemas")
     clone_parser.add_argument("--report", action="store_true", help="Generate JSON/HTML report")
-    clone_parser.add_argument("--enable-rollback", action="store_true", help="Enable rollback logging")
+    clone_parser.add_argument(
+        "--enable-rollback", action="store_true", help="Enable rollback logging"
+    )
     clone_parser.add_argument("--validate", action="store_true", help="Run validation after clone")
-    clone_parser.add_argument("--checksum", action="store_true", help="Use checksum validation (slower)")
-    clone_parser.add_argument("--parallel-tables", type=int, help="Parallel workers for tables within a schema")
-    clone_parser.add_argument("--include-tables-regex", help="Only clone tables matching this regex")
+    clone_parser.add_argument(
+        "--checksum", action="store_true", help="Use checksum validation (slower)"
+    )
+    clone_parser.add_argument(
+        "--parallel-tables", type=int, help="Parallel workers for tables within a schema"
+    )
+    clone_parser.add_argument(
+        "--include-tables-regex", help="Only clone tables matching this regex"
+    )
     clone_parser.add_argument("--exclude-tables-regex", help="Exclude tables matching this regex")
     clone_parser.add_argument("--resume", help="Resume from a previous rollback log file")
     clone_parser.add_argument("--progress", action="store_true", help="Show progress bar")
     clone_parser.add_argument("--no-progress", action="store_true", help="Disable progress bar")
-    clone_parser.add_argument("--order-by-size", choices=["asc", "desc"], help="Clone tables by size order")
-    clone_parser.add_argument("--max-rps", type=float, help="Max SQL requests per second (rate limit)")
+    clone_parser.add_argument(
+        "--order-by-size", choices=["asc", "desc"], help="Clone tables by size order"
+    )
+    clone_parser.add_argument(
+        "--max-rps", type=float, help="Max SQL requests per second (rate limit)"
+    )
     clone_parser.add_argument("--dest-host", help="Destination workspace host (cross-workspace)")
     clone_parser.add_argument("--dest-token", help="Destination workspace token (cross-workspace)")
-    clone_parser.add_argument("--dest-warehouse-id", help="Destination SQL warehouse ID (cross-workspace)")
-    clone_parser.add_argument("--as-of-timestamp", help="Clone tables as of this timestamp (Delta time travel)")
-    clone_parser.add_argument("--as-of-version", type=int, help="Clone tables as of this version (Delta time travel)")
-    clone_parser.add_argument("--location", help="Managed storage location for the destination catalog (required if workspace has no metastore root)")
-    clone_parser.add_argument("--template", help="Apply a clone template (e.g., dev-refresh, dr-replica)")
-    clone_parser.add_argument("--where", help="Global WHERE filter for all tables (deep clone only)")
-    clone_parser.add_argument("--table-filter", action="append", help="Per-table WHERE filter: 'schema.table:condition' (repeatable)")
-    clone_parser.add_argument("--auto-rollback", action="store_true", help="Auto-rollback if post-clone validation fails")
-    clone_parser.add_argument("--rollback-threshold", type=float, default=None, help="Max allowed mismatch %% before auto-rollback (default: 5)")
-    clone_parser.add_argument("--throttle", choices=["low", "medium", "high", "max"], help="Throttle profile for resource control")
-    clone_parser.add_argument("--checkpoint", action="store_true", help="Enable periodic checkpointing")
+    clone_parser.add_argument(
+        "--dest-warehouse-id", help="Destination SQL warehouse ID (cross-workspace)"
+    )
+    clone_parser.add_argument(
+        "--as-of-timestamp", help="Clone tables as of this timestamp (Delta time travel)"
+    )
+    clone_parser.add_argument(
+        "--as-of-version", type=int, help="Clone tables as of this version (Delta time travel)"
+    )
+    clone_parser.add_argument(
+        "--location",
+        help="Managed storage location for the destination catalog (required if workspace has no metastore root)",
+    )
+    clone_parser.add_argument(
+        "--template", help="Apply a clone template (e.g., dev-refresh, dr-replica)"
+    )
+    clone_parser.add_argument(
+        "--where", help="Global WHERE filter for all tables (deep clone only)"
+    )
+    clone_parser.add_argument(
+        "--table-filter",
+        action="append",
+        help="Per-table WHERE filter: 'schema.table:condition' (repeatable)",
+    )
+    clone_parser.add_argument(
+        "--auto-rollback", action="store_true", help="Auto-rollback if post-clone validation fails"
+    )
+    clone_parser.add_argument(
+        "--rollback-threshold",
+        type=float,
+        default=None,
+        help="Max allowed mismatch %% before auto-rollback (default: 5)",
+    )
+    clone_parser.add_argument(
+        "--throttle",
+        choices=["low", "medium", "high", "max"],
+        help="Throttle profile for resource control",
+    )
+    clone_parser.add_argument(
+        "--checkpoint", action="store_true", help="Enable periodic checkpointing"
+    )
     clone_parser.add_argument("--resume-from-checkpoint", help="Resume from a checkpoint file")
-    clone_parser.add_argument("--require-approval", action="store_true", help="Require approval before cloning")
-    clone_parser.add_argument("--impact-check", action="store_true", help="Run impact analysis before cloning")
+    clone_parser.add_argument(
+        "--require-approval", action="store_true", help="Require approval before cloning"
+    )
+    clone_parser.add_argument(
+        "--impact-check", action="store_true", help="Run impact analysis before cloning"
+    )
     clone_parser.add_argument("--ttl", help="Set TTL on destination (e.g., 7d, 30d, 2w)")
-    clone_parser.add_argument("--skip-unused", action="store_true", help="Skip tables with no recent queries")
-    clone_parser.add_argument("--schema-only", action="store_true", help="Create empty tables (structure only, no data) with all other artifacts (views, functions, volumes, permissions)")
+    clone_parser.add_argument(
+        "--skip-unused", action="store_true", help="Skip tables with no recent queries"
+    )
+    clone_parser.add_argument(
+        "--schema-only",
+        action="store_true",
+        help="Create empty tables (structure only, no data) with all other artifacts (views, functions, volumes, permissions)",
+    )
     clone_parser.set_defaults(func=cmd_clone)
 
     # --- diff command ---
@@ -2360,9 +2677,13 @@ def build_parser() -> argparse.ArgumentParser:
     # --- rollback command ---
     rb_parser = subparsers.add_parser("rollback", help="Rollback a previous clone operation")
     add_common_args(rb_parser)
-    rb_parser.add_argument("--rollback-log", dest="rollback_log_file", help="Path to rollback log JSON file")
+    rb_parser.add_argument(
+        "--rollback-log", dest="rollback_log_file", help="Path to rollback log JSON file"
+    )
     rb_parser.add_argument("--list", action="store_true", help="List available rollback logs")
-    rb_parser.add_argument("--drop-catalog", action="store_true", help="Also drop the destination catalog")
+    rb_parser.add_argument(
+        "--drop-catalog", action="store_true", help="Also drop the destination catalog"
+    )
     rb_parser.set_defaults(func=cmd_rollback)
 
     # --- validate command ---
@@ -2370,20 +2691,30 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(val_parser)
     val_parser.add_argument("--source", help="Override source catalog name")
     val_parser.add_argument("--dest", help="Override destination catalog name")
-    val_parser.add_argument("--checksum", action="store_true", help="Include hash-based checksum validation")
+    val_parser.add_argument(
+        "--checksum", action="store_true", help="Include hash-based checksum validation"
+    )
     val_parser.set_defaults(func=cmd_validate)
 
     # --- estimate command ---
     est_parser = subparsers.add_parser("estimate", help="Estimate storage cost for a deep clone")
     add_common_args(est_parser)
-    est_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
-    est_parser.add_argument("--price-per-gb", type=float, default=0.023, help="Storage price $/GB/month")
+    est_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
+    est_parser.add_argument(
+        "--price-per-gb", type=float, default=0.023, help="Storage price $/GB/month"
+    )
     est_parser.set_defaults(func=cmd_estimate)
 
     # --- generate-workflow command ---
-    wf_parser = subparsers.add_parser("generate-workflow", help="Generate Databricks Workflows job definition")
+    wf_parser = subparsers.add_parser(
+        "generate-workflow", help="Generate Databricks Workflows job definition"
+    )
     add_common_args(wf_parser)
-    wf_parser.add_argument("--format", choices=["json", "yaml"], default="json", help="Output format")
+    wf_parser.add_argument(
+        "--format", choices=["json", "yaml"], default="json", help="Output format"
+    )
     wf_parser.add_argument("--output", help="Output file path")
     wf_parser.add_argument("--job-name", help="Job name")
     wf_parser.add_argument("--cluster-id", help="Existing cluster ID")
@@ -2392,39 +2723,63 @@ def build_parser() -> argparse.ArgumentParser:
     wf_parser.set_defaults(func=cmd_generate_workflow)
 
     # --- create-job command ---
-    cj_parser = subparsers.add_parser("create-job", help="Create a persistent Databricks Job for scheduled cloning")
+    cj_parser = subparsers.add_parser(
+        "create-job", help="Create a persistent Databricks Job for scheduled cloning"
+    )
     add_common_args(cj_parser)
     cj_parser.add_argument("--source", help="Source catalog name")
     cj_parser.add_argument("--dest", help="Destination catalog name")
     cj_parser.add_argument("--job-name", help="Job name (default: Clone-Xs: <source> -> <dest>)")
     cj_parser.add_argument("--schedule", help="Quartz cron expression (e.g. '0 0 6 * * ?')")
     cj_parser.add_argument("--timezone", default="UTC", help="Schedule timezone (default: UTC)")
-    cj_parser.add_argument("--notification-email", help="Comma-separated emails for job notifications")
-    cj_parser.add_argument("--max-retries", type=int, default=0, help="Number of retries on failure (default: 0)")
-    cj_parser.add_argument("--timeout", type=int, default=7200, help="Job timeout in seconds (default: 7200)")
-    cj_parser.add_argument("--tag", action="append", default=[], help="Job tag as key=value (repeatable)")
-    cj_parser.add_argument("--update-job-id", type=int, help="Update an existing job instead of creating a new one")
-    cj_parser.add_argument("--run-now", action="store_true", help="Run the job immediately after creation")
+    cj_parser.add_argument(
+        "--notification-email", help="Comma-separated emails for job notifications"
+    )
+    cj_parser.add_argument(
+        "--max-retries", type=int, default=0, help="Number of retries on failure (default: 0)"
+    )
+    cj_parser.add_argument(
+        "--timeout", type=int, default=7200, help="Job timeout in seconds (default: 7200)"
+    )
+    cj_parser.add_argument(
+        "--tag", action="append", default=[], help="Job tag as key=value (repeatable)"
+    )
+    cj_parser.add_argument(
+        "--update-job-id", type=int, help="Update an existing job instead of creating a new one"
+    )
+    cj_parser.add_argument(
+        "--run-now", action="store_true", help="Run the job immediately after creation"
+    )
     cj_parser.set_defaults(func=cmd_create_job)
 
     # --- sync command ---
-    sync_parser = subparsers.add_parser("sync", help="Two-way sync: add missing objects, optionally drop extras")
+    sync_parser = subparsers.add_parser(
+        "sync", help="Two-way sync: add missing objects, optionally drop extras"
+    )
     add_common_args(sync_parser)
     sync_parser.add_argument("--source", help="Override source catalog name")
     sync_parser.add_argument("--dest", help="Override destination catalog name")
     sync_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
-    sync_parser.add_argument("--drop-extra", action="store_true", help="Drop objects in dest that don't exist in source")
+    sync_parser.add_argument(
+        "--drop-extra", action="store_true", help="Drop objects in dest that don't exist in source"
+    )
     sync_parser.set_defaults(func=cmd_sync)
 
     # --- snapshot command ---
-    snap_parser = subparsers.add_parser("snapshot", help="Export catalog metadata to a JSON manifest")
+    snap_parser = subparsers.add_parser(
+        "snapshot", help="Export catalog metadata to a JSON manifest"
+    )
     add_common_args(snap_parser)
-    snap_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    snap_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     snap_parser.add_argument("--output", help="Output file path")
     snap_parser.set_defaults(func=cmd_snapshot)
 
     # --- schema-drift command ---
-    drift_parser = subparsers.add_parser("schema-drift", help="Detect schema drift between catalogs")
+    drift_parser = subparsers.add_parser(
+        "schema-drift", help="Detect schema drift between catalogs"
+    )
     add_common_args(drift_parser)
     drift_parser.add_argument("--source", help="Override source catalog name")
     drift_parser.add_argument("--dest", help="Override destination catalog name")
@@ -2432,14 +2787,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- init command ---
     init_parser = subparsers.add_parser("init", help="Interactive config wizard")
-    init_parser.add_argument("--output", default="config/clone_config.yaml", help="Output config path")
+    init_parser.add_argument(
+        "--output", default="config/clone_config.yaml", help="Output config path"
+    )
     init_parser.set_defaults(func=cmd_init)
 
     # --- export-iac command ---
-    tf_parser = subparsers.add_parser("export-iac", help="Generate Terraform or Pulumi config from catalog")
+    tf_parser = subparsers.add_parser(
+        "export-iac", help="Generate Terraform or Pulumi config from catalog"
+    )
     add_common_args(tf_parser)
     tf_parser.add_argument("--source", help="Override source catalog name")
-    tf_parser.add_argument("--format", choices=["terraform", "pulumi"], default="terraform", help="IaC format")
+    tf_parser.add_argument(
+        "--format", choices=["terraform", "pulumi"], default="terraform", help="IaC format"
+    )
     tf_parser.add_argument("--output", help="Output file path")
     tf_parser.set_defaults(func=cmd_terraform)
 
@@ -2448,21 +2809,29 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(pf_parser)
     pf_parser.add_argument("--source", help="Override source catalog name")
     pf_parser.add_argument("--dest", help="Override destination catalog name")
-    pf_parser.add_argument("--no-write-check", action="store_true", help="Skip write permission check")
+    pf_parser.add_argument(
+        "--no-write-check", action="store_true", help="Skip write permission check"
+    )
     pf_parser.set_defaults(func=cmd_preflight)
 
     # --- search command ---
     search_parser = subparsers.add_parser("search", help="Search for tables and columns by pattern")
     add_common_args(search_parser)
-    search_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    search_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     search_parser.add_argument("--pattern", required=True, help="Regex pattern to search for")
     search_parser.add_argument("--columns", action="store_true", help="Also search column names")
     search_parser.set_defaults(func=cmd_search)
 
     # --- stats command ---
-    stats_parser = subparsers.add_parser("stats", help="Show catalog statistics (sizes, row counts)")
+    stats_parser = subparsers.add_parser(
+        "stats", help="Show catalog statistics (sizes, row counts)"
+    )
     add_common_args(stats_parser)
-    stats_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    stats_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     stats_parser.set_defaults(func=cmd_stats)
 
     # --- storage-metrics command ---
@@ -2471,45 +2840,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Analyze storage metrics (active, vacuumable, time-travel) for all tables",
     )
     add_common_args(sm_parser)
-    sm_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    sm_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     sm_parser.add_argument("--schema", help="Filter to a specific schema")
     sm_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     sm_parser.set_defaults(func=cmd_storage_metrics)
 
     # --- optimize command ---
-    opt_parser = subparsers.add_parser("optimize", help="Run OPTIMIZE on tables to compact small files")
+    opt_parser = subparsers.add_parser(
+        "optimize", help="Run OPTIMIZE on tables to compact small files"
+    )
     add_common_args(opt_parser)
-    opt_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    opt_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     opt_parser.add_argument("--schema", help="Filter to a specific schema")
     opt_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
     opt_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
     opt_parser.set_defaults(func=cmd_optimize)
 
     # --- vacuum command ---
-    vac_parser = subparsers.add_parser("vacuum", help="Run VACUUM on tables to reclaim storage from old files")
+    vac_parser = subparsers.add_parser(
+        "vacuum", help="Run VACUUM on tables to reclaim storage from old files"
+    )
     add_common_args(vac_parser)
-    vac_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    vac_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     vac_parser.add_argument("--schema", help="Filter to a specific schema")
     vac_parser.add_argument("--table", help="Filter to a specific table (requires --schema)")
-    vac_parser.add_argument("--retention-hours", type=int, default=168, help="Data retention in hours (default: 168 = 7 days)")
+    vac_parser.add_argument(
+        "--retention-hours",
+        type=int,
+        default=168,
+        help="Data retention in hours (default: 168 = 7 days)",
+    )
     vac_parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
     vac_parser.set_defaults(func=cmd_vacuum)
 
     # --- profile command ---
-    prof_parser = subparsers.add_parser("profile", help="Profile table data quality (nulls, distinct, min/max)")
+    prof_parser = subparsers.add_parser(
+        "profile", help="Profile table data quality (nulls, distinct, min/max)"
+    )
     add_common_args(prof_parser)
-    prof_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    prof_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     prof_parser.add_argument("--output", help="Save profile results to JSON file")
     prof_parser.set_defaults(func=cmd_profile)
 
     # --- monitor command ---
-    mon_parser = subparsers.add_parser("monitor", help="Continuous monitoring of catalog sync status")
+    mon_parser = subparsers.add_parser(
+        "monitor", help="Continuous monitoring of catalog sync status"
+    )
     add_common_args(mon_parser)
     mon_parser.add_argument("--source", help="Override source catalog name")
     mon_parser.add_argument("--dest", help="Override destination catalog name")
-    mon_parser.add_argument("--interval", type=int, default=30, help="Minutes between checks (default: 30)")
-    mon_parser.add_argument("--max-checks", type=int, default=0, help="Max number of checks (0 = infinite)")
-    mon_parser.add_argument("--check-drift", action="store_true", default=True, help="Check for schema drift")
+    mon_parser.add_argument(
+        "--interval", type=int, default=30, help="Minutes between checks (default: 30)"
+    )
+    mon_parser.add_argument(
+        "--max-checks", type=int, default=0, help="Max number of checks (0 = infinite)"
+    )
+    mon_parser.add_argument(
+        "--check-drift", action="store_true", default=True, help="Check for schema drift"
+    )
     mon_parser.add_argument("--check-counts", action="store_true", help="Check row counts (slower)")
     mon_parser.add_argument("--once", action="store_true", help="Run a single check and exit")
     mon_parser.set_defaults(func=cmd_monitor)
@@ -2517,8 +2913,12 @@ def build_parser() -> argparse.ArgumentParser:
     # --- export command ---
     exp_parser = subparsers.add_parser("export", help="Export catalog metadata to CSV or JSON")
     add_common_args(exp_parser)
-    exp_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
-    exp_parser.add_argument("--format", choices=["csv", "json"], default="csv", help="Export format")
+    exp_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
+    exp_parser.add_argument(
+        "--format", choices=["csv", "json"], default="csv", help="Export format"
+    )
     exp_parser.add_argument("--output", help="Output file path")
     exp_parser.set_defaults(func=cmd_export)
 
@@ -2526,7 +2926,9 @@ def build_parser() -> argparse.ArgumentParser:
     cd_parser = subparsers.add_parser("config-diff", help="Compare two config YAML files")
     cd_parser.add_argument("file_a", help="First config file")
     cd_parser.add_argument("file_b", help="Second config file")
-    cd_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+    cd_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose/debug logging"
+    )
     cd_parser.add_argument("--log-file", help="Write logs to a file in addition to console")
     cd_parser.set_defaults(func=cmd_config_diff)
 
@@ -2537,35 +2939,60 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- dashboard command ---
     dash_parser = subparsers.add_parser("dashboard", help="Launch Streamlit web dashboard")
-    dash_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
-    dash_parser.add_argument("--port", type=int, default=8501, help="Dashboard port (default: 8501)")
+    dash_parser.add_argument(
+        "-c", "--config", default="config/clone_config.yaml", help="Config file path"
+    )
+    dash_parser.add_argument(
+        "--port", type=int, default=8501, help="Dashboard port (default: 8501)"
+    )
     dash_parser.set_defaults(func=cmd_dashboard)
 
     # --- generate-dab command ---
-    dab_parser = subparsers.add_parser("generate-dab", help="Generate Databricks Asset Bundle for clone jobs")
+    dab_parser = subparsers.add_parser(
+        "generate-dab", help="Generate Databricks Asset Bundle for clone jobs"
+    )
     add_common_args(dab_parser)
     dab_parser.add_argument("--source", help="Override source catalog name")
     dab_parser.add_argument("--dest", help="Override destination catalog name")
-    dab_parser.add_argument("--output", default="dab_bundle", help="Output directory (default: dab_bundle)")
+    dab_parser.add_argument(
+        "--output", default="dab_bundle", help="Output directory (default: dab_bundle)"
+    )
     dab_parser.add_argument("--job-name", help="Job name")
     dab_parser.add_argument("--schedule", help="Quartz cron expression for scheduling")
     dab_parser.add_argument("--notification-email", help="Email for job notifications")
     dab_parser.set_defaults(func=cmd_generate_dab)
 
     # --- multi-clone command ---
-    mc_parser = subparsers.add_parser("multi-clone", help="Clone to multiple destination workspaces in parallel")
+    mc_parser = subparsers.add_parser(
+        "multi-clone", help="Clone to multiple destination workspaces in parallel"
+    )
     add_common_args(mc_parser)
     mc_parser.add_argument("--source", help="Override source catalog name")
-    mc_parser.add_argument("--destinations", required=True, help="YAML file with destination workspace configs")
-    mc_parser.add_argument("--max-parallel", type=int, default=2, help="Max parallel workspace clones")
+    mc_parser.add_argument(
+        "--destinations", required=True, help="YAML file with destination workspace configs"
+    )
+    mc_parser.add_argument(
+        "--max-parallel", type=int, default=2, help="Max parallel workspace clones"
+    )
     mc_parser.set_defaults(func=cmd_multi_clone)
 
     # --- cost-estimate command ---
-    ce_parser = subparsers.add_parser("cost-estimate", help="Estimate clone cost (storage + compute)")
+    ce_parser = subparsers.add_parser(
+        "cost-estimate", help="Estimate clone cost (storage + compute)"
+    )
     add_common_args(ce_parser)
-    ce_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
-    ce_parser.add_argument("--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type for estimate")
-    ce_parser.add_argument("--warehouse-type", choices=["serverless", "classic"], default="serverless", help="Warehouse type")
+    ce_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
+    ce_parser.add_argument(
+        "--clone-type", choices=["DEEP", "SHALLOW"], help="Clone type for estimate"
+    )
+    ce_parser.add_argument(
+        "--warehouse-type",
+        choices=["serverless", "classic"],
+        default="serverless",
+        help="Warehouse type",
+    )
     ce_parser.set_defaults(func=cmd_cost_estimate)
 
     # --- audit command ---
@@ -2589,14 +3016,32 @@ def build_parser() -> argparse.ArgumentParser:
     # --- pii-scan command ---
     pii_parser = subparsers.add_parser("pii-scan", help="Scan catalog for PII columns")
     add_common_args(pii_parser)
-    pii_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
-    pii_parser.add_argument("--schema-filter", nargs="+", help="Only scan these schemas (e.g. --schema-filter bronze silver)")
-    pii_parser.add_argument("--table-filter", help="Regex to filter table names (e.g. 'customer|user')")
-    pii_parser.add_argument("--sample-data", action="store_true", help="Sample actual data values (slower)")
-    pii_parser.add_argument("--no-exit-code", action="store_true", help="Don't exit with error if PII found")
-    pii_parser.add_argument("--read-uc-tags", action="store_true", help="Read UC column tags to enhance detection")
-    pii_parser.add_argument("--save-history", action="store_true", help="Save scan results to Delta tables")
-    pii_parser.add_argument("--apply-tags", action="store_true", help="Apply PII tags to Unity Catalog after scan")
+    pii_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
+    pii_parser.add_argument(
+        "--schema-filter",
+        nargs="+",
+        help="Only scan these schemas (e.g. --schema-filter bronze silver)",
+    )
+    pii_parser.add_argument(
+        "--table-filter", help="Regex to filter table names (e.g. 'customer|user')"
+    )
+    pii_parser.add_argument(
+        "--sample-data", action="store_true", help="Sample actual data values (slower)"
+    )
+    pii_parser.add_argument(
+        "--no-exit-code", action="store_true", help="Don't exit with error if PII found"
+    )
+    pii_parser.add_argument(
+        "--read-uc-tags", action="store_true", help="Read UC column tags to enhance detection"
+    )
+    pii_parser.add_argument(
+        "--save-history", action="store_true", help="Save scan results to Delta tables"
+    )
+    pii_parser.add_argument(
+        "--apply-tags", action="store_true", help="Apply PII tags to Unity Catalog after scan"
+    )
     pii_parser.add_argument("--tag-prefix", default="pii", help="Prefix for UC tags (default: pii)")
     pii_parser.set_defaults(func=cmd_pii_scan)
 
@@ -2611,40 +3056,58 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(se_parser)
     se_parser.add_argument("--source", help="Override source catalog name")
     se_parser.add_argument("--dest", help="Override destination catalog name")
-    se_parser.add_argument("--dry-run", action="store_true", help="Preview changes without applying")
-    se_parser.add_argument("--drop-removed", action="store_true", help="Drop columns removed from source")
+    se_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview changes without applying"
+    )
+    se_parser.add_argument(
+        "--drop-removed", action="store_true", help="Drop columns removed from source"
+    )
     se_parser.set_defaults(func=cmd_schema_evolve)
 
     # --- dep-graph command ---
-    dg_parser = subparsers.add_parser("dep-graph", help="Build and display table/view dependency graph")
+    dg_parser = subparsers.add_parser(
+        "dep-graph", help="Build and display table/view dependency graph"
+    )
     add_common_args(dg_parser)
-    dg_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    dg_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     dg_parser.add_argument("--output", help="Export graph to JSON file")
     dg_parser.set_defaults(func=cmd_dep_graph)
 
     # --- tui command ---
     tui_parser = subparsers.add_parser("tui", help="Launch interactive terminal UI")
-    tui_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
+    tui_parser.add_argument(
+        "-c", "--config", default="config/clone_config.yaml", help="Config file path"
+    )
     tui_parser.set_defaults(func=cmd_tui)
 
     # --- templates command ---
     tmpl_parser = subparsers.add_parser("templates", help="List or export clone templates")
-    tmpl_parser.add_argument("--export", help="Export a template by name (e.g., dev-copy, dr-backup)")
+    tmpl_parser.add_argument(
+        "--export", help="Export a template by name (e.g., dev-copy, dr-backup)"
+    )
     tmpl_parser.add_argument("--output", help="Output file path for export")
     tmpl_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     tmpl_parser.add_argument("--log-file", help="Log file")
     tmpl_parser.set_defaults(func=cmd_templates)
 
     # --- distributed-clone command ---
-    dc_parser = subparsers.add_parser("distributed-clone", help="Generate a Spark-based distributed clone notebook")
+    dc_parser = subparsers.add_parser(
+        "distributed-clone", help="Generate a Spark-based distributed clone notebook"
+    )
     add_common_args(dc_parser)
     dc_parser.add_argument("--source", help="Override source catalog name")
     dc_parser.add_argument("--dest", help="Override destination catalog name")
-    dc_parser.add_argument("--output", default="notebooks/distributed_clone.py", help="Output notebook path")
+    dc_parser.add_argument(
+        "--output", default="notebooks/distributed_clone.py", help="Output notebook path"
+    )
     dc_parser.set_defaults(func=cmd_distributed_clone)
 
     # --- warehouse command ---
-    wh_parser = subparsers.add_parser("warehouse", help="Manage SQL warehouse (status, start, scale)")
+    wh_parser = subparsers.add_parser(
+        "warehouse", help="Manage SQL warehouse (status, start, scale)"
+    )
     add_common_args(wh_parser)
     wh_parser.add_argument("action", choices=["status", "start", "scale"], help="Warehouse action")
     wh_parser.add_argument("--size", help="New warehouse size (for scale action)")
@@ -2653,8 +3116,11 @@ def build_parser() -> argparse.ArgumentParser:
     # --- state command ---
     st_parser = subparsers.add_parser("state", help="Manage clone state store (Delta table)")
     add_common_args(st_parser)
-    st_parser.add_argument("action", choices=["init", "summary", "stale", "failed", "mark-stale", "operations"],
-                           help="State store action")
+    st_parser.add_argument(
+        "action",
+        choices=["init", "summary", "stale", "failed", "mark-stale", "operations"],
+        help="State store action",
+    )
     st_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog")
     st_parser.add_argument("--dest", help="Override destination catalog")
     st_parser.add_argument("--limit", type=int, default=20, help="Max results for operations")
@@ -2666,7 +3132,9 @@ def build_parser() -> argparse.ArgumentParser:
     ws_parser.set_defaults(func=cmd_multi_cloud)
 
     # --- run-sql command ---
-    sql_parser = subparsers.add_parser("run-sql", help="Execute a SQL statement against a warehouse")
+    sql_parser = subparsers.add_parser(
+        "run-sql", help="Execute a SQL statement against a warehouse"
+    )
     add_common_args(sql_parser)
     sql_parser.add_argument("--sql", required=True, help="SQL statement to execute")
     sql_parser.set_defaults(func=cmd_run_sql)
@@ -2678,14 +3146,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(plan_parser)
     plan_parser.add_argument("--source", help="Override source catalog name")
     plan_parser.add_argument("--dest", help="Override destination catalog name")
-    plan_parser.add_argument("--format", choices=["console", "json", "html", "sql"], default="console", help="Output format")
+    plan_parser.add_argument(
+        "--format",
+        choices=["console", "json", "html", "sql"],
+        default="console",
+        help="Output format",
+    )
     plan_parser.add_argument("--output", help="Output file path")
-    plan_parser.add_argument("--capture-sql", dest="capture_sql", help="Save all planned SQL statements to a .sql file")
+    plan_parser.add_argument(
+        "--capture-sql", dest="capture_sql", help="Save all planned SQL statements to a .sql file"
+    )
     plan_parser.set_defaults(func=cmd_plan)
 
     # --- lint command ---
     lint_parser = subparsers.add_parser("lint", help="Validate and lint the config YAML")
-    lint_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
+    lint_parser.add_argument(
+        "-c", "--config", default="config/clone_config.yaml", help="Config file path"
+    )
     lint_parser.add_argument("--profile", help="Config profile to lint")
     lint_parser.add_argument("--strict", action="store_true", help="Treat warnings as errors")
     lint_parser.add_argument("-v", "--verbose", action="store_true")
@@ -2695,15 +3172,21 @@ def build_parser() -> argparse.ArgumentParser:
     # --- usage-analysis command ---
     ua_parser = subparsers.add_parser("usage-analysis", help="Analyze table access patterns")
     add_common_args(ua_parser)
-    ua_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    ua_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     ua_parser.add_argument("--days", type=int, default=90, help="Lookback period in days")
-    ua_parser.add_argument("--unused-days", type=int, default=30, help="Threshold for unused tables")
+    ua_parser.add_argument(
+        "--unused-days", type=int, default=30, help="Threshold for unused tables"
+    )
     ua_parser.add_argument("--recommend", action="store_true", help="Show skip recommendations")
     ua_parser.add_argument("--output", help="Export to JSON file")
     ua_parser.set_defaults(func=cmd_usage_analysis)
 
     # --- preview command ---
-    prev_parser = subparsers.add_parser("preview", help="Side-by-side data preview of source vs destination")
+    prev_parser = subparsers.add_parser(
+        "preview", help="Side-by-side data preview of source vs destination"
+    )
     add_common_args(prev_parser)
     prev_parser.add_argument("--source", help="Override source catalog name")
     prev_parser.add_argument("--dest", help="Override destination catalog name")
@@ -2735,7 +3218,9 @@ def build_parser() -> argparse.ArgumentParser:
     # --- ttl command ---
     ttl_parser = subparsers.add_parser("ttl", help="Manage data retention / TTL policies")
     add_common_args(ttl_parser)
-    ttl_parser.add_argument("action", choices=["set", "check", "cleanup", "extend", "remove"], help="TTL action")
+    ttl_parser.add_argument(
+        "action", choices=["set", "check", "cleanup", "extend", "remove"], help="TTL action"
+    )
     ttl_parser.add_argument("--dest", help="Destination catalog")
     ttl_parser.add_argument("--days", type=int, help="TTL in days")
     ttl_parser.add_argument("--confirm", action="store_true", help="Confirm cleanup")
@@ -2751,7 +3236,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- approval command ---
     appr_parser = subparsers.add_parser("approval", help="Clone approval workflows")
-    appr_parser.add_argument("action", choices=["list", "approve", "deny", "status"], help="Approval action")
+    appr_parser.add_argument(
+        "action", choices=["list", "approve", "deny", "status"], help="Approval action"
+    )
     appr_parser.add_argument("request_id", nargs="?", help="Approval request ID")
     appr_parser.add_argument("--user", help="User performing approval")
     appr_parser.add_argument("--reason", help="Denial reason")
@@ -2778,8 +3265,12 @@ def build_parser() -> argparse.ArgumentParser:
     comp_parser.set_defaults(func=cmd_compliance_report)
 
     # --- plugin command ---
-    plug_parser = subparsers.add_parser("plugin", help="Plugin marketplace (install, list, remove, enable, disable)")
-    plug_parser.add_argument("action", choices=["list", "install", "remove", "info", "update", "enable", "disable"])
+    plug_parser = subparsers.add_parser(
+        "plugin", help="Plugin marketplace (install, list, remove, enable, disable)"
+    )
+    plug_parser.add_argument(
+        "action", choices=["list", "install", "remove", "info", "update", "enable", "disable"]
+    )
     plug_parser.add_argument("name", nargs="?", help="Plugin name")
     plug_parser.add_argument("--available", action="store_true", help="Show available plugins")
     plug_parser.add_argument("--installed", action="store_true", help="Show installed plugins")
@@ -2790,14 +3281,18 @@ def build_parser() -> argparse.ArgumentParser:
     plug_parser.set_defaults(func=cmd_plugin)
 
     # --- schedule command ---
-    sched_parser = subparsers.add_parser("schedule", help="Run clones on a schedule with drift detection")
+    sched_parser = subparsers.add_parser(
+        "schedule", help="Run clones on a schedule with drift detection"
+    )
     add_common_args(sched_parser)
     sched_parser.add_argument("--source", help="Override source catalog name")
     sched_parser.add_argument("--dest", help="Override destination catalog name")
     sched_parser.add_argument("--interval", help="Run interval (e.g., 30m, 1h, 6h)")
     sched_parser.add_argument("--cron", help="Cron expression (e.g., '0 */6 * * *')")
     sched_parser.add_argument("--no-drift-check", action="store_true", help="Skip drift detection")
-    sched_parser.add_argument("--max-runs", type=int, default=0, help="Stop after N runs (0=unlimited)")
+    sched_parser.add_argument(
+        "--max-runs", type=int, default=0, help="Stop after N runs (0=unlimited)"
+    )
     sched_parser.set_defaults(func=cmd_schedule)
 
     # --- serve command (API server) ---
@@ -2809,7 +3304,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.set_defaults(func=cmd_serve)
 
     # --- incremental-sync command ---
-    isync_parser = subparsers.add_parser("incremental-sync", help="Sync only changed tables using Delta history")
+    isync_parser = subparsers.add_parser(
+        "incremental-sync", help="Sync only changed tables using Delta history"
+    )
     add_common_args(isync_parser)
     isync_parser.add_argument("--source", help="Override source catalog name")
     isync_parser.add_argument("--dest", help="Override destination catalog name")
@@ -2829,38 +3326,86 @@ def build_parser() -> argparse.ArgumentParser:
     samp_parser.set_defaults(func=cmd_sample)
 
     # --- view-deps command ---
-    vd_parser = subparsers.add_parser("view-deps", help="Analyze view/function dependencies and creation order")
+    vd_parser = subparsers.add_parser(
+        "view-deps", help="Analyze view/function dependencies and creation order"
+    )
     add_common_args(vd_parser)
-    vd_parser.add_argument("--source", "--catalog", dest="source", help="Override source catalog name")
+    vd_parser.add_argument(
+        "--source", "--catalog", dest="source", help="Override source catalog name"
+    )
     vd_parser.add_argument("--schema", required=True, help="Schema to analyze")
     vd_parser.add_argument("--output", help="Export dependency graph to JSON file")
     vd_parser.set_defaults(func=cmd_view_deps)
 
     # --- slack-bot command ---
-    sb_parser = subparsers.add_parser("slack-bot", help="Start Slack bot for clone operations (requires SLACK_BOT_TOKEN, SLACK_APP_TOKEN)")
-    sb_parser.add_argument("-c", "--config", default="config/clone_config.yaml", help="Config file path")
+    sb_parser = subparsers.add_parser(
+        "slack-bot",
+        help="Start Slack bot for clone operations (requires SLACK_BOT_TOKEN, SLACK_APP_TOKEN)",
+    )
+    sb_parser.add_argument(
+        "-c", "--config", default="config/clone_config.yaml", help="Config file path"
+    )
     sb_parser.set_defaults(func=cmd_slack_bot)
 
     # --- demo-data command ---
-    demo_parser = subparsers.add_parser("demo-data", help="Generate a demo catalog with synthetic data across industries")
+    demo_parser = subparsers.add_parser(
+        "demo-data", help="Generate a demo catalog with synthetic data across industries"
+    )
     add_common_args(demo_parser)
     demo_parser.add_argument("--catalog", required=True, help="Name of the catalog to create")
-    demo_parser.add_argument("--industry", nargs="+", choices=["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"], help="Industries to generate (default: all)")
+    demo_parser.add_argument(
+        "--industry",
+        nargs="+",
+        choices=[
+            "healthcare",
+            "financial",
+            "retail",
+            "telecom",
+            "manufacturing",
+            "energy",
+            "education",
+            "real_estate",
+            "logistics",
+            "insurance",
+        ],
+        help="Industries to generate (default: all)",
+    )
     demo_parser.add_argument("--owner", help="Set catalog owner")
-    demo_parser.add_argument("--scale", type=float, default=1.0, help="Scale factor: 1.0 = ~1B rows, 0.1 = ~100M rows, 0.01 = ~10M rows")
-    demo_parser.add_argument("--batch-size", type=int, default=5_000_000, help="Rows per INSERT batch (default: 5000000)")
+    demo_parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help="Scale factor: 1.0 = ~1B rows, 0.1 = ~100M rows, 0.01 = ~10M rows",
+    )
+    demo_parser.add_argument(
+        "--batch-size", type=int, default=5_000_000, help="Rows per INSERT batch (default: 5000000)"
+    )
     demo_parser.add_argument("--max-workers", type=int, help="Parallel SQL workers")
-    demo_parser.add_argument("--storage-location", help="Managed location for catalog (e.g., abfss://...)")
-    demo_parser.add_argument("--drop-existing", action="store_true", help="Drop and recreate if catalog exists")
-    demo_parser.add_argument("--no-medallion", action="store_true", help="Skip generating bronze/silver/gold schemas")
-    demo_parser.add_argument("--cleanup", action="store_true", help="Remove the demo catalog instead of generating")
-    demo_parser.add_argument("--start-date", default="2020-01-01", help="Data start date (default: 2020-01-01)")
-    demo_parser.add_argument("--end-date", default="2025-01-01", help="Data end date (default: 2025-01-01)")
+    demo_parser.add_argument(
+        "--storage-location", help="Managed location for catalog (e.g., abfss://...)"
+    )
+    demo_parser.add_argument(
+        "--drop-existing", action="store_true", help="Drop and recreate if catalog exists"
+    )
+    demo_parser.add_argument(
+        "--no-medallion", action="store_true", help="Skip generating bronze/silver/gold schemas"
+    )
+    demo_parser.add_argument(
+        "--cleanup", action="store_true", help="Remove the demo catalog instead of generating"
+    )
+    demo_parser.add_argument(
+        "--start-date", default="2020-01-01", help="Data start date (default: 2020-01-01)"
+    )
+    demo_parser.add_argument(
+        "--end-date", default="2025-01-01", help="Data end date (default: 2025-01-01)"
+    )
     demo_parser.add_argument("--dest-catalog", help="Clone generated catalog to this destination")
     demo_parser.set_defaults(func=cmd_demo_data)
 
     # --- rtbf command ---
-    rtbf_parser = subparsers.add_parser("rtbf", help="Right to Be Forgotten (GDPR Article 17) erasure requests")
+    rtbf_parser = subparsers.add_parser(
+        "rtbf", help="Right to Be Forgotten (GDPR Article 17) erasure requests"
+    )
     add_common_args(rtbf_parser)
     rtbf_sub = rtbf_parser.add_subparsers(dest="rtbf_action", help="RTBF sub-command")
 
@@ -2868,19 +3413,45 @@ def build_parser() -> argparse.ArgumentParser:
     rtbf_init.set_defaults(rtbf_action="init")
 
     rtbf_submit = rtbf_sub.add_parser("submit", help="Submit a new RTBF erasure request")
-    rtbf_submit.add_argument("--subject-type", required=True, choices=["email", "customer_id", "ssn", "phone", "name", "national_id", "passport", "credit_card", "custom"])
-    rtbf_submit.add_argument("--subject-value", required=True, help="The value to erase (e.g., user@example.com)")
-    rtbf_submit.add_argument("--subject-column", help="Explicit column name (required for custom subject-type)")
-    rtbf_submit.add_argument("--requester-email", required=True, help="Email of the person requesting erasure")
-    rtbf_submit.add_argument("--requester-name", required=True, help="Name of the person requesting erasure")
+    rtbf_submit.add_argument(
+        "--subject-type",
+        required=True,
+        choices=[
+            "email",
+            "customer_id",
+            "ssn",
+            "phone",
+            "name",
+            "national_id",
+            "passport",
+            "credit_card",
+            "custom",
+        ],
+    )
+    rtbf_submit.add_argument(
+        "--subject-value", required=True, help="The value to erase (e.g., user@example.com)"
+    )
+    rtbf_submit.add_argument(
+        "--subject-column", help="Explicit column name (required for custom subject-type)"
+    )
+    rtbf_submit.add_argument(
+        "--requester-email", required=True, help="Email of the person requesting erasure"
+    )
+    rtbf_submit.add_argument(
+        "--requester-name", required=True, help="Name of the person requesting erasure"
+    )
     rtbf_submit.add_argument("--legal-basis", default="GDPR Article 17(1)(a) - Consent withdrawn")
-    rtbf_submit.add_argument("--strategy", choices=["delete", "anonymize", "pseudonymize"], default="delete")
+    rtbf_submit.add_argument(
+        "--strategy", choices=["delete", "anonymize", "pseudonymize"], default="delete"
+    )
     rtbf_submit.add_argument("--scope-catalogs", nargs="+", help="Limit search to these catalogs")
     rtbf_submit.add_argument("--grace-period-days", type=int, default=0)
     rtbf_submit.add_argument("--notes", help="Additional notes")
     rtbf_submit.set_defaults(rtbf_action="submit")
 
-    rtbf_discover = rtbf_sub.add_parser("discover", help="Discover subject data across all catalogs")
+    rtbf_discover = rtbf_sub.add_parser(
+        "discover", help="Discover subject data across all catalogs"
+    )
     rtbf_discover.add_argument("--request-id", required=True)
     rtbf_discover.add_argument("--subject-value", required=True, help="The value to search for")
     rtbf_discover.set_defaults(rtbf_action="discover")
@@ -2898,7 +3469,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     rtbf_vacuum = rtbf_sub.add_parser("vacuum", help="VACUUM affected tables (physical deletion)")
     rtbf_vacuum.add_argument("--request-id", required=True)
-    rtbf_vacuum.add_argument("--retention-hours", type=int, help="VACUUM retention hours (default: 0)")
+    rtbf_vacuum.add_argument(
+        "--retention-hours", type=int, help="VACUUM retention hours (default: 0)"
+    )
     rtbf_vacuum.set_defaults(rtbf_action="vacuum")
 
     rtbf_verify = rtbf_sub.add_parser("verify", help="Verify deletion completeness")
@@ -2948,7 +3521,15 @@ def main():
         sys.exit(0)
 
     # Commands that don't need standard logging setup
-    if args.command in ("init", "completion", "dashboard", "tui", "templates", "approval", "slack-bot"):
+    if args.command in (
+        "init",
+        "completion",
+        "dashboard",
+        "tui",
+        "templates",
+        "approval",
+        "slack-bot",
+    ):
         args.func(args)
         return
 
@@ -2961,6 +3542,7 @@ def main():
     max_pq = getattr(args, "max_parallel_queries", None)
     if max_pq:
         from src.client import set_max_parallel_queries
+
         set_max_parallel_queries(max_pq)
 
     args.func(args)

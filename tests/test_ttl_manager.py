@@ -36,8 +36,14 @@ class TestFormatTtlReport:
         assert "No TTL" in format_ttl_report([])
 
     def test_with_data(self):
-        policies = [{"dest_catalog": "test_cat", "ttl_days": 7,
-                      "expires_at": "2024-01-08", "ttl_status": "5 days remaining"}]
+        policies = [
+            {
+                "dest_catalog": "test_cat",
+                "ttl_days": 7,
+                "expires_at": "2024-01-08",
+                "ttl_status": "5 days remaining",
+            }
+        ]
         output = format_ttl_report(policies)
         assert "test_cat" in output
         assert "7" in output

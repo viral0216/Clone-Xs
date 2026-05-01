@@ -110,8 +110,10 @@ class TestRunScheduledClone:
         mock_clone.return_value = {"tables": 5}
 
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
         }
         result = run_scheduled_clone(MagicMock(), config)
 
@@ -121,8 +123,10 @@ class TestRunScheduledClone:
     @patch("src.scheduler.check_drift", return_value=False)
     def test_skips_clone_when_no_drift(self, mock_drift):
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
             "drift_check_before_clone": True,
         }
         result = run_scheduled_clone(MagicMock(), config)
@@ -134,8 +138,10 @@ class TestRunScheduledClone:
     @patch("src.scheduler.check_drift", return_value=True)
     def test_handles_clone_error(self, mock_drift, mock_clone):
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
         }
         result = run_scheduled_clone(MagicMock(), config)
 
@@ -146,8 +152,10 @@ class TestRunScheduledClone:
     def test_on_complete_callback_called_on_skip(self, mock_drift):
         callback = MagicMock()
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
         }
         run_scheduled_clone(MagicMock(), config, on_complete=callback)
         callback.assert_called_once()
@@ -160,8 +168,10 @@ class TestRunScheduledClone:
         mock_clone.return_value = {"tables": 1}
         callback = MagicMock()
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
         }
         run_scheduled_clone(MagicMock(), config, on_complete=callback)
         callback.assert_called_once()
@@ -171,8 +181,10 @@ class TestRunScheduledClone:
     def test_drift_check_disabled(self, mock_drift, mock_clone):
         mock_clone.return_value = {"tables": 1}
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "exclude_schemas": [], "sql_warehouse_id": "wh",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "exclude_schemas": [],
+            "sql_warehouse_id": "wh",
             "drift_check_before_clone": False,
         }
         result = run_scheduled_clone(MagicMock(), config)

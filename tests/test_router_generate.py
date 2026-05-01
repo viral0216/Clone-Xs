@@ -7,40 +7,56 @@ pytest.importorskip("fastapi")
 
 
 def test_generate_workflow(client):
-    with patch("src.workflow.generate_workflow_yaml", return_value="/tmp/wf.yaml"), \
-         patch("api.routers.generate._read_generated_file", return_value="content: {}"):
-        resp = client.post("/api/generate/workflow", json={
-            "format": "yaml",
-            "job_name": "test-clone-job",
-        })
+    with (
+        patch("src.workflow.generate_workflow_yaml", return_value="/tmp/wf.yaml"),
+        patch("api.routers.generate._read_generated_file", return_value="content: {}"),
+    ):
+        resp = client.post(
+            "/api/generate/workflow",
+            json={
+                "format": "yaml",
+                "job_name": "test-clone-job",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_generate_workflow_json_format(client):
-    with patch("src.workflow.generate_workflow", return_value="/tmp/wf.json"), \
-         patch("api.routers.generate._read_generated_file", return_value="{}"):
-        resp = client.post("/api/generate/workflow", json={
-            "format": "json",
-            "job_name": "test-clone-job",
-        })
+    with (
+        patch("src.workflow.generate_workflow", return_value="/tmp/wf.json"),
+        patch("api.routers.generate._read_generated_file", return_value="{}"),
+    ):
+        resp = client.post(
+            "/api/generate/workflow",
+            json={
+                "format": "json",
+                "job_name": "test-clone-job",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_generate_terraform(client):
-    resp = client.post("/api/generate/terraform", json={
-        "source_catalog": "src_cat",
-        "format": "terraform",
-    })
+    resp = client.post(
+        "/api/generate/terraform",
+        json={
+            "source_catalog": "src_cat",
+            "format": "terraform",
+        },
+    )
     assert resp.status_code in (200, 422)
 
 
 def test_create_databricks_job(client):
     with patch("src.create_job.create_persistent_job", return_value={"job_id": 1}):
-        resp = client.post("/api/generate/create-job", json={
-            "source_catalog": "src_cat",
-            "destination_catalog": "dst_cat",
-            "job_name": "test-job",
-        })
+        resp = client.post(
+            "/api/generate/create-job",
+            json={
+                "source_catalog": "src_cat",
+                "destination_catalog": "dst_cat",
+                "job_name": "test-job",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
@@ -55,9 +71,12 @@ def test_list_clone_xs_jobs(client):
 
 
 def test_generate_demo_data(client):
-    resp = client.post("/api/generate/demo-data", json={
-        "catalog_name": "demo_cat",
-    })
+    resp = client.post(
+        "/api/generate/demo-data",
+        json={
+            "catalog_name": "demo_cat",
+        },
+    )
     assert resp.status_code in (200, 422)
 
 

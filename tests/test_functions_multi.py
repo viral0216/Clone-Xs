@@ -22,8 +22,12 @@ class TestMultiFanout:
     def test_each_function_stamped_with_catalog(self, mock_per_cat):
         """Defining feature: every row in the merged list carries the
         catalog it came from so the UI can render a Catalog column."""
+
         def stub(_client, _wid, catalog):
-            return [{"name": f"fn_{catalog}", "schema": "default", "full_name": f"{catalog}.default.fn"}]
+            return [
+                {"name": f"fn_{catalog}", "schema": "default", "full_name": f"{catalog}.default.fn"}
+            ]
+
         mock_per_cat.side_effect = stub
 
         result = list_functions_multi(MagicMock(), "wh", ["main", "samples"])
@@ -36,8 +40,10 @@ class TestMultiFanout:
         """`per_catalog` maps catalog → count so the UI rollup card can
         show how many UDFs each catalog contributes without iterating
         the merged list."""
+
         def stub(_client, _wid, catalog):
             return [{"name": "x"}, {"name": "y"}] if catalog == "main" else []
+
         mock_per_cat.side_effect = stub
 
         result = list_functions_multi(MagicMock(), "wh", ["main", "samples"])
@@ -47,10 +53,12 @@ class TestMultiFanout:
     def test_per_catalog_failure_does_not_abort(self, mock_per_cat):
         """One catalog raising must not kill the whole multi request —
         the others' UDFs still surface, and the failure is captured."""
+
         def stub(_client, _wid, catalog):
             if catalog == "broken":
                 raise RuntimeError("PERMISSION_DENIED on broken")
             return [{"name": "ok"}]
+
         mock_per_cat.side_effect = stub
 
         result = list_functions_multi(MagicMock(), "wh", ["main", "broken", "samples"])
@@ -76,7 +84,9 @@ class TestEndpointDispatch:
         with patch("src.functions_listing.list_functions_multi") as mock_multi:
             mock_multi.return_value = {
                 "functions": [{"name": "f", "catalog": "main"}],
-                "per_catalog": {"main": 1}, "errors": [], "catalogs": ["main"],
+                "per_catalog": {"main": 1},
+                "errors": [],
+                "catalogs": ["main"],
             }
             resp = client.post("/api/functions/multi", json={"catalogs": ["main"]})
             assert resp.status_code == 200

@@ -27,6 +27,7 @@ class PIIScanRequest(BaseModel):
     out across the listed catalogs in parallel and returns a merged
     response with each detection stamped with its owning `catalog`.
     """
+
     # Optional in multi mode. The validator below requires at least
     # one of `source_catalog` / `source_catalogs` to be set.
     source_catalog: str = ""
@@ -45,6 +46,7 @@ class PIIScanRequest(BaseModel):
     def _at_least_one_catalog(self) -> "PIIScanRequest":
         if not self.source_catalog and not self.source_catalogs:
             from api.models.analysis import _NEITHER_CATALOG_MSG
+
             raise ValueError(_NEITHER_CATALOG_MSG)
         return self
 

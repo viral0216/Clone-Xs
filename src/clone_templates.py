@@ -276,13 +276,15 @@ def list_templates() -> list[dict]:
     """List all available clone templates."""
     templates = []
     for key, tmpl in TEMPLATES.items():
-        templates.append({
-            "key": key,
-            "name": tmpl["name"],
-            "description": tmpl["description"],
-            "clone_type": tmpl["config"].get("clone_type", "DEEP"),
-            "config": tmpl.get("config", {}),
-        })
+        templates.append(
+            {
+                "key": key,
+                "name": tmpl["name"],
+                "description": tmpl["description"],
+                "clone_type": tmpl["config"].get("clone_type", "DEEP"),
+                "config": tmpl.get("config", {}),
+            }
+        )
 
     logger.info("Available clone templates:")
     logger.info("-" * 60)
@@ -315,7 +317,9 @@ def apply_template(
     """
     template = TEMPLATES.get(template_name)
     if not template:
-        raise ValueError(f"Unknown template: {template_name}. Available: {', '.join(TEMPLATES.keys())}")
+        raise ValueError(
+            f"Unknown template: {template_name}. Available: {', '.join(TEMPLATES.keys())}"
+        )
 
     # Start with base config
     merged = {**base_config}

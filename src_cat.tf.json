@@ -1,0 +1,10 @@
+{
+  "resource": {
+    "databricks_catalog": {
+      "src_cat": {
+        "name": "src_cat",
+        "comment": "Managed by Terraform - cloned catalog"
+      }
+    }
+  }
+}

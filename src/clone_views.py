@@ -55,14 +55,28 @@ def clone_view(
 
 
 def _clone_single_view(
-    client, warehouse_id, dest_catalog, source_catalog, schema,
-    view_name, view_definition, dry_run,
-    copy_permissions, copy_ownership, rollback_log,
+    client,
+    warehouse_id,
+    dest_catalog,
+    source_catalog,
+    schema,
+    view_name,
+    view_definition,
+    dry_run,
+    copy_permissions,
+    copy_ownership,
+    rollback_log,
 ) -> tuple[str, bool]:
     """Clone a single view with post-clone operations. Returns (name, success)."""
     success = clone_view(
-        client, warehouse_id, dest_catalog, source_catalog, schema,
-        view_name, view_definition, dry_run=dry_run,
+        client,
+        warehouse_id,
+        dest_catalog,
+        source_catalog,
+        schema,
+        view_name,
+        view_definition,
+        dry_run=dry_run,
     )
     if success:
         if rollback_log and not dry_run:
@@ -71,7 +85,8 @@ def _clone_single_view(
             copy_table_permissions(client, source_catalog, dest_catalog, schema, view_name)
         if copy_ownership and not dry_run:
             update_ownership(
-                client, SecurableType.TABLE,
+                client,
+                SecurableType.TABLE,
                 f"{source_catalog}.{schema}.{view_name}",
                 f"{dest_catalog}.{schema}.{view_name}",
             )
@@ -125,9 +140,17 @@ def clone_views_in_schema(
             futures = {
                 executor.submit(
                     _clone_single_view,
-                    client, warehouse_id, dest_catalog, source_catalog, schema,
-                    v["table_name"], v["view_definition"], dry_run,
-                    copy_permissions, copy_ownership, rollback_log,
+                    client,
+                    warehouse_id,
+                    dest_catalog,
+                    source_catalog,
+                    schema,
+                    v["table_name"],
+                    v["view_definition"],
+                    dry_run,
+                    copy_permissions,
+                    copy_ownership,
+                    rollback_log,
                 ): v["table_name"]
                 for v in views_to_clone
             }
@@ -140,9 +163,17 @@ def clone_views_in_schema(
     else:
         for v in views_to_clone:
             _, success = _clone_single_view(
-                client, warehouse_id, dest_catalog, source_catalog, schema,
-                v["table_name"], v["view_definition"], dry_run,
-                copy_permissions, copy_ownership, rollback_log,
+                client,
+                warehouse_id,
+                dest_catalog,
+                source_catalog,
+                schema,
+                v["table_name"],
+                v["view_definition"],
+                dry_run,
+                copy_permissions,
+                copy_ownership,
+                rollback_log,
             )
             if success:
                 results["success"] += 1

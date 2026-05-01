@@ -1,4 +1,5 @@
 """Smoke tests for the DLT router."""
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -15,9 +16,12 @@ def test_get_pipeline(client):
 
 
 def test_trigger_pipeline(client):
-    resp = client.post("/api/dlt/pipelines/pipe-123/trigger", json={
-        "full_refresh": False,
-    })
+    resp = client.post(
+        "/api/dlt/pipelines/pipe-123/trigger",
+        json={
+            "full_refresh": False,
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -27,9 +31,12 @@ def test_stop_pipeline(client):
 
 
 def test_clone_pipeline(client):
-    resp = client.post("/api/dlt/pipelines/pipe-123/clone", json={
-        "new_name": "cloned-pipeline",
-    })
+    resp = client.post(
+        "/api/dlt/pipelines/pipe-123/clone",
+        json={
+            "new_name": "cloned-pipeline",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 

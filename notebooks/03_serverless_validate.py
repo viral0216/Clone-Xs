@@ -49,19 +49,22 @@ WAREHOUSE_ID = "SERVERLESS"
 from src.validation import validate_catalogs
 
 validation = validate_catalogs(
-    client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG,
+    client,
+    WAREHOUSE_ID,
+    SOURCE_CATALOG,
+    DEST_CATALOG,
     exclude_schemas=["information_schema", "default"],
     max_workers=4,
 )
 
-print(f"Validation Results:")
+print("Validation Results:")
 print(f"  Total tables:  {validation['total_tables']}")
 print(f"  Matched:       {validation['matched']}")
 print(f"  Mismatched:    {validation['mismatched']}")
 print(f"  Errors:        {validation['errors']}")
 
 if validation.get("mismatches"):
-    print(f"\nMismatched tables:")
+    print("\nMismatched tables:")
     for m in validation["mismatches"]:
         print(f"  {m['table']}: source={m['source_count']} dest={m['dest_count']}")
 
@@ -75,12 +78,15 @@ if validation.get("mismatches"):
 from src.validation import validate_table
 
 result = validate_table(
-    client, WAREHOUSE_ID,
-    SOURCE_CATALOG, DEST_CATALOG,
-    "bronze", "customer_data",  # schema, table
+    client,
+    WAREHOUSE_ID,
+    SOURCE_CATALOG,
+    DEST_CATALOG,
+    "bronze",
+    "customer_data",  # schema, table
 )
 
-print(f"Table: bronze.customer_data")
+print("Table: bronze.customer_data")
 print(f"  Source rows:  {result['source_count']}")
 print(f"  Dest rows:    {result['dest_count']}")
 print(f"  Match:        {'Yes' if result['match'] else 'No'}")

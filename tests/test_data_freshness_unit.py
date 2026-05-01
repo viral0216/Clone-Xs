@@ -29,9 +29,7 @@ class TestCheckFreshness:
 
     @patch("src.data_freshness._run_sql")
     @patch("src.data_freshness._query_sql")
-    def test_fresh_and_stale_classification(
-        self, mock_query, mock_run, mock_schema
-    ):
+    def test_fresh_and_stale_classification(self, mock_query, mock_run, mock_schema):
         """Tables within max_stale_hours are fresh; older ones are stale."""
         from src.data_freshness import check_freshness
 
@@ -59,9 +57,7 @@ class TestCheckFreshness:
         ]
 
         client = MagicMock()
-        result = check_freshness(
-            client, "my_catalog", max_stale_hours=24, warehouse_id="wh-1"
-        )
+        result = check_freshness(client, "my_catalog", max_stale_hours=24, warehouse_id="wh-1")
 
         assert result["catalog"] == "my_catalog"
         assert result["total_tables"] == 2
@@ -79,9 +75,7 @@ class TestCheckFreshness:
 
     @patch("src.data_freshness._run_sql")
     @patch("src.data_freshness._query_sql")
-    def test_query_failure_returns_error_key(
-        self, mock_query, mock_run, mock_schema
-    ):
+    def test_query_failure_returns_error_key(self, mock_query, mock_run, mock_schema):
         """When the information_schema query fails, result has an error key."""
         from src.data_freshness import check_freshness
 
@@ -100,9 +94,7 @@ class TestCheckFreshness:
 
     @patch("src.data_freshness._run_sql")
     @patch("src.data_freshness._query_sql")
-    def test_catalog_not_accessible_returns_error(
-        self, mock_query, mock_run, mock_schema
-    ):
+    def test_catalog_not_accessible_returns_error(self, mock_query, mock_run, mock_schema):
         """When SHOW SCHEMAS fails, result has an error key."""
         from src.data_freshness import check_freshness
 
@@ -116,9 +108,7 @@ class TestCheckFreshness:
 
     @patch("src.data_freshness._run_sql")
     @patch("src.data_freshness._query_sql")
-    def test_unknown_status_when_last_altered_is_none(
-        self, mock_query, mock_run, mock_schema
-    ):
+    def test_unknown_status_when_last_altered_is_none(self, mock_query, mock_run, mock_schema):
         from src.data_freshness import check_freshness
 
         mock_query.side_effect = [

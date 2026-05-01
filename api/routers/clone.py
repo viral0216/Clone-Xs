@@ -156,9 +156,8 @@ async def get_job_cost(
     # cross-workspace clones the actual write warehouse is on the target,
     # which we don't have billing access to from here, so we fall back to
     # the source warehouse (still useful — measures source-side egress DBU).
-    target_warehouse_id = (
-        job.get("destination_warehouse_id")
-        or app_config.get("sql_warehouse_id", "")
+    target_warehouse_id = job.get("destination_warehouse_id") or app_config.get(
+        "sql_warehouse_id", ""
     )
     query_warehouse_id = app_config.get("sql_warehouse_id", "")
 
@@ -191,7 +190,9 @@ async def get_job_cost(
 
 
 @router.websocket("/ws/{job_id}")
-async def clone_progress_ws(websocket: WebSocket, job_id: str, jm: JobManager = Depends(get_job_manager)):
+async def clone_progress_ws(
+    websocket: WebSocket, job_id: str, jm: JobManager = Depends(get_job_manager)
+):
     """WebSocket endpoint for live clone progress."""
     await jm.connection_manager.connect(websocket, job_id)
     try:

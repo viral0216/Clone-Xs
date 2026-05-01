@@ -1,6 +1,5 @@
 """IaC and workflow generation endpoints."""
 
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
@@ -24,17 +23,23 @@ def _read_generated_file(path: str) -> str:
 async def generate_workflow(req: WorkflowRequest):
     """Generate a Databricks Workflows job definition."""
     from src.workflow import generate_workflow, generate_workflow_yaml
+
     config = await get_app_config()
     if req.format == "yaml":
         output = generate_workflow_yaml(
-            config, output_path=req.output_path or "databricks_workflow.yaml",
-            job_name=req.job_name, schedule_cron=req.schedule,
+            config,
+            output_path=req.output_path or "databricks_workflow.yaml",
+            job_name=req.job_name,
+            schedule_cron=req.schedule,
         )
     else:
         output = generate_workflow(
-            config, output_path=req.output_path or "databricks_workflow.json",
-            job_name=req.job_name, cluster_id=req.cluster_id,
-            schedule_cron=req.schedule, notification_email=req.notification_email,
+            config,
+            output_path=req.output_path or "databricks_workflow.json",
+            job_name=req.job_name,
+            cluster_id=req.cluster_id,
+            schedule_cron=req.schedule,
+            notification_email=req.notification_email,
         )
     content = _read_generated_file(output)
     return {"output_path": output, "content": content, "format": req.format}
@@ -55,7 +60,11 @@ async def generate_terraform(
     config["format"] = req.format
     config["output_path"] = req.output_path
     job_id = await jm.submit_job("terraform", config, client)
-    return {"job_id": job_id, "status": "queued", "message": f"{req.format.title()} generation submitted"}
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": f"{req.format.title()} generation submitted",
+    }
 
 
 @router.post("/create-job")
@@ -143,11 +152,13 @@ async def list_clone_xs_jobs(client=Depends(get_db_client)):
                 tags = job.settings.tags
             if tags.get("created_by") == "clone-xs":
                 name = job.settings.name if job.settings else ""
-                results.append({
-                    "job_id": job.job_id,
-                    "job_name": name,
-                    "tags": tags,
-                })
+                results.append(
+                    {
+                        "job_id": job.job_id,
+                        "job_name": name,
+                        "tags": tags,
+                    }
+                )
         return results
     except Exception:
         return []
@@ -203,6 +214,7 @@ async def preview_demo_data(req: DemoDataRequest):
     every form change (the UI debounces by 500ms).
     """
     from src.demo_generator import preview_demo_catalog
+
     config = {
         "industries": req.industries,
         "scale_factor": req.scale_factor,
@@ -249,7 +261,8 @@ async def start_streaming_emission(
 
 @router.post("/demo-data/streaming/{job_id}/stop", summary="Stop a streaming emission job")
 async def stop_streaming_emission(
-    job_id: str, jm: JobManager = Depends(get_job_manager),
+    job_id: str,
+    jm: JobManager = Depends(get_job_manager),
 ):
     """Request a streaming-emit job to stop at its next tick.
 
@@ -260,6 +273,7 @@ async def stop_streaming_emission(
     """
     if job_id not in jm.jobs:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
     jm.jobs[job_id]["stop_requested"] = True
     return {"job_id": job_id, "stop_requested": True}
@@ -267,16 +281,21 @@ async def stop_streaming_emission(
 
 @router.get("/demo-data/streaming/auto-loader-sql", summary="Get the Auto Loader SQL snippet")
 async def get_streaming_auto_loader_sql(
-    catalog: str, schema: str, profile: str,
-    refresh_minutes: int = 5, volume: str = "events_volume",
+    catalog: str,
+    schema: str,
+    profile: str,
+    refresh_minutes: int = 5,
+    volume: str = "events_volume",
 ):
     """Return the copy-paste DBSQL snippet for a streaming Bronze table
     over the events Volume. Used by the UI's Auto Loader panel so users
     can run the CREATE TABLE manually if `auto_create_bronze` failed
     (e.g., DBSQL Serverless not enabled) or wasn't requested."""
     from src.demo_streaming import DEVICE_PROFILES, get_auto_loader_sql
+
     if profile not in DEVICE_PROFILES:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=400,
             detail=f"Unknown profile {profile!r}; valid: {list(DEVICE_PROFILES)}",
@@ -291,7 +310,8 @@ async def get_streaming_auto_loader_sql(
 
 @router.post("/demo-data/streaming/schedule", summary="Schedule streaming as a Databricks Job")
 async def schedule_streaming(
-    req: StreamingScheduleRequest, client=Depends(get_db_client),
+    req: StreamingScheduleRequest,
+    client=Depends(get_db_client),
 ):
     """Generate a notebook + create a scheduled Databricks Job.
 
@@ -308,6 +328,7 @@ async def schedule_streaming(
     to the manual SQL snippet path.
     """
     from src.demo_streaming_schedule import schedule_streaming_emission
+
     payload = req.model_dump(by_alias=False)
     # Pydantic stores the aliased `schema` field as `schema_name` —
     # re-key for the helper which reads `schema` directly.
@@ -324,7 +345,8 @@ async def schedule_streaming(
 
 @router.get("/demo-data/catalogs", summary="List catalogs (with demo signal + size)")
 async def list_demo_catalogs(
-    demo_only: bool = False, client=Depends(get_db_client),
+    demo_only: bool = False,
+    client=Depends(get_db_client),
 ):
     """List catalogs the caller can read, with metadata and a demo flag.
 
@@ -340,6 +362,7 @@ async def list_demo_catalogs(
     """
     from concurrent.futures import ThreadPoolExecutor
     from src.client import execute_sql
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
 
@@ -370,7 +393,10 @@ async def list_demo_catalogs(
         if not name or not wid:
             return out
         try:
-            rows = execute_sql(client, wid, f"""
+            rows = execute_sql(
+                client,
+                wid,
+                f"""
                 SELECT
                     (SELECT COUNT(DISTINCT table_schema)
                        FROM `{name}`.information_schema.tables
@@ -385,7 +411,8 @@ async def list_demo_catalogs(
                       WHERE property_key = 'demo.generated_by'
                         AND property_value = 'clone-xs')
                         AS num_demo_tables
-            """.strip())
+            """.strip(),
+            )
             r = rows[0] if rows else {}
             out["num_schemas"] = int(r.get("num_schemas") or 0)
             out["num_tables"] = int(r.get("num_tables") or 0)
@@ -419,7 +446,9 @@ async def cleanup_demo_data(catalog_name: str, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     if not wid:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail="No SQL warehouse configured")
     from src.demo_generator import cleanup_demo_catalog
+
     result = cleanup_demo_catalog(client, wid, catalog_name)
     return result

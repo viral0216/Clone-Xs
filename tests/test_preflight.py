@@ -60,7 +60,10 @@ def test_check_catalog_access_failure(mock_sql):
     assert result["status"] == "FAIL"
 
 
-@patch.dict("os.environ", {"DATABRICKS_HOST": "https://test.cloud.databricks.com", "DATABRICKS_TOKEN": "tok"})
+@patch.dict(
+    "os.environ",
+    {"DATABRICKS_HOST": "https://test.cloud.databricks.com", "DATABRICKS_TOKEN": "tok"},
+)
 def test_check_env_vars_present():
     result = check_env_vars()
     assert result["status"] == "OK"

@@ -88,9 +88,7 @@ class TestLinkTermToColumns:
     """Tests for link_term_to_columns."""
 
     @patch("src.table_registry.get_batch_insert_size", return_value=100)
-    def test_link_term_to_columns_batch_insert(
-        self, mock_batch, mock_exec, mock_schema
-    ):
+    def test_link_term_to_columns_batch_insert(self, mock_batch, mock_exec, mock_schema):
         from src.governance import link_term_to_columns
 
         client = MagicMock()
@@ -105,9 +103,7 @@ class TestLinkTermToColumns:
             assert col in insert_sql
 
     @patch("src.table_registry.get_batch_insert_size", return_value=100)
-    def test_link_term_empty_columns_only_tracks_change(
-        self, mock_batch, mock_exec, mock_schema
-    ):
+    def test_link_term_empty_columns_only_tracks_change(self, mock_batch, mock_exec, mock_schema):
         from src.governance import link_term_to_columns
 
         client = MagicMock()

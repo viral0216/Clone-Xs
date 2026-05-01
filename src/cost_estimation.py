@@ -40,8 +40,7 @@ def compute_selective_estimate(
         return None
 
     size_by_table: dict[tuple[str, str], int] = {
-        (t["schema"], t["table"]): int(t["size_bytes"])
-        for t in source_table_sizes
+        (t["schema"], t["table"]): int(t["size_bytes"]) for t in source_table_sizes
     }
 
     drift_breakdown = {"never_cloned": 0, "version_drift": 0, "unable_to_compare": 0}
@@ -52,7 +51,11 @@ def compute_selective_estimate(
     for schema in schemas:
         try:
             drift = find_drifted_tables(
-                client, warehouse_id, source_catalog, destination_catalog, schema,
+                client,
+                warehouse_id,
+                source_catalog,
+                destination_catalog,
+                schema,
             )
         except Exception as e:
             logger.debug(f"Drift detection failed for schema {schema}: {e}")
@@ -65,19 +68,21 @@ def compute_selective_estimate(
             drift_breakdown[reason] = drift_breakdown.get(reason, 0) + 1
             size = size_by_table.get((schema, d["table_name"]), 0)
             drifted_bytes += size
-            drifted_tables.append({
-                "schema": schema,
-                "table": d["table_name"],
-                "reason": reason,
-                "size_bytes": size,
-                "size_gb": size / (1024 ** 3),
-            })
+            drifted_tables.append(
+                {
+                    "schema": schema,
+                    "table": d["table_name"],
+                    "reason": reason,
+                    "size_bytes": size,
+                    "size_gb": size / (1024**3),
+                }
+            )
         # Count in-sync as: source tables in this schema we measured minus drifted
-        for (sch, _tbl) in size_by_table:
+        for sch, _tbl in size_by_table:
             if sch == schema and _tbl not in drift_names:
                 in_sync_tables += 1
 
-    drifted_gb = drifted_bytes / (1024 ** 3)
+    drifted_gb = drifted_bytes / (1024**3)
     drifted_monthly = drifted_gb * price_per_gb
 
     full_bytes = sum(int(t["size_bytes"]) for t in source_table_sizes)
@@ -175,14 +180,16 @@ def estimate_clone_cost(
             size = get_table_size_bytes(client, warehouse_id, source_catalog, schema, table_name)
             if size is not None:
                 total_bytes += size
-                table_sizes.append({
-                    "schema": schema,
-                    "table": table_name,
-                    "size_bytes": size,
-                    "size_gb": size / (1024 ** 3),
-                })
+                table_sizes.append(
+                    {
+                        "schema": schema,
+                        "table": table_name,
+                        "size_bytes": size,
+                        "size_gb": size / (1024**3),
+                    }
+                )
 
-    total_gb = total_bytes / (1024 ** 3)
+    total_gb = total_bytes / (1024**3)
     monthly_cost = total_gb * price_per_gb
 
     # Sort by size descending
@@ -207,8 +214,13 @@ def estimate_clone_cost(
     if destination_catalog:
         try:
             selective = compute_selective_estimate(
-                client, warehouse_id, source_catalog, destination_catalog,
-                schemas, table_sizes, price_per_gb,
+                client,
+                warehouse_id,
+                source_catalog,
+                destination_catalog,
+                schemas,
+                table_sizes,
+                price_per_gb,
             )
             if selective is not None:
                 result["selective"] = selective

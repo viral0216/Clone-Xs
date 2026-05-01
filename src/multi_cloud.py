@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CloudWorkspace:
     """Represents a Databricks workspace on a specific cloud provider."""
+
     name: str
     cloud: str  # aws, azure, gcp
     host: str
@@ -91,6 +92,7 @@ def get_client_for_workspace(workspace: CloudWorkspace):
     # Azure Service Principal auth
     if workspace.cloud == "azure" and workspace.azure_client_id:
         from databricks.sdk import WorkspaceClient
+
         return WorkspaceClient(
             host=workspace.host,
             azure_tenant_id=workspace.azure_tenant_id,
@@ -101,12 +103,14 @@ def get_client_for_workspace(workspace: CloudWorkspace):
     # GCP Service Account auth
     if workspace.cloud == "gcp" and workspace.gcp_service_account_key:
         from databricks.sdk import WorkspaceClient
+
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = workspace.gcp_service_account_key
         return WorkspaceClient(host=workspace.host)
 
     # AWS Profile auth
     if workspace.cloud == "aws" and workspace.aws_profile:
         from databricks.sdk import WorkspaceClient
+
         return WorkspaceClient(
             host=workspace.host,
             profile=workspace.aws_profile,
@@ -140,7 +144,9 @@ def clone_across_clouds(
     source_cloud = source_workspace.cloud.upper()
     dest_cloud = dest_workspace.cloud.upper()
 
-    logger.info(f"Cross-cloud clone: {source_cloud} ({source_workspace.name}) -> {dest_cloud} ({dest_workspace.name})")
+    logger.info(
+        f"Cross-cloud clone: {source_cloud} ({source_workspace.name}) -> {dest_cloud} ({dest_workspace.name})"
+    )
 
     if config.get("clone_type", "DEEP").upper() == "SHALLOW":
         logger.warning("Shallow clone is not supported across clouds. Switching to DEEP clone.")
@@ -158,12 +164,14 @@ def clone_across_clouds(
         "sql_warehouse_id": source_workspace.warehouse_id or config.get("sql_warehouse_id"),
     }
 
-    destinations = [{
-        "host": dest_workspace.host,
-        "token": dest_workspace.token,
-        "sql_warehouse_id": dest_workspace.warehouse_id,
-        "destination_catalog": config.get("destination_catalog"),
-    }]
+    destinations = [
+        {
+            "host": dest_workspace.host,
+            "token": dest_workspace.token,
+            "sql_warehouse_id": dest_workspace.warehouse_id,
+            "destination_catalog": config.get("destination_catalog"),
+        }
+    ]
 
     result = clone_to_multiple_workspaces(clone_config, destinations)
 
@@ -185,9 +193,13 @@ def list_workspaces(config: dict) -> None:
 
     for ws in workspaces:
         cloud_icon = {"aws": "☁️ AWS", "azure": "🔷 Azure", "gcp": "🟢 GCP"}.get(ws.cloud, ws.cloud)
-        auth = "token" if ws.token else (
-            "service_principal" if ws.azure_client_id else (
-                "service_account" if ws.gcp_service_account_key else "default"
+        auth = (
+            "token"
+            if ws.token
+            else (
+                "service_principal"
+                if ws.azure_client_id
+                else ("service_account" if ws.gcp_service_account_key else "default")
             )
         )
         logger.info(f"  {ws.name}")

@@ -42,10 +42,12 @@ class TestEstimateCloneCost:
     def test_with_include_schemas(self, mock_sql, mock_size):
         # Tables query
         mock_sql.return_value = [{"table_name": "orders"}]
-        mock_size.return_value = 10 * (1024 ** 3)  # 10 GB
+        mock_size.return_value = 10 * (1024**3)  # 10 GB
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
             exclude_schemas=["information_schema"],
             include_schemas=["sales"],
             price_per_gb=0.023,
@@ -67,10 +69,12 @@ class TestEstimateCloneCost:
             # Third call: tables in hr
             [{"table_name": "employees"}],
         ]
-        mock_size.return_value = 5 * (1024 ** 3)  # 5 GB each
+        mock_size.return_value = 5 * (1024**3)  # 5 GB each
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
             exclude_schemas=["information_schema"],
         )
 
@@ -84,7 +88,9 @@ class TestEstimateCloneCost:
         mock_size.return_value = None
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
             exclude_schemas=[],
             include_schemas=["s1"],
         )
@@ -102,7 +108,9 @@ class TestEstimateCloneCost:
         mock_size.side_effect = [100, 9999]
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
             exclude_schemas=[],
             include_schemas=["s1"],
         )
@@ -114,10 +122,12 @@ class TestEstimateCloneCost:
     @patch("src.cost_estimation.execute_sql")
     def test_custom_price_per_gb(self, mock_sql, mock_size):
         mock_sql.return_value = [{"table_name": "t1"}]
-        mock_size.return_value = 1024 ** 3  # 1 GB
+        mock_size.return_value = 1024**3  # 1 GB
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
             exclude_schemas=[],
             include_schemas=["s1"],
             price_per_gb=0.10,
@@ -133,7 +143,7 @@ class TestComputeSelectiveEstimate:
     (all source tables) and a SELECTIVE re-clone (drifted tables only) on
     the dry-run / preview tile."""
 
-    GB = 1024 ** 3
+    GB = 1024**3
 
     def _make_client(self, target_exists: bool = True):
         client = MagicMock()
@@ -150,8 +160,12 @@ class TestComputeSelectiveEstimate:
         uses to hide the comparison tile."""
         result = compute_selective_estimate(
             self._make_client(target_exists=False),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1"], source_table_sizes=[], price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1"],
+            source_table_sizes=[],
+            price_per_gb=0.023,
         )
         assert result is None
 
@@ -168,8 +182,12 @@ class TestComputeSelectiveEstimate:
         ]
         result = compute_selective_estimate(
             self._make_client(),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1"], source_table_sizes=sizes, price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1"],
+            source_table_sizes=sizes,
+            price_per_gb=0.023,
         )
         assert result is not None
         assert result["target_exists"] is True
@@ -199,8 +217,12 @@ class TestComputeSelectiveEstimate:
         ]
         result = compute_selective_estimate(
             self._make_client(),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1"], source_table_sizes=sizes, price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1"],
+            source_table_sizes=sizes,
+            price_per_gb=0.023,
         )
         assert result["tables_to_clone"] == 3
         assert result["savings_pct"] == pytest.approx(25.0, abs=0.1)  # 5 GB / 20 GB
@@ -224,8 +246,12 @@ class TestComputeSelectiveEstimate:
         ]
         result = compute_selective_estimate(
             self._make_client(),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1"], source_table_sizes=sizes, price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1"],
+            source_table_sizes=sizes,
+            price_per_gb=0.023,
         )
         assert result["drift_breakdown"] == {
             "never_cloned": 1,
@@ -244,8 +270,12 @@ class TestComputeSelectiveEstimate:
         ]
         result = compute_selective_estimate(
             self._make_client(),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1"], source_table_sizes=sizes, price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1"],
+            source_table_sizes=sizes,
+            price_per_gb=0.023,
         )
         assert result["tables_to_clone"] == 0
         assert result["tables_in_sync"] == 1
@@ -269,8 +299,12 @@ class TestComputeSelectiveEstimate:
         ]
         result = compute_selective_estimate(
             self._make_client(),
-            "wh-123", "src_cat", "dst_cat",
-            schemas=["s1", "s2"], source_table_sizes=sizes, price_per_gb=0.023,
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            schemas=["s1", "s2"],
+            source_table_sizes=sizes,
+            price_per_gb=0.023,
         )
         # s1 silently dropped; s2 reported one drifted, one in sync
         assert result["tables_to_clone"] == 1
@@ -286,20 +320,26 @@ class TestEstimateCloneCostSelectiveIntegration:
     @patch("src.cost_estimation.get_table_size_bytes")
     @patch("src.cost_estimation.execute_sql")
     def test_includes_selective_block_when_target_exists(
-        self, mock_sql, mock_size, mock_drift,
+        self,
+        mock_sql,
+        mock_size,
+        mock_drift,
     ):
         """destination_catalog provided + target exists → response carries
         a `selective` key with comparison numbers."""
         mock_sql.return_value = [{"table_name": "t1"}]
-        mock_size.return_value = 10 * (1024 ** 3)  # 10 GB per table
+        mock_size.return_value = 10 * (1024**3)  # 10 GB per table
         mock_drift.return_value = [{"table_name": "t1", "reason": "version_drift"}]
 
         client = MagicMock()
         client.catalogs.get.return_value = MagicMock()  # target exists
 
         result = estimate_clone_cost(
-            client, "wh-123", "src_cat",
-            exclude_schemas=[], include_schemas=["s1"],
+            client,
+            "wh-123",
+            "src_cat",
+            exclude_schemas=[],
+            include_schemas=["s1"],
             destination_catalog="dst_cat",
         )
         assert "selective" in result
@@ -312,14 +352,17 @@ class TestEstimateCloneCostSelectiveIntegration:
         """destination_catalog provided + target doesn't exist → no
         comparison possible, `selective` key absent. UI hides the tile."""
         mock_sql.return_value = [{"table_name": "t1"}]
-        mock_size.return_value = 10 * (1024 ** 3)
+        mock_size.return_value = 10 * (1024**3)
 
         client = MagicMock()
         client.catalogs.get.side_effect = Exception("not found")
 
         result = estimate_clone_cost(
-            client, "wh-123", "src_cat",
-            exclude_schemas=[], include_schemas=["s1"],
+            client,
+            "wh-123",
+            "src_cat",
+            exclude_schemas=[],
+            include_schemas=["s1"],
             destination_catalog="dst_cat",
         )
         assert "selective" not in result
@@ -327,16 +370,21 @@ class TestEstimateCloneCostSelectiveIntegration:
     @patch("src.cost_estimation.get_table_size_bytes")
     @patch("src.cost_estimation.execute_sql")
     def test_omits_selective_block_when_destination_not_specified(
-        self, mock_sql, mock_size,
+        self,
+        mock_sql,
+        mock_size,
     ):
         """No destination_catalog passed → no comparison attempted. Existing
         `/estimate` callers (UI source-only flow) keep their existing
         response shape."""
         mock_sql.return_value = [{"table_name": "t1"}]
-        mock_size.return_value = 10 * (1024 ** 3)
+        mock_size.return_value = 10 * (1024**3)
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "src_cat",
-            exclude_schemas=[], include_schemas=["s1"],
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            exclude_schemas=[],
+            include_schemas=["s1"],
         )
         assert "selective" not in result

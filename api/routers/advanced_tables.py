@@ -12,6 +12,7 @@ router = APIRouter()
 async def list_advanced(req: AdvancedTablesListRequest, client=Depends(get_db_client)):
     """List materialized views, streaming tables, and online tables in a catalog."""
     from src.clone_advanced_tables import list_all_advanced_tables
+
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
     return list_all_advanced_tables(client, wid, req.source_catalog, req.schema_filter)
@@ -24,10 +25,14 @@ async def clone_advanced(req: AdvancedTablesCloneRequest, client=Depends(get_db_
     Streaming tables are exported as definitions (require DLT pipeline for creation).
     """
     from src.clone_advanced_tables import clone_all_advanced_tables
+
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
     return clone_all_advanced_tables(
-        client, wid, req.source_catalog, req.destination_catalog,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
         schema=req.schema_filter,
         include_mvs=req.include_materialized_views,
         include_streaming=req.include_streaming_tables,

@@ -30,19 +30,26 @@ class MetricsCollector:
         }
 
     def record_table_clone(
-        self, schema: str, table: str, duration_seconds: float,
-        success: bool, row_count: int | None = None, size_bytes: int | None = None,
+        self,
+        schema: str,
+        table: str,
+        duration_seconds: float,
+        success: bool,
+        row_count: int | None = None,
+        size_bytes: int | None = None,
     ):
         """Record individual table clone metrics."""
-        self._table_metrics.append({
-            "schema": schema,
-            "table": table,
-            "duration_seconds": round(duration_seconds, 2),
-            "success": success,
-            "row_count": row_count,
-            "size_bytes": size_bytes,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        self._table_metrics.append(
+            {
+                "schema": schema,
+                "table": table,
+                "duration_seconds": round(duration_seconds, 2),
+                "success": success,
+                "row_count": row_count,
+                "size_bytes": size_bytes,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     def end_operation(self, summary: dict):
         """Finalize and compute aggregate metrics."""
@@ -69,7 +76,9 @@ class MetricsCollector:
                 "successful": successful,
                 "failed": failed,
                 "failure_rate": round(failed / total_tables * 100, 2) if total_tables > 0 else 0,
-                "throughput_tables_per_min": round(total_tables / (duration / 60), 2) if duration > 0 else 0,
+                "throughput_tables_per_min": round(total_tables / (duration / 60), 2)
+                if duration > 0
+                else 0,
                 "avg_table_clone_seconds": round(avg_duration, 2),
                 "total_clone_duration_seconds": round(total_duration, 2),
                 "total_row_count": sum(m["row_count"] or 0 for m in self._table_metrics),
@@ -85,6 +94,7 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
     if len(parts) == 3:
         catalog, schema, table = parts
         from src.catalog_utils import ensure_catalog_and_schema
+
         ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
@@ -115,10 +125,17 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
 
     m = metrics.get("metrics", {})
     import uuid
+
     op_id = str(uuid.uuid4())[:8]
-    user_name = metrics.get("user_name", os.environ.get("USER", os.environ.get("USERNAME", "unknown")))
+    user_name = metrics.get(
+        "user_name", os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
+    )
     failed_count = m.get("failed", 0)
-    status = "failed" if metrics.get("error") else ("completed_with_errors" if failed_count > 0 else "success")
+    status = (
+        "failed"
+        if metrics.get("error")
+        else ("completed_with_errors" if failed_count > 0 else "success")
+    )
     job_type = metrics.get("job_type", "clone")
     insert_sql = f"""
         INSERT INTO {table_fqn} VALUES (
@@ -140,7 +157,7 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
             '{user_name}',
             '{status}',
             '{job_type}',
-            '{json.dumps(metrics, default=str).replace(chr(39), chr(39)+chr(39))}',
+            '{json.dumps(metrics, default=str).replace(chr(39), chr(39) + chr(39))}',
             current_timestamp()
         )
     """
@@ -149,7 +166,10 @@ def save_metrics_delta(client, warehouse_id: str, metrics: dict, table_fqn: str)
 
 
 def save_operation_metrics(
-    client, warehouse_id: str, job: dict, config: dict,
+    client,
+    warehouse_id: str,
+    job: dict,
+    config: dict,
 ) -> None:
     """Save basic operation metrics to the clone_metrics Delta table.
 
@@ -159,6 +179,7 @@ def save_operation_metrics(
         return
 
     from src.table_registry import get_table_fqn as _get_table_fqn
+
     table_fqn = config.get("metrics_table") or _get_table_fqn(config, "metrics", "clone_metrics")
 
     started = job.get("started_at", "")
@@ -167,6 +188,7 @@ def save_operation_metrics(
     if started and completed:
         try:
             from datetime import datetime
+
             t1 = datetime.fromisoformat(started)
             t2 = datetime.fromisoformat(completed)
             duration = (t2 - t1).total_seconds()
@@ -192,7 +214,9 @@ def save_operation_metrics(
         "started_at": started,
         "completed_at": completed,
         "duration_seconds": round(duration, 1),
-        "user_name": job.get("user_name", os.environ.get("USER", os.environ.get("USERNAME", "unknown"))),
+        "user_name": job.get(
+            "user_name", os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
+        ),
         "job_type": job.get("job_type", "clone"),
         "metrics": {
             "total_tables": total,
@@ -235,15 +259,15 @@ def save_metrics_prometheus(metrics: dict, output_path: str):
         "",
         "# HELP clone_failure_rate Percentage of failed table clones",
         "# TYPE clone_failure_rate gauge",
-        f'clone_failure_rate {m.get("failure_rate", 0)}',
+        f"clone_failure_rate {m.get('failure_rate', 0)}",
         "",
         "# HELP clone_throughput_tables_per_min Tables cloned per minute",
         "# TYPE clone_throughput_tables_per_min gauge",
-        f'clone_throughput_tables_per_min {m.get("throughput_tables_per_min", 0)}',
+        f"clone_throughput_tables_per_min {m.get('throughput_tables_per_min', 0)}",
         "",
         "# HELP clone_avg_table_seconds Average seconds per table clone",
         "# TYPE clone_avg_table_seconds gauge",
-        f'clone_avg_table_seconds {m.get("avg_table_clone_seconds", 0)}',
+        f"clone_avg_table_seconds {m.get('avg_table_clone_seconds', 0)}",
         "",
     ]
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -255,6 +279,7 @@ def save_metrics_prometheus(metrics: dict, output_path: str):
 def save_metrics_webhook(metrics: dict, webhook_url: str):
     """POST metrics as JSON to a webhook endpoint."""
     import urllib.request
+
     data = json.dumps(metrics, default=str).encode("utf-8")
     req = urllib.request.Request(
         webhook_url,
@@ -270,8 +295,11 @@ def save_metrics_webhook(metrics: dict, webhook_url: str):
 
 
 def query_metrics_history(
-    client, warehouse_id: str, table_fqn: str,
-    source_catalog: str | None = None, limit: int = 50,
+    client,
+    warehouse_id: str,
+    table_fqn: str,
+    source_catalog: str | None = None,
+    limit: int = 50,
 ) -> list[dict]:
     """Query historical metrics from Delta table."""
     where = ""
@@ -295,7 +323,9 @@ def format_metrics_report(metrics_list: list[dict]) -> str:
     lines.append("=" * 80)
     lines.append("CLONE METRICS HISTORY")
     lines.append("=" * 80)
-    lines.append(f"{'Operation':10s} {'Source':20s} {'Dest':20s} {'Duration':>10s} {'Tables':>8s} {'Failed':>8s}")
+    lines.append(
+        f"{'Operation':10s} {'Source':20s} {'Dest':20s} {'Duration':>10s} {'Tables':>8s} {'Failed':>8s}"
+    )
     lines.append("-" * 80)
 
     for m in metrics_list:
@@ -351,7 +381,10 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     audit_fqn = get_audit_table_fqn(config or {})
     run_logs_fqn = get_run_logs_fqn(config)
     _cfg = config or {}
-    metrics_fqn = _cfg.get("metrics_table", f"{_cfg.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+    metrics_fqn = _cfg.get(
+        "metrics_table",
+        f"{_cfg.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics",
+    )
 
     # Each table has different column names — use SQL aliases to normalize:
     #   job_id, job_type, source_catalog, destination_catalog, clone_type,
@@ -415,14 +448,18 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
         day = now - timedelta(days=i)
         day_str = day.strftime("%Y-%m-%d")
         day_label = day.strftime("%a")
-        day_jobs = [j for j in jobs if j.get("started_at") and str(j["started_at"]).startswith(day_str)]
-        activity.append({
-            "day": day_label,
-            "date": day_str,
-            "clones": len(day_jobs),
-            "success": sum(1 for j in day_jobs if j.get("status") in ("completed", "success")),
-            "failed": sum(1 for j in day_jobs if j.get("status") == "failed"),
-        })
+        day_jobs = [
+            j for j in jobs if j.get("started_at") and str(j["started_at"]).startswith(day_str)
+        ]
+        activity.append(
+            {
+                "day": day_label,
+                "date": day_str,
+                "clones": len(day_jobs),
+                "success": sum(1 for j in day_jobs if j.get("status") in ("completed", "success")),
+                "failed": sum(1 for j in day_jobs if j.get("status") == "failed"),
+            }
+        )
 
     # --- Status breakdown ---
     by_status = {}
@@ -450,7 +487,8 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
             catalog_counts[src] = catalog_counts.get(src, 0) + 1
     top_catalogs = sorted(
         [{"catalog": k, "count": v} for k, v in catalog_counts.items()],
-        key=lambda x: x["count"], reverse=True,
+        key=lambda x: x["count"],
+        reverse=True,
     )[:5]
 
     # --- Active users ---
@@ -461,7 +499,8 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
             user_counts[u] = user_counts.get(u, 0) + 1
     active_users = sorted(
         [{"user": k, "count": v} for k, v in user_counts.items()],
-        key=lambda x: x["count"], reverse=True,
+        key=lambda x: x["count"],
+        reverse=True,
     )[:5]
 
     # --- Peak usage hours ---
@@ -479,9 +518,19 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     # --- Week over week ---
     this_week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     last_week_start = (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%d")
-    this_week = sum(1 for j in jobs if j.get("started_at") and str(j["started_at"])[:10] >= this_week_start)
-    last_week = sum(1 for j in jobs if j.get("started_at") and last_week_start <= str(j["started_at"])[:10] < this_week_start)
-    wow_change = round(((this_week - last_week) / last_week) * 100, 1) if last_week > 0 else (100.0 if this_week > 0 else 0)
+    this_week = sum(
+        1 for j in jobs if j.get("started_at") and str(j["started_at"])[:10] >= this_week_start
+    )
+    last_week = sum(
+        1
+        for j in jobs
+        if j.get("started_at") and last_week_start <= str(j["started_at"])[:10] < this_week_start
+    )
+    wow_change = (
+        round(((this_week - last_week) / last_week) * 100, 1)
+        if last_week > 0
+        else (100.0 if this_week > 0 else 0)
+    )
 
     # --- Query audit trail for object-level stats (tables, views, volumes, size) ---
     total_tables_cloned = 0
@@ -493,7 +542,10 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     # Query clone_operations for object-level aggregates
     # clone_operations has: tables_cloned, views_cloned, volumes_cloned, total_size_bytes
     try:
-        agg_rows = execute_sql(client, warehouse_id, f"""
+        agg_rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT
                 COALESCE(SUM(tables_cloned), 0) AS total_tables,
                 COALESCE(SUM(views_cloned), 0) AS total_views,
@@ -502,7 +554,8 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
                 COALESCE(AVG(tables_cloned), 0) AS avg_tables,
                 COUNT(*) AS op_count
             FROM {audit_fqn}
-        """)
+        """,
+        )
         if agg_rows and int(agg_rows[0].get("op_count", 0) or 0) > 0:
             row = agg_rows[0]
             total_tables_cloned = int(row.get("total_tables", 0) or 0)
@@ -517,7 +570,10 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     # clone_metrics has: total_tables, successful, failed, total_size_bytes
     if total_tables_cloned == 0:
         try:
-            agg_rows = execute_sql(client, warehouse_id, f"""
+            agg_rows = execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 SELECT
                     COALESCE(SUM(total_tables), 0) AS total_tables,
                     COALESCE(SUM(successful), 0) AS total_successful,
@@ -525,7 +581,8 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
                     COALESCE(AVG(total_tables), 0) AS avg_tables,
                     COUNT(*) AS op_count
                 FROM {metrics_fqn}
-            """)
+            """,
+            )
             if agg_rows and int(agg_rows[0].get("op_count", 0) or 0) > 0:
                 row = agg_rows[0]
                 total_tables_cloned = int(row.get("total_tables", 0) or 0)
@@ -537,14 +594,18 @@ def get_metrics_summary(client=None, warehouse_id: str = "", config: dict | None
     # If we didn't get user data from the base query, try clone_operations
     if not active_users:
         try:
-            user_rows = execute_sql(client, warehouse_id, f"""
+            user_rows = execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 SELECT user_name, COUNT(*) as cnt
                 FROM {audit_fqn}
                 WHERE user_name IS NOT NULL
                 GROUP BY user_name
                 ORDER BY cnt DESC
                 LIMIT 5
-            """)
+            """,
+            )
             if user_rows:
                 active_users = [{"user": r["user_name"], "count": int(r["cnt"])} for r in user_rows]
         except Exception:

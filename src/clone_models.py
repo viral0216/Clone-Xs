@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 def list_registered_models(
-    client: WorkspaceClient, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List all registered models in a catalog, optionally filtered by schema."""
     results = []
@@ -19,40 +21,45 @@ def list_registered_models(
             schema_name=schema,
         )
         for m in models:
-            results.append({
-                "full_name": m.full_name,
-                "name": m.name,
-                "catalog_name": m.catalog_name,
-                "schema_name": m.schema_name,
-                "comment": m.comment,
-                "owner": m.owner,
-                "created_at": str(m.created_at) if m.created_at else None,
-                "updated_at": str(m.updated_at) if m.updated_at else None,
-            })
+            results.append(
+                {
+                    "full_name": m.full_name,
+                    "name": m.name,
+                    "catalog_name": m.catalog_name,
+                    "schema_name": m.schema_name,
+                    "comment": m.comment,
+                    "owner": m.owner,
+                    "created_at": str(m.created_at) if m.created_at else None,
+                    "updated_at": str(m.updated_at) if m.updated_at else None,
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list models in {catalog}: {e}")
     return results
 
 
 def list_model_versions(
-    client: WorkspaceClient, model_full_name: str,
+    client: WorkspaceClient,
+    model_full_name: str,
 ) -> list[dict]:
     """List all versions of a registered model."""
     results = []
     try:
         versions = client.model_versions.list(full_name=model_full_name)
         for v in versions:
-            results.append({
-                "version": v.version,
-                "model_name": v.model_name,
-                "catalog_name": v.catalog_name,
-                "schema_name": v.schema_name,
-                "source": v.source,
-                "run_id": v.run_id,
-                "status": str(v.status) if v.status else None,
-                "comment": v.comment,
-                "created_at": str(v.created_at) if v.created_at else None,
-            })
+            results.append(
+                {
+                    "version": v.version,
+                    "model_name": v.model_name,
+                    "catalog_name": v.catalog_name,
+                    "schema_name": v.schema_name,
+                    "source": v.source,
+                    "run_id": v.run_id,
+                    "status": str(v.status) if v.status else None,
+                    "comment": v.comment,
+                    "created_at": str(v.created_at) if v.created_at else None,
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list versions for {model_full_name}: {e}")
     return results
@@ -60,8 +67,10 @@ def list_model_versions(
 
 def clone_model(
     client: WorkspaceClient,
-    source_catalog: str, dest_catalog: str,
-    schema: str, model_name: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    model_name: str,
     copy_versions: bool = True,
     dry_run: bool = False,
 ) -> dict:
@@ -118,7 +127,9 @@ def clone_model(
                     logger.warning(f"Could not copy version {v.version} of {source_fqn}: {ve}")
 
         result["success"] = True
-        logger.info(f"Cloned model {source_fqn} -> {dest_fqn} ({result['versions_copied']} versions)")
+        logger.info(
+            f"Cloned model {source_fqn} -> {dest_fqn} ({result['versions_copied']} versions)"
+        )
 
     except Exception as e:
         result["error"] = str(e)
@@ -129,7 +140,8 @@ def clone_model(
 
 def clone_all_models(
     client: WorkspaceClient,
-    source_catalog: str, dest_catalog: str,
+    source_catalog: str,
+    dest_catalog: str,
     schemas: list[str] | None = None,
     copy_versions: bool = True,
     dry_run: bool = False,
@@ -146,9 +158,13 @@ def clone_all_models(
 
     def _clone(m):
         return clone_model(
-            client, source_catalog, dest_catalog,
-            m["schema_name"], m["name"],
-            copy_versions=copy_versions, dry_run=dry_run,
+            client,
+            source_catalog,
+            dest_catalog,
+            m["schema_name"],
+            m["name"],
+            copy_versions=copy_versions,
+            dry_run=dry_run,
         )
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

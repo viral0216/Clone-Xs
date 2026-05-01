@@ -1,14 +1,18 @@
 """Smoke tests for the pipeline router."""
+
 import pytest
 
 pytest.importorskip("fastapi")
 
 
 def test_create_pipeline(client):
-    resp = client.post("/api/pipelines/pipelines", json={
-        "name": "test-pipeline",
-        "steps": [{"type": "clone", "name": "step1", "config": {}}],
-    })
+    resp = client.post(
+        "/api/pipelines/pipelines",
+        json={
+            "name": "test-pipeline",
+            "steps": [{"type": "clone", "name": "step1", "config": {}}],
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -53,7 +57,10 @@ def test_list_templates(client):
 
 
 def test_create_from_template(client):
-    resp = client.post("/api/pipelines/templates/basic-clone/create", json={
-        "template_name": "basic-clone",
-    })
+    resp = client.post(
+        "/api/pipelines/templates/basic-clone/create",
+        json={
+            "template_name": "basic-clone",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 422, 500)

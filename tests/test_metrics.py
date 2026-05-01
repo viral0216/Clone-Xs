@@ -4,7 +4,12 @@ import json
 import os
 import tempfile
 
-from src.metrics import MetricsCollector, save_metrics_json, save_metrics_prometheus, format_metrics_report
+from src.metrics import (
+    MetricsCollector,
+    save_metrics_json,
+    save_metrics_prometheus,
+    format_metrics_report,
+)
 
 
 class TestMetricsCollector:
@@ -51,11 +56,15 @@ class TestSaveMetrics:
 
     def test_save_prometheus(self):
         metrics = {
-            "source_catalog": "src", "destination_catalog": "dst",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
             "duration_seconds": 120,
             "metrics": {
-                "successful": 10, "failed": 2, "failure_rate": 16.67,
-                "throughput_tables_per_min": 6.0, "avg_table_clone_seconds": 5.0,
+                "successful": 10,
+                "failed": 2,
+                "failure_rate": 16.67,
+                "throughput_tables_per_min": 6.0,
+                "avg_table_clone_seconds": 5.0,
             },
         }
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
@@ -74,7 +83,15 @@ class TestFormatMetrics:
         assert "No metrics" in output
 
     def test_with_data(self):
-        data = [{"operation_id": "abc", "source_catalog": "src", "destination_catalog": "dst",
-                 "duration_seconds": 120, "total_tables": 10, "failed": 0}]
+        data = [
+            {
+                "operation_id": "abc",
+                "source_catalog": "src",
+                "destination_catalog": "dst",
+                "duration_seconds": 120,
+                "total_tables": 10,
+                "failed": 0,
+            }
+        ]
         output = format_metrics_report(data)
         assert "abc" in output

@@ -87,6 +87,7 @@ def with_retry(
         @wraps(func)
         def wrapper(*args, **kwargs):
             return policy.execute(func, *args, **kwargs)
+
         return wrapper
 
     return decorator

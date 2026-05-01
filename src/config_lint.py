@@ -61,11 +61,13 @@ def check_required_fields(config: dict) -> list[LintResult]:
         if schema.get("required"):
             val = config.get(field_name)
             if not val:
-                results.append(LintResult(
-                    severity=Severity.ERROR,
-                    field=field_name,
-                    message=f"Required field '{field_name}' is missing or empty",
-                ))
+                results.append(
+                    LintResult(
+                        severity=Severity.ERROR,
+                        field=field_name,
+                        message=f"Required field '{field_name}' is missing or empty",
+                    )
+                )
     return results
 
 
@@ -80,19 +82,23 @@ def check_types(config: dict) -> list[LintResult]:
             continue
         expected = schema.get("type")
         if expected and not isinstance(val, expected):
-            results.append(LintResult(
-                severity=Severity.ERROR,
-                field=field_name,
-                message=f"'{field_name}' should be {expected} but got {type(val).__name__}",
-            ))
+            results.append(
+                LintResult(
+                    severity=Severity.ERROR,
+                    field=field_name,
+                    message=f"'{field_name}' should be {expected} but got {type(val).__name__}",
+                )
+            )
         # Check allowed values
         allowed = schema.get("values")
         if allowed and val not in allowed:
-            results.append(LintResult(
-                severity=Severity.ERROR,
-                field=field_name,
-                message=f"'{field_name}' must be one of {allowed}, got '{val}'",
-            ))
+            results.append(
+                LintResult(
+                    severity=Severity.ERROR,
+                    field=field_name,
+                    message=f"'{field_name}' must be one of {allowed}, got '{val}'",
+                )
+            )
     return results
 
 
@@ -109,12 +115,14 @@ def check_value_ranges(config: dict) -> list[LintResult]:
         if value_range and isinstance(val, (int, float)):
             min_val, max_val = value_range
             if val < min_val or val > max_val:
-                results.append(LintResult(
-                    severity=Severity.WARNING,
-                    field=field_name,
-                    message=f"'{field_name}' value {val} is outside recommended range ({min_val}-{max_val})",
-                    suggestion=f"Consider a value between {min_val} and {max_val}",
-                ))
+                results.append(
+                    LintResult(
+                        severity=Severity.WARNING,
+                        field=field_name,
+                        message=f"'{field_name}' value {val} is outside recommended range ({min_val}-{max_val})",
+                        suggestion=f"Consider a value between {min_val} and {max_val}",
+                    )
+                )
     return results
 
 
@@ -123,11 +131,13 @@ def check_deprecated(config: dict) -> list[LintResult]:
     results = []
     for key, message in DEPRECATED_OPTIONS.items():
         if key in config:
-            results.append(LintResult(
-                severity=Severity.WARNING,
-                field=key,
-                message=f"'{key}' is deprecated. {message}",
-            ))
+            results.append(
+                LintResult(
+                    severity=Severity.WARNING,
+                    field=key,
+                    message=f"'{key}' is deprecated. {message}",
+                )
+            )
     return results
 
 
@@ -137,57 +147,72 @@ def check_conflicts(config: dict) -> list[LintResult]:
 
     # Shallow clone + masking rules
     if config.get("clone_type") == "SHALLOW" and config.get("masking_rules"):
-        results.append(LintResult(
-            severity=Severity.WARNING,
-            field="masking_rules",
-            message="Masking rules with SHALLOW clone may not work as expected — "
-                    "shallow clones reference source data, masking modifies destination data",
-            suggestion="Use DEEP clone when applying masking rules",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.WARNING,
+                field="masking_rules",
+                message="Masking rules with SHALLOW clone may not work as expected — "
+                "shallow clones reference source data, masking modifies destination data",
+                suggestion="Use DEEP clone when applying masking rules",
+            )
+        )
 
     # Validate checksum + dry run
     if config.get("validate_checksum") and config.get("dry_run"):
-        results.append(LintResult(
-            severity=Severity.WARNING,
-            field="validate_checksum",
-            message="Checksum validation has no effect in dry-run mode — nothing to validate",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.WARNING,
+                field="validate_checksum",
+                message="Checksum validation has no effect in dry-run mode — nothing to validate",
+            )
+        )
 
     # Auto-rollback without rollback enabled
     if config.get("auto_rollback_on_failure") and not config.get("enable_rollback"):
-        results.append(LintResult(
-            severity=Severity.ERROR,
-            field="auto_rollback_on_failure",
-            message="auto_rollback_on_failure requires enable_rollback to be True",
-            suggestion="Set enable_rollback: true or use --enable-rollback flag",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.ERROR,
+                field="auto_rollback_on_failure",
+                message="auto_rollback_on_failure requires enable_rollback to be True",
+                suggestion="Set enable_rollback: true or use --enable-rollback flag",
+            )
+        )
 
     # Auto-rollback without validation
     if config.get("auto_rollback_on_failure") and not config.get("validate_after_clone"):
-        results.append(LintResult(
-            severity=Severity.ERROR,
-            field="auto_rollback_on_failure",
-            message="auto_rollback_on_failure requires validate_after_clone to be True",
-            suggestion="Set validate_after_clone: true or use --validate flag",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.ERROR,
+                field="auto_rollback_on_failure",
+                message="auto_rollback_on_failure requires validate_after_clone to be True",
+                suggestion="Set validate_after_clone: true or use --validate flag",
+            )
+        )
 
     # Source == destination
-    if (config.get("source_catalog") and config.get("destination_catalog")
-            and config["source_catalog"] == config["destination_catalog"]):
-        results.append(LintResult(
-            severity=Severity.ERROR,
-            field="destination_catalog",
-            message="source_catalog and destination_catalog cannot be the same",
-        ))
+    if (
+        config.get("source_catalog")
+        and config.get("destination_catalog")
+        and config["source_catalog"] == config["destination_catalog"]
+    ):
+        results.append(
+            LintResult(
+                severity=Severity.ERROR,
+                field="destination_catalog",
+                message="source_catalog and destination_catalog cannot be the same",
+            )
+        )
 
     # Where clauses with shallow clone
     if config.get("where_clauses") and config.get("clone_type") == "SHALLOW":
-        results.append(LintResult(
-            severity=Severity.ERROR,
-            field="where_clauses",
-            message="WHERE clause filtering is only supported with DEEP clone",
-            suggestion="Use clone_type: DEEP when using where_clauses",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.ERROR,
+                field="where_clauses",
+                message="WHERE clause filtering is only supported with DEEP clone",
+                suggestion="Use clone_type: DEEP when using where_clauses",
+            )
+        )
 
     return results
 
@@ -198,39 +223,47 @@ def check_optimizations(config: dict) -> list[LintResult]:
 
     # Parallel tables
     if config.get("parallel_tables", 1) == 1:
-        results.append(LintResult(
-            severity=Severity.SUGGESTION,
-            field="parallel_tables",
-            message="parallel_tables is 1 — tables within each schema are cloned sequentially",
-            suggestion="Consider parallel_tables: 4 or higher for faster cloning",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.SUGGESTION,
+                field="parallel_tables",
+                message="parallel_tables is 1 — tables within each schema are cloned sequentially",
+                suggestion="Consider parallel_tables: 4 or higher for faster cloning",
+            )
+        )
 
     # Rollback not enabled
     if not config.get("enable_rollback"):
-        results.append(LintResult(
-            severity=Severity.SUGGESTION,
-            field="enable_rollback",
-            message="Rollback logging is disabled — you won't be able to undo this clone",
-            suggestion="Set enable_rollback: true for production clones",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.SUGGESTION,
+                field="enable_rollback",
+                message="Rollback logging is disabled — you won't be able to undo this clone",
+                suggestion="Set enable_rollback: true for production clones",
+            )
+        )
 
     # Validation not enabled
     if not config.get("validate_after_clone"):
-        results.append(LintResult(
-            severity=Severity.SUGGESTION,
-            field="validate_after_clone",
-            message="Post-clone validation is disabled — data integrity won't be verified",
-            suggestion="Set validate_after_clone: true for production clones",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.SUGGESTION,
+                field="validate_after_clone",
+                message="Post-clone validation is disabled — data integrity won't be verified",
+                suggestion="Set validate_after_clone: true for production clones",
+            )
+        )
 
     # Max workers very high
     if config.get("max_workers", 4) > 16:
-        results.append(LintResult(
-            severity=Severity.WARNING,
-            field="max_workers",
-            message=f"max_workers={config['max_workers']} is very high and may cause rate limiting",
-            suggestion="Consider max_workers: 8-16 for optimal throughput",
-        ))
+        results.append(
+            LintResult(
+                severity=Severity.WARNING,
+                field="max_workers",
+                message=f"max_workers={config['max_workers']} is very high and may cause rate limiting",
+                suggestion="Consider max_workers: 8-16 for optimal throughput",
+            )
+        )
 
     return results
 
@@ -266,7 +299,9 @@ def format_lint_results(results: list[LintResult]) -> str:
             if r.suggestion:
                 lines.append(f"          Suggestion: {r.suggestion}")
 
-    summary = f"\nSummary: {len(errors)} errors, {len(warnings)} warnings, {len(suggestions)} suggestions"
+    summary = (
+        f"\nSummary: {len(errors)} errors, {len(warnings)} warnings, {len(suggestions)} suggestions"
+    )
     lines.append(summary)
 
     return "\n".join(lines)

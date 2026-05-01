@@ -33,13 +33,16 @@ class JobStatus(Enum):
 @dataclass(order=True)
 class CloneJob:
     """A queued clone operation."""
+
     priority: int
     job_id: str = field(compare=False)
     source_catalog: str = field(compare=False)
     dest_catalog: str = field(compare=False)
     config: dict = field(compare=False, repr=False)
     status: JobStatus = field(default=JobStatus.QUEUED, compare=False)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), compare=False)
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(), compare=False
+    )
     started_at: str | None = field(default=None, compare=False)
     completed_at: str | None = field(default=None, compare=False)
     result: dict | None = field(default=None, compare=False)
@@ -182,7 +185,9 @@ class CloneQueue:
                 self._running_count -= 1
                 self._save_state()
 
-            total_failed = sum(summary[t]["failed"] for t in ("tables", "views", "functions", "volumes"))
+            total_failed = sum(
+                summary[t]["failed"] for t in ("tables", "views", "functions", "volumes")
+            )
             if total_failed > 0:
                 logger.warning(f"Job {job.job_id} completed with {total_failed} failures")
             else:
@@ -248,8 +253,11 @@ class CloneQueue:
 
         for job in jobs:
             status_icon = {
-                "queued": "⏳", "running": "🔄", "completed": "✅",
-                "failed": "❌", "cancelled": "🚫",
+                "queued": "⏳",
+                "running": "🔄",
+                "completed": "✅",
+                "failed": "❌",
+                "cancelled": "🚫",
             }.get(job["status"], "?")
             logger.info(
                 f"  {status_icon} {job['job_id']} | {job['source']} -> {job['dest']} | "

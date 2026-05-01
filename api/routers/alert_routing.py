@@ -34,11 +34,13 @@ class CreateDigestRequest(BaseModel):
 
 # ─── Routing Rules ──────────────────────────────────────────────────────
 
+
 @router.get("/routing-rules", summary="List routing rules")
 async def list_routing_rules(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import list_routing_rules
+
     return list_routing_rules(client, wid, config)
 
 
@@ -47,14 +49,18 @@ async def create_routing_rule(req: CreateRoutingRuleRequest, client=Depends(get_
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import create_routing_rule
+
     return create_routing_rule(**req.model_dump(), client=client, warehouse_id=wid, config=config)
 
 
 @router.put("/routing-rules/{rule_id}", summary="Update routing rule")
-async def update_routing_rule(rule_id: str, req: CreateRoutingRuleRequest, client=Depends(get_db_client)):
+async def update_routing_rule(
+    rule_id: str, req: CreateRoutingRuleRequest, client=Depends(get_db_client)
+):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import update_routing_rule
+
     return update_routing_rule(rule_id, req.model_dump(), client, wid, config)
 
 
@@ -63,11 +69,13 @@ async def delete_routing_rule(rule_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import delete_routing_rule
+
     delete_routing_rule(rule_id, client, wid, config)
     return {"status": "deleted"}
 
 
 # ─── Alert Inbox ────────────────────────────────────────────────────────
+
 
 @router.get("/inbox", summary="Get alert inbox")
 async def get_inbox(
@@ -78,6 +86,7 @@ async def get_inbox(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import get_inbox
+
     return get_inbox(status, severity, client, wid, config)
 
 
@@ -86,8 +95,10 @@ async def route_alert(req: RouteAlertRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import route_alert
-    return route_alert(req.event_type, req.table_fqn, req.severity, req.title, req.message,
-                       client, wid, config)
+
+    return route_alert(
+        req.event_type, req.table_fqn, req.severity, req.title, req.message, client, wid, config
+    )
 
 
 @router.post("/inbox/{alert_id}/acknowledge", summary="Acknowledge alert")
@@ -95,6 +106,7 @@ async def acknowledge(alert_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import acknowledge_alert
+
     acknowledge_alert(alert_id, client, wid, config)
     return {"status": "acknowledged"}
 
@@ -104,6 +116,7 @@ async def resolve(alert_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import resolve_alert
+
     resolve_alert(alert_id, client, wid, config)
     return {"status": "resolved"}
 
@@ -113,6 +126,7 @@ async def snooze(alert_id: str, hours: int = Query(default=4, ge=1), client=Depe
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import snooze_alert
+
     snooze_alert(alert_id, hours, client, wid, config)
     return {"status": "snoozed", "hours": hours}
 
@@ -122,16 +136,19 @@ async def get_analytics(days: int = Query(default=30, ge=1), client=Depends(get_
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import get_alert_analytics
+
     return get_alert_analytics(days, client, wid, config)
 
 
 # ─── Digests ────────────────────────────────────────────────────────────
+
 
 @router.get("/digests", summary="List digest configurations")
 async def list_digests(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import list_digests
+
     return list_digests(client, wid, config)
 
 
@@ -140,6 +157,7 @@ async def create_digest(req: CreateDigestRequest, client=Depends(get_db_client))
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import create_digest
+
     return create_digest(req.recipient, req.frequency, req.filters, client, wid, config)
 
 
@@ -148,5 +166,6 @@ async def delete_digest(digest_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.alert_routing import delete_digest
+
     delete_digest(digest_id, client, wid, config)
     return {"status": "deleted"}

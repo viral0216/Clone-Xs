@@ -60,7 +60,11 @@ class TestQuiesceSourceSchemas:
         client = _client_with_grants(
             _make_assignment(
                 "alice@example.com",
-                "SELECT", "MODIFY", "WRITE_VOLUME", "USE_SCHEMA", "EXECUTE",
+                "SELECT",
+                "MODIFY",
+                "WRITE_VOLUME",
+                "USE_SCHEMA",
+                "EXECUTE",
             ),
         )
         snapshots = quiesce_source_schemas(client, "src_cat", ["bronze"])
@@ -81,7 +85,10 @@ class TestQuiesceSourceSchemas:
         client = _client_with_grants(
             _make_assignment(
                 "service-account",
-                "USE_SCHEMA", "CREATE_TABLE", "CREATE_VOLUME", "CREATE_FUNCTION",
+                "USE_SCHEMA",
+                "CREATE_TABLE",
+                "CREATE_VOLUME",
+                "CREATE_FUNCTION",
             ),
         )
         snapshots = quiesce_source_schemas(client, "src_cat", ["bronze"])
@@ -157,11 +164,15 @@ class TestQuiesceSourceSchemas:
         doesn't taint another's snapshot."""
         client = _client_with_grants(_make_assignment("alice", "MODIFY"))
         snapshots = quiesce_source_schemas(
-            client, "src_cat", ["bronze", "silver", "gold"],
+            client,
+            "src_cat",
+            ["bronze", "silver", "gold"],
         )
 
         assert [s.schema_fqn for s in snapshots] == [
-            "src_cat.bronze", "src_cat.silver", "src_cat.gold",
+            "src_cat.bronze",
+            "src_cat.silver",
+            "src_cat.gold",
         ]
         # grants.get called once per schema
         assert client.grants.get.call_count == 3

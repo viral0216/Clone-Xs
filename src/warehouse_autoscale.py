@@ -111,7 +111,9 @@ def scale_warehouse(
         Updated warehouse status.
     """
     current = get_warehouse_status(client, warehouse_id)
-    logger.info(f"Current warehouse size: {current.get('size')}, clusters: {current.get('num_clusters')}")
+    logger.info(
+        f"Current warehouse size: {current.get('size')}, clusters: {current.get('num_clusters')}"
+    )
 
     update_kwargs = {}
     if new_size:
@@ -176,10 +178,14 @@ def auto_manage_warehouse(
     current_size = original.get("size", "Small")
 
     if _size_rank(recommended_size) > _size_rank(current_size):
-        logger.info(f"Catalog is {catalog_size_gb:.0f} GB — scaling warehouse from {current_size} to {recommended_size}")
+        logger.info(
+            f"Catalog is {catalog_size_gb:.0f} GB — scaling warehouse from {current_size} to {recommended_size}"
+        )
         scale_warehouse(client, warehouse_id, new_size=recommended_size)
     else:
-        logger.info(f"Warehouse size {current_size} is adequate for {catalog_size_gb:.0f} GB catalog")
+        logger.info(
+            f"Warehouse size {current_size} is adequate for {catalog_size_gb:.0f} GB catalog"
+        )
 
     return {
         "status": "ready",
@@ -195,7 +201,8 @@ def restore_warehouse(client, warehouse_id: str, original_settings: dict) -> Non
     """Restore warehouse to its original settings after clone."""
     try:
         scale_warehouse(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             new_size=original_settings.get("size"),
             min_clusters=original_settings.get("min_clusters"),
             max_clusters=original_settings.get("max_clusters"),
@@ -220,8 +227,15 @@ def _recommend_size(catalog_size_gb: float) -> str:
 
 
 SIZE_RANKS = {
-    "2X-Small": 1, "X-Small": 2, "Small": 3, "Medium": 4,
-    "Large": 5, "X-Large": 6, "2X-Large": 7, "3X-Large": 8, "4X-Large": 9,
+    "2X-Small": 1,
+    "X-Small": 2,
+    "Small": 3,
+    "Medium": 4,
+    "Large": 5,
+    "X-Large": 6,
+    "2X-Large": 7,
+    "3X-Large": 8,
+    "4X-Large": 9,
 }
 
 

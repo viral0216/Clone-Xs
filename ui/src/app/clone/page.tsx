@@ -1193,6 +1193,8 @@ function ClonePageInner() {
     copy_comments: true,
     auto_mask_pii: false,
     enable_retry: true,
+    compare_dq_after_clone: false,
+    dq_drift_rollback_pct: 5.0,
     // Features
     enable_rollback: true,
     validate_after_clone: false,
@@ -1242,7 +1244,7 @@ function ClonePageInner() {
       "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
       "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
       "validate_after_clone", "validate_checksum", "dry_run", "force_reclone", "schema_only",
-      "auto_mask_pii", "enable_retry",
+      "auto_mask_pii", "enable_retry", "compare_dq_after_clone",
       "generate_report", "show_progress", "auto_rollback", "checkpoint",
       "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
     ];
@@ -1790,6 +1792,7 @@ function ClonePageInner() {
                   ["schema_only", "Schema Only (empty tables)"],
                   ["auto_mask_pii", "Auto-mask PII (from UC tags)"],
                   ["enable_retry", "Auto-retry transient failures"],
+                  ["compare_dq_after_clone", "DQ drift comparison + rollback"],
                   ["generate_report", "Generate Report"],
                   ["show_progress", "Show Progress"],
                   ["checkpoint", "Enable Checkpoint"],

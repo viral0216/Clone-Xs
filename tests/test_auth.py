@@ -18,6 +18,7 @@ from src.auth import (
 
 # ── Cache key ────────────────────────────────────────────────────────
 
+
 def test_cache_key_basic():
     key = _cache_key("https://host", "dapi1234567890", "default")
     assert "https://host" in key
@@ -32,11 +33,13 @@ def test_cache_key_empty():
 
 # ── Client validation ────────────────────────────────────────────────
 
+
 def test_is_client_valid_no_cache():
     assert _is_client_valid("some-key") is False
 
 
 # ── clear_cache ──────────────────────────────────────────────────────
+
 
 def test_clear_cache():
     clear_cache()
@@ -44,6 +47,7 @@ def test_clear_cache():
 
 
 # ── list_profiles ────────────────────────────────────────────────────
+
 
 @patch("src.auth.os.path.exists", return_value=False)
 def test_list_profiles_no_config(mock_exists):
@@ -68,6 +72,7 @@ def test_list_profiles_with_profiles(tmp_path):
 
 # ── _detect_auth_method ──────────────────────────────────────────────
 
+
 def test_detect_explicit_token():
     assert _detect_auth_method(host="h", token="t") == "explicit-token"
 
@@ -77,12 +82,16 @@ def test_detect_oauth_sp():
     assert _detect_auth_method() == "databricks-oauth-sp"
 
 
-@patch.dict(os.environ, {
-    "DATABRICKS_CLIENT_ID": "",
-    "DATABRICKS_CLIENT_SECRET": "",
-    "AZURE_CLIENT_ID": "id",
-    "AZURE_CLIENT_SECRET": "secret",
-}, clear=False)
+@patch.dict(
+    os.environ,
+    {
+        "DATABRICKS_CLIENT_ID": "",
+        "DATABRICKS_CLIENT_SECRET": "",
+        "AZURE_CLIENT_ID": "id",
+        "AZURE_CLIENT_SECRET": "secret",
+    },
+    clear=False,
+)
 def test_detect_azure_sp():
     assert _detect_auth_method() == "azure-ad-sp"
 
@@ -93,6 +102,7 @@ def test_detect_profile():
 
 # ── get_auth_status ──────────────────────────────────────────────────
 
+
 def test_auth_status_not_authenticated():
     clear_cache()
     status = get_auth_status()
@@ -101,6 +111,7 @@ def test_auth_status_not_authenticated():
 
 
 # ── Session persistence ──────────────────────────────────────────────
+
 
 def test_save_and_load_session(tmp_path):
     session_file = tmp_path / "session.json"
@@ -128,8 +139,10 @@ def test_load_session_missing(tmp_path):
 
 # ── add_auth_args ────────────────────────────────────────────────────
 
+
 def test_add_auth_args():
     import argparse
+
     parser = argparse.ArgumentParser()
     add_auth_args(parser)
     args = parser.parse_args(["--host", "https://h", "--token", "t", "--login"])
@@ -140,6 +153,7 @@ def test_add_auth_args():
 
 # ── get_client ───────────────────────────────────────────────────────
 
+
 @patch("src.auth.WorkspaceClient")
 def test_get_client_with_host_and_token(mock_ws):
     mock_ws.return_value = MagicMock()
@@ -149,9 +163,18 @@ def test_get_client_with_host_and_token(mock_ws):
 
 
 @patch("src.auth.WorkspaceClient")
-@patch.dict(os.environ, {"DATABRICKS_HOST": "", "DATABRICKS_TOKEN": "",
-                          "DATABRICKS_CLIENT_ID": "", "DATABRICKS_CLIENT_SECRET": "",
-                          "AZURE_CLIENT_ID": "", "AZURE_CLIENT_SECRET": "", "AZURE_TENANT_ID": ""})
+@patch.dict(
+    os.environ,
+    {
+        "DATABRICKS_HOST": "",
+        "DATABRICKS_TOKEN": "",
+        "DATABRICKS_CLIENT_ID": "",
+        "DATABRICKS_CLIENT_SECRET": "",
+        "AZURE_CLIENT_ID": "",
+        "AZURE_CLIENT_SECRET": "",
+        "AZURE_TENANT_ID": "",
+    },
+)
 def test_get_client_with_profile(mock_ws):
     mock_ws.return_value = MagicMock()
     clear_cache()

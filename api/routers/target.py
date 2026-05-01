@@ -22,7 +22,9 @@ def _run_validation(target: TargetWorkspace) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Could not authenticate to target workspace: {e}")
+        raise HTTPException(
+            status_code=401, detail=f"Could not authenticate to target workspace: {e}"
+        )
 
     # Resolve the authenticated identity so the UI can show "logged in as <user>".
     try:
@@ -46,8 +48,7 @@ def _run_validation(target: TargetWorkspace) -> dict:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Target warehouse '{target.warehouse_id}' is not visible "
-                f"in {target.host}: {e}"
+                f"Target warehouse '{target.warehouse_id}' is not visible in {target.host}: {e}"
             ),
         )
 

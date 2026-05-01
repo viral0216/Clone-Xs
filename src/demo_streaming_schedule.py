@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # suite asserts the inlined output matches the canonical generators
 # for a representative input.
 _PROFILE_GENERATORS_SOURCE = {
-    "generic_sensor": '''
+    "generic_sensor": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -78,8 +78,8 @@ def generate_event(state, seq, now):
         "pressure_hpa": round(d["press_mean"] + random.uniform(-3.0, 3.0), 2),
         "vibration_g": round(max(0.0, d["vib_mean"] + random.uniform(-0.05, 0.15)), 4),
     }
-''',
-    "industrial_machine": '''
+""",
+    "industrial_machine": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -108,8 +108,8 @@ def generate_event(state, seq, now):
         "tool_wear_pct": round(d["tool_wear_pct"], 4),
         "error_code": error_code,
     }
-''',
-    "car_obd2": '''
+""",
+    "car_obd2": """
 def init_state(num_devices):
     vin_chars = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
     return {"devices": [
@@ -144,8 +144,8 @@ def generate_event(state, seq, now):
         "lng": round(d["lng"], 6),
         "dtc": dtc,
     }
-''',
-    "smart_meter": '''
+""",
+    "smart_meter": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -168,8 +168,8 @@ def generate_event(state, seq, now):
         "current_a": round(random.uniform(0.5, 25.0), 2),
         "power_factor": round(random.uniform(0.85, 1.0), 3),
     }
-''',
-    "wearable_health": '''
+""",
+    "wearable_health": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -202,8 +202,8 @@ def generate_event(state, seq, now):
         "calories_burned": round(d["calories"], 2),
         "alert": alert,
     }
-''',
-    "pos_terminal": '''
+""",
+    "pos_terminal": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -228,8 +228,8 @@ def generate_event(state, seq, now):
         "item_count": random.randint(1, 12),
         "status": random.choice(statuses),
     }
-''',
-    "wind_turbine": '''
+""",
+    "wind_turbine": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -258,8 +258,8 @@ def generate_event(state, seq, now):
         "blade_pitch_deg": round(random.uniform(-2.0, 90.0), 2),
         "fault_code": fault,
     }
-''',
-    "atm_transaction": '''
+""",
+    "atm_transaction": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -293,8 +293,8 @@ def generate_event(state, seq, now):
         "lng": d["lng"],
         "is_fraud_suspected": is_fraud,
     }
-''',
-    "server_metrics": '''
+""",
+    "server_metrics": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -327,8 +327,8 @@ def generate_event(state, seq, now):
         "net_out_mbps": round(random.uniform(0.0, 950.0), 2),
         "status": status,
     }
-''',
-    "clickstream": '''
+""",
+    "clickstream": """
 def init_state(num_devices):
     user_agents = [
         "Mozilla/5.0 (Macintosh) Chrome/120.0",
@@ -374,7 +374,7 @@ def generate_event(state, seq, now):
         "user_agent": d["user_agent"],
         "device_type": d["device_type"],
     }
-''',
+""",
 }
 
 
@@ -480,7 +480,9 @@ print(f"Done — {{events_emitted}} events across {{files_written}} files in {{r
 
 
 def upload_streaming_notebook(
-    client: WorkspaceClient, workspace_path: str, content: str,
+    client: WorkspaceClient,
+    workspace_path: str,
+    content: str,
 ) -> str:
     """Upload the generated notebook to a workspace path. Returns the path.
 
@@ -554,6 +556,7 @@ def create_streaming_job(
             RuntimeEngine,
         )
         from databricks.sdk.service.jobs import JobCluster
+
         cluster = JobCluster(
             job_cluster_key="default",
             new_cluster={

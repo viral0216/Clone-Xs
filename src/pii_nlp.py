@@ -9,6 +9,7 @@ def is_presidio_available() -> bool:
     """Check if the presidio-analyzer package is installed."""
     try:
         import presidio_analyzer  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -28,9 +29,7 @@ def detect_pii_with_presidio(
     try:
         from presidio_analyzer import AnalyzerEngine
     except ImportError:
-        logger.warning(
-            "presidio-analyzer not installed. Install with: pip install 'clone-xs[nlp]'"
-        )
+        logger.warning("presidio-analyzer not installed. Install with: pip install 'clone-xs[nlp]'")
         return []
 
     analyzer = AnalyzerEngine()
@@ -80,10 +79,12 @@ def detect_pii_with_presidio(
     for pii_type, count in type_counts.items():
         match_rate = count / total if total > 0 else 0
         if match_rate > 0.3:
-            detections.append({
-                "pii_type": pii_type,
-                "count": count,
-                "match_rate": round(match_rate, 2),
-            })
+            detections.append(
+                {
+                    "pii_type": pii_type,
+                    "count": count,
+                    "match_rate": round(match_rate, 2),
+                }
+            )
 
     return detections

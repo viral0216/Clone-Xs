@@ -29,7 +29,10 @@ def build_pii_masking_rules(
 
     try:
         detections = detect_pii_from_uc_tags(
-            client, warehouse_id, catalog, exclude_schemas=exclude_schemas,
+            client,
+            warehouse_id,
+            catalog,
+            exclude_schemas=exclude_schemas,
         )
     except Exception as e:
         logger.warning(f"PII tag detection failed for {catalog}: {e}")
@@ -38,15 +41,17 @@ def build_pii_masking_rules(
     rules: list[dict] = []
     for d in detections:
         strategy = d.get("suggested_masking") or "redact"
-        rules.append({
-            "schema": d["schema"],
-            "table": d["table"],
-            "column": d["column"],
-            "strategy": strategy,
-            "match_type": "exact",
-            "pii_type": d.get("pii_type", "PII_GENERIC"),
-            "source": "auto_pii_tag",
-        })
+        rules.append(
+            {
+                "schema": d["schema"],
+                "table": d["table"],
+                "column": d["column"],
+                "strategy": strategy,
+                "match_type": "exact",
+                "pii_type": d.get("pii_type", "PII_GENERIC"),
+                "source": "auto_pii_tag",
+            }
+        )
     return rules
 
 
@@ -122,10 +127,7 @@ def apply_masking_rules(
 
     try:
         execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-        logger.info(
-            f"{'[DRY RUN] ' if dry_run else ''}"
-            f"Masked {masked_count} columns in {dest}"
-        )
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Masked {masked_count} columns in {dest}")
     except Exception as e:
         logger.error(f"Failed to apply masking to {dest}: {e}")
 
@@ -171,6 +173,7 @@ def _get_mask_expression(column_name: str, strategy: str, data_type: str) -> str
 def _validate_ident(name: str) -> str:
     """Validate a Databricks identifier (alphanumeric, underscores, hyphens)."""
     import re as _re
+
     if not name or not _re.match(r"^[A-Za-z0-9_\-]+$", name):
         raise ValueError(f"Invalid identifier: {name!r}")
     return name
@@ -259,7 +262,9 @@ def mask_subject_rows(
                     break
 
         # Also mask the identifier column itself
-        id_mask = _get_mask_expression(identifier_column, "hash", col_map.get(identifier_column, "STRING"))
+        id_mask = _get_mask_expression(
+            identifier_column, "hash", col_map.get(identifier_column, "STRING")
+        )
         if id_mask:
             update_parts.append(f"`{identifier_column}` = {id_mask}")
 
@@ -267,7 +272,9 @@ def mask_subject_rows(
         return {"columns_masked": 0, "sql_executed": None}
 
     safe_value = identifier_value.replace("'", "''")
-    sql = f"UPDATE {dest} SET {', '.join(update_parts)} WHERE `{identifier_column}` = '{safe_value}'"
+    sql = (
+        f"UPDATE {dest} SET {', '.join(update_parts)} WHERE `{identifier_column}` = '{safe_value}'"
+    )
 
     if dry_run:
         logger.info(f"[DRY RUN] Row-level masking SQL: {sql}")

@@ -13,7 +13,13 @@ from src.clone_tables import clone_table, clone_tables_in_schema
 def test_clone_table_deep(mock_sql):
     mock_sql.return_value = []
     success, metrics = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
     )
     assert success is True
     assert metrics is None  # empty rows → no metrics
@@ -25,7 +31,13 @@ def test_clone_table_deep(mock_sql):
 def test_clone_table_shallow(mock_sql):
     mock_sql.return_value = []
     success, _ = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "SHALLOW",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "SHALLOW",
     )
     assert success is True
     sql_called = mock_sql.call_args[0][2]
@@ -36,7 +48,13 @@ def test_clone_table_shallow(mock_sql):
 def test_clone_table_failure(mock_sql):
     mock_sql.side_effect = Exception("permission denied")
     success, metrics = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
     )
     assert success is False
     assert metrics is None
@@ -46,7 +64,13 @@ def test_clone_table_failure(mock_sql):
 def test_clone_table_dry_run(mock_sql):
     mock_sql.return_value = []
     success, metrics = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
         dry_run=True,
     )
     assert success is True
@@ -59,7 +83,13 @@ def test_clone_table_dry_run(mock_sql):
 def test_clone_table_with_timestamp(mock_sql):
     mock_sql.return_value = []
     success, _ = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
         as_of_timestamp="2024-01-15T00:00:00",
     )
     assert success is True
@@ -72,7 +102,13 @@ def test_clone_table_with_timestamp(mock_sql):
 def test_clone_table_with_version(mock_sql):
     mock_sql.return_value = []
     success, _ = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
         as_of_version=5,
     )
     assert success is True
@@ -84,16 +120,24 @@ def test_clone_table_with_version(mock_sql):
 def test_clone_table_captures_metrics_when_returned(mock_sql):
     """Databricks returns a single-row DataFrame from each CLONE statement
     with file/byte counts. clone_table extracts these into a metrics dict."""
-    mock_sql.return_value = [{
-        "source_table_size": 1024 * 1024 * 500,  # 500 MB
-        "source_num_of_files": 42,
-        "num_copied_files": 42,
-        "copied_files_size": 1024 * 1024 * 500,
-        "num_removed_files": 0,
-        "removed_files_size": 0,
-    }]
+    mock_sql.return_value = [
+        {
+            "source_table_size": 1024 * 1024 * 500,  # 500 MB
+            "source_num_of_files": 42,
+            "num_copied_files": 42,
+            "copied_files_size": 1024 * 1024 * 500,
+            "num_removed_files": 0,
+            "removed_files_size": 0,
+        }
+    ]
     success, metrics = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
     )
     assert success is True
     assert metrics is not None
@@ -108,7 +152,13 @@ def test_clone_table_emits_tbl_properties_clause(mock_sql):
     Setting via post-clone ALTER TABLE is too late for retention windows."""
     mock_sql.return_value = []
     success, _ = clone_table(
-        MagicMock(), "wh-123", "src", "dst", "schema1", "table1", "DEEP",
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
         tbl_properties={"delta.logRetentionDuration": "3650 days"},
     )
     assert success is True
@@ -140,8 +190,14 @@ def test_clone_tables_in_schema_aggregates_per_format_counters(mock_sql, mock_li
     mock_sql.return_value = []  # successful clone, no metrics row
 
     result = clone_tables_in_schema(
-        MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1",
-        clone_type="DEEP", exclude_tables=[], load_type="FULL",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "schema1",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
     )
 
     assert result["success"] == 5
@@ -163,8 +219,14 @@ def test_clone_tables_in_schema_format_counter_excludes_failures(mock_sql, mock_
     mock_sql.side_effect = [[], Exception("partition evolution not supported")]
 
     result = clone_tables_in_schema(
-        MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1",
-        clone_type="DEEP", exclude_tables=[], load_type="FULL",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "schema1",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
     )
 
     assert result["success"] == 1
@@ -187,8 +249,14 @@ def test_clone_tables_in_schema_format_counter_uppercases(mock_sql, mock_list):
     mock_sql.return_value = []
 
     result = clone_tables_in_schema(
-        MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1",
-        clone_type="DEEP", exclude_tables=[], load_type="FULL",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "schema1",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
     )
 
     assert result["formats"] == {"PARQUET": 3}

@@ -39,7 +39,9 @@ async def reconcile(
     dest_catalog = (payload.get("destination_catalog") or "").strip()
     tw_raw = payload.get("target_workspace")
     if not source_catalog or not dest_catalog or not tw_raw:
-        raise HTTPException(400, "source_catalog, destination_catalog, and target_workspace are required")
+        raise HTTPException(
+            400, "source_catalog, destination_catalog, and target_workspace are required"
+        )
 
     try:
         tw = TargetWorkspace.model_validate(tw_raw)
@@ -58,8 +60,12 @@ async def reconcile(
 
     try:
         return reconcile_cross_metastore(
-            source_client, source_wh, source_catalog,
-            target_client, target_wh, dest_catalog,
+            source_client,
+            source_wh,
+            source_catalog,
+            target_client,
+            target_wh,
+            dest_catalog,
             exclude_schemas=payload.get("exclude_schemas"),
             use_checksum=bool(payload.get("use_checksum", False)),
             max_workers=int(payload.get("max_workers", 4) or 4),

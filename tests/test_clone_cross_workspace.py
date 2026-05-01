@@ -26,7 +26,8 @@ class TestFindRecipientForTarget:
         assert _find_recipient_for_target(source, target_id) is None
 
     def test_returns_none_when_recipients_point_at_other_targets(
-        self, mock_cross_workspace_setup,
+        self,
+        mock_cross_workspace_setup,
     ):
         """Existing recipients all point at OTHER target metastores — no
         match for our target id → None."""
@@ -41,7 +42,8 @@ class TestFindRecipientForTarget:
         assert _find_recipient_for_target(source, target_id) is None
 
     def test_returns_existing_recipient_pointing_at_target(
-        self, mock_cross_workspace_setup,
+        self,
+        mock_cross_workspace_setup,
     ):
         """The bug we fixed: a previous clone already created a recipient
         pointing at this target. Reuse it instead of failing the next clone."""

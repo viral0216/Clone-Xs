@@ -39,7 +39,10 @@ WAREHOUSE_ID = "SERVERLESS"
 from src.diff import compare_catalogs
 
 diff = compare_catalogs(
-    client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG,
+    client,
+    WAREHOUSE_ID,
+    SOURCE_CATALOG,
+    DEST_CATALOG,
     exclude_schemas=["information_schema", "default"],
 )
 
@@ -49,9 +52,13 @@ for obj_type in ["schemas", "tables", "views", "functions", "volumes"]:
     if only_source or only_dest:
         print(f"\n{obj_type.upper()}:")
         if only_source:
-            print(f"  Only in {SOURCE_CATALOG} ({len(only_source)}): {', '.join(sorted(only_source)[:10])}")
+            print(
+                f"  Only in {SOURCE_CATALOG} ({len(only_source)}): {', '.join(sorted(only_source)[:10])}"
+            )
         if only_dest:
-            print(f"  Only in {DEST_CATALOG} ({len(only_dest)}): {', '.join(sorted(only_dest)[:10])}")
+            print(
+                f"  Only in {DEST_CATALOG} ({len(only_dest)}): {', '.join(sorted(only_dest)[:10])}"
+            )
 
 if all(not diff[t]["only_in_source"] and not diff[t]["only_in_dest"] for t in diff):
     print("Catalogs are in sync!")

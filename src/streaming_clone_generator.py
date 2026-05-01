@@ -44,7 +44,9 @@ def generate_dlt_pipeline_spec(
         raise ValueError("advanced_tables is empty — nothing to generate")
 
     target_schema = target_schema or schema
-    pipeline_name = pipeline_name or f"clone-xs-repl-{destination_catalog}-{schema}-{uuid.uuid4().hex[:6]}"
+    pipeline_name = (
+        pipeline_name or f"clone-xs-repl-{destination_catalog}-{schema}-{uuid.uuid4().hex[:6]}"
+    )
 
     sql_cells: list[str] = []
     for t in advanced_tables:

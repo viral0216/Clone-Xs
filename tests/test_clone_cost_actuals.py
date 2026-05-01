@@ -15,6 +15,7 @@ from src.clone_cost_actuals import (
 
 # ----------------- reconcile_estimate_vs_actual -----------------
 
+
 class TestReconcile:
     def test_over_budget(self):
         r = reconcile_estimate_vs_actual(estimated_cost=10.0, actual_cost=12.5)
@@ -41,6 +42,7 @@ class TestReconcile:
 
 # ----------------- input sanitisation -----------------
 
+
 class TestSafeIdentifiers:
     def test_safe_id_strips_injection_chars(self):
         assert _safe_id("abc'; DROP TABLE x") == "abcDROPTABLEx"
@@ -58,6 +60,7 @@ class TestSafeIdentifiers:
 
 
 # ----------------- _parse_iso -----------------
+
 
 class TestParseIso:
     def test_parses_naive_iso_as_utc(self):
@@ -78,6 +81,7 @@ class TestParseIso:
 
 
 # ----------------- query_clone_job_actual_cost -----------------
+
 
 class TestQueryActualCost:
     def test_missing_warehouse_returns_error_no_crash(self):
@@ -105,7 +109,11 @@ class TestQueryActualCost:
         recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         with patch("src.clone_cost_actuals.execute_sql", return_value=[{"dbus": 0, "cost": 0}]):
             r = query_clone_job_actual_cost(
-                MagicMock(), "wh1", "wh1", started_at=recent, completed_at=recent,
+                MagicMock(),
+                "wh1",
+                "wh1",
+                started_at=recent,
+                completed_at=recent,
             )
         assert r["billing_data_incomplete"] is True
         assert r["lag_warning"] is not None
@@ -116,7 +124,11 @@ class TestQueryActualCost:
         old = (datetime.now(timezone.utc) - timedelta(hours=BILLING_LAG_HOURS + 1)).isoformat()
         with patch("src.clone_cost_actuals.execute_sql", return_value=[{"dbus": 0, "cost": 0}]):
             r = query_clone_job_actual_cost(
-                MagicMock(), "wh1", "wh1", started_at=old, completed_at=old,
+                MagicMock(),
+                "wh1",
+                "wh1",
+                started_at=old,
+                completed_at=old,
             )
         assert r["billing_data_incomplete"] is False
         assert r["lag_warning"] is None
@@ -127,7 +139,9 @@ class TestQueryActualCost:
             return_value=[{"dbus": 12.5, "cost": 8.75}],
         ):
             r = query_clone_job_actual_cost(
-                MagicMock(), "wh1", "wh1",
+                MagicMock(),
+                "wh1",
+                "wh1",
                 started_at="2026-04-01T10:00:00",
                 completed_at="2026-04-01T11:00:00",
             )
@@ -141,7 +155,9 @@ class TestQueryActualCost:
             side_effect=Exception("warehouse not running"),
         ):
             r = query_clone_job_actual_cost(
-                MagicMock(), "wh1", "wh1",
+                MagicMock(),
+                "wh1",
+                "wh1",
                 started_at="2026-04-01T10:00:00",
                 completed_at="2026-04-01T11:00:00",
             )

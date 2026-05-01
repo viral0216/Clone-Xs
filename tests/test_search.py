@@ -16,7 +16,12 @@ class TestSearchSchema:
         ]
         compiled = re.compile("order", re.IGNORECASE)
         tables, columns = _search_schema(
-            MagicMock(), "wh-123", "cat", "sales", compiled, search_columns=False,
+            MagicMock(),
+            "wh-123",
+            "cat",
+            "sales",
+            compiled,
+            search_columns=False,
         )
         assert len(tables) == 1
         assert tables[0]["table"] == "orders"
@@ -29,13 +34,28 @@ class TestSearchSchema:
             [{"table_name": "users", "table_type": "MANAGED", "comment": ""}],
             # columns
             [
-                {"table_name": "users", "column_name": "email", "data_type": "STRING", "comment": ""},
-                {"table_name": "users", "column_name": "name", "data_type": "STRING", "comment": ""},
+                {
+                    "table_name": "users",
+                    "column_name": "email",
+                    "data_type": "STRING",
+                    "comment": "",
+                },
+                {
+                    "table_name": "users",
+                    "column_name": "name",
+                    "data_type": "STRING",
+                    "comment": "",
+                },
             ],
         ]
         compiled = re.compile("email", re.IGNORECASE)
         tables, columns = _search_schema(
-            MagicMock(), "wh-123", "cat", "sch", compiled, search_columns=True,
+            MagicMock(),
+            "wh-123",
+            "cat",
+            "sch",
+            compiled,
+            search_columns=True,
         )
         assert len(columns) == 1
         assert columns[0]["column"] == "email"
@@ -47,7 +67,12 @@ class TestSearchSchema:
         ]
         compiled = re.compile("zzz", re.IGNORECASE)
         tables, columns = _search_schema(
-            MagicMock(), "wh-123", "cat", "sch", compiled, search_columns=False,
+            MagicMock(),
+            "wh-123",
+            "cat",
+            "sch",
+            compiled,
+            search_columns=False,
         )
         assert tables == []
         assert columns == []
@@ -71,7 +96,10 @@ class TestSearchTables:
         ]
 
         result = search_tables(
-            MagicMock(), "wh-123", "my_catalog", "order",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
+            "order",
             exclude_schemas=["information_schema"],
         )
 
@@ -91,7 +119,10 @@ class TestSearchTables:
         ]
 
         result = search_tables(
-            MagicMock(), "wh-123", "my_catalog", "xyz_nonexistent",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
+            "xyz_nonexistent",
             exclude_schemas=["information_schema"],
         )
 
@@ -107,14 +138,32 @@ class TestSearchTables:
             [{"table_name": "employees", "table_type": "MANAGED", "comment": ""}],
             # columns
             [
-                {"table_name": "employees", "column_name": "email", "data_type": "STRING", "comment": ""},
-                {"table_name": "employees", "column_name": "name", "data_type": "STRING", "comment": ""},
-                {"table_name": "employees", "column_name": "email_verified", "data_type": "BOOLEAN", "comment": ""},
+                {
+                    "table_name": "employees",
+                    "column_name": "email",
+                    "data_type": "STRING",
+                    "comment": "",
+                },
+                {
+                    "table_name": "employees",
+                    "column_name": "name",
+                    "data_type": "STRING",
+                    "comment": "",
+                },
+                {
+                    "table_name": "employees",
+                    "column_name": "email_verified",
+                    "data_type": "BOOLEAN",
+                    "comment": "",
+                },
             ],
         ]
 
         result = search_tables(
-            MagicMock(), "wh-123", "my_catalog", "email",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
+            "email",
             exclude_schemas=["information_schema"],
             search_columns=True,
         )
@@ -133,7 +182,10 @@ class TestSearchTables:
         ]
 
         result = search_tables(
-            MagicMock(), "wh-123", "cat", "t1",
+            MagicMock(),
+            "wh-123",
+            "cat",
+            "t1",
             exclude_schemas=["information_schema"],
             include_schemas=["sales", "information_schema"],
         )
@@ -152,7 +204,10 @@ class TestSearchTables:
         ]
 
         result = search_tables(
-            MagicMock(), "wh-123", "cat", "mytable",
+            MagicMock(),
+            "wh-123",
+            "cat",
+            "mytable",
             exclude_schemas=[],
         )
 

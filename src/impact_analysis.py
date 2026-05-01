@@ -41,10 +41,14 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
     }
 
     # Find dependent views
-    impact["dependent_views"] = _find_dependent_views(client, warehouse_id, catalog, schema_filter, table_filter)
+    impact["dependent_views"] = _find_dependent_views(
+        client, warehouse_id, catalog, schema_filter, table_filter
+    )
 
     # Find dependent functions
-    impact["dependent_functions"] = _find_dependent_functions(client, warehouse_id, catalog, schema_filter, table_filter)
+    impact["dependent_functions"] = _find_dependent_functions(
+        client, warehouse_id, catalog, schema_filter, table_filter
+    )
 
     # Find referencing jobs
     impact["referencing_jobs"] = _find_referencing_jobs(client, catalog)
@@ -59,9 +63,13 @@ def analyze_impact(client, warehouse_id: str, catalog: str, config: dict) -> dic
     threshold = config.get("impact_high_threshold", 10)
     impact["risk_level"] = _assess_risk(impact, threshold)
 
-    total = (len(impact["dependent_views"]) + len(impact["dependent_functions"]) +
-             len(impact["referencing_jobs"]) + len(impact["active_queries"]) +
-             len(impact["dashboard_references"]))
+    total = (
+        len(impact["dependent_views"])
+        + len(impact["dependent_functions"])
+        + len(impact["referencing_jobs"])
+        + len(impact["active_queries"])
+        + len(impact["dashboard_references"])
+    )
     impact["total_dependent_objects"] = total
 
     return impact
@@ -72,8 +80,9 @@ def _escape_like(s: str) -> str:
     return s.replace("%", "\\%").replace("_", "\\_")
 
 
-def _find_dependent_views(client, warehouse_id: str, catalog: str,
-                          schema_filter: str = None, table_filter: str = None) -> list[dict]:
+def _find_dependent_views(
+    client, warehouse_id: str, catalog: str, schema_filter: str = None, table_filter: str = None
+) -> list[dict]:
     """Find views that reference this catalog across all accessible catalogs."""
     try:
         # Build the LIKE pattern for the target objects
@@ -107,8 +116,9 @@ def _find_dependent_views(client, warehouse_id: str, catalog: str,
         return []
 
 
-def _find_dependent_functions(client, warehouse_id: str, catalog: str,
-                              schema_filter: str = None, table_filter: str = None) -> list[dict]:
+def _find_dependent_functions(
+    client, warehouse_id: str, catalog: str, schema_filter: str = None, table_filter: str = None
+) -> list[dict]:
     """Find functions that reference this catalog."""
     try:
         if table_filter and schema_filter:
@@ -152,11 +162,13 @@ def _find_referencing_jobs(client, catalog: str) -> list[dict]:
                 for task in job.settings.tasks:
                     task_str = str(task)
                     if catalog in task_str:
-                        results.append({
-                            "job_id": job.job_id,
-                            "job_name": job_name,
-                            "task": task.task_key if hasattr(task, 'task_key') else "",
-                        })
+                        results.append(
+                            {
+                                "job_id": job.job_id,
+                                "job_name": job_name,
+                                "task": task.task_key if hasattr(task, "task_key") else "",
+                            }
+                        )
                         break  # One match per job is enough
     except Exception as e:
         logger.debug(f"Could not list jobs: {e}")
@@ -189,10 +201,12 @@ def _find_dashboard_references(client, catalog: str) -> list[dict]:
         for dash in dashboards:
             dash_str = str(dash)
             if catalog in dash_str:
-                results.append({
-                    "dashboard_id": dash.dashboard_id if hasattr(dash, 'dashboard_id') else "",
-                    "name": dash.display_name if hasattr(dash, 'display_name') else "",
-                })
+                results.append(
+                    {
+                        "dashboard_id": dash.dashboard_id if hasattr(dash, "dashboard_id") else "",
+                        "name": dash.display_name if hasattr(dash, "display_name") else "",
+                    }
+                )
     except Exception as e:
         logger.debug(f"Could not list dashboards: {e}")
 
@@ -219,11 +233,13 @@ def _extract_references(definition: str, target: str) -> str:
 
 def _assess_risk(impact: dict, threshold: int) -> str:
     """Assess risk level based on total dependent objects."""
-    total = (len(impact.get("dependent_views", [])) +
-             len(impact.get("dependent_functions", [])) +
-             len(impact.get("referencing_jobs", [])) +
-             len(impact.get("active_queries", [])) +
-             len(impact.get("dashboard_references", [])))
+    total = (
+        len(impact.get("dependent_views", []))
+        + len(impact.get("dependent_functions", []))
+        + len(impact.get("referencing_jobs", []))
+        + len(impact.get("active_queries", []))
+        + len(impact.get("dashboard_references", []))
+    )
 
     if total == 0:
         return "low"

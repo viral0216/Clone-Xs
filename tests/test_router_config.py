@@ -8,6 +8,7 @@ pytest.importorskip("fastapi")
 
 # ── GET /api/config ───────────────────────────────────────────────────────────
 
+
 def test_get_config(client):
     resp = client.get("/api/config")
     assert resp.status_code == 200
@@ -18,6 +19,7 @@ def test_get_config(client):
 
 # ── PUT /api/config ───────────────────────────────────────────────────────────
 
+
 @patch("api.routers.config.yaml")
 @patch("builtins.open")
 def test_update_config(mock_open, mock_yaml, client, mock_app_config):
@@ -27,17 +29,22 @@ def test_update_config(mock_open, mock_yaml, client, mock_app_config):
 
 # ── POST /api/config/diff ─────────────────────────────────────────────────────
 
+
 def test_config_diff(client):
-    resp = client.post("/api/config/diff", json={
-        "config_a": {"key": "a"},
-        "config_b": {"key": "b"},
-    })
+    resp = client.post(
+        "/api/config/diff",
+        json={
+            "config_a": {"key": "a"},
+            "config_b": {"key": "b"},
+        },
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, dict)
 
 
 # ── POST /api/config/audit ────────────────────────────────────────────────────
+
 
 @patch("builtins.open")
 @patch("api.routers.config.yaml")
@@ -49,6 +56,7 @@ def test_save_audit_settings(mock_yaml, mock_open, client):
 
 # ── PATCH /api/config/warehouse ───────────────────────────────────────────────
 
+
 @patch("builtins.open")
 @patch("api.routers.config.yaml")
 def test_set_warehouse(mock_yaml, mock_open, client):
@@ -58,6 +66,7 @@ def test_set_warehouse(mock_yaml, mock_open, client):
 
 
 # ── PATCH /api/config/performance ─────────────────────────────────────────────
+
 
 @patch("builtins.open")
 @patch("api.routers.config.yaml")
@@ -69,6 +78,7 @@ def test_set_performance(mock_yaml, mock_open, client):
 
 # ── PATCH /api/config/pricing ─────────────────────────────────────────────────
 
+
 @patch("builtins.open")
 @patch("api.routers.config.yaml")
 def test_set_pricing(mock_yaml, mock_open, client):
@@ -78,6 +88,7 @@ def test_set_pricing(mock_yaml, mock_open, client):
 
 
 # ── GET /api/config/profiles ──────────────────────────────────────────────────
+
 
 @patch("api.routers.config.yaml")
 @patch("builtins.open")

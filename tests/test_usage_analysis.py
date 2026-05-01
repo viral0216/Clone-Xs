@@ -1,6 +1,5 @@
 """Tests for usage analysis."""
 
-
 from src.usage_analysis import analyze_usage, _parse_query_history, format_usage_report
 
 
@@ -33,8 +32,16 @@ class TestAnalyzeUsage:
 class TestParseQueryHistory:
     def test_extracts_table_names(self):
         rows = [
-            {"statement_text": "SELECT * FROM `mycat`.`schema1`.`table1`", "start_time": "2024-01-01", "user_name": "user1"},
-            {"statement_text": "SELECT * FROM mycat.schema1.table1", "start_time": "2024-01-02", "user_name": "user2"},
+            {
+                "statement_text": "SELECT * FROM `mycat`.`schema1`.`table1`",
+                "start_time": "2024-01-01",
+                "user_name": "user1",
+            },
+            {
+                "statement_text": "SELECT * FROM mycat.schema1.table1",
+                "start_time": "2024-01-02",
+                "user_name": "user2",
+            },
         ]
         result = _parse_query_history(rows, "mycat")
         assert len(result) == 1

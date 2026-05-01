@@ -32,12 +32,14 @@ def _search_schema(
 
     for t in tables:
         if compiled.search(t["table_name"]):
-            tables_found.append({
-                "schema": schema,
-                "table": t["table_name"],
-                "type": t.get("table_type", ""),
-                "comment": t.get("comment", ""),
-            })
+            tables_found.append(
+                {
+                    "schema": schema,
+                    "table": t["table_name"],
+                    "type": t.get("table_type", ""),
+                    "comment": t.get("comment", ""),
+                }
+            )
 
     # Search columns
     if search_columns:
@@ -50,13 +52,15 @@ def _search_schema(
 
         for c in columns:
             if compiled.search(c["column_name"]):
-                columns_found.append({
-                    "schema": schema,
-                    "table": c["table_name"],
-                    "column": c["column_name"],
-                    "data_type": c.get("data_type", ""),
-                    "comment": c.get("comment", ""),
-                })
+                columns_found.append(
+                    {
+                        "schema": schema,
+                        "table": c["table_name"],
+                        "column": c["column_name"],
+                        "data_type": c.get("data_type", ""),
+                        "comment": c.get("comment", ""),
+                    }
+                )
 
     return tables_found, columns_found
 
@@ -108,8 +112,13 @@ def search_tables(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                _search_schema, client, warehouse_id, catalog, schema,
-                compiled, search_columns,
+                _search_schema,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                compiled,
+                search_columns,
             ): schema
             for schema in schemas
         }
@@ -145,10 +154,7 @@ def search_tables(
         logger.info(f"\n  Columns ({len(matched_columns)} matches):")
         for c in matched_columns:
             comment = f" -- {c['comment']}" if c.get("comment") else ""
-            logger.info(
-                f"    {c['schema']}.{c['table']}.{c['column']} "
-                f"({c['data_type']}){comment}"
-            )
+            logger.info(f"    {c['schema']}.{c['table']}.{c['column']} ({c['data_type']}){comment}")
     elif search_columns:
         logger.info("  No matching columns found.")
 

@@ -12,6 +12,7 @@ router = APIRouter()
 
 # ── System Table Endpoints (primary) ─────────────────────────────────
 
+
 @router.get("/billing", summary="Billing cost from system tables")
 async def billing_cost(
     days: int = Query(default=30, ge=1, le=365),
@@ -24,6 +25,7 @@ async def billing_cost(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_billing_cost
+
     return query_billing_cost(client, wid, days)
 
 
@@ -33,6 +35,7 @@ async def warehouses(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_warehouses
+
     return query_warehouses(client, wid)
 
 
@@ -45,6 +48,7 @@ async def warehouse_events(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_warehouse_events
+
     return query_warehouse_events(client, wid, days)
 
 
@@ -54,6 +58,7 @@ async def clusters(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_clusters
+
     return query_clusters(client, wid)
 
 
@@ -66,6 +71,7 @@ async def node_utilization(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_node_utilization
+
     return query_node_utilization(client, wid, days)
 
 
@@ -78,6 +84,7 @@ async def query_stats(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_query_stats
+
     return query_query_stats(client, wid, days)
 
 
@@ -90,6 +97,7 @@ async def storage_summary(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_storage
+
     return query_storage(client, wid, catalog)
 
 
@@ -102,6 +110,7 @@ async def recommendations(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_recommendations
+
     return query_recommendations(client, wid, catalog)
 
 
@@ -114,6 +123,7 @@ async def query_costs(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_cost_per_query
+
     return query_cost_per_query(client, wid, days)
 
 
@@ -126,6 +136,7 @@ async def job_costs(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import query_cost_per_job
+
     return query_cost_per_job(client, wid, days)
 
 
@@ -135,10 +146,12 @@ async def system_table_status(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.finops_queries import check_system_tables
+
     return check_system_tables(client, wid)
 
 
 # ── Azure Cost Management (supplementary, deferred) ──────────────────
+
 
 def _get_session_info(request: Request) -> tuple[str, any]:
     """Extract auth method and client from the current session."""
@@ -147,6 +160,7 @@ def _get_session_info(request: Request) -> tuple[str, any]:
         return "", None
     try:
         from api.routers.auth import get_session
+
         session = get_session(session_id)
         if session:
             return session.auth_method, session.client
@@ -160,6 +174,7 @@ async def azure_cost_status(request: Request):
     """Check if Azure subscription is configured for cost queries."""
     config = await get_app_config()
     from src.azure_costs import is_azure_configured
+
     status = is_azure_configured(config)
 
     auth_method, _ = _get_session_info(request)
@@ -168,7 +183,9 @@ async def azure_cost_status(request: Request):
     if status["can_reuse_session"]:
         status["auth_hint"] = f"Using existing {auth_method} credentials for Azure Cost Management"
     elif not status["configured"]:
-        status["auth_hint"] = "Configure Azure subscription in Settings → Azure / FinOps, or log in via Azure CLI"
+        status["auth_hint"] = (
+            "Configure Azure subscription in Settings → Azure / FinOps, or log in via Azure CLI"
+        )
 
     return status
 
@@ -190,11 +207,15 @@ async def azure_costs(
     auth_method, client = _get_session_info(request)
 
     from src.azure_costs import query_azure_costs
+
     try:
         result = query_azure_costs(
-            subscription_id=subscription_id, resource_group=resource_group,
-            tenant_id=tenant_id, days=days,
-            session_auth_method=auth_method, session_client=client,
+            subscription_id=subscription_id,
+            resource_group=resource_group,
+            tenant_id=tenant_id,
+            days=days,
+            session_auth_method=auth_method,
+            session_client=client,
         )
         return result.to_dict()
     except PermissionError as e:
@@ -207,6 +228,7 @@ async def azure_costs(
 async def save_azure_config(req: dict):
     """Save Azure subscription/resource group/tenant configuration."""
     import yaml
+
     config_path = "config/clone_config.yaml"
     try:
         with open(config_path, "r") as f:
@@ -226,6 +248,7 @@ async def save_azure_config(req: dict):
         yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
 
     from src.config import invalidate_config_cache
+
     invalidate_config_cache()
 
     return {"status": "saved", "azure": raw["azure"]}

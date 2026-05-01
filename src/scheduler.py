@@ -22,7 +22,9 @@ def parse_interval(interval_str: str) -> int:
     """
     match = re.match(r"^(\d+)\s*([smhd])$", interval_str.strip().lower())
     if not match:
-        raise ValueError(f"Invalid interval: '{interval_str}'. Use format like '30s', '5m', '1h', '6h', '1d'")
+        raise ValueError(
+            f"Invalid interval: '{interval_str}'. Use format like '30s', '5m', '1h', '6h', '1d'"
+        )
 
     value = int(match.group(1))
     unit = match.group(2)
@@ -69,6 +71,7 @@ def parse_cron(cron_expr: str) -> int:
                 target = now.replace(hour=check_hour, minute=minute, second=0, microsecond=0)
                 if hours_ahead > 0:
                     from datetime import timedelta
+
                     days = hours_ahead // 24
                     remaining_hours = hours_ahead % 24
                     target = target.replace(hour=check_hour)
@@ -85,13 +88,16 @@ def parse_cron(cron_expr: str) -> int:
     return 86400
 
 
-def check_drift(client, warehouse_id: str, source: str, dest: str, exclude_schemas: list[str]) -> bool:
+def check_drift(
+    client, warehouse_id: str, source: str, dest: str, exclude_schemas: list[str]
+) -> bool:
     """Check if source and destination catalogs have drifted.
 
     Returns True if there are differences, False if in sync.
     """
     try:
         from src.diff import compare_catalogs
+
         diff_result = compare_catalogs(client, warehouse_id, source, dest, exclude_schemas)
 
         has_drift = False
@@ -100,8 +106,10 @@ def check_drift(client, warehouse_id: str, source: str, dest: str, exclude_schem
             only_in_dest = diff_result.get(obj_type, {}).get("only_in_dest", [])
             if only_in_source or only_in_dest:
                 has_drift = True
-                logger.info(f"Drift detected in {obj_type}: "
-                           f"+{len(only_in_source)} in source, +{len(only_in_dest)} in dest")
+                logger.info(
+                    f"Drift detected in {obj_type}: "
+                    f"+{len(only_in_source)} in source, +{len(only_in_dest)} in dest"
+                )
 
         return has_drift
     except Exception as e:
@@ -147,9 +155,11 @@ def run_scheduled_clone(client, config: dict, on_complete=None) -> dict:
     try:
         if is_cross_workspace:
             from src.clone_cross_workspace import run_cross_workspace_clone
+
             summary = run_cross_workspace_clone(client, config)
         else:
             from src.clone_catalog import clone_catalog
+
             summary = clone_catalog(client, config)
         summary["status"] = summary.get("status") or "completed"
     except Exception as e:
@@ -163,7 +173,8 @@ def run_scheduled_clone(client, config: dict, on_complete=None) -> dict:
 
 
 def schedule_loop(
-    client, config: dict,
+    client,
+    config: dict,
     interval_seconds: int,
     max_runs: int = 0,
     on_complete=None,
@@ -188,7 +199,9 @@ def schedule_loop(
     signal.signal(signal.SIGTERM, _signal_handler)
 
     run_count = 0
-    logger.info(f"Scheduler started: interval={interval_seconds}s, max_runs={max_runs or 'unlimited'}")
+    logger.info(
+        f"Scheduler started: interval={interval_seconds}s, max_runs={max_runs or 'unlimited'}"
+    )
 
     while not shutdown_event.is_set():
         run_count += 1
@@ -214,6 +227,7 @@ def schedule_loop(
 # ---------------------------------------------------------------------------
 # Schedule CRUD — persistent storage in ~/.clone-xs/schedules.json
 # ---------------------------------------------------------------------------
+
 
 def _load_schedules() -> list[dict]:
     """Load schedules from JSON file."""
@@ -288,6 +302,7 @@ def create_schedule(
     if client and config:
         try:
             from src.create_job import create_persistent_job
+
             job_config = dict(config)
             job_config["source_catalog"] = source_catalog
             job_config["destination_catalog"] = destination_catalog

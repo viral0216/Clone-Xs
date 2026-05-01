@@ -16,7 +16,10 @@ def test_monitor_once_in_sync(mock_compare, mock_drift):
     mock_drift.return_value = {"tables_with_drift": 0}
 
     result = monitor_once(
-        MagicMock(), "wh-123", "src_cat", "dst_cat",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
         exclude_schemas=["information_schema"],
     )
 
@@ -36,7 +39,10 @@ def test_monitor_once_out_of_sync(mock_compare, mock_drift):
     mock_drift.return_value = {"tables_with_drift": 0}
 
     result = monitor_once(
-        MagicMock(), "wh-123", "src_cat", "dst_cat",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
         exclude_schemas=["information_schema"],
     )
 
@@ -57,7 +63,10 @@ def test_monitor_once_drift_detected(mock_compare, mock_drift):
     mock_drift.return_value = {"tables_with_drift": 3}
 
     result = monitor_once(
-        MagicMock(), "wh-123", "src_cat", "dst_cat",
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
         exclude_schemas=["information_schema"],
     )
 

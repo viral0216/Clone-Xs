@@ -34,6 +34,7 @@ def is_databricks_app() -> bool:
     """Detect if running as a Databricks App (service principal auth is injected)."""
     return os.getenv("CLONE_XS_RUNTIME") == "databricks-app"
 
+
 logger = logging.getLogger(__name__)
 
 # ── Module-level client cache ─────────────────────────────────────────
@@ -98,6 +99,7 @@ def clear_cache() -> None:
     _client_verify_time = 0
     try:
         from src.client import clear_metadata_cache
+
         clear_metadata_cache()
     except ImportError:
         pass
@@ -135,7 +137,11 @@ def _run_az(*args: str, timeout: int = 30) -> dict | list:
     cmd = ["az", *args, "--output", "json", "--only-show-errors"]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, env=_AZ_ENV,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=_AZ_ENV,
         )
         if result.returncode != 0:
             raise RuntimeError(f"az {' '.join(args)} failed: {result.stderr.strip()}")
@@ -151,7 +157,10 @@ def _run_databricks_cli(*args: str, timeout: int = 30) -> dict | list | str:
     cmd = ["databricks", *args, "--output", "json"]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         if result.returncode != 0:
             raise RuntimeError(f"databricks {' '.join(args)} failed: {result.stderr.strip()}")
@@ -166,6 +175,7 @@ def _run_databricks_cli(*args: str, timeout: int = 30) -> dict | list | str:
 
 
 # ── Public API ─────────────────────────────────────────────────────────
+
 
 def ensure_logged_in(host: str | None = None, force: bool = False) -> str:
     """Ensure user is logged in via Databricks CLI. Returns username.
@@ -207,7 +217,9 @@ def ensure_logged_in(host: str | None = None, force: bool = False) -> str:
     try:
         cmd = ["databricks", "auth", "login", "--host", workspace_host]
         result = subprocess.run(
-            cmd, capture_output=False, timeout=120,
+            cmd,
+            capture_output=False,
+            timeout=120,
         )
         if result.returncode != 0:
             raise RuntimeError("databricks auth login failed. Check your workspace URL.")
@@ -242,6 +254,7 @@ def list_profiles() -> list[dict]:
         return []
 
     import configparser
+
     cfg = configparser.ConfigParser()
     cfg.read(config_path)
 
@@ -273,10 +286,12 @@ def list_tenants() -> list[dict]:
     try:
         data = _run_az("account", "tenant", "list")
         for t in data:
-            tenants.append({
-                "tenant_id": t.get("tenantId", ""),
-                "name": t.get("displayName", "") or t.get("tenantId", ""),
-            })
+            tenants.append(
+                {
+                    "tenant_id": t.get("tenantId", ""),
+                    "name": t.get("displayName", "") or t.get("tenantId", ""),
+                }
+            )
     except Exception:
         pass
 
@@ -290,11 +305,13 @@ def list_tenants() -> list[dict]:
                 tid = acc.get("tenantId", "")
                 if tid and tid not in seen:
                     seen.add(tid)
-                    tenants.append({
-                        "tenant_id": tid,
-                        "name": acc.get("tenantDisplayName", "") or tid,
-                        "is_active": tid in active_tenants,
-                    })
+                    tenants.append(
+                        {
+                            "tenant_id": tid,
+                            "name": acc.get("tenantDisplayName", "") or tid,
+                            "is_active": tid in active_tenants,
+                        }
+                    )
         else:
             for t in tenants:
                 t["is_active"] = t["tenant_id"] in active_tenants
@@ -319,12 +336,14 @@ def list_subscriptions(tenant_id: str = "") -> list[dict]:
         if tenant_id and acc.get("tenantId", "") != tenant_id:
             continue
         seen.add(sub_id)
-        subs.append({
-            "subscription_id": sub_id,
-            "name": acc.get("name", sub_id),
-            "tenant_id": acc.get("tenantId", ""),
-            "state": acc.get("state", ""),
-        })
+        subs.append(
+            {
+                "subscription_id": sub_id,
+                "name": acc.get("name", sub_id),
+                "tenant_id": acc.get("tenantId", ""),
+                "state": acc.get("state", ""),
+            }
+        )
     subs.sort(key=lambda s: (s["state"] != "Enabled", s["name"].lower()))
     return subs
 
@@ -348,16 +367,19 @@ def list_databricks_workspaces(subscription_id: str) -> list[dict]:
             workspace_url = props.get("workspaceUrl", "")
             if workspace_url and not workspace_url.startswith("https://"):
                 workspace_url = f"https://{workspace_url}"
-            workspaces.append({
-                "name": ws.get("name", ""),
-                "host": workspace_url,
-                "location": ws.get("location", ""),
-                "resource_group": ws.get("id", "").split("/resourceGroups/")[-1].split("/")[0]
-                    if "/resourceGroups/" in ws.get("id", "") else "",
-                "sku": ws.get("sku", {}).get("name", ""),
-                "state": props.get("provisioningState", ""),
-                "workspace_id": props.get("workspaceId", ""),
-            })
+            workspaces.append(
+                {
+                    "name": ws.get("name", ""),
+                    "host": workspace_url,
+                    "location": ws.get("location", ""),
+                    "resource_group": ws.get("id", "").split("/resourceGroups/")[-1].split("/")[0]
+                    if "/resourceGroups/" in ws.get("id", "")
+                    else "",
+                    "sku": ws.get("sku", {}).get("name", ""),
+                    "state": props.get("provisioningState", ""),
+                    "workspace_id": props.get("workspaceId", ""),
+                }
+            )
         return workspaces
     except Exception as e:
         logger.debug("Failed to list workspaces: %s", e)
@@ -418,7 +440,10 @@ def interactive_login() -> dict:
         try:
             result = subprocess.run(
                 ["az", "login", "--output", "json", "--only-show-errors"],
-                capture_output=True, text=True, timeout=120, env=_AZ_ENV,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=_AZ_ENV,
             )
             if result.returncode != 0:
                 print(f"  Error: az login failed: {result.stderr.strip()}")
@@ -663,9 +688,11 @@ def _create_client(
             return WorkspaceClient(host=session_host, token=session_token)
         # Host-only session — try azure-cli auth non-interactively
         import shutil
+
         if shutil.which("az"):
             logger.debug("Auth: using saved session for %s (azure-cli)", session_host)
             from databricks.sdk.config import Config
+
             return WorkspaceClient(config=Config(host=session_host, auth_type="azure-cli"))
         logger.debug("Auth: saved session for %s but no token or az CLI", session_host)
 
@@ -725,7 +752,9 @@ def ensure_authenticated(
         _client_verified = True
         _client_verify_time = _time.time()
 
-        logger.info("Authenticated as %s on %s (%s)", info["user"], info["host"], info["auth_method"])
+        logger.info(
+            "Authenticated as %s on %s (%s)", info["user"], info["host"], info["auth_method"]
+        )
         return info
 
     except Exception as e:
@@ -795,15 +824,21 @@ def list_warehouses(client: WorkspaceClient) -> list[dict]:
     warehouses = []
     try:
         for wh in client.warehouses.list():
-            warehouses.append({
-                "id": wh.id,
-                "name": wh.name or "",
-                "size": getattr(wh, "cluster_size", "") or "",
-                "state": str(getattr(wh, "state", "")).split(".")[-1] if wh.state else "UNKNOWN",
-                "type": "SERVERLESS" if getattr(wh, "enable_serverless_compute", False)
-                    else "PRO" if getattr(wh, "warehouse_type", None) and "PRO" in str(wh.warehouse_type)
+            warehouses.append(
+                {
+                    "id": wh.id,
+                    "name": wh.name or "",
+                    "size": getattr(wh, "cluster_size", "") or "",
+                    "state": str(getattr(wh, "state", "")).split(".")[-1]
+                    if wh.state
+                    else "UNKNOWN",
+                    "type": "SERVERLESS"
+                    if getattr(wh, "enable_serverless_compute", False)
+                    else "PRO"
+                    if getattr(wh, "warehouse_type", None) and "PRO" in str(wh.warehouse_type)
                     else "CLASSIC",
-            })
+                }
+            )
     except Exception as e:
         logger.debug("Failed to list warehouses: %s", e)
     return warehouses
@@ -831,7 +866,9 @@ def select_warehouse(client: WorkspaceClient) -> str:
     print(f"\n  SQL warehouses ({len(warehouses)}):")
     for i, wh in enumerate(warehouses, 1):
         state_icon = "*" if wh["state"] == "RUNNING" else " "
-        print(f"    {i}. {wh['name']:<30} {wh['size']:<12} {wh['state']:<10} {wh['type']}{state_icon}")
+        print(
+            f"    {i}. {wh['name']:<30} {wh['size']:<12} {wh['state']:<10} {wh['type']}{state_icon}"
+        )
         print(f"       {wh['id']}")
     pick = input(f"\n  Select warehouse [1-{len(warehouses)}] (default: 1): ").strip()
     idx = int(pick) - 1 if pick.isdigit() and 1 <= int(pick) <= len(warehouses) else 0

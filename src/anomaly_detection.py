@@ -33,8 +33,10 @@ def _get_thresholds(config: dict | None = None) -> tuple[int, float, float]:
 # Schema helpers (mirrors reconciliation_store.py pattern)
 # ---------------------------------------------------------------------------
 
+
 def _get_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "data_quality")
 
 
@@ -67,17 +69,22 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
 
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             CREATE TABLE IF NOT EXISTS {schema}.metric_baselines ({_BASELINES_DDL})
             USING DELTA
             COMMENT 'Clone-Xs Data Quality: metric baselines and anomaly detection'
             TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not create {schema}.metric_baselines: {e}")
 
@@ -85,6 +92,7 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def record_metric(
     table_fqn: str,
@@ -120,7 +128,9 @@ def record_metric(
         ORDER BY measured_at DESC
     """
     try:
-        recent = _query_sql(history_sql, limit=baseline_window, client=client, warehouse_id=warehouse_id)
+        recent = _query_sql(
+            history_sql, limit=baseline_window, client=client, warehouse_id=warehouse_id
+        )
     except Exception:
         recent = []
 
@@ -152,7 +162,8 @@ def record_metric(
 
     # Insert the metric record
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.metric_baselines VALUES (
                 '{metric_id}',
                 '{_esc(table_fqn)}',
@@ -166,7 +177,10 @@ def record_metric(
                 {str(is_anomaly).lower()},
                 '{severity}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not store metric: {e}")
 
@@ -183,7 +197,9 @@ def record_metric(
         "is_anomaly": is_anomaly,
         "severity": severity,
     }
-    logger.info(f"Recorded metric {metric_name} for {table_fqn}: value={value}, z={z_score:.2f}, severity={severity}")
+    logger.info(
+        f"Recorded metric {metric_name} for {table_fqn}: value={value}, z={z_score:.2f}, severity={severity}"
+    )
     return record
 
 
@@ -231,11 +247,19 @@ def record_metrics_batch(
         if union_parts:
             # Execute in batches of 20 UNIONs to avoid query size limits
             for i in range(0, len(union_parts), 20):
-                batch_sql = " UNION ALL ".join(union_parts[i:i + 20])
-                rows = _query_sql(batch_sql, limit=len(metric_keys) * baseline_window,
-                                  client=client, warehouse_id=warehouse_id)
-                for r in (rows or []):
-                    key = (r.get("table_fqn", ""), r.get("column_name", ""), r.get("metric_name", ""))
+                batch_sql = " UNION ALL ".join(union_parts[i : i + 20])
+                rows = _query_sql(
+                    batch_sql,
+                    limit=len(metric_keys) * baseline_window,
+                    client=client,
+                    warehouse_id=warehouse_id,
+                )
+                for r in rows or []:
+                    key = (
+                        r.get("table_fqn", ""),
+                        r.get("column_name", ""),
+                        r.get("metric_name", ""),
+                    )
                     baselines.setdefault(key, []).append(float(r["value"]))
     except Exception as e:
         logger.debug(f"Could not bulk-fetch baselines: {e}")
@@ -262,27 +286,36 @@ def record_metrics_batch(
 
         z_score = abs(value - mean) / stddev if stddev > 0 else 0.0
         is_anomaly = z_score > warning_threshold
-        severity = "critical" if z_score > critical_threshold else ("warning" if is_anomaly else "normal")
+        severity = (
+            "critical" if z_score > critical_threshold else ("warning" if is_anomaly else "normal")
+        )
 
         value_rows.append(
             f"('{metric_id}', '{_esc(table_fqn)}', '{_esc(column_name)}', "
             f"'{_esc(metric_name)}', {value}, '{now}', {mean}, {stddev}, "
             f"{z_score}, {str(is_anomaly).lower()}, '{severity}')"
         )
-        records.append({
-            "id": metric_id, "table_fqn": table_fqn, "value": value,
-            "z_score": round(z_score, 4), "severity": severity,
-        })
+        records.append(
+            {
+                "id": metric_id,
+                "table_fqn": table_fqn,
+                "value": value,
+                "z_score": round(z_score, 4),
+                "severity": severity,
+            }
+        )
 
     # Batch insert
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(value_rows), batch_size):
-        batch = value_rows[i:i + batch_size]
+        batch = value_rows[i : i + batch_size]
         try:
             _run_sql(
                 f"INSERT INTO {schema}.metric_baselines VALUES {', '.join(batch)}",
-                client, warehouse_id,
+                client,
+                warehouse_id,
             )
         except Exception as e:
             logger.warning(f"Could not batch-insert metrics: {e}")
@@ -436,7 +469,9 @@ def compute_baselines(
             ORDER BY measured_at DESC
         """
         try:
-            recent = _query_sql(val_query, limit=baseline_window, client=client, warehouse_id=warehouse_id)
+            recent = _query_sql(
+                val_query, limit=baseline_window, client=client, warehouse_id=warehouse_id
+            )
         except Exception:
             errors += 1
             continue
@@ -451,14 +486,18 @@ def compute_baselines(
 
         # Update all rows for this metric key with new baseline stats
         try:
-            _run_sql(f"""
+            _run_sql(
+                f"""
                 UPDATE {schema}.metric_baselines
                 SET baseline_mean = {mean},
                     baseline_stddev = {stddev}
                 WHERE table_fqn = '{_esc(tbl)}'
                   AND column_name = '{_esc(col)}'
                   AND metric_name = '{_esc(met)}'
-            """, client, warehouse_id)
+            """,
+                client,
+                warehouse_id,
+            )
             updated += 1
         except Exception as e:
             logger.warning(f"Could not update baseline for {tbl}.{col}.{met}: {e}")

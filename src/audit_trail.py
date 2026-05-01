@@ -69,12 +69,20 @@ def ensure_audit_table(client, warehouse_id: str, config: dict) -> str:
     """
     execute_sql(client, warehouse_id, create_sql)
 
-    # Add new columns only if they don't already exist
+    # Add new columns only if they don't already exist. Older audit tables
+    # are upgraded in place via ALTER ADD COLUMN — old rows have NULL for the
+    # new columns, which compliance/finance queries can COALESCE to 0.
     new_columns = [
         ("tables_skipped", "INT"),
         ("clone_mode", "STRING"),
         ("trigger", "STRING"),
         ("destination_existed", "BOOLEAN"),
+        # Databricks per-CLONE metrics aggregated across all per-table CLONE
+        # statements. `bytes_copied` is the cloud-egress finance number.
+        ("bytes_copied", "BIGINT"),
+        ("files_copied", "BIGINT"),
+        ("source_table_size", "BIGINT"),
+        ("source_num_of_files", "BIGINT"),
     ]
     try:
         existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
@@ -178,6 +186,14 @@ def log_operation_complete(
         tables_skipped = summary.get("tables_skipped", 0) or summary.get("skipped", 0)
     destination_existed = summary.get("destination_existed", False)
 
+    # Databricks CLONE metrics — `bytes_copied` is the headline number for
+    # cloud-egress finance. Both orchestrators emit these at top level via
+    # _build_summary / CrossWorkspaceResult.to_dict.
+    bytes_copied = int(summary.get("bytes_copied", 0) or 0)
+    files_copied = int(summary.get("files_copied", 0) or 0)
+    source_table_size = int(summary.get("source_table_size", 0) or 0)
+    source_num_of_files = int(summary.get("source_num_of_files", 0) or 0)
+
     status = "failed" if error_message else ("completed_with_errors" if tables_failed > 0 else "success")
     summary_json = json.dumps(summary).replace("'", "''")
     error_msg = (error_message or "").replace("'", "''")
@@ -194,6 +210,10 @@ def log_operation_complete(
         functions_cloned = {functions_cloned},
         volumes_cloned = {volumes_cloned},
         destination_existed = {str(destination_existed).lower()},
+        bytes_copied = {bytes_copied},
+        files_copied = {files_copied},
+        source_table_size = {source_table_size},
+        source_num_of_files = {source_num_of_files},
         summary_json = '{summary_json}',
         error_message = '{error_msg}'
     WHERE operation_id = '{operation_id}'

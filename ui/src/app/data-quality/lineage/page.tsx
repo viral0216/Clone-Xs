@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,14 +53,14 @@ function sourceColor(source: string) {
 }
 
 export default function DataLineagePage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
-  const [table, setTable] = useState("");
-  const [depth, setDepth] = useState(2);
-  const [includeColumns, setIncludeColumns] = useState(false);
+  const [catalog, setCatalog] = usePersistedState<string>("dq-lineage-catalog", "");
+  const [schema, setSchema] = usePersistedState<string>("dq-lineage-schema", "");
+  const [table, setTable] = usePersistedState<string>("dq-lineage-table", "");
+  const [depth, setDepth] = usePersistedState<number>("dq-lineage-depth", 2);
+  const [includeColumns, setIncludeColumns] = usePersistedState<boolean>("dq-lineage-include-cols", false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<LineageResult | null>(null);
-  const [hasRun, setHasRun] = useState(false);
+  const [result, setResult] = usePersistedState<LineageResult | null>("dq-lineage-result", null);
+  const [hasRun, setHasRun] = usePersistedState<boolean>("dq-lineage-has-run", false);
 
   async function traceLineage() {
     if (!catalog) {

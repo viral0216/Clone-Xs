@@ -143,6 +143,312 @@ export function useStartClone() {
   });
 }
 
+export function useValidateTarget() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/target/validate", req),
+  });
+}
+
+export function useTargetWarehouses() {
+  return useMutation<WarehouseInfo[], Error, Record<string, unknown>>({
+    mutationFn: (req) => api.post("/target/warehouses", req),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Saved target connections — stored in browser localStorage. The server
+// is intentionally stateless w.r.t. target creds; clones send full creds
+// inline in the request body, sourced from the localStorage entry.
+// ──────────────────────────────────────────────────────────────────
+
+export interface TargetConnection {
+  name: string;
+  host: string;
+  auth_method: "pat" | "service_principal" | "profile";
+  token?: string;
+  client_id?: string;
+  client_secret?: string;
+  profile?: string;
+  warehouse_id: string;
+  keep_share?: boolean;
+  data_sync_mode?: "snapshot_once" | "incremental" | "force_full";
+  auto_handle_masks?: boolean;
+}
+
+const TARGETS_KEY = "clxs_target_connections";
+
+function readTargets(): TargetConnection[] {
+  try {
+    const raw = localStorage.getItem(TARGETS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTargets(list: TargetConnection[]): void {
+  localStorage.setItem(TARGETS_KEY, JSON.stringify(list));
+}
+
+export function findTargetConnection(name: string): TargetConnection | null {
+  return readTargets().find((c) => c.name === name) ?? null;
+}
+
+// Build the body POSTed to /target/* endpoints from a stored connection.
+// Strips the sentinel "***" placeholder that some legacy entries may carry.
+export function targetCredsBody(conn: TargetConnection): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    host: conn.host,
+    auth_method: conn.auth_method,
+  };
+  if (conn.auth_method === "pat") body.token = conn.token;
+  if (conn.auth_method === "service_principal") {
+    body.client_id = conn.client_id;
+    body.client_secret = conn.client_secret;
+  }
+  if (conn.auth_method === "profile") body.profile = conn.profile;
+  return body;
+}
+
+export function useTargetConnections() {
+  return useQuery<TargetConnection[]>({
+    queryKey: ["target-connections"],
+    queryFn: () => Promise.resolve(readTargets()),
+    staleTime: Infinity,
+  });
+}
+
+export function useCreateTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<TargetConnection, Error, TargetConnection>({
+    mutationFn: async (conn) => {
+      const list = readTargets();
+      if (list.some((c) => c.name === conn.name)) {
+        throw new Error(`Target connection '${conn.name}' already exists`);
+      }
+      list.push(conn);
+      writeTargets(list);
+      return conn;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+export function useUpdateTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<TargetConnection, Error, { name: string; patch: Partial<TargetConnection> }>({
+    mutationFn: async ({ name, patch }) => {
+      const list = readTargets();
+      const idx = list.findIndex((c) => c.name === name);
+      if (idx < 0) throw new Error(`Target connection '${name}' not found`);
+      const merged = { ...list[idx], ...patch, name };
+      list[idx] = merged;
+      writeTargets(list);
+      return merged;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+export function useDeleteTargetConnection() {
+  const qc = useQueryClient();
+  return useMutation<{ name: string }, Error, string>({
+    mutationFn: async (name) => {
+      const list = readTargets();
+      const remaining = list.filter((c) => c.name !== name);
+      if (remaining.length === list.length) throw new Error(`Target connection '${name}' not found`);
+      writeTargets(remaining);
+      return { name };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["target-connections"] }),
+  });
+}
+
+// Test takes a connection NAME (resolved from localStorage to creds), then
+// posts the inline creds to the existing /target/validate endpoint.
+export function useTestTargetConnection() {
+  return useMutation<any, Error, string>({
+    mutationFn: async (name) => {
+      const conn = findTargetConnection(name);
+      if (!conn) throw new Error(`Target connection '${name}' not found`);
+      const body = { ...targetCredsBody(conn), warehouse_id: conn.warehouse_id };
+      return api.post("/target/validate", body);
+    },
+  });
+}
+
+// Lightweight identity check — used by /settings to display "Logged in as"
+// for each saved target without running the full validate flow.
+export function useTargetWhoami(connectionName: string | null | undefined) {
+  return useQuery<{ user: string | null; host: string }>({
+    queryKey: ["target-whoami", connectionName],
+    queryFn: () => {
+      const conn = findTargetConnection(connectionName!);
+      if (!conn) throw new Error(`Target connection '${connectionName}' not found`);
+      return api.post("/target/whoami", targetCredsBody(conn));
+    },
+    enabled: !!connectionName,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+// Resolves connection name → creds from localStorage, then POSTs to the
+// stateless /target/catalogs endpoint.
+export function useTargetCatalogs(connectionName: string | null | undefined) {
+  return useQuery<string[]>({
+    queryKey: ["target-catalogs", connectionName],
+    queryFn: () => {
+      const conn = findTargetConnection(connectionName!);
+      if (!conn) throw new Error(`Target connection '${connectionName}' not found`);
+      return api.post("/target/catalogs", targetCredsBody(conn));
+    },
+    enabled: !!connectionName,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useEstimate() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/estimate", req),
+  });
+}
+
+export function useStartSync() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/sync", req),
+  });
+}
+
+export function useIncrementalCheck() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/check", req),
+  });
+}
+
+export function useStartIncrementalSync() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/sync", req),
+  });
+}
+
+export function useSchemaEvolutionDetect() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/schema-evolution/detect", req),
+  });
+}
+
+export function useCdfCheck() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/incremental/cdf-check", req),
+  });
+}
+
+export function useSchedules() {
+  return useQuery({
+    queryKey: ["schedules"],
+    queryFn: () => api.get<any[]>("/schedules"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useCreateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post<any>("/schedules", req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function usePauseSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/schedules/${encodeURIComponent(id)}/pause`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useResumeSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/schedules/${encodeURIComponent(id)}/resume`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useDeleteSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/schedules/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useSyncJobs() {
+  return useQuery({
+    queryKey: ["sync-jobs"],
+    queryFn: async () => {
+      const all = await api.get<any[]>("/clone/jobs");
+      // Backend job_type is "sync" or "incremental_sync"
+      return (all || []).filter((j) => {
+        const t = (j.job_type || "").toLowerCase();
+        return t === "sync" || t === "incremental_sync";
+      });
+    },
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useDiffPreview() {
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/diff", req),
+  });
+}
+
+export function useSnapshots(catalog?: string | null) {
+  const qs = catalog ? `?source_catalog=${encodeURIComponent(catalog)}` : "";
+  return useQuery({
+    queryKey: ["clone-snapshots", catalog || null],
+    queryFn: () => api.get<any[]>(`/clone-snapshots${qs}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: Record<string, unknown>) => api.post("/clone-snapshots", req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clone-snapshots"] }),
+  });
+}
+
+export function useDeleteSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/clone-snapshots/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clone-snapshots"] }),
+  });
+}
+
+export function useSchemaObjects(catalog: string | null, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-objects", catalog, schema],
+    queryFn: () => api.get<{
+      tables: string[];
+      views: string[];
+      functions: string[];
+      volumes: string[];
+    }>(`/catalogs/${encodeURIComponent(catalog!)}/${encodeURIComponent(schema!)}/objects`),
+    enabled: !!catalog && !!schema,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useDiff() {
   return useMutation({
     mutationFn: (req: { source_catalog: string; destination_catalog: string; warehouse_id?: string }) =>
@@ -156,22 +462,79 @@ export function useValidate() {
   });
 }
 
+/** Build the sessionStorage cache key for a stats response.
+ * Single-catalog: `clxs-stats-<catalog>-<mode>`.
+ * Multi-catalog: `clxs-stats-multi-<sorted,csv>-<mode>` — sorted so
+ * `[a,b]` and `[b,a]` share a slot. */
+function statsCacheKey(catalogs: string[], mode: "fast" | "detailed"): string {
+  if (catalogs.length === 1) return `clxs-stats-${catalogs[0]}-${mode}`;
+  const sorted = [...catalogs].sort((a, b) => a.localeCompare(b)).join(",");
+  return `clxs-stats-multi-${sorted}-${mode}`;
+}
+
 export function useStats() {
   return useMutation({
-    mutationFn: async (req: { source_catalog: string; warehouse_id?: string }) => {
-      const result = await api.post("/stats", req);
-      // Cache in sessionStorage for page navigation persistence
-      try { sessionStorage.setItem(`clxs-stats-${req.source_catalog}`, JSON.stringify(result)); } catch {}
+    // `fast=true` (default) hits the bulk-information_schema path on the
+    // server — ~1-3s for any catalog size. Pass `fast: false` to fall
+    // back to the per-table COUNT(*) + DESCRIBE DETAIL path which is
+    // exact but 30-90s on a 500-table catalog. Cache key includes the
+    // mode so switching between fast / detailed doesn't return stale.
+    //
+    // Multi-catalog: pass `source_catalogs: string[]` instead of (or
+    // alongside an empty) `source_catalog`. The server's /stats route
+    // detects the plural field and fans out via `catalog_stats_multi`.
+    mutationFn: async (req: {
+      source_catalog?: string;
+      source_catalogs?: string[];
+      warehouse_id?: string;
+      fast?: boolean;
+    }) => {
+      const fast = req.fast ?? true;
+      const result = await api.post("/stats", { ...req, fast });
+      const mode = fast ? "fast" : "detailed";
+      let cats: string[];
+      if (req.source_catalogs && req.source_catalogs.length > 0) {
+        cats = req.source_catalogs;
+      } else if (req.source_catalog) {
+        cats = [req.source_catalog];
+      } else {
+        cats = [];
+      }
+      if (cats.length > 0) {
+        try {
+          sessionStorage.setItem(statsCacheKey(cats, mode), JSON.stringify(result));
+        } catch {}
+      }
       return result;
     },
   });
 }
 
-/** Load cached stats for a catalog (survives page navigation) */
-export function getCachedStats(catalog: string): any | null {
+/** Load cached stats for one or more catalogs (survives page navigation).
+ * Falls back across modes — preferring whichever the caller asks for, but
+ * accepting the other if that's all sessionStorage has. Pass either a
+ * single catalog string (legacy) or an array for multi-catalog lookups. */
+export function getCachedStats(
+  catalogOrCatalogs: string | string[],
+  fast: boolean = true,
+): any {
   try {
-    const cached = sessionStorage.getItem(`clxs-stats-${catalog}`);
-    return cached ? JSON.parse(cached) : null;
+    const cats = Array.isArray(catalogOrCatalogs)
+      ? catalogOrCatalogs
+      : [catalogOrCatalogs];
+    if (cats.length === 0) return null;
+    const preferredMode = fast ? "fast" : "detailed";
+    const fallbackMode = fast ? "detailed" : "fast";
+    const primary = sessionStorage.getItem(statsCacheKey(cats, preferredMode));
+    if (primary) return JSON.parse(primary);
+    const alt = sessionStorage.getItem(statsCacheKey(cats, fallbackMode));
+    if (alt) return JSON.parse(alt);
+    // Legacy unsuffixed key only ever existed for single-catalog
+    if (cats.length === 1) {
+      const legacy = sessionStorage.getItem(`clxs-stats-${cats[0]}`);
+      if (legacy) return JSON.parse(legacy);
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -193,6 +556,128 @@ export function usePiiScan() {
   return useMutation({
     mutationFn: (req: { source_catalog: string; no_exit_code?: boolean }) =>
       api.post("/pii-scan", req),
+  });
+}
+
+/** Permissions audit on the Catalog Explorer's Audit tab. Optional
+ * `pii_intersection` runs a PII scan inline so findings on PII tables
+ * escalate one risk level. */
+export function usePermissionsAudit() {
+  return useMutation({
+    mutationFn: (req: {
+      source_catalog: string;
+      warehouse_id?: string;
+      pii_intersection?: boolean;
+    }) => api.post("/permissions-audit", req),
+  });
+}
+
+/** List catalogs the user can read, with size + demo-flag metadata.
+ * Backs the Manage Catalogs tab on `/demo-data`. `demoOnly` filters to
+ * catalogs flagged with `demo.generated_by = 'clone-xs'` table tags. */
+export function useDemoCatalogs(demoOnly: boolean = false) {
+  return useQuery<{ catalogs: any[]; demo_only: boolean; total: number }>({
+    queryKey: ["demo-catalogs", demoOnly],
+    queryFn: () => api.get(`/generate/demo-data/catalogs${demoOnly ? "?demo_only=true" : ""}`),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Drop a demo catalog. Reuses the existing `DELETE /demo-data/{name}`
+ * endpoint (no new destructive path). Invalidates the listing on success
+ * so the row disappears from the Manage tab. */
+export function useDemoCatalogDrop() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, { catalog_name: string }>({
+    mutationFn: ({ catalog_name }) => api.delete(`/generate/demo-data/${encodeURIComponent(catalog_name)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["demo-catalogs"] }),
+  });
+}
+
+/** Schedule a streaming emission job on Databricks. Generates a
+ * notebook in the user's workspace + creates a Job that runs it on
+ * a Quartz cron. Survives API restarts. Returns
+ * `{job_id, run_url, notebook_path}`. */
+export function useStreamingSchedule() {
+  return useMutation({
+    mutationFn: (req: {
+      catalog: string;
+      schema: string;
+      volume?: string;
+      profile: "generic_sensor" | "industrial_machine" | "car_obd2"
+        | "smart_meter" | "wearable_health" | "pos_terminal"
+        | "wind_turbine" | "atm_transaction" | "server_metrics"
+        | "clickstream";
+      events_per_batch?: number;
+      interval_seconds?: number;
+      total_duration_seconds?: number;
+      num_devices?: number;
+      auto_create_bronze?: boolean;
+      bronze_refresh_minutes?: number;
+      warehouse_id?: string;
+      name?: string;
+      schedule_quartz_cron: string;
+      timezone_id?: string;
+      notebook_path?: string;
+      use_serverless?: boolean;
+    }) => api.post("/generate/demo-data/streaming/schedule", req),
+  });
+}
+
+/** Start a streaming-emission demo job. Spawns a background job that
+ * writes JSON event batches to a UC Volume on a tunable cadence,
+ * optionally also creating a DBSQL streaming Bronze table that
+ * consumes the Volume via Auto Loader. Returns `{job_id}` — poll
+ * `/api/jobs/{job_id}` for live progress (events_emitted, files_written). */
+export function useStreamingEmit() {
+  return useMutation({
+    mutationFn: (req: {
+      catalog: string;
+      schema: string;
+      volume?: string;
+      profile: "generic_sensor" | "industrial_machine" | "car_obd2"
+        | "smart_meter" | "wearable_health" | "pos_terminal"
+        | "wind_turbine" | "atm_transaction" | "server_metrics"
+        | "clickstream";
+      destination?: "volume" | "volume_bronze" | "direct_table";
+      bronze_table?: string;
+      events_per_batch?: number;
+      interval_seconds?: number;
+      total_duration_seconds?: number;
+      num_devices?: number;
+      auto_create_bronze?: boolean;
+      bronze_refresh_minutes?: number;
+      warehouse_id?: string;
+    }) => api.post("/generate/demo-data/streaming", req),
+  });
+}
+
+/** Stop a running streaming-emission job. The runner sleeps in short
+ * slices so the stop request lands within ~0.5 s regardless of the
+ * configured emission interval. */
+export function useStreamingStop() {
+  return useMutation({
+    mutationFn: (req: { job_id: string }) =>
+      api.post(`/generate/demo-data/streaming/${req.job_id}/stop`, {}),
+  });
+}
+
+/** Stale & orphan table detection on the Catalog Explorer's Cleanup tab.
+ * Single mode (`source_catalog`) or multi (`source_catalogs`); the
+ * server's /stale-scan dispatches accordingly. No sessionStorage cache
+ * — findings are time-sensitive, so re-scan each time. */
+export function useStaleScan() {
+  return useMutation({
+    mutationFn: (req: {
+      source_catalog?: string;
+      source_catalogs?: string[];
+      warehouse_id?: string;
+      days_threshold?: number;
+      min_age_days?: number;
+      min_size_bytes?: number;
+      check_small_files?: boolean;
+    }) => api.post("/stale-scan", req),
   });
 }
 

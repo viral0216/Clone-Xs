@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ export default function MLAssetsPage() {
   const { job, run, isRunning } = usePageJob("ml-assets");
   const [sourceCatalog, setSourceCatalog] = useState(job?.params?.source || "");
   const [destCatalog, setDestCatalog] = useState(job?.params?.dest || "");
-  const [activeTab, setActiveTab] = useState<Tab>("models");
+  const [activeTab, setActiveTab] = usePersistedState<Tab>("ml-assets-tab", "models");
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneResult, setCloneResult] = useState<any>(null);
 

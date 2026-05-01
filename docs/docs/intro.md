@@ -32,7 +32,7 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Time Travel | Clone tables at a specific version or timestamp |
 | Data Filtering | Clone subsets with `--where` and `--table-filter` |
 | Schema Drift Detection | Detect changes between source and destination |
-| Cross-Workspace Clone | Clone catalogs across Databricks workspaces |
+| Cross-Workspace & Cross-Cloud Migration | Delta Sharing + DEEP CLONE pipeline to migrate a catalog — schemas, tables, views, SQL functions, volumes + files, grants, tags, ownership — across Databricks workspaces on AWS, Azure, or GCP. Saved target connections live in **browser localStorage**, never on the server — no PATs in `clone_config.yaml`, nothing for git secret-scanning to flag. Includes a same-metastore preflight check that fails fast (1–2s) instead of creating orphan recipients when both workspaces share a single UC metastore |
 | Dry Run & Execution Plan | Preview all SQL with cost estimates |
 | Auto-Rollback | Automatically undo clone if validation fails |
 | Delta RESTORE Rollback | Non-destructive rollback using `RESTORE TABLE ... TO VERSION AS OF` with pre-clone version tracking |

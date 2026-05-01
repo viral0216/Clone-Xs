@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,9 +39,9 @@ interface SchemaNode {
 /* ── Component ────────────────────────────────────────── */
 
 export default function CatalogBrowserPage() {
-  const [catalogs, setCatalogs] = useState<TreeNode[]>([]);
+  const [catalogs, setCatalogs] = usePersistedState<TreeNode[]>("dq-cb-catalogs", []);
   const [loadingCatalogs, setLoadingCatalogs] = useState(true);
-  const [searchFilter, setSearchFilter] = useState("");
+  const [searchFilter, setSearchFilter] = usePersistedState<string>("dq-cb-search", "");
 
   // Selected table info
   const [selected, setSelected] = useState<{
@@ -50,15 +51,21 @@ export default function CatalogBrowserPage() {
     table_type?: string;
   } | null>(null);
 
-  // Certification & glossary data for detail panel
-  const [certifications, setCertifications] = useState<any[]>([]);
-  const [glossary, setGlossary] = useState<any[]>([]);
+  // Certification & glossary data for detail panel — persisted so the detail
+  // pane stays usable after navigation without re-querying.
+  const [certifications, setCertifications] = usePersistedState<any[]>("dq-cb-certifications", []);
+  const [glossary, setGlossary] = usePersistedState<any[]>("dq-cb-glossary", []);
 
   /* ── Load catalogs ─────────────────────────────────── */
 
   useEffect(() => {
-    loadCatalogs();
-    loadGovernanceData();
+    if (catalogs && catalogs.length > 0) {
+      setLoadingCatalogs(false);
+    } else {
+      loadCatalogs();
+    }
+    if (!certifications?.length || !glossary?.length) loadGovernanceData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadCatalogs() {

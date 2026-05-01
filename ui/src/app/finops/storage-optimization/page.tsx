@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,13 +40,13 @@ function formatGB(bytes: number) {
 }
 
 export default function StorageOptimizationPage() {
-  const [catalog, setCatalog] = useState("");
-  const [schema, setSchema] = useState("");
+  const [catalog, setCatalog] = usePersistedState<string>("storage-opt-catalog", "");
+  const [schema, setSchema] = usePersistedState<string>("storage-opt-schema", "");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [dryRun, setDryRun] = useState(true);
-  const [retentionHours, setRetentionHours] = useState(168);
+  const [dryRun, setDryRun] = usePersistedState<boolean>("storage-opt-dry-run", true);
+  const [retentionHours, setRetentionHours] = usePersistedState<number>("storage-opt-retention", 168);
   const [actionLoading, setActionLoading] = useState(false);
-  const [actionResults, setActionResults] = useState<any>(null);
+  const [actionResults, setActionResults] = usePersistedState<any>("storage-opt-action-results", null);
 
   const storageQuery = useFinOpsStorage(catalog);
   const loading = storageQuery.isLoading;

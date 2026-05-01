@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,18 +30,18 @@ function sevColor(s: string) {
 
 export default function RemediationPage() {
   // Form state
-  const [srcCatalog, setSrcCatalog] = useState("");
-  const [srcSchema, setSrcSchema] = useState("");
-  const [srcTable, setSrcTable] = useState("");
-  const [destCatalog, setDestCatalog] = useState("");
-  const [destSchema, setDestSchema] = useState("");
-  const [destTable, setDestTable] = useState("");
-  const [keyColumns, setKeyColumns] = useState("");
-  const [fixType, setFixType] = useState("all");
+  const [srcCatalog, setSrcCatalog] = usePersistedState<string>("dq-remediation-src-catalog", "");
+  const [srcSchema, setSrcSchema] = usePersistedState<string>("dq-remediation-src-schema", "");
+  const [srcTable, setSrcTable] = usePersistedState<string>("dq-remediation-src-table", "");
+  const [destCatalog, setDestCatalog] = usePersistedState<string>("dq-remediation-dest-catalog", "");
+  const [destSchema, setDestSchema] = usePersistedState<string>("dq-remediation-dest-schema", "");
+  const [destTable, setDestTable] = usePersistedState<string>("dq-remediation-dest-table", "");
+  const [keyColumns, setKeyColumns] = usePersistedState<string>("dq-remediation-key-cols", "");
+  const [fixType, setFixType] = usePersistedState<string>("dq-remediation-fix-type", "all");
 
   // Results state
   const [generating, setGenerating] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = usePersistedState<any>("dq-remediation-result", null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   async function generate() {

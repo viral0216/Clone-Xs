@@ -27,7 +27,7 @@ CONFIG_SCHEMA = {
     "destination_catalog": {"type": str, "required": True},
     "clone_type": {"type": str, "required": True, "values": ["DEEP", "SHALLOW"]},
     "sql_warehouse_id": {"type": str, "required": True},
-    "load_type": {"type": str, "values": ["FULL", "INCREMENTAL"]},
+    "load_type": {"type": str, "values": ["FULL", "INCREMENTAL", "SELECTIVE"]},
     "max_workers": {"type": int, "range": (1, 64)},
     "parallel_tables": {"type": int, "range": (1, 32)},
     "max_rps": {"type": (int, float), "range": (0.0, 100.0)},

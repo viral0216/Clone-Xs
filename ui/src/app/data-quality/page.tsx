@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,15 +47,22 @@ function healthScoreBg(score: number) {
 
 export default function DataQualityOverviewPage() {
   const [loading, setLoading] = useState(true);
-  const [dqResults, setDqResults] = useState<any[]>([]);
-  const [dqxChecks, setDqxChecks] = useState<any[]>([]);
-  const [rules, setRules] = useState<any[]>([]);
-  const [freshnessSummary, setFreshnessSummary] = useState<{ fresh: number; stale: number; unknown: number }>({ fresh: 0, stale: 0, unknown: 0 });
-  const [recentAnomalies, setRecentAnomalies] = useState<any[]>([]);
-  const [recentIncidents, setRecentIncidents] = useState<any[]>([]);
-  const [healthTrend, setHealthTrend] = useState<any[]>([]);
+  // Overview-card data persists across navigation. Auto-load skipped when
+  // a previous visit's results are still in sessionStorage.
+  const [dqResults, setDqResults] = usePersistedState<any[]>("dq-overview-results", []);
+  const [dqxChecks, setDqxChecks] = usePersistedState<any[]>("dq-overview-dqx", []);
+  const [rules, setRules] = usePersistedState<any[]>("dq-overview-rules", []);
+  const [freshnessSummary, setFreshnessSummary] = usePersistedState<{ fresh: number; stale: number; unknown: number }>("dq-overview-freshness", { fresh: 0, stale: 0, unknown: 0 });
+  const [recentAnomalies, setRecentAnomalies] = usePersistedState<any[]>("dq-overview-anomalies", []);
+  const [recentIncidents, setRecentIncidents] = usePersistedState<any[]>("dq-overview-incidents", []);
+  const [healthTrend, setHealthTrend] = usePersistedState<any[]>("dq-overview-trend", []);
 
   useEffect(() => {
+    if ((dqResults && dqResults.length > 0) || (dqxChecks && dqxChecks.length > 0)
+        || (rules && rules.length > 0) || (recentAnomalies && recentAnomalies.length > 0)) {
+      setLoading(false);
+      return;
+    }
     async function load() {
       try {
         const [results, checks, ruleList, freshness, anomalies, incidents, trend] = await Promise.allSettled([

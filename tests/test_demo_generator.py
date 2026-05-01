@@ -286,6 +286,50 @@ class TestGenerateDemoCatalog:
 
     @patch("src.demo_generator.execute_sql_parallel")
     @patch("src.demo_generator.execute_sql")
+    def test_schema_only_skips_inserts(self, mock_sql, mock_parallel):
+        """schema_only=True must produce CREATE TABLE statements but NOT
+        INSERT INTO. The 0-rows return value flows through the result counts.
+        Used by CI smoke runs and DDL-template validation where minutes-long
+        data generation isn't needed."""
+        mock_sql.return_value = []
+        mock_parallel.return_value = []
+        client = MagicMock()
+
+        result = generate_demo_catalog(
+            client, "wid", "test_cat",
+            industries=["healthcare"],
+            scale_factor=0.01,
+            batch_size=5000,
+            medallion=False,
+            create_functions=False,
+            create_volumes=False,
+            schema_only=True,
+        )
+
+        # Tables still created — DDL ran
+        assert result["tables_created"] >= 1
+        # …but no rows inserted
+        assert result["total_rows"] == 0
+
+        # Walk every captured SQL call: not one INSERT INTO should have fired
+        # against an industry table. (CREATE TABLE … AS SELECT for views and
+        # samples is a different pattern; we only flag bare INSERT INTO.)
+        all_sql = []
+        for call in mock_sql.call_args_list:
+            args = call[0]
+            if len(args) >= 3:
+                all_sql.append(str(args[2]).upper())
+        for call in mock_parallel.call_args_list:
+            kwargs = call[1] if len(call) > 1 else {}
+            args = call[0]
+            queries = kwargs.get("queries") or (args[2] if len(args) >= 3 else [])
+            for q in queries or []:
+                all_sql.append(str(q).upper())
+        insert_calls = [s for s in all_sql if s.lstrip().startswith("INSERT INTO")]
+        assert insert_calls == [], f"schema_only run still issued {len(insert_calls)} INSERT INTO statements"
+
+    @patch("src.demo_generator.execute_sql_parallel")
+    @patch("src.demo_generator.execute_sql")
     def test_progress_dict_updated(self, mock_sql, mock_parallel):
         """Progress dict should be updated during generation."""
         mock_sql.return_value = []
@@ -307,6 +351,90 @@ class TestGenerateDemoCatalog:
         # Progress should have been updated with industry info
         assert "current_industry" in progress
         assert "current_phase" in progress
+
+
+class TestQuotaFailFast:
+    """When the Databricks metastore hits its per-metastore table quota
+    (UC_RESOURCE_QUOTA_EXCEEDED, default 500), every subsequent CREATE
+    TABLE in the run will fail with the same error. We must short-circuit
+    on the first quota error rather than logging 20 duplicate ERROR lines
+    — and the raised message must surface remediation steps, not just
+    the raw SDK error."""
+
+    @patch("src.demo_generator.execute_sql_parallel")
+    @patch("src.demo_generator.execute_sql")
+    def test_uc_quota_exceeded_raises_with_remediation(self, mock_sql, mock_parallel):
+        # Mock SQL: every CREATE TABLE raises QUOTA_EXCEEDED
+        def quota_exceeded(_client, _wid, sql, **_kw):
+            if "CREATE TABLE" in sql.upper():
+                raise RuntimeError(
+                    "[RequestId=abc ErrorClass=QUOTA_EXCEEDED.UC_RESOURCE_QUOTA_EXCEEDED] "
+                    "Cannot create 1 Table(s) in Metastore xyz "
+                    "(estimated count: 520, limit: 500)."
+                )
+            return []
+
+        mock_sql.side_effect = quota_exceeded
+        mock_parallel.return_value = []
+        client = MagicMock()
+
+        with pytest.raises(RuntimeError) as exc_info:
+            generate_demo_catalog(
+                client, "wid", "test_cat",
+                industries=["healthcare"],
+                scale_factor=0.001,
+                batch_size=5000,
+                medallion=False,
+                create_functions=False,
+                create_volumes=False,
+            )
+        msg = str(exc_info.value)
+        # Hard-stop message references the underlying cause
+        assert "table quota exceeded" in msg.lower()
+        # And surfaces concrete remediation steps so users don't just see
+        # the opaque QUOTA_EXCEEDED.UC_RESOURCE_QUOTA_EXCEEDED string
+        assert "DROP CATALOG" in msg
+        assert "metastore" in msg.lower()
+
+    @patch("src.demo_generator.execute_sql_parallel")
+    @patch("src.demo_generator.execute_sql")
+    def test_only_first_quota_failure_attempted(self, mock_sql, mock_parallel):
+        """The orchestrator must NOT keep trying to create the remaining
+        tables after the first quota error — that's the noise pattern
+        we're fixing. With 20 tables in healthcare and quota-exceeded
+        on every CREATE, only ONE CREATE TABLE call should fire before
+        the run aborts."""
+        create_count = {"n": 0}
+
+        def quota_exceeded(_client, _wid, sql, **_kw):
+            if "CREATE TABLE" in sql.upper():
+                create_count["n"] += 1
+                raise RuntimeError(
+                    "QUOTA_EXCEEDED.UC_RESOURCE_QUOTA_EXCEEDED Cannot create 1 Table(s)"
+                )
+            return []
+
+        mock_sql.side_effect = quota_exceeded
+        mock_parallel.return_value = []
+        client = MagicMock()
+
+        with pytest.raises(RuntimeError, match="quota exceeded"):
+            generate_demo_catalog(
+                client, "wid", "test_cat",
+                industries=["healthcare"],
+                scale_factor=0.001,
+                batch_size=5000,
+                medallion=False,
+                create_functions=False,
+                create_volumes=False,
+            )
+        # Healthcare has 20 tables. Without fail-fast, all 20 CREATE TABLE
+        # calls would fire and produce 20 ERROR log lines. With fail-fast,
+        # only the first table's CREATE is attempted before we abort.
+        assert create_count["n"] == 1, (
+            f"expected exactly 1 CREATE TABLE attempt before fail-fast, "
+            f"got {create_count['n']} — we're back to the doomed-loop pattern"
+        )
 
 
 # ---------------------------------------------------------------------------

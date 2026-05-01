@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,10 +47,10 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function CertificationsPage() {
-  const [certifications, setCertifications] = useState<any[]>([]);
+  const [certifications, setCertifications] = usePersistedState<any[]>("dq-certifications", []);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = usePersistedState<string>("dq-certifications-status-filter", "All");
 
   // Form state
   const [catalog, setCatalog] = useState("");
@@ -59,7 +60,11 @@ export default function CertificationsPage() {
   const [reviewFrequency, setReviewFrequency] = useState("quarterly");
   const [expiryDate, setExpiryDate] = useState("");
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (certifications && certifications.length > 0) { setLoading(false); return; }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     setLoading(true);

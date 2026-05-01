@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,16 +16,23 @@ import {
 
 export default function GovernanceOverview() {
   const [loading, setLoading] = useState(true);
-  const [glossaryCount, setGlossaryCount] = useState(0);
-  const [certifications, setCertifications] = useState<any[]>([]);
-  const [dqResults, setDqResults] = useState<any[]>([]);
-  const [slaStatus, setSlaStatus] = useState<any>({});
-  const [changes, setChanges] = useState<any[]>([]);
-  const [odcsContracts, setOdcsContracts] = useState<any[]>([]);
+  // Overview data persists across navigation — auto-load skipped when cached.
+  const [glossaryCount, setGlossaryCount] = usePersistedState<number>("gov-glossary-count", 0);
+  const [certifications, setCertifications] = usePersistedState<any[]>("gov-certifications", []);
+  const [dqResults, setDqResults] = usePersistedState<any[]>("gov-dq-results", []);
+  const [slaStatus, setSlaStatus] = usePersistedState<any>("gov-sla-status", {});
+  const [changes, setChanges] = usePersistedState<any[]>("gov-changes", []);
+  const [odcsContracts, setOdcsContracts] = usePersistedState<any[]>("gov-odcs-contracts", []);
   const [initStatus, setInitStatus] = useState("");
 
   useEffect(() => {
+    if ((certifications && certifications.length > 0) || (dqResults && dqResults.length > 0)
+        || (changes && changes.length > 0) || (odcsContracts && odcsContracts.length > 0)) {
+      setLoading(false);
+      return;
+    }
     initAndLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function initAndLoad() {

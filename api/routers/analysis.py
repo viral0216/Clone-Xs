@@ -14,7 +14,10 @@ from api.models.analysis import (
     ResultsProfileRequest,
     SchemaDriftRequest,
     SearchRequest,
+    PermissionsAuditRequest,
     SnapshotRequest,
+    StaleScanRequest,
+    StatsRequest,
     StorageMetricsRequest,
     TableMaintenanceRequest,
     TableProfileRequest,
@@ -36,6 +39,68 @@ async def catalog_diff(req: CatalogPairRequest, client=Depends(get_db_client)):
     wid = req.warehouse_id or get_warehouse_id(config)
     result = compare_catalogs(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
     return result
+
+
+@router.post("/permissions-audit", summary="Audit risky catalog GRANTs")
+async def permissions_audit(req: PermissionsAuditRequest, client=Depends(get_db_client)):
+    """Audit a catalog's GRANTs and surface risky patterns.
+
+    Bulk-queries `<catalog>.information_schema.table_privileges`,
+    classifies each (principal × table × privilege) cluster into
+    CRITICAL / HIGH / MEDIUM / LOW based on:
+      - Whether the principal is a public group (`account users`,
+        `users`).
+      - The blast radius of the privilege (SELECT / MODIFY / ALL).
+      - Whether the target table appears in the optional PII overlay.
+
+    When `pii_intersection: true`, runs `scan_catalog_for_pii` inline
+    first so findings on PII-bearing tables escalate one level. The
+    overlay roughly doubles audit time (~3-5s extra for a 500-table
+    catalog) but is the marquee workflow — tying "who can read this
+    PII column" to "what risk that creates" in one report.
+    """
+    config = await get_app_config()
+    wid = req.warehouse_id or get_warehouse_id(config)
+
+    pii_columns: list[dict] | None = None
+    if req.pii_intersection:
+        from src.pii_detection import scan_catalog_for_pii
+        pii_config = config.get("pii_detection") or {}
+        pii_result = scan_catalog_for_pii(
+            client, wid, req.source_catalog, req.exclude_schemas,
+            sample_data=False, pii_config=pii_config or None,
+            read_uc_tags=False, save_history=False,
+        )
+        pii_columns = pii_result.get("columns") or []
+
+    from src.permissions_audit import audit_catalog_permissions
+    return audit_catalog_permissions(
+        client, wid, req.source_catalog,
+        pii_columns=pii_columns,
+        exclude_schemas=req.exclude_schemas,
+    )
+
+
+@router.post("/diff-detail", summary="Detailed catalog diff (presence + column drift + size delta)")
+async def catalog_diff_detail(req: CatalogPairRequest, client=Depends(get_db_client)):
+    """Detailed cross-catalog diff combining presence/absence + drift.
+
+    Returns the existing `/diff` shape (schemas/tables/views/functions/
+    volumes presence per object type) plus a `drift` list of common
+    tables that differ in column shape or size, plus a `summary`
+    rollup the UI uses for headline cards. Faster than calling `/diff`
+    + `/compare` separately because it runs one bulk query per side.
+
+    Failure isolation: if either bulk metadata query fails (e.g. one
+    side lacks `table_properties`), the presence/absence diff still
+    surfaces with `drift: []` and the failure under `drift_errors`.
+    """
+    from src.catalog_diff_detail import compare_catalogs_detailed
+    config = await get_app_config()
+    wid = req.warehouse_id or get_warehouse_id(config)
+    return compare_catalogs_detailed(
+        client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas,
+    )
 
 
 @router.post("/compare", summary="Deep column-level comparison")
@@ -102,34 +167,107 @@ async def schema_drift(req: SchemaDriftRequest, client=Depends(get_db_client)):
 
 
 @router.post("/stats", summary="Catalog statistics")
-async def catalog_stats(req: CatalogRequest, client=Depends(get_db_client)):
+async def catalog_stats(req: StatsRequest, client=Depends(get_db_client)):
     """Get catalog statistics — sizes, row counts, file counts, and top tables.
 
-    Runs `COUNT(*)`, `DESCRIBE DETAIL`, and column metadata queries in parallel
-    across all tables. Returns per-schema breakdown and top 10 by size/rows.
+    Single-catalog mode (default — pass `source_catalog: str`):
+    - `fast=false` (default): runs `COUNT(*)`, `DESCRIBE DETAIL`, and
+      column metadata queries in parallel across all tables. Returns
+      per-schema breakdown and top 10 by size / rows. Slow on large
+      catalogs (~30-90s for 500 tables) but exact.
+    - `fast=true`: serves the bulk `information_schema` path — same
+      response shape, ~1-3 second latency for any catalog size.
+
+    Multi-catalog mode (pass `source_catalogs: list[str]`):
+    - Fans the per-catalog stats query out across the listed catalogs
+      in parallel (max 5 concurrent). Returns one merged response with
+      every `tables[]` row stamped with its owning catalog, summed
+      aggregate totals, and a `per_catalog` rollup. One catalog's
+      failure (auth, deleted) doesn't abort — the response carries an
+      `errors` list with per-catalog details.
+    - The Catalog Explorer page's Multi toggle uses this with
+      `fast=true` for sub-3-second cross-catalog audits.
     """
-    from src.stats import catalog_stats
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
+    # Multi-catalog path takes priority when source_catalogs is provided.
+    if req.source_catalogs:
+        from src.stats_multi import catalog_stats_multi
+        result = catalog_stats_multi(
+            client, wid, req.source_catalogs, req.exclude_schemas, fast=req.fast,
+        )
+    elif req.fast:
+        from src.stats_fast import catalog_stats_fast
+        result = catalog_stats_fast(client, wid, req.source_catalog, req.exclude_schemas)
+    else:
+        from src.stats import catalog_stats
+        result = catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
+
+    # Opportunistic time-series snapshot — best-effort, never breaks /stats.
+    # Drives the 30-day trend chart on the Catalog Explorer's multi
+    # Overview tab. Idempotent by (date, catalog) — re-clicking Explore
+    # the same day overwrites today's row instead of duplicating.
+    try:
+        from src.catalog_size_history import record_snapshots_from_stats
+        record_snapshots_from_stats(client, wid, config, result)
+    except Exception:
+        pass
     return result
+
+
+@router.get("/catalog-size-history", summary="Per-catalog daily size trend")
+async def catalog_size_history(
+    catalogs: str | None = None, days: int = 30,
+    client=Depends(get_db_client),
+):
+    """Read back per-catalog daily size snapshots over the last N days.
+
+    Snapshots are written opportunistically by `POST /stats` whenever
+    the user clicks Explore — so the trend chart only has data for
+    catalogs people have actually looked at recently. First-time users
+    see an empty array, which the UI renders as "no history yet".
+
+    Args:
+        catalogs: Optional comma-separated list to restrict to specific
+            catalogs (e.g. `?catalogs=prod_us,prod_eu`). Defaults to all.
+        days: Look-back window (1..365, default 30).
+    """
+    from src.catalog_size_history import get_history
+    config = await get_app_config()
+    wid = get_warehouse_id(config)
+    cats = [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else None
+    return {
+        "rows": get_history(client, wid, config, catalogs=cats, days=days),
+        "days": days,
+    }
 
 
 @router.post("/search", summary="Search tables and columns")
 async def search_catalog(req: SearchRequest, client=Depends(get_db_client)):
     """Search for tables and columns matching a regex pattern.
 
-    Searches table names by default. Set `search_columns=true` to also
-    search column names (e.g., find all columns containing "email").
+    Single catalog (default — `source_catalog` set): searches table
+    names by default; `search_columns=true` also searches column names.
+
+    Multi-catalog (`source_catalogs: list[str]`): fans the per-catalog
+    search out across the listed catalogs in parallel and merges
+    matches. Each row is stamped with its owning `catalog`. One
+    catalog's failure (auth, missing) doesn't abort — the response
+    carries an `errors` list with per-catalog details.
     """
-    from src.search import search_tables
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = search_tables(
+    if req.source_catalogs:
+        from src.search_multi import search_tables_multi
+        return search_tables_multi(
+            client, wid, req.source_catalogs, req.pattern,
+            req.exclude_schemas, search_columns=req.search_columns,
+        )
+    from src.search import search_tables
+    return search_tables(
         client, wid, req.source_catalog, req.pattern,
         req.exclude_schemas, search_columns=req.search_columns,
     )
-    return result
 
 
 @router.post("/profile", summary="Data quality profiling")
@@ -198,6 +336,7 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     result = estimate_clone_cost(
         client, wid, req.source_catalog, req.exclude_schemas,
         include_schemas=req.include_schemas, price_per_gb=req.price_per_gb,
+        destination_catalog=req.destination_catalog,
     )
     return result
 
@@ -222,6 +361,52 @@ async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_clie
         deep_analyze=req.deep_analyze,
     )
     return result
+
+
+@router.post("/stale-scan", summary="Detect stale & orphan tables")
+async def stale_scan(req: StaleScanRequest, client=Depends(get_db_client)):
+    """Scan a catalog (or several) for stale & orphan tables.
+
+    Joins per-table stats (`information_schema` size + ANALYZE-derived
+    rows) with read activity (`system.access.audit`, 90-day window) and
+    classifies each table into HIGH / MEDIUM / LOW risk plus a
+    suggested action (Run OPTIMIZE / Review for drop / OPTIMIZE then
+    VACUUM, …). v1 is read-only — `DROP` is out of scope; the UI's
+    bulk action buttons hit the existing `POST /optimize` and
+    `POST /vacuum` endpoints.
+
+    Single mode (`source_catalog: str`): direct call into
+    `src.stale_detection.detect_stale_tables`.
+
+    Multi mode (`source_catalogs: list[str]`): fans the scan out across
+    the listed catalogs in parallel (max 3 concurrent) and returns one
+    merged response with each finding stamped with its owning catalog,
+    summed `summary` counts, and a `per_catalog` rollup. One catalog's
+    failure (auth on system.access.audit, missing) doesn't abort — the
+    response carries an `errors` list with per-catalog details.
+    """
+    config = await get_app_config()
+    wid = req.warehouse_id or get_warehouse_id(config)
+
+    if req.source_catalogs:
+        from src.stale_detection_multi import detect_stale_tables_multi
+        return detect_stale_tables_multi(
+            client, wid, req.source_catalogs,
+            days_threshold=req.days_threshold,
+            min_age_days=req.min_age_days,
+            min_size_bytes=req.min_size_bytes,
+            exclude_schemas=req.exclude_schemas,
+            check_small_files=req.check_small_files,
+        )
+    from src.stale_detection import detect_stale_tables
+    return detect_stale_tables(
+        client, wid, req.source_catalog,
+        days_threshold=req.days_threshold,
+        min_age_days=req.min_age_days,
+        min_size_bytes=req.min_size_bytes,
+        exclude_schemas=req.exclude_schemas,
+        check_small_files=req.check_small_files,
+    )
 
 
 @router.post("/optimize", summary="OPTIMIZE selected tables")

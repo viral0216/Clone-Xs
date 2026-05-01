@@ -53,8 +53,15 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "AI Rules",
+    items: [
+      { href: "/governance/nl-rules", label: "NL Rule Builder", icon: Search },
+    ],
+  },
+  {
     title: "Compliance",
     items: [
+      { href: "/compliance/frameworks", label: "Frameworks", icon: Award },
       { href: "/governance/rtbf", label: "RTBF / Erasure", icon: UserX },
       { href: "/governance/dsar", label: "DSAR / Access", icon: Download },
     ],

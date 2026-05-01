@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useVolumes } from "@/hooks/useApi";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import {
@@ -21,16 +23,18 @@ function DestinationCatalogPicker({ value, onChange, isNewCatalog, onIsNewChange
   location: string;
   onLocationChange: (v: string) => void;
 }) {
-  const [catalogs, setCatalogs] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setLoading(true);
-    api.get<string[]>("/catalogs")
-      .then((data) => setCatalogs(data || []))
-      .catch(() => setCatalogs([]))
-      .finally(() => setLoading(false));
-  }, []);
+  // Catalogs list cached via TanStack Query so navigating away and back
+  // doesn't re-query Databricks.
+  const catalogsQuery = useQuery<string[]>({
+    queryKey: ["create-job", "catalogs"],
+    queryFn: async () => {
+      const data = await api.get<string[]>("/catalogs");
+      return Array.isArray(data) ? data : [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const catalogs = catalogsQuery.data ?? [];
+  const loading = catalogsQuery.isLoading;
 
   const selectClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
@@ -201,21 +205,24 @@ export default function CreateJobPage() {
 
   const [loading, setLoading] = useState(false);
   const [runAfterCreate, setRunAfterCreate] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  // Submit result persists across navigation — the user can come back to see
+  // the job URL/run ID without resubmitting.
+  const [result, setResult] = usePersistedState<any>("create-job-result", null);
   const [error, setError] = useState<string | null>(null);
 
   const volumes = useVolumes();
 
-  // Load Clone-Xs jobs for the dropdown
-  const [cloneJobs, setCloneJobs] = useState<{ job_id: number; job_name: string }[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(false);
-  useEffect(() => {
-    setJobsLoading(true);
-    api.get<{ job_id: number; job_name: string }[]>("/generate/clone-jobs")
-      .then((data) => setCloneJobs(Array.isArray(data) ? data : []))
-      .catch(() => setCloneJobs([]))
-      .finally(() => setJobsLoading(false));
-  }, []);
+  // Load Clone-Xs jobs for the dropdown — cached so revisits are instant.
+  const cloneJobsQuery = useQuery<{ job_id: number; job_name: string }[]>({
+    queryKey: ["create-job", "clone-jobs"],
+    queryFn: async () => {
+      const data = await api.get<{ job_id: number; job_name: string }[]>("/generate/clone-jobs");
+      return Array.isArray(data) ? data : [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const cloneJobs = cloneJobsQuery.data ?? [];
+  const jobsLoading = cloneJobsQuery.isLoading;
 
   const handleSubmit = async () => {
     if (!sourceCatalog || !destCatalog) {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { ClipboardCheck, CheckCircle2, XCircle } from "lucide-react";
 
 export default function DQResultsPage() {
   const [results, setResults] = usePersistedState<any[]>("gov-dq-results", []);
-  const [sevFilter, setSevFilter] = useState("");
+  const [sevFilter, setSevFilter] = usePersistedState<string>("gov-dq-results-severity-filter", "");
 
   useEffect(() => { api.get("/governance/dq/results").then(d => setResults(Array.isArray(d) ? d : [])).catch(() => {}); }, []);
 

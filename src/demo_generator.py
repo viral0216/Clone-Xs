@@ -990,6 +990,16 @@ def generate_demo_catalog(
     create_volumes: bool = True,
     start_date: str = "2020-01-01",
     end_date: str = "2025-01-01",
+    schema_only: bool = False,
+    realistic_data: bool = False,
+    locale: str = "en_US",
+    seed: int | None = None,
+    validate_referential_integrity: bool = True,
+    dq_profile: str = "realistic",
+    anomaly_rate: float = 0.02,
+    inject_anomalies: bool = True,
+    custom_industries: list[str] | None = None,
+    data_model: str = "flat",
     progress_dict: dict | None = None,
 ) -> dict:
     """Generate a demo catalog with realistic synthetic data.
@@ -1005,6 +1015,19 @@ def generate_demo_catalog(
         max_workers: Parallel SQL workers.
         storage_location: Optional managed location for catalog.
         drop_existing: Drop existing catalog first.
+        schema_only: When True, create catalog/schemas/tables/views/UDFs but
+            skip every INSERT statement (and any post-population step that
+            mutates data — DQ injection, version history, seasonal patterns,
+            volume CSV writes). Cuts generation time from minutes/hours to
+            seconds; used for DDL template verification and CI smoke.
+        realistic_data: When True, replace the small static name / email /
+            phone pools embedded in INSERT expressions with Faker-generated
+            locale-aware pools. See ``src/demo_faker.py``. Off by default to
+            preserve test fixtures that match legacy values.
+        locale: Faker locale (e.g. ``en_US``, ``en_GB``, ``de_DE``). Only
+            consulted when ``realistic_data`` is True.
+        seed: Optional seed for deterministic Faker output. None = non-
+            deterministic (each generation produces a different pool).
 
     Returns:
         Summary dict with counts and timing.
@@ -1032,8 +1055,28 @@ def generate_demo_catalog(
             raise
         raise ValueError(f"Invalid date format — use YYYY-MM-DD. start_date={start_date}, end_date={end_date}")
 
+    # Theme 4c — load + merge custom YAML industries BEFORE the validation
+    # below, so users can pass `industries=["my_custom_one"]` and have it
+    # accepted when accompanied by `custom_industries=["~/.clone-xs/aerospace.yaml"]`.
+    # We mutate the module-level INDUSTRIES dict in place; cleanup happens on
+    # the success path right before `return result`. On exception, the custom
+    # industry sticks around in INDUSTRIES until process restart — acceptable
+    # since (a) the JobManager runs jobs serially per process and (b) the
+    # alternative (try/finally) requires indenting 500+ lines of orchestrator
+    # body. Documented as a known limitation in the demo-data guide.
+    _added_industry_keys: list[str] = []
+    if custom_industries:
+        from src.demo_industry_loader import load_yaml_industries
+        loaded = load_yaml_industries(custom_industries)
+        for name, idef in loaded.items():
+            if name in INDUSTRIES:
+                raise ValueError(f"Custom industry {name!r} clashes with a built-in")
+            INDUSTRIES[name] = idef
+            _added_industry_keys.append(name)
+            ALL_INDUSTRIES.append(name)
+
     if industries is None:
-        industries = ALL_INDUSTRIES
+        industries = list(ALL_INDUSTRIES)
     else:
         invalid = [i for i in industries if i not in INDUSTRIES]
         if invalid:
@@ -1096,6 +1139,10 @@ def generate_demo_catalog(
                 progress_dict=progress_dict,
                 create_functions=create_functions,
                 start_date=start_date,
+                schema_only=schema_only,
+                realistic_data=realistic_data,
+                locale=locale,
+                seed=seed,
             )
             result["schemas_created"] += 1
             result["tables_created"] += counts["tables"]
@@ -1103,6 +1150,14 @@ def generate_demo_catalog(
             result["udfs_created"] += counts["udfs"]
             result["total_rows"] += counts["rows"]
         except Exception as e:
+            err = str(e)
+            # Per-industry failures get logged + carried in `result["errors"]`
+            # so the rest of the run can still produce something useful.
+            # Metastore-level quota errors are NOT per-industry — every
+            # subsequent industry will hit the same wall — so they bubble
+            # all the way out to abort the job with a clear message.
+            if "QUOTA_EXCEEDED" in err and "UC_RESOURCE_QUOTA_EXCEEDED" in err:
+                raise
             logger.error(f"Error generating {industry}: {e}")
             result["errors"].append(f"{industry}: {e}")
 
@@ -1342,21 +1397,54 @@ def generate_demo_catalog(
         except Exception:
             pass  # Best effort — FK may already exist or columns mismatch
 
-    # 4d: Data quality issues (intentional nulls, duplicates, outliers)
-    logger.info("  Injecting data quality issues...")
-    for industry in industries:
-        try:
-            _inject_data_quality_issues(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry])
-        except Exception as e:
-            logger.warning(f"  DQ injection for {industry}: {e}")
+    # 4d: Data quality issues (intentional nulls, duplicates, outliers).
+    # Rates come from the named profile (`clean` / `realistic` / `dirty`)
+    # in src.demo_anomalies.DQ_PROFILES; the `clean` profile is a no-op.
+    if schema_only:
+        logger.info("  [schema_only] Skipping data quality injection")
+    else:
+        logger.info(f"  Injecting data quality issues (profile={dq_profile})...")
+        for industry in industries:
+            try:
+                _inject_data_quality_issues(
+                    client, warehouse_id, catalog_name, industry, INDUSTRIES[industry],
+                    dq_profile=dq_profile,
+                )
+            except Exception as e:
+                logger.warning(f"  DQ injection for {industry}: {e}")
+
+    # 4d-bis: Labeled anomaly / training-target columns
+    # (`is_fraud`, `churn_risk`, `is_anomaly`). Added on the fact tables in
+    # src.demo_anomalies._LABELED_COLUMNS at the configured anomaly_rate.
+    # Skipped on schema_only (no rows to update), and when the caller
+    # explicitly turns it off via inject_anomalies=False.
+    if schema_only:
+        logger.info("  [schema_only] Skipping labeled anomaly column injection")
+    elif inject_anomalies:
+        from src.demo_anomalies import inject_labeled_anomalies
+        logger.info(f"  Injecting labeled anomaly columns (rate={anomaly_rate:.1%})...")
+        result["anomalies"] = []
+        for industry in industries:
+            try:
+                report = inject_labeled_anomalies(
+                    client, warehouse_id, catalog_name, industry,
+                    anomaly_rate=anomaly_rate,
+                )
+                if report.get("added"):
+                    result["anomalies"].extend(report["added"])
+            except Exception as e:
+                logger.warning(f"  Anomaly column injection for {industry}: {e}")
 
     # 4e: Delta version history (UPDATEs to create time travel versions)
-    logger.info("  Creating Delta version history...")
-    for industry in industries:
-        try:
-            _create_version_history(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry])
-        except Exception as e:
-            logger.warning(f"  Version history for {industry}: {e}")
+    if schema_only:
+        logger.info("  [schema_only] Skipping version history creation")
+    else:
+        logger.info("  Creating Delta version history...")
+        for industry in industries:
+            try:
+                _create_version_history(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry])
+            except Exception as e:
+                logger.warning(f"  Version history for {industry}: {e}")
 
     # 4f: Cross-industry views
     logger.info("  Creating cross-industry views...")
@@ -1365,23 +1453,37 @@ def generate_demo_catalog(
     except Exception as e:
         logger.warning(f"  Cross-industry views: {e}")
 
-    # 4g: Managed volumes with sample files
+    # 4g: Managed volumes with sample files. The volume objects themselves
+    # are pure DDL, but `_create_volumes` also writes sample CSV files via
+    # the Files API — that's a data-mutation step, so it's gated by
+    # schema_only too. The volumes still exist; they're just empty.
     if create_volumes:
-        logger.info("  Creating managed volumes...")
-        for industry in industries:
-            try:
-                _create_volumes(client, warehouse_id, catalog_name, industry)
-            except Exception as e:
-                logger.warning(f"  Volumes for {industry}: {e}")
+        if schema_only:
+            logger.info("  [schema_only] Creating volume DDL only (no sample CSV uploads)")
+            for industry in industries:
+                try:
+                    _create_volumes(client, warehouse_id, catalog_name, industry, write_samples=False)
+                except Exception as e:
+                    logger.warning(f"  Volumes for {industry}: {e}")
+        else:
+            logger.info("  Creating managed volumes...")
+            for industry in industries:
+                try:
+                    _create_volumes(client, warehouse_id, catalog_name, industry)
+                except Exception as e:
+                    logger.warning(f"  Volumes for {industry}: {e}")
     else:
         logger.info("  Skipping volume creation (disabled)")
 
     # 4h: Pre-populate audit logs
-    logger.info("  Pre-populating audit logs...")
-    try:
-        _create_demo_audit_logs(client, warehouse_id, catalog_name, industries)
-    except Exception as e:
-        logger.warning(f"  Audit logs: {e}")
+    if schema_only:
+        logger.info("  [schema_only] Skipping audit log pre-population")
+    else:
+        logger.info("  Pre-populating audit logs...")
+        try:
+            _create_demo_audit_logs(client, warehouse_id, catalog_name, industries)
+        except Exception as e:
+            logger.warning(f"  Audit logs: {e}")
 
     # 4i: Row-level security (column masks on PII columns)
     logger.info("  Applying column masks...")
@@ -1399,11 +1501,17 @@ def generate_demo_catalog(
         except Exception as e:
             logger.warning(f"  Optimize for {industry}: {e}")
 
-    # 4k: Row filters on dimension tables
+    # 4k: Row filters on dimension tables. We track which `<industry>.<table>`
+    # ended up with a row filter so the FK audit (4s) can annotate orphan
+    # warnings — a LEFT JOIN against a row-filtered parent reports
+    # filtered-but-real rows as "orphans" from the current user's view.
+    _row_filtered_tables: set[str] = set()
     logger.info("  Applying row filters...")
     for industry in industries:
         try:
-            _apply_row_filters(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry])
+            filtered = _apply_row_filters(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry])
+            if filtered:
+                _row_filtered_tables.update(filtered)
         except Exception as e:
             logger.warning(f"  Row filters for {industry}: {e}")
 
@@ -1423,12 +1531,15 @@ def generate_demo_catalog(
         logger.warning(f"  Data catalog views: {e}")
 
     # 4n: Seasonal data patterns
-    logger.info("  Applying seasonal data patterns...")
-    for industry in industries:
-        try:
-            _apply_seasonal_patterns(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry], scale_factor=scale_factor)
-        except Exception as e:
-            logger.warning(f"  Seasonal patterns for {industry}: {e}")
+    if schema_only:
+        logger.info("  [schema_only] Skipping seasonal pattern injection (no rows to duplicate)")
+    else:
+        logger.info("  Applying seasonal data patterns...")
+        for industry in industries:
+            try:
+                _apply_seasonal_patterns(client, warehouse_id, catalog_name, industry, INDUSTRIES[industry], scale_factor=scale_factor)
+            except Exception as e:
+                logger.warning(f"  Seasonal patterns for {industry}: {e}")
 
     # 4o: Business-meaningful table comments
     logger.info("  Applying business table comments...")
@@ -1460,6 +1571,48 @@ def generate_demo_catalog(
     except Exception as e:
         logger.warning(f"  Clone template: {e}")
 
+    # 4r-bis: Star Schema modeling layer (Theme: data_model="star_schema").
+    # Layered ON TOP of the existing flat industry tables — CTAS into a
+    # sibling `<industry>_star` schema with fct_/dim_ tables following
+    # DBT-style naming. Skipped on schema_only (creates DDL with zero rows
+    # so downstream permission/grant DDL still works).
+    if data_model == "star_schema":
+        try:
+            from src.demo_models import generate_star_schemas_for_industries
+            star_report = generate_star_schemas_for_industries(
+                client, warehouse_id, catalog_name, industries,
+                start_date=start_date, end_date=end_date,
+                schema_only=schema_only,
+            )
+            result["data_model"] = "star_schema"
+            result["star_schema"] = star_report
+            logger.info(
+                f"  Star Schema: {star_report['facts_created']} facts + "
+                f"{star_report['dims_created']} dims across "
+                f"{len(star_report['schemas_created'])} schemas"
+            )
+        except Exception as e:
+            logger.warning(f"  Star Schema generation failed: {e}")
+
+    # 4s: Referential integrity audit. Cheap (sampled LEFT JOIN per FK) and
+    # high-value: surfaces any drift between FK ranges and parent table sizes
+    # that would otherwise cause silent join failures in downstream demos.
+    # Skipped on schema_only runs (no rows to check).
+    if validate_referential_integrity and not schema_only:
+        try:
+            ri_report = _validate_referential_integrity(
+                client, warehouse_id, catalog_name, industries,
+                row_filtered_tables=_row_filtered_tables,
+            )
+            result["referential_integrity"] = ri_report
+            logger.info(
+                f"  Referential integrity audit: "
+                f"{ri_report['orphan_free']}/{ri_report['checks_run']} FKs orphan-free"
+                + (f", {ri_report['with_orphans']} with orphans" if ri_report['with_orphans'] else "")
+            )
+        except Exception as e:
+            logger.warning(f"  Referential integrity audit failed: {e}")
+
     result["elapsed_seconds"] = round(time.time() - start, 1)
     logger.info(
         f"Demo catalog '{catalog_name}' generated: "
@@ -1467,6 +1620,13 @@ def generate_demo_catalog(
         f"{result['views_created']} views, {result['udfs_created']} UDFs, "
         f"~{result['total_rows']:,} rows in {result['elapsed_seconds']}s"
     )
+
+    # Theme 4c — pop the YAML industries we merged at start. Idempotent on
+    # the next run (re-loaded fresh from the YAML files passed in config).
+    for _k in _added_industry_keys:
+        INDUSTRIES.pop(_k, None)
+        if _k in ALL_INDUSTRIES:
+            ALL_INDUSTRIES.remove(_k)
     return result
 
 
@@ -1474,8 +1634,19 @@ def _generate_industry(
     client, warehouse_id, catalog, industry_name, industry_def,
     scale_factor, batch_size, max_workers, progress_dict=None,
     create_functions=True, start_date: str = "2020-01-01",
+    schema_only: bool = False,
+    realistic_data: bool = False,
+    locale: str = "en_US",
+    seed: int | None = None,
 ):
-    """Generate all objects for a single industry schema."""
+    """Generate all objects for a single industry schema.
+
+    When ``schema_only=True``, tables are still created (DDL emitted) but
+    no INSERTs run — `counts['rows']` will be 0.
+
+    When ``realistic_data=True``, INSERT expressions are rewritten to sample
+    from Faker-generated locale-aware pools (see ``src/demo_faker.py``).
+    """
     schema = f"`{catalog}`.`{industry_name}`"
     fqn_prefix = f"{catalog}.{industry_name}"
 
@@ -1494,10 +1665,34 @@ def _generate_industry(
                 client, warehouse_id, fqn_prefix, tbl_def,
                 scale_factor, batch_size, max_workers, industry_name,
                 start_date=start_date,
+                schema_only=schema_only,
+                realistic_data=realistic_data,
+                locale=locale,
+                seed=seed,
             )
             counts["tables"] += 1
             counts["rows"] += rows
         except Exception as e:
+            err = str(e)
+            # Hitting the metastore-level table quota is a hard stop — every
+            # subsequent CREATE in this run will fail with the same error,
+            # and we'd just produce 20 nearly-identical ERROR lines for no
+            # gain. Short-circuit with a clear actionable message so the
+            # user sees the real problem (workspace quota) at the top of
+            # the log instead of buried after a wall of duplicate errors.
+            if "QUOTA_EXCEEDED" in err and "UC_RESOURCE_QUOTA_EXCEEDED" in err:
+                raise RuntimeError(
+                    f"Databricks Unity Catalog table quota exceeded — your "
+                    f"metastore is at the per-metastore table limit (default 500). "
+                    f"Demo Data Generator aborted after first failure to avoid "
+                    f"flooding the log with duplicate quota errors.\n\n"
+                    f"Fix one of:\n"
+                    f"  1) Free space — drop unused demo catalogs:\n"
+                    f"     `DROP CATALOG demo_quick_old CASCADE`\n"
+                    f"  2) Request a metastore quota increase from Databricks support\n"
+                    f"  3) Pick a different metastore (different workspace) for demos\n\n"
+                    f"Original error: {err}"
+                ) from e
             logger.error(f"  Failed table {tbl_def['name']}: {e}")
 
     if progress_dict is not None:
@@ -1541,8 +1736,22 @@ def _create_and_populate_table(
     client, warehouse_id, schema_prefix, tbl_def,
     scale_factor, batch_size, max_workers, industry_name,
     start_date: str = "2020-01-01",
+    schema_only: bool = False,
+    realistic_data: bool = False,
+    locale: str = "en_US",
+    seed: int | None = None,
 ):
-    """Create a table and populate it with data in batches."""
+    """Create a table and populate it with data in batches.
+
+    With ``schema_only=True``, the CREATE TABLE still runs (so downstream
+    DDL like CHECK constraints and column masks have something to attach
+    to), but the INSERT batches are skipped and 0 rows are returned.
+
+    With ``realistic_data=True``, the per-table ``insert_expr`` is rewritten
+    by ``apply_faker_substitutions`` so name / email / phone literals come
+    from a Faker-driven, locale-aware pool instead of the small hardcoded
+    pools embedded in the INDUSTRIES dict.
+    """
     name = tbl_def["name"]
     fqn = f"{schema_prefix}.{name}"
     target_rows = int(tbl_def["rows"] * scale_factor)
@@ -1575,8 +1784,21 @@ def _create_and_populate_table(
     if target_rows == 0:
         return 0
 
+    if schema_only:
+        logger.info(f"  [schema_only] Skipping {target_rows:,} INSERT rows for {fqn}")
+        return 0
+
     # Fix FK ranges for referential integrity and configurable dates
     insert_expr = _fix_fk_ranges(tbl_def["insert_expr"], industry_name, scale_factor, start_date=start_date)
+
+    # Theme 1 (Realism): rewrite literal name / email / phone pools to use
+    # Faker-driven, locale-aware ones. Off by default so existing test
+    # fixtures matching the legacy "James"/"Mary"/"patient1@example.com"
+    # values keep passing.
+    if realistic_data:
+        from src.demo_faker import apply_faker_substitutions
+        insert_expr = apply_faker_substitutions(insert_expr, locale=locale, seed=seed)
+
     actual_batch = min(batch_size, target_rows)
     num_batches = max(1, (target_rows + actual_batch - 1) // actual_batch)
 
@@ -1840,8 +2062,29 @@ def _get_pii_tables(industry: str) -> dict[str, str]:
     return base.get(industry, {})
 
 
-def _inject_data_quality_issues(client, warehouse_id, catalog, industry, industry_def):
-    """Inject intentional data quality issues for DQ tools to detect."""
+def _inject_data_quality_issues(
+    client, warehouse_id, catalog, industry, industry_def,
+    dq_profile: str = "realistic",
+):
+    """Inject intentional data quality issues for DQ tools to detect.
+
+    `dq_profile` selects from named profiles in `src.demo_anomalies.DQ_PROFILES`:
+    - ``clean``     — no issues injected (for tutorials / unit-test fixtures)
+    - ``realistic`` (default) — 5% null, 1% dup, 0.1% outliers
+    - ``dirty``     — 15% null, 5% dup, 5% outliers (exercises DQ tooling)
+    """
+    from src.demo_anomalies import get_dq_profile
+
+    profile = get_dq_profile(dq_profile)
+    null_rate = profile["null_rate"]
+    dup_count = int(profile["dup_count"])
+    outlier_rate = profile["outlier_rate"]
+
+    if null_rate == 0 and dup_count == 0 and outlier_rate == 0:
+        # `clean` profile — nothing to do. Saves a bunch of UPDATEs that
+        # would otherwise be no-ops.
+        return
+
     tables = industry_def.get("tables", [])
     fqn_prefix = f"{catalog}.{industry}"
     queries = []
@@ -1851,25 +2094,25 @@ def _inject_data_quality_issues(client, warehouse_id, catalog, industry, industr
         fqn = f"{fqn_prefix}.{name}"
         cols = tbl["ddl_cols"]
 
-        # Inject NULLs into string columns (1% of rows)
-        if "status STRING" in cols:
-            queries.append(f"UPDATE {fqn} SET status = NULL WHERE rand() < 0.01")
+        # Inject NULLs into string columns at the profile's null_rate
+        if "status STRING" in cols and null_rate > 0:
+            queries.append(f"UPDATE {fqn} SET status = NULL WHERE rand() < {null_rate}")
 
-        # Inject outliers in numeric columns
-        if "amount" in cols.lower() or "price" in cols.lower():
-            # Find a numeric column
+        # Inject outliers in numeric columns at the profile's outlier_rate
+        if outlier_rate > 0 and ("amount" in cols.lower() or "price" in cols.lower()):
             for col_part in cols.split(","):
                 col_part = col_part.strip()
                 if "amount" in col_part.lower() and ("DECIMAL" in col_part or "DOUBLE" in col_part):
                     col_name = col_part.split()[0]
-                    queries.append(f"UPDATE {fqn} SET {col_name} = {col_name} * 1000 WHERE rand() < 0.001")
+                    queries.append(f"UPDATE {fqn} SET {col_name} = {col_name} * 1000 WHERE rand() < {outlier_rate}")
                     break
 
-        # Inject duplicate-looking rows (insert 100 copies of first row)
-        queries.append(f"""
-            INSERT INTO {fqn}
-            SELECT * FROM {fqn} LIMIT 100
-        """)
+        # Inject duplicate rows at the profile's dup_count
+        if dup_count > 0:
+            queries.append(f"""
+                INSERT INTO {fqn}
+                SELECT * FROM {fqn} LIMIT {dup_count}
+            """)
 
     if queries:
         for q in queries:
@@ -1973,8 +2216,13 @@ def _create_cross_industry_views(client, warehouse_id, catalog, industries):
             logger.warning(f"    Failed cross-industry view {view_name}: {e}")
 
 
-def _create_volumes(client, warehouse_id, catalog, industry):
-    """Create managed volumes with sample data files."""
+def _create_volumes(client, warehouse_id, catalog, industry, write_samples: bool = True):
+    """Create managed volumes with sample data files.
+
+    When ``write_samples=False``, only the volume DDL runs — the sample
+    tables (CTAS from the just-populated source tables) are skipped. Used
+    by ``schema_only`` runs where the source tables are empty.
+    """
     schema = f"`{catalog}`.`{industry}`"
     industry_def = INDUSTRIES.get(industry, {})
     tables = industry_def.get("tables", [])
@@ -1987,8 +2235,12 @@ def _create_volumes(client, warehouse_id, catalog, industry):
         except Exception as e:
             logger.warning(f"    Failed to create volume {vol_name} for {industry}: {e}")
 
-    # Write sample Parquet files to the sample_data volume (top 3 tables, 1000 rows each)
-    # Write sample tables (1000 rows each) for the top 3 tables
+    if not write_samples:
+        return
+
+    # Write sample tables (1000 rows each) for the top 3 tables — CTAS from
+    # the freshly-populated source tables. Skipped on schema_only runs since
+    # the source tables would be empty (no point creating empty samples).
     for tbl in tables[:3]:
         name = tbl["name"]
         try:
@@ -2046,7 +2298,24 @@ def _create_demo_audit_logs(client, warehouse_id, catalog, industries):
             "user_name": random.choice(["admin@company.com", "data-eng@company.com", "platform@company.com"]),
         })
 
-    # Insert into run_logs (if table exists)
+    # Probe once with a cheap SELECT — if the audit table doesn't exist
+    # (common when audit_trail.catalog hasn't been provisioned), skip the
+    # whole loop instead of emitting 20 identical TABLE_OR_VIEW_NOT_FOUND
+    # warnings. This was the noisy log pattern in real runs.
+    try:
+        execute_sql(client, warehouse_id, f"SELECT 1 FROM {run_logs_fqn} LIMIT 0")
+    except Exception as e:
+        if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "cannot be found" in str(e):
+            logger.info(
+                f"    Audit log table {run_logs_fqn} not present — skipping "
+                f"demo audit insert (set up edp_dev.logging or update "
+                f"audit_trail config to enable)"
+            )
+            return
+        # Some other error (auth, transient) — fall through and let the
+        # per-row INSERT loop surface it.
+
+    inserted = 0
     for op in fake_ops:
         sql = f"""
             INSERT INTO {run_logs_fqn}
@@ -2061,11 +2330,12 @@ def _create_demo_audit_logs(client, warehouse_id, catalog, industries):
         """
         try:
             execute_sql(client, warehouse_id, sql)
+            inserted += 1
         except Exception as e:
             logger.warning(f"    Audit log insert failed: {e}")
             continue  # Don't stop — try remaining entries
-
-    logger.info(f"    Inserted {len(fake_ops)} demo audit log entries")
+    if inserted:
+        logger.info(f"    Inserted {inserted} demo audit log entries")
 
 
 def _apply_column_masks(client, warehouse_id, catalog, industry, industry_def):
@@ -2149,9 +2419,16 @@ def _optimize_tables(client, warehouse_id, catalog, industry, industry_def):
 
 
 def _apply_row_filters(client, warehouse_id, catalog, industry, industry_def):
-    """Create row filter functions and apply to dimension tables with state/region columns."""
+    """Create row filter functions and apply to dimension tables with state/region columns.
+
+    Returns a set of fully-qualified table names that received a row filter,
+    so callers (e.g. the FK integrity audit) can annotate their warnings —
+    LEFT JOIN against a row-filtered parent table reports filtered-but-real
+    rows as "orphans" from the current user's perspective.
+    """
     fqn_prefix = f"{catalog}.{industry}"
     tables = industry_def.get("tables", [])
+    filtered_tables: set[str] = set()
 
     # Find dimension tables (rows <= 1M) that have a 'state' or 'country' column
     for tbl in tables:
@@ -2177,9 +2454,12 @@ def _apply_row_filters(client, warehouse_id, catalog, industry, industry_def):
             execute_sql(client, warehouse_id,
                 f"ALTER TABLE {fqn_prefix}.{tbl['name']} SET ROW FILTER {fqn_prefix}.{func_name} ON ({filter_col})")
             logger.info(f"    Row filter: {fqn_prefix}.{tbl['name']} on {filter_col}")
+            filtered_tables.add(f"{industry}.{tbl['name']}")
         except Exception as e:
             logger.warning(f"    Could not set row filter on {tbl['name']}: {e}")
         break  # Only 1 per industry to avoid lock contention
+
+    return filtered_tables
 
 
 def _add_scd2_columns(client, warehouse_id, catalog, industry, industry_def):
@@ -2319,6 +2599,50 @@ def cleanup_demo_catalog(client, warehouse_id, catalog_name):
 
 # FK column → dimension table row count mapping per industry
 # Used to ensure FK values fall within valid PK ranges
+# FK relationship registry — maps each foreign key to the parent table it
+# references. Used for two things:
+#   1. Post-generation integrity validation (`_validate_referential_integrity`)
+#      runs LEFT JOIN orphan checks across these.
+#   2. The `/preview` endpoint and FK relationship diagram on the result page
+#      use this to show users which tables join to which (Theme 4).
+#
+# Format: industry → list of (child_table, fk_column, parent_table, parent_pk)
+# Add only the cross-table FKs that map to a real parent in INDUSTRIES; many
+# FK columns (e.g. `payer_id`) reference small reference dims that aren't
+# materialised as separate tables — those are intentionally NOT listed here
+# (orphan check would always fail).
+_FK_RELATIONSHIPS: dict[str, list[tuple[str, str, str, str]]] = {
+    "healthcare": [
+        ("encounters", "patient_id", "patients", "patient_id"),
+        ("encounters", "provider_id", "providers", "provider_id"),
+        ("encounters", "facility_id", "facilities", "facility_id"),
+        ("claims", "patient_id", "patients", "patient_id"),
+        ("claims", "provider_id", "providers", "provider_id"),
+        ("claims", "facility_id", "facilities", "facility_id"),
+        ("prescriptions", "patient_id", "patients", "patient_id"),
+        ("prescriptions", "provider_id", "providers", "provider_id"),
+        ("vitals", "patient_id", "patients", "patient_id"),
+        ("lab_results", "patient_id", "patients", "patient_id"),
+    ],
+    "financial": [
+        ("transactions", "account_id", "accounts", "account_id"),
+        ("transactions", "merchant_id", "merchants", "merchant_id"),
+        ("accounts", "customer_id", "customers", "customer_id"),
+        ("loans", "customer_id", "customers", "customer_id"),
+        ("cards", "account_id", "accounts", "account_id"),
+    ],
+    "retail": [
+        ("orders", "customer_id", "customers", "customer_id"),
+        ("orders", "store_id", "stores", "store_id"),
+        ("order_items", "product_id", "products", "product_id"),
+    ],
+    "telecom": [
+        ("cdr_records", "subscriber_id", "subscribers", "subscriber_id"),
+        ("subscribers", "plan_id", "plans", "plan_id"),
+    ],
+}
+
+
 _FK_DIM_ROWS = {
     "healthcare": {"patient_id": 1_000_000, "provider_id": 1_000_000, "facility_id": 1_000_000, "pharmacy_id": 200_000, "plan_id": 1_000_000, "payer_id": 100},
     "financial": {"account_id": 1_000_000, "customer_id": 1_000_000, "card_id": 1_000_000, "loan_id": 1_000_000, "merchant_id": 500_000, "branch_id": 1_000_000},
@@ -2355,6 +2679,200 @@ def _fix_fk_ranges(insert_expr: str, industry_name: str, scale_factor: float, st
         result = result.replace("'2015-01-01'", f"'{start_date}'")  # Some dim tables use older dates
 
     return result
+
+
+def preview_demo_catalog(config: dict) -> dict:
+    """Compute the per-industry row count / size / duration estimate for a
+    given DemoDataRequest config — without generating anything.
+
+    Pure function: reads the scale_factor and selected industries from
+    `config`, multiplies through the static `INDUSTRIES` table_def row counts,
+    estimates bytes (rough average row width × rowcount), and estimates a
+    wall-clock duration based on a hand-tuned per-industry ingest rate.
+
+    Used by `POST /generate/demo-data/preview` to power the live preview
+    tile on /demo-data so users see how big a 1.0-scale generation will be
+    before submitting. Also used standalone by the `clxs preview` CLI path.
+    """
+    # Distinguish "key absent" from "explicit empty list":
+    # - missing → preview every industry (caller hasn't picked yet)
+    # - []      → preview nothing (caller deselected everything)
+    if "industries" in config:
+        industries = list(config["industries"])
+    else:
+        industries = list(INDUSTRIES)
+    scale_factor = float(config.get("scale_factor", 1.0))
+
+    # Rough per-industry-row byte width (average across all tables in the
+    # industry — derived empirically from the demo_quick benchmark). Errs
+    # on the high side so the cost-tile doesn't underestimate.
+    _AVG_ROW_BYTES = {
+        "healthcare": 220,
+        "financial": 180,
+        "retail": 150,
+        "telecom": 140,
+        "manufacturing": 200,
+        "energy": 160,
+        "education": 180,
+        "real_estate": 240,
+        "logistics": 200,
+        "insurance": 220,
+    }
+    # Sustained ingest rate per industry — Spark warehouse, S/M cluster,
+    # full DEEP CLONE / CTAS write path. Used to convert rowcount to ETA.
+    _ROWS_PER_SEC = 1_500_000
+
+    per_industry: list[dict] = []
+    total_rows = 0
+    total_bytes = 0
+
+    for industry in industries:
+        idef = INDUSTRIES.get(industry)
+        if idef is None:
+            continue
+        tables = idef.get("tables", [])
+        rows = sum(int(t["rows"] * scale_factor) for t in tables)
+        avg_w = _AVG_ROW_BYTES.get(industry, 180)
+        bytes_est = rows * avg_w
+        per_industry.append({
+            "industry": industry,
+            "tables": len(tables),
+            "rows": rows,
+            "estimated_bytes": bytes_est,
+            "estimated_duration_seconds": round(rows / _ROWS_PER_SEC, 1) if rows else 0.0,
+        })
+        total_rows += rows
+        total_bytes += bytes_est
+
+    # Cost estimate: $0.023/GB-month storage + $0.40/DBU compute (rough,
+    # serverless SQL pricing). Storage cost is amortised — preview reports
+    # the one-month-resident cost.
+    storage_gb = total_bytes / (1024 ** 3)
+    monthly_storage_cost = round(storage_gb * 0.023, 2)
+    # Compute: ~1 DBU per ~10 GB written for CTAS+CLONE pattern.
+    estimated_dbu = max(0.1, storage_gb / 10)
+    compute_cost = round(estimated_dbu * 0.40, 2)
+
+    return {
+        "scale_factor": scale_factor,
+        "schema_only": bool(config.get("schema_only")),
+        "per_industry": per_industry,
+        "total_rows": total_rows,
+        "total_bytes": total_bytes,
+        "total_gb": round(storage_gb, 2),
+        "estimated_duration_seconds": round(total_rows / _ROWS_PER_SEC, 1) if total_rows else 0.0,
+        "estimated_cost_usd": {
+            "monthly_storage": monthly_storage_cost,
+            "one_time_compute": compute_cost,
+            "first_month_total": round(monthly_storage_cost + compute_cost, 2),
+        },
+    }
+
+
+def _validate_referential_integrity(
+    client, warehouse_id: str, catalog: str, industries: list[str],
+    sample_limit: int = 100_000,
+    row_filtered_tables: set[str] | None = None,
+) -> dict:
+    """Post-generation orphan check across the FK registry.
+
+    For each (child, fk, parent, parent_pk) tuple in `_FK_RELATIONSHIPS`,
+    runs a sampled `LEFT JOIN ... WHERE parent.pk IS NULL` and reports the
+    orphan count. Sampling caps the child-side rowcount at `sample_limit`
+    so the validation is bounded even for billion-row fact tables.
+
+    Returns a dict shaped like the FK relationship diagram the UI renders:
+
+        {
+          "checks_run": int,
+          "orphan_free": int,    # number of FKs with 0 orphans
+          "with_orphans": int,
+          "details": [
+            {"industry", "child", "fk", "parent", "parent_pk",
+             "child_sampled", "orphans", "orphan_pct",
+             "parent_has_row_filter": bool},
+            ...
+          ],
+        }
+
+    `row_filtered_tables` is a set of `"<industry>.<table>"` strings
+    listing parent tables that have a UC row filter applied. The audit
+    LEFT JOINs through the filter (it runs as the same caller), so
+    filtered-but-real rows show up as "orphans" — we annotate the
+    warning with `(row filter likely)` when the orphan rate is high
+    on a filtered parent so users don't chase a phantom data bug.
+
+    Per-FK exceptions are captured in `details[i]["error"]` rather than
+    raised, so a single bad query doesn't abort the whole audit.
+    """
+    row_filtered_tables = row_filtered_tables or set()
+    details: list[dict] = []
+    orphan_free = 0
+    with_orphans = 0
+
+    for industry in industries:
+        for child, fk, parent, parent_pk in _FK_RELATIONSHIPS.get(industry, []):
+            child_fqn = f"`{catalog}`.`{industry}`.`{child}`"
+            parent_fqn = f"`{catalog}`.`{industry}`.`{parent}`"
+            sql = (
+                f"WITH child_sample AS ("
+                f"  SELECT `{fk}` FROM {child_fqn} LIMIT {sample_limit}"
+                f") "
+                f"SELECT "
+                f"  COUNT(*) AS sampled, "
+                f"  SUM(CASE WHEN p.`{parent_pk}` IS NULL THEN 1 ELSE 0 END) AS orphans "
+                f"FROM child_sample c "
+                f"LEFT JOIN {parent_fqn} p ON c.`{fk}` = p.`{parent_pk}`"
+            )
+            parent_has_row_filter = f"{industry}.{parent}" in row_filtered_tables
+            entry = {
+                "industry": industry,
+                "child": child,
+                "fk": fk,
+                "parent": parent,
+                "parent_pk": parent_pk,
+                "parent_has_row_filter": parent_has_row_filter,
+            }
+            try:
+                rows = execute_sql(client, warehouse_id, sql)
+                row = rows[0] if rows else {}
+                sampled = int(row.get("sampled", 0) or 0)
+                orphans = int(row.get("orphans", 0) or 0)
+                entry["child_sampled"] = sampled
+                entry["orphans"] = orphans
+                entry["orphan_pct"] = round(100.0 * orphans / sampled, 2) if sampled else 0.0
+                if orphans == 0:
+                    orphan_free += 1
+                else:
+                    with_orphans += 1
+                    # If the parent has a row filter applied, the LEFT JOIN
+                    # honours it for the current caller — filtered rows look
+                    # like orphans. Annotate so users don't chase a phantom.
+                    hint = ""
+                    if parent_has_row_filter:
+                        hint = (
+                            f" — row filter on {parent} likely the cause "
+                            f"(filtered-but-real rows appear as orphans to non-admins)"
+                        )
+                    logger.warning(
+                        f"  FK orphans: {industry}.{child}.{fk} → {parent}.{parent_pk}: "
+                        f"{orphans:,} of {sampled:,} sampled rows "
+                        f"({entry['orphan_pct']}%){hint}"
+                    )
+            except Exception as e:
+                # Common case: source tables missing (e.g. industry not in
+                # this run's scope, or a previous step failed). Log and
+                # carry on — don't crash the whole audit.
+                entry["error"] = str(e)
+                logger.debug(f"  FK check skipped for {industry}.{child}.{fk}: {e}")
+            details.append(entry)
+
+    return {
+        "checks_run": len(details),
+        "orphan_free": orphan_free,
+        "with_orphans": with_orphans,
+        "details": details,
+    }
 
 
 # Business-meaningful table comments
@@ -2444,6 +2962,26 @@ CHECK_CONSTRAINTS = {
 }
 
 
+def _split_top_level(s: str, sep: str = ",") -> list[str]:
+    """Split on `sep` only when paren depth is zero — preserves type specs like DECIMAL(10,2)."""
+    parts: list[str] = []
+    depth = 0
+    buf: list[str] = []
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == sep and depth == 0:
+            parts.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        parts.append("".join(buf).strip())
+    return parts
+
+
 def _apply_seasonal_patterns(client, warehouse_id, catalog, industry, industry_def, scale_factor=1.0):
     """Shift data dates to create realistic seasonal patterns."""
     fqn_prefix = f"{catalog}.{industry}"
@@ -2482,15 +3020,23 @@ def _apply_seasonal_patterns(client, warehouse_id, catalog, industry, industry_d
                 month_cond = f"month({date_col}) BETWEEN {peak_end + 1} AND {peak_start - 1}"
                 shift_expr = f"add_months({date_col}, {peak_start} - month({date_col}) + 12)"
 
-            # Get all columns except the date column, then add shifted date
-            all_cols = [c.strip().split()[0] for c in tbl["ddl_cols"].split(",")]
-            other_cols = [c for c in all_cols if c != date_col]
-            select_cols = ", ".join(other_cols)
+            # Parse column names — naive .split(",") breaks on type specs like
+            # DECIMAL(10,2) where the comma is inside parentheses. Walk the string
+            # and only split on top-level commas.
+            all_cols = [c.split()[0] for c in _split_top_level(tbl["ddl_cols"])]
+            # Build a SELECT that preserves the original column order, replacing
+            # only the date column with the shifted expression. INSERT INTO ...
+            # SELECT matches positionally, so the SELECT must mirror table order.
+            select_parts = [
+                f"{shift_expr} AS {date_col}" if c == date_col else c
+                for c in all_cols
+            ]
+            select_cols = ", ".join(select_parts)
             limit_rows = max(1000, int(tbl["rows"] * scale_factor * 0.05))
 
             execute_sql(client, warehouse_id, f"""
-                INSERT INTO {fqn}
-                SELECT {select_cols}, {shift_expr} AS {date_col}
+                INSERT INTO {fqn} ({", ".join(all_cols)})
+                SELECT {select_cols}
                 FROM {fqn}
                 WHERE {month_cond}
                 AND rand() < 0.15

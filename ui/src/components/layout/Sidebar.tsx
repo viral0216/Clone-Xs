@@ -7,6 +7,7 @@ import {
   ChevronRight, ChevronDown, History, BarChart3,
   Undo2, GitFork, Zap, Layers, Terminal, Sparkles, Database,
   X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
+  Store, Server, Camera,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -46,6 +47,7 @@ export const allNavSections: NavSection[] = [
       { href: "/demo-data", label: "Demo Data", icon: Database },
       { href: "/dlt", label: "Delta Live Tables", icon: Zap },
       { href: "/advanced-tables", label: "Advanced Tables", icon: Layers },
+      { href: "/snapshots", label: "Snapshots", icon: Camera },
     ],
   },
   {
@@ -58,6 +60,13 @@ export const allNavSections: NavSection[] = [
       { href: "/lineage", label: "Lineage", icon: GitFork },
       { href: "/view-deps", label: "Dependencies", icon: GitBranch },
       { href: "/impact", label: "Impact Analysis", icon: Zap },
+    ],
+  },
+  {
+    title: "Platforms",
+    items: [
+      { href: "/marketplace", label: "Marketplace", icon: Store },
+      { href: "/environments", label: "Environments", icon: Server },
     ],
   },
   {

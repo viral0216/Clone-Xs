@@ -257,6 +257,15 @@ Submit a clone job to the background queue.
 | `location`             | string   | No       |                                        | External location for catalog        |
 | `serverless`           | boolean  | No       | `false`                                | Use serverless compute               |
 | `volume`               | string   | No       |                                        | UC Volume path for serverless        |
+| `include_objects`      | object[] | No       |                                        | Partial-scope clone — a list of `{schema, name, type}` records where `type` is `table`, `view`, `function`, or `volume`. Translated by the router into `include_schemas` + an anchored `include_tables_regex`. Use instead of (or alongside) `include_schemas` when the UI Scope Picker is in "Select schemas + objects" mode. |
+| `target_workspace`     | object   | No       |                                        | Cross-workspace migration — see [Target Workspace](#target-workspace). When set, routes the job to the Delta Sharing + DEEP CLONE orchestrator (`job_type=clone_cross_workspace`) and the `destination_catalog` may legitimately share the source name since it lives on a different metastore. |
+| `clone_views`          | boolean  | No       | `true`                                 | Cross-workspace only — re-issue view DDL on the target with catalog references rewritten. No effect for same-workspace clones (those always migrate views). |
+| `clone_functions`      | boolean  | No       | `true`                                 | Cross-workspace only — re-issue SQL function DDL on the target. No effect for same-workspace clones. |
+| `clone_volumes`        | boolean  | No       | `true`                                 | Cross-workspace only — recreate volumes and copy files via the Databricks Files API. No effect for same-workspace clones. |
+| `volume_max_file_mb`   | integer  | No       | `500`                                  | Cross-workspace only — per-file cap (MB) for managed-volume file copy. Files larger than this are skipped with a warning. |
+| `max_duration_min`     | integer  | No       |                                        | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. Checked between schemas. |
+| `max_tables`           | integer  | No       |                                        | Runtime guardrail — abort after this many tables have been touched. Checked between schemas. |
+| `source_snapshot_id`   | string   | No       |                                        | UUID of a row in `<audit>.clone_snapshots`. When set, resolved to `as_of_timestamp` so every table clones from the snapshot's captured state. See [Clone Snapshots](#clone-snapshots). |
 
 **Example request:**
 
@@ -342,6 +351,204 @@ Cancel a running or queued clone job.
 ### `WebSocket /api/clone/ws/{job_id}`
 
 WebSocket endpoint for live clone progress updates. Send `"ping"` to keep the connection alive; receive JSON progress events.
+
+---
+
+## Target Workspace
+
+Endpoints for cross-workspace / cross-cloud catalog migration. See the [Cross-workspace clone guide](../guide/clone) for the full pipeline.
+
+### `POST /api/target/validate`
+
+Verify credentials for a target workspace and read its metastore sharing identifier. Call this before `POST /api/clone` with `target_workspace` to fail fast on bad creds.
+
+**Request body** — the `TargetWorkspace` model:
+
+| Field           | Type    | Required | Description                                                                 |
+|-----------------|---------|----------|-----------------------------------------------------------------------------|
+| `host`          | string  | Yes      | Full workspace URL (must start with `https://`)                             |
+| `auth_method`   | string  | No       | `"pat"` (default), `"service_principal"`, or `"profile"`                    |
+| `token`         | string  | Cond.    | Required when `auth_method="pat"`                                           |
+| `client_id`     | string  | Cond.    | Required when `auth_method="service_principal"`                             |
+| `client_secret` | string  | Cond.    | Required when `auth_method="service_principal"`                             |
+| `profile`       | string  | Cond.    | CLI profile name (from `~/.databrickscfg`); required when `auth_method="profile"` |
+| `warehouse_id`  | string  | Yes      | Target SQL warehouse that will run DDL + DEEP CLONE                         |
+| `keep_share`    | boolean | No       | Legacy/informational — leave the Delta Share intact after migration (`false` by default). Prefer `cleanup_after_clone` for new code. |
+| `data_sync_mode` | string | No       | How re-runs treat existing target tables. `"snapshot_once"` (default; CREATE IF NOT EXISTS), `"incremental"` (CREATE OR REPLACE — mirrors source updates, overwrites target writes), or `"force_full"` (DROP + CREATE every run) |
+| `auto_handle_masks` | boolean | No   | When true, Clone-Xs drops column masks / row filters on source so masked tables can be added to the share, re-applies them on target after the clone, and (for `snapshot_once` / `force_full`) restores them on source in the finally block. Leaves source masks dropped for `incremental` mode. Default `false`. |
+| `cleanup_after_clone` | boolean | No | Drop the deterministic share / recipient / shared-catalog at end of run. Default `false` so deterministic objects persist between runs and subsequent re-clones reuse them (true incremental sync). Set `true` for one-shot migrations. |
+| `prune_share_extras` | boolean | No  | When `true`, re-runs also `ALTER SHARE … REMOVE TABLE` for tables that are in the share but no longer exist in the source. Default `false` because pruning is destructive on the share side. |
+
+**Example request:**
+
+```bash
+curl -X POST http://localhost:8080/api/target/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "https://adb-target.azuredatabricks.net",
+    "auth_method": "pat",
+    "token": "dapi...",
+    "warehouse_id": "abc123"
+  }'
+```
+
+**Example response (success):**
+
+```json
+{
+  "ok": true,
+  "host": "https://adb-target.azuredatabricks.net",
+  "user": "data_engineering@example.com",
+  "catalog_count": 14,
+  "metastore_sharing_id": "azure:eastus:a1b2c3d4-...",
+  "sharing_error": null,
+  "warehouse_state": "RUNNING",
+  "warehouse_name": "Serverless Starter Warehouse",
+  "warehouse_start_triggered": false
+}
+```
+
+**Response fields beyond `ok`/`host`:**
+
+| Field | Description |
+|---|---|
+| `user` | Authenticated identity on the target (from `client.current_user.me()`). Surfaced in the UI as "Logged in as ..." so you can spot wrong-token mistakes early. |
+| `catalog_count` | Number of catalogs the credentials can list — a quick "is this account healthy?" signal. |
+| `metastore_sharing_id` | Target metastore's `global_metastore_id` (`<cloud>:<region>:<uuid>` format). Used as the recipient `USING ID` on source. |
+| `sharing_error` | Non-null when auth works but metastore introspection failed. Cross-workspace clone may need manual Delta Sharing setup. |
+| `warehouse_state` | One of `RUNNING` / `STARTING` / `STOPPED` / `STOPPING` / `DELETED`. The endpoint also fails the validation if `warehouse_id` doesn't exist. |
+| `warehouse_name` | Display name from Databricks for the supplied `warehouse_id` — useful if the user typed a different ID than expected. |
+| `warehouse_start_triggered` | `true` when the warehouse was `STOPPED` / `STOPPING` and the endpoint fired a non-blocking `warehouses.start()` so it'll be `RUNNING` by clone time. |
+
+**Responses:**
+
+| Status | Meaning                                                                                                    |
+|--------|------------------------------------------------------------------------------------------------------------|
+| `200`  | Credentials work, warehouse exists. Body fields above describe the target.                                 |
+| `400`  | Request body violates the `TargetWorkspace` schema (e.g. missing PAT when `auth_method="pat"`), or the supplied `warehouse_id` is not visible in the target workspace. |
+| `401`  | Authentication failed — bad host, invalid token, or unreachable workspace. Error detail in `detail`.       |
+
+---
+
+### `POST /api/target/warehouses`
+
+List SQL warehouses available in a target workspace. Used by the UI to populate the warehouse dropdown after the user enters host + auth, before they pick a warehouse_id.
+
+**Request body** — `TargetWorkspaceConnect` (same as `TargetWorkspace` but **without** `warehouse_id`).
+
+**Example response:**
+
+```json
+[
+  {"id": "abc123", "name": "Serverless Starter Warehouse", "size": "Small", "type": "SERVERLESS", "state": "RUNNING"},
+  {"id": "def456", "name": "Pro Warehouse", "size": "Medium", "type": "PRO", "state": "STOPPED"}
+]
+```
+
+---
+
+### `POST /api/target/catalogs`
+
+List catalog names that exist in a target workspace. Used by the `/clone` Destination Catalog dropdown when "Clone to a different workspace" is enabled — so the user picks an existing target catalog (or `+ Create New`), instead of seeing source-side catalogs.
+
+**Request body** — `TargetWorkspaceConnect` (same as `/api/target/warehouses`).
+
+**Example response:**
+
+```json
+["analytics_prod", "main", "samples", "system"]
+```
+
+---
+
+### `POST /api/target/whoami`
+
+Lightweight identity check — returns just the authenticated user for the supplied target creds. Calls `client.current_user.me()` only (no warehouse, no metastore lookup, no catalog list), so it's fast enough to fire on `/settings → Target Workspaces` page mount for every saved connection.
+
+**Request body** — `TargetWorkspaceConnect`.
+
+**Example response:**
+
+```json
+{
+  "user": "data_engineering@example.com",
+  "host": "https://adb-target.azuredatabricks.net"
+}
+```
+
+**Responses:** `200` on success, `400` on schema violation, `401` on auth failure (wraps the underlying SDK error in `detail`).
+
+---
+
+### A note on credential storage
+
+The `/api/target/*` endpoints are **stateless**. Saved target connections in the UI live in browser `localStorage` (key `clxs_target_connections`); per-clone requests resolve the picked entry to inline credentials and POST them. Nothing about target workspaces persists on the server — neither in `clone_config.yaml` nor in any database. This avoids a class of "leaked-token-to-git" mistakes that the legacy yaml-based persistence enabled.
+
+---
+
+## Clone Snapshots
+
+Named fork points for point-in-time clones. See [Clone Snapshots guide](../guide/snapshots) for the full flow. Requires `audit_trail.catalog` to be configured — snapshots live in a Delta table in that catalog.
+
+### `POST /api/clone-snapshots`
+
+Capture a named snapshot of a catalog's current Delta-version state.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `source_catalog` | string | Yes | Catalog to capture |
+| `name` | string | Yes | Human-readable label |
+| `description` | string | No | Free-text context shown in listings |
+| `exclude_schemas` | string[] | No | Schemas to skip; defaults to `["information_schema", "default"]` |
+
+**Response** (200):
+
+```json
+{
+  "snapshot_id": "7f3a4b5c-8d2e-4a1f-b9d3-...",
+  "name": "pre-migration",
+  "source_catalog": "prod",
+  "description": "Captured before 2026-04 refactor",
+  "captured_at": "2026-04-19T14:30:00Z",
+  "created_by": "alice@example.com",
+  "table_count": 611,
+  "total_bytes": 2574326784
+}
+```
+
+Errors: `400` if `audit_trail.catalog` or `sql_warehouse_id` is missing.
+
+### `GET /api/clone-snapshots`
+
+List all snapshots, newest first.
+
+| Query | Type | Description |
+|---|---|---|
+| `source_catalog` | string (optional) | Filter to snapshots captured from this catalog |
+
+Response is an array of the shape above (without `tables_json`).
+
+### `GET /api/clone-snapshots/{snapshot_id}`
+
+Return one snapshot including the parsed per-table list:
+
+```json
+{
+  "snapshot_id": "...",
+  "name": "pre-migration",
+  "table_count": 611,
+  "tables": [
+    { "schema": "bronze", "table": "orders",    "version": 42, "size_bytes": 1073741824 },
+    { "schema": "bronze", "table": "customers", "version": 8,  "size_bytes": 268435456 }
+  ]
+}
+```
+
+Returns `404` if `snapshot_id` is not found.
+
+### `DELETE /api/clone-snapshots/{snapshot_id}`
+
+Remove a snapshot row. Idempotent — returns `{snapshot_id, deleted: true}` whether or not the row existed.
 
 ---
 
@@ -1000,6 +1207,26 @@ List tables in a schema.
 |-----------|--------|------|----------|--------------|
 | `catalog` | string | path | Yes      | Catalog name |
 | `schema`  | string | path | Yes      | Schema name  |
+
+### `GET /api/catalogs/{catalog}/{schema}/objects`
+
+List every cloneable object in a schema: tables, views, functions, and volumes. Used by the UI Scope Picker to render the object tree. SDK-based — no SQL warehouse required.
+
+| Parameter | Type   | In   | Required | Description  |
+|-----------|--------|------|----------|--------------|
+| `catalog` | string | path | Yes      | Catalog name |
+| `schema`  | string | path | Yes      | Schema name  |
+
+**Example response:**
+
+```json
+{
+  "tables": ["orders", "customers", "line_items"],
+  "views": ["v_active_customers", "v_monthly_revenue"],
+  "functions": ["calculate_discount"],
+  "volumes": ["raw_uploads", "exports"]
+}
+```
 
 ### `GET /api/catalogs/{catalog}/{schema}/{table}/info`
 

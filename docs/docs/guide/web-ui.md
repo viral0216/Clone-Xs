@@ -71,12 +71,41 @@ The Settings page (`/settings`) uses a two-panel layout similar to VS Code Setti
 | Section | Contents |
 |---------|----------|
 | **Connection** | Databricks host URL with a compact connection status bar (green/red dot) |
-| **Authentication** | Pill-style tabs for PAT and Azure authentication methods |
+| **Authentication** | Pill-style tabs for PAT, OAuth, Azure, and Service Principal. Once authenticated, a "✓ Logged in as `<user>`" line appears under the Save & Connect button so you can spot wrong-account / wrong-token mistakes immediately. |
 | **Warehouses** | Radio-button warehouse selection with Start and Test buttons for each warehouse |
+| **Target Workspaces** | Manage saved cross-workspace clone targets. See [Target Workspaces](#target-workspaces) below. |
 | **Audit & Logs** | Audit table catalog and schema, loaded from the application YAML config |
 | **Interface** | Theme picker grid (10 themes), Sidebar Navigation toggle (collapse/expand), Export Buttons visibility, Catalog Browser visibility |
 | **Performance** | Cost Estimation Settings with configurable storage price per GB/month, currency selection (10 currencies) |
 | **Features** | Feature flags and experimental toggles |
+
+### Target Workspaces
+
+Clone-Xs supports cross-workspace and cross-cloud catalog migration via Delta Sharing + DEEP CLONE (see the [cross-workspace clone guide](./clone#cross-workspace--cross-cloud-migration)). Rather than typing target host + PAT + warehouse_id on every clone, save target connections once here and pick them from a dropdown on `/clone`.
+
+**Click `+ Add target`** to open the dialog:
+
+| Field | Notes |
+|---|---|
+| Name | Slug used to identify this connection (e.g. `prod-azure`, `dev-aws`). Letters, digits, `-`, `_`. |
+| Target Host | Full https URL of the destination workspace |
+| Auth Method | `Personal Access Token`, `Service Principal`, or `CLI Profile` |
+| Token / Client ID + Secret / Profile | Credentials for the chosen method. The token field becomes a masked password input on edit (`***` placeholder = "keep existing") |
+| Target SQL Warehouse | Click **Browse** to populate the dropdown from the target workspace. Required. |
+| Default data sync mode | `snapshot_once` (default), `incremental`, or `force_full` |
+| Auto-handle column masks & row filters | When ticked, Clone-Xs drops masks/filters before adding tables to the share and re-applies them on the target after the clone |
+| Keep migration share after clone | Leaves the Delta Share intact for audit/debugging |
+
+**Each saved connection card** shows:
+- Name + a `✓ Connected · WH RUNNING` badge after a successful Test
+- Host (monospace, truncated if long)
+- `✓ Logged in as <user>` — auto-fetched on page mount via the lightweight `POST /api/target/whoami` endpoint, so you see who you're authenticated as without having to click Test
+- Auth method · Warehouse ID · sync mode (one-line summary)
+- **Test / Edit / Delete** buttons. Test triggers a full check (auth, metastore sharing, warehouse existence, non-blocking warehouse-start if STOPPED) and surfaces toast notifications with the result.
+
+**Where credentials are stored:** browser `localStorage`, key `clxs_target_connections`. The server is intentionally stateless — saved targets never persist to disk, never appear in `clone_config.yaml`, and never travel through git. Each clone request sends the picked target's credentials inline. To export/import (e.g., onboard a teammate) copy the JSON from the localStorage key. To clear all saved targets, delete the key in browser devtools → Application → Local Storage.
+
+**On `/clone`** the saved targets appear in a dropdown when you tick "Clone to a different workspace." See the [cross-workspace clone guide](./clone#cross-workspace--cross-cloud-migration) for the full flow.
 
 ## Sidebar
 

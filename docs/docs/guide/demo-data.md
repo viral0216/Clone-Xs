@@ -5,6 +5,10 @@ title: Demo Data Generator
 
 # Demo Data Generator
 
+:::tip Field tooltips
+All 13 fields on the Demo Data page (Catalog Name, Industries, Scale Factor, Medallion, UC Best Practices, Create UDFs, Create Volumes, …) have an info icon — hover for a 1-line description of what each option does. Existing inline `text-xs` helper lines still sit under each field for casual reading; the tooltip has the longer form.
+:::
+
 ## Overview
 The Demo Data Generator creates realistic Unity Catalog demo catalogs with synthetic data for showcasing Clone-Xs capabilities. All data is generated server-side using Databricks SQL — no data is transferred from the client.
 
@@ -197,3 +201,382 @@ The Demo Data Generator has a comprehensive test suite with 33 unit and integrat
 ```bash
 python3 -m pytest tests/test_demo_generator.py -v
 ```
+
+---
+
+## Recent enhancements (Demo Data Generator v2)
+
+The generator gained four enhancement themes layered onto the existing
+10-industry foundation. Each is opt-in (off by default in most cases) so
+existing CI fixtures and scripted callers see no shape change.
+
+### Theme 1 — Realism (Faker)
+
+When `realistic_data: true`, the generator rewrites the small static
+name / email / phone pools embedded in INSERT expressions to sample from
+locale-aware Faker pools.
+
+```bash
+clxs generate demo-data \
+  --catalog demo_de --scale-factor 0.01 \
+  --realistic-data --locale de_DE --seed 42
+```
+
+```yaml
+realistic_data: true
+locale: de_DE         # any Faker-supported locale: en_US, en_GB, fr_FR, ja_JP, …
+seed: 42              # optional — same seed produces the same names across runs
+```
+
+What gets replaced:
+
+- First-name + surname `element_at(array(…))` pools (the legacy `'James'`/`'Mary'`/`'Smith'`/`'Johnson'` lists)
+- `concat('patient',id,'@example.com')` style emails → RFC-5322 Faker emails
+- `concat('555-',lpad(…))` style phones → locale-correct phone formats
+- SSN-like fields use the IRS `9XX-XX-XXXX` test pool format
+
+### Theme 2 — DQ profiles + ML training labels
+
+Two related controls for ML demos:
+
+```yaml
+dq_profile: realistic   # clean | realistic | dirty — null/dup/outlier rates
+anomaly_rate: 0.02      # 0.0..1.0 — positive class rate for labeled columns
+inject_anomalies: true  # add `is_fraud` / `churn_risk` / `is_anomaly` columns
+```
+
+DQ profile rates (configured in `src/demo_anomalies.py:DQ_PROFILES`):
+
+| Profile | Null rate | Dup count | Outlier rate | Use case |
+|---|---|---|---|---|
+| `clean` | 0% | 0 | 0% | Tutorials, screenshots, unit-test fixtures |
+| `realistic` (default) | 5% | 100 | 0.1% | Normal demo state |
+| `dirty` | 15% | 5,000 | 5% | Stress-test DQ tooling / dashboards |
+
+Labeled training columns added when `inject_anomalies: true`:
+
+| Industry.Table | Column | Type | Use case |
+|---|---|---|---|
+| financial.transactions | `is_fraud` | BOOLEAN | Fraud detection demo |
+| telecom.subscribers | `churn_risk` | DOUBLE 0–1 | Churn prediction demo |
+| healthcare.encounters | `is_anomaly` | BOOLEAN | Anomaly detection demo |
+| manufacturing.sensor_readings | `is_anomaly` | BOOLEAN | Predictive maintenance demo |
+
+The positive class rate is driven by `anomaly_rate`. At `0.02` (default),
+~2% of `transactions` rows have `is_fraud = true` — realistic for an
+unbalanced ML training set.
+
+### Theme 3 — Referential integrity audit
+
+After generation completes, the orchestrator runs a sampled `LEFT JOIN`
+orphan check across the registered FK relationships
+(`src/demo_generator.py:_FK_RELATIONSHIPS`) and surfaces the report:
+
+```json
+{
+  "referential_integrity": {
+    "checks_run": 22,
+    "orphan_free": 22,
+    "with_orphans": 0,
+    "details": [
+      {"industry": "healthcare", "child": "encounters", "fk": "patient_id",
+       "parent": "patients", "parent_pk": "patient_id",
+       "child_sampled": 100000, "orphans": 0, "orphan_pct": 0.0}
+    ]
+  }
+}
+```
+
+The /demo-data UI renders this as a per-FK list under "Foreign-key integrity audit"
+on the completion summary. Orphan-free FKs show ✓; FKs with orphans show
+the count + percentage so you can see where drift exists.
+
+Skipped automatically on `schema_only: true` (no rows to check). Set
+`validate_referential_integrity: false` to skip on very large generations
+where the per-FK SELECT is costly relative to value.
+
+### Theme 4 — UI insight + extensibility
+
+#### Schema-only mode
+
+```yaml
+schema_only: true
+```
+
+Creates catalog / schemas / tables / views / UDFs / volumes — but
+**skips every INSERT statement** (and every other data-mutating step:
+DQ injection, version history, seasonal patterns, anomaly columns,
+volume sample writes). Generation completes in seconds even at
+`scale_factor: 1.0`. Used for DDL-template verification and CI smoke runs.
+
+#### Live preview endpoint
+
+`POST /api/generate/demo-data/preview` returns per-industry row count /
+size / cost / duration estimates without submitting a generation job.
+The /demo-data UI calls this on demand to populate the
+"Per-industry breakdown" tile.
+
+```bash
+curl -X POST $CLXS_HOST/api/generate/demo-data/preview \
+  -H "Content-Type: application/json" \
+  -d '{"catalog_name":"demo_x","industries":["healthcare","financial"],"scale_factor":0.1}'
+```
+
+#### Export config as JSON
+
+The "Export JSON" button on /demo-data downloads the current form state
+as a JSON file that round-trips back into a `POST /api/generate/demo-data`
+request. Useful for sharing presets across machines.
+
+#### Custom YAML industry templates
+
+Customers wanting their own schema can write a YAML file and pass its
+path in `custom_industries`:
+
+```yaml
+# ~/.clone-xs/aerospace.yaml
+name: aerospace
+description: Custom aerospace demo schema
+tables:
+  - name: flights
+    rows: 1000000
+    ddl_cols: |
+      flight_id BIGINT, carrier STRING, origin STRING,
+      destination STRING, dep_date DATE, status STRING
+    insert_expr: |
+      id + {offset} AS flight_id,
+      element_at(array('UA','DL','AA','BA'), cast(floor(rand()*4)+1 as INT)) AS carrier,
+      element_at(array('SFO','JFK','LAX','SEA'), cast(floor(rand()*4)+1 as INT)) AS origin,
+      element_at(array('DEN','ORD','BOS','MIA'), cast(floor(rand()*4)+1 as INT)) AS destination,
+      date_add('2020-01-01', cast(floor(rand()*1825) as INT)) AS dep_date,
+      element_at(array('on_time','delayed','cancelled'), cast(floor(rand()*3)+1 as INT)) AS status
+```
+
+Then:
+
+```bash
+clxs generate demo-data \
+  --catalog aerospace_demo \
+  --industries aerospace \
+  --custom-industries ~/.clone-xs/aerospace.yaml
+```
+
+Validation is strict — malformed YAML, missing required keys, or names
+clashing with built-in industries are rejected with a clear error
+pointing at the offending file.
+
+**Known limitation**: a custom industry merged at run start is removed
+from the runtime registry on success. If the run **raises** mid-way,
+the merged entry sticks around in the in-memory registry until the API
+server restarts.
+
+---
+
+## Data modeling patterns
+
+`data_model` selects how the generated catalog is laid out. v1 supports
+two values:
+
+- **`flat`** (default) — the existing per-industry schema. One schema per
+  industry (`healthcare`, `financial`, …) holding all the industry's
+  tables. Same shape Clone-Xs has always produced. No new schemas.
+- **`star_schema`** — adds a `<industry>_star` schema *on top of* the flat
+  layer with fact / dimension tables following Kimball conventions and
+  DBT-style naming. The flat tables stay in place; the Star Schema is
+  materialised via CTAS from them (~5% extra time).
+
+Future modeling patterns (Data Vault 2.0, One Big Table, Snowflake) are
+on the roadmap; their registry slots in `src/demo_models.py` will follow
+the same shape as `STAR_SCHEMA_REGISTRY`.
+
+### Star Schema layout
+
+For each selected industry, `data_model: star_schema` produces:
+
+```
+demo_quick.healthcare              -- existing flat layer (unchanged)
+demo_quick.healthcare_star         -- Star Schema overlay
+  ├── dim_date                     -- universal calendar (start_date..end_date)
+  ├── dim_patient                  -- CTAS from healthcare.patients
+  ├── dim_provider                 -- CTAS from healthcare.providers
+  ├── dim_facility                 -- CTAS from healthcare.facilities
+  ├── dim_diagnosis                -- DISTINCT diagnosis_code from claims
+  ├── fct_claims                   -- claims + dim surrogate keys joined in
+  ├── fct_encounters
+  └── fct_prescriptions
+```
+
+### Naming conventions (DBT-style)
+
+| Object | Pattern | Example |
+|---|---|---|
+| Schema | `<industry>_star` | `healthcare_star`, `financial_star` |
+| Fact table | `fct_<entity>` | `fct_claims`, `fct_transactions`, `fct_order_items` |
+| Conformed dim | `dim_<entity>` | `dim_patient`, `dim_customer`, `dim_product` |
+| Calendar dim | `dim_date` | universal, generated from scratch |
+| Derived dim | `dim_<attribute>` | `dim_diagnosis` (DISTINCT from a fact column) |
+| Surrogate key | `<entity>_sk` | `patient_sk` (BIGINT, generated via `row_number()`) |
+| Business key (preserved) | `<entity>_id` | `patient_id` — stays on the dim AND on the fact |
+| Audit columns on dims | `valid_from`, `valid_to`, `is_current` | SCD2-shape (single-row-per-BK in v1) |
+
+### Per-industry coverage
+
+All 10 built-in industries have a Star Schema registry entry in
+`src/demo_models.py:STAR_SCHEMA_REGISTRY`. The fact/dim split follows
+each industry's natural high-volume / low-volume table pattern:
+
+| Industry | Facts (sample) | Dims (sample) |
+|---|---|---|
+| healthcare | `fct_claims`, `fct_encounters`, `fct_prescriptions` | `dim_patient`, `dim_provider`, `dim_facility`, `dim_diagnosis` |
+| financial | `fct_transactions`, `fct_card_events`, `fct_loan_payments` | `dim_customer`, `dim_account`, `dim_branch`, `dim_merchant`, `dim_card` |
+| retail | `fct_order_items`, `fct_reviews`, `fct_orders` | `dim_customer`, `dim_product`, `dim_store`, `dim_warehouse` |
+| telecom | `fct_cdr_records`, `fct_data_usage`, `fct_billing` | `dim_subscriber`, `dim_plan`, `dim_tower`, `dim_device` |
+| manufacturing | `fct_sensor_readings`, `fct_production_events`, `fct_quality_checks` | `dim_equipment`, `dim_production_line`, `dim_material` |
+| energy | `fct_meter_readings`, `fct_generation_output`, `fct_billing_energy` | `dim_customer`, `dim_power_plant` |
+| education | `fct_enrollments`, `fct_learning_events`, `fct_assessments` | `dim_student`, `dim_course`, `dim_instructor` |
+| real_estate | `fct_listings`, `fct_transactions_re`, `fct_property_views` | `dim_property`, `dim_agent` |
+| logistics | `fct_shipments`, `fct_tracking_events`, `fct_fleet_telemetry` | `dim_vehicle`, `dim_driver`, `dim_warehouse` |
+| insurance | `fct_policies`, `fct_claims_ins`, `fct_underwriting` | `dim_policyholder`, `dim_agent` |
+
+### How the Star Schema is built
+
+For each industry the orchestrator runs (in order):
+
+1. **`CREATE SCHEMA IF NOT EXISTS <industry>_star`**
+2. **`dim_date`** — generated via `sequence(date('<start>'), date('<end>'), interval 1 day)` plus `year/quarter/month/week/day_of_week/is_weekend` columns.
+3. **Conformed dims** — for each `(dim_name, source_table, business_key)`:
+   ```sql
+   CREATE OR REPLACE TABLE <catalog>.<industry>_star.<dim_name> AS
+   SELECT
+     row_number() OVER (ORDER BY `<business_key>`) AS `<entity>_sk`,
+     *,
+     CAST('1900-01-01' AS DATE) AS valid_from,
+     CAST('9999-12-31' AS DATE) AS valid_to,
+     true AS is_current
+   FROM <catalog>.<industry>.<source_table>
+   ```
+4. **Derived dims** — `SELECT DISTINCT <distinct_col>` + `row_number()` SK.
+5. **Facts** — pass-through CTAS that LEFT JOINs each registered dim and pulls the SK column onto the fact:
+   ```sql
+   CREATE OR REPLACE TABLE <catalog>.<industry>_star.fct_claims AS
+   SELECT
+     f.*,                          -- all original measure columns
+     d0.patient_sk,                -- surrogate keys joined from each dim
+     d1.provider_sk,
+     d2.facility_sk
+   FROM <catalog>.healthcare.claims f
+   LEFT JOIN <catalog>.healthcare_star.dim_patient   d0 ON f.patient_id  = d0.patient_id
+   LEFT JOIN <catalog>.healthcare_star.dim_provider  d1 ON f.provider_id = d1.provider_id
+   LEFT JOIN <catalog>.healthcare_star.dim_facility  d2 ON f.facility_id = d2.facility_id
+   ```
+
+Original FK columns are preserved on the fact alongside the new SKs — customers can choose which keys to use depending on demo style.
+
+### Result-shape additions
+
+When `data_model: star_schema`, the run summary gains:
+
+```json
+{
+  "data_model": "star_schema",
+  "star_schema": {
+    "industries": ["healthcare", "financial"],
+    "schemas_created": ["healthcare_star", "financial_star"],
+    "facts_created": 6,
+    "dims_created": 9,
+    "per_industry": [
+      {"industry": "healthcare", "schema": "healthcare_star", "facts_created": 3, "dims_created": 5, "schema_only": false},
+      {"industry": "financial",  "schema": "financial_star",  "facts_created": 3, "dims_created": 6, "schema_only": false}
+    ]
+  }
+}
+```
+
+The /demo-data UI surfaces this as a "Star Schema modeling layer" panel
+on the completion summary, showing per-industry rows with ✓ / error /
+skipped icons.
+
+### Sample query
+
+After a generation with `data_model: star_schema`, the classic Kimball
+"sales by quarter" pattern works out of the box:
+
+```sql
+SELECT d.year, d.quarter,
+       COUNT(*)              AS claim_count,
+       SUM(f.claim_amount)   AS total_claimed
+FROM   demo_quick.healthcare_star.fct_claims  f
+JOIN   demo_quick.healthcare_star.dim_date    d ON f.submitted_date = d.date_key
+JOIN   demo_quick.healthcare_star.dim_patient p ON f.patient_sk     = p.patient_sk
+GROUP  BY d.year, d.quarter
+ORDER  BY 1, 2
+```
+
+### Trade-offs
+
+- **Time**: ~5% of total generation runtime. Each fact/dim is a single
+  CTAS off the already-populated flat tables, so it parallelises with
+  the warehouse's cores.
+- **Storage**: roughly +30% of catalog size. Facts duplicate the flat
+  data with extra SK columns; dims are small. SHALLOW CLONE on the
+  Star schema would avoid the duplication if needed (out of scope for
+  the generator itself — Clone-Xs's clone path supports it).
+- **Skipped on `schema_only=true`**: tables exist with the correct shape
+  (and the SCD2 audit columns) but contain zero rows. Useful for
+  validating DDL templates without paying the CTAS cost.
+- **SCD2 history**: dims carry `valid_from` / `valid_to` / `is_current`
+  columns but only one row per business key in v1 (always-current).
+  Real SCD2 row history is on the v2 roadmap.
+
+---
+
+## Workspace quota gotchas
+
+Two Databricks Unity Catalog metastore-level limits surface as confusing
+errors during generation. Both are workspace administrative settings, not
+Clone-Xs bugs.
+
+### Metastore table limit (default 500)
+
+```
+[QUOTA_EXCEEDED.UC_RESOURCE_QUOTA_EXCEEDED] Cannot create 1 Table(s) in
+Metastore <id> (estimated count: 520, limit: 500).
+```
+
+**What it means**: the metastore is at its per-metastore table cap. Every
+demo catalog you ever generated counts against this limit until dropped.
+After ~25 full-demo runs you'll hit it.
+
+**What Clone-Xs does**: as of this release, the generator detects this
+specific error class on the first `CREATE TABLE` failure and **aborts
+the run immediately** with a clear remediation message. Without this
+fail-fast, the orchestrator would emit ~20 nearly-identical `ERROR`
+lines (one per attempted table) before the run finally gave up on the
+medallion step.
+
+**How to fix**: pick one —
+1. Drop unused demo catalogs:
+   ```sql
+   DROP CATALOG demo_quick_old CASCADE;
+   ```
+2. Request a metastore quota increase from Databricks support.
+3. Use a different metastore (different workspace) for demos.
+
+### Metastore volume limit (default 50)
+
+```
+[QUOTA_EXCEEDED.UC_RESOURCE_QUOTA_EXCEEDED] Cannot create 1 Volume(s) in
+Metastore <id> (estimated count: 51, limit: 50).
+```
+
+**What it means**: same shape, lower limit. Each demo industry generates
+2 volumes (`sample_data`, `exports`), so a Full Demo (10 industries) adds
+20 volumes. After ~2 Full Demos you may hit this limit.
+
+**What Clone-Xs does**: per-volume failures are logged and the rest of
+the generation continues — volumes are nice-to-have for the demo, not
+load-bearing. To skip volume creation entirely, set `create_volumes:
+false` on the request.
+
+**How to fix**: drop unused volumes from prior demo catalogs, or set
+`create_volumes: false` and live without sample-data volumes.

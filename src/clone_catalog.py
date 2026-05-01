@@ -37,6 +37,33 @@ from src.rollback import create_rollback_log, record_object
 logger = logging.getLogger(__name__)
 
 
+def _log_schema_rollup(schema_name: str, result: dict) -> None:
+    """Emit a one-line per-schema summary after a schema finishes.
+
+    Example: ``[INFO] Schema bronze complete: 42/45 tables cloned (2 failed, 1 skipped) in 18s``
+    """
+    t = result.get("tables") or {}
+    success = int(t.get("success", 0) or 0)
+    failed = int(t.get("failed", 0) or 0)
+    skipped = int(t.get("skipped", 0) or 0)
+    total = success + failed + skipped
+    dur = result.get("duration_seconds")
+    dur_s = f" in {dur:.0f}s" if isinstance(dur, (int, float)) else ""
+    # Only emit if the schema actually had tables — keeps logs quiet on metadata-only schemas
+    if total == 0:
+        return
+    detail_parts = []
+    if failed:
+        detail_parts.append(f"{failed} failed")
+    if skipped:
+        detail_parts.append(f"{skipped} skipped")
+    detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+    logger.info(
+        f"{SCHEMA} Schema {bold(schema_name)} complete: "
+        f"{success}/{total} tables cloned{detail}{dur_s}"
+    )
+
+
 def get_schemas(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -245,6 +272,8 @@ def process_schema(
             as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
             force_reclone=force_reclone, where_clauses=where_clause,
             schema_only=config.get("schema_only", False),
+            tables_progress=config.get("_tables_progress"),
+            tbl_properties=config.get("clone_tbl_properties"),
         )
 
         # Apply data masking after table cloning
@@ -486,11 +515,50 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     if filter_tags:
         schemas = _filter_schemas_by_tags(client, warehouse_id, source, schemas, filter_tags)
 
+    # If the request names a snapshot, resolve its captured timestamp and
+    # use it as the default `as_of_timestamp` so every table clones from the
+    # snapshot's point-in-time state. Per-request `as_of_timestamp` /
+    # `as_of_version` still win if explicitly set.
+    snapshot_id = config.get("source_snapshot_id")
+    if snapshot_id and not config.get("as_of_timestamp") and not config.get("as_of_version"):
+        try:
+            from src.clone_snapshots import resolve_snapshot_timestamp
+            snap_ts = resolve_snapshot_timestamp(client, warehouse_id, config, snapshot_id)
+            if snap_ts:
+                config["as_of_timestamp"] = snap_ts
+                logger.info(f"{CATALOG} Cloning from snapshot {snapshot_id} (captured_at={snap_ts})")
+            else:
+                logger.warning(f"Snapshot {snapshot_id} not found — ignoring source_snapshot_id")
+        except Exception as e:
+            logger.warning(f"Could not resolve snapshot {snapshot_id}: {e}")
+
     logger.info(f"{SCHEMA} Found {bold(str(len(schemas)))} schemas to clone: {', '.join(cyan(s) for s in schemas)}")
 
+    # Pre-count tables per schema so the progress bar has a catalog-level denominator
+    # and we can emit a meaningful startup summary. Best-effort — on failure we
+    # just skip the denominator and the Tables suffix disappears from the bar.
+    tables_total = 0
+    try:
+        from src.client import list_tables_sdk
+        for _s in schemas:
+            try:
+                tables_total += len(list_tables_sdk(client, source, _s) or [])
+            except Exception:
+                pass
+    except Exception:
+        tables_total = 0
+
+    if tables_total:
+        logger.info(
+            f"{SCHEMA} Starting clone: {bold(str(tables_total))} tables across "
+            f"{bold(str(len(schemas)))} schemas {ARROW} {cyan(dest)}"
+        )
+
     # Step 4: Process schemas in parallel with progress tracking
-    progress = SchemaProgressTracker(schemas, show_progress=show_progress)
+    progress = SchemaProgressTracker(schemas, show_progress=show_progress, tables_total=tables_total)
     progress.start()
+    # Stash on config so process_schema → clone_tables_in_schema can bump live
+    config["_tables_progress"] = progress
 
     # Optional TUI dashboard for terminal sessions
     dashboard = None
@@ -502,36 +570,92 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
         except Exception:
             pass  # Fall back to standard progress tracker
 
-    all_results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                process_schema, client, config, schema, rollback_log, completed_objects,
-            ): schema
-            for schema in schemas
-        }
+    # Runtime guardrails — aborting the schema loop on breach so the error
+    # surfaces in the job's `error` field and shows up in the UI summary.
+    max_duration_min = config.get("max_duration_min")
+    max_tables_budget = config.get("max_tables")
+    budget_aborted = False
 
-        for future in as_completed(futures):
-            schema_name = futures[future]
-            try:
-                if pm:
-                    pm.run_on_table_start(schema_name, config, client, warehouse_id)
-                result = future.result()
-                all_results.append(result)
-                progress.schema_done(result)
-                if pm:
-                    pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
-                if dashboard:
-                    dashboard.schema_completed(schema_name, result)
-            except Exception as e:
-                logger.error(f"{FAIL} Schema {bold_red(schema_name)} failed: {e}")
-                error_result = {"schema": schema_name, "error": str(e)}
-                all_results.append(error_result)
-                progress.schema_done(error_result)
-                if pm:
-                    pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
-                if dashboard:
-                    dashboard.schema_completed(schema_name, error_result)
+    # Pre-clone source quiesce — snapshot + revoke write privileges on source
+    # schemas so concurrent writes can't land mid-clone and produce a target
+    # with missing rows / out-of-order commits. The corresponding restore in
+    # the finally block below runs even on clone failure (no orphaned
+    # revocations). No-op when quiesce_source is unset/false.
+    quiesce_snapshots = []
+    if config.get("quiesce_source") and not dry_run:
+        from src.quiesce import quiesce_source_schemas
+        quiesce_snapshots = quiesce_source_schemas(client, source, schemas)
+
+    all_results = []
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_schema, client, config, schema, rollback_log, completed_objects,
+                ): schema
+                for schema in schemas
+            }
+
+            for future in as_completed(futures):
+                schema_name = futures[future]
+                try:
+                    if pm:
+                        pm.run_on_table_start(schema_name, config, client, warehouse_id)
+                    result = future.result()
+                    all_results.append(result)
+                    progress.schema_done(result)
+                    _log_schema_rollup(schema_name, result)
+                    if pm:
+                        pm.run_on_table_complete(schema_name, "success", client, warehouse_id)
+                    if dashboard:
+                        dashboard.schema_completed(schema_name, result)
+                except Exception as e:
+                    logger.error(f"{FAIL} Schema {bold_red(schema_name)} failed: {e}")
+                    error_result = {"schema": schema_name, "error": str(e)}
+                    all_results.append(error_result)
+                    progress.schema_done(error_result)
+                    if pm:
+                        pm.run_on_table_complete(schema_name, "failed", client, warehouse_id)
+                    if dashboard:
+                        dashboard.schema_completed(schema_name, error_result)
+
+                # Budget check after every schema finishes — aborts remaining futures.
+                if max_duration_min is not None:
+                    elapsed_min = (time.time() - clone_start) / 60.0
+                    if elapsed_min >= float(max_duration_min):
+                        logger.error(
+                            f"{FAIL} BUDGET: max_duration_min={max_duration_min} reached "
+                            f"after {elapsed_min:.1f} min — aborting remaining schemas"
+                        )
+                        budget_aborted = "max_duration_min"
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        break
+                if max_tables_budget is not None:
+                    tables_done = sum(
+                        (r.get("tables", {}).get("success", 0) or 0)
+                        + (r.get("tables", {}).get("failed", 0) or 0)
+                        + (r.get("tables", {}).get("skipped", 0) or 0)
+                        for r in all_results
+                    )
+                    if tables_done >= int(max_tables_budget):
+                        logger.error(
+                            f"{FAIL} BUDGET: max_tables={max_tables_budget} reached "
+                            f"({tables_done} tables touched) — aborting remaining schemas"
+                        )
+                        budget_aborted = "max_tables"
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        break
+    finally:
+        # Always restore source grants — runs whether the schema loop
+        # succeeded, partially failed, or was aborted by a budget breach. Empty
+        # snapshots list (quiesce_source disabled or dry-run) is a no-op.
+        if quiesce_snapshots:
+            from src.quiesce import restore_source_grants
+            restore_source_grants(client, quiesce_snapshots)
 
     progress.stop()
     if dashboard:
@@ -547,6 +671,9 @@ def clone_catalog(client: WorkspaceClient, config: dict) -> dict:
     # Step 5: Build and print summary
     summary = _build_summary(all_results)
     summary["duration_seconds"] = round(time.time() - clone_start, 1)
+    if budget_aborted:
+        summary["aborted"] = True
+        summary["abort_reason"] = budget_aborted
     _print_summary(summary, source, dest, dry_run=dry_run)
 
     # Save metrics (#6)
@@ -735,6 +862,18 @@ def _build_summary(results: list[dict]) -> dict:
         "volumes": {"success": 0, "failed": 0, "skipped": 0},
         "errors": [],
         "schema_durations": {},
+        # Catalog-wide CLONE metric totals (Databricks per-CLONE response rows
+        # summed across every table). Useful for cloud-egress finance reporting
+        # and surfacing "GB transferred" on the run summary.
+        "bytes_copied": 0,
+        "files_copied": 0,
+        "source_table_size": 0,
+        "source_num_of_files": 0,
+        # Per-source-format success counters (DELTA / PARQUET / ICEBERG / etc.)
+        # — same CLONE syntax works across all three when the source is
+        # registered in UC. Surfaced in the run summary so users can see the
+        # mix of formats they migrated.
+        "formats": {},
     }
 
     for result in results:
@@ -746,6 +885,15 @@ def _build_summary(results: list[dict]) -> dict:
             if obj_type in result:
                 for key in ("success", "failed", "skipped"):
                     summary[obj_type][key] += result[obj_type].get(key, 0)
+
+        # Roll up per-schema clone metrics into the catalog-wide totals.
+        tbl = result.get("tables") or {}
+        for metric in ("bytes_copied", "files_copied", "source_table_size", "source_num_of_files"):
+            summary[metric] += tbl.get(metric, 0)
+
+        # Roll up per-source-format counters (Delta / Parquet / Iceberg).
+        for fmt, count in (tbl.get("formats") or {}).items():
+            summary["formats"][fmt] = summary["formats"].get(fmt, 0) + count
 
         if "duration_seconds" in result:
             summary["schema_durations"][result["schema"]] = result["duration_seconds"]

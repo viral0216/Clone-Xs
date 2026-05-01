@@ -6,8 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, ClipboardCopy, Check, Download, ChevronDown, ChevronUp, ArrowDownToLine } from "lucide-react";
 
 function logColor(line: string) {
-  if (/error|ERROR|FAILED|failed/i.test(line)) return "text-red-400";
-  if (/warn|WARNING/i.test(line)) return "text-gray-400";
+  // Check the log-level prefix first so a WARNING that mentions "failed"
+  // in its message body doesn't get painted red.
+  if (/^\s*(?:\[[^\]]+\]\s*)?WARN(?:ING)?\b/i.test(line)) return "text-amber-400";
+  if (/^\s*(?:\[[^\]]+\]\s*)?ERROR\b/i.test(line)) return "text-red-400";
+  if (/\bERROR\b|\bFAILED\b/.test(line)) return "text-red-400";
   if (/OK|success|cloned|completed|matched|created|done/i.test(line)) return "text-gray-300";
   if (/progress|running|scanning|cloning|syncing|generating/i.test(line)) return "text-gray-400";
   return "text-gray-300";

@@ -5,12 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useStartClone, useVolumes } from "@/hooks/useApi";
+import { useStartClone, useVolumes, useTargetConnections, useTargetCatalogs, useTestTargetConnection, useSnapshots } from "@/hooks/useApi";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useActiveJobs } from "@/contexts/ActiveJobsContext";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
@@ -18,6 +19,13 @@ import {
 } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import LoadingState from "@/components/LoadingState";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import ScopePicker, { ObjectRef, ScopeMode } from "@/components/ScopePicker";
+import PreviewPanel from "@/components/PreviewPanel";
+import FieldLabel, { FieldLabelSmall, InfoDot } from "@/components/FieldLabel";
+import { toast } from "sonner";
+
+const TTL_PATTERN = /^\d+[hdw]$/;
 
 type Step = "source" | "options" | "preview" | "execute";
 
@@ -41,6 +49,46 @@ function ProgressBar({ value, max, label }: { value: number; max: number; label?
   );
 }
 
+// Cross-workspace clone returns a flat shape (tables_cloned, views_migrated,
+// schemas_created, ...). New backends emit canonical aliases too, but older
+// completed jobs persisted before that change still have only the flat fields,
+// so map them here as a fallback.
+//
+// Fanout results (`mode: "fanout"`) wrap N per-target cross-workspace results
+// in a `per_target` list with rolled-up totals at the top level. Same
+// flat-field naming as cross-workspace, so the fallback mapping works.
+function normalizeResult(result: any): any {
+  if (!result) return result;
+  const isFanout = result.mode === "fanout";
+  const isCrossWorkspace =
+    isFanout || (result.tables_total !== undefined && result.tables === undefined);
+  if (!isCrossWorkspace) return result;
+  return {
+    ...result,
+    schemas_processed: result.schemas_processed ?? result.schemas_created ?? 0,
+    tables: result.tables ?? {
+      success: result.tables_cloned || 0,
+      failed: result.tables_failed || 0,
+      skipped: result.tables_skipped || 0,
+    },
+    views: result.views ?? {
+      success: result.views_migrated || 0,
+      failed: result.views_failed || 0,
+      skipped: 0,
+    },
+    functions: result.functions ?? {
+      success: result.functions_migrated || 0,
+      failed: result.functions_failed || 0,
+      skipped: 0,
+    },
+    volumes: result.volumes ?? {
+      success: result.volumes_migrated || 0,
+      failed: result.volumes_failed || 0,
+      skipped: 0,
+    },
+  };
+}
+
 function downloadFile(content: string, filename: string, type = "application/json") {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -51,8 +99,24 @@ function downloadFile(content: string, filename: string, type = "application/jso
   URL.revokeObjectURL(url);
 }
 
+// Render a byte count with the largest sensible unit. Used by the clone
+// metrics row (Databricks reports `copied_files_size` in bytes; teams want
+// to see GB / MB).
+function formatBytes(n: number): string {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
+
 function generateReport(job: any): string {
-  const v = job.result?.validation;
+  const result = normalizeResult(job.result);
+  const v = result?.validation;
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const lines = [
     `# Clone Report`,
@@ -69,7 +133,7 @@ function generateReport(job: any): string {
     `| Clone Type | ${job.clone_type} |`,
     `| Started | ${job.started_at ? new Date(job.started_at).toLocaleString() : "—"} |`,
     `| Completed | ${job.completed_at ? new Date(job.completed_at).toLocaleString() : "—"} |`,
-    `| Duration | ${job.result?.duration_seconds ? job.result.duration_seconds.toFixed(1) + "s" : "—"} |`,
+    `| Duration | ${result?.duration_seconds ? result.duration_seconds.toFixed(1) + "s" : "—"} |`,
     ``,
     `## Objects Processed`,
     `| Type | Success | Failed | Skipped |`,
@@ -77,13 +141,13 @@ function generateReport(job: any): string {
   ];
 
   for (const key of ["tables", "views", "functions", "volumes"]) {
-    const d = job.result?.[key];
+    const d = result?.[key];
     if (d) {
       lines.push(`| ${key} | ${d.success || 0} | ${d.failed || 0} | ${d.skipped || 0} |`);
     }
   }
 
-  lines.push(`| schemas | ${job.result?.schemas_processed || 0} | — | — |`);
+  lines.push(`| schemas | ${result?.schemas_processed || 0} | — | — |`);
 
   if (v) {
     lines.push(``);
@@ -118,10 +182,10 @@ function generateReport(job: any): string {
     }
   }
 
-  if (job.result?.errors && job.result.errors.length > 0) {
+  if (result?.errors && result.errors.length > 0) {
     lines.push(``);
     lines.push(`## Warnings`);
-    for (const err of job.result.errors) {
+    for (const err of result.errors) {
       lines.push(`- ${err}`);
     }
   }
@@ -263,37 +327,13 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
   );
 }
 
-function JobProgress({ jobId }: { jobId: string }) {
+function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }) {
+  // Job data is owned by useDurableJob in the parent, which polls and persists
+  // across navigation. Fall back to ActiveJobsContext for the case where the
+  // user landed here via a deep link to a job that's already in flight (e.g.
+  // from the recent-jobs panel) and the durable hook hasn't latched yet.
   const { getJob } = useActiveJobs();
-  const [job, setJob] = useState<any>(null);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Use global context data as baseline, poll faster (2s) for active view
-  useEffect(() => {
-    const contextJob = getJob(jobId);
-    if (contextJob) setJob(contextJob);
-  }, [getJob, jobId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`, { signal: controller.signal });
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch (e: any) {
-        if (e?.name === "AbortError") return; // Expected on unmount
-        console.warn("Job poll failed:", e?.message);
-      }
-    };
-
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => { controller.abort(); if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId]);
-
+  const job = jobFromParent ?? getJob(jobId);
 
   if (!job) {
     return <LoadingState message="Loading job status..." />;
@@ -409,18 +449,20 @@ function JobProgress({ jobId }: { jobId: string }) {
       </div>
 
       {/* Result */}
-      {job.status === "completed" && job.result && (
+      {job.status === "completed" && job.result && (() => {
+        const result = normalizeResult(job.result);
+        return (
         <div className="space-y-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-[#E8453C]">{job.result.schemas_processed || 0}</p>
+                <p className="text-2xl font-bold text-[#E8453C]">{result.schemas_processed || 0}</p>
                 <p className="text-xs text-gray-500">Schemas Processed</p>
               </CardContent>
             </Card>
             {["tables", "views", "functions", "volumes"].map((key) => {
-              const d = job.result[key];
+              const d = result[key];
               if (!d) return null;
               const total = (d.success || 0) + (d.failed || 0) + (d.skipped || 0);
               return (
@@ -440,20 +482,121 @@ function JobProgress({ jobId }: { jobId: string }) {
             })}
           </div>
 
+          {/* Per-target rollup for fanout runs (mode === "fanout"). Shows
+              one row per target with its status, bytes/tables, and any
+              error so users can see at a glance which target(s) failed. */}
+          {result.mode === "fanout" && Array.isArray(result.per_target) && (
+            <div className="border rounded-md p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-sm font-medium">
+                  Fanout: {result.succeeded_targets ?? 0} of {result.target_count ?? 0} targets succeeded
+                </div>
+                {result.status && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      result.status === "success"
+                        ? "border-emerald-500 text-emerald-700 dark:text-emerald-400 text-[10px]"
+                        : result.status === "partial"
+                        ? "border-amber-500 text-amber-700 dark:text-amber-400 text-[10px]"
+                        : "border-red-500 text-red-700 dark:text-red-400 text-[10px]"
+                    }
+                  >
+                    {String(result.status).toUpperCase()}
+                  </Badge>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {result.per_target.map((t: any, idx: number) => (
+                  <div
+                    key={t.target_host || idx}
+                    className="flex items-start gap-2 bg-muted/30 rounded p-2"
+                  >
+                    {t.target_status === "success" ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-mono truncate">{t.target_host}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {t.target_status === "success"
+                          ? `${t.tables_cloned ?? 0} tables · ${formatBytes(t.bytes_copied || 0)} · ${(t.target_duration_seconds ?? 0).toFixed(1)}s`
+                          : t.error || "failed"}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Source format mix — same CLONE syntax handles Delta, Parquet, and
+              Iceberg sources registered in UC. Surface the breakdown so the
+              user knows what they migrated (especially useful for catalogs
+              that mix formats during a migration). */}
+          {result.formats && Object.keys(result.formats).length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground">Source formats:</span>
+              {Object.entries(result.formats as Record<string, number>)
+                .sort((a, b) => (b[1] as number) - (a[1] as number))
+                .map(([fmt, count]) => (
+                  <Badge key={fmt} variant="outline" className="text-xs">
+                    {fmt}: {count}
+                  </Badge>
+                ))}
+            </div>
+          )}
+
+          {/* Clone metrics (Databricks per-CLONE counters, summed across tables) —
+              only render when we actually have data movement to show. */}
+          {((result.bytes_copied || 0) > 0 || (result.files_copied || 0) > 0) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="pt-4 text-center">
+                  <p className="text-2xl font-bold text-foreground">{formatBytes(result.bytes_copied || 0)}</p>
+                  <p className="text-xs text-gray-500">Bytes Copied</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 text-center">
+                  <p className="text-2xl font-bold text-foreground">{(result.files_copied || 0).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">Files Copied</p>
+                </CardContent>
+              </Card>
+              {(result.source_table_size || 0) > 0 && (
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-foreground">{formatBytes(result.source_table_size || 0)}</p>
+                    <p className="text-xs text-gray-500">Source Size</p>
+                  </CardContent>
+                </Card>
+              )}
+              {(result.source_num_of_files || 0) > 0 && (
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-foreground">{(result.source_num_of_files || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">Source Files</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
           {/* Duration */}
-          {job.result.duration_seconds && (
-            <p className="text-sm text-gray-500">Clone duration: {job.result.duration_seconds.toFixed(1)}s</p>
+          {result.duration_seconds && (
+            <p className="text-sm text-gray-500">Clone duration: {result.duration_seconds.toFixed(1)}s</p>
           )}
 
           {/* Validation Results */}
-          {job.result.validation && (
+          {result.validation && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <CheckCircle className="h-5 w-5 text-foreground" />
                   Post-Clone Validation
-                  <Badge className="ml-auto bg-muted/40 text-foreground">
-                    {job.result.validation.matched}/{job.result.validation.total_tables} matched
+                  <Badge variant="outline" className="ml-auto">
+                    {result.validation.matched}/{result.validation.total_tables} matched
                   </Badge>
                 </CardTitle>
               </CardHeader>
@@ -461,25 +604,25 @@ function JobProgress({ jobId }: { jobId: string }) {
                 {/* Validation summary */}
                 <div className="grid grid-cols-4 gap-3 mb-4">
                   <div className="text-center p-2 bg-muted/20 rounded">
-                    <p className="text-lg font-bold text-foreground">{job.result.validation.matched}</p>
+                    <p className="text-lg font-bold text-foreground">{result.validation.matched}</p>
                     <p className="text-xs text-gray-500">Matched</p>
                   </div>
                   <div className="text-center p-2 bg-red-50 rounded">
-                    <p className="text-lg font-bold text-red-700">{job.result.validation.mismatched}</p>
+                    <p className="text-lg font-bold text-red-700">{result.validation.mismatched}</p>
                     <p className="text-xs text-gray-500">Mismatched</p>
                   </div>
                   <div className="text-center p-2 bg-muted/20 rounded">
-                    <p className="text-lg font-bold text-muted-foreground">{job.result.validation.errors}</p>
+                    <p className="text-lg font-bold text-muted-foreground">{result.validation.errors}</p>
                     <p className="text-xs text-gray-500">Errors</p>
                   </div>
                   <div className="text-center p-2 bg-muted/30 rounded">
-                    <p className="text-lg font-bold text-[#E8453C]">{job.result.validation.total_tables}</p>
+                    <p className="text-lg font-bold text-[#E8453C]">{result.validation.total_tables}</p>
                     <p className="text-xs text-gray-500">Total Tables</p>
                   </div>
                 </div>
 
                 {/* Table details */}
-                {job.result.validation.details && job.result.validation.details.length > 0 && (
+                {result.validation.details && result.validation.details.length > 0 && (
                   <div className="overflow-x-auto max-h-80 overflow-y-auto">
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-white">
@@ -492,7 +635,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {job.result.validation.details.map((row: any, i: number) => (
+                        {result.validation.details.map((row: any, i: number) => (
                           <tr key={i} className={`border-b ${row.match ? "" : row.error ? "bg-muted/20" : "bg-red-50"}`}>
                             <td className="py-2 px-3">
                               {row.match ? (
@@ -518,17 +661,17 @@ function JobProgress({ jobId }: { jobId: string }) {
           )}
 
           {/* Errors */}
-          {job.result.errors && job.result.errors.length > 0 && (
+          {result.errors && result.errors.length > 0 && (
             <Card className="border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2 text-foreground">
                   <AlertCircle className="h-5 w-5" />
-                  Warnings ({job.result.errors.length})
+                  Warnings ({result.errors.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="max-h-40 overflow-y-auto text-sm space-y-1">
-                  {job.result.errors.map((err: string, i: number) => (
+                  {result.errors.map((err: string, i: number) => (
                     <div key={i} className="text-muted-foreground font-mono text-xs">{err}</div>
                   ))}
                 </div>
@@ -536,7 +679,8 @@ function JobProgress({ jobId }: { jobId: string }) {
             </Card>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Error */}
       {job.status === "failed" && (
@@ -560,26 +704,93 @@ function JobProgress({ jobId }: { jobId: string }) {
   );
 }
 
-function DestinationCatalogPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [catalogs, setCatalogs] = useState<string[]>([]);
+function SnapshotPicker({
+  catalog, value, onChange,
+}: { catalog: string; value: string; onChange: (id: string) => void }) {
+  const snapshots = useSnapshots(catalog || null);
+  const items = snapshots.data || [];
+  // Don't render the picker at all when there are no snapshots for this catalog —
+  // keeps the Source step clean for the common case. A single help line in
+  // /snapshots explains how to create one.
+  if (!catalog || !items.length) return null;
+  return (
+    <div>
+      <FieldLabelSmall hint="Clone from a named point-in-time snapshot instead of the catalog's current state. Resolves to as_of_timestamp under the hood.">
+        Source snapshot (optional)
+      </FieldLabelSmall>
+      <select
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">— current state —</option>
+        {items.map((s: any) => (
+          <option key={s.snapshot_id} value={s.snapshot_id}>
+            {s.name} · {new Date(s.captured_at).toLocaleDateString()} · {s.table_count ?? 0} tbl
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function DestinationCatalogPicker({
+  value,
+  onChange,
+  targetConnectionName,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  targetConnectionName?: string | null;
+}) {
+  const [sourceCatalogs, setSourceCatalogs] = useState<string[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // When the user is doing a cross-workspace clone with a saved target picked,
+  // the dropdown must list catalogs that exist in the *target* workspace
+  // (otherwise we suggest catalogs that don't exist on the destination side).
+  const targetCatalogs = useTargetCatalogs(targetConnectionName ?? null);
+  const useTarget = !!targetConnectionName;
+
   useEffect(() => {
+    if (useTarget) return; // skip source-side fetch
     setLoading(true);
     api.get<string[]>("/catalogs")
-      .then((data) => setCatalogs(data || []))
-      .catch(() => setCatalogs([]))
+      .then((data) => {
+        const list = data || [];
+        setSourceCatalogs(list);
+        if (list.length === 0) {
+          toast.warning("No catalogs visible — check workspace permissions or type a name manually.");
+        }
+      })
+      .catch(() => setSourceCatalogs([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [useTarget]);
+
+  const catalogs = useTarget ? (targetCatalogs.data ?? []) : sourceCatalogs;
+  const isLoading = useTarget ? targetCatalogs.isLoading : loading;
+  const fetchError = useTarget && targetCatalogs.isError;
 
   const selectClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]";
 
   return (
     <div>
-      <label className="text-sm font-medium">Destination Catalog</label>
-      {loading ? (
+      <label className="text-sm font-medium">
+        Destination Catalog
+        {useTarget && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            (from target '{targetConnectionName}')
+          </span>
+        )}
+      </label>
+      {fetchError && (
+        <p className="text-xs text-red-500 mt-1">
+          Could not list target catalogs — check the saved connection in Settings.
+        </p>
+      )}
+      {isLoading ? (
         <LoadingState message="Loading catalogs..." className="py-2" />
       ) : isNew ? (
         <div className="space-y-2">
@@ -626,18 +837,287 @@ function DestinationCatalogPicker({ value, onChange }: { value: string; onChange
   );
 }
 
-export default function ClonePage() {
+function CrossWorkspaceTogglePanel({
+  enabled,
+  onEnabledChange,
+  connectionName,
+  onConnectionChange,
+  fanoutMode,
+  onFanoutModeChange,
+  fanoutNames,
+  onFanoutNamesChange,
+  fanoutMaxParallel,
+  onFanoutMaxParallelChange,
+}: {
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  connectionName: string;
+  onConnectionChange: (v: string) => void;
+  // Fanout state — when on, plural multi-target dispatch replaces the
+  // single-target one. See `target_workspaces` field on CloneRequest.
+  fanoutMode: boolean;
+  onFanoutModeChange: (v: boolean) => void;
+  fanoutNames: string[];
+  onFanoutNamesChange: (v: string[]) => void;
+  fanoutMaxParallel: number;
+  onFanoutMaxParallelChange: (v: number) => void;
+}) {
+  const conns = useTargetConnections();
+  const test = useTestTargetConnection();
+  const list = conns.data ?? [];
+  const picked = list.find((c) => c.name === connectionName);
+
+  const runTest = () => {
+    if (!connectionName) return;
+    test.mutate(connectionName, {
+      onSuccess: (data: any) => {
+        const extras = [
+          typeof data?.catalog_count === "number" ? `${data.catalog_count} catalogs` : "",
+          data?.warehouse_state ? `warehouse ${data.warehouse_state}` : "",
+        ].filter(Boolean);
+        toast.success(`'${connectionName}' connection OK${extras.length ? ` — ${extras.join(", ")}` : ""}`);
+        if (data?.warehouse_start_triggered) {
+          toast.info(`Warehouse was ${data.warehouse_state} — start triggered, RUNNING in 30–60s.`);
+        }
+      },
+      onError: (e: any) => toast.error(e?.message || `'${connectionName}' test failed`),
+    });
+  };
+
+  const toggleFanoutTarget = (name: string) => {
+    if (fanoutNames.includes(name)) {
+      onFanoutNamesChange(fanoutNames.filter((n) => n !== name));
+    } else {
+      onFanoutNamesChange([...fanoutNames, name]);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+        <div>
+          <div className="text-sm font-medium">Clone to a different workspace</div>
+          {!enabled && (
+            <div className="text-xs text-muted-foreground">
+              Cross-workspace / cross-cloud migration via Delta Sharing → DEEP CLONE. Manage saved targets in Settings.
+            </div>
+          )}
+        </div>
+      </label>
+
+      {enabled && (
+        <div className="space-y-3 border-t pt-3">
+          {conns.isLoading && (
+            <p className="text-xs text-muted-foreground">Loading saved targets…</p>
+          )}
+          {!conns.isLoading && list.length === 0 && (
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">No saved target workspaces.</p>
+              <a href="/settings#target-workspaces" className="text-sm text-[#E8453C] underline">
+                + Configure in Settings →
+              </a>
+            </div>
+          )}
+
+          {/* Fanout mode toggle. Off → single-target dropdown (legacy). On →
+              multi-pick checkboxes that route to the plural target_workspaces
+              field on CloneRequest, dispatching to clone_fanout in parallel. */}
+          {list.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={fanoutMode}
+                onChange={(e) => onFanoutModeChange(e.target.checked)}
+              />
+              <span className="text-sm font-medium">Fan out to multiple targets (parallel multi-region clone)</span>
+            </label>
+          )}
+
+          {list.length > 0 && !fanoutMode && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium">Target connection:</span>
+              <select
+                className="h-9 px-3 py-1 text-sm bg-background border border-input rounded-md min-w-[200px]"
+                value={connectionName}
+                onChange={(e) => onConnectionChange(e.target.value)}
+              >
+                <option value="">— select target —</option>
+                {list.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runTest}
+                disabled={!connectionName || test.isPending}
+              >
+                {test.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+              </Button>
+              <a href="/settings#target-workspaces" className="text-xs text-muted-foreground hover:text-foreground underline">
+                Manage in Settings →
+              </a>
+            </div>
+          )}
+
+          {list.length > 0 && fanoutMode && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">
+                Targets ({fanoutNames.length} of {list.length} selected):
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-48 overflow-y-auto border rounded-md p-2">
+                {list.map((c) => {
+                  const checked = fanoutNames.includes(c.name);
+                  return (
+                    <label
+                      key={c.name}
+                      className="flex items-start gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={checked}
+                        onChange={() => toggleFanoutTarget(c.name)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{c.name}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono truncate">
+                          {c.host} · WH {c.warehouse_id}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm">Parallel:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={fanoutMaxParallel}
+                  onChange={(e) => onFanoutMaxParallelChange(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="h-8 w-16 px-2 text-sm bg-background border border-input rounded-md"
+                />
+                <span className="text-xs text-muted-foreground">
+                  How many targets clone simultaneously. Cap at 5 for typical bandwidth-limited sources.
+                </span>
+              </div>
+              {fanoutNames.length === 0 && (
+                <div className="text-xs text-amber-700 dark:text-amber-400">
+                  Pick at least one target to fan out to.
+                </div>
+              )}
+              {fanoutNames.length === 1 && (
+                <div className="text-xs text-muted-foreground">
+                  Only one target picked — request will be sent as `target_workspaces` (plural) but it&apos;s equivalent to a regular cross-workspace clone.
+                </div>
+              )}
+            </div>
+          )}
+
+          {picked && !fanoutMode && (
+            <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 font-mono truncate">
+              {picked.host} · {picked.auth_method === "pat" ? "PAT" : picked.auth_method === "service_principal" ? "SP" : `Profile ${picked.profile}`} · WH {picked.warehouse_id} · {picked.data_sync_mode}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClonePageInner() {
   const [step, setStep] = useState<Step>("source");
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  // Durable job tracking — survives page navigation and browser refresh.
+  // The hook keeps the job_id, the latest server-side progress dict, and a
+  // capped progress history in JobContext (sessionStorage-backed) so coming
+  // back to this page mid-clone restores progress instead of resetting.
+  const cloneJob = useDurableJob({
+    key: "clone",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Clone-Xs",
+  });
+  const activeJobId = cloneJob.jobId;
+  const setActiveJobId = (id: string | null) => {
+    if (id) {
+      // Used only by the recent-jobs deep link (no submit). Seed the entry so
+      // useDurableJob picks it up and starts polling.
+      cloneJob.start({}, async () => id);
+    } else {
+      cloneJob.clear();
+    }
+  };
+  // Mid-clone navigation: if the user comes back while a job is in flight,
+  // jump the wizard to the execute step so the progress card is visible.
+  useEffect(() => {
+    if (activeJobId && step !== "execute") setStep("execute");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobId]);
   const { favorites, addFavorite, removeFavorite } = useFavorites();
   const [showAddFav, setShowAddFav] = useState(false);
   const [favSource, setFavSource] = useState("");
   const [favDest, setFavDest] = useState("");
 
+  // Cross-workspace / cross-cloud migration state
+  const [crossWorkspace, setCrossWorkspace] = useState(false);
+  const [targetConnectionName, setTargetConnectionName] = useState<string>("");
+  // Multi-target fanout state. When `fanoutMode` is on, the singular target
+  // dropdown is hidden and multi-pick checkboxes drive the request payload's
+  // `target_workspaces` (plural) field — dispatched to the parallel
+  // run_cross_workspace_fanout orchestrator on the server side.
+  const [fanoutMode, setFanoutMode] = useState(false);
+  const [fanoutNames, setFanoutNames] = useState<string[]>([]);
+  const [fanoutMaxParallel, setFanoutMaxParallel] = useState<number>(5);
+  const targetConnections = useTargetConnections();
+  const pickedConnection = (targetConnections.data ?? []).find((c) => c.name === targetConnectionName) ?? null;
+  const pickedFanoutConnections = (targetConnections.data ?? []).filter((c) => fanoutNames.includes(c.name));
+  // Synthesize a target shape for PreviewPanel's CLI/YAML output. Secrets stay
+  // redacted as "***" (the GET endpoint masks them) — correct behavior for
+  // commands the user might paste/share.
+  const targetForPreview = pickedConnection
+    ? {
+        host: pickedConnection.host,
+        auth_method: pickedConnection.auth_method,
+        token: pickedConnection.token ?? "",
+        client_id: pickedConnection.client_id ?? "",
+        client_secret: pickedConnection.client_secret ?? "",
+        profile: pickedConnection.profile ?? "",
+        warehouse_id: pickedConnection.warehouse_id,
+        keep_share: !!pickedConnection.keep_share,
+        data_sync_mode: pickedConnection.data_sync_mode ?? "snapshot_once",
+        auto_handle_masks: !!pickedConnection.auto_handle_masks,
+      }
+    : {
+        host: "",
+        auth_method: "pat" as const,
+        token: "",
+        client_id: "",
+        client_secret: "",
+        profile: "",
+        warehouse_id: "",
+        keep_share: false,
+        data_sync_mode: "snapshot_once" as const,
+        auto_handle_masks: false,
+      };
+
+  // Scope selection state
+  const [scopeMode, setScopeMode] = useState<ScopeMode>("all");
+  const [selectedObjects, setSelectedObjects] = useState<ObjectRef[]>([]);
+
   // Default config
   const defaults = {
     source_catalog: "",
     destination_catalog: "",
+    source_snapshot_id: null as string | null,
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
     load_type: "FULL" as "FULL" | "INCREMENTAL",
     dry_run: false,
@@ -645,6 +1125,8 @@ export default function ClonePage() {
     parallel_tables: 1,
     max_parallel_queries: 100,
     max_rps: 0,
+    max_duration_min: null as number | null,
+    max_tables: null as number | null,
     // Copy options
     copy_permissions: true,
     copy_ownership: true,
@@ -686,6 +1168,9 @@ export default function ClonePage() {
     throttle: "" as "" | "low" | "medium" | "high" | "max",
     ttl: "",
     template: "",
+    // Free-form TBLPROPERTIES override block — one `key = value` per line.
+    // Parsed at submit-time into clone_tbl_properties dict. Empty = no override.
+    clone_tbl_properties_text: "",
   };
 
   // Apply URL query params from template selection on mount
@@ -787,6 +1272,40 @@ export default function ClonePage() {
   const volumes = useVolumes();
 
   const handleClone = (dryRun: boolean) => {
+    if (
+      !crossWorkspace &&
+      config.source_catalog &&
+      config.source_catalog === config.destination_catalog
+    ) {
+      toast.error("Source and destination catalogs must be different.");
+      return;
+    }
+    if (crossWorkspace) {
+      if (fanoutMode) {
+        if (fanoutNames.length === 0) {
+          toast.error("Pick at least one target to fan out to.");
+          return;
+        }
+      } else if (!targetConnectionName) {
+        toast.error("Pick a target workspace (or add one in Settings).");
+        return;
+      }
+    }
+    for (const field of ["include_tables_regex", "exclude_tables_regex"] as const) {
+      const pattern = (config as any)[field];
+      if (pattern) {
+        try {
+          new RegExp(pattern);
+        } catch {
+          toast.error(`Invalid regex in ${field.replace(/_/g, " ")}: ${pattern}`);
+          return;
+        }
+      }
+    }
+    if (config.ttl && !TTL_PATTERN.test(config.ttl)) {
+      toast.error("TTL must look like 24h, 7d, or 2w.");
+      return;
+    }
     // Clean up empty strings → null so Pydantic optional fields validate correctly
     const payload: Record<string, unknown> = { ...config, dry_run: dryRun };
     if (!payload.order_by_size) payload.order_by_size = null;
@@ -801,13 +1320,90 @@ export default function ClonePage() {
     if (!payload.ttl) delete payload.ttl;
     if (!payload.template) delete payload.template;
     if (!payload.where_clause) delete payload.where_clause;
+    if (payload.max_duration_min == null) delete payload.max_duration_min;
+    if (payload.max_tables == null) delete payload.max_tables;
+    if (!payload.source_snapshot_id) delete payload.source_snapshot_id;
 
-    startClone.mutate(payload, {
-      onSuccess: (data: any) => {
-        setActiveJobId(data.job_id);
-        setStep("execute");
-      },
-    });
+    // Parse the free-form TBLPROPERTIES textarea ("key = value" per line) into
+    // the dict the backend expects on `clone_tbl_properties`. Skip blank
+    // lines and lines without `=`. Strip surrounding quotes from values.
+    const tblPropsText = (payload.clone_tbl_properties_text as string) || "";
+    delete payload.clone_tbl_properties_text;
+    if (tblPropsText.trim()) {
+      const props: Record<string, string> = {};
+      for (const line of tblPropsText.split("\n")) {
+        const eq = line.indexOf("=");
+        if (eq < 0) continue;
+        const k = line.slice(0, eq).trim();
+        let v = line.slice(eq + 1).trim();
+        if (!k) continue;
+        if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+          v = v.slice(1, -1);
+        }
+        props[k] = v;
+      }
+      if (Object.keys(props).length > 0) {
+        payload.clone_tbl_properties = props;
+      }
+    }
+
+    if (crossWorkspace && fanoutMode && fanoutNames.length > 0) {
+      // Multi-target fanout — server-side `clone_fanout` orchestrator runs N
+      // cross-workspace clones in parallel, one per target. Same inline-creds
+      // pattern as the single-target path, just one entry per picked target.
+      const missing = fanoutNames.filter(
+        (n) => !pickedFanoutConnections.some((c) => c.name === n),
+      );
+      if (missing.length > 0) {
+        toast.error(`Target connections not found in browser storage: ${missing.join(", ")}`);
+        return;
+      }
+      payload.target_workspaces = pickedFanoutConnections.map((c) => ({
+        host: c.host,
+        auth_method: c.auth_method,
+        token: c.token,
+        client_id: c.client_id,
+        client_secret: c.client_secret,
+        profile: c.profile,
+        warehouse_id: c.warehouse_id,
+        keep_share: !!c.keep_share,
+        data_sync_mode: c.data_sync_mode || "snapshot_once",
+        auto_handle_masks: !!c.auto_handle_masks,
+      }));
+      payload.fanout_max_parallel = fanoutMaxParallel;
+    } else if (crossWorkspace && targetConnectionName) {
+      // Resolve localStorage entry → inline target_workspace creds for this
+      // single request. Server is stateless w.r.t. saved connections.
+      if (!pickedConnection) {
+        toast.error(`Target '${targetConnectionName}' not found in browser storage.`);
+        return;
+      }
+      payload.target_workspace = {
+        host: pickedConnection.host,
+        auth_method: pickedConnection.auth_method,
+        token: pickedConnection.token,
+        client_id: pickedConnection.client_id,
+        client_secret: pickedConnection.client_secret,
+        profile: pickedConnection.profile,
+        warehouse_id: pickedConnection.warehouse_id,
+        keep_share: !!pickedConnection.keep_share,
+        data_sync_mode: pickedConnection.data_sync_mode || "snapshot_once",
+        auto_handle_masks: !!pickedConnection.auto_handle_masks,
+      };
+    }
+
+    if (scopeMode === "select" && selectedObjects.length > 0) {
+      payload.include_objects = selectedObjects;
+    }
+
+    cloneJob.start(payload, () =>
+      new Promise<string>((resolve, reject) => {
+        startClone.mutate(payload, {
+          onSuccess: (data: any) => resolve(data.job_id),
+          onError: (e: any) => reject(e instanceof Error ? e : new Error(String(e))),
+        });
+      })
+    ).catch(() => { /* error already surfaced via cloneJob.entry.error */ });
     setStep("execute");
   };
 
@@ -887,6 +1483,18 @@ export default function ClonePage() {
             <DestinationCatalogPicker
               value={config.destination_catalog}
               onChange={(v) => setConfig({ ...config, destination_catalog: v })}
+              targetConnectionName={crossWorkspace ? targetConnectionName : null}
+            />
+            {config.source_catalog && config.destination_catalog &&
+              config.source_catalog === config.destination_catalog && (
+              <p className="text-xs text-red-600 dark:text-red-400 -mt-2">
+                Source and destination catalogs must be different.
+              </p>
+            )}
+            <SnapshotPicker
+              catalog={config.source_catalog}
+              value={config.source_snapshot_id || ""}
+              onChange={(id) => setConfig({ ...config, source_snapshot_id: id || null })}
             />
             <div>
               <label className="text-sm font-medium">Storage Location (optional)</label>
@@ -897,7 +1505,50 @@ export default function ClonePage() {
               />
               <p className="text-xs text-gray-400 mt-1">Required if workspace uses Default Storage</p>
             </div>
-            <Button onClick={() => setStep("options")} disabled={!config.source_catalog || !config.destination_catalog}>
+            <div className="border-t border-b py-4">
+              <CrossWorkspaceTogglePanel
+                enabled={crossWorkspace}
+                onEnabledChange={(v) => {
+                  setCrossWorkspace(v);
+                  if (!v) {
+                    setTargetConnectionName("");
+                    setFanoutMode(false);
+                    setFanoutNames([]);
+                  }
+                }}
+                connectionName={targetConnectionName}
+                onConnectionChange={setTargetConnectionName}
+                fanoutMode={fanoutMode}
+                onFanoutModeChange={(v) => {
+                  setFanoutMode(v);
+                  // Switching modes clears the other side so submission state
+                  // is unambiguous (matches the Pydantic XOR validator).
+                  if (v) setTargetConnectionName("");
+                  else setFanoutNames([]);
+                }}
+                fanoutNames={fanoutNames}
+                onFanoutNamesChange={setFanoutNames}
+                fanoutMaxParallel={fanoutMaxParallel}
+                onFanoutMaxParallelChange={setFanoutMaxParallel}
+              />
+            </div>
+            <ScopePicker
+              catalog={config.source_catalog}
+              mode={scopeMode}
+              onModeChange={setScopeMode}
+              selected={selectedObjects}
+              onSelectedChange={setSelectedObjects}
+            />
+            <Button
+              onClick={() => setStep("options")}
+              disabled={
+                !config.source_catalog ||
+                !config.destination_catalog ||
+                (!crossWorkspace && config.source_catalog === config.destination_catalog) ||
+                (crossWorkspace && !targetConnectionName) ||
+                (scopeMode === "select" && selectedObjects.length === 0)
+              }
+            >
               Next: Options
             </Button>
           </CardContent>
@@ -913,7 +1564,7 @@ export default function ClonePage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium">Clone Type</label>
+                <FieldLabel field="clone_type">Clone Type</FieldLabel>
                 <div className="flex gap-2 mt-1">
                   {(["DEEP", "SHALLOW"] as const).map((t) => (
                     <Button
@@ -928,7 +1579,7 @@ export default function ClonePage() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium">Load Type</label>
+                <FieldLabel field="load_type">Load Type</FieldLabel>
                 <div className="flex gap-2 mt-1">
                   {(["FULL", "INCREMENTAL"] as const).map((t) => (
                     <Button
@@ -955,10 +1606,11 @@ export default function ClonePage() {
                     onChange={(e) => setConfig({ ...config, serverless: e.target.checked })}
                   />
                   Use Serverless Compute
+                  <InfoDot field="serverless" />
                 </label>
                 {config.serverless && (
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">UC Volume (required for serverless)</label>
+                    <FieldLabelSmall field="volume" className="text-xs text-gray-500 mb-1 inline-flex items-center gap-1.5">UC Volume (required for serverless)</FieldLabelSmall>
                     {volumes.isLoading ? (
                       <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -997,29 +1649,29 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Performance</label>
               <div className="grid grid-cols-4 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">Max Workers (schemas)</label>
+                  <FieldLabelSmall field="max_workers">Max Workers (schemas)</FieldLabelSmall>
                   <Input type="number" min={1} max={16} value={config.max_workers}
                     onChange={(e) => setConfig({ ...config, max_workers: parseInt(e.target.value) || 4 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Parallel Tables</label>
+                  <FieldLabelSmall field="parallel_tables">Parallel Tables</FieldLabelSmall>
                   <Input type="number" min={1} max={8} value={config.parallel_tables}
                     onChange={(e) => setConfig({ ...config, parallel_tables: parseInt(e.target.value) || 1 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Max Parallel Queries</label>
+                  <FieldLabelSmall field="max_parallel_queries">Max Parallel Queries</FieldLabelSmall>
                   <Input type="number" min={1} max={200} value={config.max_parallel_queries}
                     onChange={(e) => setConfig({ ...config, max_parallel_queries: parseInt(e.target.value) || 100 })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Max RPS (0=unlimited)</label>
+                  <FieldLabelSmall field="max_rps">Max RPS (0=unlimited)</FieldLabelSmall>
                   <Input type="number" min={0} max={100} value={config.max_rps}
                     onChange={(e) => setConfig({ ...config, max_rps: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 mt-3">
                 <div>
-                  <label className="text-xs text-gray-500">Order by Size</label>
+                  <FieldLabelSmall field="order_by_size">Order by Size</FieldLabelSmall>
                   <div className="flex gap-1 mt-1">
                     {(["", "asc", "desc"] as const).map((v) => (
                       <Button key={v || "none"} size="sm" variant={config.order_by_size === v ? "default" : "outline"}
@@ -1030,7 +1682,7 @@ export default function ClonePage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Throttle Profile</label>
+                  <FieldLabelSmall field="throttle">Throttle Profile</FieldLabelSmall>
                   <div className="flex gap-1 mt-1">
                     {(["", "low", "medium", "high", "max"] as const).map((v) => (
                       <Button key={v || "none"} size="sm" variant={config.throttle === v ? "default" : "outline"}
@@ -1060,6 +1712,7 @@ export default function ClonePage() {
                     <input type="checkbox" checked={config[key] as boolean}
                       onChange={(e) => setConfig({ ...config, [key]: e.target.checked })} />
                     {label}
+                    <InfoDot field={key} />
                   </label>
                 ))}
               </div>
@@ -1088,6 +1741,7 @@ export default function ClonePage() {
                     <input type="checkbox" checked={config[key] as boolean}
                       onChange={(e) => setConfig({ ...config, [key]: e.target.checked })} />
                     {label}
+                    <InfoDot field={key} />
                   </label>
                 ))}
               </div>
@@ -1096,7 +1750,7 @@ export default function ClonePage() {
             {/* Auto Rollback Threshold */}
             {config.auto_rollback && (
               <div className="w-48">
-                <label className="text-xs text-gray-500">Rollback Threshold (%)</label>
+                <FieldLabelSmall field="rollback_threshold">Rollback Threshold (%)</FieldLabelSmall>
                 <Input type="number" min={0} max={100} value={config.rollback_threshold}
                   onChange={(e) => setConfig({ ...config, rollback_threshold: parseFloat(e.target.value) || 5 })} />
               </div>
@@ -1107,22 +1761,22 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Filtering</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">Include Schemas (comma-separated)</label>
+                  <FieldLabelSmall field="include_schemas">Include Schemas (comma-separated)</FieldLabelSmall>
                   <Input placeholder="e.g. bronze,silver,gold" value={config.include_schemas.join(",")}
                     onChange={(e) => setConfig({ ...config, include_schemas: e.target.value ? e.target.value.split(",").map(s => s.trim()) : [] })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Exclude Schemas (comma-separated)</label>
+                  <FieldLabelSmall field="exclude_schemas">Exclude Schemas (comma-separated)</FieldLabelSmall>
                   <Input value={config.exclude_schemas.join(",")}
                     onChange={(e) => setConfig({ ...config, exclude_schemas: e.target.value ? e.target.value.split(",").map(s => s.trim()) : [] })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Include Tables Regex</label>
+                  <FieldLabelSmall field="include_tables_regex">Include Tables Regex</FieldLabelSmall>
                   <Input placeholder="e.g. ^fact_.*" value={config.include_tables_regex}
                     onChange={(e) => setConfig({ ...config, include_tables_regex: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Exclude Tables Regex</label>
+                  <FieldLabelSmall field="exclude_tables_regex">Exclude Tables Regex</FieldLabelSmall>
                   <Input placeholder="e.g. _tmp$|_backup$" value={config.exclude_tables_regex}
                     onChange={(e) => setConfig({ ...config, exclude_tables_regex: e.target.value })} />
                 </div>
@@ -1134,12 +1788,12 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Time Travel (optional)</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">As-of Timestamp</label>
+                  <FieldLabelSmall field="as_of_timestamp">As-of Timestamp</FieldLabelSmall>
                   <Input type="datetime-local" value={config.as_of_timestamp}
                     onChange={(e) => setConfig({ ...config, as_of_timestamp: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">As-of Version</label>
+                  <FieldLabelSmall field="as_of_version">As-of Version</FieldLabelSmall>
                   <Input type="number" min={0} placeholder="e.g. 5" value={config.as_of_version}
                     onChange={(e) => setConfig({ ...config, as_of_version: e.target.value })} />
                 </div>
@@ -1151,20 +1805,67 @@ export default function ClonePage() {
               <label className="text-sm font-medium mb-2 block">Advanced</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500">WHERE Clause (deep clone only)</label>
+                  <FieldLabelSmall field="where_clause">WHERE Clause (deep clone only)</FieldLabelSmall>
                   <Input placeholder="e.g. created_date > '2024-01-01'" value={config.where_clause}
                     onChange={(e) => setConfig({ ...config, where_clause: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">TTL (e.g. 7d, 30d, 2w)</label>
+                  <FieldLabelSmall field="ttl">TTL (e.g. 7d, 30d, 2w)</FieldLabelSmall>
                   <Input placeholder="e.g. 7d" value={config.ttl}
                     onChange={(e) => setConfig({ ...config, ttl: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Template</label>
+                  <FieldLabelSmall field="template">Template</FieldLabelSmall>
                   <Input placeholder="e.g. dev-refresh, dr-replica" value={config.template}
                     onChange={(e) => setConfig({ ...config, template: e.target.value })} />
                 </div>
+                <div>
+                  <FieldLabelSmall hint="Runtime guardrail: abort the clone if it takes longer than this (minutes). Leave blank for no limit.">
+                    Max duration (min)
+                  </FieldLabelSmall>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 60"
+                    value={config.max_duration_min ?? ""}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        max_duration_min: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabelSmall hint="Runtime guardrail: abort the clone after this many tables have been touched. Safety net against runaway scope changes.">
+                    Max tables
+                  </FieldLabelSmall>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 500"
+                    value={config.max_tables ?? ""}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        max_tables: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <FieldLabelSmall hint="Optional Databricks TBLPROPERTIES applied INLINE on every per-table CLONE statement. One `key = value` per line. Primary use case: archival retention (e.g. delta.logRetentionDuration = '3650 days'). Setting these via ALTER TABLE post-clone is too late for the first VACUUM window.">
+                  TBLPROPERTIES override (advanced — for archival use)
+                </FieldLabelSmall>
+                <textarea
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8]"
+                  rows={3}
+                  placeholder={"delta.logRetentionDuration = '3650 days'\ndelta.deletedFileRetentionDuration = '3650 days'"}
+                  value={config.clone_tbl_properties_text}
+                  onChange={(e) => setConfig({ ...config, clone_tbl_properties_text: e.target.value })}
+                />
               </div>
             </div>
 
@@ -1178,44 +1879,25 @@ export default function ClonePage() {
 
       {/* Step 3: Preview */}
       {step === "preview" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Preview Clone Configuration
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-gray-900 text-gray-300 p-4 rounded-lg font-mono text-sm space-y-1">
-              <p>clxs clone \</p>
-              <p>  --source {config.source_catalog} --dest {config.destination_catalog} \</p>
-              <p>  --clone-type {config.clone_type} --load-type {config.load_type} \</p>
-              <p>  --max-workers {config.max_workers} --parallel-tables {config.parallel_tables} \</p>
-              {!config.copy_permissions && <p>  --no-permissions \</p>}
-              {!config.copy_tags && <p>  --no-tags \</p>}
-              {!config.copy_security && <p>  --no-security \</p>}
-              {config.enable_rollback && <p>  --enable-rollback \</p>}
-              {config.validate_after_clone && <p>  --validate \</p>}
-              {config.force_reclone && <p>  --force-reclone \</p>}
-              {config.serverless && <p>  --serverless \</p>}
-              {config.serverless && config.volume && <p>  --volume &quot;{config.volume}&quot; \</p>}
-              {config.location && <p>  --location &quot;{config.location}&quot; \</p>}
-              <p>  --progress</p>
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep("options")}>Back</Button>
-              <Button variant="outline" onClick={() => handleClone(true)} disabled={startClone.isPending}>
-                {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
-                Dry Run
-              </Button>
-              <Button onClick={() => handleClone(false)} className="bg-[#E8453C] hover:bg-[#D93025]" disabled={startClone.isPending}>
-                {startClone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                Execute Clone
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PreviewPanel
+          config={config}
+          scopeMode={scopeMode}
+          selectedObjects={selectedObjects}
+          crossWorkspace={crossWorkspace}
+          target={targetForPreview}
+          fanoutMode={fanoutMode}
+          fanoutTargets={pickedFanoutConnections.map((c) => ({
+            name: c.name,
+            host: c.host,
+            warehouse_id: c.warehouse_id,
+          }))}
+          fanoutMaxParallel={fanoutMaxParallel}
+          onBack={() => setStep("options")}
+          onDryRun={() => handleClone(true)}
+          onExecute={() => handleClone(false)}
+          isStartingClone={startClone.isPending}
+          dryRunResult={startClone.isSuccess && config.dry_run ? startClone.data : null}
+        />
       )}
 
       {/* Step 4: Execution with Live Progress */}
@@ -1236,28 +1918,28 @@ export default function ClonePage() {
               {config.max_rps > 0 && <Badge variant="outline" className="text-xs">RPS:{config.max_rps}</Badge>}
               {config.order_by_size && <Badge variant="outline" className="text-xs">Size:{config.order_by_size}</Badge>}
               {config.throttle && <Badge variant="outline" className="text-xs">Throttle:{config.throttle}</Badge>}
-              {config.copy_permissions && <Badge className="bg-muted/40 text-foreground text-xs">Permissions</Badge>}
-              {config.copy_tags && <Badge className="bg-muted/40 text-foreground text-xs">Tags</Badge>}
-              {config.copy_security && <Badge className="bg-muted/40 text-foreground text-xs">Security</Badge>}
-              {config.copy_constraints && <Badge className="bg-muted/40 text-foreground text-xs">Constraints</Badge>}
-              {config.copy_properties && <Badge className="bg-muted/40 text-foreground text-xs">Properties</Badge>}
-              {config.copy_comments && <Badge className="bg-muted/40 text-foreground text-xs">Comments</Badge>}
-              {config.enable_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Rollback</Badge>}
-              {config.auto_rollback && <Badge className="bg-muted/50 text-foreground text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
-              {config.validate_after_clone && <Badge className="bg-muted/50 text-foreground text-xs">Validate</Badge>}
-              {config.validate_checksum && <Badge className="bg-muted/50 text-foreground text-xs">Checksum</Badge>}
-              {config.generate_report && <Badge className="bg-muted/50 text-foreground text-xs">Report</Badge>}
-              {config.checkpoint && <Badge className="bg-muted/50 text-foreground text-xs">Checkpoint</Badge>}
-              {config.force_reclone && <Badge className="bg-muted/40 text-foreground text-xs">Force Re-clone</Badge>}
-              {config.schema_only && <Badge className="bg-muted/40 text-foreground text-xs">Schema Only</Badge>}
-              {config.skip_unused && <Badge className="bg-muted/40 text-foreground text-xs">Skip Unused</Badge>}
-              {config.impact_check && <Badge className="bg-muted/40 text-foreground text-xs">Impact Check</Badge>}
-              {config.require_approval && <Badge className="bg-muted/40 text-foreground text-xs">Approval Required</Badge>}
-              {config.dry_run && <Badge className="bg-muted/40 text-foreground text-xs">Dry Run</Badge>}
-              {config.verbose && <Badge className="bg-gray-100 text-gray-800 text-xs">Verbose</Badge>}
-              {config.serverless && <Badge className="bg-muted/40 text-foreground text-xs">Serverless</Badge>}
-              {!config.copy_permissions && <Badge className="bg-red-100 text-red-800 text-xs">No Permissions</Badge>}
-              {!config.copy_ownership && <Badge className="bg-red-100 text-red-800 text-xs">No Ownership</Badge>}
+              {config.copy_permissions && <Badge variant="outline" className="text-xs">Permissions</Badge>}
+              {config.copy_tags && <Badge variant="outline" className="text-xs">Tags</Badge>}
+              {config.copy_security && <Badge variant="outline" className="text-xs">Security</Badge>}
+              {config.copy_constraints && <Badge variant="outline" className="text-xs">Constraints</Badge>}
+              {config.copy_properties && <Badge variant="outline" className="text-xs">Properties</Badge>}
+              {config.copy_comments && <Badge variant="outline" className="text-xs">Comments</Badge>}
+              {config.enable_rollback && <Badge variant="outline" className="text-xs">Rollback</Badge>}
+              {config.auto_rollback && <Badge variant="outline" className="text-xs">Auto-Rollback ({config.rollback_threshold}%)</Badge>}
+              {config.validate_after_clone && <Badge variant="outline" className="text-xs">Validate</Badge>}
+              {config.validate_checksum && <Badge variant="outline" className="text-xs">Checksum</Badge>}
+              {config.generate_report && <Badge variant="outline" className="text-xs">Report</Badge>}
+              {config.checkpoint && <Badge variant="outline" className="text-xs">Checkpoint</Badge>}
+              {config.force_reclone && <Badge variant="outline" className="text-xs">Force Re-clone</Badge>}
+              {config.schema_only && <Badge variant="outline" className="text-xs">Schema Only</Badge>}
+              {config.skip_unused && <Badge variant="outline" className="text-xs">Skip Unused</Badge>}
+              {config.impact_check && <Badge variant="outline" className="text-xs">Impact Check</Badge>}
+              {config.require_approval && <Badge variant="outline" className="text-xs">Approval Required</Badge>}
+              {config.dry_run && <Badge variant="outline" className="text-xs">Dry Run</Badge>}
+              {config.verbose && <Badge variant="outline" className="text-xs">Verbose</Badge>}
+              {config.serverless && <Badge variant="outline" className="text-xs">Serverless</Badge>}
+              {!config.copy_permissions && <Badge variant="outline" className="text-xs border-red-400 text-red-600 dark:text-red-400">No Permissions</Badge>}
+              {!config.copy_ownership && <Badge variant="outline" className="text-xs border-red-400 text-red-600 dark:text-red-400">No Ownership</Badge>}
               {config.include_schemas.length > 0 && <Badge variant="outline" className="text-xs">Schemas: {config.include_schemas.join(",")}</Badge>}
               {config.include_tables_regex && <Badge variant="outline" className="text-xs">Include: {config.include_tables_regex}</Badge>}
               {config.exclude_tables_regex && <Badge variant="outline" className="text-xs">Exclude: {config.exclude_tables_regex}</Badge>}
@@ -1276,7 +1958,7 @@ export default function ClonePage() {
               </div>
             )}
 
-            {activeJobId && <JobProgress jobId={activeJobId} />}
+            {activeJobId && <JobProgress jobId={activeJobId} job={cloneJob.entry?.data} />}
 
             {startClone.isError && !activeJobId && (
               <div className="flex items-center gap-2 text-red-600">
@@ -1312,5 +1994,13 @@ export default function ClonePage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ClonePage() {
+  return (
+    <ErrorBoundary fallbackTitle="Clone page failed to render">
+      <ClonePageInner />
+    </ErrorBoundary>
   );
 }

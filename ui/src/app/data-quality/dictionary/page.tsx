@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,14 +29,14 @@ const STATUSES = ["active", "draft", "deprecated"] as const;
 /* ── Page ──────────────────────────────────────────────── */
 
 export default function DataDictionaryPage() {
-  const [terms, setTerms] = useState<any[]>([]);
+  const [terms, setTerms] = usePersistedState<any[]>("dq-dictionary-terms", []);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
   // Filters
-  const [domainFilter, setDomainFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [searchText, setSearchText] = useState("");
+  const [domainFilter, setDomainFilter] = usePersistedState<string>("dq-dictionary-domain", "All");
+  const [statusFilter, setStatusFilter] = usePersistedState<string>("dq-dictionary-status", "All");
+  const [searchText, setSearchText] = usePersistedState<string>("dq-dictionary-search", "");
 
   // Form state
   const [form, setForm] = useState({
@@ -49,13 +50,15 @@ export default function DataDictionaryPage() {
   });
 
   // Global metadata search
-  const [metaQuery, setMetaQuery] = useState("");
-  const [metaResults, setMetaResults] = useState<any>(null);
+  const [metaQuery, setMetaQuery] = usePersistedState<string>("dq-dictionary-meta-query", "");
+  const [metaResults, setMetaResults] = usePersistedState<any>("dq-dictionary-meta-results", null);
   const [metaSearching, setMetaSearching] = useState(false);
-  const [metaTab, setMetaTab] = useState<"tables" | "columns" | "terms" | "tags">("tables");
+  const [metaTab, setMetaTab] = usePersistedState<"tables" | "columns" | "terms" | "tags">("dq-dictionary-meta-tab", "tables");
 
   useEffect(() => {
+    if (terms && terms.length > 0) { setLoading(false); return; }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function load() {

@@ -43,6 +43,18 @@ exclude_schemas:
 table_pattern: ""             # Regex for inclusion (empty = all)
 exclude_table_pattern: ""     # Regex for exclusion
 
+# ── Partial-scope selection ──────────────────────────
+# Clone a specific subset of schemas + objects. Produced by the UI Scope Picker.
+# Translated by the router into include_schemas + an anchored include_tables_regex,
+# so it composes with include/exclude_schemas and the regex fields above.
+# Volumes are enumerated per-schema and don't honor the regex — selecting a
+# specific volume will include the whole schema's volumes.
+include_objects:
+  - { schema: "sales",     name: "orders",           type: "table" }
+  - { schema: "sales",     name: "customers",        type: "table" }
+  - { schema: "marketing", name: "v_campaigns",      type: "view" }
+  - { schema: "analytics", name: "calc_discount",    type: "function" }
+
 # ── Tag filtering ────────────────────────────────────
 filter_tags: {}               # e.g. { "env": "prod", "tier": "gold" }
 
@@ -68,10 +80,76 @@ retry_delay: 2                # Seconds between retries
 pre_clone_hooks: []           # SQL statements to run before clone
 post_clone_hooks: []          # SQL statements to run after clone
 
-# ── Cross-workspace ─────────────────────────────────
-destination_workspace:
-  host: ""                    # e.g. "https://adb-other.azuredatabricks.net"
-  token: ""
+# ── Runtime guardrails ───────────────────────────────
+# Abort the clone in flight if it exceeds these limits. Checked between
+# schemas. When tripped, the job's summary gets aborted=true + abort_reason.
+max_duration_min: null      # e.g. 60  — null = no wall-clock limit
+max_tables: null            # e.g. 500 — null = no table-count limit
+
+# ── Named snapshot source ────────────────────────────
+# Clone FROM a previously captured snapshot instead of the catalog's current
+# state. See guide/snapshots.md. Resolved to `as_of_timestamp` at run time.
+source_snapshot_id: null    # UUID of a row in <audit>.clone_snapshots
+
+# ── Cross-workspace / cross-cloud migration ─────────
+# When target_workspace is set, the clone runs through the Delta Sharing + DEEP
+# CLONE orchestrator (see the Cross-workspace guide). Leave unset for normal
+# same-workspace clones.
+#
+# UI USERS: ignore this block. Saved target connections are managed in the
+# browser via /settings → Target Workspaces and stored in localStorage
+# (key: clxs_target_connections). The /clone payload assembly resolves the
+# picked connection name into the same `target_workspace` object inline at
+# request time, so the server never needs to know about saved targets and
+# no PAT or client_secret is persisted on disk. This block is for users who
+# drive Clone-Xs via the API directly with one-off creds.
+target_workspace:
+  host: ""                    # e.g. "https://adb-target.azuredatabricks.net"
+  auth_method: "pat"          # "pat" | "service_principal" | "profile"
+  token: ""                   # required when auth_method="pat"
+  client_id: ""               # required when auth_method="service_principal"
+  client_secret: ""           # required when auth_method="service_principal"
+  profile: ""                 # required when auth_method="profile"
+  warehouse_id: ""            # target SQL warehouse for DDL + DEEP CLONE
+  keep_share: false           # legacy/informational — leave the Delta Share intact (use cleanup_after_clone instead)
+  # How re-runs treat tables that already exist on the target.
+  #   snapshot_once = CREATE TABLE IF NOT EXISTS ... DEEP CLONE  (default; skip existing)
+  #   incremental   = CREATE OR REPLACE TABLE ... DEEP CLONE     (mirror source; overwrites target writes)
+  #   force_full    = DROP + CREATE                              (full re-clone every run)
+  data_sync_mode: snapshot_once
+  # Delta Sharing refuses tables with column masks or row filters. When true,
+  # Clone-Xs drops them on source before adding the table to the share, then
+  # re-applies them on the target after the clone. For snapshot_once /
+  # force_full the masks are also restored on source. For incremental the
+  # source masks remain dropped (otherwise ongoing share reads break).
+  # The ADD TABLE loop also has a retry fallback: if Delta Sharing rejects
+  # an ADD because of a mask/filter that the upfront DESCRIBE-EXTENDED-based
+  # inventory missed, the loop catches the specific error, runs inventory +
+  # drop, and retries the ADD once.
+  auto_handle_masks: false
+  # Lifecycle of the deterministic share/recipient/shared-catalog. Default
+  # false means objects persist between runs so subsequent re-clones reuse
+  # them (true incremental sync). Set true for one-shot migrations where
+  # you don't intend to re-run.
+  cleanup_after_clone: false
+  # When true, re-runs also `ALTER SHARE … REMOVE TABLE` for tables that are
+  # in the share but no longer exist in the source. Default false because
+  # pruning is destructive on the share side.
+  prune_share_extras: false
+
+# ⚠ Same-metastore preflight: if both source and target workspaces attach to
+# the same Unity Catalog metastore, Clone-Xs refuses to run the cross-workspace
+# orchestrator (Delta Sharing requires distinct metastores — you cannot share
+# to yourself). Use the in-metastore clone path instead by removing
+# target_workspace from your config. The check compares
+# `client.metastores.summary().global_metastore_id` for both clients.
+
+# Toggle which object types migrate cross-workspace (all default true).
+# copy_permissions / copy_ownership / copy_tags above also apply.
+clone_views: true             # re-issue view DDL on target (catalog refs rewritten)
+clone_functions: true         # re-issue SQL function DDL on target
+clone_volumes: true           # recreate volumes and copy files via the Files API
+volume_max_file_mb: 500       # skip files larger than this during volume copy
 
 # ── Ordering ─────────────────────────────────────────
 order_by_size: false          # Clone largest tables first
@@ -181,6 +259,97 @@ profiles:
 # Use the staging profile
 clxs clone --profile staging
 ```
+
+## Clone options reference
+
+Every field in the Clone page's **Options** step (and the matching YAML key). Hovering the info icon next to each field in the UI shows the same description.
+
+### Clone type & load type
+
+| Field | YAML key | Description |
+|---|---|---|
+| Clone Type | `clone_type` | `DEEP` copies all data files into the destination (independent of source). `SHALLOW` only copies metadata — destination points at source files. |
+| Load Type | `load_type` | `FULL` re-clones every table on each run. `INCREMENTAL` only clones tables whose Delta version advanced since the last run. |
+
+### Compute
+
+| Field | YAML key | Description |
+|---|---|---|
+| Use Serverless Compute | `serverless` | Run the clone as a serverless Databricks job instead of against a SQL warehouse. Zero-warehouse cost for one-offs and CI. |
+| UC Volume | `volume` | Unity Catalog volume path where Clone-Xs uploads itself for the serverless job to execute. |
+
+### Performance
+
+| Field | YAML key | Description |
+|---|---|---|
+| Max Workers (schemas) | `max_workers` | Number of schemas processed in parallel. Raise for wide catalogs; each worker holds one warehouse slot. |
+| Parallel Tables | `parallel_tables` | Tables cloned in parallel within a single schema. Raise for many small tables; lower for big tables on a shared warehouse. |
+| Max Parallel Queries | `max_parallel_queries` | Upper bound on concurrent SQL statements across all workers. Prevents warehouse saturation. |
+| Max RPS | `max_rps` | Rate-limit statements per second across all workers. `0` = unlimited. Use to protect shared upstream systems. |
+| Order by Size | `order_by_size` | Clone order by table byte-size. `desc` = biggest first (fails fast on storage issues); `asc` = small tables finish early. |
+| Throttle Profile | `throttle` | Pre-defined throughput profile. `low` = minimal warehouse load; `max` = no self-limiting. Overrides `parallel_tables` and `max_parallel_queries`. |
+
+### Copy options
+
+Controls which metadata flows from source to destination. All default to `true`.
+
+| Field | YAML key | Description |
+|---|---|---|
+| Permissions | `copy_permissions` | Copy Unity Catalog grants (SELECT, MODIFY, etc.) from source objects to destination. |
+| Ownership | `copy_ownership` | Set the destination object's OWNER to match the source. |
+| Tags | `copy_tags` | Copy Unity Catalog tags (key-value annotations) on catalogs, schemas, tables, and columns. |
+| Properties | `copy_properties` | Copy Delta table properties (`delta.autoOptimize`, `delta.minReaderVersion`, etc.). |
+| Security | `copy_security` | Copy row filters and column masks attached to source tables. |
+| Constraints | `copy_constraints` | Copy NOT NULL and CHECK constraints from source tables. |
+| Comments | `copy_comments` | Copy table and column comments. |
+
+### Features
+
+| Field | YAML key | Description |
+|---|---|---|
+| Enable Rollback | `enable_rollback` | Write a rollback manifest so `clxs rollback` can undo the clone later. |
+| Auto Rollback on Fail | `auto_rollback` | Automatically trigger rollback if post-clone validation detects more mismatches than `rollback_threshold`. |
+| Validate After Clone | `validate_after_clone` | Run row-count validation after each table clone completes. |
+| Checksum Validation | `validate_checksum` | Use SHA-256 over hashed columns in addition to row counts. Slower but catches silent data drift. |
+| Force Re-clone | `force_reclone` | Drop and recreate destination tables even when they already exist. Otherwise existing tables are skipped. |
+| Schema Only | `schema_only` | Create destination schemas + empty tables but skip the actual data copy. Useful for schema-migration dry runs. |
+| Generate Report | `generate_report` | Emit an HTML audit report summarising what was cloned, mismatches, and timings. |
+| Show Progress | `show_progress` | Render live progress bars in the CLI / job logs. |
+| Enable Checkpoint | `checkpoint` | Persist per-table progress to a checkpoint file so interrupted clones can resume where they left off. |
+| Require Approval | `require_approval` | Pause the job before any write operation and wait for manual approval in the UI. |
+| Impact Check | `impact_check` | Pre-flight scan for downstream dependencies (views, jobs, dashboards) that reference the destination. |
+| Skip Unused Tables | `skip_unused` | Skip tables with zero recent usage in `system.access.table_lineage`. Trims the scope of dev-refresh jobs. |
+| Verbose Logging | `verbose` | Emit DEBUG-level logs for every SQL statement. Large output volume — use for troubleshooting only. |
+| Rollback Threshold (%) | `rollback_threshold` | Maximum percentage of row mismatches tolerated before **Auto Rollback on Fail** kicks in. Only shown when auto-rollback is enabled. |
+
+### Filtering
+
+| Field | YAML key | Description |
+|---|---|---|
+| Include Schemas | `include_schemas` | Comma-separated schema names to clone. Empty = all schemas (minus excludes). |
+| Exclude Schemas | `exclude_schemas` | Comma-separated schemas to skip. `information_schema` and `default` are excluded by default. |
+| Include Tables Regex | `include_tables_regex` | Only tables + views whose name matches this regex are cloned. Applies after include/exclude schemas. |
+| Exclude Tables Regex | `exclude_tables_regex` | Tables + views whose name matches this regex are skipped. Takes precedence over include regex. |
+
+### Time travel
+
+| Field | YAML key | Description |
+|---|---|---|
+| As-of Timestamp | `as_of_timestamp` | Clone each source table as it existed at this timestamp. Requires the source's Delta version retention to cover this point. |
+| As-of Version | `as_of_version` | Clone each source table at this specific Delta transaction version. |
+
+### Advanced
+
+| Field | YAML key | Description |
+|---|---|---|
+| WHERE Clause | `where_clause` | Per-table row predicate applied to DEEP clones. Only rows matching the predicate are copied to the destination. |
+| TTL | `ttl` | Auto-expiry for the destination catalog (e.g. `7d`, `30d`, `2w`). A background cleanup job drops expired catalogs. |
+| Template | `template` | Named config preset (e.g. `dev-refresh`, `dr-replica`) that overrides common flags. See `clxs templates list` for available presets. |
+| Max duration (min) | `max_duration_min` | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. `null` = no limit. Checked between schemas. |
+| Max tables | `max_tables` | Runtime guardrail — abort after this many tables have been touched (success/failed/skipped). Safety net against runaway scope changes. |
+| Source snapshot ID | `source_snapshot_id` | Clone from a named snapshot instead of the catalog's current state. The snapshot's `captured_at` is applied as `as_of_timestamp`. See [Clone Snapshots](../guide/snapshots). |
+
+---
 
 ## CLI overrides
 

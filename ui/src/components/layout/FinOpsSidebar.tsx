@@ -43,6 +43,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/finops/budgets", label: "Budget Tracker", icon: Target },
       { href: "/finops/trends", label: "Cost Trends", icon: BarChart3 },
+      { href: "/finops/copq", label: "Cost of Poor DQ", icon: DollarSign },
     ],
   },
   {

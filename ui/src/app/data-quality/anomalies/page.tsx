@@ -52,8 +52,8 @@ export default function AnomaliesPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Metric collection
-  const [collectCatalog, setCollectCatalog] = useState("");
-  const [collectSchema, setCollectSchema] = useState("");
+  const [collectCatalog, setCollectCatalog] = usePersistedState<string>("dq-anomalies-collect-catalog", "");
+  const [collectSchema, setCollectSchema] = usePersistedState<string>("dq-anomalies-collect-schema", "");
   const [collecting, setCollecting] = useState(false);
   const [collectResult, setCollectResult] = useState<any>(null);
 

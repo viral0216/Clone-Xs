@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ const PREF_LABELS: Record<string, string> = {
 
 export default function AlertsPage() {
   /* ── Webhooks state ── */
-  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [webhooks, setWebhooks] = usePersistedState<Webhook[]>("dq-alerts-webhooks", []);
   const [webhooksLoading, setWebhooksLoading] = useState(true);
   const [newWebhook, setNewWebhook] = useState({ name: "", type: "slack", url: "" });
   const [creatingWebhook, setCreatingWebhook] = useState(false);
@@ -97,13 +98,13 @@ export default function AlertsPage() {
   const [savingPrefs, setSavingPrefs] = useState(false);
 
   /* ── Alert rules state ── */
-  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [rules, setRules] = usePersistedState<AlertRule[]>("dq-alerts-rules", []);
   const [rulesLoading, setRulesLoading] = useState(true);
   const [newRule, setNewRule] = useState({ name: "", metric: "match_rate", operator: ">", threshold: "", severity: "warning" });
   const [creatingRule, setCreatingRule] = useState(false);
 
   /* ── Alert history state ── */
-  const [history, setHistory] = useState<AlertHistoryEntry[]>([]);
+  const [history, setHistory] = usePersistedState<AlertHistoryEntry[]>("dq-alerts-history", []);
   const [historyLoading, setHistoryLoading] = useState(true);
 
   /* ── Data fetching ── */

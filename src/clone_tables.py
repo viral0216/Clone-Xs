@@ -74,6 +74,56 @@ def _matches_regex(name: str, include_regex: str | None, exclude_regex: str | No
     return True
 
 
+_METRIC_FIELDS = (
+    "source_table_size",
+    "source_num_of_files",
+    "num_removed_files",
+    "num_copied_files",
+    "removed_files_size",
+    "copied_files_size",
+)
+
+
+def _extract_clone_metrics(rows: list[dict] | None) -> dict | None:
+    """Pull Databricks's CLONE metrics row into a dict of ints.
+
+    Databricks returns a single-row DataFrame from each CLONE statement with
+    file/byte counts. Schema is documented at
+    https://learn.microsoft.com/en-gb/azure/databricks/delta/clone#clone-metrics.
+    Returns None when the result has no recognizable metrics row (dry run,
+    schema-only, CTAS-with-WHERE, or unexpected response shape).
+    """
+    if not rows:
+        return None
+    row = rows[0]
+    if not any(k in row for k in _METRIC_FIELDS):
+        return None
+    out: dict[str, int] = {}
+    for f in _METRIC_FIELDS:
+        v = row.get(f)
+        if v is None:
+            continue
+        try:
+            out[f] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return out or None
+
+
+def _format_tbl_properties(props: dict[str, str] | None) -> str:
+    """Render `TBLPROPERTIES (k1 = 'v1', k2 = 'v2')` clause, or empty string.
+
+    Single quotes in values are SQL-escaped by doubling.
+    """
+    if not props:
+        return ""
+    pairs = [
+        f"{k} = '{str(v).replace(chr(39), chr(39) * 2)}'"
+        for k, v in props.items()
+    ]
+    return f" TBLPROPERTIES ({', '.join(pairs)})"
+
+
 def clone_table(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -88,7 +138,8 @@ def clone_table(
     where_clause: str | None = None,
     force_reclone: bool = False,
     schema_only: bool = False,
-) -> bool:
+    tbl_properties: dict[str, str] | None = None,
+) -> tuple[bool, dict | None]:
     """Clone a single table from source to destination catalog.
 
     Args:
@@ -97,6 +148,18 @@ def clone_table(
         where_clause: Optional WHERE filter. Only applied for DEEP clones.
             Uses CTAS instead of CLONE, which loses Delta history/versioning.
         force_reclone: If True, drop the destination table before cloning to force a fresh clone.
+        tbl_properties: Optional `TBLPROPERTIES (...)` overrides emitted on
+            the CLONE statement itself — primarily for archival use cases
+            (e.g. `delta.logRetentionDuration`). Setting these inline applies
+            them on the first commit; doing so via `ALTER TABLE` after clone
+            is too late for retention windows.
+
+    Returns:
+        Tuple of (success, metrics). `metrics` is a dict of Databricks
+        CLONE counters (`source_table_size`, `source_num_of_files`,
+        `num_copied_files`, `copied_files_size`, etc.) when available, or
+        None for dry-run / schema-only / WHERE-filtered (CTAS) paths and any
+        case where the response didn't carry the expected columns.
     """
     source = f"`{source_catalog}`.`{schema}`.`{table_name}`"
     dest = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
@@ -115,10 +178,12 @@ def clone_table(
         try:
             execute_sql(client, warehouse_id, sql, dry_run=dry_run)
             logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}")
-            return True
+            return True, None
         except Exception as e:
             logger.error(f"{FAIL} Failed to create empty table {dest}: {e}")
-            return False
+            return False, None
+
+    tbl_props_clause = _format_tbl_properties(tbl_properties)
 
     # If where_clause is provided and clone_type is DEEP, use CTAS
     if where_clause and clone_type == "DEEP":
@@ -126,6 +191,8 @@ def clone_table(
             f"Using filtered clone (CTAS) for {source}. "
             "Filtered clones lose Delta history/versioning."
         )
+        # CTAS doesn't accept TBLPROPERTIES at the same SQL position as CLONE;
+        # if user supplied them, apply post-clone via ALTER TABLE.
         sql = f"CREATE TABLE IF NOT EXISTS {dest} AS SELECT * FROM {source} WHERE {where_clause}"
     else:
         if where_clause and clone_type != "DEEP":
@@ -143,10 +210,25 @@ def clone_table(
         elif as_of_version is not None:
             time_travel = f" VERSION AS OF {as_of_version}"
 
-        sql = f"CREATE TABLE IF NOT EXISTS {dest} {clone_keyword} {source}{time_travel}"
+        sql = (
+            f"CREATE TABLE IF NOT EXISTS {dest} {clone_keyword} {source}"
+            f"{time_travel}{tbl_props_clause}"
+        )
 
     try:
-        execute_sql(client, warehouse_id, sql, dry_run=dry_run)
+        rows = execute_sql(client, warehouse_id, sql, dry_run=dry_run)
+        metrics = _extract_clone_metrics(rows) if not dry_run else None
+        # CTAS path with WHERE: TBLPROPERTIES couldn't go on the SQL itself —
+        # apply via ALTER TABLE so the override still takes effect (best-effort).
+        if where_clause and clone_type == "DEEP" and tbl_properties and not dry_run:
+            try:
+                execute_sql(
+                    client, warehouse_id,
+                    f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
+                    dry_run=dry_run,
+                )
+            except Exception as e:
+                logger.warning(f"{WARN} ALTER TABLE SET TBLPROPERTIES failed on {dest}: {e}")
         tt_info = ""
         if not (where_clause and clone_type == "DEEP"):
             time_travel = ""
@@ -157,13 +239,13 @@ def clone_table(
             tt_info = f", {time_travel.strip()}" if time_travel else ""
         filter_info = f", WHERE {where_clause}" if (where_clause and clone_type == "DEEP") else ""
         logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}")
-        return True
+        return True, metrics
     except Exception as e:
         if "No pipeline was present" in str(e):
             logger.info(f"{SKIP} Skipping DLT pipeline table {source}: {e}")
-            return False
+            return False, None
         logger.error(f"{FAIL} Failed to clone table {source}: {e}")
-        return False
+        return False, None
 
 
 def _clone_single_table(
@@ -188,8 +270,13 @@ def _clone_single_table(
     where_clause: str | None = None,
     force_reclone: bool = False,
     schema_only: bool = False,
-) -> tuple[str, bool]:
-    """Clone a single table with all post-clone operations. Returns (table_name, success)."""
+    tbl_properties: dict[str, str] | None = None,
+) -> tuple[str, bool, dict | None]:
+    """Clone a single table with all post-clone operations.
+
+    Returns (table_name, success, metrics) where metrics is the Databricks
+    CLONE counters dict (None on failure, dry-run, or schema-only).
+    """
     # Record destination table's pre-clone Delta version for RESTORE rollback
     if rollback_log and not dry_run:
         dest_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
@@ -199,16 +286,16 @@ def _clone_single_table(
         except Exception:
             pass  # Don't block clone if version recording fails
 
-    success = clone_table(
+    success, metrics = clone_table(
         client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
         clone_type, dry_run=dry_run,
         as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
         where_clause=where_clause, force_reclone=force_reclone,
-        schema_only=schema_only,
+        schema_only=schema_only, tbl_properties=tbl_properties,
     )
 
     if not success:
-        return table_name, False
+        return table_name, False, None
 
     if rollback_log and not dry_run:
         record_object(rollback_log, "tables", f"`{dest_catalog}`.`{schema}`.`{table_name}`")
@@ -253,7 +340,7 @@ def _clone_single_table(
             dry_run=dry_run,
         )
 
-    return table_name, True
+    return table_name, True, metrics
 
 
 def clone_tables_in_schema(
@@ -284,6 +371,8 @@ def clone_tables_in_schema(
     where_clauses: dict | None = None,
     force_reclone: bool = False,
     schema_only: bool = False,
+    tables_progress=None,
+    tbl_properties: dict[str, str] | None = None,
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -294,9 +383,64 @@ def clone_tables_in_schema(
         where_clauses: Optional dict mapping table names to WHERE clauses.
             Keys can be "schema.table_name" for specific tables or "*" for all tables.
         force_reclone: If True, drop destination tables before cloning to force fresh clones.
+        tbl_properties: Optional `TBLPROPERTIES (...)` overrides applied to
+            every CLONE statement in this schema (e.g. archival retention).
+
+    Returns:
+        Dict with success/failed/skipped counts and aggregate clone metrics
+        (`bytes_copied`, `files_copied`, `source_table_size`,
+        `source_num_of_files`) summed across the per-table CLONE responses.
     """
     tables = get_tables(client, warehouse_id, source_catalog, schema, order_by_size=order_by_size)
-    results = {"success": 0, "failed": 0, "skipped": 0}
+    # Map table_name → source format (DELTA / PARQUET / ICEBERG / etc.) so
+    # we can roll up per-format counters in the result without changing the
+    # tables_to_clone list shape (still a list of names).
+    format_by_name = {
+        row["table_name"]: (row.get("data_source_format") or "DELTA").upper()
+        for row in tables
+    }
+    results = {
+        "success": 0,
+        "failed": 0,
+        "skipped": 0,
+        # Aggregate Databricks CLONE metrics across this schema's tables.
+        # Sums of: copied_files_size (bytes_copied), num_copied_files
+        # (files_copied), source_table_size, source_num_of_files. Per-table
+        # rows that don't carry metrics (dry-run, schema-only, CTAS-with-WHERE)
+        # contribute 0.
+        "bytes_copied": 0,
+        "files_copied": 0,
+        "source_table_size": 0,
+        "source_num_of_files": 0,
+        # Per-source-format success counters. Same syntax (`CREATE TABLE …
+        # CLONE source`) works for Delta, Parquet, and Iceberg sources
+        # registered in UC. The counter lets the UI show "26 Delta + 2 Parquet
+        # + 1 Iceberg cloned" rather than just a flat count.
+        "formats": {},
+    }
+
+    def _add_metrics(m: dict | None) -> None:
+        if not m:
+            return
+        results["bytes_copied"] += m.get("copied_files_size", 0)
+        results["files_copied"] += m.get("num_copied_files", 0)
+        results["source_table_size"] += m.get("source_table_size", 0)
+        results["source_num_of_files"] += m.get("source_num_of_files", 0)
+
+    def _bump_format(table_name: str) -> None:
+        fmt = format_by_name.get(table_name, "DELTA")
+        results["formats"][fmt] = results["formats"].get(fmt, 0) + 1
+
+    def _bump(kind: str) -> None:
+        """Mirror the schema-local counter increment onto the catalog-level tracker."""
+        if tables_progress is None:
+            return
+        if kind == "success":
+            tables_progress.tables_update(success=1)
+        elif kind == "failed":
+            tables_progress.tables_update(failed=1)
+        elif kind == "skipped":
+            tables_progress.tables_update(skipped=1)
 
     # For incremental loads, check what already exists
     existing = set()
@@ -311,26 +455,31 @@ def clone_tables_in_schema(
         if table_name in exclude_tables:
             logger.info(f"  {SKIP} Skipping excluded table: {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if table_name.startswith("event_log_") or table_name.startswith("__materialization_"):
             logger.info(f"  {SKIP} Skipping DLT pipeline table: {dim(table_name)}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if not _matches_regex(table_name, include_tables_regex, exclude_tables_regex):
             logger.info(f"  {SKIP} Skipping table (regex filter): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if load_type == "INCREMENTAL" and table_name in existing:
             logger.info(f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         if resumed_tables and table_name in resumed_tables:
             logger.info(f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}")
             results["skipped"] += 1
+            _bump("skipped")
             continue
 
         tables_to_clone.append(table_name)
@@ -357,28 +506,38 @@ def clone_tables_in_schema(
                     copy_security, copy_constraints, copy_comments, rollback_log,
                     as_of_timestamp, as_of_version,
                     _resolve_where_clause(tname), force_reclone, schema_only,
+                    tbl_properties,
                 ): tname
                 for tname in tables_to_clone
             }
             for future in as_completed(futures):
-                _, success = future.result()
+                tname, success, metrics = future.result()
+                _add_metrics(metrics)
                 if success:
                     results["success"] += 1
+                    _bump("success")
+                    _bump_format(tname)
                 else:
                     results["failed"] += 1
+                    _bump("failed")
     else:
         for tname in tables_to_clone:
-            _, success = _clone_single_table(
+            _, success, metrics = _clone_single_table(
                 client, warehouse_id, source_catalog, dest_catalog, schema,
                 tname, clone_type, dry_run,
                 copy_permissions, copy_ownership, copy_tags, copy_properties,
                 copy_security, copy_constraints, copy_comments, rollback_log,
                 as_of_timestamp, as_of_version,
                 _resolve_where_clause(tname), force_reclone, schema_only,
+                tbl_properties,
             )
+            _add_metrics(metrics)
             if success:
                 results["success"] += 1
+                _bump("success")
+                _bump_format(tname)
             else:
                 results["failed"] += 1
+                _bump("failed")
 
     return results

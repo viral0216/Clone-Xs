@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +8,7 @@ import { api } from "@/lib/api-client";
 import { usePageJob } from "@/contexts/JobContext";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
+import { FieldLabelSmall } from "@/components/FieldLabel";
 import {
   Loader2, Layers, Database, Radio, Zap, Copy, CheckCircle,
   XCircle, Info, RefreshCw,
@@ -24,7 +26,7 @@ export default function AdvancedTablesPage() {
   const { job, run, isRunning } = usePageJob("advanced-tables");
   const [sourceCatalog, setSourceCatalog] = useState(job?.params?.source || "");
   const [destCatalog, setDestCatalog] = useState(job?.params?.dest || "");
-  const [activeTab, setActiveTab] = useState<Tab>("materialized_views");
+  const [activeTab, setActiveTab] = usePersistedState<Tab>("advanced-tables-tab", "materialized_views");
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneResult, setCloneResult] = useState<any>(null);
 
@@ -73,11 +75,11 @@ export default function AdvancedTablesPage() {
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex-1 min-w-[200px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Source Catalog</label>
+              <FieldLabelSmall hint="Catalog scanned for materialized views, streaming tables, and online tables.">Source Catalog</FieldLabelSmall>
               <CatalogPicker value={sourceCatalog} onChange={setSourceCatalog} />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Destination Catalog</label>
+              <FieldLabelSmall hint="Catalog where the listed advanced tables will be cloned. Required only when running 'Clone All'.">Destination Catalog</FieldLabelSmall>
               <CatalogPicker value={destCatalog} onChange={setDestCatalog} placeholder="For cloning" />
             </div>
             <Button onClick={fetchTables} disabled={!sourceCatalog || isRunning}>

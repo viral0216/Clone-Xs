@@ -72,14 +72,14 @@ function fmtDuration(seconds: number | null | undefined): string {
 export default function ReconciliationHistoryPage() {
   const [runs, setRuns] = usePersistedState<any[]>("gov-recon-history-runs", []);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("");
-  const [limit, setLimit] = useState(30);
+  const [filter, setFilter] = usePersistedState<string>("gov-recon-history-search", "");
+  const [limit, setLimit] = usePersistedState<number>("gov-recon-history-limit", 30);
 
   // Structured filters
-  const [filterType, setFilterType] = useState("");
-  const [filterCatalog, setFilterCatalog] = useState("");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterType, setFilterType] = usePersistedState<string>("gov-recon-history-filter-type", "");
+  const [filterCatalog, setFilterCatalog] = usePersistedState<string>("gov-recon-history-filter-catalog", "");
+  const [filterDateFrom, setFilterDateFrom] = usePersistedState<string>("gov-recon-history-filter-date-from", "");
+  const [filterDateTo, setFilterDateTo] = usePersistedState<string>("gov-recon-history-filter-date-to", "");
 
   // Compare mode
   const [compareA, setCompareA] = useState<string | null>(null);

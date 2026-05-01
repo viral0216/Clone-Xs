@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,14 +87,14 @@ function KpiCard({ label, value, sub, color, icon: Icon }: {
 // ── Component ───────────────────────────────────────────────────────
 
 export default function DqTrendsPage() {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = usePersistedState<number>("dq-trends-days", 30);
   const [loading, setLoading] = useState(true);
 
-  const [healthData, setHealthData] = useState<HealthPoint[]>([]);
-  const [slaData, setSlaData] = useState<SlaPoint[]>([]);
-  const [freshnessData, setFreshnessData] = useState<FreshnessPoint[]>([]);
-  const [dqData, setDqData] = useState<DqPoint[]>([]);
-  const [anomalies, setAnomalies] = useState<AnomalyRow[]>([]);
+  const [healthData, setHealthData] = usePersistedState<HealthPoint[]>("dq-trends-health", []);
+  const [slaData, setSlaData] = usePersistedState<SlaPoint[]>("dq-trends-sla", []);
+  const [freshnessData, setFreshnessData] = usePersistedState<FreshnessPoint[]>("dq-trends-freshness", []);
+  const [dqData, setDqData] = usePersistedState<DqPoint[]>("dq-trends-dq", []);
+  const [anomalies, setAnomalies] = usePersistedState<AnomalyRow[]>("dq-trends-anomalies", []);
 
   async function loadAll() {
     setLoading(true);

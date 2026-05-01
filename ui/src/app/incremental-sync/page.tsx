@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useVolumes } from "@/hooks/useApi";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import { Input } from "@/components/ui/input";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
@@ -91,24 +92,22 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
 
 /* ── Per-schema job progress tracker ─────────────────── */
 function SyncJobProgress({ jobId, schema }: { jobId: string; schema: string }) {
-  const [job, setJob] = useState<any>(null);
-  const [expanded, setExpanded] = useState(true);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-
+  // Durable polling — survives navigation. Each schema gets its own tracker
+  // key so multiple schemas in flight don't collide.
+  const tracker = useDurableJob({
+    key: `incsync-job-${jobId}`,
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Incremental sync complete",
+  });
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`);
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch {}
-    };
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId]);
+    if (!tracker.jobId && jobId) {
+      tracker.start({ schema }, async () => jobId).catch(() => {});
+    }
+  }, [jobId, schema, tracker]);
+  const job = tracker.entry?.data ?? null;
+  const [expanded, setExpanded] = useState(true);
 
   const statusColor: Record<string, string> = {
     queued: "bg-muted/200/20 text-gray-400 border-border/30",
@@ -273,7 +272,21 @@ export default function IncrementalSyncPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [schemaResults, setSchemaResults] = useState<SchemaCheck[]>([]);
-  const [syncResult, setSyncResult] = useState<any>(null);
+  // Persist the list of submitted-job IDs across navigation. Reading the
+  // server-side state for each job is handled by SyncJobProgress (durable).
+  const [syncResult, _setSyncResult] = useState<any>(() => {
+    try {
+      const raw = sessionStorage.getItem("clxs-incsync-result");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const setSyncResult = (v: any) => {
+    _setSyncResult(v);
+    try {
+      if (v) sessionStorage.setItem("clxs-incsync-result", JSON.stringify(v));
+      else sessionStorage.removeItem("clxs-incsync-result");
+    } catch {}
+  };
   const [serverless, setServerless] = useState(() => {
     try { return localStorage.getItem("clxs-incr-serverless") === "true"; } catch { return false; }
   });

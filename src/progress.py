@@ -2,6 +2,7 @@ import logging
 import sys
 import threading
 import time
+from typing import Callable
 
 from src.log_formatter import IS_TTY as _IS_TTY
 
@@ -11,7 +12,12 @@ logger = logging.getLogger(__name__)
 class ProgressTracker:
     """Thread-safe progress tracker with console display."""
 
-    def __init__(self, total: int, description: str = "Processing"):
+    def __init__(
+        self,
+        total: int,
+        description: str = "Processing",
+        extra_info_fn: Callable[[], str] | None = None,
+    ):
         self.total = total
         self.description = description
         self.completed = 0
@@ -21,6 +27,9 @@ class ProgressTracker:
         self.start_time = time.time()
         self._running = False
         self._thread = None
+        # Optional callable — its return value is appended to the status line,
+        # used e.g. to show a secondary counter (Tables) alongside the primary one.
+        self._extra_info_fn = extra_info_fn
 
     def start(self) -> None:
         """Start the progress display."""
@@ -107,11 +116,18 @@ class ProgressTracker:
                 fail_s = f"{self.failed}fail"
                 skip_s = f"{self.skipped}skip"
 
+            extra = ""
+            if self._extra_info_fn:
+                try:
+                    extra = self._extra_info_fn() or ""
+                except Exception:
+                    extra = ""
+
             status = (
                 f"\r  {self.description} |{bar}| "
                 f"{done}/{self.total} ({pct:.0f}%) "
                 f"[{ok_s}/{fail_s}/{skip_s}] "
-                f"ETA: {eta_str}  "
+                f"ETA: {eta_str}{extra}  "
             )
 
             sys.stderr.write(status)
@@ -123,16 +139,37 @@ class ProgressTracker:
 
 
 class SchemaProgressTracker:
-    """Track progress across schemas with per-object-type tracking."""
+    """Track progress across schemas with per-object-type tracking.
 
-    def __init__(self, schemas: list[str], show_progress: bool = True):
+    Also tracks catalog-level table counts and renders them inline on the
+    Schemas progress bar as ``· Tables 120/611 [118ok/1fail/1skip]`` so the
+    user can see both denominators at a glance.
+    """
+
+    def __init__(
+        self,
+        schemas: list[str],
+        show_progress: bool = True,
+        tables_total: int = 0,
+    ):
         self.schemas = schemas
         self.show_progress = show_progress
         self.schema_tracker = None
         self.object_trackers: dict[str, ProgressTracker] = {}
 
+        # Catalog-level table counters (live across all schemas)
+        self.tables_total = tables_total
+        self._tables_done = 0
+        self._tables_failed = 0
+        self._tables_skipped = 0
+        self._tables_lock = threading.Lock()
+
         if show_progress and schemas:
-            self.schema_tracker = ProgressTracker(len(schemas), "Schemas")
+            self.schema_tracker = ProgressTracker(
+                len(schemas),
+                "Schemas",
+                extra_info_fn=self._render_tables_suffix if tables_total else None,
+            )
 
     def start(self) -> None:
         if self.schema_tracker:
@@ -149,6 +186,27 @@ class SchemaProgressTracker:
 
         has_error = "error" in schema_results
         self.schema_tracker.update(success=not has_error)
+
+    def tables_update(self, success: int = 0, failed: int = 0, skipped: int = 0) -> None:
+        """Bump the catalog-level Tables counters. Called mid-schema as tables finish."""
+        if success or failed or skipped:
+            with self._tables_lock:
+                self._tables_done += success
+                self._tables_failed += failed
+                self._tables_skipped += skipped
+
+    def _render_tables_suffix(self) -> str:
+        with self._tables_lock:
+            done = self._tables_done + self._tables_failed + self._tables_skipped
+            if _IS_TTY:
+                ok = f"\033[32m{self._tables_done}ok\033[0m"
+                fl = f"\033[31m{self._tables_failed}fail\033[0m" if self._tables_failed else f"{self._tables_failed}fail"
+                sk = f"\033[33m{self._tables_skipped}skip\033[0m" if self._tables_skipped else f"{self._tables_skipped}skip"
+            else:
+                ok = f"{self._tables_done}ok"
+                fl = f"{self._tables_failed}fail"
+                sk = f"{self._tables_skipped}skip"
+            return f" · Tables {done}/{self.tables_total} [{ok}/{fl}/{sk}]"
 
     def get_summary(self) -> dict | None:
         if self.schema_tracker:

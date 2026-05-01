@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import CatalogPicker from "@/components/CatalogPicker";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   Dialog,
   DialogContent,
@@ -36,9 +37,14 @@ function formatBytes(bytes: number): string {
 export default function ReportsPage() {
   const jobs = useCloneJobs();
   const { symbol: currSymbol } = useCurrency();
-  const [catalog, setCatalog] = useState("");
-  const [costResult, setCostResult] = useState<any>(null);
-  const [rollbackLogs, setRollbackLogs] = useState<any[]>([]);
+  // Form inputs + result data persist via sessionStorage so navigating away
+  // and back keeps the page in the state the user left it (cost estimate,
+  // rollback log list, snapshot result, export result, plus the catalogs the
+  // user typed). Ephemeral UI flags (loading spinners, modal open) stay as
+  // plain useState — there's nothing to restore for those.
+  const [catalog, setCatalog] = usePersistedState<string>("reports-catalog", "");
+  const [costResult, setCostResult] = usePersistedState<any>("reports-cost-result", null);
+  const [rollbackLogs, setRollbackLogs] = usePersistedState<any[]>("reports-rollback-logs", []);
   const [loading, setLoading] = useState(false);
   const [rbLoading, setRbLoading] = useState(false);
 
@@ -47,19 +53,19 @@ export default function ReportsPage() {
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [dropCatalog, setDropCatalog] = useState(false);
   const [rollbackExecuting, setRollbackExecuting] = useState(false);
-  const [rollbackResult, setRollbackResult] = useState<any>(null);
+  const [rollbackResult, setRollbackResult] = usePersistedState<any>("reports-rollback-result", null);
 
   // Catalog Snapshot state
-  const [snapshotCatalog, setSnapshotCatalog] = useState("");
-  const [snapshotOutputPath, setSnapshotOutputPath] = useState("");
+  const [snapshotCatalog, setSnapshotCatalog] = usePersistedState<string>("reports-snapshot-catalog", "");
+  const [snapshotOutputPath, setSnapshotOutputPath] = usePersistedState<string>("reports-snapshot-output", "");
   const [snapshotLoading, setSnapshotLoading] = useState(false);
-  const [snapshotResult, setSnapshotResult] = useState<any>(null);
+  const [snapshotResult, setSnapshotResult] = usePersistedState<any>("reports-snapshot-result", null);
 
   // Export Metadata state
-  const [exportCatalog, setExportCatalog] = useState("");
-  const [exportFormat, setExportFormat] = useState("csv");
+  const [exportCatalog, setExportCatalog] = usePersistedState<string>("reports-export-catalog", "");
+  const [exportFormat, setExportFormat] = usePersistedState<string>("reports-export-format", "csv");
   const [exportLoading, setExportLoading] = useState(false);
-  const [exportResult, setExportResult] = useState<any>(null);
+  const [exportResult, setExportResult] = usePersistedState<any>("reports-export-result", null);
 
   const estimateCost = async () => {
     setLoading(true);

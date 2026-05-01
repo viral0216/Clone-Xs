@@ -7,6 +7,11 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
  * Each page stores its results under a unique key (e.g. "pii", "preflight", "diff").
  * State is mirrored to sessionStorage so a page refresh restores previous results.
  * Closing the tab clears the cache automatically (sessionStorage behavior).
+ *
+ * Two consumers:
+ *   - usePageJob(key)      — for "run analysis, cache result" pages (PII, preflight, diff…).
+ *   - useDurableJob(opts)  — for in-flight server-side jobs that must survive navigation
+ *                            (clone, sync, demo-data, IaC, reconciliation, …).
  */
 
 const STORAGE_KEY = "clonexs_job_state";
@@ -18,12 +23,14 @@ function hydrateFromSession(): Record<string, JobEntry> {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, JobEntry>;
     const now = Date.now();
-    // Filter out stale entries and reset stuck "loading" jobs
     const cleaned: Record<string, JobEntry> = {};
     for (const [key, entry] of Object.entries(parsed)) {
       const ts = entry.completedAt || entry.startedAt;
-      if (ts && now - new Date(ts).getTime() > MAX_AGE_MS) continue; // too old
-      if (entry.status === "loading") continue; // was in-flight when page closed
+      if (ts && now - new Date(ts).getTime() > MAX_AGE_MS) continue;
+      // Keep "loading" entries that have a server-side jobId — useDurableJob
+      // will reconnect to them on mount. Drop other "loading" entries (the
+      // page closed mid-run with no server reference, no way to reconnect).
+      if (entry.status === "loading" && !entry.jobId) continue;
       cleaned[key] = entry;
     }
     return cleaned;
@@ -53,6 +60,19 @@ export interface JobEntry {
   startedAt: string | null;
   /** Timestamp when the job completed */
   completedAt: string | null;
+  /**
+   * Server-side job_id for jobs that run on the backend JobManager.
+   * Present when the result of `start()` is a job_id rather than a final result —
+   * useDurableJob polls `pollUrl(jobId)` and updates the entry until completion.
+   * On remount, the hook reconnects via this id so progress resumes mid-run.
+   */
+  jobId?: string | null;
+  /**
+   * Capped ring-buffer of progress snapshots. Used by streaming/throughput
+   * charts that need a time series — server only exposes the latest snapshot,
+   * so we accumulate client-side. Cap is set per-call (default 200).
+   */
+  progressHistory?: any[];
 }
 
 interface JobContextValue {
@@ -68,6 +88,10 @@ interface JobContextValue {
   clearJob: (key: string) => void;
   /** Check if a job is currently loading */
   isLoading: (key: string) => boolean;
+  /** Partial update — used by useDurableJob each poll tick. */
+  updateJob: (key: string, partial: Partial<JobEntry>) => void;
+  /** Append a progress snapshot, capped at `cap` entries (default 200). */
+  appendProgress: (key: string, snapshot: any, cap?: number) => void;
 }
 
 const JobContext = createContext<JobContextValue | null>(null);
@@ -100,6 +124,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         error: null,
         startedAt: new Date().toISOString(),
         completedAt: null,
+        jobId: null,
+        progressHistory: [],
       },
     }));
   }, []);
@@ -142,8 +168,46 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     [jobs],
   );
 
+  const updateJob = useCallback((key: string, partial: Partial<JobEntry>) => {
+    setJobs((prev) => {
+      const existing = prev[key];
+      if (!existing) {
+        return {
+          ...prev,
+          [key]: {
+            status: "loading",
+            params: {},
+            data: null,
+            error: null,
+            startedAt: new Date().toISOString(),
+            completedAt: null,
+            ...partial,
+          },
+        };
+      }
+      return { ...prev, [key]: { ...existing, ...partial } };
+    });
+  }, []);
+
+  const appendProgress = useCallback((key: string, snapshot: any, cap = 200) => {
+    setJobs((prev) => {
+      const existing = prev[key];
+      if (!existing) return prev;
+      const history = existing.progressHistory ?? [];
+      const next = history.length >= cap
+        ? [...history.slice(history.length - cap + 1), snapshot]
+        : [...history, snapshot];
+      return { ...prev, [key]: { ...existing, progressHistory: next } };
+    });
+  }, []);
+
   return (
-    <JobContext.Provider value={{ getJob, startJob, completeJob, failJob, clearJob, isLoading }}>
+    <JobContext.Provider
+      value={{
+        getJob, startJob, completeJob, failJob, clearJob, isLoading,
+        updateJob, appendProgress,
+      }}
+    >
       {children}
     </JobContext.Provider>
   );
@@ -174,12 +238,13 @@ export function usePageJob(key: string) {
 
   const rawJob = getJob(key);
 
-  // Auto-clear stale "loading" jobs (stuck for > 5 minutes)
-  const job = rawJob?.status === "loading" && rawJob.startedAt
+  // Auto-clear stale "loading" jobs (stuck for > 5 minutes) — but only when
+  // there's no server-side jobId attached. With a jobId, useDurableJob is
+  // legitimately polling and we shouldn't pretend the job is idle.
+  const job = rawJob?.status === "loading" && rawJob.startedAt && !rawJob.jobId
     ? (() => {
         const elapsed = Date.now() - new Date(rawJob.startedAt).getTime();
         if (elapsed > 5 * 60 * 1000) {
-          // Stale — treat as idle (don't show spinner)
           return null;
         }
         return rawJob;

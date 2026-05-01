@@ -61,8 +61,19 @@ async def rollback(req: RollbackRequest, client=Depends(get_db_client)):
 
 @router.post("/pii-scan")
 async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
-    """Scan catalog for PII columns."""
-    from src.pii_detection import scan_catalog_for_pii
+    """Scan catalog(s) for PII columns.
+
+    Single mode (`source_catalog: str`): runs the existing
+    `scan_catalog_for_pii` pipeline (column-name + optional sampling +
+    optional UC-tag detection).
+
+    Multi mode (`source_catalogs: list[str]`): fans the same scan out
+    across the listed catalogs in parallel (max 3 concurrent — PII
+    sampling is heavier than stats). Returns one merged response with
+    each detection stamped with its owning catalog, a worst-case rollup
+    risk level, and a per-catalog block. One catalog's failure doesn't
+    abort — the response carries an `errors` list.
+    """
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
 
@@ -72,7 +83,22 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         pii_config.update(req.pii_config)
 
     state_catalog = config.get("audit_trail", {}).get("catalog", "clone_audit")
-    result = scan_catalog_for_pii(
+
+    if req.source_catalogs:
+        from src.pii_multi import scan_catalogs_for_pii_multi
+        return scan_catalogs_for_pii_multi(
+            client, wid, req.source_catalogs, req.exclude_schemas,
+            sample_data=req.sample_data, max_workers=req.max_workers,
+            pii_config=pii_config or None,
+            read_uc_tags=req.read_uc_tags,
+            save_history=True,
+            state_catalog=state_catalog,
+            schema_filter=req.schema_filter,
+            table_filter=req.table_filter,
+        )
+
+    from src.pii_detection import scan_catalog_for_pii
+    return scan_catalog_for_pii(
         client, wid, req.source_catalog, req.exclude_schemas,
         sample_data=req.sample_data, max_workers=req.max_workers,
         pii_config=pii_config or None,
@@ -82,7 +108,6 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         schema_filter=req.schema_filter,
         table_filter=req.table_filter,
     )
-    return result
 
 
 @router.get("/pii-patterns")
@@ -305,6 +330,52 @@ async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
         return []
 
 
+@router.get("/catalogs/{catalog}/{schema}/objects")
+async def list_schema_objects(catalog: str, schema: str, client=Depends(get_db_client)):
+    """List every cloneable object in a schema: tables, views, functions, volumes.
+
+    Returns a flat object keyed by type so the Scope Picker in the UI can
+    render checkbox trees. Uses the SDK directly — no SQL warehouse required.
+    """
+    tables: list[str] = []
+    views: list[str] = []
+    functions: list[str] = []
+    volumes: list[str] = []
+
+    try:
+        for t in client.tables.list(catalog_name=catalog, schema_name=schema):
+            if not t.name:
+                continue
+            kind = str(getattr(t, "table_type", "")).split(".")[-1]
+            if kind in ("VIEW", "MATERIALIZED_VIEW"):
+                views.append(t.name)
+            else:
+                tables.append(t.name)
+    except Exception:
+        pass
+
+    try:
+        for f in client.functions.list(catalog_name=catalog, schema_name=schema):
+            if f.name:
+                functions.append(f.name)
+    except Exception:
+        pass
+
+    try:
+        for v in client.volumes.list(catalog_name=catalog, schema_name=schema):
+            if v.name:
+                volumes.append(v.name)
+    except Exception:
+        pass
+
+    return {
+        "tables": sorted(tables),
+        "views": sorted(views),
+        "functions": sorted(functions),
+        "volumes": sorted(volumes),
+    }
+
+
 @router.get("/uc-objects")
 async def list_uc_objects(client=Depends(get_db_client)):
     """List all Unity Catalog workspace-level objects using the SDK (no SQL warehouse needed)."""
@@ -458,7 +529,7 @@ async def get_audit_log(client=Depends(get_db_client)):
 async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, client=Depends(get_db_client)):
     """Get incremental sync history for a source→dest pair from Delta tables."""
     try:
-        from src.client import execute_sql
+        from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
         config = await get_app_config()
@@ -468,8 +539,8 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
         run_fqn = get_run_logs_fqn(config)
         audit_fqn = get_audit_table_fqn(config)
 
-        queries = [
-            f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+        candidates = [
+            (run_fqn, f"""SELECT job_id, job_type, source_catalog, destination_catalog,
                        clone_type, status, started_at, completed_at,
                        duration_seconds, tables_cloned, tables_failed,
                        error_message, user_name
@@ -477,8 +548,8 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
                 WHERE job_type IN ('sync', 'incremental_sync', 'incremental')
                   {f"AND source_catalog = '{source}'" if source else ""}
                   {f"AND destination_catalog = '{dest}'" if dest else ""}
-                ORDER BY started_at DESC LIMIT {limit}""",
-            f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                ORDER BY started_at DESC LIMIT {limit}"""),
+            (audit_fqn, f"""SELECT operation_id AS job_id, operation_type AS job_type,
                        source_catalog, destination_catalog,
                        clone_type, status, started_at, completed_at,
                        duration_seconds, tables_cloned, tables_failed,
@@ -488,10 +559,15 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
                        OR clone_mode = 'incremental')
                   {f"AND source_catalog = '{source}'" if source else ""}
                   {f"AND destination_catalog = '{dest}'" if dest else ""}
-                ORDER BY started_at DESC LIMIT {limit}""",
+                ORDER BY started_at DESC LIMIT {limit}"""),
         ]
 
-        for sql in queries:
+        for fqn, sql in candidates:
+            try:
+                if not table_exists(client, wid, fqn):
+                    continue
+            except Exception:
+                pass
             try:
                 rows = execute_sql(client, wid, sql)
                 if rows:
@@ -1452,7 +1528,7 @@ async def get_metrics(client=Depends(get_db_client)):
 async def get_notifications(since: str | None = None, client=Depends(get_db_client)):
     """Get recent notifications from run logs (completions, failures, TTL warnings)."""
     try:
-        from src.client import execute_sql
+        from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
         config = await get_app_config()
@@ -1462,23 +1538,24 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
         audit_fqn = get_audit_table_fqn(config)
         metrics_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
 
-        # Normalize column names via SQL aliases for each table
-        queries = [
-            # run_logs: job_id, job_type
-            f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+        # Normalize column names via SQL aliases for each table. We
+        # pair each query with the FQN it reads so we can probe for
+        # existence first — this avoids polluting the warehouse logs
+        # with TABLE_OR_VIEW_NOT_FOUND when the audit catalog hasn't
+        # been provisioned yet (common on fresh workspaces).
+        candidates = [
+            (run_logs_fqn, f"""SELECT job_id, job_type, source_catalog, destination_catalog,
                        status, completed_at, duration_seconds, error_message
                 FROM {run_logs_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20""",
-            # clone_operations: operation_id → job_id, operation_type → job_type
-            f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                ORDER BY completed_at DESC LIMIT 20"""),
+            (audit_fqn, f"""SELECT operation_id AS job_id, operation_type AS job_type,
                        source_catalog, destination_catalog,
                        status, completed_at, duration_seconds, error_message
                 FROM {audit_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20""",
-            # clone_metrics: operation_id → job_id, derive status from failed count
-            f"""SELECT operation_id AS job_id, 'clone' AS job_type,
+                ORDER BY completed_at DESC LIMIT 20"""),
+            (metrics_fqn, f"""SELECT operation_id AS job_id, 'clone' AS job_type,
                        source_catalog, destination_catalog,
                        CASE WHEN failed > 0 THEN 'completed_with_errors'
                             ELSE 'success' END AS status,
@@ -1486,11 +1563,20 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
                        CAST(NULL AS STRING) AS error_message
                 FROM {metrics_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20""",
+                ORDER BY completed_at DESC LIMIT 20"""),
         ]
 
-        rows = []
-        for sql in queries:
+        rows: list = []
+        for fqn, sql in candidates:
+            # Probe-then-query: skip queries against tables that don't
+            # exist so the warehouse never sees a NOT_FOUND.
+            try:
+                if not table_exists(client, wid, fqn):
+                    continue
+            except Exception:
+                # Probe itself failed (auth / transient). Fall through
+                # to the real query so we don't silently mask issues.
+                pass
             try:
                 rows = execute_sql(client, wid, sql)
                 if rows:
@@ -1543,7 +1629,7 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
 async def get_catalog_health(client=Depends(get_db_client)):
     """Get aggregate catalog health score based on recent operations."""
     try:
-        from src.client import execute_sql
+        from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
         config = await get_app_config()
@@ -1556,21 +1642,22 @@ async def get_catalog_health(client=Depends(get_db_client)):
 
         catalogs = {}
 
-        # Queries with normalized status column
-        health_queries = [
-            # run_logs & clone_operations have status column
-            f"""SELECT source_catalog, status, COUNT(*) as cnt,
+        # Queries with normalized status column. Each is paired with
+        # its source FQN so we can probe-then-query — skipping audit
+        # tables that haven't been provisioned avoids polluting the
+        # warehouse logs with TABLE_OR_VIEW_NOT_FOUND errors.
+        health_candidates = [
+            (run_logs_fqn, f"""SELECT source_catalog, status, COUNT(*) as cnt,
                        MAX(completed_at) as last_operation
                 FROM {run_logs_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
-                GROUP BY source_catalog, status ORDER BY source_catalog""",
-            f"""SELECT source_catalog, status, COUNT(*) as cnt,
+                GROUP BY source_catalog, status ORDER BY source_catalog"""),
+            (audit_fqn, f"""SELECT source_catalog, status, COUNT(*) as cnt,
                        MAX(completed_at) as last_operation
                 FROM {audit_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
-                GROUP BY source_catalog, status ORDER BY source_catalog""",
-            # clone_metrics: derive status from failed column
-            f"""SELECT source_catalog,
+                GROUP BY source_catalog, status ORDER BY source_catalog"""),
+            (metrics_fqn, f"""SELECT source_catalog,
                        CASE WHEN failed > 0 THEN 'completed_with_errors'
                             ELSE 'success' END AS status,
                        COUNT(*) as cnt,
@@ -1578,11 +1665,16 @@ async def get_catalog_health(client=Depends(get_db_client)):
                 FROM {metrics_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
                 GROUP BY source_catalog, CASE WHEN failed > 0 THEN 'completed_with_errors' ELSE 'success' END
-                ORDER BY source_catalog""",
+                ORDER BY source_catalog"""),
         ]
 
         rows = []
-        for sql in health_queries:
+        for fqn, sql in health_candidates:
+            try:
+                if not table_exists(client, wid, fqn):
+                    continue
+            except Exception:
+                pass
             try:
                 rows = execute_sql(client, wid, sql)
                 if rows:

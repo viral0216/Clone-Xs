@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -239,9 +240,9 @@ export default function RtbfPage() {
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [loadingActions, setLoadingActions] = useState(false);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = usePersistedState<string>("rtbf-tab", "dashboard");
 
-  const [subjectType, setSubjectType] = useState("email");
+  const [subjectType, setSubjectType] = usePersistedState<string>("rtbf-subject-type", "email");
   const [subjectValue, setSubjectValue] = useState("");
   const [subjectColumn, setSubjectColumn] = useState("");
   const [requesterEmail, setRequesterEmail] = useState("");

@@ -7,6 +7,10 @@ title: Rollback
 
 > **Docs:** [RESTORE TABLE](https://docs.databricks.com/en/sql/language-manual/delta-restore.html) | [DROP TABLE](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-drop-table.html) | [DROP SCHEMA](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-drop-schema.html) | [DROP CATALOG](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-drop-catalog.html)
 
+:::tip Field tooltips
+The "Also drop the destination catalog" checkbox inside an expanded rollback entry has an info tooltip — hover the icon to confirm the blast radius before clicking Rollback.
+:::
+
 ## When to use
 
 Something went wrong during a clone and you want to undo it. Rollback now uses **true Delta time-travel** (`RESTORE TABLE ... TO VERSION AS OF`) instead of destructive DROP operations, preserving table history and minimizing data loss.
@@ -118,6 +122,44 @@ Rollback data is persisted to a `rollback_logs` Delta table in your configured a
 ```
 
 This enables querying rollback history across operations, tracking which tables were restored vs. dropped, and auditing rollback activity over time. See [Delta Table Logging](./monitoring.md#delta-table-logging) for the full schema.
+
+### Pre-clone version tracking
+
+Before cloning a destination table that already exists, Clone-Xs captures its current Delta version and stores it in the rollback log's `table_versions` map. The version is resolved in two steps:
+
+1. **SDK first** — `client.tables.get(full_name)` is called (no SQL warehouse required). If the SDK returns a version in the `TableInfo` response, it's used as-is.
+2. **`DESCRIBE HISTORY` fallback** — if the SDK doesn't expose a version, Clone-Xs runs `DESCRIBE HISTORY <fqn> LIMIT 1` through the warehouse and reads `version` from the first row.
+
+The stored entry looks like:
+
+```json
+"table_versions": {
+  "staging.sales.orders": 42,
+  "staging.sales.customers": 8
+}
+```
+
+At rollback time this version drives the **RESTORE** path: `RESTORE TABLE staging.sales.orders TO VERSION AS OF 42`. If the version is `0` or missing, rollback downgrades to the timestamp mode (`RESTORE TO TIMESTAMP AS OF '<clone_started_at>'`), and from there to DROP if neither works. That cascade is why old rollback logs still rollback cleanly even when the current log format changes — the fallbacks are ordered safest-to-most-destructive.
+
+### Auto-rollback on fail
+
+**When to use:** scheduled / CI clones that run unattended overnight, where a silent partial failure (e.g. 3 schemas cloned but 40 tables failed) is worse than a full retry from scratch the next morning. Leave it off for interactive clones where you'd rather inspect mismatches manually.
+
+Enable via config:
+
+```yaml
+auto_rollback_on_failure: true
+rollback_threshold: 5.0          # percent
+validate_after_clone: true       # prerequisite
+```
+
+When all three are set, a clone that reports a post-clone validation mismatch **greater than the threshold** is rolled back automatically using the just-written rollback log — no user interaction. The threshold is an **aggregate** percentage across all validated tables, not per-table.
+
+Use it for scheduled / CI clones where a silent partial failure is worse than a full retry. Leave it off for interactive clones where you'd rather inspect mismatches manually.
+
+:::caution
+Auto-rollback runs the same RESTORE + DROP sequence as a manual rollback. A transient network blip during post-clone validation can roll back successfully-cloned tables too. For noisy environments, prefer manual review — set `validate_after_clone: true` and `auto_rollback_on_failure: false`, then run `clxs rollback --log-file <path>` yourself if the validation report warrants it.
+:::
 
 ## Resume from failure
 

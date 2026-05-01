@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -75,8 +76,45 @@ export default function RowLevelReconciliationPage() {
   // Batch mode state
   const [batchMode, setBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [jobPolling, setJobPolling] = useState(false);
+  // Durable batch-job tracking — survives page navigation. Logs are appended
+  // via the hook's onProgress callback so the user can navigate away and the
+  // log timeline is rebuilt from the same server-side progress dict.
+  const batchTracker = useDurableJob({
+    key: "gov-recon-row-batch",
+    pollUrl: (id) => `/reconciliation/batch-validate/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Reconciliation complete",
+    onProgress: (job) => {
+      const progress = job?.progress || {};
+      if (progress.current_table) {
+        setLogs((prev) => {
+          const lastLine = prev[prev.length - 1] || "";
+          const progressLine = `[${new Date().toLocaleTimeString()}] [${progress.completed || 0}/${progress.total || 0}] Processing ${progress.current_table}...`;
+          if (lastLine.includes("Processing") && lastLine.includes(progress.current_table)) return prev;
+          return [...prev, progressLine];
+        });
+      }
+    },
+    onComplete: (job) => {
+      if (job.status === "completed") {
+        setResults(job.result);
+        const r = job.result || {};
+        setLogs((prev) => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] Batch complete: ${r.matched || 0}/${r.total_tables || 0} matched, ${r.mismatched || 0} mismatched, ${r.errors || 0} errors`,
+          r.run_id ? `[${new Date().toLocaleTimeString()}] Results stored in Delta → run_id: ${r.run_id}` : "",
+        ].filter(Boolean));
+        toast.success(`Batch reconciliation complete: ${r.matched || 0}/${r.total_tables || 0} matched`);
+      } else {
+        setResults({ error: job.error || "Job failed" });
+        setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${job.error || "Job failed"}`]);
+        toast.error("Batch reconciliation failed");
+      }
+    },
+  });
+  const activeJobId = batchTracker.jobId;
+  const jobPolling = batchTracker.isRunning;
 
   function addToBatch() {
     if (!sourceSchema || !sourceTable) return;
@@ -101,59 +139,24 @@ export default function RowLevelReconciliationPage() {
     setSampleData({});
     setLogs([`[${new Date().toLocaleTimeString()}] Submitting batch job: ${tables.length} tables from ${source}.${sourceSchema} → ${dest}`]);
     try {
-      const data = await api.post("/reconciliation/batch-validate", {
-        source_catalog: source,
-        destination_catalog: dest,
-        tables,
-        use_checksum: useChecksum,
-        use_spark: useSpark,
-        max_workers: maxWorkers,
+      await batchTracker.start({ source, dest, tables: tables.length }, async () => {
+        const data = await api.post("/reconciliation/batch-validate", {
+          source_catalog: source,
+          destination_catalog: dest,
+          tables,
+          use_checksum: useChecksum,
+          use_spark: useSpark,
+          max_workers: maxWorkers,
+        });
+        setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Job queued: ${data.job_id} (${data.total_tables} tables)`]);
+        return data.job_id;
       });
-      setActiveJobId(data.job_id);
-      setJobPolling(true);
-      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Job queued: ${data.job_id} (${data.total_tables} tables)`]);
     } catch (e: any) {
       toast.error(e.message);
       setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${e.message}`]);
     }
   }
-
-  // Poll batch job status
-  useEffect(() => {
-    if (!activeJobId || !jobPolling) return;
-    const interval = setInterval(async () => {
-      try {
-        const job = await api.get(`/reconciliation/batch-validate/${activeJobId}`);
-        const progress = job.progress || {};
-        if (progress.current_table) {
-          setLogs(prev => {
-            const lastLine = prev[prev.length - 1] || "";
-            const progressLine = `[${new Date().toLocaleTimeString()}] [${progress.completed || 0}/${progress.total || 0}] Processing ${progress.current_table}...`;
-            if (lastLine.includes("Processing") && lastLine.includes(progress.current_table)) return prev;
-            return [...prev, progressLine];
-          });
-        }
-        if (job.status === "completed") {
-          clearInterval(interval);
-          setJobPolling(false);
-          setResults(job.result);
-          const r = job.result || {};
-          setLogs(prev => [...prev,
-            `[${new Date().toLocaleTimeString()}] Batch complete: ${r.matched || 0}/${r.total_tables || 0} matched, ${r.mismatched || 0} mismatched, ${r.errors || 0} errors`,
-            r.run_id ? `[${new Date().toLocaleTimeString()}] Results stored in Delta → run_id: ${r.run_id}` : "",
-          ].filter(Boolean));
-          toast.success(`Batch reconciliation complete: ${r.matched || 0}/${r.total_tables || 0} matched`);
-        } else if (job.status === "failed") {
-          clearInterval(interval);
-          setJobPolling(false);
-          setResults({ error: job.error || "Job failed" });
-          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ERROR: ${job.error || "Job failed"}`]);
-          toast.error("Batch reconciliation failed");
-        }
-      } catch { /* polling error — continue */ }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [activeJobId, jobPolling]);
+  // Polling lives in batchTracker — see useDurableJob above.
 
   useEffect(() => {
     api.get("/reconciliation/spark-status").then((s) => {

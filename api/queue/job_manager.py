@@ -164,13 +164,18 @@ class JobManager:
 
             # Log operation start to audit trail (clone_operations table)
             audit_start_time = datetime.now(timezone.utc)
+            audit_ready = False
             try:
                 from src.audit_trail import ensure_audit_table, log_operation_start
                 ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)
                 log_operation_start(client, config.get("sql_warehouse_id", ""),
                                     config, job_id, operation_type=job_type)
-            except Exception:
-                pass
+                audit_ready = True
+            except Exception as e:
+                # Don't fail the job, but make it visible WHY the completion
+                # log later won't have a row to UPDATE.
+                logger.warning("Audit trail unavailable for job %s: %s", job_id, e)
+            self.jobs[job_id]["_audit_ready"] = audit_ready
 
             if job_type == "clone":
                 if config.get("serverless") and config.get("volume"):
@@ -180,9 +185,24 @@ class JobManager:
                         config,
                         volume_path=config["volume"],
                     )
+                elif (config.get("load_type") or "").upper() == "SELECTIVE":
+                    # Selective re-clone: only touch tables that have drifted
+                    # between source and target. Routed inside the "clone" job
+                    # type (rather than a new job_type) so existing /api/clone
+                    # callers can opt in by setting load_type=SELECTIVE without
+                    # changing endpoints, and the audit-trail / run-id flow
+                    # stays identical.
+                    from src.selective_reclone import selective_reclone_catalog
+                    result = selective_reclone_catalog(client, config)
                 else:
                     from src.clone_catalog import clone_catalog
                     result = clone_catalog(client, config)
+            elif job_type == "clone_cross_workspace":
+                from src.clone_cross_workspace import run_cross_workspace_clone
+                result = run_cross_workspace_clone(client, config)
+            elif job_type == "clone_fanout":
+                from src.clone_fanout import run_cross_workspace_fanout
+                result = run_cross_workspace_fanout(client, config)
             elif job_type == "validate":
                 from src.validation import validate_catalog
                 result = validate_catalog(
@@ -314,6 +334,20 @@ class JobManager:
                 except Exception:
                     pass
                 result = {"output_path": output, "content": content, "format": fmt}
+            elif job_type == "streaming-emit":
+                from src.demo_streaming import run_streaming_emission
+                # Live progress + stop flag are read by the runner via
+                # the closures below. The stop flag is flipped by
+                # POST /demo-data/streaming/{job_id}/stop on the route
+                # side; the runner checks it every ~0.5s.
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = run_streaming_emission(
+                    client, config["sql_warehouse_id"], config,
+                    progress_dict=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
                 # Use the job dict's "progress" key for live progress updates
@@ -334,6 +368,16 @@ class JobManager:
                     create_volumes=config.get("create_volumes", True),
                     start_date=config.get("start_date", "2020-01-01"),
                     end_date=config.get("end_date", "2025-01-01"),
+                    schema_only=config.get("schema_only", False),
+                    realistic_data=config.get("realistic_data", False),
+                    locale=config.get("locale", "en_US"),
+                    seed=config.get("seed"),
+                    validate_referential_integrity=config.get("validate_referential_integrity", True),
+                    dq_profile=config.get("dq_profile", "realistic"),
+                    anomaly_rate=config.get("anomaly_rate", 0.02),
+                    inject_anomalies=config.get("inject_anomalies", True),
+                    custom_industries=config.get("custom_industries"),
+                    data_model=config.get("data_model", "flat"),
                     progress_dict=self.jobs[job_id]["progress"],
                 )
             elif job_type == "reconciliation-batch":
@@ -743,18 +787,20 @@ class JobManager:
             except Exception as log_err:
                 logger.debug(f"Could not persist run log to Delta: {log_err}")
 
-            # Log operation completion to audit trail (clone_operations table)
-            try:
-                from src.audit_trail import log_operation_complete
-                job_data = self.jobs[job_id]
-                summary = job_data.get("result") or {}
-                log_operation_complete(
-                    client, config.get("sql_warehouse_id", ""), config,
-                    job_id, summary, audit_start_time,
-                    error_message=job_data.get("error"),
-                )
-            except Exception as audit_err:
-                logger.debug(f"Could not persist audit trail to Delta: {audit_err}")
+            # Log operation completion to audit trail (clone_operations table) —
+            # skip if start never succeeded, otherwise UPDATE has no row to hit.
+            if self.jobs[job_id].get("_audit_ready"):
+                try:
+                    from src.audit_trail import log_operation_complete
+                    job_data = self.jobs[job_id]
+                    summary = job_data.get("result") or {}
+                    log_operation_complete(
+                        client, config.get("sql_warehouse_id", ""), config,
+                        job_id, summary, audit_start_time,
+                        error_message=job_data.get("error"),
+                    )
+                except Exception as audit_err:
+                    logger.debug(f"Could not persist audit trail to Delta: {audit_err}")
 
             # Save operation metrics to clone_metrics table
             try:

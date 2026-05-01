@@ -2,18 +2,26 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
+import FieldLabel, { InfoDot } from "@/components/FieldLabel";
 import { useCurrency } from "@/hooks/useSettings";
+import { useStreamingEmit, useStreamingStop, useVolumes, useStreamingSchedule, useDemoCatalogs, useDemoCatalogDrop } from "@/hooks/useApi";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
-  ClipboardCopy, Check, Download,
+  ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
 } from "lucide-react";
 
 const INDUSTRIES = ["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"] as const;
@@ -148,10 +156,61 @@ export default function DemoDataPage() {
   const [ucBestPractices, setUcBestPractices] = useState(true);
   const [createFunctions, setCreateFunctions] = useState(true);
   const [createVolumes, setCreateVolumes] = useState(true);
+  // schema_only: when true, the backend creates DDL (catalog/schemas/tables/
+  // views/UDFs/volumes) without running any INSERT statements. Cuts a 60-min
+  // generation down to seconds — perfect for verifying DDL templates, CI
+  // smoke runs, or YAML custom-industry validation.
+  const [schemaOnly, setSchemaOnly] = useState(false);
+  // Theme 1 (Realism): when on, the backend rewrites the small static
+  // name/email/phone pools embedded in INSERT expressions to sample from
+  // Faker-generated, locale-aware pools. `seed` makes the output
+  // deterministic across runs (handy for screenshot demos).
+  const [realisticData, setRealisticData] = useState(false);
+  const [locale, setLocale] = useState("en_US");
+  const [seed, setSeed] = useState<string>("");
+  // Theme 2 (DQ profiles + ML labels). dq_profile is a named bundle of
+  // null/dup/outlier rates; anomaly_rate is the positive-class rate for
+  // labeled training columns (is_fraud / churn_risk / is_anomaly).
+  const [dqProfile, setDqProfile] = useState<"clean" | "realistic" | "dirty">("realistic");
+  const [anomalyRate, setAnomalyRate] = useState<number>(0.02);
+  const [injectAnomalies, setInjectAnomalies] = useState(true);
+  // Data modeling pattern overlay. "flat" preserves today's behaviour;
+  // "star_schema" additionally generates `<industry>_star` schemas with
+  // fct_/dim_ tables following DBT-style naming (DV2/OBT/Snowflake later).
+  const [dataModel, setDataModel] = useState<"flat" | "star_schema">("flat");
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(true);
   const [industryDetailOpen, setIndustryDetailOpen] = useState(false);
+  // Theme 4 — server-computed per-industry preview. Lazily fetched from
+  // POST /generate/demo-data/preview when the user clicks "Refresh"
+  // (default off so a stale form doesn't keep hammering the API).
+  const [livePreview, setLivePreview] = useState<{
+    per_industry: Array<{ industry: string; tables: number; rows: number; estimated_bytes: number; estimated_duration_seconds: number }>;
+    total_rows: number;
+    total_gb: number;
+    estimated_duration_seconds: number;
+    estimated_cost_usd: { monthly_storage: number; one_time_compute: number; first_month_total: number };
+  } | null>(null);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+
+  const fetchLivePreview = async () => {
+    if (selectedIndustries.length === 0) return;
+    setLivePreviewLoading(true);
+    try {
+      const res = await api.post("/generate/demo-data/preview", {
+        catalog_name: catalogName.trim() || "demo_preview",
+        industries: selectedIndustries,
+        scale_factor: Number.parseFloat(scaleFactor),
+        schema_only: schemaOnly,
+      });
+      setLivePreview(res);
+    } catch (e: any) {
+      toast.error(`Preview failed: ${e?.message || e}`);
+    } finally {
+      setLivePreviewLoading(false);
+    }
+  };
   const [expandedIndustries, setExpandedIndustries] = useState<Set<string>>(new Set());
   const [cleanupLoading, setCleanupLoading] = useState(false);
 
@@ -215,12 +274,161 @@ export default function DemoDataPage() {
     return n.toFixed(0);
   };
 
-  // Job state
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<any>(null);
+  // Job state — durable across page navigation. The hook polls the server,
+  // persists job_id + latest server dict in JobContext, and reconnects to an
+  // in-flight job on remount so progress/logs resume mid-run.
+  const batchJob = useDurableJob({
+    key: "demo-data-batch",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Demo data ready",
+    onComplete: (d) => {
+      if (d.status === "completed") toast.success("Demo data generated successfully");
+      else toast.error(d.error || "Demo data generation failed");
+    },
+  });
+  const jobId = batchJob.jobId;
+  const job = batchJob.entry?.data ?? null;
   const [submitting, setSubmitting] = useState(false);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Top-level "which generator?" switch. The page houses two distinct
+  // generators (batch catalog + streaming events); each gets its own
+  // tab so users aren't scrolling past inapplicable controls.
+  // Persisted to sessionStorage so refresh keeps the user where they
+  // were.
+  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "manage">(() => {
+    try {
+      const v = sessionStorage.getItem("clxs-demo-gen-tab");
+      if (v === "batch" || v === "streaming" || v === "manage") return v;
+    } catch {}
+    return "batch";
+  });
+
+  // Manage Catalogs tab state — typed-confirm modal sits above the
+  // listing. The modal asks the user to type the catalog name to
+  // arm the destructive Confirm button (typed-confirm pattern, not
+  // a window.confirm() — we want the higher safety bar here than the
+  // existing Batch-tab inline delete).
+  const [manageDemoOnly, setManageDemoOnly] = useState(false);
+  const [dropModalCatalog, setDropModalCatalog] = useState<string | null>(null);
+  const [dropModalTyped, setDropModalTyped] = useState("");
+  const demoCatalogsQuery = useDemoCatalogs(manageDemoOnly);
+  const demoCatalogDrop = useDemoCatalogDrop();
+
+  // Schedule-streaming modal state — opened by the "Schedule on
+  // Databricks" button on the Streaming tab. All fields prefilled
+  // from sensible defaults; user only needs to click submit.
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleCron, setScheduleCron] = useState("0 */5 * * * ?");
+  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
+  const [scheduleUseServerless, setScheduleUseServerless] = useState(true);
+  const [scheduleNotebookPath, setScheduleNotebookPath] = useState("");
+  const [scheduleResult, setScheduleResult] = useState<any>(null);
+  const streamingSchedule = useStreamingSchedule();
+
+  // Streaming-emission card state. Independent from the batch form
+  // above — has its own catalog/schema/profile inputs and its own
+  // job lifecycle. Re-uses the same /api/jobs/{id} polling endpoint
+  // by tracking `streamingJobId` and pulling the same job dict.
+  const [streamCatalog, setStreamCatalog] = useState("");
+  const [streamSchema, setStreamSchema] = useState("iot");
+  // UC Volume the runner writes JSON batches into. Default matches the
+  // legacy hardcoded name so existing demos keep working; users can pick
+  // an existing volume from the suggestions list or type a new name
+  // (the runner CREATE VOLUME IF NOT EXISTS the chosen name).
+  const [streamVolume, setStreamVolume] = useState("events_volume");
+  // "Custom mode" flags for the three target-location selects. Tracked
+  // explicitly because the value alone can't distinguish "user picked
+  // Custom and is partway through typing" from "user is between picks
+  // (value temporarily empty)". The runner CREATE … IF NOT EXISTS
+  // catalog/schema/volume so any chosen name works whether it exists
+  // already or not.
+  const [streamCatalogCustom, setStreamCatalogCustom] = useState(false);
+  const [streamSchemaCustom, setStreamSchemaCustom] = useState(false);
+  const [streamVolumeCustom, setStreamVolumeCustom] = useState(false);
+  const volumesQuery = useVolumes();
+  const catalogsQuery = useQuery<string[]>({
+    queryKey: ["catalogs"],
+    queryFn: () => api.get("/catalogs"),
+    staleTime: 1000 * 60 * 10,
+  });
+  const schemasQuery = useQuery<string[]>({
+    queryKey: ["schemas", streamCatalog],
+    queryFn: () => api.get(`/catalogs/${streamCatalog}/schemas`),
+    // Only fetch when we have an existing catalog selected. If the user
+    // is in "Custom catalog" mode the catalog doesn't exist yet, so
+    // there are no schemas to enumerate.
+    enabled: !!streamCatalog && !streamCatalogCustom,
+    staleTime: 1000 * 60 * 5,
+  });
+  const [streamProfile, setStreamProfile] = useState<
+    | "generic_sensor"
+    | "industrial_machine"
+    | "car_obd2"
+    | "smart_meter"
+    | "wearable_health"
+    | "pos_terminal"
+    | "wind_turbine"
+    | "atm_transaction"
+    | "server_metrics"
+    | "clickstream"
+  >("generic_sensor");
+  const [streamEventsPerBatch, setStreamEventsPerBatch] = useState(100);
+  const [streamIntervalSeconds, setStreamIntervalSeconds] = useState(5);
+  const [streamDurationSeconds, setStreamDurationSeconds] = useState(60);
+  // Destination mode for streaming events:
+  //   "volume"        — JSON files only, no Bronze
+  //   "volume_bronze" — files + auto-create Bronze STREAMING TABLE (default)
+  //   "direct_table"  — INSERT INTO Delta table directly (no Volume)
+  const [streamDestination, setStreamDestination] = useState<"volume" | "volume_bronze" | "direct_table">("volume_bronze");
+  const [streamBronzeTable, setStreamBronzeTable] = useState("");
+  // Legacy auto-create flag — derived from destination on submit. Kept
+  // as state only to render the refresh-cadence input in volume_bronze mode.
+  const [streamBronzeRefreshMinutes, setStreamBronzeRefreshMinutes] = useState(5);
+  // Streaming job — durable. progressHistory replaces the previous local
+  // streamingSeries useState; the hook captures one snapshot per server tick
+  // and persists them so the throughput chart restores after navigation.
+  const streamJob = useDurableJob({
+    key: "demo-data-streaming",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    captureProgress: (d) => {
+      const prog = d?.progress;
+      if (!prog || typeof prog.ticks !== "number" || typeof prog.events_emitted !== "number") return null;
+      return {
+        tick: prog.ticks,
+        elapsed: typeof prog.elapsed_seconds === "number" ? prog.elapsed_seconds : 0,
+        events: prog.events_emitted,
+        // delta is filled in on read using the previous snapshot (see streamingSeries memo)
+      };
+    },
+    isProgressEqual: (a, b) => a?.tick === b?.tick,
+    historyCap: 600,
+    notificationTitle: "Streaming complete",
+    onComplete: (d) => {
+      if (d.status === "completed") toast.success("Streaming emission completed");
+      else toast.error(d.error || "Streaming emission failed");
+    },
+  });
+  const streamingJobId = streamJob.jobId;
+  const streamingJob = streamJob.entry?.data ?? null;
+  // Recompute deltas from the persisted history. The hook stores absolute
+  // counts; the chart wants per-tick deltas, so we derive them here.
+  const streamingSeries = (() => {
+    const hist = streamJob.progressHistory ?? [];
+    let lastEvents = 0;
+    return hist.map((p: any) => {
+      const delta = (p?.events ?? 0) - lastEvents;
+      lastEvents = p?.events ?? lastEvents;
+      return { ...p, delta };
+    });
+  })();
+  const streamingEmit = useStreamingEmit();
+  const streamingStop = useStreamingStop();
 
   const toggleIndustry = (industry: string) => {
     setSelectedIndustries((prev) =>
@@ -241,8 +449,7 @@ export default function DemoDataPage() {
     }
 
     setSubmitting(true);
-    setJob(null);
-    setJobId(null);
+    batchJob.clear();
 
     try {
       const body: any = {
@@ -254,20 +461,32 @@ export default function DemoDataPage() {
         uc_best_practices: ucBestPractices,
         create_functions: createFunctions,
         create_volumes: createVolumes,
+        schema_only: schemaOnly,
+        realistic_data: realisticData,
+        locale,
       };
+      // Seed is optional — only send when the user typed a number, otherwise
+      // omit so the backend gets None and the Faker output is non-deterministic.
+      const seedNum = seed.trim() ? Number.parseInt(seed.trim(), 10) : Number.NaN;
+      if (!Number.isNaN(seedNum)) body.seed = seedNum;
+      // Theme 2 — DQ profile + anomaly rate. Always sent so the backend
+      // can validate them; defaults match server-side defaults.
+      body.dq_profile = dqProfile;
+      body.anomaly_rate = anomalyRate;
+      body.inject_anomalies = injectAnomalies;
+      body.data_model = dataModel;
       if (owner.trim()) body.owner = owner.trim();
       if (storageLocation.trim()) body.storage_location = storageLocation.trim();
       if (startDate) body.start_date = startDate;
       if (endDate) body.end_date = endDate;
       if (destCatalog.trim()) body.dest_catalog = destCatalog.trim();
 
-      const res = await api.post("/generate/demo-data", body);
-      if (res.job_id) {
-        setJobId(res.job_id);
+      await batchJob.start(body, async () => {
+        const res = await api.post("/generate/demo-data", body);
+        if (!res.job_id) throw new Error("Unexpected response — no job_id returned");
         toast.success(`Demo data generation submitted (Job ${res.job_id})`);
-      } else {
-        toast.error("Unexpected response — no job_id returned");
-      }
+        return res.job_id;
+      });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -275,33 +494,62 @@ export default function DemoDataPage() {
     }
   };
 
-  // Poll for job status
-  useEffect(() => {
-    if (!jobId) return;
+  // Polling for both batch and streaming jobs is handled by useDurableJob —
+  // it lives in JobContext so it survives navigation.
 
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`);
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "completed") {
-            toast.success("Demo data generated successfully");
-          } else {
-            toast.error(data.error || "Demo data generation failed");
-          }
-        }
-      } catch {
-        // Silently retry on poll errors
-      }
-    };
+  const handleStartStreaming = async () => {
+    if (!streamCatalog.trim() || !streamSchema.trim()) {
+      toast.error("Catalog and schema are required");
+      return;
+    }
+    try {
+      // Wipe previous streaming-job state (including chart history) so a new
+      // run starts clean visually instead of merging with the prior series.
+      streamJob.clear();
+      const params = {
+        catalog: streamCatalog.trim(),
+        schema: streamSchema.trim(),
+        volume: streamVolume.trim() || "events_volume",
+        profile: streamProfile,
+        events_per_batch: streamEventsPerBatch,
+        interval_seconds: streamIntervalSeconds,
+        total_duration_seconds: streamDurationSeconds,
+        destination: streamDestination,
+        bronze_table: streamBronzeTable.trim(),
+        auto_create_bronze: streamDestination === "volume_bronze",
+        bronze_refresh_minutes: streamBronzeRefreshMinutes,
+      };
+      await streamJob.start(params, async () => {
+        const res = await streamingEmit.mutateAsync(params);
+        if (res?.job_id) toast.success(`Streaming emission started (Job ${res.job_id})`);
+        return res?.job_id;
+      });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
 
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [jobId]);
+  const handleStopStreaming = async () => {
+    if (!streamingJobId) return;
+    try {
+      await streamingStop.mutateAsync({ job_id: streamingJobId });
+      toast.success("Stop requested — runner will halt at next tick");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  // Built once and shown verbatim in the Auto Loader panel below.
+  // Same shape as the SQL the auto-create path executes — keeping
+  // the two in sync makes manual re-runs predictable.
+  const autoLoaderSnippet = (
+    `CREATE OR REFRESH STREAMING TABLE \`${streamCatalog || "<catalog>"}\`.\`${streamSchema || "<schema>"}\`.\`bronze_${streamProfile}\`\n` +
+    `SCHEDULE REFRESH CRON '0 0/${streamBronzeRefreshMinutes} * * * ?' AT TIME ZONE 'UTC'\n` +
+    `AS SELECT * FROM STREAM read_files(\n` +
+    `  '/Volumes/${streamCatalog || "<catalog>"}/${streamSchema || "<schema>"}/${streamVolume || "events_volume"}/${streamProfile}/',\n` +
+    `  format => 'json'\n` +
+    `);`
+  );
 
   // Auto-scroll logs
   useEffect(() => {
@@ -309,8 +557,7 @@ export default function DemoDataPage() {
   }, [job?.logs]);
 
   const handleReset = () => {
-    setJobId(null);
-    setJob(null);
+    batchJob.clear();
   };
 
   const handleCleanup = async () => {
@@ -371,6 +618,35 @@ export default function DemoDataPage() {
         description="Generate realistic demo catalogs with synthetic data across 5 industries — healthcare, financial, retail, telecom, and manufacturing."
       />
 
+      {/* Generator tabs — Batch (one-shot synthetic catalog) and
+          Streaming (continuous IoT events to a Volume) are two distinct
+          workflows; tabs keep each surface focused. Selection persists
+          via sessionStorage so refresh keeps the user where they were. */}
+      <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
+        {[
+          { key: "batch", label: "Batch Catalog", icon: Database, hint: "Generate one-shot synthetic data across N industries" },
+          { key: "streaming", label: "Streaming Events", icon: Radio, hint: "Continuously emit IoT events to a UC Volume" },
+          { key: "manage", label: "Manage Catalogs", icon: Trash2, hint: "List and drop existing demo catalogs" },
+        ].map(({ key, label, icon: TabIcon, hint }) => (
+          <button key={key}
+            onClick={() => {
+              setActiveGenTab(key as typeof activeGenTab);
+              try { sessionStorage.setItem("clxs-demo-gen-tab", key); } catch {}
+            }}
+            title={hint}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px shrink-0 flex items-center gap-1.5 ${
+              activeGenTab === key
+                ? "border-[#E8453C] text-[#E8453C]"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            <TabIcon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeGenTab === "batch" && (<>
+
       {/* Template Presets */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium text-muted-foreground">Presets:</span>
@@ -414,25 +690,34 @@ export default function DemoDataPage() {
             Configuration
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent>
+          <Tabs defaultValue="basics">
+            <TabsList className="grid w-full grid-cols-4 h-9">
+              <TabsTrigger value="basics">Basics</TabsTrigger>
+              <TabsTrigger value="catalog">Catalog Options</TabsTrigger>
+              <TabsTrigger value="quality">Data Quality &amp; ML</TabsTrigger>
+              <TabsTrigger value="architecture">Architecture</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="basics" className="space-y-5 mt-4">
           {/* Catalog Name */}
-          <div>
-            <label className="text-sm font-medium">
+          <div className="space-y-1.5">
+            <FieldLabel hint="Name of the new demo catalog. Must not already exist unless 'Drop Existing' is checked.">
               Catalog Name <span className="text-red-500">*</span>
-            </label>
+            </FieldLabel>
             <Input
               value={catalogName}
               onChange={(e) => setCatalogName(e.target.value)}
               placeholder="demo_catalog"
-              className="mt-1 max-w-md"
+              className="max-w-md"
               disabled={isRunning}
             />
           </div>
 
           {/* Industries */}
-          <div>
-            <label className="text-sm font-medium">Industries</label>
-            <div className="flex flex-wrap gap-3 mt-2">
+          <div className="space-y-2">
+            <FieldLabel hint="Each industry generates a domain-specific schema (e.g. healthcare gets patients, encounters, claims). Pick one for a quick demo, several for cross-domain analytics scenarios.">Industries</FieldLabel>
+            <div className="flex flex-wrap gap-3">
               {INDUSTRIES.map((industry) => (
                 <label
                   key={industry}
@@ -452,13 +737,13 @@ export default function DemoDataPage() {
           </div>
 
           {/* Scale Factor */}
-          <div>
-            <label className="text-sm font-medium">Scale Factor</label>
+          <div className="space-y-1.5">
+            <FieldLabel hint="Multiplier on row counts. 0.01 = ~10M rows total (good for laptop demos); 1.0 = ~1B rows (production-scale benchmark).">Scale Factor</FieldLabel>
             <select
               value={scaleFactor}
               onChange={(e) => setScaleFactor(e.target.value)}
               disabled={isRunning}
-              className="flex h-9 w-full max-w-md rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring mt-1"
+              className="flex h-9 w-full max-w-md rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               {SCALE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -468,67 +753,67 @@ export default function DemoDataPage() {
             </select>
           </div>
 
-          {/* Owner */}
-          <div>
-            <label className="text-sm font-medium">Owner</label>
-            <Input
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              placeholder="team-name or user@domain.com"
-              className="mt-1 max-w-md"
-              disabled={isRunning}
-            />
-            <p className="text-xs text-muted-foreground mt-1">Optional. Sets the catalog owner.</p>
-          </div>
-
-          {/* Storage Location */}
-          <div>
-            <label className="text-sm font-medium">Storage Location</label>
-            <Input
-              value={storageLocation}
-              onChange={(e) => setStorageLocation(e.target.value)}
-              placeholder="abfss://container@storage.dfs.core.windows.net/path"
-              className="mt-1 max-w-xl"
-              disabled={isRunning}
-            />
-            <p className="text-xs text-muted-foreground mt-1">Optional. Custom managed storage location for the catalog.</p>
-          </div>
-
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-4 max-w-xl">
-            <div>
-              <label className="text-sm font-medium">Start Date</label>
+            <div className="space-y-1.5">
+              <FieldLabel hint="Earliest date for generated transactional data (orders, claims, events).">Start Date</FieldLabel>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="mt-1"
                 disabled={isRunning}
               />
             </div>
-            <div>
-              <label className="text-sm font-medium">End Date</label>
+            <div className="space-y-1.5">
+              <FieldLabel hint="Latest date for generated transactional data. Window between start and end determines volume per day.">End Date</FieldLabel>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="mt-1"
                 disabled={isRunning}
               />
             </div>
           </div>
+            </TabsContent>
+
+            <TabsContent value="catalog" className="space-y-5 mt-4">
+          {/* Owner */}
+          <div className="space-y-1.5">
+            <FieldLabel hint="Sets the catalog owner principal — usually a team email or group SCIM name. Defaults to the current user.">Owner</FieldLabel>
+            <Input
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+              placeholder="team-name or user@domain.com"
+              className="max-w-md"
+              disabled={isRunning}
+            />
+            <p className="text-xs text-muted-foreground">Optional. Sets the catalog owner.</p>
+          </div>
+
+          {/* Storage Location */}
+          <div className="space-y-1.5">
+            <FieldLabel hint="External storage URI for managed tables. Required if the workspace doesn't have a default Unity Catalog storage root configured.">Storage Location</FieldLabel>
+            <Input
+              value={storageLocation}
+              onChange={(e) => setStorageLocation(e.target.value)}
+              placeholder="abfss://container@storage.dfs.core.windows.net/path"
+              className="max-w-xl"
+              disabled={isRunning}
+            />
+            <p className="text-xs text-muted-foreground">Optional. Custom managed storage location for the catalog.</p>
+          </div>
 
           {/* Destination Catalog */}
-          <div>
-            <label className="text-sm font-medium">Destination Catalog</label>
+          <div className="space-y-1.5">
+            <FieldLabel hint="If set, the generated catalog is auto-cloned to this destination after generation completes.">Destination Catalog</FieldLabel>
             <Input
               value={destCatalog}
               onChange={(e) => setDestCatalog(e.target.value)}
               placeholder="e.g. prod_catalog"
-              className="mt-1 max-w-xl"
+              className="max-w-xl"
               disabled={isRunning}
             />
-            <p className="text-xs text-muted-foreground mt-1">Optional. When filled, the generated catalog will be automatically cloned to this destination.</p>
+            <p className="text-xs text-muted-foreground">Optional. When filled, the generated catalog will be automatically cloned to this destination.</p>
           </div>
 
           {/* Drop Existing */}
@@ -542,10 +827,157 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
               />
               <span className="text-sm font-medium">Drop Existing</span>
+              <InfoDot hint="Drop the catalog if it already exists, then recreate. Without this, generation aborts on conflict." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               If checked, the existing catalog will be dropped and recreated.
             </p>
+          </div>
+
+          {/* Schema-only — DDL without INSERTs. Cuts generation from
+              minutes/hours to seconds for DDL-template verification. */}
+          <div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={schemaOnly}
+                onChange={(e) => setSchemaOnly(e.target.checked)}
+                disabled={isRunning}
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span className="text-sm font-medium">Schema only (DDL, skip data INSERTs)</span>
+              <InfoDot hint="Create catalog, schemas, tables, views, UDFs and volumes — but skip every INSERT. Generation completes in seconds. Useful for verifying DDL templates and CI smoke runs." />
+            </label>
+            <p className="text-xs text-muted-foreground mt-1 ml-6">
+              Skips data generation entirely. The result has 0 rows but every table / view / UDF DDL is created.
+            </p>
+          </div>
+            </TabsContent>
+
+            <TabsContent value="quality" className="space-y-5 mt-4">
+          {/* Theme 2 — DQ profile + ML anomaly labels.
+              dq_profile picks a named bundle of null/dup/outlier rates;
+              anomaly_rate drives the positive-class rate on labeled
+              training columns (is_fraud / churn_risk / is_anomaly). */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FieldLabel hint="Named bundle of data quality noise. 'clean' injects nothing (perfect for tutorials/screenshots). 'realistic' (default) is small-but-noticeable. 'dirty' makes DQ dashboards meaningful.">
+                <span className="text-sm font-medium">DQ profile</span>
+                <select
+                  className="mt-1 h-9 w-full px-2 text-sm bg-background border border-input rounded-md"
+                  value={dqProfile}
+                  onChange={(e) => setDqProfile(e.target.value as "clean" | "realistic" | "dirty")}
+                  disabled={isRunning}
+                >
+                  <option value="clean">clean — no DQ noise</option>
+                  <option value="realistic">realistic — 5% null, 1% dup (default)</option>
+                  <option value="dirty">dirty — 15% null, 5% dup (exercises DQ tools)</option>
+                </select>
+              </FieldLabel>
+              <FieldLabel hint="Positive-class rate for labeled training columns added to fact tables. 0.02 = 2% (typical for unbalanced ML demos). Set to 0 to disable; or untick the checkbox below.">
+                <span className="text-sm font-medium">Anomaly rate</span>
+                <Input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={anomalyRate}
+                  onChange={(e) => {
+                    const v = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(v)) setAnomalyRate(Math.max(0, Math.min(1, v)));
+                  }}
+                  disabled={isRunning || !injectAnomalies}
+                  className="mt-1 h-9 text-sm"
+                />
+              </FieldLabel>
+            </div>
+            <label className="flex items-center gap-2 text-xs cursor-pointer select-none ml-1">
+              <input
+                type="checkbox"
+                checked={injectAnomalies}
+                onChange={(e) => setInjectAnomalies(e.target.checked)}
+                disabled={isRunning}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span>Add labeled training columns (<code>is_fraud</code> on financial.transactions, <code>churn_risk</code> on telecom.subscribers, <code>is_anomaly</code> on healthcare.encounters &amp; manufacturing.sensor_readings)</span>
+            </label>
+          </div>
+            </TabsContent>
+
+            <TabsContent value="architecture" className="space-y-5 mt-4">
+          {/* Theme: data modeling pattern overlay. "flat" preserves
+              today's behaviour. "star_schema" generates additional
+              `<industry>_star` schemas with fct_/dim_ tables (DBT-style
+              naming) layered on top of the flat data. Future: Data
+              Vault 2.0, One Big Table, Snowflake. */}
+          <div>
+            <FieldLabel hint="How the generated data is laid out. 'Flat' = the existing per-industry schema. 'Star Schema' = adds `<industry>_star` schemas with fact/dim tables (DBT-style fct_*/dim_* naming) materialised via CTAS on top of the flat data.">
+              <span className="text-sm font-medium">Data modeling pattern</span>
+              <select
+                className="mt-1 h-9 w-full px-2 text-sm bg-background border border-input rounded-md"
+                value={dataModel}
+                onChange={(e) => setDataModel(e.target.value as "flat" | "star_schema")}
+                disabled={isRunning}
+              >
+                <option value="flat">Flat — single per-industry schema (default)</option>
+                <option value="star_schema">Star Schema — adds &lt;industry&gt;_star with fct_/dim_ tables</option>
+              </select>
+            </FieldLabel>
+            {dataModel === "star_schema" && (
+              <p className="text-xs text-muted-foreground mt-1 ml-1">
+                Star Schema overlay materialises a calendar dim, conformed dims with surrogate keys, and fact tables joined to dims. Layered on top of the flat tables (~5% extra time). DBT-style naming: <code>fct_*</code> / <code>dim_*</code>. Skipped on schema-only.
+              </p>
+            )}
+          </div>
+
+          {/* Realistic data (Faker) — when enabled, name/email/phone columns
+              sample from locale-aware Faker pools instead of the legacy
+              hardcoded "James"/"Mary"/"patient1@example.com" pools. */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={realisticData}
+                onChange={(e) => setRealisticData(e.target.checked)}
+                disabled={isRunning}
+                className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
+              />
+              <span className="text-sm font-medium">Realistic data (Faker)</span>
+              <InfoDot hint="Replace the small static name / email / phone pools with locale-aware Faker output. Off by default to preserve test fixtures matching legacy values." />
+            </label>
+            {realisticData && (
+              <div className="ml-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <FieldLabel hint="Faker locale code. en_US for American names, en_GB for British, de_DE for German, etc.">
+                  <span className="text-xs">Locale</span>
+                  <select
+                    className="mt-1 h-8 w-full px-2 text-sm bg-background border border-input rounded-md"
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value)}
+                    disabled={isRunning}
+                  >
+                    <option value="en_US">en_US — American English</option>
+                    <option value="en_GB">en_GB — British English</option>
+                    <option value="de_DE">de_DE — German</option>
+                    <option value="fr_FR">fr_FR — French</option>
+                    <option value="es_ES">es_ES — Spanish</option>
+                    <option value="ja_JP">ja_JP — Japanese</option>
+                    <option value="zh_CN">zh_CN — Simplified Chinese</option>
+                    <option value="hi_IN">hi_IN — Hindi (India)</option>
+                  </select>
+                </FieldLabel>
+                <FieldLabel hint="Optional integer seed for deterministic Faker output. Same seed → same generated names across runs. Leave blank for non-deterministic.">
+                  <span className="text-xs">Seed (optional)</span>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 42"
+                    value={seed}
+                    onChange={(e) => setSeed(e.target.value)}
+                    disabled={isRunning}
+                    className="mt-1 h-8 text-sm"
+                  />
+                </FieldLabel>
+              </div>
+            )}
           </div>
 
           {/* Medallion Architecture */}
@@ -559,6 +991,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Medallion Architecture (Bronze / Silver / Gold)</span>
+              <InfoDot hint="Generate bronze → silver → gold schemas per industry, mirroring the standard Lakehouse layering." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates bronze (raw), silver (cleaned), and gold (aggregated) schemas per industry.
@@ -577,6 +1010,7 @@ export default function DemoDataPage() {
                   className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
                 />
                 <span className="text-sm font-medium">UC Best Practices Naming</span>
+                <InfoDot hint="Shared naming (bronze.healthcare_patients) instead of legacy per-industry schemas (healthcare_bronze.patients). Recommended for new deployments." />
               </label>
               <p className="text-xs text-muted-foreground mt-1 ml-6">
                 {ucBestPractices
@@ -606,6 +1040,7 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create UDFs (User-Defined Functions)</span>
+              <InfoDot hint="Generate ~20 SQL UDFs per industry — masking, formatters, validators, business calculations. Adds ~30s to generation." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates 20 SQL UDFs per industry for masking, formatting, validation, and business logic.
@@ -623,11 +1058,14 @@ export default function DemoDataPage() {
                 className="h-4 w-4 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]"
               />
               <span className="text-sm font-medium">Create Volumes with Sample Files</span>
+              <InfoDot hint="Create one managed volume per industry and seed it with sample CSV exports (1000 rows/table). Useful for ingestion demos." />
             </label>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
               Creates managed volumes and exports sample CSV files (1000 rows per table).
             </p>
           </div>
+            </TabsContent>
+          </Tabs>
 
           {/* Submit / Reset buttons */}
           <div className="flex items-center gap-3 pt-2">
@@ -642,6 +1080,48 @@ export default function DemoDataPage() {
                 <Play className="h-4 w-4 mr-2" />
               )}
               {submitting ? "Submitting..." : isRunning ? "Generating..." : "Generate Demo Data"}
+            </Button>
+            {/* Theme 4 — Export config as JSON. Round-trippable: paste back
+                into POST /generate/demo-data to reproduce the exact form
+                state. Useful for reusing presets across machines / sharing
+                a "Sales Demo Mk II" config in a Slack thread. */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                const config = {
+                  catalog_name: catalogName,
+                  industries: selectedIndustries,
+                  scale_factor: Number.parseFloat(scaleFactor),
+                  owner: owner || undefined,
+                  storage_location: storageLocation || undefined,
+                  start_date: startDate,
+                  end_date: endDate,
+                  dest_catalog: destCatalog || undefined,
+                  drop_existing: dropExisting,
+                  medallion,
+                  uc_best_practices: ucBestPractices,
+                  create_functions: createFunctions,
+                  create_volumes: createVolumes,
+                  schema_only: schemaOnly,
+                  realistic_data: realisticData,
+                  locale,
+                  seed: seed.trim() ? Number.parseInt(seed.trim(), 10) : undefined,
+                  dq_profile: dqProfile,
+                  anomaly_rate: anomalyRate,
+                  inject_anomalies: injectAnomalies,
+                };
+                const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `${(catalogName || "demo").trim()}-config.json`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                toast.success("Config exported");
+              }}
+              disabled={!catalogName.trim() || selectedIndustries.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export JSON
             </Button>
             {(isComplete || isFailed) && (
               <Button variant="outline" onClick={handleReset}>
@@ -724,6 +1204,52 @@ export default function DemoDataPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Theme 4 — Server-computed per-industry breakdown. Toggle via
+                  "Get accurate preview" button so we don't hit the endpoint on
+                  every keystroke. The numbers here come from the same
+                  `preview_demo_catalog` helper the orchestrator uses internally,
+                  so they're closer to actual generation reality than the
+                  client-side static estimates above. */}
+              <div className="border-t pt-3 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Per-industry breakdown</div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={fetchLivePreview}
+                    disabled={livePreviewLoading || isRunning || selectedIndustries.length === 0}
+                  >
+                    {livePreviewLoading ? "Estimating…" : livePreview ? "Refresh" : "Get accurate preview"}
+                  </Button>
+                </div>
+                {livePreview && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      {livePreview.per_industry.map((p) => (
+                        <div key={p.industry} className="flex items-center justify-between bg-white dark:bg-gray-900 rounded px-3 py-2 shadow-sm">
+                          <div className="font-medium capitalize">{p.industry.replaceAll("_", " ")}</div>
+                          <div className="text-muted-foreground">
+                            {p.tables} tables · {formatNumber(p.rows)} rows · {(p.estimated_bytes / (1024 ** 3)).toFixed(2)} GB · ~{p.estimated_duration_seconds.toFixed(0)}s
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground pt-1">
+                      <span>
+                        Total: <strong className="text-foreground">{formatNumber(livePreview.total_rows)}</strong> rows ·
+                        <strong className="text-foreground"> {livePreview.total_gb.toFixed(2)} GB</strong> ·
+                        ~<strong className="text-foreground">{(livePreview.estimated_duration_seconds / 60).toFixed(1)} min</strong>
+                      </span>
+                      <span>
+                        First-month cost: <strong className="text-foreground">${livePreview.estimated_cost_usd.first_month_total.toFixed(2)}</strong>
+                        {" "}({" "}${livePreview.estimated_cost_usd.monthly_storage.toFixed(2)} storage + ${livePreview.estimated_cost_usd.one_time_compute.toFixed(2)} compute)
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           )}
         </Card>
@@ -797,7 +1323,7 @@ export default function DemoDataPage() {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {isRunning && <Loader2 className="h-5 w-5 text-[#E8453C] animate-spin" />}
-                {isComplete && <CheckCircle2 className="h-5 w-5 text-foreground" />}
+                {isComplete && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                 {isFailed && <XCircle className="h-5 w-5 text-red-600" />}
                 Job Progress
               </div>
@@ -912,10 +1438,15 @@ export default function DemoDataPage() {
                 <div className="bg-[#0d1117] text-gray-300 rounded-lg p-3 overflow-x-auto text-xs font-mono max-h-[400px] overflow-y-auto">
                   {logs.map((line: string, i: number) => (
                     <div key={i} className={`whitespace-pre-wrap leading-relaxed ${
+                      // Reserve red shades for actual ERRORs. In-progress
+                      // "Creating …" / "Generating …" lines render cyan so
+                      // users don't mistake them for failures (the brand
+                      // red used elsewhere is the same hue as the ERROR
+                      // colour, which was confusing).
                       line.includes("ERROR") ? "text-red-400" :
                       line.includes("WARNING") ? "text-gray-400" :
                       line.includes("done") || line.includes("Created") || line.includes("created") ? "text-gray-300" :
-                      line.includes("Creating") || line.includes("Generating") ? "text-[#E8453C]" : ""
+                      line.includes("Creating") || line.includes("Generating") ? "text-cyan-400" : ""
                     }`}>
                       {line}
                     </div>
@@ -1017,8 +1548,848 @@ export default function DemoDataPage() {
                 <p className="text-xs text-muted-foreground mt-1">Duration</p>
               </div>
             </div>
+
+            {/* Theme 4 — FK relationship diagram. The orchestrator's
+                referential-integrity audit (Theme 3) emits per-FK orphan
+                counts; render them as a compact list so users can see at
+                a glance which dim/fact joins are clean and which have
+                drift. Hidden when the audit was skipped (schema_only) or
+                turned off via validate_referential_integrity=False. */}
+            {result.referential_integrity?.details && (
+              <div className="mt-4 border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Foreign-key integrity audit</div>
+                  <span className="text-xs text-muted-foreground">
+                    {result.referential_integrity.orphan_free}/{result.referential_integrity.checks_run} FKs orphan-free
+                    {result.referential_integrity.with_orphans > 0 && (
+                      <span className="ml-2 text-amber-700 dark:text-amber-400">
+                        · {result.referential_integrity.with_orphans} with orphans
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.referential_integrity.details.map((d: any, i: number) => {
+                    const ok = !d.error && (d.orphans ?? 0) === 0;
+                    const skipped = !!d.error;
+                    return (
+                      <div key={`${d.industry}-${d.child}-${d.fk}-${i}`} className="flex items-center justify-between bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5">
+                        <span className="font-mono text-[11px]">
+                          {d.industry}.{d.child}.{d.fk} → {d.parent}.{d.parent_pk}
+                        </span>
+                        {skipped ? (
+                          <span className="text-muted-foreground text-[10px]">skipped</span>
+                        ) : ok ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 text-[10px]">✓ {d.child_sampled?.toLocaleString()} sampled</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 text-[10px]" title={d.parent_has_row_filter ? `Row filter on ${d.parent} likely — filtered-but-real rows appear as orphans for non-admins` : undefined}>
+                            {d.orphans?.toLocaleString()} orphans ({d.orphan_pct}%)
+                            {d.parent_has_row_filter && <span className="ml-1 opacity-70">(row filter)</span>}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Theme 2 — labeled training columns rollup. Surfaces what
+                ML target columns were added and at what positive-class
+                rate, so the demo is self-describing. */}
+            {result.anomalies && result.anomalies.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <div className="text-sm font-medium mb-2">Labeled training columns</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.anomalies.map((a: any, i: number) => (
+                    <div key={`anom-${a.industry}-${a.table}-${a.column}-${i}`} className="bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5 font-mono text-[11px]">
+                      <span className="text-emerald-600 dark:text-emerald-400">+ </span>
+                      {a.industry}.{a.table}.{a.column}
+                      <span className="text-muted-foreground"> ({a.sql_type}, ~{(a.anomaly_rate * 100).toFixed(1)}% positive)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Star Schema modeling layer rollup — per-industry schema +
+                fact / dim counts. Hidden when data_model="flat" (no key on
+                result), and on per-industry skipped/error entries we
+                annotate the row instead of dropping it (signals that the
+                user picked an industry without a registry entry). */}
+            {result.star_schema?.per_industry && (
+              <div className="mt-4 border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Star Schema modeling layer</div>
+                  <span className="text-xs text-muted-foreground">
+                    {result.star_schema.facts_created} facts + {result.star_schema.dims_created} dims across {result.star_schema.schemas_created?.length ?? 0} schemas
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+                  {result.star_schema.per_industry.map((s: any, i: number) => (
+                    <div key={`star-${s.industry}-${i}`} className="bg-gray-50 dark:bg-gray-900 rounded px-2 py-1.5 font-mono text-[11px]">
+                      {s.error ? (
+                        <span className="text-red-500">✗ {s.industry}: {s.error}</span>
+                      ) : s.skipped ? (
+                        <span className="text-muted-foreground">— {s.industry}: skipped ({s.reason})</span>
+                      ) : (
+                        <>
+                          <span className="text-emerald-600 dark:text-emerald-400">✓ </span>
+                          <span className="font-medium">{s.schema}</span>
+                          <span className="text-muted-foreground"> · {s.facts_created} facts · {s.dims_created} dims</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
+      )}
+
+      </>)}
+
+      {activeGenTab === "streaming" && (
+      <>
+      {/* ─── Streaming emission card ─── */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Radio className="h-4 w-4 text-[#E8453C]" />
+            Streaming emission (IoT demo)
+            <Badge variant="outline" className="text-[10px] ml-1">Beta</Badge>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Continuously emit JSON event batches to a UC Volume — Auto Loader / DLT consumes the files.
+            Choose a built-in device profile or auto-create a streaming Bronze Delta table.
+          </p>
+        </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Destination mode — controls which downstream fields are visible
+                and what the runner does each tick. */}
+            <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
+              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition.">
+                Destination
+              </FieldLabel>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+                {[
+                  { val: "volume", title: "Volume only", sub: "JSON files → Volume" },
+                  { val: "volume_bronze", title: "Volume + Bronze", sub: "Files + Auto Loader STREAMING TABLE" },
+                  { val: "direct_table", title: "Direct to table", sub: "INSERT each batch into Delta (no Volume)" },
+                ].map((opt) => (
+                  <label
+                    key={opt.val}
+                    className={`flex items-start gap-2 p-2 border rounded-md cursor-pointer text-xs transition-colors ${
+                      streamDestination === opt.val
+                        ? "border-[#E8453C] bg-[#E8453C]/5"
+                        : "border-input hover:bg-muted/30"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="stream-destination"
+                      value={opt.val}
+                      checked={streamDestination === opt.val}
+                      onChange={() => setStreamDestination(opt.val as typeof streamDestination)}
+                      className="mt-0.5 h-3.5 w-3.5 text-[#E8453C] focus:ring-[#E8453C]"
+                    />
+                    <div>
+                      <div className="font-medium">{opt.title}</div>
+                      <div className="text-[10px] text-muted-foreground">{opt.sub}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Device profile */}
+            <div className="space-y-1.5">
+              <FieldLabel>Device profile</FieldLabel>
+              <select className="block w-full md:w-72 h-9 px-3 text-sm bg-background border border-input rounded-md"
+                value={streamProfile}
+                onChange={(e) => setStreamProfile(e.target.value as typeof streamProfile)}>
+                <option value="generic_sensor">Generic IoT Sensor</option>
+                <option value="industrial_machine">Industrial Machine</option>
+                <option value="car_obd2">Car OBD-II</option>
+                <option value="smart_meter">Smart Meter (Energy)</option>
+                <option value="wearable_health">Wearable Health (Healthcare)</option>
+                <option value="pos_terminal">POS Terminal (Retail)</option>
+                <option value="wind_turbine">Wind Turbine (Energy)</option>
+                <option value="atm_transaction">ATM Transaction (Financial)</option>
+                <option value="server_metrics">Server Metrics (Infra)</option>
+                <option value="clickstream">Web Clickstream (Digital)</option>
+              </select>
+            </div>
+
+            {/* Catalog + Schema + Volume — all three accept either an existing
+                name (dropdown) or a new name ("Custom name…" → free text).
+                The runner CREATE … IF NOT EXISTS each one. */}
+            <div>
+              <FieldLabel hint="Pick an existing catalog/schema/volume from the dropdowns, or choose 'Custom name…' on any of them to create a new one. The runner runs CREATE … IF NOT EXISTS for catalog, schema, and volume.">
+                Target location
+              </FieldLabel>
+              <div className="mt-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Catalog */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Catalog</label>
+                  <select
+                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
+                    value={streamCatalogCustom ? "__custom__" : streamCatalog}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "__custom__") {
+                        setStreamCatalogCustom(true);
+                      } else {
+                        setStreamCatalogCustom(false);
+                        setStreamCatalog(v);
+                        // Reset schema custom flag when catalog changes — we
+                        // can't know if the existing schema name applies.
+                        setStreamSchemaCustom(false);
+                      }
+                    }}
+                  >
+                    <option value="">{catalogsQuery.isLoading ? "Loading…" : "Select catalog…"}</option>
+                    {(catalogsQuery.data || []).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    <option value="__custom__">Custom name… (create new)</option>
+                  </select>
+                  {streamCatalogCustom && (
+                    <Input
+                      value={streamCatalog}
+                      onChange={(e) => setStreamCatalog(e.target.value)}
+                      placeholder="my_catalog"
+                      className="mt-1.5"
+                      autoFocus
+                    />
+                  )}
+                </div>
+
+                {/* Schema */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Schema</label>
+                  <select
+                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
+                    value={streamSchemaCustom ? "__custom__" : streamSchema}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "__custom__") {
+                        setStreamSchemaCustom(true);
+                      } else {
+                        setStreamSchemaCustom(false);
+                        setStreamSchema(v);
+                      }
+                    }}
+                    disabled={!streamCatalog && !streamCatalogCustom}
+                  >
+                    <option value="">
+                      {!streamCatalog && !streamCatalogCustom
+                        ? "Select catalog first"
+                        : streamCatalogCustom
+                          ? "—"
+                          : (schemasQuery.isLoading ? "Loading…" : "Select schema…")}
+                    </option>
+                    {!streamCatalogCustom && (schemasQuery.data || []).map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="__custom__">Custom name… (create new)</option>
+                  </select>
+                  {streamSchemaCustom && (
+                    <Input
+                      value={streamSchema}
+                      onChange={(e) => setStreamSchema(e.target.value)}
+                      placeholder="my_schema"
+                      className="mt-1.5"
+                      autoFocus
+                    />
+                  )}
+                </div>
+
+                {/* Volume picker (volume / volume_bronze modes) OR Bronze
+                    table name (direct_table mode). The third column slot
+                    serves both purposes — what's shown depends on the
+                    Destination radio above. */}
+                <div>
+                  {streamDestination === "direct_table" ? (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">Bronze table</label>
+                      <Input
+                        value={streamBronzeTable}
+                        onChange={(e) => setStreamBronzeTable(e.target.value)}
+                        placeholder={`bronze_${streamProfile}`}
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Delta table created in the chosen schema. Empty → defaults to <code className="text-[10px] bg-muted/50 px-1 rounded">bronze_{streamProfile}</code>. Each tick INSERTs one batch directly.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">Volume</label>
+                      {(() => {
+                        const matches = (volumesQuery.data || [])
+                          .filter((v) => (!streamCatalog || v.catalog === streamCatalog)
+                                      && (!streamSchema || v.schema === streamSchema))
+                          .map((v) => v.name);
+                        const uniqueExisting = Array.from(new Set(matches));
+                        return (
+                          <>
+                            <select
+                              className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
+                              value={streamVolumeCustom ? "__custom__" : streamVolume}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === "__custom__") {
+                                  setStreamVolumeCustom(true);
+                                } else {
+                                  setStreamVolumeCustom(false);
+                                  setStreamVolume(v);
+                                }
+                              }}
+                            >
+                              <option value="events_volume">events_volume (default — created if missing)</option>
+                              {uniqueExisting
+                                .filter((n) => n !== "events_volume")
+                                .map((name) => (
+                                  <option key={name} value={name}>{name}</option>
+                                ))}
+                              <option value="__custom__">Custom name…</option>
+                            </select>
+                            {streamVolumeCustom && (
+                              <Input
+                                value={streamVolume}
+                                onChange={(e) => setStreamVolume(e.target.value)}
+                                placeholder="my_volume"
+                                className="mt-1.5"
+                                autoFocus
+                              />
+                            )}
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                              {volumesQuery.isLoading
+                                ? "Loading volumes…"
+                                : streamCatalog && streamSchema && uniqueExisting.length === 0
+                                  ? `No existing volumes in ${streamCatalog}.${streamSchema}. Default will be created on start.`
+                                  : `${uniqueExisting.length} existing volume${uniqueExisting.length === 1 ? "" : "s"} in scope.`}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Cadence */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <FieldLabel>Events per batch</FieldLabel>
+                <Input type="number" min={1} max={10000} value={streamEventsPerBatch}
+                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))} />
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Interval (seconds)</FieldLabel>
+                <Input type="number" min={1} max={300} value={streamIntervalSeconds}
+                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))} />
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Total duration (seconds, max 3600)</FieldLabel>
+                <Input type="number" min={1} max={3600} value={streamDurationSeconds}
+                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))} />
+              </div>
+            </div>
+
+            {/* Bronze refresh cadence — only meaningful when destination
+                is volume_bronze (the runner runs CREATE OR REFRESH
+                STREAMING TABLE on this CRON). Hidden in volume-only and
+                direct_table modes. */}
+            {streamDestination === "volume_bronze" && (
+              <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
+                <p className="text-xs">
+                  Bronze table <code className="text-[10px] bg-muted/50 px-1 rounded">bronze_{streamProfile}</code> will be created via <code className="text-[10px] bg-muted/50 px-1 rounded">CREATE OR REFRESH STREAMING TABLE</code> on the cadence below. Requires DBSQL Serverless that supports the syntax (Free Edition does — uses CRON form).
+                </p>
+                <div className="mt-3 flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">Refresh every</span>
+                  <Input type="number" min={1} max={60} value={streamBronzeRefreshMinutes}
+                    onChange={(e) => setStreamBronzeRefreshMinutes(Math.max(1, Math.min(60, parseInt(e.target.value) || 5)))}
+                    className="w-20 h-7 text-xs px-2.5" />
+                  <span className="text-xs text-muted-foreground">minutes</span>
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              <Button onClick={handleStartStreaming}
+                disabled={streamingEmit.isPending || (!!streamingJob && streamingJob.status === "running")}>
+                {streamingEmit.isPending
+                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  : <Play className="h-4 w-4 mr-2" />}
+                Start streaming
+              </Button>
+              {streamingJob?.status === "running" && (
+                <Button variant="outline" onClick={handleStopStreaming}
+                  disabled={streamingStop.isPending}>
+                  <StopCircle className="h-4 w-4 mr-2" />Stop
+                </Button>
+              )}
+              {/* Sibling to Start — opens a modal that creates a real
+                  Databricks Job. The in-process Start is unchanged;
+                  users only click this when they need unattended runs. */}
+              <Button variant="outline" onClick={() => {
+                if (!streamCatalog.trim() || !streamSchema.trim()) {
+                  toast.error("Catalog and schema are required");
+                  return;
+                }
+                setScheduleResult(null);
+                setScheduleName(`clxs-stream-${streamProfile}`);
+                setScheduleModalOpen(true);
+              }}>
+                <Calendar className="h-4 w-4 mr-2" />Schedule on Databricks
+              </Button>
+            </div>
+
+            {/* Live progress */}
+            {streamingJob && (
+              <Card className="bg-card border-border">
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {streamingJob.status === "completed" ? <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      : streamingJob.status === "failed" ? <XCircle className="h-4 w-4 text-red-500" />
+                      : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <span className="text-sm font-medium">
+                      {streamingJob.status === "running" ? "Emitting..."
+                        : streamingJob.status === "completed" ? "Completed"
+                        : streamingJob.status === "failed" ? "Failed"
+                        : streamingJob.status}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-auto">Job {streamingJobId}</span>
+                  </div>
+                  {streamingJob.progress && (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                      <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{streamingJob.progress.events_emitted ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{streamingJob.progress.files_written ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Rows inserted:</span> <span className="font-mono">{streamingJob.progress.rows_inserted ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
+                      <div><span className="text-muted-foreground">Elapsed:</span> <span className="font-mono">{streamingJob.progress.elapsed_seconds ?? 0}s</span></div>
+                    </div>
+                  )}
+
+                  {/* Throughput chart — dual-axis line chart of cumulative
+                      events (left) and per-tick delta (right) over elapsed
+                      seconds. Hidden until we have ≥2 samples (one point
+                      isn't a line). */}
+                  {streamingSeries.length >= 2 && (
+                    <div className="border border-border rounded-md bg-background p-2 mt-2">
+                      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Throughput</div>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <LineChart data={streamingSeries} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                          <XAxis
+                            dataKey="elapsed"
+                            type="number"
+                            domain={[0, "dataMax"]}
+                            tick={{ fontSize: 10 }}
+                            stroke="var(--text-muted, #666)"
+                            label={{ value: "elapsed (s)", position: "insideBottom", offset: -2, style: { fontSize: 10, fill: "var(--text-muted, #666)" } }}
+                          />
+                          <YAxis
+                            yAxisId="cumulative"
+                            tick={{ fontSize: 10 }}
+                            stroke="var(--text-muted, #666)"
+                            allowDecimals={false}
+                          />
+                          <YAxis
+                            yAxisId="delta"
+                            orientation="right"
+                            tick={{ fontSize: 10 }}
+                            stroke="var(--text-muted, #666)"
+                            allowDecimals={false}
+                          />
+                          <Tooltip
+                            contentStyle={{ background: "var(--card, #2C2C2C)", border: "1px solid var(--border, #404040)", borderRadius: 8, fontSize: 11 }}
+                            formatter={(v: number, name: string) => [v, name === "events" ? "Cumulative events" : "Events / tick"]}
+                            labelFormatter={(v: number) => `t=${v}s`}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Line
+                            yAxisId="cumulative"
+                            type="monotone"
+                            dataKey="events"
+                            name="Cumulative events"
+                            stroke="#E8453C"
+                            strokeWidth={2}
+                            dot={false}
+                            isAnimationActive={false}
+                          />
+                          <Line
+                            yAxisId="delta"
+                            type="monotone"
+                            dataKey="delta"
+                            name="Events / tick"
+                            stroke="#374151"
+                            strokeWidth={1.5}
+                            strokeDasharray="3 3"
+                            dot={false}
+                            isAnimationActive={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  {streamingJob.progress?.current_batch_path && (
+                    <div className="text-[11px] text-muted-foreground font-mono truncate" title={streamingJob.progress.current_batch_path}>
+                      Latest: {streamingJob.progress.current_batch_path}
+                    </div>
+                  )}
+                  {/* Bronze status — only shown when result has landed */}
+                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (
+                    <div className="border-t border-border pt-2 mt-2 text-xs">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline mr-1" />
+                      Bronze streaming table created: <code className="text-[11px] bg-muted/50 px-1 rounded">{streamingJob.result.bronze_table_fqn}</code>
+                      <a
+                        href={(() => {
+                          // Deep-link into Data Lab with a pre-filled SELECT against the bronze
+                          // table and run=1 so the workbench fires the query immediately on
+                          // arrival. Pull catalog/schema/profile off the job result rather than
+                          // the form state — the form fields can be empty by the time the user
+                          // clicks (e.g. after a fresh load that hydrated the job from
+                          // sessionStorage but didn't restore the form), which used to produce
+                          // SELECT * FROM ``.`iot`.`bronze_…`.
+                          const r = streamingJob.result || {};
+                          const cat = r.catalog || streamCatalog;
+                          const sch = r.schema || streamSchema;
+                          const prof = r.profile || streamProfile;
+                          const fqn = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
+                          // captured_at is the per-event timestamp populated by every device
+                          // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
+                          // across atm_transaction, smart_meter, car_obd2, etc.
+                          const sql = `SELECT * FROM ${fqn} ORDER BY captured_at DESC LIMIT 100`;
+                          const encoded = btoa(encodeURIComponent(sql));
+                          return `/data-lab#q=${encoded}&run=1`;
+                        })()}
+                        className="text-[#E8453C] hover:underline ml-2"
+                      >
+                        Query latest rows →
+                      </a>
+                    </div>
+                  )}
+                  {streamingJob.result?.bronze_status === "failed" && (
+                    <div className="border-t border-border pt-2 mt-2 text-xs text-amber-600">
+                      <XCircle className="h-3.5 w-3.5 inline mr-1" />
+                      Bronze auto-create failed: {streamingJob.result.bronze_error}. The Volume files still landed — run the SQL below manually after enabling DBSQL Serverless.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Auto Loader SQL snippet — only relevant for the
+                Volume → Auto Loader path. Hidden for volume-only (no
+                Bronze) and direct_table (no files / no Auto Loader). */}
+            {streamDestination === "volume_bronze" && (
+              <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Auto Loader SQL (copy-paste into DBSQL)</span>
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    navigator.clipboard?.writeText(autoLoaderSnippet);
+                    toast.success("Copied to clipboard");
+                  }}>
+                    <ClipboardCopy className="h-3.5 w-3.5 mr-1" />Copy
+                  </Button>
+                </div>
+                <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre">{autoLoaderSnippet}</pre>
+              </div>
+            )}
+          </CardContent>
+      </Card>
+      </>)}
+
+      {activeGenTab === "manage" && (() => {
+        const rows = (demoCatalogsQuery.data?.catalogs || []) as any[];
+        return (
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-[#E8453C]" />
+                Manage Catalogs
+                <Badge variant="outline" className="text-[10px] ml-1">{demoCatalogsQuery.data?.total ?? 0}</Badge>
+                <span className="ml-auto flex items-center gap-2 text-xs font-normal">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox"
+                      checked={manageDemoOnly}
+                      onChange={(e) => setManageDemoOnly(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                    Demo only
+                  </label>
+                  <Button size="sm" variant="ghost" onClick={() => demoCatalogsQuery.refetch()}>
+                    <RefreshCw className={`h-3.5 w-3.5 ${demoCatalogsQuery.isFetching ? "animate-spin" : ""}`} />
+                  </Button>
+                </span>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Lists every catalog you can read. Toggle <strong>Demo only</strong> to filter to catalogs tagged
+                with <code className="text-[10px] bg-muted/50 px-1 rounded">demo.generated_by = 'clone-xs'</code>.
+                Drop is permanent — confirm by typing the catalog name.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {demoCatalogsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Probing catalogs...
+                </div>
+              ) : demoCatalogsQuery.isError ? (
+                <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-md text-red-500 text-sm">
+                  {(demoCatalogsQuery.error as Error)?.message || "Failed to load catalogs"}
+                </div>
+              ) : rows.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">
+                  <Database className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">{manageDemoOnly ? "No demo catalogs found" : "No catalogs visible"}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border">
+                      <tr className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        <th className="px-3 py-2">Catalog</th>
+                        <th className="px-3 py-2">Demo?</th>
+                        <th className="px-3 py-2 text-right">Schemas</th>
+                        <th className="px-3 py-2 text-right">Demo Tables</th>
+                        <th className="px-3 py-2 text-right">All Tables</th>
+                        <th className="px-3 py-2">Owner</th>
+                        <th className="px-3 py-2 w-[80px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.name} className="border-b border-border/40 hover:bg-muted/20">
+                          <td className="px-3 py-2 font-mono text-sm">{r.name}</td>
+                          <td className="px-3 py-2">
+                            {r.is_demo
+                              ? <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]"><Check className="h-3 w-3 mr-1" />Demo</Badge>
+                              : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_schemas}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_demo_tables}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_tables}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]" title={r.owner}>{r.owner || "—"}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                              title={`Drop catalog ${r.name}`}
+                              onClick={() => { setDropModalCatalog(r.name); setDropModalTyped(""); }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Typed-confirm modal — Manage tab drop. Stricter than the
+          existing Batch-tab window.confirm() since this surface
+          encourages bulk cleanup; we want a deliberate keystroke
+          per drop, not a single OK click. */}
+      {dropModalCatalog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => !demoCatalogDrop.isPending && setDropModalCatalog(null)}>
+          <div className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-red-500" />
+                <h3 className="text-sm font-semibold text-foreground">Drop catalog</h3>
+              </div>
+              <button onClick={() => !demoCatalogDrop.isPending && setDropModalCatalog(null)}
+                className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm">
+                This will execute <code className="text-[11px] bg-muted/50 px-1 rounded">DROP CATALOG {dropModalCatalog} CASCADE</code>{" "}
+                and cannot be undone. Every schema, table, view, function, and volume below it will be deleted.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Type <code className="text-[11px] bg-muted/50 px-1 rounded">{dropModalCatalog}</code> to confirm:
+              </p>
+              <Input value={dropModalTyped} onChange={(e) => setDropModalTyped(e.target.value)}
+                placeholder={dropModalCatalog} autoFocus />
+              {demoCatalogDrop.isError && (
+                <div className="text-xs text-red-500">{(demoCatalogDrop.error as Error)?.message}</div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setDropModalCatalog(null)}
+                disabled={demoCatalogDrop.isPending}>Cancel</Button>
+              <Button size="sm"
+                disabled={dropModalTyped !== dropModalCatalog || demoCatalogDrop.isPending}
+                className="bg-red-500 hover:bg-red-600 text-white"
+                onClick={async () => {
+                  try {
+                    await demoCatalogDrop.mutateAsync({ catalog_name: dropModalCatalog });
+                    toast.success(`Dropped ${dropModalCatalog}`);
+                    setDropModalCatalog(null);
+                  } catch (e) {
+                    toast.error((e as Error).message || "Drop failed");
+                  }
+                }}>
+                {demoCatalogDrop.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Drop catalog
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule streaming on Databricks modal — collects cron +
+          submits to /demo-data/streaming/schedule. On success shows
+          the new Job's URL with a one-click open button. */}
+      {scheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => !streamingSchedule.isPending && setScheduleModalOpen(false)}>
+          <div className="bg-background border border-border rounded-lg shadow-xl max-w-2xl w-full mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#E8453C]" />
+                <h3 className="text-sm font-semibold text-foreground">Schedule streaming on Databricks</h3>
+              </div>
+              <button onClick={() => !streamingSchedule.isPending && setScheduleModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {!scheduleResult ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Generates a self-contained notebook in your workspace and creates a Databricks Job
+                    on the cron below. Emission runs on Databricks compute and survives API restarts.
+                    The Job is tagged <code className="text-[10px] bg-muted/50 px-1 rounded">created_by=clone-xs</code> so it shows in your Jobs list.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Job name</FieldLabel>
+                      <Input value={scheduleName} onChange={(e) => setScheduleName(e.target.value)}
+                        placeholder={`clxs-stream-${streamProfile}`} className="mt-1" />
+                    </div>
+                    <div>
+                      <FieldLabel>Timezone</FieldLabel>
+                      <Input value={scheduleTimezone} onChange={(e) => setScheduleTimezone(e.target.value)}
+                        placeholder="UTC" className="mt-1" />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Quartz cron expression</FieldLabel>
+                    <Input value={scheduleCron} onChange={(e) => setScheduleCron(e.target.value)}
+                      placeholder="0 */5 * * * ?" className="mt-1 font-mono text-xs" />
+                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground">Quick picks:</span>
+                      {[
+                        { label: "Every 5 min", cron: "0 */5 * * * ?" },
+                        { label: "Top of hour", cron: "0 0 * * * ?" },
+                        { label: "Weekdays 9am", cron: "0 0 9 ? * MON-FRI" },
+                      ].map((p) => (
+                        <button key={p.cron} onClick={() => setScheduleCron(p.cron)}
+                          className="text-[10px] text-[#E8453C] hover:underline px-1.5 py-0.5 rounded">
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={scheduleUseServerless}
+                      onChange={(e) => setScheduleUseServerless(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                    Use Serverless compute (recommended)
+                  </label>
+                  <div>
+                    <FieldLabel>Notebook path (advanced)</FieldLabel>
+                    <Input value={scheduleNotebookPath} onChange={(e) => setScheduleNotebookPath(e.target.value)}
+                      placeholder={`/Users/<me>/clxs/streaming_${streamProfile}_<timestamp>`}
+                      className="mt-1 font-mono text-xs" />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Leave empty for the default per-user, timestamped path. Existing notebooks at the
+                      same path are overwritten.
+                    </p>
+                  </div>
+                  {streamingSchedule.isError && (
+                    <div className="text-xs text-red-500 p-2 bg-red-500/5 border border-red-500/20 rounded">
+                      {(streamingSchedule.error as Error).message}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Job created
+                  </div>
+                  <dl className="text-xs space-y-1.5">
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Job ID:</dt>
+                      <dd className="font-mono">{scheduleResult.job_id}</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Schedule:</dt>
+                      <dd className="font-mono">{scheduleResult.schedule_quartz_cron} ({scheduleResult.timezone_id})</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Notebook:</dt>
+                      <dd className="font-mono text-[11px] break-all">{scheduleResult.notebook_path}</dd>
+                    </div>
+                  </dl>
+                  <a href={scheduleResult.run_url} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-[#E8453C] hover:underline">
+                    <ExternalLink className="h-3.5 w-3.5" />Open in Databricks Jobs
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+              <Button size="sm" variant="outline"
+                onClick={() => setScheduleModalOpen(false)}
+                disabled={streamingSchedule.isPending}>
+                {scheduleResult ? "Close" : "Cancel"}
+              </Button>
+              {!scheduleResult && (
+                <Button size="sm"
+                  disabled={streamingSchedule.isPending || !scheduleCron.trim()}
+                  onClick={async () => {
+                    try {
+                      const res = await streamingSchedule.mutateAsync({
+                        catalog: streamCatalog.trim(),
+                        schema: streamSchema.trim(),
+                        volume: streamVolume.trim() || "events_volume",
+                        profile: streamProfile,
+                        events_per_batch: streamEventsPerBatch,
+                        interval_seconds: streamIntervalSeconds,
+                        total_duration_seconds: streamDurationSeconds,
+                        auto_create_bronze: streamDestination === "volume_bronze",
+                        bronze_refresh_minutes: streamBronzeRefreshMinutes,
+                        name: scheduleName.trim() || undefined,
+                        schedule_quartz_cron: scheduleCron.trim(),
+                        timezone_id: scheduleTimezone.trim() || "UTC",
+                        notebook_path: scheduleNotebookPath.trim() || undefined,
+                        use_serverless: scheduleUseServerless,
+                      });
+                      setScheduleResult(res);
+                      toast.success(`Scheduled (Job ${res.job_id})`);
+                    } catch (e) {
+                      toast.error((e as Error).message || "Schedule failed");
+                    }
+                  }}>
+                  {streamingSchedule.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Calendar className="h-4 w-4 mr-2" />}
+                  Create scheduled Job
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

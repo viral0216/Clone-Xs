@@ -221,6 +221,70 @@ function reducer(state: NotebookState, action: Action): NotebookState {
   }
 }
 
+// Runtime-state persistence (results / errors / view modes / params).
+// Saved to sessionStorage so navigating away from the notebook page and
+// returning preserves what the user was looking at — including query results
+// they don't want to re-run. Capped per-cell to avoid blowing the storage
+// quota on huge result sets.
+const RUNTIME_STORAGE_KEY = "clxs-notebook-runtime";
+const RUNTIME_RESULTS_CAP = 1000;
+
+function persistRuntime(state: NotebookState) {
+  try {
+    const cells = state.cells.map((c) => ({
+      id: c.id,
+      type: c.type,
+      content: c.content,
+      results: Array.isArray(c.results) ? c.results.slice(0, RUNTIME_RESULTS_CAP) : c.results,
+      error: c.error ?? null,
+      elapsed: c.elapsed ?? null,
+      viewMode: c.viewMode,
+      chartType: c.chartType,
+      chartXCol: c.chartXCol,
+      chartYCol: c.chartYCol,
+      collapsed: c.collapsed,
+      executionCount: c.executionCount ?? null,
+      lastRunAt: c.lastRunAt ?? null,
+      speakerNotes: c.speakerNotes,
+    }));
+    const snap = {
+      id: state.id,
+      title: state.title,
+      cells,
+      params: state.params,
+      executionCounter: state.executionCounter,
+    };
+    sessionStorage.setItem(RUNTIME_STORAGE_KEY, JSON.stringify(snap));
+  } catch {
+    // Storage quota or serialization error — silently drop. Reaching the
+    // quota is acceptable; the user just loses the runtime restore.
+  }
+}
+
+function hydrateRuntime(): NotebookState | null {
+  try {
+    const raw = sessionStorage.getItem(RUNTIME_STORAGE_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw);
+    return {
+      id: snap.id ?? null,
+      title: snap.title ?? "Untitled Notebook",
+      cells: Array.isArray(snap.cells) && snap.cells.length > 0
+        ? snap.cells.map((c: any) => ({ ...makeCell(c.type), ...c }))
+        : [makeCell("sql")],
+      dirty: false,
+      runningAll: false,
+      executionCounter: snap.executionCounter ?? 0,
+      params: snap.params ?? {},
+      focusedCellId: null,
+      undoStack: [],
+      redoStack: [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 // localStorage persistence
 const STORAGE_KEY = "clxs-notebooks";
 
@@ -299,8 +363,16 @@ export function extractToc(cells: NotebookCell[]): { cellId: string; level: numb
 }
 
 export function useNotebook() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  // Hydrate runtime state (cells + results) from sessionStorage so navigating
+  // back to the notebook page restores exactly where the user left off — no
+  // need to re-run their queries against Databricks.
+  const [state, dispatch] = useReducer(reducer, initialState, (init) => hydrateRuntime() ?? init);
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Mirror runtime state to sessionStorage on every change.
+  useEffect(() => {
+    persistRuntime(state);
+  }, [state]);
 
   // Auto-save every 30 seconds if dirty
   useEffect(() => {

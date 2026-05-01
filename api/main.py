@@ -296,6 +296,78 @@ _tag_metadata = [
         "name": "data-quality",
         "description": "Data quality observability — freshness monitoring, anomaly detection, volume tracking, expectation suites, incidents, and health scores.",
     },
+    {
+        "name": "trust-scores",
+        "description": "Trust Score Engine — composite per-table trust scores (0-100) from DQ, freshness, anomaly, schema, PII, and lineage dimensions.",
+    },
+    {
+        "name": "coverage",
+        "description": "DQ Coverage Map — heatmap of quality check coverage with gap analysis.",
+    },
+    {
+        "name": "copq",
+        "description": "Cost of Poor Data Quality — quantify DQ failures in dollars.",
+    },
+    {
+        "name": "anomaly-correlations",
+        "description": "Cross-table anomaly correlation — root cause analysis across the lineage graph.",
+    },
+    {
+        "name": "nl-rules",
+        "description": "Natural Language DQ Rule Builder — define rules in plain English.",
+    },
+    {
+        "name": "playbooks",
+        "description": "Automated Remediation Playbooks — if-this-then-that workflows triggered by DQ events.",
+    },
+    {
+        "name": "data-products",
+        "description": "Data Product Marketplace — publish, discover, and subscribe to curated data products.",
+    },
+    {
+        "name": "compliance-automation",
+        "description": "Regulatory Compliance — map controls to SOC2/GDPR/HIPAA/CCPA/DORA with automated evidence.",
+    },
+    {
+        "name": "alert-routing",
+        "description": "Intelligent Alert Routing — smart deduplication, priority routing, and digest engine.",
+    },
+    {
+        "name": "environments",
+        "description": "Data Environment Manager — ephemeral sandboxes with masking, DQ validation, and TTL cleanup.",
+    },
+    {
+        "name": "target",
+        "description": "Target workspace endpoints for cross-workspace / cross-cloud migration — validate credentials and inspect target metastore.",
+    },
+    {
+        "name": "clone-snapshots",
+        "description": "Named clone snapshots (fork points) — capture a catalog's Delta-version state at a moment in time, then clone from it later via `source_snapshot_id`.",
+    },
+    {
+        "name": "schema-evolution",
+        "description": "Detect + apply additive schema changes (ALTER TABLE ADD / DROP / ALTER COLUMN) without re-cloning the table.",
+    },
+    {
+        "name": "reconciliation",
+        "description": "Cross-metastore reconciliation — verify a cross-workspace clone landed correctly via row-count + optional checksum comparison across two WorkspaceClients.",
+    },
+    {
+        "name": "provenance",
+        "description": "Clone signing / provenance — HMAC-SHA256 sign + verify a clone manifest. Secret via `CLONE_XS_SIGNING_SECRET` env var.",
+    },
+    {
+        "name": "continuous-sync",
+        "description": "Continuous sync **preview** (v0.11.0) — generate a Structured Streaming job spec for near-real-time replication. Execution engine ships in v0.12.0.",
+    },
+    {
+        "name": "streaming-clone",
+        "description": "Streaming / MV data-clone **preview** (v0.11.0) — generate the DLT pipeline spec + SQL that rebuilds MV / streaming-table data on the destination. Execution in v0.12.0.",
+    },
+    {
+        "name": "schedules",
+        "description": "Clone / Sync schedules — cron-backed recurring jobs. Persisted locally and (when credentials allow) also provisioned as Databricks Jobs so the cron fires workspace-side.",
+    },
 ]
 
 app = FastAPI(
@@ -418,6 +490,61 @@ app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-as
 
 from api.routers import notebooks
 app.include_router(notebooks.router, prefix="/api/notebooks", tags=["notebooks"])
+
+# ── New Feature Routers ────────────────────────────────────────────────
+from api.routers import trust_score
+app.include_router(trust_score.router, prefix="/api/trust-scores", tags=["trust-scores"])
+
+from api.routers import coverage
+app.include_router(coverage.router, prefix="/api/coverage", tags=["coverage"])
+
+from api.routers import copq
+app.include_router(copq.router, prefix="/api/copq", tags=["copq"])
+
+from api.routers import anomaly_correlation
+app.include_router(anomaly_correlation.router, prefix="/api/anomaly-correlations", tags=["anomaly-correlations"])
+
+from api.routers import nl_rules
+app.include_router(nl_rules.router, prefix="/api/nl-rules", tags=["nl-rules"])
+
+from api.routers import playbooks
+app.include_router(playbooks.router, prefix="/api/playbooks", tags=["playbooks"])
+
+from api.routers import data_products
+app.include_router(data_products.router, prefix="/api/data-products", tags=["data-products"])
+
+from api.routers import compliance_engine
+app.include_router(compliance_engine.router, prefix="/api/compliance", tags=["compliance-automation"])
+
+from api.routers import alert_routing
+app.include_router(alert_routing.router, prefix="/api/alerts", tags=["alert-routing"])
+
+from api.routers import environments
+app.include_router(environments.router, prefix="/api/environments", tags=["environments"])
+
+from api.routers import target as target_router
+app.include_router(target_router.router, prefix="/api/target", tags=["target"])
+
+from api.routers import clone_snapshots as clone_snapshots_router
+app.include_router(clone_snapshots_router.router, prefix="/api/clone-snapshots", tags=["clone-snapshots"])
+
+from api.routers import schema_evolution as schema_evolution_router
+app.include_router(schema_evolution_router.router, prefix="/api/schema-evolution", tags=["schema-evolution"])
+
+from api.routers import cross_metastore_recon as cmr_router
+app.include_router(cmr_router.router, prefix="/api/reconciliation", tags=["reconciliation"])
+
+from api.routers import clone_provenance as provenance_router
+app.include_router(provenance_router.router, prefix="/api/provenance", tags=["provenance"])
+
+from api.routers import continuous_sync as continuous_sync_router
+app.include_router(continuous_sync_router.router, prefix="/api/continuous-sync", tags=["continuous-sync"])
+
+from api.routers import streaming_clone_generator as streaming_clone_router
+app.include_router(streaming_clone_router.router, prefix="/api/streaming-clone", tags=["streaming-clone"])
+
+from api.routers import schedules as schedules_router
+app.include_router(schedules_router.router, prefix="/api/schedules", tags=["schedules"])
 
 # Serve frontend static files in production
 import os

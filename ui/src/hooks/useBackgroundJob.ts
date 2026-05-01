@@ -82,7 +82,7 @@ export function useBackgroundJob({
         if (wasBackgrounded.current && typeof Notification !== "undefined" && Notification.permission === "granted") {
           new Notification(notificationTitle, {
             body: failed ? `Job failed: ${data.error || "Unknown error"}` : "Job completed successfully",
-            icon: "/favicon.ico",
+            icon: "/favicon.svg",
           });
         }
         wasBackgrounded.current = false;

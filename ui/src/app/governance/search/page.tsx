@@ -11,10 +11,10 @@ import PageHeader from "@/components/PageHeader";
 import { Search, Table2, Columns, BookOpen, Tag, Loader2 } from "lucide-react";
 
 export default function MetadataSearchPage() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = usePersistedState<string>("gov-search-query", "");
   const [results, setResults] = usePersistedState<any>("gov-search-results", null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = usePersistedState<string>("gov-search-tab", "all");
 
   async function doSearch() {
     if (!query.trim()) return;

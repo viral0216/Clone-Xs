@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,22 +51,30 @@ const COLS: Column[] = [
 ];
 
 export default function DsarPage() {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [dashboard, setDashboard] = useState<any>(null);
+  // Result + dashboard data persists across navigation; the auto-load effect
+  // skips re-querying if the cache is fresh.
+  const [requests, setRequests] = usePersistedState<any[]>("dsar-requests", []);
+  const [dashboard, setDashboard] = usePersistedState<any>("dsar-dashboard", null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitResult, setSubmitResult] = useState<any>(null);
-  const [subjectType, setSubjectType] = useState("email");
+  const [submitResult, setSubmitResult] = usePersistedState<any>("dsar-submit-result", null);
+  const [subjectType, setSubjectType] = usePersistedState<string>("dsar-subject-type", "email");
   const [subjectValue, setSubjectValue] = useState("");
   const [requesterEmail, setRequesterEmail] = useState("");
   const [requesterName, setRequesterName] = useState("");
-  const [exportFormat, setExportFormat] = useState("csv");
+  const [exportFormat, setExportFormat] = usePersistedState<string>("dsar-export-format", "csv");
   const [notes, setNotes] = useState("");
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = usePersistedState<string>("dsar-tab", "dashboard");
   const [selectedReq, setSelectedReq] = useState<any>(null);
   const [actionLoading, setActionLoading] = useState("");
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    // Hydrated from sessionStorage already? Don't re-query Databricks just
+    // because the user navigated back. They can hit Refresh to force a reload.
+    if (dashboard || (requests && requests.length > 0)) return;
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function loadAll() {
     setLoading(true);
     try { const [d, r] = await Promise.all([api.get("/dsar/dashboard"), api.get("/dsar/requests")]); setDashboard(d); setRequests(r || []); } catch {}

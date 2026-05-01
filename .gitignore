@@ -101,11 +101,16 @@ checkpoints/
 databricks_workflow.json
 clone_queue_state.json
 
-# Marketplace (contains partner application with contact info)
-marketplace/
+# Marketplace (contains partner application with contact info).
+# Anchored to repo root so it doesn't accidentally match
+# ui/src/app/marketplace/ which is a tracked UI page.
+/marketplace/
 
 # Config cache
 config/cache/
+
+# Saved cross-workspace target connections (contains PATs / client_secrets)
+config/target_connections.yaml
 
 # Misc
 *.bak

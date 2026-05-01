@@ -1966,7 +1966,23 @@ def run_cross_workspace_clone(
                             f"(source format is {source_format}, UniForm requires Delta)"
                         )
                     else:
+                        # 3-step UniForm enable required by Databricks:
+                        # disable DVs → REORG PURGE → set IcebergCompatV2 +
+                        # column mapping. See same-workspace path in
+                        # clone_tables.clone_table() for the rationale.
                         try:
+                            _run(
+                                target_client,
+                                target_wh,
+                                f"ALTER TABLE {dst} SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false')",
+                                dry_run=dry_run,
+                            )
+                            _run(
+                                target_client,
+                                target_wh,
+                                f"REORG TABLE {dst} APPLY (PURGE)",
+                                dry_run=dry_run,
+                            )
                             _run(
                                 target_client,
                                 target_wh,

@@ -279,8 +279,19 @@ def clone_table(
         # UniForm: enable Iceberg-readable metadata on the Delta target so
         # external Iceberg readers can query it without a data copy. Only
         # applicable when the source is Delta — non-Delta sources are skipped
-        # with a warning (caller already logged source format). UniForm requires
-        # column mapping and IcebergCompatV2 to be on for forward compatibility.
+        # with a warning (caller already logged source format).
+        #
+        # Order of DDL matters and is dictated by Databricks' own
+        # IcebergCompatV2 validator:
+        #   1. Disable deletion vectors (DVs) — enabled by default on modern
+        #      DBR; IcebergCompatV2 refuses to coexist with them.
+        #   2. REORG TABLE … APPLY (PURGE) — bakes any existing deletion-
+        #      marker files into rewritten data files. No-op if the table
+        #      had no DVs (still scans, but cheap on a freshly-cloned table).
+        #   3. SET the UniForm properties (column mapping, IcebergCompatV2,
+        #      universal format = iceberg).
+        # If we tried steps in any other order, Databricks rejects with
+        # DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED.
         if target_format.upper() == "ICEBERG" and not dry_run:
             if source_format.upper() != "DELTA":
                 logger.warning(
@@ -289,6 +300,18 @@ def clone_table(
                 )
             else:
                 try:
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"ALTER TABLE {dest} SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false')",
+                        dry_run=dry_run,
+                    )
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"REORG TABLE {dest} APPLY (PURGE)",
+                        dry_run=dry_run,
+                    )
                     execute_sql(
                         client,
                         warehouse_id,

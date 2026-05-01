@@ -271,8 +271,11 @@ def test_clone_tables_in_schema_format_counter_uppercases(mock_sql, mock_list):
 
 @patch("src.clone_tables.execute_sql")
 def test_clone_table_uniform_emitted_for_delta_source(mock_sql):
-    """target_format=ICEBERG + Delta source → post-clone ALTER TABLE enables
-    UniForm so external Iceberg engines can read the Delta target."""
+    """target_format=ICEBERG + Delta source → post-clone runs the 3-step
+    UniForm enable that Databricks' IcebergCompatV2 validator demands:
+    disable deletion vectors, REORG PURGE, then SET the UniForm props.
+    Order matters — without the disable-DV + PURGE, the SET ICebergCompatV2
+    fails with DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED."""
     mock_sql.return_value = []
     success, _ = clone_table(
         MagicMock(),
@@ -286,14 +289,25 @@ def test_clone_table_uniform_emitted_for_delta_source(mock_sql):
         source_format="DELTA",
     )
     assert success is True
-    # Two SQL calls: the CLONE itself, then the UniForm ALTER.
-    assert mock_sql.call_count == 2
-    alter_sql = mock_sql.call_args_list[1][0][2]
-    assert "ALTER TABLE" in alter_sql
-    assert "delta.universalFormat.enabledFormats" in alter_sql
-    assert "iceberg" in alter_sql
-    assert "delta.columnMapping.mode" in alter_sql
-    assert "delta.enableIcebergCompatV2" in alter_sql
+    # 4 SQL calls in order: CLONE, disable-DV ALTER, REORG PURGE,
+    # SET-UniForm ALTER. Asserting the count so accidental reordering or
+    # collapsing into one statement gets caught.
+    assert mock_sql.call_count == 4
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    # 0: CLONE
+    assert "DEEP CLONE" in sqls[0]
+    # 1: disable deletion vectors
+    assert "delta.enableDeletionVectors" in sqls[1]
+    assert "false" in sqls[1].lower()
+    # 2: REORG PURGE — required to bake any existing DV markers into data
+    assert sqls[2].startswith("REORG TABLE")
+    assert "PURGE" in sqls[2]
+    # 3: SET UniForm props — only legal once DVs are disabled and purged
+    assert "ALTER TABLE" in sqls[3]
+    assert "delta.universalFormat.enabledFormats" in sqls[3]
+    assert "iceberg" in sqls[3]
+    assert "delta.columnMapping.mode" in sqls[3]
+    assert "delta.enableIcebergCompatV2" in sqls[3]
 
 
 @patch("src.clone_tables.execute_sql")

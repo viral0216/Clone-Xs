@@ -139,15 +139,27 @@ See the [Databricks Parquet/Iceberg CLONE reference](https://learn.microsoft.com
 
 By default a clone lands as Delta. Set `target_format: ICEBERG` (or pick **ICEBERG** in the wizard's *Target Format* toggle) to additionally enable [Delta UniForm](https://learn.microsoft.com/en-gb/azure/databricks/delta/uniform) on the destination so external Iceberg engines (Snowflake, Trino, Athena, Iceberg-aware Spark, etc.) can read the table without a separate copy.
 
-What it does, mechanically: after each successful Delta DEEP CLONE, Clone-Xs runs
+What it does, mechanically: after each successful Delta DEEP CLONE, Clone-Xs runs **three statements in order** (the order is mandatory — Databricks' IcebergCompatV2 validator rejects any other sequence):
 
 ```sql
+-- 1. Disable deletion vectors. Modern DBR has them on by default; UniForm
+--    can't coexist with DVs so we turn them off first.
+ALTER TABLE `dst`.`schema`.`table`
+  SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false');
+
+-- 2. Bake any existing deletion-marker files into rewritten data files.
+--    No-op (but cheap scan) if the freshly-cloned table had no DVs.
+REORG TABLE `dst`.`schema`.`table` APPLY (PURGE);
+
+-- 3. Enable UniForm. Now allowed because the table has no DVs.
 ALTER TABLE `dst`.`schema`.`table` SET TBLPROPERTIES (
   'delta.columnMapping.mode'             = 'name',
   'delta.enableIcebergCompatV2'          = 'true',
   'delta.universalFormat.enabledFormats' = 'iceberg'
-)
+);
 ```
+
+If you skip steps 1+2, step 3 fails with `DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED`. Earlier Clone-Xs releases emitted only step 3, which is why fresh clones from DV-enabled sources logged a UniForm warning even though the CLONE itself succeeded — fixed in v0.8.x.
 
 Constraints worth knowing:
 

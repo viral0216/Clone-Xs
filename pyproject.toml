@@ -1,6 +1,6 @@
 [project]
 name = "clone-xs"
-version = "0.7.0"
+version = "0.8.0"
 description = "Enterprise-grade Unity Catalog cloning toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API."
 readme = "README.md"
 license = {text = "MIT"}

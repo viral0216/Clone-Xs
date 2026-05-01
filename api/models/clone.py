@@ -210,6 +210,14 @@ class CloneRequest(BaseModel):
     # source-side egress bandwidth pressure; lower values serialize. Default
     # 5 matches typical N-region DR fanout (us, eu, apac, etc.).
     fanout_max_parallel: int = 5
+    # Cross-format target. When "ICEBERG", the destination is still a Delta
+    # table but UniForm is enabled (delta.universalFormat.enabledFormats =
+    # 'iceberg' + columnMapping=name + IcebergCompatV2) so external Iceberg
+    # readers can query it without a data copy. Only meaningful when the
+    # source is Delta — non-Delta sources fall back to "DELTA" with a warning
+    # logged at clone time. Phase A: Delta source only. Phase B (TBD) adds
+    # Iceberg→Delta and full bidirectional rewrite.
+    target_format: Literal["DELTA", "ICEBERG"] = "DELTA"
 
     @model_validator(mode="after")
     def _different_catalogs(self) -> "CloneRequest":

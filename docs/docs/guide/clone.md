@@ -111,6 +111,27 @@ Format-specific gotchas inherited from Databricks CLONE (Clone-Xs surfaces these
 
 See the [Databricks Parquet/Iceberg CLONE reference](https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet) for the canonical limitations list.
 
+#### Target format — `target_format: ICEBERG` (UniForm)
+
+By default a clone lands as Delta. Set `target_format: ICEBERG` (or pick **ICEBERG** in the wizard's *Target Format* toggle) to additionally enable [Delta UniForm](https://learn.microsoft.com/en-gb/azure/databricks/delta/uniform) on the destination so external Iceberg engines (Snowflake, Trino, Athena, Iceberg-aware Spark, etc.) can read the table without a separate copy.
+
+What it does, mechanically: after each successful Delta DEEP CLONE, Clone-Xs runs
+
+```sql
+ALTER TABLE `dst`.`schema`.`table` SET TBLPROPERTIES (
+  'delta.columnMapping.mode'             = 'name',
+  'delta.enableIcebergCompatV2'          = 'true',
+  'delta.universalFormat.enabledFormats' = 'iceberg'
+)
+```
+
+Constraints worth knowing:
+
+- **Delta source only.** Non-Delta sources in the same job (Parquet, Iceberg) clone normally but UniForm is skipped for those tables — a `WARN` line is logged and the rest of the run continues.
+- **Destination is still Delta.** UniForm publishes Iceberg-compatible metadata alongside the Delta log; it doesn't physically rewrite to Iceberg. If you need actual Iceberg storage / file format semantics, that's the Phase B explicit-conversion path (currently scoped, not shipped).
+- **One-way.** Disabling UniForm later is `ALTER TABLE … UNSET TBLPROPERTIES`. The Delta history isn't affected.
+- **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
+
 ### Stage 4 — Views, functions, volumes
 
 Run **after tables** because views and functions reference them. For each:

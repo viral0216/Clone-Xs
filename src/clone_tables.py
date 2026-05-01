@@ -147,6 +147,8 @@ def clone_table(
     force_reclone: bool = False,
     schema_only: bool = False,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
+    source_format: str = "DELTA",
 ) -> tuple[bool, dict | None]:
     """Clone a single table from source to destination catalog.
 
@@ -161,6 +163,13 @@ def clone_table(
             (e.g. `delta.logRetentionDuration`). Setting these inline applies
             them on the first commit; doing so via `ALTER TABLE` after clone
             is too late for retention windows.
+        target_format: "DELTA" (default) or "ICEBERG". When "ICEBERG", the
+            target is still a Delta table but UniForm is enabled post-clone
+            so external Iceberg readers can query it without copying data.
+            Only effective when the source is Delta — other formats fall back
+            to "DELTA" with a warning.
+        source_format: Source table's data_source_format (DELTA/PARQUET/
+            ICEBERG/etc.), used to decide whether UniForm is applicable.
 
     Returns:
         Tuple of (success, metrics). `metrics` is a dict of Databricks
@@ -242,6 +251,35 @@ def clone_table(
                 )
             except Exception as e:
                 logger.warning(f"{WARN} ALTER TABLE SET TBLPROPERTIES failed on {dest}: {e}")
+
+        # UniForm: enable Iceberg-readable metadata on the Delta target so
+        # external Iceberg readers can query it without a data copy. Only
+        # applicable when the source is Delta — non-Delta sources are skipped
+        # with a warning (caller already logged source format). UniForm requires
+        # column mapping and IcebergCompatV2 to be on for forward compatibility.
+        if target_format.upper() == "ICEBERG" and not dry_run:
+            if source_format.upper() != "DELTA":
+                logger.warning(
+                    f"{WARN} target_format=ICEBERG ignored for {source} "
+                    f"(source format is {source_format}, UniForm requires Delta)"
+                )
+            else:
+                try:
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        (
+                            f"ALTER TABLE {dest} SET TBLPROPERTIES ("
+                            f"'delta.columnMapping.mode' = 'name', "
+                            f"'delta.enableIcebergCompatV2' = 'true', "
+                            f"'delta.universalFormat.enabledFormats' = 'iceberg'"
+                            f")"
+                        ),
+                        dry_run=dry_run,
+                    )
+                    logger.info(f"  {OK} Enabled UniForm (Iceberg) on {dest}")
+                except Exception as e:
+                    logger.warning(f"{WARN} UniForm enable failed on {dest}: {e}")
         tt_info = ""
         if not (where_clause and clone_type == "DEEP"):
             time_travel = ""
@@ -286,6 +324,8 @@ def _clone_single_table(
     force_reclone: bool = False,
     schema_only: bool = False,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
+    source_format: str = "DELTA",
 ) -> tuple[str, bool, dict | None]:
     """Clone a single table with all post-clone operations.
 
@@ -318,6 +358,8 @@ def _clone_single_table(
         force_reclone=force_reclone,
         schema_only=schema_only,
         tbl_properties=tbl_properties,
+        target_format=target_format,
+        source_format=source_format,
     )
 
     if not success:
@@ -425,6 +467,7 @@ def clone_tables_in_schema(
     schema_only: bool = False,
     tables_progress=None,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -577,6 +620,8 @@ def clone_tables_in_schema(
                     force_reclone,
                     schema_only,
                     tbl_properties,
+                    target_format,
+                    format_by_name.get(tname, "DELTA"),
                 ): tname
                 for tname in tables_to_clone
             }
@@ -615,6 +660,8 @@ def clone_tables_in_schema(
                 force_reclone,
                 schema_only,
                 tbl_properties,
+                target_format,
+                format_by_name.get(tname, "DELTA"),
             )
             _add_metrics(metrics)
             if success:

@@ -317,6 +317,7 @@ def process_schema(
             schema_only=config.get("schema_only", False),
             tables_progress=config.get("_tables_progress"),
             tbl_properties=config.get("clone_tbl_properties"),
+            target_format=config.get("target_format", "DELTA"),
         )
 
         # Apply data masking after table cloning. Two sources of rules:

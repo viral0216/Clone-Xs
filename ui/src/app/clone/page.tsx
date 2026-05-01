@@ -1176,6 +1176,7 @@ function ClonePageInner() {
     source_snapshot_id: null as string | null,
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
     load_type: "FULL" as "FULL" | "INCREMENTAL",
+    target_format: "DELTA" as "DELTA" | "ICEBERG",
     dry_run: false,
     max_workers: 4,
     parallel_tables: 1,
@@ -1654,6 +1655,31 @@ function ClonePageInner() {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Target format — UniForm. ICEBERG keeps the table as Delta but
+                enables Iceberg-readable metadata so external Iceberg engines
+                can query without a copy. Only effective when source is Delta. */}
+            <div>
+              <FieldLabel field="target_format">Target Format</FieldLabel>
+              <div className="flex gap-2 mt-1">
+                {(["DELTA", "ICEBERG"] as const).map((t) => (
+                  <Button
+                    key={t}
+                    variant={config.target_format === t ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setConfig({ ...config, target_format: t })}
+                  >
+                    {t}
+                  </Button>
+                ))}
+              </div>
+              {config.target_format === "ICEBERG" && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Target stays Delta but is readable by external Iceberg engines via UniForm.
+                  Non-Delta source tables in this clone fall back to DELTA with a warning.
+                </p>
+              )}
             </div>
 
             {/* Serverless */}

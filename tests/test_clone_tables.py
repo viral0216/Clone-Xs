@@ -260,3 +260,118 @@ def test_clone_tables_in_schema_format_counter_uppercases(mock_sql, mock_list):
     )
 
     assert result["formats"] == {"PARQUET": 3}
+
+
+# UniForm (Phase A — backlog item #9): when target_format=ICEBERG, the clone
+# stays Delta but post-clone ALTER TABLE enables Iceberg-readable metadata
+# (delta.universalFormat.enabledFormats=iceberg + columnMapping=name +
+# IcebergCompatV2). Only effective on Delta sources; non-Delta sources are
+# skipped with a warning. Dry-run never executes the ALTER.
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_uniform_emitted_for_delta_source(mock_sql):
+    """target_format=ICEBERG + Delta source → post-clone ALTER TABLE enables
+    UniForm so external Iceberg engines can read the Delta target."""
+    mock_sql.return_value = []
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        target_format="ICEBERG",
+        source_format="DELTA",
+    )
+    assert success is True
+    # Two SQL calls: the CLONE itself, then the UniForm ALTER.
+    assert mock_sql.call_count == 2
+    alter_sql = mock_sql.call_args_list[1][0][2]
+    assert "ALTER TABLE" in alter_sql
+    assert "delta.universalFormat.enabledFormats" in alter_sql
+    assert "iceberg" in alter_sql
+    assert "delta.columnMapping.mode" in alter_sql
+    assert "delta.enableIcebergCompatV2" in alter_sql
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_uniform_skipped_for_non_delta_source(mock_sql):
+    """target_format=ICEBERG with a non-Delta source falls back to a plain
+    Delta clone — UniForm requires Delta as the underlying format. Caller
+    sees a warning in the log; only the CLONE statement is executed."""
+    mock_sql.return_value = []
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        target_format="ICEBERG",
+        source_format="PARQUET",
+    )
+    assert success is True
+    # Only the CLONE itself runs — no ALTER TABLE for UniForm.
+    assert mock_sql.call_count == 1
+    assert "ALTER TABLE" not in mock_sql.call_args[0][2]
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_uniform_skipped_in_dry_run(mock_sql):
+    """Dry-run never executes the post-clone ALTER — same dry-run discipline
+    the rest of the clone path follows. UI labels the run [DRY RUN] without
+    the user worrying that some side effects landed."""
+    mock_sql.return_value = []
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        dry_run=True,
+        target_format="ICEBERG",
+        source_format="DELTA",
+    )
+    assert success is True
+    # Only the CLONE call (which itself is dry-run); no ALTER attempted.
+    assert mock_sql.call_count == 1
+    assert "ALTER TABLE" not in mock_sql.call_args[0][2]
+
+
+@patch("src.clone_tables.list_tables_sdk")
+@patch("src.clone_tables.execute_sql")
+def test_clone_tables_in_schema_propagates_target_format(mock_sql, mock_list):
+    """target_format=ICEBERG fans out per-table: Delta sources get UniForm
+    enabled, non-Delta sources are cloned plainly. Asserts the ALTER TABLE
+    call appears for the Delta row only."""
+    mock_list.return_value = [
+        {"table_name": "delta_tbl", "table_type": "MANAGED", "data_source_format": "DELTA"},
+        {"table_name": "parquet_tbl", "table_type": "EXTERNAL", "data_source_format": "PARQUET"},
+    ]
+    mock_sql.return_value = []
+
+    result = clone_tables_in_schema(
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "schema1",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
+        target_format="ICEBERG",
+    )
+
+    assert result["success"] == 2
+    # Walk all SQL emitted across both tables. We expect:
+    #   delta_tbl   → CREATE TABLE … DEEP CLONE  +  ALTER TABLE … UniForm
+    #   parquet_tbl → CREATE TABLE … DEEP CLONE  (no ALTER, fallback)
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    uniform_alters = [s for s in sqls if "ALTER TABLE" in s and "delta.universalFormat" in s]
+    assert len(uniform_alters) == 1
+    assert "`dst_cat`.`schema1`.`delta_tbl`" in uniform_alters[0]

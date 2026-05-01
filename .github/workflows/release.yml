@@ -12,9 +12,9 @@ jobs:
   build-wheel:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
           cache: pip
@@ -25,7 +25,7 @@ jobs:
       - name: Build wheel
         run: python3 -m build --wheel --outdir dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: wheel
           path: dist/*.whl
@@ -34,9 +34,9 @@ jobs:
   build-frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -48,7 +48,7 @@ jobs:
       - name: Build frontend
         run: cd ui && npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: frontend
           path: ui/dist/
@@ -57,13 +57,13 @@ jobs:
   build-desktop-mac:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -79,7 +79,7 @@ jobs:
       - name: Build macOS app
         run: ./scripts/build-desktop.sh --mac --skip-frontend
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-mac
           path: desktop/dist/*.zip
@@ -88,13 +88,13 @@ jobs:
   build-desktop-win:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: ./scripts/build-desktop.sh --win --skip-frontend
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-win
           path: |
@@ -122,7 +122,7 @@ jobs:
   build-docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build Docker image
         run: docker build -t clone-xs:${{ github.ref_name }} .
@@ -131,7 +131,7 @@ jobs:
         run: |
           docker save clone-xs:${{ github.ref_name }} | gzip > clone-xs-${{ github.ref_name }}-docker.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: docker
           path: clone-xs-*-docker.tar.gz
@@ -141,9 +141,9 @@ jobs:
     needs: [build-wheel, build-frontend, build-desktop-mac, build-desktop-win, build-docker]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
 

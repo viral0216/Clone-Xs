@@ -6,6 +6,11 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
 from src.client import execute_sql, list_tables_sdk
+from src.clone_iceberg import (
+    IcebergPreflightError,
+    is_recoverable_via_ctas,
+    preflight_iceberg_source,
+)
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.log_formatter import (
@@ -206,6 +211,18 @@ def clone_table(
 
     tbl_props_clause = _format_tbl_properties(tbl_properties)
 
+    # Iceberg source preflight (Phase B of #9). Refuse hidden-partitioning
+    # tables before any DDL runs — silently dropping the transform would
+    # change partition pruning semantics on the target, which we won't do
+    # without explicit user opt-in. Skip in dry-run (we still want the SQL
+    # to render for inspection) and skip when source is not Iceberg.
+    if source_format.upper() == "ICEBERG" and not dry_run:
+        try:
+            preflight_iceberg_source(client, warehouse_id, source)
+        except IcebergPreflightError as pe:
+            logger.error(f"{FAIL} {pe}")
+            return False, None
+
     # If where_clause is provided and clone_type is DEEP, use CTAS
     if where_clause and clone_type == "DEEP":
         logger.warning(
@@ -297,6 +314,46 @@ def clone_table(
         if "No pipeline was present" in str(e):
             logger.info(f"{SKIP} Skipping DLT pipeline table {source}: {e}")
             return False, None
+        # Phase B (#9): auto-CTAS fallback for the recoverable Iceberg
+        # failure modes (partition evolution, truncated decimal partition).
+        # CTAS sidesteps the Databricks CLONE limitation by reading rows and
+        # writing a fresh Delta target — the cost is loss of Delta source
+        # history (target starts at version 0). UniForm is skipped in this
+        # path even if requested: the user can ALTER post-hoc if they want
+        # Iceberg readability on the recovered Delta target.
+        if source_format.upper() == "ICEBERG" and is_recoverable_via_ctas(e):
+            logger.warning(
+                f"{WARN} CLONE failed on {source} with recoverable error "
+                f"({type(e).__name__}: {e}); retrying as CTAS. "
+                f"Note: Delta source history is lost on the CTAS target."
+            )
+            ctas_sql = f"CREATE TABLE IF NOT EXISTS {dest} AS SELECT * FROM {source}"
+            if as_of_timestamp:
+                ctas_sql += f" TIMESTAMP AS OF '{as_of_timestamp}'"
+            elif as_of_version is not None:
+                ctas_sql += f" VERSION AS OF {as_of_version}"
+            try:
+                execute_sql(client, warehouse_id, ctas_sql, dry_run=dry_run)
+                if tbl_properties and not dry_run:
+                    try:
+                        execute_sql(
+                            client,
+                            warehouse_id,
+                            f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
+                            dry_run=dry_run,
+                        )
+                    except Exception as alter_e:
+                        logger.warning(
+                            f"{WARN} ALTER TABLE SET TBLPROPERTIES failed on {dest}: {alter_e}"
+                        )
+                logger.info(
+                    f"{OK} Cloned table via CTAS fallback: {source} {ARROW} {dest} "
+                    f"{dim('(no Delta history)')}"
+                )
+                return True, None
+            except Exception as ctas_e:
+                logger.error(f"{FAIL} CTAS fallback also failed for {source}: {ctas_e}")
+                return False, None
         logger.error(f"{FAIL} Failed to clone table {source}: {e}")
         return False, None
 

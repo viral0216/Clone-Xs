@@ -343,6 +343,115 @@ def test_clone_table_uniform_skipped_in_dry_run(mock_sql):
     assert "ALTER TABLE" not in mock_sql.call_args[0][2]
 
 
+# Phase B (#9) — automatic CTAS fallback for known Iceberg CLONE failures.
+# When the CLONE statement raises a "partition evolution" or "truncated
+# decimal" error (the documented Iceberg limitations), clone_table() retries
+# as CTAS so the table still lands. CTAS targets always lose Delta history.
+
+
+@patch("src.clone_iceberg.execute_sql")
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_falls_back_to_ctas_on_partition_evolution(mock_sql, mock_iceberg_sql):
+    """Iceberg CLONE that fails with `partition evolution` is retried as
+    CTAS. Both the CLONE and the CTAS should appear in the SQL trace, with
+    CTAS landing as the recovery path."""
+    # Preflight DESCRIBE returns no hidden partitioning (so preflight passes
+    # through to the CLONE attempt).
+    mock_iceberg_sql.return_value = []
+    mock_sql.side_effect = [
+        Exception("partition evolution not supported for source"),
+        [],  # CTAS succeeds
+    ]
+    success, metrics = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "iceberg_evolved",
+        "DEEP",
+        source_format="ICEBERG",
+    )
+    assert success is True
+    assert metrics is None  # CTAS path doesn't return Databricks CLONE metrics
+    # Two SQL calls in clone_tables: the failed CLONE, then the CTAS retry.
+    assert mock_sql.call_count == 2
+    ctas_sql = mock_sql.call_args_list[1][0][2]
+    assert ctas_sql.startswith("CREATE TABLE IF NOT EXISTS")
+    assert "AS SELECT * FROM" in ctas_sql
+
+
+@patch("src.clone_iceberg.execute_sql")
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_no_ctas_fallback_for_unrecoverable_error(mock_sql, mock_iceberg_sql):
+    """Permission denied (or any non-Iceberg-specific error) fails outright
+    rather than silently retrying as CTAS — CTAS would hit the same error
+    and auto-retry would mask the real cause."""
+    mock_iceberg_sql.return_value = []
+    mock_sql.side_effect = Exception("Permission denied: USE CATALOG required")
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "iceberg_locked",
+        "DEEP",
+        source_format="ICEBERG",
+    )
+    assert success is False
+    # Only the original CLONE attempt — no CTAS retry.
+    assert mock_sql.call_count == 1
+
+
+@patch("src.clone_iceberg.execute_sql")
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_no_ctas_fallback_for_non_iceberg_source(mock_sql, mock_iceberg_sql):
+    """Even a `partition evolution` error on a Parquet source doesn't trigger
+    CTAS — the feature is scoped to Iceberg sources where the failure mode
+    is documented and CTAS is known to recover. Other formats fail loud."""
+    mock_iceberg_sql.return_value = []
+    mock_sql.side_effect = Exception("partition evolution not supported")
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "parquet_tbl",
+        "DEEP",
+        source_format="PARQUET",
+    )
+    assert success is False
+    assert mock_sql.call_count == 1
+
+
+@patch("src.clone_tables.preflight_iceberg_source")
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_refuses_iceberg_with_hidden_partitioning(mock_sql, mock_preflight):
+    """Preflight raising IcebergPreflightError aborts the clone before any
+    DDL runs. Asserts that mock_sql was never called — no CLONE attempt.
+    Patches `src.clone_tables.preflight_iceberg_source` (the import site, not
+    the definition site) — clone_tables imports the name at module load,
+    so that's the binding the call resolves through."""
+    from src.clone_iceberg import IcebergPreflightError
+
+    mock_preflight.side_effect = IcebergPreflightError("Source uses bucket(16, user_id) — refused")
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "iceberg_bucketed",
+        "DEEP",
+        source_format="ICEBERG",
+    )
+    assert success is False
+    # CLONE never ran — preflight short-circuited.
+    assert mock_sql.call_count == 0
+
+
 @patch("src.clone_tables.list_tables_sdk")
 @patch("src.clone_tables.execute_sql")
 def test_clone_tables_in_schema_propagates_target_format(mock_sql, mock_list):

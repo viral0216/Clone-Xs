@@ -102,10 +102,11 @@ Source formats:  DELTA: 26   PARQUET: 2   ICEBERG: 1
 Bytes Copied: 480 GB    Files Copied: 12,840
 ```
 
-Format-specific gotchas inherited from Databricks CLONE (Clone-Xs surfaces these with an actionable wrapper, but cannot work around them):
+Format-specific gotchas inherited from Databricks CLONE. **Phase B of the Iceberg work** (released alongside `target_format`) added two safety nets so most of these no longer fail-loud:
 
-- **Iceberg + partition evolution** — clone fails. Use a manual CTAS or [`CONVERT TO DELTA`](https://learn.microsoft.com/en-gb/azure/databricks/delta/convert-to-delta) for that table.
-- **Iceberg with truncated decimal partitions** — clone fails on DBR < 13.3. Truncated partitions on string / long / int columns work on DBR 13.3+.
+- **Iceberg + partition evolution** — Clone-Xs auto-retries as `CREATE TABLE … AS SELECT * FROM source` (CTAS) when it sees this error class. The recovered target lands as Delta but **starts at version 0** — Delta source history is lost. A `WARN` line in the run log makes the fallback explicit.
+- **Iceberg with truncated decimal partitions** — same auto-CTAS recovery as above. Truncated partitions on string / long / int columns work natively on DBR 13.3+; the CTAS fallback covers older runtimes.
+- **Iceberg with hidden partitioning** (`bucket(N, col)`, `truncate(N, col)`, `years(col)`, `months(col)`, `days(col)`, `hours(col)`) — **refused at preflight, before any DDL runs.** Hidden partition transforms have no Delta equivalent, and silently dropping them would break partition pruning on the target. Use `CONVERT TO DELTA` on the source (in-place) and re-clone, or write a manual CTAS that materialises the transform as a Delta generated column.
 - **Partitioned Parquet referenced by path** — clone fails. Register the table to UC by name first.
 - **Glob/wildcard paths** — not supported by Databricks CLONE for any format.
 
@@ -131,6 +132,23 @@ Constraints worth knowing:
 - **Destination is still Delta.** UniForm publishes Iceberg-compatible metadata alongside the Delta log; it doesn't physically rewrite to Iceberg. If you need actual Iceberg storage / file format semantics, that's the Phase B explicit-conversion path (currently scoped, not shipped).
 - **One-way.** Disabling UniForm later is `ALTER TABLE … UNSET TBLPROPERTIES`. The Delta history isn't affected.
 - **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
+- **Cross-workspace clones** (Delta Sharing path) honour `target_format: ICEBERG` too — UniForm is enabled on the target after each successful DEEP CLONE through the share.
+
+#### Iceberg source preflight (Phase B)
+
+When the source is Iceberg, Clone-Xs runs `DESCRIBE TABLE EXTENDED` before the CLONE statement and refuses tables that use hidden-partition transforms. The refusal is deliberate — see [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full check. The error message names the offending transform and points at the workaround:
+
+```
+Source Iceberg table `src`.`s`.`t` uses hidden partitioning
+(bucket(16, user_id)) which has no Delta equivalent. Clone-Xs refuses
+this clone rather than silently change the partitioning semantics.
+Workarounds:
+  1) Materialise the transform as a regular column on the source and re-clone, OR
+  2) Run a manual CTAS that replicates the transform via Delta generated columns, OR
+  3) Use CONVERT TO DELTA on the source (in-place; destructive) and then clone normally.
+```
+
+Type-level differences (`time`, `uuid`, `fixed(L)`, `timestamptz`) are *not* refusal cases — they map through CLONE with documented losses (uuid → string, fixed → binary, etc.). See `ICEBERG_TYPE_NOTES` in [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full table.
 
 ### Stage 4 — Views, functions, volumes
 

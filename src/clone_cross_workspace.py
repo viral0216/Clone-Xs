@@ -1952,6 +1952,36 @@ def run_cross_workspace_clone(
                         dry_run=dry_run,
                     )
                 metrics = _extract_clone_metrics(rows) if not dry_run else None
+                # Phase A of #9 (extended to cross-workspace in Phase B): when
+                # target_format=ICEBERG and source is Delta, enable UniForm on
+                # the target so external Iceberg engines can read it without a
+                # data copy. Non-Delta sources skip with a warning — UniForm is
+                # a Delta-only feature. Same DDL as the same-workspace path in
+                # clone_tables.clone_table().
+                target_format = (config.get("target_format") or "DELTA").upper()
+                if target_format == "ICEBERG" and not dry_run:
+                    if source_format.upper() != "DELTA":
+                        logger.warning(
+                            f"target_format=ICEBERG ignored for {alias} "
+                            f"(source format is {source_format}, UniForm requires Delta)"
+                        )
+                    else:
+                        try:
+                            _run(
+                                target_client,
+                                target_wh,
+                                (
+                                    f"ALTER TABLE {dst} SET TBLPROPERTIES ("
+                                    f"'delta.columnMapping.mode' = 'name', "
+                                    f"'delta.enableIcebergCompatV2' = 'true', "
+                                    f"'delta.universalFormat.enabledFormats' = 'iceberg'"
+                                    f")"
+                                ),
+                                dry_run=dry_run,
+                            )
+                            logger.info(f"Enabled UniForm (Iceberg) on {dst}")
+                        except Exception as uniform_e:
+                            logger.warning(f"UniForm enable failed on {dst}: {uniform_e}")
                 return TableResult(
                     schema=schema,
                     table=table,

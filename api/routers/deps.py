@@ -76,11 +76,15 @@ async def list_views(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     try:
+        # `view_definition` lives on `information_schema.views`, NOT
+        # on `information_schema.tables` (that one only has table-level
+        # metadata: type, comment, created, last_altered, …). Querying
+        # tables for view_definition fails with UNRESOLVED_COLUMN on
+        # any UC catalog. Use the dedicated `views` view instead.
         rows = execute_sql(client, wid, f"""
             SELECT table_catalog, table_schema, table_name, view_definition
-            FROM {catalog}.information_schema.tables
-            WHERE table_type = 'VIEW'
-            AND table_schema NOT IN ('information_schema', '__internal')
+            FROM {catalog}.information_schema.views
+            WHERE table_schema NOT IN ('information_schema', '__internal')
             ORDER BY table_schema, table_name
         """)
         return [

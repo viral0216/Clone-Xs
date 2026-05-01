@@ -1,4 +1,4 @@
-# Generating One Billion Rows of Realistic Healthcare Data in 12 Minutes — Without Materialising a Single Row in Python
+# Generating Billions of Rows of Realistic Synthetic Data — Without Materialising a Single Row in Python
 
 How we built Clone-Xs's Demo Data Generator: a SQL-first synthetic data engine that produces 10 industries, 200 tables, locale-aware Faker pools, ML-ready labeled targets, and validated foreign keys — all without leaving the warehouse.
 
@@ -357,6 +357,95 @@ The merge is in-place into the runtime `INDUSTRIES` dict at run start, popped on
 
 ---
 
+## Theme 5: Data modeling overlay — Kimball star schemas without re-generating data
+
+The flat industry tables are useful for ad-hoc demos, but BI teams want fact tables and dim tables. Tableau / Power BI / dbt-style modelling is the actual job-to-be-done for a lot of customer evaluations. So we layered a Kimball-style star schema on top of the flat layer.
+
+The trick: don't regenerate. The star schema is a **CTAS overlay** — `CREATE TABLE … AS SELECT` from the existing flat tables, which adds ~5% to total generation time vs. doubling it.
+
+Triggered by `data_model="star_schema"`, the orchestrator builds a parallel `<industry>_star` schema next to the flat one. Naming follows DBT-style + DV2 conventions:
+
+- Schema: `healthcare_star`
+- Fact: `fct_claims`, `fct_encounters`, …
+- Dim: `dim_patient`, `dim_provider`, `dim_facility`, …
+- Surrogate key: `patient_sk` (BIGINT, `row_number()` over the business key)
+- Business key preserved as `patient_id` etc.
+
+The per-industry split lives in a registry, not in the orchestrator code:
+
+```python
+# src/demo_models.py
+STAR_SCHEMA_REGISTRY = {
+    "healthcare": {
+        "dims": [
+            ("dim_patient",  "patients",   "patient_id"),
+            ("dim_provider", "providers",  "provider_id"),
+            ("dim_facility", "facilities", "facility_id"),
+        ],
+        "facts": [
+            ("fct_claims", "claims", [
+                ("patient_id",  "dim_patient"),
+                ("provider_id", "dim_provider"),
+                ("facility_id", "dim_facility"),
+            ]),
+            # …
+        ],
+        "derived_dims": [
+            ("dim_diagnosis", "claims", "diagnosis_code"),
+        ],
+    },
+    # …
+}
+```
+
+Adding an industry is a dict entry — no code change.
+
+**Three dim types, one CTAS pattern:**
+
+*Conformed dims* — `row_number()` surrogate key over the existing flat dim:
+
+```sql
+CREATE OR REPLACE TABLE healthcare_star.dim_patient AS
+SELECT row_number() OVER (ORDER BY patient_id) AS patient_sk, *
+FROM healthcare.patients
+```
+
+*Derived dims* — for attributes that live as a column on a fact (e.g. `claims.diagnosis_code`) but deserve their own dim:
+
+```sql
+CREATE OR REPLACE TABLE healthcare_star.dim_diagnosis AS
+SELECT row_number() OVER (ORDER BY diagnosis_code) AS diagnosis_sk, diagnosis_code
+FROM (SELECT DISTINCT diagnosis_code FROM healthcare.claims WHERE diagnosis_code IS NOT NULL)
+```
+
+*Universal `dim_date`* — built from the same `explode(sequence(…))` primitive that powers the entire row generator. The architecture trick from the opening reappears here, on a smaller scale:
+
+```sql
+SELECT cast(d AS DATE) AS date_key, year(d), quarter(d), month(d), …
+FROM (SELECT explode(sequence(date('2020-01-01'), date('2025-01-01'), interval 1 day)) AS d)
+```
+
+**Facts** pass through with `LEFT JOIN`s to each dim, pulling the surrogate keys onto the row:
+
+```sql
+CREATE OR REPLACE TABLE healthcare_star.fct_claims AS
+SELECT f.*, d0.patient_sk, d1.provider_sk, d2.facility_sk
+FROM healthcare.claims f
+LEFT JOIN healthcare_star.dim_patient   d0 ON f.patient_id  = d0.patient_id
+LEFT JOIN healthcare_star.dim_provider  d1 ON f.provider_id = d1.provider_id
+LEFT JOIN healthcare_star.dim_facility  d2 ON f.facility_id = d2.facility_id
+```
+
+`schema_only=true` produces zero-row CTASs of the same shape via `WHERE 1=0` — useful for CI and permission-scoping rehearsals.
+
+Per-industry failures don't abort the loop — partial star coverage beats none, and the per-industry report bubbles up to the run result so the UI can render the gap.
+
+What's not in v1:
+- SCD2 history is *carried through* (the flat dim source already has `valid_from` / `valid_to` / `is_current`), but no row-level history is built in the star — single row per business key.
+- Data Vault 2.0, One Big Table, and Snowflake variants are deferred. The registry shape was designed to admit them: `data_model` is an enum, not a boolean.
+
+---
+
 ## Numbers and what they mean
 
 A `Quick Demo` preset (1 industry, scale 0.01, no medallion) on a serverless Small SQL Warehouse:
@@ -409,9 +498,7 @@ The custom-YAML cleanup-on-exception limitation is in the docs. The `dq_profile=
 
 ---
 
-If you're working on Databricks demos, ML pipelines, or just want a way to spin up realistic-looking healthcare data in 90 seconds, the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) is open-source and ready to use. The full guide with all knobs is in [the docs](https://github.com/viral0216/clone-xs/blob/main/docs/docs/guide/demo-data.md).
-
-The blog title was "one billion rows in 12 minutes" — that's the Full Demo preset on a Medium warehouse with parallel batch INSERTs. We'll see if anyone tries it on a Large.
+If you're working on Databricks demos, ML pipelines, or just want a way to spin up realistic-looking synthetic data in 90 seconds (or billions of rows on a real warehouse), the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) is open-source and ready to use. The full guide with all knobs is in [the docs](https://github.com/viral0216/clone-xs/blob/main/docs/docs/guide/demo-data.md).
 
 ---
 

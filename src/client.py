@@ -378,6 +378,34 @@ def execute_sql(
     raise last_exception
 
 
+def table_exists(client: WorkspaceClient, warehouse_id: str, fqn: str) -> bool:
+    """Cheap probe: does this fully-qualified table/view exist?
+
+    Uses `SELECT 1 FROM <fqn> LIMIT 0` — returns no rows but resolves
+    the table; fast and warehouse-cheap. Returns False if the catalog,
+    schema, or table is missing (any TABLE_OR_VIEW_NOT_FOUND), True if
+    the LIMIT 0 succeeds. Any other error (auth, transient) re-raises
+    so callers can distinguish "missing" from "broken".
+
+    Use this before issuing real reads against optional audit tables —
+    it skips polluting the warehouse logs with NOT_FOUND errors when
+    the audit catalog hasn't been provisioned yet.
+
+    `fqn` must already be a properly-quoted three-part name; no
+    additional escaping is performed.
+    """
+    try:
+        execute_sql(client, warehouse_id, f"SELECT 1 FROM {fqn} LIMIT 0")
+        return True
+    except Exception as e:
+        msg = str(e)
+        if "TABLE_OR_VIEW_NOT_FOUND" in msg or "cannot be found" in msg:
+            return False
+        # Permissions / connectivity / unrelated SQL error — caller
+        # gets to decide. Don't paper over real failures.
+        raise
+
+
 def execute_sql_cached(client: WorkspaceClient, warehouse_id: str, sql: str, ttl: int = 120) -> list[dict]:
     """Execute SQL with caching for read-only queries (SELECT, SHOW, DESCRIBE).
 

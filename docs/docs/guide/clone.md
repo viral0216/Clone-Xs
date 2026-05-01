@@ -93,6 +93,29 @@ Behavior modifiers:
 
 Within each schema, `parallel_tables` (default 1) controls how many tables clone simultaneously. Set to 4–8 for catalogs with many small tables; keep at 1 for catalogs dominated by large tables to avoid saturating the warehouse.
 
+#### What gets cloned vs skipped
+
+Clone-Xs only runs `CREATE TABLE … CLONE source` against tables whose `table_type` is `MANAGED` or `EXTERNAL`. Anything else is logged + counted as skipped, with a clear reason in the run output:
+
+| Source `table_type` | What happens | Why |
+|---|---|---|
+| `MANAGED` | ✓ Cloned | Standard Unity Catalog managed Delta — fully cloneable. |
+| `EXTERNAL` | ✓ Cloned | External table (Delta / Parquet / Iceberg) registered in UC. |
+| `STREAMING_TABLE` | △ Skipped | Owned by a Lakeflow / DLT pipeline. The table is the *output* of a streaming pipeline definition; cloning the data files would produce a static snapshot with no way to refresh, silently breaking the user's mental model. **Recreate by running the pipeline against the new schema.** |
+| `MATERIALIZED_VIEW` | △ Skipped | Same shape as streaming tables — pipeline-owned, not standalone. |
+| `VIEW` | (handled by clone_views.py, not here) | Logical view → re-emitted as `CREATE OR REPLACE VIEW` against the new schema. |
+| Any other / unknown | △ Skipped | Defensive default — better to surface "unknown type, skipping" than fire a CLONE that produces a cryptic Databricks error. Open an issue if your environment uses a `table_type` that should be supported. |
+
+The skip line in the run log names the type explicitly so operators can tell at a glance what was filtered:
+
+```
+△ Skipping non-clonable table type STREAMING_TABLE: iot.bronze_pos_terminal
+  (streaming / materialized-view tables are pipeline-owned and must be
+   recreated by re-running their pipeline against the new schema)
+```
+
+If your run summary shows `Tables: 0 success, 0 failed, 0 skipped` but you expected tables to clone, check the schema's table_type via `DESCRIBE TABLE EXTENDED` — almost always it's a streaming table being silently ignored prior to the v0.8.x fix that surfaced the skip.
+
 #### Mixed-format sources (Delta, Parquet, Iceberg)
 
 The CLONE statement is format-agnostic. The same `CREATE TABLE … DEEP CLONE source` syntax works whether the source is Delta, Parquet, or Iceberg — provided the source is registered in Unity Catalog. The destination always lands as Delta, regardless of source format. This means a single Clone-Xs run can migrate a catalog that mixes formats (typical mid-migration state), and the run summary breaks the result down by source format:

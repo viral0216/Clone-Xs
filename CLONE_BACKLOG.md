@@ -80,11 +80,14 @@ Ranking is **impact ÷ effort**. Tier 1 = ship next quarter; Tier 3 = needs a re
 
 ### Tier 3 — Larger initiatives (4+ weeks, design phase needed)
 
-#### 9. Iceberg ↔ Delta cross-format clone
+#### 9. Iceberg ↔ Delta cross-format clone — ✅ shipped (Phases A + B + C1)
 **Gap:** Clone-Xs detects Iceberg tables (per exploration) but cannot clone them. Delta-only.
 **Benefit:** Competitive parity with multi-format lake products. Unblocks customers running heterogeneous lakes (Delta + Iceberg side-by-side) and is the primitive needed for format-migration projects (Iceberg → Delta or vice versa).
-**Add:** New `clone_iceberg.py` module using Unity Catalog's UniForm or explicit format conversion. Both directions: Delta source → Iceberg target, Iceberg source → Delta target.
-**Effort:** ~4-6 weeks. Schema mapping is the hard part (type system, partitioning, hidden partitioning).
+**Shipped:**
+- **Phase A** — `target_format: ICEBERG` flag enables UniForm on the Delta target so external Iceberg engines can read it without a copy. UI toggle on the clone wizard's Options step. ([api/models/clone.py](api/models/clone.py), [src/clone_tables.py](src/clone_tables.py))
+- **Phase B** — Iceberg-source preflight refuses hidden partitioning (`bucket`/`truncate`/`years`/`months`/`days`/`hours`); auto-CTAS fallback recovers the documented partition-evolution / truncated-decimal failures (lossy: target loses Delta history); cross-workspace path also honours `target_format: ICEBERG`. ([src/clone_iceberg.py](src/clone_iceberg.py), [src/clone_cross_workspace.py](src/clone_cross_workspace.py))
+- **Phase C1** — Informational type-caveats log on every Iceberg-source clone (`uuid → string`, `fixed → binary`, `time` unsupported, `timestamptz` zone loss). It's a log, not a runtime detector — UC surfaces Iceberg types as their already-Sparkified equivalents.
+**Deferred** — see #12 (physical Iceberg target) and #13 (`CONVERT TO DELTA` in-place mode).
 **Verify:** Clone a partitioned Iceberg table to Delta → query both, row counts and partition pruning match.
 
 #### 10. Live (CDC-driven) bidirectional sync
@@ -101,6 +104,29 @@ Ranking is **impact ÷ effort**. Tier 1 = ship next quarter; Tier 3 = needs a re
 **Effort:** ~4-5 weeks.
 **Verify:** Clone a table with 3 duplicate customer records → target has 1 golden record + 2 archived candidates with provenance.
 
+#### 12. Physical Delta → Iceberg target (real Iceberg files, not UniForm metadata)
+**Gap:** #9 Phase A shipped UniForm — Iceberg readability via metadata on a Delta-backed table. Some consumers need actual Iceberg storage (different file layout, native Iceberg snapshot semantics, Iceberg-specific table maintenance). UniForm doesn't deliver that.
+**Benefit:** Closes the last gap in cross-format target support. Customers running Iceberg-native compaction / snapshot-pruning pipelines (Spark-Iceberg, Trino with Iceberg writes) can target a Clone-Xs destination without an extra format-conversion step.
+**Design risk — needs investigation before scoping:**
+- How does Databricks UC currently support managed Iceberg tables? `CREATE TABLE … USING iceberg` works in some configs but may not interop with CLONE.
+- Does CLONE accept `USING iceberg` on the destination, or do we need a CTAS into a pre-created Iceberg table?
+- How are catalog-level settings (storage location, schema evolution policy) plumbed?
+**Add:** New code path in `src/clone_iceberg.py` that, when `target_format: ICEBERG` is requested AND the user opts into "physical" mode (new flag, e.g. `iceberg_physical: true`), creates an Iceberg-formatted target. UniForm remains the default for `target_format: ICEBERG`.
+**Effort:** ~2 weeks once the API questions above are answered. Open the investigation as a 2-day spike first.
+**Verify:** Clone a Delta source with `target_format: ICEBERG, iceberg_physical: true` → target shows up as `data_source_format = 'ICEBERG'` in `information_schema.tables` and is readable by an external Iceberg engine without UniForm metadata.
+
+#### 13. Explicit `CONVERT TO DELTA` mode (in-place, destructive on source)
+**Gap:** Phase B's auto-CTAS fallback recovers from Iceberg CLONE failures by reading rows into a *new Delta destination* — source untouched. Some teams want the opposite: convert the source itself to Delta in-place using Databricks' `CONVERT TO DELTA` SQL command, then continue using the same FQN. That's a different feature shape than clone (no destination, source mutates).
+**Benefit:** Final-step migration path. Once a team has decided "we're moving off Iceberg," in-place conversion avoids the dual-table window where source and target both exist. Also the documented workaround for #9's hidden-partitioning refusal — currently users have to run it manually.
+**Design risk — distinct ergonomics from clone:**
+- **Destructive on source.** Needs strong confirmation (`require_confirmation: true` flag? typed-name check? approval workflow integration?).
+- **Source-write detection.** Concurrent writes during conversion are unsafe — needs the same quiesce-source pattern that cross-workspace clone uses.
+- **Audit trail shape.** Today's audit rows assume source ≠ destination. CONVERT TO DELTA breaks that — needs schema work in [src/audit_trail.py](src/audit_trail.py).
+- **Endpoint surface.** Should not overload `target_format` — this isn't a clone. Likely a separate `POST /convert-to-delta` endpoint with its own request model.
+**Add:** New `src/clone_convert_to_delta.py` (separate from `clone_iceberg.py` because the semantics differ); separate API route; UI surface (probably in the existing /tools area, not the clone wizard).
+**Effort:** ~1 week for the SQL + audit, plus 3-5 days for the UX (confirmation flow, dry-run preview, source-write detection).
+**Verify:** Run on an Iceberg table with hidden partitioning → source is converted in-place to Delta with the partition transform materialised as a generated column → audit row references source FQN with `operation = 'convert_in_place'`.
+
 ---
 
 ## Recommendation
@@ -113,7 +139,7 @@ If picking a Tier 1 bundle: **#1 + #2 + #3** — three quick wins that together 
 
 - Is there appetite for the approval workflow (#5)? It's high-impact but introduces a UX cost — every prod clone now has a wait.
 - For #3 (cost actuals), is access to `system.billing.usage` available in the workspaces this runs in? It requires Account-admin-granted system schema access.
-- For #9 (Iceberg), is there actual demand or is this speculative? Defer if no current ask.
+- For #9 (Iceberg), is there actual demand or is this speculative? Defer if no current ask. — *Resolved: A + B + C1 shipped. C2 / C3 carved out as #12 / #13 awaiting demand signal.*
 
 ## How to verify any of these end-to-end
 

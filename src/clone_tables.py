@@ -37,11 +37,18 @@ def get_tables(
 ) -> list[dict]:
     """List all tables in a schema, optionally ordered by size.
 
+    Returns *every* table_type — including non-clonable ones like
+    ``STREAMING_TABLE`` and ``MATERIALIZED_VIEW``. Filtering down to
+    ``MANAGED`` / ``EXTERNAL`` happens in ``clone_tables_in_schema``
+    so that non-clonable rows are logged + counted as skipped, rather
+    than silently dropped here. (Earlier silent-drop behaviour produced
+    confusing "1 table planned, 0 cloned, 0 skipped" runs that gave
+    operators no signal about what happened.)
+
     Args:
         order_by_size: "asc" (smallest first), "desc" (largest first), or None.
     """
-    all_tables = list_tables_sdk(client, catalog, schema)
-    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
+    tables = list_tables_sdk(client, catalog, schema)
 
     if order_by_size and tables:
         # Get sizes for ordering
@@ -598,10 +605,33 @@ def clone_tables_in_schema(
     if load_type == "INCREMENTAL":
         existing = get_existing_tables(client, warehouse_id, dest_catalog, schema)
 
+    # Tables Clone-Xs is willing to run `CREATE TABLE … CLONE source` on.
+    # STREAMING_TABLE and MATERIALIZED_VIEW are owned by their pipelines —
+    # cloning the data files would produce a static snapshot with no way
+    # to refresh, which silently breaks the user's mental model. VIEW is
+    # handled by clone_views.py, not here.
+    _CLONABLE_TABLE_TYPES = ("MANAGED", "EXTERNAL")
+
     # Filter tables to process
     tables_to_clone = []
     for table_row in tables:
         table_name = table_row["table_name"]
+
+        # Non-clonable table type — log + count as skipped so the run
+        # summary reflects what actually happened. Previously this filter
+        # ran inside get_tables() and the row vanished silently, which
+        # produced "1 table planned, 0/0/0 results" runs.
+        table_type = table_row.get("table_type")
+        if table_type not in _CLONABLE_TABLE_TYPES:
+            logger.info(
+                f"  {SKIP} Skipping non-clonable table type "
+                f"{table_type or 'UNKNOWN'}: "
+                f"{dim(f'{schema}.{table_name}')} "
+                f"{dim('(streaming / materialized-view tables are pipeline-owned and must be recreated by re-running their pipeline against the new schema)')}"
+            )
+            results["skipped"] += 1
+            _bump("skipped")
+            continue
 
         if table_name in exclude_tables:
             logger.info(f"  {SKIP} Skipping excluded table: {dim(f'{schema}.{table_name}')}")

@@ -452,6 +452,116 @@ def test_clone_table_refuses_iceberg_with_hidden_partitioning(mock_sql, mock_pre
     assert mock_sql.call_count == 0
 
 
+# Non-clonable table_type skip-with-log. Previously STREAMING_TABLE and
+# MATERIALIZED_VIEW rows were silently dropped inside get_tables(), which
+# produced confusing "1 table planned, 0/0/0 results" runs. They now go
+# through the same skip path as exclude_tables / regex filters.
+
+
+@patch("src.clone_tables.list_tables_sdk")
+@patch("src.clone_tables.execute_sql")
+def test_clone_tables_in_schema_skips_streaming_table_with_log(mock_sql, mock_list, caplog):
+    """A STREAMING_TABLE shows up in `list_tables_sdk` and must be visibly
+    skipped — counted, logged, with a hint pointing at why (pipeline-owned).
+    Asserts no CLONE was attempted for it."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="src.clone_tables")
+    mock_list.return_value = [
+        {"table_name": "regular", "table_type": "MANAGED", "data_source_format": "DELTA"},
+        {
+            "table_name": "bronze_pos_terminal",
+            "table_type": "STREAMING_TABLE",
+            "data_source_format": "DELTA",
+        },
+    ]
+    mock_sql.return_value = []
+
+    result = clone_tables_in_schema(
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "iot",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
+    )
+
+    assert result["success"] == 1  # only the MANAGED one
+    assert result["skipped"] == 1  # the STREAMING_TABLE
+    # The MANAGED table got its CLONE; the STREAMING_TABLE did not.
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    clones = [s for s in sqls if "CLONE" in s]
+    assert len(clones) == 1
+    assert "regular" in clones[0]
+    assert "bronze_pos_terminal" not in clones[0]
+    # Log message names the type and the table so operators can act on it.
+    skip_msgs = [
+        r.getMessage() for r in caplog.records if "Skipping non-clonable" in r.getMessage()
+    ]
+    assert len(skip_msgs) == 1
+    assert "STREAMING_TABLE" in skip_msgs[0]
+    assert "bronze_pos_terminal" in skip_msgs[0]
+
+
+@patch("src.clone_tables.list_tables_sdk")
+@patch("src.clone_tables.execute_sql")
+def test_clone_tables_in_schema_skips_materialized_view(mock_sql, mock_list):
+    """MATERIALIZED_VIEW is the same shape as STREAMING_TABLE for cloning
+    purposes — pipeline-owned, can't be cloned via CREATE TABLE … CLONE."""
+    mock_list.return_value = [
+        {
+            "table_name": "mv_orders",
+            "table_type": "MATERIALIZED_VIEW",
+            "data_source_format": "DELTA",
+        },
+    ]
+    mock_sql.return_value = []
+
+    result = clone_tables_in_schema(
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "iot",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
+    )
+
+    assert result["success"] == 0
+    assert result["skipped"] == 1
+    # No SQL emitted at all — preflight + clone never happened.
+    assert mock_sql.call_count == 0
+
+
+@patch("src.clone_tables.list_tables_sdk")
+@patch("src.clone_tables.execute_sql")
+def test_clone_tables_in_schema_skips_unknown_table_type(mock_sql, mock_list):
+    """Defensive: unknown / future Databricks table_types are also skipped
+    rather than blindly attempted. Better to surface "unknown type, skipping"
+    than to fire a CLONE that produces a cryptic Databricks error."""
+    mock_list.return_value = [
+        {"table_name": "weird_thing", "table_type": "FOREIGN_TABLE", "data_source_format": "DELTA"},
+    ]
+    mock_sql.return_value = []
+
+    result = clone_tables_in_schema(
+        MagicMock(),
+        "wh-123",
+        "src_cat",
+        "dst_cat",
+        "iot",
+        clone_type="DEEP",
+        exclude_tables=[],
+        load_type="FULL",
+    )
+
+    assert result["skipped"] == 1
+    assert mock_sql.call_count == 0
+
+
 @patch("src.clone_tables.list_tables_sdk")
 @patch("src.clone_tables.execute_sql")
 def test_clone_tables_in_schema_propagates_target_format(mock_sql, mock_list):

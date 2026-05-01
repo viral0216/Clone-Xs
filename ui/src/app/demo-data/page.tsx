@@ -22,7 +22,20 @@ import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
   ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
+  Copy,
 } from "lucide-react";
+
+// Small helper used by the streaming card's copy buttons. Falls back
+// gracefully on browsers without `navigator.clipboard` (older Safari,
+// non-secure contexts) so the click still feels responsive.
+async function copyToClipboard(text: string, label = "Copied") {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(label);
+  } catch {
+    toast.error("Could not copy to clipboard");
+  }
+}
 
 const INDUSTRIES = ["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"] as const;
 
@@ -1965,15 +1978,64 @@ export default function DemoDataPage() {
                     </span>
                     <span className="text-xs text-muted-foreground ml-auto">Job {streamingJobId}</span>
                   </div>
-                  {streamingJob.progress && (
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-                      <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{streamingJob.progress.events_emitted ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{streamingJob.progress.files_written ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Rows inserted:</span> <span className="font-mono">{streamingJob.progress.rows_inserted ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Elapsed:</span> <span className="font-mono">{streamingJob.progress.elapsed_seconds ?? 0}s</span></div>
-                    </div>
-                  )}
+                  {streamingJob.progress && (() => {
+                    const elapsed = Number(streamingJob.progress.elapsed_seconds ?? 0);
+                    const events = Number(streamingJob.progress.events_emitted ?? 0);
+                    const filesWritten = Number(streamingJob.progress.files_written ?? 0);
+                    const rowsInserted = Number(streamingJob.progress.rows_inserted ?? 0);
+                    // Throughput: cumulative events / wall-clock elapsed.
+                    // Bias the divisor to >=1s so the rate doesn't blow up
+                    // on the first sub-second tick.
+                    const eventsPerSec = elapsed > 0
+                      ? (events / Math.max(elapsed, 1)).toFixed(1)
+                      : "—";
+                    // Time remaining is derived from the form-controlled
+                    // total duration. Only shown while running, and only
+                    // when emission hasn't already overrun (rare but
+                    // possible with a slow warehouse).
+                    const isRunning = streamingJob.status === "running";
+                    const remaining = isRunning && streamDurationSeconds > elapsed
+                      ? Math.max(0, Math.round(streamDurationSeconds - elapsed))
+                      : null;
+                    // "Rows inserted: 0" is a frequent FAQ in volume_bronze
+                    // mode — rows are inserted by the bronze streaming
+                    // table's refresh job, not the emitter. Surface that
+                    // inline with a small Info icon + native title tooltip
+                    // when the situation is exactly that (files landed,
+                    // rows haven't yet).
+                    const showRowsHint =
+                      streamDestination === "volume_bronze"
+                      && rowsInserted === 0
+                      && filesWritten > 0;
+                    return (
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{events}</span></div>
+                        <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{filesWritten}</span></div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground">Rows inserted:</span>
+                          <span className="font-mono">{rowsInserted}</span>
+                          {showRowsHint && (
+                            <Info
+                              className="h-3 w-3 text-muted-foreground cursor-help"
+                              aria-label="Rows-inserted explainer"
+                              title="Rows are inserted by the bronze streaming table's refresh job, not by this emitter. They'll appear after the next refresh cycle (configured above)."
+                            />
+                          )}
+                        </div>
+                        <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
+                        <div><span className="text-muted-foreground">Events/s:</span> <span className="font-mono">{eventsPerSec}</span></div>
+                        <div>
+                          <span className="text-muted-foreground">Elapsed:</span>{" "}
+                          <span className="font-mono">{elapsed}s</span>
+                          {remaining !== null && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              · {remaining}s left
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Throughput chart — dual-axis line chart of cumulative
                       events (left) and per-tick delta (right) over elapsed
@@ -2038,42 +2100,73 @@ export default function DemoDataPage() {
                     </div>
                   )}
                   {streamingJob.progress?.current_batch_path && (
-                    <div className="text-[11px] text-muted-foreground font-mono truncate" title={streamingJob.progress.current_batch_path}>
-                      Latest: {streamingJob.progress.current_batch_path}
+                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
+                      <span className="truncate flex-1" title={streamingJob.progress.current_batch_path}>
+                        Latest: {streamingJob.progress.current_batch_path}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(streamingJob.progress.current_batch_path, "Path copied")}
+                        className="shrink-0 p-1 rounded hover:bg-muted/50"
+                        aria-label="Copy batch path"
+                        title="Copy batch path"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
                     </div>
                   )}
                   {/* Bronze status — only shown when result has landed */}
-                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (
-                    <div className="border-t border-border pt-2 mt-2 text-xs">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline mr-1" />
-                      Bronze streaming table created: <code className="text-[11px] bg-muted/50 px-1 rounded">{streamingJob.result.bronze_table_fqn}</code>
-                      <a
-                        href={(() => {
-                          // Deep-link into Data Lab with a pre-filled SELECT against the bronze
-                          // table and run=1 so the workbench fires the query immediately on
-                          // arrival. Pull catalog/schema/profile off the job result rather than
-                          // the form state — the form fields can be empty by the time the user
-                          // clicks (e.g. after a fresh load that hydrated the job from
-                          // sessionStorage but didn't restore the form), which used to produce
-                          // SELECT * FROM ``.`iot`.`bronze_…`.
-                          const r = streamingJob.result || {};
-                          const cat = r.catalog || streamCatalog;
-                          const sch = r.schema || streamSchema;
-                          const prof = r.profile || streamProfile;
-                          const fqn = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
-                          // captured_at is the per-event timestamp populated by every device
-                          // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
-                          // across atm_transaction, smart_meter, car_obd2, etc.
-                          const sql = `SELECT * FROM ${fqn} ORDER BY captured_at DESC LIMIT 100`;
-                          const encoded = btoa(encodeURIComponent(sql));
-                          return `/data-lab#q=${encoded}&run=1`;
-                        })()}
-                        className="text-[#E8453C] hover:underline ml-2"
-                      >
-                        Query latest rows →
-                      </a>
-                    </div>
-                  )}
+                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (() => {
+                    // Pull catalog/schema/profile off the job result rather than the form
+                    // state — the form fields can be empty by the time the user clicks
+                    // (e.g. after a fresh load that hydrated the job from sessionStorage
+                    // but didn't restore the form).
+                    const r = streamingJob.result || {};
+                    const cat = r.catalog || streamCatalog;
+                    const sch = r.schema || streamSchema;
+                    const prof = r.profile || streamProfile;
+                    const fqnQuoted = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
+                    // captured_at is the per-event timestamp populated by every device
+                    // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
+                    // across atm_transaction, smart_meter, car_obd2, etc.
+                    const previewSql = `SELECT * FROM ${fqnQuoted} ORDER BY captured_at DESC LIMIT 10`;
+                    const workbenchSql = `SELECT * FROM ${fqnQuoted} ORDER BY captured_at DESC LIMIT 100`;
+                    const workbenchHref = `/data-lab#q=${btoa(encodeURIComponent(workbenchSql))}&run=1`;
+                    return (
+                      <div className="border-t border-border pt-2 mt-2 space-y-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline" />
+                          <span>Bronze streaming table created:</span>
+                          <code className="text-[11px] bg-muted/50 px-1 rounded">
+                            {streamingJob.result.bronze_table_fqn}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(streamingJob.result.bronze_table_fqn, "Table FQN copied")}
+                            className="shrink-0 p-1 rounded hover:bg-muted/50"
+                            aria-label="Copy table FQN"
+                            title="Copy table FQN"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                          <a
+                            href={workbenchHref}
+                            className="text-[#E8453C] hover:underline ml-auto"
+                          >
+                            Open in workbench →
+                          </a>
+                        </div>
+                        <StreamingPreview
+                          sql={previewSql}
+                          // Refetch when emission progresses — events_emitted
+                          // monotonically increases, so passing it as a key
+                          // dependency naturally drives a refresh per batch.
+                          version={streamingJob.progress?.events_emitted ?? 0}
+                          done={streamingJob.status !== "running"}
+                        />
+                      </div>
+                    );
+                  })()}
                   {streamingJob.result?.bronze_status === "failed" && (
                     <div className="border-t border-border pt-2 mt-2 text-xs text-amber-600">
                       <XCircle className="h-3.5 w-3.5 inline mr-1" />
@@ -2342,6 +2435,36 @@ export default function DemoDataPage() {
                       <dt className="text-muted-foreground w-32 shrink-0">Notebook:</dt>
                       <dd className="font-mono text-[11px] break-all">{scheduleResult.notebook_path}</dd>
                     </div>
+                    {scheduleResult.bronze_status && (
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-32 shrink-0">Bronze table:</dt>
+                        <dd className="text-[11px] flex-1">
+                          {scheduleResult.bronze_status === "created" && (
+                            <span className="inline-flex items-center gap-1 text-green-600">
+                              <CheckCircle2 className="h-3 w-3" />
+                              <code className="bg-muted/50 px-1 rounded font-mono">
+                                {scheduleResult.bronze_table_fqn}
+                              </code>
+                            </span>
+                          )}
+                          {scheduleResult.bronze_status === "failed" && (
+                            <span className="inline-flex items-start gap-1 text-amber-600">
+                              <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                              <span>
+                                Bronze auto-create failed: {scheduleResult.bronze_error}.
+                                Files will still land in the volume; create the table manually after enabling DBSQL Serverless.
+                              </span>
+                            </span>
+                          )}
+                          {scheduleResult.bronze_status === "skipped" && (
+                            <span className="inline-flex items-start gap-1 text-amber-600">
+                              <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                              <span>Bronze table not created: {scheduleResult.bronze_error}</span>
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                   <a href={scheduleResult.run_url} target="_blank" rel="noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs text-[#E8453C] hover:underline">
@@ -2391,6 +2514,125 @@ export default function DemoDataPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// Inline preview of the most-recently-emitted rows in the bronze table.
+//
+// The schema chips above the table are derived from the first response's
+// keys — they cost nothing extra (we already SELECT *), and they let the
+// user confirm field names without leaving the page.
+//
+// `version` is bumped each emission tick (events_emitted) so React's
+// dependency array refetches naturally on each new batch. Failures are
+// rendered inline (rather than thrown as toasts) because warehouse-cold-
+// start is the most common cause and that's expected to clear within a
+// few seconds — toast spam would be worse than a quiet inline message.
+function StreamingPreview({
+  sql,
+  version,
+  done,
+}: {
+  sql: string;
+  version: number;
+  done: boolean;
+}) {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.post<Record<string, unknown>[]>("/execute-sql", { sql })
+      .then((data) => {
+        if (cancelled) return;
+        setRows(Array.isArray(data) ? data : []);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e?.message ?? "preview unavailable");
+        setRows([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sql, version]);
+
+  if (loading && rows.length === 0) {
+    return (
+      <div className="text-[11px] text-muted-foreground italic">
+        Loading preview...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-[11px] text-amber-600">
+        Preview unavailable: {error}
+        {!done && " (will retry on next batch)"}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-[11px] text-muted-foreground italic">
+        No rows landed yet — bronze refresh runs on its own cadence.
+      </div>
+    );
+  }
+
+  // Use the first row's keys as the schema. Insertion order in JSON
+  // matches the SELECT projection, which is the natural reading order
+  // for the user.
+  const columns = Object.keys(rows[0]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {columns.map((c) => (
+          <Badge key={c} variant="outline" className="text-[10px] font-mono">
+            {c}
+          </Badge>
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded border border-border">
+        <table className="w-full text-[11px] font-mono">
+          <thead className="bg-muted/30">
+            <tr>
+              {columns.map((c) => (
+                <th key={c} className="text-left px-2 py-1 font-medium text-muted-foreground whitespace-nowrap">
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-t border-border">
+                {columns.map((c) => (
+                  <td key={c} className="px-2 py-1 whitespace-nowrap max-w-[200px] truncate" title={String(row[c] ?? "")}>
+                    {row[c] === null || row[c] === undefined
+                      ? <span className="text-muted-foreground">null</span>
+                      : String(row[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        Showing {rows.length} most recent {rows.length === 1 ? "row" : "rows"}.
+      </div>
     </div>
   );
 }

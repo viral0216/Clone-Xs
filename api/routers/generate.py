@@ -312,6 +312,7 @@ async def get_streaming_auto_loader_sql(
 async def schedule_streaming(
     req: StreamingScheduleRequest,
     client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
 ):
     """Generate a notebook + create a scheduled Databricks Job.
 
@@ -322,8 +323,13 @@ async def schedule_streaming(
     kind=streaming-emit, profile=<profile>` so the existing
     `GET /clone-jobs` listing automatically includes scheduled streams.
 
-    Returns `{job_id, run_url, notebook_path, schedule_quartz_cron}`.
-    Failures (DBSQL Serverless not available, no CREATE JOB permission)
+    When `auto_create_bronze=True`, also provisions the bronze
+    STREAMING TABLE up front so the table's own refresh CRON polls
+    the volume independently of the notebook's emission cadence.
+
+    Returns `{job_id, run_url, notebook_path, schedule_quartz_cron,
+    bronze_status?, bronze_table_fqn?, bronze_error?}`. Failures
+    (DBSQL Serverless not available, no CREATE JOB permission)
     surface as HTTP 500 with the SDK error so the UI can fall back
     to the manual SQL snippet path.
     """
@@ -334,6 +340,11 @@ async def schedule_streaming(
     # re-key for the helper which reads `schema` directly.
     if "schema_name" in payload:
         payload["schema"] = payload.pop("schema_name")
+    # Bronze table creation needs a warehouse_id. Fall back to the
+    # configured app warehouse when the request omits it — same
+    # convention the in-process emitter and other endpoints use.
+    if not (payload.get("warehouse_id") or "").strip():
+        payload["warehouse_id"] = app_config.get("sql_warehouse_id", "")
     try:
         return schedule_streaming_emission(client, payload)
     except Exception as e:

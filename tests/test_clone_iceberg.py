@@ -15,6 +15,7 @@ from src.clone_iceberg import (
     IcebergPreflightError,
     detect_hidden_partitioning,
     is_recoverable_via_ctas,
+    log_iceberg_type_caveats,
     preflight_iceberg_source,
 )
 
@@ -169,3 +170,66 @@ def test_iceberg_type_notes_documents_known_painful_types():
     assert "time" in ICEBERG_TYPE_NOTES
     assert "uuid" in ICEBERG_TYPE_NOTES
     assert "fixed" in ICEBERG_TYPE_NOTES
+
+
+# Phase C of #9 — informational type-caveats log emitted once per Iceberg-
+# source clone. Why a log instead of a runtime detector: UC surfaces
+# Iceberg-native types as their already-Sparkified equivalents (uuid →
+# STRING, fixed(L) → BINARY), so a DESCRIBE-based scan can't see them.
+
+
+def test_log_iceberg_type_caveats_emits_info_with_all_types(caplog):
+    """The caveat log must list every entry in ICEBERG_TYPE_NOTES so users
+    don't see a partial picture in the run log. Test guards against future
+    drift between the dict and the formatted log line."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="src.clone_iceberg")
+    log_iceberg_type_caveats("`src`.`s`.`t`")
+    assert len(caplog.records) == 1
+    msg = caplog.records[0].getMessage()
+    # Source FQN is included so multi-table clones can correlate the line.
+    assert "`src`.`s`.`t`" in msg
+    # Every type from the canonical dict is present in the formatted log.
+    for type_key in ICEBERG_TYPE_NOTES:
+        assert type_key in msg
+
+
+@patch("src.clone_iceberg.execute_sql")
+def test_preflight_logs_caveats_when_clean(mock_sql, caplog):
+    """preflight_iceberg_source emits the caveat log on the happy path —
+    no hidden partitioning detected, but type caveats still surfaced so
+    operators see them at clone time, not after data lands."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="src.clone_iceberg")
+    mock_sql.return_value = _describe_rows(
+        ("id", "bigint"),
+        ("region", "string"),
+        ("# Partition Information", ""),
+        ("region", "string"),
+    )
+    preflight_iceberg_source(MagicMock(), "wh-1", "`src`.`s`.`t`")
+    # One INFO record for the caveats; the logger.debug from the
+    # describe-failure path didn't fire because the call succeeded.
+    info_records = [r for r in caplog.records if r.levelname == "INFO"]
+    assert len(info_records) == 1
+    assert "type-mapping caveats" in info_records[0].getMessage()
+
+
+@patch("src.clone_iceberg.execute_sql")
+def test_preflight_skips_caveats_when_refusing(mock_sql, caplog):
+    """If preflight refuses (hidden partitioning), the caveat log MUST NOT
+    fire — the user's about to see an exception with the workarounds, and
+    a follow-on INFO line about lossy types would just be noise."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="src.clone_iceberg")
+    mock_sql.return_value = _describe_rows(
+        ("# Partition Information", ""),
+        ("user_id", "bucket(16, user_id)"),
+    )
+    with pytest.raises(IcebergPreflightError):
+        preflight_iceberg_source(MagicMock(), "wh-1", "`src`.`s`.`t`")
+    info_records = [r for r in caplog.records if r.levelname == "INFO"]
+    assert info_records == []

@@ -150,6 +150,19 @@ Workarounds:
 
 Type-level differences (`time`, `uuid`, `fixed(L)`, `timestamptz`) are *not* refusal cases — they map through CLONE with documented losses (uuid → string, fixed → binary, etc.). See `ICEBERG_TYPE_NOTES` in [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full table.
 
+Phase C of #9 adds an informational log line when the source is Iceberg, listing the same caveats inline so operators see them in the run output (not just the docs):
+
+```
+INFO Iceberg source `src`.`s`.`t` — type-mapping caveats may apply: time:
+no Delta equivalent — Delta has only date and timestamp, uuid: lands as
+Delta string (lossy but reversible), fixed: lands as Delta binary, fixed
+length is dropped, timestamptz: lands as Delta timestamp (UTC stored,
+zone metadata dropped). Spot-check affected columns on the target if your
+downstream consumers depend on length / zone / format-specific semantics.
+```
+
+This is a log, not a runtime detector: UC surfaces Iceberg-native types as their already-Sparkified equivalents (`uuid` already shows as STRING via `DESCRIBE TABLE`), so a programmatic schema scan can't reliably identify them. The log is the honest "here are the things to watch for" surface — operators can spot-check the columns they care about.
+
 ### Stage 4 — Views, functions, volumes
 
 Run **after tables** because views and functions reference them. For each:

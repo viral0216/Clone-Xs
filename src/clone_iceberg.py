@@ -147,11 +147,38 @@ def detect_hidden_partitioning(
     return transforms
 
 
+def log_iceberg_type_caveats(source_fqn: str) -> None:
+    """Emit one informational log line listing Iceberg → Delta type caveats.
+
+    Phase C of #9. Why this exists rather than a runtime type detector:
+    UC-registered Iceberg tables surface in DESCRIBE / information_schema
+    with their *Spark-mapped* types — `uuid` already shows as STRING, a
+    `fixed(L)` column as BINARY, `time` as an unsupported / coerced type.
+    The native Iceberg types aren't visible from the SQL surface, so a
+    proactive scan of the source schema can't reliably identify them.
+
+    Instead, we log the caveat list at clone time so operators see it in
+    the run logs and can spot-check columns they care about. The list
+    matches the entries in ``ICEBERG_TYPE_NOTES`` — kept in sync so the
+    in-process log and the docs site stay aligned.
+    """
+    notes = ", ".join(f"{k}: {v}" for k, v in ICEBERG_TYPE_NOTES.items())
+    logger.info(
+        "Iceberg source %s — type-mapping caveats may apply: %s. "
+        "Spot-check affected columns on the target if your downstream "
+        "consumers depend on length / zone / format-specific semantics.",
+        source_fqn,
+        notes,
+    )
+
+
 def preflight_iceberg_source(client: WorkspaceClient, warehouse_id: str, source_fqn: str) -> None:
     """Run all preflight checks on an Iceberg source. Raises on refusal.
 
     Currently checks:
       1. Hidden partitioning — refuse (semantic change can't be silent).
+      2. Logs type-mapping caveats (informational; see
+         ``log_iceberg_type_caveats`` for why this is a log, not a scan).
 
     Type-level checks (time / uuid / fixed) are deliberately *not* refusal
     cases. They're rare in practice and the lossy-but-functional mapping is
@@ -172,6 +199,9 @@ def preflight_iceberg_source(client: WorkspaceClient, warehouse_id: str, source_
             f"  3) Use CONVERT TO DELTA on the source (in-place; destructive) "
             f"and then clone normally."
         )
+    # Hidden partitioning check passed — surface the type caveats so users
+    # see them in the run log alongside the rest of the per-table output.
+    log_iceberg_type_caveats(source_fqn)
 
 
 # Failure-mode patterns we know how to recover from with CTAS. Same patterns

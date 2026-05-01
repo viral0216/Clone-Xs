@@ -18,6 +18,7 @@ asks across the supported industries:
 - ``wind_turbine``       — energy: wind speed, RPM, power output, blade pitch, faults
 - ``atm_transaction``    — financial: ATM withdrawals/deposits, lat/lng, fraud flag
 - ``server_metrics``     — infra: CPU / memory / disk / network per host
+- ``clickstream``        — digital: web/mobile clickstream (user, session, event, page)
 
 Optionally, after provisioning the Volume, the runner can also create
 a DBSQL **streaming Bronze table** that consumes the Volume via

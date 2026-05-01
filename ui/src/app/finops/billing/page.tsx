@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,8 +55,8 @@ const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B
 // ── Component ────────────────────────────────────────────────────────
 
 export default function BillingPage() {
-  const [catalog, setCatalog] = useState("");
-  const [days, setDays] = useState(30);
+  const [catalog, setCatalog] = usePersistedState<string>("finops-billing-catalog", "");
+  const [days, setDays] = usePersistedState<number>("finops-billing-days", 30);
 
   const billingQuery = useBillingCost(days);
   const azureQuery = useAzureCosts(days);

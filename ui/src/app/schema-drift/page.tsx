@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useCallback } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -224,8 +225,8 @@ export default function SchemaDriftPage() {
   const [sourceTable, setSourceTable] = useState(job?.params?.sourceTable || "");
   const [dest, setDest] = useState(job?.params?.dest || "");
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<FilterType>("ALL");
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("ALL");
+  const [filter, setFilter] = usePersistedState<FilterType>("schema-drift-filter", "ALL");
+  const [severityFilter, setSeverityFilter] = usePersistedState<SeverityFilter>("schema-drift-severity-filter", "ALL");
   const [showMigration, setShowMigration] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 

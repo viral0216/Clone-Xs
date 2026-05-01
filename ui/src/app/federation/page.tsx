@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +17,8 @@ type Tab = "catalogs" | "connections" | "tables";
 
 export default function FederationPage() {
   const { job, run, isRunning } = usePageJob("federation");
-  const [activeTab, setActiveTab] = useState<Tab>("catalogs");
-  const [selectedCatalog, setSelectedCatalog] = useState("");
+  const [activeTab, setActiveTab] = usePersistedState<Tab>("federation-tab", "catalogs");
+  const [selectedCatalog, setSelectedCatalog] = usePersistedState<string>("federation-catalog", "");
   const [migrateFqn, setMigrateFqn] = useState("");
   const [migrateDestFqn, setMigrateDestFqn] = useState("");
   const [migrateLoading, setMigrateLoading] = useState(false);

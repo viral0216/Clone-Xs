@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ const CHART_COLORS = ["#E8453C", "#374151", "#9CA3AF", "#6B7280", "#D1D5DB", "#B
 // ── Component ────────────────────────────────────────────────────────
 
 export default function FinOpsPage() {
-  const [catalog, setCatalog] = useState("");
+  const [catalog, setCatalog] = usePersistedState<string>("finops-overview-catalog", "");
   const queryClient = useQueryClient();
 
   // Cached config

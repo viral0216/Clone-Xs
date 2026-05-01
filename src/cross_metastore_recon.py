@@ -73,7 +73,7 @@ def _get_hashable_columns(client: WorkspaceClient, catalog: str, schema: str, ta
         info = client.tables.get(full_name=f"{catalog}.{schema}.{table}")
         return [
             c.name for c in (info.columns or [])
-            if c.name and not str(getattr(c, "type_name", "")).upper() in ("ARRAY", "MAP", "STRUCT")
+            if c.name and str(getattr(c, "type_name", "")).upper() not in ("ARRAY", "MAP", "STRUCT")
         ]
     except Exception as e:
         logger.debug(f"tables.get failed for {catalog}.{schema}.{table}: {e}")

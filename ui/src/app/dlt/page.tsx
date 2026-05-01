@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,7 +77,7 @@ export default function DltPage() {
   const [lineage, setLineage] = useState<any>(null);
   const [updates, setUpdates] = useState<any[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = usePersistedState<string>("dlt-tab", "dashboard");
 
   // Clone modal state
   const [cloneModal, setCloneModal] = useState<{ open: boolean; pipeline: any } | null>(null);

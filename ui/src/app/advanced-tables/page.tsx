@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ export default function AdvancedTablesPage() {
   const { job, run, isRunning } = usePageJob("advanced-tables");
   const [sourceCatalog, setSourceCatalog] = useState(job?.params?.source || "");
   const [destCatalog, setDestCatalog] = useState(job?.params?.dest || "");
-  const [activeTab, setActiveTab] = useState<Tab>("materialized_views");
+  const [activeTab, setActiveTab] = usePersistedState<Tab>("advanced-tables-tab", "materialized_views");
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneResult, setCloneResult] = useState<any>(null);
 

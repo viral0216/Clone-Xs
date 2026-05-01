@@ -13,10 +13,10 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
-
 from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _run_sql
 from src.table_registry import get_schema_fqn
+
+logger = logging.getLogger(__name__)
 
 
 def _get_schema(config: dict) -> str:

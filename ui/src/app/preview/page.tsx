@@ -25,13 +25,13 @@ export default function PreviewPage() {
   const [results, setResults] = usePersistedState<any>("preview-results", null);
 
   // Search & sort state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [searchQuery, setSearchQuery] = usePersistedState<string>("preview-search-query", "");
+  const [sortCol, setSortCol] = usePersistedState<string | null>("preview-sort-col", null);
+  const [sortDir, setSortDir] = usePersistedState<"asc" | "desc">("preview-sort-dir", "asc");
 
   // View mode and stats toggle
-  const [viewMode, setViewMode] = useState<"side-by-side" | "unified">("side-by-side");
-  const [showStats, setShowStats] = useState(false);
+  const [viewMode, setViewMode] = usePersistedState<"side-by-side" | "unified">("preview-view-mode", "side-by-side");
+  const [showStats, setShowStats] = usePersistedState<boolean>("preview-show-stats", false);
 
   // Auto-compare from URL params (e.g., from clone completion)
   const [searchParams] = useSearchParams();

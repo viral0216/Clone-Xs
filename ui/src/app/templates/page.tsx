@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +95,7 @@ function ConfigBadge({ label, enabled }: { label: string; enabled: boolean }) {
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = usePersistedState<string>("templates-filter", "all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const navigate = useNavigate();
 

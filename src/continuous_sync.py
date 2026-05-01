@@ -13,7 +13,6 @@ dedicated service lifecycle + UI for stream health deserves its own release.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 

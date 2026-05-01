@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,11 +58,11 @@ function stateBadge(state: string) {
 
 export default function SystemInsightsPage() {
   const { job, run, isRunning } = usePageJob("system-insights");
-  const [catalog, setCatalog] = useState(job?.params?.catalog || "");
-  const [days, setDays] = useState(job?.params?.days || 30);
-  const [jobFilter, setJobFilter] = useState(job?.params?.jobFilter || "");
-  const [queryDays, setQueryDays] = useState(30);
-  const [queryLimit, setQueryLimit] = useState(200);
+  const [catalog, setCatalog] = usePersistedState<string>("system-insights-catalog", job?.params?.catalog || "");
+  const [days, setDays] = usePersistedState<number>("system-insights-days", job?.params?.days || 30);
+  const [jobFilter, setJobFilter] = usePersistedState<string>("system-insights-job-filter", job?.params?.jobFilter || "");
+  const [queryDays, setQueryDays] = usePersistedState<number>("system-insights-query-days", 30);
+  const [queryLimit, setQueryLimit] = usePersistedState<number>("system-insights-query-limit", 200);
 
   // Overview data (from /summary)
   const data = job?.data as any;

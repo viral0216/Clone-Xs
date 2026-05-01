@@ -21,6 +21,7 @@ import {
   usePauseSchedule, useResumeSchedule, useDeleteSchedule,
 } from "@/hooks/useApi";
 import { useDurableJob } from "@/hooks/useDurableJob";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 function actionColor(action: string) {
   switch (action?.toUpperCase()) {
@@ -279,20 +280,20 @@ type SyncMode = "two_way" | "incremental";
 type IncrementalStrategy = "auto" | "cdf" | "version";
 
 export default function SyncPage() {
-  const [mode, setMode] = useState<SyncMode>("two_way");
+  const [mode, setMode] = usePersistedState<SyncMode>("sync-mode", "two_way");
 
-  const [source, setSource] = useState("");
-  const [dest, setDest] = useState("");
-  const [dryRun, setDryRun] = useState(true);
+  const [source, setSource] = usePersistedState<string>("sync-source", "");
+  const [dest, setDest] = usePersistedState<string>("sync-dest", "");
+  const [dryRun, setDryRun] = usePersistedState<boolean>("sync-dry-run", true);
 
   // Two-way
-  const [dropExtra, setDropExtra] = useState(false);
+  const [dropExtra, setDropExtra] = usePersistedState<boolean>("sync-drop-extra", false);
 
   // Incremental
   const [schemas, setSchemas] = useState<string[]>([]);
-  const [schemaName, setSchemaName] = useState("");
-  const [syncStrategy, setSyncStrategy] = useState<IncrementalStrategy>("auto");
-  const [cloneType, setCloneType] = useState<"DEEP" | "SHALLOW">("DEEP");
+  const [schemaName, setSchemaName] = usePersistedState<string>("sync-schema-name", "");
+  const [syncStrategy, setSyncStrategy] = usePersistedState<IncrementalStrategy>("sync-strategy", "auto");
+  const [cloneType, setCloneType] = usePersistedState<"DEEP" | "SHALLOW">("sync-clone-type", "DEEP");
 
   const [showConfirm, setShowConfirm] = useState(false);
   // Active sync job_id — persisted in sessionStorage so navigating away

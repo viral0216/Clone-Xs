@@ -9,14 +9,13 @@ Storage: {audit_catalog}.data_quality.trust_scores
 """
 
 import logging
-import math
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
-
 from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _run_sql
-from src.table_registry import get_schema_fqn, get_batch_insert_size
+from src.table_registry import get_schema_fqn
+
+logger = logging.getLogger(__name__)
 
 # Default dimension weights (must sum to 1.0)
 DEFAULT_WEIGHTS = {

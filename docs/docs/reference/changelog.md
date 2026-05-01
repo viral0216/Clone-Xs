@@ -9,6 +9,24 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Streaming demo: clickstream profile + bug fix for unreachable profiles
+
+### Added
+- **New `clickstream` device profile** for the streaming demo — web/mobile event stream with `user_id`, `session_id`, `event_type`, `page_url`, `referrer`, `user_agent`, `device_type`. Sessions rotate every ~30 events per user (drives Bronze→Silver sessionization demos), `user_agent` and `device_type` are sticky per user (preserves identity across events for analytics joins). Default 500 distinct users; weighted event distribution biases toward `page_view` with rarer `submit`/`purchase` to mirror funnel drop-off.
+- **Two new guard tests** in `tests/test_demo_streaming.py` to prevent silent drift across the registry, the Pydantic Literal, and the scheduled-notebook generator source:
+  - `test_pydantic_literal_matches_registry` — fails CI if `StreamingEmissionRequest.profile` Literal goes out of sync with `DEVICE_PROFILES` keys.
+  - `test_schedule_notebook_source_covers_all_profiles` — fails CI if `_PROFILE_GENERATORS_SOURCE` is missing a profile (which would crash the scheduled Job at runtime with `NameError` on `init_state`).
+
+### Fixed
+- **Pydantic `profile` Literal was rejecting 6 of 9 dropdown options.** The UI exposed `smart_meter`, `wearable_health`, `pos_terminal`, `wind_turbine`, `atm_transaction`, and `server_metrics` profiles, but the request model's `Literal` only listed the original 3 — so users selecting any of the other 6 got a 422 at the `/demo-data/streaming` endpoint. The Literal now covers all 10 profiles, kept in sync via the new guard test.
+- **Scheduled-notebook generator covers all profiles.** `_PROFILE_GENERATORS_SOURCE` previously inlined only 3 profile generators; the other 6 (and now `clickstream`) all have inlined source so users can schedule any profile without editing the notebook by hand.
+
+### Tested
+- 4 new tests in `tests/test_demo_streaming.py`: clickstream event shape, session-rotation behaviour (sessions change after ~30 events), per-user `user_agent` stickiness, plus the two guard tests above.
+- All prior tests preserved. Full suite: 1828 passing (was 1815 → +13 from this batch).
+
+---
+
 ## Unreleased — Demo Data Generator: Manage Catalogs tab + Schedule streaming as Databricks Job
 
 ### Added

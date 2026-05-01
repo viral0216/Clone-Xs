@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import CatalogPicker from "@/components/CatalogPicker";
 import { useSearch, useStats, useStaleScan, usePermissionsAudit, getCachedStats } from "@/hooks/useApi";
 import { useShowExports, useShowCatalogBrowser, usePersistedNumber, useCurrency, useStoragePrice } from "@/hooks/useSettings";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import ResizeHandle from "@/components/ResizeHandle";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
@@ -236,7 +237,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
   const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
   const [schemaLoading, setSchemaLoading] = useState<Set<string>>(new Set());
   const [tableLoading, setTableLoading] = useState<Set<string>>(new Set());
-  const [searchQ, setSearchQ] = useState("");
+  const [searchQ, setSearchQ] = usePersistedState<string>("explore-tree-search", "");
 
   // Read schema/table results out of the React Query cache by key, so we can
   // render them without re-fetching when the user re-expands a node they

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -149,7 +150,7 @@ const TABLE_COLUMNS: Column[] = [
 export default function PiiPage() {
   const { job, run, isRunning } = usePageJob("pii");
   const [sourceCatalog, setSourceCatalog] = useState(job?.params?.sourceCatalog || "");
-  const [filterType, setFilterType] = useState<string>("all");
+  const [filterType, setFilterType] = usePersistedState<string>("pii-filter-type", "all");
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const [piiConfig, setPiiConfig] = useState<any>(null);
   const [tagging, setTagging] = useState(false);

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -82,13 +83,13 @@ function getQueryHistoryUrl(statementId: string, startTime: string | null): stri
 // ── Component ────────────────────────────────────────────────────────
 
 export default function QueryCostsPage() {
-  const [days, setDays] = useState(30);
-  const [search, setSearch] = useState("");
+  const [days, setDays] = usePersistedState<number>("finops-qc-days", 30);
+  const [search, setSearch] = usePersistedState<string>("finops-qc-search", "");
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [filterUser, setFilterUser] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterUser, setFilterUser] = usePersistedState<string>("finops-qc-filter-user", "");
+  const [filterType, setFilterType] = usePersistedState<string>("finops-qc-filter-type", "");
+  const [filterStatus, setFilterStatus] = usePersistedState<string>("finops-qc-filter-status", "");
 
   const queryCostsQuery = useQueryCosts(days);
   const data = queryCostsQuery.data;

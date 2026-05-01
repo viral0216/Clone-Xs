@@ -275,7 +275,7 @@ as_of_timestamp: "2026-04-19T02:59:00"
 
 **Problem:** Analytics team only needs the 2024 partition for their model; the full history is 8 TB.
 
-**Approach:** [WHERE-clause clone](./clone#data-filtering) (DEEP only — loses Delta history).
+**Approach:** [WHERE-clause clone](./clone) (DEEP only — loses Delta history).
 
 ```yaml
 clone_type: "DEEP"

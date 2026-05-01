@@ -9,6 +9,82 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.7.1 — UI state persistence, deferred Bronze auto-create, Data Lab deep-links
+
+### Added
+- **Durable in-flight job tracking across UI navigation.** New `useDurableJob` hook (in `ui/src/hooks/useDurableJob.ts`) fuses sessionStorage-backed job IDs, auto-reconnect on remount, tab-visibility-aware polling, and a capped progress-history ring buffer. Pages with long-running operations (clone, sync, incremental-sync, demo-data batch + streaming, generate IaC, governance reconciliation row/column/deep) survive page navigation and browser refresh — coming back mid-job resumes from the last server-known state instead of resetting to a blank form.
+- **`usePersistedState` hook** (`ui/src/hooks/usePersistedState.ts`) and a 30-page sweep migrating filter dropdowns, search inputs, tab selectors, catalog/days pickers and other navigation-aid inputs from `useState` to sessionStorage-backed state. Form fields about to be POSTed (notes, descriptions, YAML, SQL, credentials, typed-confirm fields) intentionally stay local.
+- **`JobContext` extensions** (`ui/src/contexts/JobContext.tsx`): added `jobId`, `progressHistory`, `updateJob`, `appendProgress` to the `JobEntry` shape so durable in-flight jobs can persist progress series (used by the streaming throughput chart).
+- **Notebook runtime persistence** — `useNotebook` now mirrors cell results / errors / view modes / params to sessionStorage so navigating away from `/notebooks` and back doesn't re-execute the queries against Databricks.
+- **Explore page query caching** — catalog tree, schemas, tables, table-info drawer, functions, volumes, UC objects, table-usage, trend, and views queries converted to TanStack Query with 5–10 min staleTime. Combined with the global localStorage persister, returning to `/explore` within the staleness window hits the cache instead of re-querying Databricks.
+- **Data Lab deep-link auto-run**: `/data-lab#q=<base64-sql>&run=1` now pre-fills SQL and fires `runQuery()` on arrival. Used by the new "Query latest rows →" link on the Demo Data streaming card to jump straight into a `SELECT * FROM bronze_<profile> ORDER BY captured_at DESC LIMIT 100` against the just-created Bronze table.
+
+### Fixed
+- **Bronze auto-create no longer trips `CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE`.** `create_bronze_streaming_table` was previously called *before* the streaming loop emitted any JSON batches, so `read_files()` had nothing to infer schema from. Bronze creation is now deferred until after the first batch lands; uniform fix applies to every device profile.
+- **Marketplace UI page restored to git tracking.** The repo's `.gitignore` had a non-anchored `marketplace/` rule that swallowed `ui/src/app/marketplace/page.tsx`. Anchored to `/marketplace/` so the UI page can be tracked.
+- **Ruff lint clean.** Resolved 26 ruff errors in `src/` (E402 module-level imports below `logger = …`, F401 unused imports, E713 `not (x in y)` → `x not in y`).
+- **Streaming Bronze "Query latest rows" link no longer produces empty backticks.** Reads catalog/schema/profile from the streaming-job result (server-authoritative) instead of the form state, which can be empty when the durable job hydrates from sessionStorage on a fresh load.
+
+### Changed
+- **GitHub Actions bumped to Node 24 versions** to silence Node 20 deprecation warnings (`checkout` v4→v5, `setup-node` v4→v5, `setup-python` v5→v6, `upload-artifact` v4→v6, `download-artifact` v4→v5, `upload-pages-artifact` v3→v4, `deploy-pages` v4→v5).
+
+---
+
+## v0.7.0 — DQX, ODCS, FinOps, MDM, Compliance, Data Products, Streaming Demo, Persistent UI
+
+### Added — Data Quality
+
+- **DQX integration** (`src/dqx_engine.py`, `api/routers/governance.py`) — Databricks Labs DQX profiling, rule generation, check execution, and result persistence. UI at `/governance/dqx`.
+- **Expectation Suites** (`src/expectation_suites.py`, `/api/data-quality/suites`) — group DQ rules + DQX checks into named reusable suites; run a suite end-to-end and persist results. UI at `/data-quality/expectations`.
+- **Trust Score Engine** (`src/trust_score.py`, `/api/trust-scores`) — composite per-table 0–100 score from six dimensions (DQ pass rate, freshness, anomaly history, PII coverage, schema stability, lineage completeness). Configurable weights. UI at `/data-quality/trust-scores`.
+- **DQ Coverage Map** (`src/coverage_map.py`, `/api/coverage`) — cross-references information_schema against DQ rules, SLA, PII scans, profiling, and contracts to compute per-table coverage percentage. UI at `/data-quality/coverage`.
+- **COPQ — Cost of Poor Data Quality** (`src/copq.py`, `/api/copq`) — quantifies pipeline reruns, SLA breaches, engineer time, and downstream impact in dollars. UI at `/finops/copq`.
+- **Anomaly correlation engine** (`src/anomaly_correlation.py`, `/api/anomaly-correlations`) — groups correlated anomalies under root-cause groups across upstream/downstream tables. UI at `/data-quality/correlations`.
+- **NL Rule Builder** (`src/nl_rule_builder.py`, `/api/nl-rules`) — translate plain-English rule descriptions into executable DQ rule configs via the configured AI backend. UI at `/governance/nl-rules`.
+- **Alert routing** (`src/alert_routing.py`, `/api/alerts`) — smart deduplication, correlation, priority-ranking, and routing of alerts to teams via channels. Supports digest mode. UI at `/data-quality/alert-routing`.
+
+### Added — Governance & Compliance
+
+- **ODCS Data Contracts** (`src/data_contracts.py`, `/api/governance/odcs`) — full Open Data Contract Standard CRUD with YAML import/export, validation, and DQX integration. UI at `/governance/odcs`.
+- **Compliance automation** (`src/compliance_engine.py`, `/api/compliance`) — maps DQ controls to SOC2 / GDPR / HIPAA / CCPA / DORA frameworks with automated evidence collection and audit-ready reports. UI at `/compliance/frameworks`.
+- **Remediation playbooks** (`src/playbooks.py`, `/api/playbooks`) — if-this-then-that automation triggered on DQ failures, anomalies, SLA breaches, freshness staleness, schema drift. UI at `/automation/playbooks`.
+- **Data Products catalog** (`src/data_products.py`, `/api/data-products`) — internal marketplace for publishing and subscribing to curated data products with docs, quality guarantees, and SLAs.
+
+### Added — Master Data, Federation, ML
+
+- **MDM (Master Data Management)** (`src/mdm.py`, `/api/mdm`) — entity resolution, survivorship, golden records, hierarchies, stewardship, cross-domain matching. UI under `/mdm/*`.
+- **Lakehouse Federation** (`src/federation.py`, `/api/federation`) — browse foreign catalogs, manage connections, migrate to managed Delta. UI at `/federation`.
+- **ML Assets** (`src/clone_feature_tables.py`, `clone_models.py`, `clone_serving_endpoints.py`, `clone_vector_search.py`, `/api/ml-assets`) — clone Models + Feature Tables + Vector Indexes + Serving Endpoints. UI at `/ml-assets`.
+- **Advanced Tables** (`src/clone_advanced_tables.py`, `/api/advanced-tables`) — clone Materialized Views, Streaming Tables, Online Tables. UI at `/advanced-tables`.
+
+### Added — Operations
+
+- **Continuous Sync (streaming replication)** (`src/continuous_sync.py`, `/api/continuous-sync`) — Structured Streaming job spec for change-data-capture sync. PREVIEW.
+- **Ephemeral Environments** (`src/environment_manager.py`, `/api/environments`) — one-click sandbox creation with auto PII masking, DQ validation, cost budgets, and TTL-based cleanup. UI at `/environments`.
+- **FinOps suite** (`src/azure_costs.py`, `src/finops_queries.py`, `/api/finops`) — cost dashboards (billing, breakdown, compute, query costs, recommendations, storage optimization, budgets, trends, warehouses) backed by Databricks system tables. UI under `/finops/*`.
+- **System Insights** (`src/system_insights.py`, `/api/system-insights`) — workspace billing, optimization opportunities, job costs, query costs from system tables. UI at `/system-insights`.
+
+### Added — Demo Data
+
+- **10 streaming device profiles** in `src/demo_streaming.py`: `generic_sensor`, `industrial_machine`, `car_obd2`, `smart_meter`, `wearable_health`, `pos_terminal`, `wind_turbine`, `atm_transaction`, `server_metrics`, `clickstream`. Each emits batched JSON to a UC Volume; Auto Loader / DLT consumes the files.
+- **Schedule streaming as a Databricks Job** (`/api/demo-data/streaming/schedule`) — generates a self-contained notebook + creates a real Databricks Job with the chosen Quartz schedule and tags `created_by=clone-xs`.
+- **Auto-create Bronze streaming table** (opt-in) — `CREATE OR REFRESH STREAMING TABLE … AS SELECT * FROM STREAM read_files(...)` on DBSQL Serverless; failure-isolated so file emission keeps working when CREATE is denied.
+- **Manage Catalogs tab** on `/demo-data` — list every catalog the user can read with metadata, demo-only filter, typed-confirm drop modal.
+- **Star schema modeling layer** (`src/demo_models.py`) and **locale-aware Faker pools** (`src/demo_faker.py`).
+- **Anomaly injection** (`src/demo_anomalies.py`) — labeled anomalies for ML training datasets.
+
+### Added — Portal Model
+
+- **Multi-portal sidebar / app shell.** The UI now organises pages into seven portals — Clone-Xs (default), Governance, Data Quality, FinOps, Security, Automation, Infrastructure, MDM. Switch via the portal-picker in the header (`ui/src/components/PortalSwitcher.tsx`). Portals can be enabled/disabled per workspace in Settings.
+
+### Improvements
+- **Reconciliation suite** — row-level (`/reconciliation/batch-validate`), column-level (`/reconciliation/batch-compare`), and deep (`/reconciliation/batch-deep-validate`) batch validation with WebSocket progress streams. UI under `/governance/reconciliation/*`.
+- **Cross-metastore reconciliation** (`src/cross_metastore_recon.py`) — for migrated catalogs.
+- **Lakehouse Monitor** integration (`src/lakehouse_monitor.py`, `/api/lakehouse-monitor`) — discover, clone, manage Databricks quality monitors. UI at `/lakehouse-monitor`.
+- **Persistent runtime state** (sessionStorage) for ~30 analysis-result pages — hitting the same page twice no longer re-queries Databricks within a 30-minute window.
+
+---
+
 ## Unreleased — Streaming demo: clickstream profile + bug fix for unreachable profiles
 
 ### Added

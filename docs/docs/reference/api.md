@@ -1099,6 +1099,123 @@ curl -X DELETE http://localhost:8080/api/generate/demo-data/demo_source
 {"catalog": "demo_source", "status": "cleaned", "schemas_dropped": 45, "tables_dropped": 312}
 ```
 
+### `GET /api/generate/demo-data/catalogs`
+
+List catalogs the caller can read, with metadata + a demo flag (used
+by the Manage Catalogs tab on `/demo-data`). For each catalog,
+queries `<catalog>.information_schema.table_properties` in parallel
+to detect tables tagged `demo.generated_by = 'clone-xs'`.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `demo_only` | bool | `false` | When `true`, returns only catalogs with `is_demo=true` |
+
+**Example response:**
+
+```json
+{
+  "catalogs": [
+    {
+      "name": "demo_source",
+      "owner": "viral@example.com",
+      "comment": "",
+      "created_at": "2026-04-30T14:22:01Z",
+      "is_demo": true,
+      "num_demo_tables": 312,
+      "num_schemas": 45,
+      "num_tables": 312,
+      "error": null
+    }
+  ],
+  "demo_only": false,
+  "total": 1
+}
+```
+
+Per-catalog probe failures (e.g. `PERMISSION_DENIED` on
+`information_schema`) surface as the `error` field on the row;
+the listing as a whole doesn't abort.
+
+### `POST /api/generate/demo-data/streaming`
+
+Start an in-process streaming-emit job. The runner emits JSON event
+batches at `interval_seconds` cadence for `total_duration_seconds` to
+a UC Volume. See the [Demo Data Generator guide](../guide/demo-data.md#streaming-emission-continuous-iot-events)
+for details on the 10 built-in profiles.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `catalog` | string | (required) | Target catalog (created if missing) |
+| `schema` | string | (required) | Target schema |
+| `volume` | string | `events_volume` | UC Volume name (created if missing) |
+| `profile` | string | (required) | One of: `generic_sensor`, `industrial_machine`, `car_obd2`, `smart_meter`, `wearable_health`, `pos_terminal`, `wind_turbine`, `atm_transaction`, `server_metrics`, `clickstream` |
+| `events_per_batch` | int | `100` | Events per file (1..10000) |
+| `interval_seconds` | float | `5.0` | Seconds between batches (0.1..300) |
+| `total_duration_seconds` | int | `60` | Total run time, capped at 1 hour (1..3600) |
+| `num_devices` | int? | profile default | Override the per-profile default device count |
+| `auto_create_bronze` | bool | `false` | Run `CREATE OR REFRESH STREAMING TABLE` for the Bronze table |
+| `bronze_refresh_minutes` | int | `5` | Streaming-table refresh cadence (1..60) |
+| `warehouse_id` | string? | (config) | Override the SQL warehouse |
+
+**Returns:** `{job_id, status, message}`. Poll `/api/clone/{job_id}` for
+live progress (events_emitted, files_written, current_batch_path).
+
+### `POST /api/generate/demo-data/streaming/{job_id}/stop`
+
+Request a streaming-emit job to halt at its next tick. The runner
+sleeps in 0.5-second slices, so latency-to-stop is bounded
+regardless of `interval_seconds`.
+
+### `GET /api/generate/demo-data/streaming/auto-loader-sql`
+
+Return the canonical `CREATE OR REFRESH STREAMING TABLE …` SQL the
+in-process emitter would run. Used by the UI's copy-to-clipboard
+panel so users running the SQL manually get the same DDL.
+
+**Query parameters:** `catalog`, `schema`, `profile`,
+`refresh_minutes` (default 5), `volume` (default `events_volume`).
+
+### `POST /api/generate/demo-data/streaming/schedule`
+
+Generate a self-contained Python notebook in the user's workspace
+and create a Databricks Job that runs it on a Quartz cron. Unlike
+the in-process `/streaming` endpoint, the resulting Job runs on
+Databricks compute and survives Clone-Xs API restarts. The Job is
+tagged `created_by=clone-xs, kind=streaming-emit, profile=<profile>`
+so it shows up in `GET /api/generate/clone-jobs`.
+
+**Request body** (extends `StreamingEmissionRequest` above with):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | auto | Job name (`clxs-stream-<profile>-<utc-iso>` if empty) |
+| `schedule_quartz_cron` | string | `0 */5 * * * ?` | Quartz cron (6 or 7 fields) |
+| `timezone_id` | string | `UTC` | IANA timezone |
+| `notebook_path` | string? | auto | Workspace path; default `/Users/<me>/clxs/streaming_<profile>_<isoZ>` |
+| `use_serverless` | bool | `true` | Use Serverless compute; `false` falls back to Single-Node job cluster |
+
+**Example response:**
+
+```json
+{
+  "job_id": 1234567890,
+  "run_url": "https://<workspace>/#job/1234567890",
+  "notebook_path": "/Users/me@example.com/clxs/streaming_generic_sensor_20260501T120000Z",
+  "schedule_quartz_cron": "0 */5 * * * ?",
+  "timezone_id": "UTC",
+  "tags": {"created_by": "clone-xs", "kind": "streaming-emit", "profile": "generic_sensor"}
+}
+```
+
+Returns HTTP 500 with the SDK error if `client.jobs.create` fails
+(e.g., DBSQL Serverless not enabled, no `CREATE JOB` permission).
+The in-process Start path still works in that case — users can run
+the notebook manually from the workspace.
+
 ---
 
 ## Management

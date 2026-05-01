@@ -122,6 +122,8 @@ The file is updated **only after a successful per-table sync**. A corrupt file i
 
 ## Continuous sync (long-running streams)
 
+> Looking for the user-friendly setup walk-through? See the [Continuous Sync guide](continuous-sync.md). The section below goes deep on the streaming runtime, plan endpoints, stream-id stability, and recovery edge cases.
+
 **When to use:**
 You need second-to-minute-level lag instead of run-on-schedule lag. Examples:
 - A real-time dashboard reading from `staging.metrics` that needs prod data within 60 seconds.

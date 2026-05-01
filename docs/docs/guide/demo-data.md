@@ -580,3 +580,200 @@ false` on the request.
 
 **How to fix**: drop unused volumes from prior demo catalogs, or set
 `create_volumes: false` and live without sample-data volumes.
+
+---
+
+## Streaming emission (continuous IoT events)
+
+The batch generator above produces **static** datasets — billions of
+rows in seconds, then done. The `/demo-data` page also has a
+**Streaming Events** tab that simulates **continuous** event streams,
+landing JSON event batches into a UC Volume on a tunable cadence.
+Customers wire the Volume up to Auto Loader / DLT to demo their
+bronze→silver→gold streaming pipelines.
+
+### Device profiles
+
+Pick from 10 built-in profiles covering the common IoT and
+event-stream demo asks:
+
+| Profile             | Vertical    | Key fields                                                      |
+|---------------------|-------------|------------------------------------------------------------------|
+| `generic_sensor`    | IoT         | `device_id`, `temperature_c`, `humidity_pct`, `pressure_hpa`, `vibration_g` |
+| `industrial_machine`| Manufacturing| `machine_id`, `rpm`, `oil_pressure_psi`, `tool_wear_pct`, `error_code` |
+| `car_obd2`          | Automotive  | `vehicle_vin`, `speed_kmh`, `engine_rpm`, `fuel_level_pct`, `lat`, `lng`, `dtc` |
+| `smart_meter`       | Utilities   | `meter_id`, `kwh_cumulative`, `voltage_v`, `current_a`, `power_factor` |
+| `wearable_health`   | Healthcare  | `wearable_id`, `heart_rate_bpm`, `spo2_pct`, `steps_cumulative`, `alert` |
+| `pos_terminal`      | Retail      | `terminal_id`, `store_id`, `transaction_id`, `amount_usd`, `payment_method`, `status` |
+| `wind_turbine`      | Energy      | `turbine_id`, `wind_speed_ms`, `rotor_rpm`, `power_output_kw`, `fault_code` |
+| `atm_transaction`   | Financial   | `atm_id`, `transaction_id`, `transaction_type`, `amount_usd`, `is_fraud_suspected` |
+| `server_metrics`    | Infra       | `host_id`, `cpu_pct`, `mem_used_gb`, `disk_used_pct`, `net_in_mbps`, `status` |
+| `clickstream`       | Digital     | `user_id`, `session_id`, `event_type`, `page_url`, `referrer`, `device_type` |
+
+Each profile maintains **per-device state** — a wearable's
+`steps_cumulative` increases monotonically, a car's `speed_kmh`
+random-walks within plausible bounds, a clickstream user's
+`session_id` rotates every ~30 events. This makes downstream demos
+believable (sessionization, cumulative-trend dashboards, anomaly
+detection on a stable baseline).
+
+### Run a streaming demo
+
+On `/demo-data` → **Streaming Events** tab:
+
+1. Pick a profile, catalog, schema, and volume name (the runner
+   creates the catalog/schema/volume if they don't exist).
+2. Set cadence: events per batch (default 100), interval seconds
+   (default 5), total duration seconds (default 60, max 3600).
+3. Click **Start streaming**. Files land in
+   `/Volumes/<catalog>/<schema>/<volume>/<profile>/batch-<utc>-<seq>.json`.
+4. Stop early with the **Stop** button (latency-to-stop is bounded by
+   ~0.5s — the runner sleeps in short slices).
+
+The same flow is exposed via `POST /api/generate/demo-data/streaming`
+for scripted use:
+
+```bash
+curl -X POST http://localhost:8000/api/generate/demo-data/streaming \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "catalog": "demo",
+    "schema": "iot",
+    "volume": "events",
+    "profile": "generic_sensor",
+    "events_per_batch": 100,
+    "interval_seconds": 5,
+    "total_duration_seconds": 60
+  }'
+```
+
+### Auto Loader (Bronze table)
+
+The Streaming card includes an opt-in **"Auto-create streaming Bronze
+table"** checkbox. When enabled, the runner additionally executes:
+
+```sql
+CREATE OR REFRESH STREAMING TABLE `<catalog>`.`<schema>`.`bronze_<profile>`
+SCHEDULE EVERY 5 MINUTES
+AS SELECT * FROM STREAM read_files(
+  '/Volumes/<catalog>/<schema>/<volume>/<profile>/',
+  format => 'json'
+);
+```
+
+This requires **DBSQL Serverless** on the warehouse (streaming tables
+run on serverless DBSQL — no DLT pipeline, no cluster). When
+Serverless isn't available the runner captures the error, surfaces
+"Bronze auto-create failed" in the UI, and emission continues — the
+files still land, you just need to run the SQL manually after
+upgrading.
+
+The Streaming card always shows the canonical `CREATE OR REFRESH
+STREAMING TABLE` snippet with a copy-to-clipboard button so you can
+paste it into a DBSQL editor regardless.
+
+:::tip Bronze creation is deferred until the first batch lands
+`read_files()` infers schema from existing files, so creating the
+Bronze table against an empty Volume hits
+`CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE`. As of v0.7.1, the runner waits
+for the first JSON batch to land before issuing `CREATE OR REFRESH
+STREAMING TABLE` — the wait is bounded by the first emission tick
+(typically 1–5 seconds). All ten device profiles are covered uniformly.
+:::
+
+### Query latest rows from Data Lab
+
+Once the Bronze table is created, the streaming progress card shows a
+**"Query latest rows →"** link. Clicking it opens
+[Data Lab](data-lab.md) with this SQL pre-filled and auto-executed:
+
+```sql
+SELECT * FROM `<catalog>`.`<schema>`.`bronze_<profile>`
+ORDER BY captured_at DESC
+LIMIT 100
+```
+
+`captured_at` is the per-event timestamp populated by every device
+profile. The deep-link uses Data Lab's `#q=<base64>&run=1` URL hash
+format — see [Data Lab](data-lab.md#deep-link-auto-run) for how to
+embed the same pattern in your own pages.
+
+### Schedule streaming as a Databricks Job
+
+In-process emission (the **Start streaming** button above) runs as a
+background thread inside the Clone-Xs API server — fine for short
+demos but it dies when the API restarts. To run unattended demos
+("emit every 5 min for 24 hours") use **Schedule on Databricks**:
+
+1. Click **Schedule on Databricks** (sibling to **Start streaming**).
+2. Pick a Quartz cron — quick presets: every 5 min, top of hour,
+   weekdays at 9am.
+3. Choose **Use Serverless compute** (default — recommended).
+4. Submit. Clone-Xs:
+   - Generates a self-contained Python notebook with the relevant
+     profile generator inlined and uploads it to
+     `/Users/<me>/clxs/streaming_<profile>_<isoZ>` in your workspace.
+   - Calls `client.jobs.create(...)` with the cron schedule and the
+     uploaded notebook as a `notebook_task`. The Job is tagged
+     `created_by=clone-xs, kind=streaming-emit, profile=<profile>` so
+     it shows up in the existing `/clone-jobs` listing.
+5. The modal returns the new Job's URL — open it in Databricks Jobs
+   to view runs, edit the schedule, or pause.
+
+The scheduled Job emission is **independent of the API server** —
+restart Clone-Xs and the Job keeps running. To stop it, use the
+Databricks Jobs UI (or the Jobs SDK).
+
+### Streaming + multi-tenant gotcha
+
+Generated files persist in the Volume after the run completes. For
+shared workspaces:
+
+- Use a unique `volume` per demo so retries don't mix events.
+- Drop the Volume between runs if the Bronze table accumulates more
+  than you want: `REMOVE FILES '/Volumes/.../events_volume/<profile>/'`.
+
+---
+
+## Manage Catalogs tab
+
+The third tab on `/demo-data` lists every catalog the user can read,
+with metadata and a per-row drop action. Use it for cleanup after
+demos.
+
+### What it shows
+
+For each catalog:
+
+- **Demo?** — green badge when the catalog has at least one table
+  tagged `TBLPROPERTIES ('demo.generated_by' = 'clone-xs')`. All
+  Clone-Xs-generated demo catalogs get this tag automatically.
+- **Schemas** / **All Tables** — counts from `information_schema`.
+- **Demo Tables** — count of clone-xs-tagged tables (the FinOps
+  signal — bigger numbers usually mean bigger drops).
+- **Owner** — from `DESCRIBE CATALOG EXTENDED`.
+
+The **"Demo only"** toggle filters to catalogs flagged as demo; off
+by default so users can see and drop any catalog they have rights to.
+
+### Dropping a catalog
+
+Click the trash icon → typed-confirmation modal opens. Type the
+catalog name into the input to arm the red **Drop catalog** button.
+This calls `DELETE /api/generate/demo-data/{name}`, which executes
+`DROP CATALOG IF EXISTS <name> CASCADE` and returns the counts of
+schemas + tables dropped. The listing auto-refreshes minus the
+dropped row.
+
+The typed-confirmation pattern is intentionally stricter than the
+Batch tab's inline `window.confirm()` — the Manage tab encourages
+bulk cleanup workflows where one accidental click could destroy a
+lot of work.
+
+### Per-catalog probe failures
+
+If `information_schema.table_properties` is denied for a catalog,
+that row still appears in the listing with the error in a per-row
+`error` field. The listing as a whole doesn't abort — failure
+isolation mirrors the `stats_multi` contract used elsewhere in
+Clone-Xs.

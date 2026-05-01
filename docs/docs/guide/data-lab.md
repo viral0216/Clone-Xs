@@ -71,6 +71,30 @@ The recommendation applies automatically for high-confidence matches. An **Auto*
 - **Fix with AI** — on query error, suggests corrected SQL with an "Apply Fix" button
 - **Generate SQL with AI** — natural language to SQL via the More menu
 
+### Deep-link auto-run
+
+Data Lab accepts a deep-link URL hash that pre-fills the query editor and (optionally) auto-executes the query on arrival:
+
+```
+/data-lab#q=<base64-encoded SQL>
+/data-lab#q=<base64-encoded SQL>&run=1
+```
+
+`q` is `btoa(encodeURIComponent(sql))`. With `&run=1`, the workbench fires `runQuery()` once the SQL state has settled. The hash is wiped after parsing so a refresh doesn't auto-run a second time.
+
+Use this from any other Clone-Xs page to jump users straight into Data Lab with a pre-filled query. Examples in the codebase:
+
+- The "Query latest rows →" link on the [Demo Data streaming card](demo-data.md#query-latest-rows-from-data-lab) — opens a `SELECT * FROM bronze_<profile> ORDER BY captured_at DESC LIMIT 100` against the just-created Bronze table.
+- The Share button inside the SQL Workbench produces a copyable deep-link of the current query (without `run=1` so the recipient sees the SQL before running it).
+
+Snippet for embedding the same pattern in your own UI code:
+
+```tsx
+const sql = `SELECT * FROM \`${cat}\`.\`${sch}\`.\`${tbl}\` LIMIT 100`;
+const encoded = btoa(encodeURIComponent(sql));
+window.open(`/data-lab#q=${encoded}&run=1`, "_blank");
+```
+
 ---
 
 ## SQL Notebooks

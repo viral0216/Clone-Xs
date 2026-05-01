@@ -78,6 +78,24 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Databricks Jobs Cloning | Clone job definitions within or across workspaces — with diff view, backup/restore, and cross-workspace migration |
 | DLT Pipeline Cloning | Clone Delta Live Tables pipeline definitions — same workspace or cross-workspace with credential handling |
 | 8-Portal Architecture | Clone-Xs, Governance, Data Quality, FinOps, Security, Automation, Infrastructure, MDM — each with dedicated sidebar and pages |
+| DQX Integration | Databricks Labs DQX — profile tables, auto-generate rules, run check suites, persist results to Delta. Pairs with Trust Scores and Coverage Map |
+| ODCS Data Contracts | Open Data Contract Standard — full CRUD with YAML import/export, validation, and DQX-backed enforcement |
+| Trust Score Engine | Composite per-table 0-100 score from six dimensions (DQ pass rate, freshness, anomaly history, PII coverage, schema stability, lineage) with configurable weights |
+| Compliance Automation | Map DQ controls to SOC2 / GDPR / HIPAA / CCPA / DORA frameworks with automated evidence collection and audit-ready reports |
+| COPQ — Cost of Poor Data Quality | Quantify pipeline reruns, SLA breaches, engineer time, and downstream impact in dollars |
+| Anomaly Correlation | Group correlated anomalies under root-cause groups across upstream/downstream tables |
+| NL Rule Builder | Translate plain-English descriptions into executable DQ rule configs via the configured AI backend |
+| Alert Routing | Smart deduplication, correlation, priority-ranking, and digest-mode delivery to teams via channels |
+| Remediation Playbooks | If-this-then-that automation triggered on DQ failures, anomalies, SLA breaches, freshness staleness, schema drift |
+| FinOps Suite | Billing, breakdown, compute, query costs, recommendations, storage optimization, budgets, trend dashboards backed by Databricks system tables |
+| Ephemeral Environments | One-click sandbox creation with auto PII masking, DQ validation, cost budgets, and TTL-based cleanup |
+| Continuous Sync | Streaming replication via Structured Streaming jobs (PREVIEW) for change-data-capture sync |
+| Data Products Catalog | Internal marketplace for publishing and subscribing to curated data products with docs, quality guarantees, and SLAs |
+| Lakehouse Federation | Browse foreign catalogs, manage connections, migrate to managed Delta |
+| ML Assets Cloning | Clone Models + Feature Tables + Vector Indexes + Serving Endpoints across catalogs/workspaces |
+| Advanced Tables | Clone Materialized Views, Streaming Tables, and Online Tables |
+| Streaming Demo Profiles | 10 IoT device profiles (sensor, machine, car, smart-meter, wearable, POS, turbine, ATM, server, clickstream) emit JSON to UC Volume; auto-create Bronze + schedule as Databricks Job |
+| Durable Job Tracking | Long-running operations (clone, sync, demo-data, IaC, batch reconciliation) survive page navigation and browser refresh — progress, logs, and chart history resume from server state |
 
 ## Quick install
 

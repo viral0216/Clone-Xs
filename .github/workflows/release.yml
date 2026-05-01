@@ -25,7 +25,7 @@ jobs:
       - name: Build wheel
         run: python3 -m build --wheel --outdir dist
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: wheel
           path: dist/*.whl
@@ -48,7 +48,7 @@ jobs:
       - name: Build frontend
         run: cd ui && npm run build
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: frontend
           path: ui/dist/
@@ -79,7 +79,7 @@ jobs:
       - name: Build macOS app
         run: ./scripts/build-desktop.sh --mac --skip-frontend
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: desktop-mac
           path: desktop/dist/*.zip
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: ./scripts/build-desktop.sh --win --skip-frontend
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: desktop-win
           path: |
@@ -131,7 +131,7 @@ jobs:
         run: |
           docker save clone-xs:${{ github.ref_name }} | gzip > clone-xs-${{ github.ref_name }}-docker.tar.gz
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: docker
           path: clone-xs-*-docker.tar.gz

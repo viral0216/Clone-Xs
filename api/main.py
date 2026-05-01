@@ -23,6 +23,7 @@ from api.routers import (
     incremental,
     management,
     monitor,
+    promotions,
     sampling,
 )
 
@@ -438,6 +439,7 @@ app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(clone.router, prefix="/api/clone", tags=["clone"])
 app.include_router(approval.router, prefix="/api/approvals", tags=["approvals"])
+app.include_router(promotions.router, prefix="/api/promotions", tags=["promotions"])
 app.include_router(analysis.router, prefix="/api", tags=["analysis"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(generate.router, prefix="/api/generate", tags=["generate"])

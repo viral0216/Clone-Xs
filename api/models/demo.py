@@ -102,9 +102,17 @@ class StreamingEmissionRequest(BaseModel):
     # path `/Volumes/<catalog>/<schema>/events_volume/<profile>/` for
     # any existing API callers.
     volume: str = Field(default="events_volume", description="UC Volume name (created if missing)")
-    profile: Literal["generic_sensor", "industrial_machine", "car_obd2"] = Field(
-        ..., description="Built-in device profile",
-    )
+    # Keep this list in sync with `src.demo_streaming.DEVICE_PROFILES`
+    # — the registry is the source of truth, but Pydantic needs the
+    # explicit Literal for OpenAPI / 422 validation. The
+    # `tests/test_demo_streaming.py:test_pydantic_literal_matches_registry`
+    # check guards against drift.
+    profile: Literal[
+        "generic_sensor", "industrial_machine", "car_obd2",
+        "smart_meter", "wearable_health", "pos_terminal",
+        "wind_turbine", "atm_transaction", "server_metrics",
+        "clickstream",
+    ] = Field(..., description="Built-in device profile")
     events_per_batch: int = Field(default=100, ge=1, le=10000)
     interval_seconds: float = Field(default=5.0, ge=0.1, le=300.0)
     # 1-hour cap on v1 — bounds the maximum demo session length and
@@ -136,3 +144,51 @@ class StreamingEmissionRequest(BaseModel):
     # when set.
     auto_create_bronze: bool = Field(default=False)
     bronze_refresh_minutes: int = Field(default=5, ge=1, le=60)
+
+
+class StreamingScheduleRequest(StreamingEmissionRequest):
+    """Schedule a streaming-emit job on Databricks.
+
+    Inherits every field from ``StreamingEmissionRequest`` (catalog,
+    schema, volume, profile, cadence, num_devices, destination,
+    auto-create-bronze) and adds the Job-creation specifics: Quartz
+    cron, name, timezone, notebook path, and a serverless-vs-cluster
+    toggle.
+
+    Unlike the in-process ``POST /demo-data/streaming`` path, this
+    creates a real Databricks Job — emission runs on Databricks
+    compute and survives API restarts. Tagged ``created_by=clone-xs``
+    so the existing ``GET /clone-jobs`` listing picks it up.
+    """
+    name: str = Field(default="", description="Databricks Job name; empty → auto-generated")
+    schedule_quartz_cron: str = Field(
+        default="0 */5 * * * ?",
+        description="Quartz cron expression (e.g. '0 */5 * * * ?' for every 5 min)",
+    )
+    timezone_id: str = Field(default="UTC", description="IANA timezone for the schedule")
+    notebook_path: str | None = Field(
+        default=None,
+        description="Workspace path for the generated notebook; None → auto-generated under /Users/<me>/clxs/",
+    )
+    use_serverless: bool = Field(
+        default=True,
+        description="Use Serverless compute (recommended). Falls back to a Single-Node job cluster when False.",
+    )
+
+    @field_validator("schedule_quartz_cron")
+    @classmethod
+    def _cron_shape(cls, v: str) -> str:
+        # Basic Quartz validation — Quartz cron has 6 or 7 fields
+        # (sec min hour dom mon dow [year]). Reject empty / obviously
+        # wrong shapes; full validation happens server-side when
+        # Databricks rejects the create_job call.
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("schedule_quartz_cron must not be empty")
+        parts = v.split()
+        if len(parts) not in (6, 7):
+            raise ValueError(
+                f"schedule_quartz_cron must have 6 or 7 fields (Quartz format), "
+                f"got {len(parts)}: {v!r}"
+            )
+        return v

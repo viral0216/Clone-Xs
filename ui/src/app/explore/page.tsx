@@ -1,12 +1,13 @@
 // @ts-nocheck
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import CatalogPicker from "@/components/CatalogPicker";
-import { useSearch, useStats, useColumnUsage, useStaleScan, usePermissionsAudit, getCachedStats } from "@/hooks/useApi";
+import { useSearch, useStats, useStaleScan, usePermissionsAudit, getCachedStats } from "@/hooks/useApi";
 import { useShowExports, useShowCatalogBrowser, usePersistedNumber, useCurrency, useStoragePrice } from "@/hooks/useSettings";
 import ResizeHandle from "@/components/ResizeHandle";
 import PageHeader from "@/components/PageHeader";
@@ -57,17 +58,18 @@ const TYPE_COLORS = { MANAGED: "#E8453C", EXTERNAL: "#9CA3AF", VIEW: "#6B7280", 
 
 // ─── Table Detail Drawer ───
 function TableDetailDrawer({ catalog, schema, table, onClose }: { catalog: string; schema: string; table: string; onClose: () => void }) {
-  const [info, setInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [drawerW, setDrawerW] = usePersistedNumber("clxs-drawer-width", 480);
-
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/catalogs/${catalog}/${schema}/${table}/info`)
-      .then((res) => setInfo(res))
-      .catch(() => setInfo(null))
-      .finally(() => setLoading(false));
-  }, [catalog, schema, table]);
+  // useQuery here means closing the drawer and re-opening the same table
+  // re-uses the cached info instead of re-querying Databricks. The 5-minute
+  // staleTime is conservative enough that schema/property edits show up
+  // promptly while saving the user from a round-trip on quick re-opens.
+  const infoQuery = useQuery<any>({
+    queryKey: ["explore", "table-info", catalog, schema, table],
+    queryFn: () => api.get(`/catalogs/${catalog}/${schema}/${table}/info`),
+    staleTime: 5 * 60 * 1000,
+  });
+  const info = infoQuery.data ?? null;
+  const loading = infoQuery.isLoading;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
@@ -215,33 +217,62 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
   onSelectTable: (c: string, s: string, t: string) => void;
   activeCatalog: string;
 }) {
-  const [catalogs, setCatalogs] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  // The catalog tree lives in TanStack Query — staleTime is long (5 min) so
+  // navigating away and coming back hits the cache instead of re-querying
+  // Databricks. queryClient persistence (configured in main.tsx) means the
+  // tree even survives a page refresh for up to 24 hours.
+  const queryClient = useQueryClient();
+  const catalogsQuery = useQuery<string[]>({
+    queryKey: ["explore", "catalogs"],
+    queryFn: async () => {
+      const data = await api.get<string[]>("/catalogs");
+      return Array.isArray(data) ? data.sort() : [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const catalogs = catalogsQuery.data ?? [];
+  const loading = catalogsQuery.isLoading;
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
-  const [schemaCache, setSchemaCache] = useState<Record<string, string[]>>({});
-  const [tableCache, setTableCache] = useState<Record<string, string[]>>({});
   const [schemaLoading, setSchemaLoading] = useState<Set<string>>(new Set());
   const [tableLoading, setTableLoading] = useState<Set<string>>(new Set());
   const [searchQ, setSearchQ] = useState("");
 
-  useEffect(() => {
-    api.get<string[]>("/catalogs")
-      .then((data) => setCatalogs(Array.isArray(data) ? data.sort() : []))
-      .catch(() => setCatalogs([]))
-      .finally(() => setLoading(false));
-  }, []);
+  // Read schema/table results out of the React Query cache by key, so we can
+  // render them without re-fetching when the user re-expands a node they
+  // already opened earlier in the session (or in a previous visit, since the
+  // cache is sessionStorage-persisted at the queryClient level).
+  const schemaCacheLookup = (cat: string): string[] | undefined =>
+    queryClient.getQueryData<string[]>(["explore", "schemas", cat]);
+  const tableCacheLookup = (cat: string, schema: string): string[] | undefined =>
+    queryClient.getQueryData<string[]>(["explore", "tables", cat, schema]);
+  const schemaCache: Record<string, string[]> = {};
+  const tableCache: Record<string, string[]> = {};
+  for (const cat of catalogs) {
+    const s = schemaCacheLookup(cat);
+    if (s) schemaCache[cat] = s;
+    for (const schema of s ?? []) {
+      const t = tableCacheLookup(cat, schema);
+      if (t) tableCache[`${cat}.${schema}`] = t;
+    }
+  }
 
   const toggleCatalog = (cat: string) => {
     const next = new Set(expandedCats);
     if (next.has(cat)) { next.delete(cat); }
     else {
       next.add(cat);
-      if (!schemaCache[cat]) {
+      if (!schemaCacheLookup(cat)) {
         setSchemaLoading((prev) => new Set(prev).add(cat));
-        api.get<string[]>(`/catalogs/${cat}/schemas`)
-          .then((data) => setSchemaCache((prev) => ({ ...prev, [cat]: Array.isArray(data) ? data : [] })))
-          .catch(() => setSchemaCache((prev) => ({ ...prev, [cat]: [] })))
+        queryClient.fetchQuery({
+          queryKey: ["explore", "schemas", cat],
+          queryFn: async () => {
+            const data = await api.get<string[]>(`/catalogs/${cat}/schemas`);
+            return Array.isArray(data) ? data : [];
+          },
+          staleTime: 5 * 60 * 1000,
+        })
+          .catch(() => {})
           .finally(() => setSchemaLoading((prev) => { const n = new Set(prev); n.delete(cat); return n; }));
       }
     }
@@ -254,11 +285,17 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
     if (next.has(key)) { next.delete(key); }
     else {
       next.add(key);
-      if (!tableCache[key]) {
+      if (!tableCacheLookup(cat, schema)) {
         setTableLoading((prev) => new Set(prev).add(key));
-        api.get<string[]>(`/catalogs/${cat}/${schema}/tables`)
-          .then((data) => setTableCache((prev) => ({ ...prev, [key]: Array.isArray(data) ? data : [] })))
-          .catch(() => setTableCache((prev) => ({ ...prev, [key]: [] })))
+        queryClient.fetchQuery({
+          queryKey: ["explore", "tables", cat, schema],
+          queryFn: async () => {
+            const data = await api.get<string[]>(`/catalogs/${cat}/${schema}/tables`);
+            return Array.isArray(data) ? data : [];
+          },
+          staleTime: 5 * 60 * 1000,
+        })
+          .catch(() => {})
           .finally(() => setTableLoading((prev) => { const n = new Set(prev); n.delete(key); return n; }));
       }
     }
@@ -366,6 +403,7 @@ function CatalogBrowser({ onSelectCatalog, onSelectTable, activeCatalog }: {
 
 // ─── Main Page ───
 export default function ExplorePage() {
+  const queryClient = useQueryClient();
   const [catalog, setCatalog] = useState(() => sessionStorage.getItem("clxs-explore-catalog") || "");
   // Multi-catalog mode (Option A): user can pick N catalogs and see
   // aggregate stats across them. Per-catalog tabs (Functions / Volumes
@@ -388,8 +426,6 @@ export default function ExplorePage() {
   const [schemaFilter, setSchemaFilter] = useState<Set<string>>(new Set());
   const [schemaInsight, setSchemaInsight] = useState<string | null>(null);
   const [schemaInsightLoading, setSchemaInsightLoading] = useState(false);
-  const [tableUsage, setTableUsage] = useState<any>(null);
-  const [tableUsageLoading, setTableUsageLoading] = useState(false);
   const browserGlobal = useShowCatalogBrowser();
   const [showBrowser, setShowBrowser] = useState(true);
   const showExports = useShowExports();
@@ -397,29 +433,23 @@ export default function ExplorePage() {
   const { symbol: currSymbol } = useCurrency();
   const storagePrice = useStoragePrice();
 
-  // New tab data
-  const [functionsData, setFunctionsData] = useState<any[]>([]);
-  const [functionsLoading, setFunctionsLoading] = useState(false);
-  const [volumesData, setVolumesData] = useState<any[]>([]);
-  const [volumesLoading, setVolumesLoading] = useState(false);
+  // New tab data — cached via TanStack Query so navigating away and back
+  // doesn't re-query Databricks. The query client's localStorage persistence
+  // (configured in main.tsx) keeps these cached across browser refreshes too.
   const [piiData, setPiiData] = useState<any>(null);
   const [piiLoading, setPiiLoading] = useState(false);
   const [piiScanned, setPiiScanned] = useState(false);
-  const [ucObjects, setUcObjects] = useState<any>(null);
-  const [ucObjectsLoading, setUcObjectsLoading] = useState(false);
-  // Per-catalog 30-day trend chart on the multi Overview. Pulled
-  // opportunistically — `/stats` records a snapshot every time the
-  // user clicks Explore, so the chart fills in over time without
-  // requiring scheduled jobs.
-  const [trendRows, setTrendRows] = useState<any[]>([]);
-  const [trendLoading, setTrendLoading] = useState(false);
+  // Long staleTime (10 min) — UC metadata doesn't change often. Re-runs only
+  // when the user clicks Explore again or after the staleness window lapses.
+  const EXPLORE_STALE = 10 * 60 * 1000;
 
   // Sync with global setting
   useEffect(() => { setShowBrowser(browserGlobal); }, [browserGlobal]);
 
   const search = useSearch();
   const stats = useStats();
-  const columnUsage = useColumnUsage();
+  // useColumnUsage (mutation) is replaced below by columnUsage — a useQuery
+  // shim that survives remount via the persisted query cache.
   const staleScan = useStaleScan();
   const permsAudit = usePermissionsAudit();
   // Audit tab state — toggle for the PII overlay (slower but enables
@@ -444,14 +474,25 @@ export default function ExplorePage() {
     catch { return "fast"; }
   });
 
-  // Auto-load stats for persisted catalog(s) on mount
+  // Auto-load stats for persisted catalog(s) on mount — but only if we don't
+  // already have cached results in sessionStorage. `useStats` is a useMutation
+  // so its `.data` is reset on remount; we hydrate from the cached blob the
+  // mutation wrote on its previous run so coming back to the page doesn't
+  // re-query Databricks.
+  const cachedStats = useMemo(() => {
+    const cats = mode === "multi" ? selectedCatalogs : (catalog ? [catalog] : []);
+    if (cats.length === 0) return null;
+    return getCachedStats(cats, statsMode === "fast");
+  }, [mode, selectedCatalogs, catalog, statsMode]);
   useEffect(() => {
     if (stats.data || stats.isPending) return;
+    if (cachedStats) return; // hydrated from sessionStorage — no fetch needed
     if (mode === "multi" && selectedCatalogs.length > 0) {
       stats.mutate({ source_catalogs: selectedCatalogs, fast: statsMode === "fast" });
     } else if (catalog) {
       stats.mutate({ source_catalog: catalog, fast: statsMode === "fast" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadCatalog = (cat: string) => {
@@ -462,9 +503,13 @@ export default function ExplorePage() {
     setSchemaFilter(new Set());
     setActiveTab("overview");
     stats.mutate({ source_catalog: cat, fast: statsMode === "fast" });
-    // Reset lazy-loaded data
-    setFunctionsData([]);
-    setVolumesData([]);
+    // Invalidate the cached query results for the previous catalog so the
+    // next render fetches fresh data for the newly-selected one. We can't
+    // just "reset state" any more since these are now query-client cached.
+    queryClient.invalidateQueries({ queryKey: ["explore", "functions"] });
+    queryClient.invalidateQueries({ queryKey: ["explore", "table-usage"] });
+    queryClient.invalidateQueries({ queryKey: ["explore", "trend"] });
+    queryClient.invalidateQueries({ queryKey: ["explore", "views"] });
     setPiiData(null);
     setPiiScanned(false);
   };
@@ -484,121 +529,122 @@ export default function ExplorePage() {
     setSchemaFilter(new Set());
   };
 
-  // Load functions when the active catalog set changes. Single mode →
-  // GET /functions/{catalog}; multi → POST /functions/multi which fans
-  // out across the selected catalogs in parallel and merges. Each row
-  // in multi mode carries `catalog` so the Functions tab can render
-  // a leading Catalog column when isMulti.
-  const fnKeyRef = useRef("");
-  useEffect(() => {
-    const key = mode === "multi" ? `multi:${[...selectedCatalogs].sort().join(",")}` : `single:${catalog}`;
-    if (fnKeyRef.current === key) return;
-    if (mode === "multi" ? selectedCatalogs.length === 0 : !catalog) return;
-    fnKeyRef.current = key;
-    setFunctionsLoading(true);
-    const fetcher = mode === "multi"
-      ? api.post<{ functions: any[] }>("/functions/multi", { catalogs: selectedCatalogs })
-          .then((res) => Array.isArray(res?.functions) ? res.functions : [])
-      : api.get<any[]>(`/functions/${catalog}`)
-          .then((d) => Array.isArray(d) ? d : []);
-    fetcher
-      .then((rows) => setFunctionsData(rows))
-      .catch(() => setFunctionsData([]))
-      .finally(() => setFunctionsLoading(false));
-  }, [catalog, mode, selectedCatalogs]);
+  // Functions — single mode hits GET /functions/{catalog}; multi mode posts
+  // /functions/multi which fans out and merges. queryKey includes the active
+  // catalog set so re-mounting on the same selection hits the cache.
+  const functionsQuery = useQuery<any[]>({
+    queryKey: ["explore", "functions", mode, mode === "multi" ? [...selectedCatalogs].sort().join(",") : catalog],
+    queryFn: async () => {
+      if (mode === "multi") {
+        const res = await api.post<{ functions: any[] }>("/functions/multi", { catalogs: selectedCatalogs });
+        return Array.isArray(res?.functions) ? res.functions : [];
+      }
+      const d = await api.get<any[]>(`/functions/${catalog}`);
+      return Array.isArray(d) ? d : [];
+    },
+    enabled: mode === "multi" ? selectedCatalogs.length > 0 : !!catalog,
+    staleTime: EXPLORE_STALE,
+  });
+  const functionsData = functionsQuery.data ?? [];
+  const functionsLoading = functionsQuery.isLoading;
 
-  // Eagerly load volumes when the active catalog set changes. The
-  // backend `/auth/volumes` endpoint already returns volumes across
-  // all catalogs the user can read — the UI just needs to filter the
-  // global list against the active catalog selection. So multi mode
-  // is essentially free here: filter against the set instead of one.
-  const volKeyRef = useRef("");
-  useEffect(() => {
-    const key = mode === "multi" ? `multi:${[...selectedCatalogs].sort().join(",")}` : `single:${catalog}`;
-    if (volKeyRef.current === key) return;
-    if (mode === "multi" ? selectedCatalogs.length === 0 : !catalog) return;
-    volKeyRef.current = key;
-    setVolumesLoading(true);
+  // Volumes — server returns all readable volumes; we filter to the active
+  // catalog set. Cached across navigation by the query client.
+  const volumesQueryRaw = useQuery<any[]>({
+    queryKey: ["explore", "volumes-all"],
+    queryFn: async () => {
+      const v = await api.get<any[]>("/auth/volumes");
+      return Array.isArray(v) ? v : [];
+    },
+    staleTime: EXPLORE_STALE,
+  });
+  const volumesData = useMemo(() => {
+    const all = volumesQueryRaw.data ?? [];
     const activeCats = mode === "multi" ? new Set(selectedCatalogs) : new Set([catalog]);
-    api.get("/auth/volumes")
-      .then((vols: any) => setVolumesData((vols || []).filter((v: any) => activeCats.has(v.catalog))))
-      .catch(() => setVolumesData([]))
-      .finally(() => setVolumesLoading(false));
-  }, [catalog, mode, selectedCatalogs]);
+    return all.filter((v: any) => activeCats.has(v.catalog));
+  }, [volumesQueryRaw.data, mode, selectedCatalogs, catalog]);
+  const volumesLoading = volumesQueryRaw.isLoading;
 
-  // Lazy-load UC objects when tab is activated
-  const ucLoadedRef = useRef(false);
-  useEffect(() => {
-    if (activeTab === "uc_objects" && !ucLoadedRef.current && !ucObjectsLoading) {
-      ucLoadedRef.current = true;
-      setUcObjectsLoading(true);
-      api.get("/uc-objects")
-        .then((res: any) => setUcObjects(res))
-        .catch(() => setUcObjects({}))
-        .finally(() => setUcObjectsLoading(false));
-    }
-  }, [activeTab]);
+  // UC objects — lazy: enabled only when the tab is open. Cached after first
+  // load so toggling tabs doesn't re-query.
+  const ucObjectsQuery = useQuery<any>({
+    queryKey: ["explore", "uc-objects"],
+    queryFn: () => api.get<any>("/uc-objects"),
+    enabled: activeTab === "uc_objects",
+    staleTime: EXPLORE_STALE,
+  });
+  const ucObjects = ucObjectsQuery.data ?? null;
+  const ucObjectsLoading = ucObjectsQuery.isLoading;
 
-  // Auto-fetch column usage + table usage when stats load
-  const colUsageCatalogRef = useRef("");
-  useEffect(() => {
-    if (stats.data && catalog && colUsageCatalogRef.current !== catalog) {
-      colUsageCatalogRef.current = catalog;
-      columnUsage.mutate({ catalog });
-      // Fetch table usage
-      setTableUsageLoading(true);
-      api.post("/table-usage", { catalog, days: 90, limit: 20 })
-        .then((res) => setTableUsage(res))
-        .catch(() => setTableUsage(null))
-        .finally(() => setTableUsageLoading(false));
-    }
-  }, [stats.data, catalog]);
+  // Column usage — was a useMutation that fired in a useEffect on every
+  // remount because mutation state doesn't survive unmounting. Promoted to a
+  // useQuery so the cache (TanStack Query + the localStorage persister)
+  // serves results from a previous visit instantly.
+  const columnUsageQuery = useQuery<any>({
+    queryKey: ["explore", "column-usage", catalog],
+    queryFn: () => api.post("/column-usage", { catalog }),
+    enabled: !!catalog && !!(stats.data || cachedStats),
+    staleTime: EXPLORE_STALE,
+  });
+  // Shim to keep the rest of this file unchanged — exposes the same shape
+  // the previous useMutation handle did (data / isPending / mutate).
+  const columnUsage = useMemo(() => ({
+    data: columnUsageQuery.data ?? null,
+    isPending: columnUsageQuery.isLoading || columnUsageQuery.isFetching,
+    mutate: (_req?: { catalog?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["explore", "column-usage", catalog] });
+    },
+  }), [columnUsageQuery.data, columnUsageQuery.isLoading, columnUsageQuery.isFetching, catalog, queryClient]);
 
-  // Pull per-catalog size history when stats land in multi mode. The
-  // chart on the Overview tab needs at least 2 days of snapshots to
-  // draw a line — for first-time users we render an empty-state hint.
-  const trendKeyRef = useRef("");
-  useEffect(() => {
-    if (!stats.data) return;
-    const cats = mode === "multi" ? selectedCatalogs : (catalog ? [catalog] : []);
-    if (cats.length === 0) return;
-    const key = [...cats].sort().join(",");
-    if (trendKeyRef.current === key) return;
-    trendKeyRef.current = key;
-    setTrendLoading(true);
-    api.get(`/catalog-size-history?catalogs=${encodeURIComponent(cats.join(","))}&days=30`)
-      .then((res: any) => setTrendRows(res?.rows || []))
-      .catch(() => setTrendRows([]))
-      .finally(() => setTrendLoading(false));
-  }, [stats.data, mode, catalog, selectedCatalogs]);
+  // Table usage — cached via TanStack Query so navigation doesn't re-query.
+  const tableUsageQuery = useQuery<any>({
+    queryKey: ["explore", "table-usage", catalog],
+    queryFn: () => api.post("/table-usage", { catalog, days: 90, limit: 20 }),
+    enabled: !!catalog && !!(stats.data || cachedStats),
+    staleTime: EXPLORE_STALE,
+  });
+  const tableUsage = tableUsageQuery.data ?? null;
+  const tableUsageLoading = tableUsageQuery.isLoading;
 
-  const data = stats.data;
+  // Per-catalog 30-day trend — cached. queryKey includes the catalog set so
+  // switching selection invalidates appropriately.
+  const trendCats = mode === "multi" ? selectedCatalogs : (catalog ? [catalog] : []);
+  const trendQuery = useQuery<any[]>({
+    queryKey: ["explore", "trend", [...trendCats].sort().join(",")],
+    queryFn: async () => {
+      const res = await api.get<{ rows?: any[] }>(`/catalog-size-history?catalogs=${encodeURIComponent(trendCats.join(","))}&days=30`);
+      return res?.rows ?? [];
+    },
+    enabled: trendCats.length > 0 && !!(stats.data || cachedStats),
+    staleTime: EXPLORE_STALE,
+  });
+  const trendRows = trendQuery.data ?? [];
+  const trendLoading = trendQuery.isLoading;
+
+  // Render either the live mutation result OR the sessionStorage-cached
+  // result. cachedStats is hydrated synchronously on mount so the page draws
+  // its data without a fresh /stats round-trip.
+  const data = stats.data ?? cachedStats;
   const tables = data?.tables || [];
   const topBySize = data?.top_tables_by_size || [];
   const topByRows = data?.top_tables_by_rows || [];
   const topColumns = columnUsage.data?.top_columns || [];
   const topUsedTables = tableUsage?.tables || [];
 
-  // Derived: Views — from stats tables first, fallback to dedicated endpoint
-  const [viewsFromApi, setViewsFromApi] = useState<any[]>([]);
-  const viewsCatalogRef = useRef("");
+  // Derived: Views — from stats tables first, fallback to dedicated endpoint.
   const viewsFromStats = useMemo(() =>
     tables.filter((t: any) => (t.table_type || t.type || "").toUpperCase() === "VIEW"),
   [tables]);
-
-  // If stats doesn't include views, fetch from dedicated endpoint
-  useEffect(() => {
-    if (catalog && viewsCatalogRef.current !== catalog) {
-      viewsCatalogRef.current = catalog;
-      if (viewsFromStats.length === 0) {
-        api.get<any[]>(`/views/${catalog}`)
-          .then((data) => setViewsFromApi(Array.isArray(data) ? data : []))
-          .catch(() => setViewsFromApi([]));
-      } else {
-        setViewsFromApi([]);
-      }
-    }
-  }, [catalog, viewsFromStats.length]);
+  const viewsApiQuery = useQuery<any[]>({
+    queryKey: ["explore", "views", catalog],
+    queryFn: async () => {
+      const d = await api.get<any[]>(`/views/${catalog}`);
+      return Array.isArray(d) ? d : [];
+    },
+    enabled: !!catalog && viewsFromStats.length === 0,
+    staleTime: EXPLORE_STALE,
+  });
+  const viewsFromApi = viewsApiQuery.data ?? [];
 
   const viewTables = viewsFromStats.length > 0 ? viewsFromStats : viewsFromApi;
 

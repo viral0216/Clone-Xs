@@ -11,6 +11,7 @@ import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api-client";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useActiveJobs } from "@/contexts/ActiveJobsContext";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import {
   Copy, Play, Eye, CheckCircle, XCircle, Loader2,
   ArrowRight, Clock, AlertCircle, Download, ClipboardCopy, Check, ExternalLink,
@@ -326,37 +327,13 @@ function LogPanel({ logs, jobId, isRunning }: { logs: string[]; jobId: string; i
   );
 }
 
-function JobProgress({ jobId }: { jobId: string }) {
+function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }) {
+  // Job data is owned by useDurableJob in the parent, which polls and persists
+  // across navigation. Fall back to ActiveJobsContext for the case where the
+  // user landed here via a deep link to a job that's already in flight (e.g.
+  // from the recent-jobs panel) and the durable hook hasn't latched yet.
   const { getJob } = useActiveJobs();
-  const [job, setJob] = useState<any>(null);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Use global context data as baseline, poll faster (2s) for active view
-  useEffect(() => {
-    const contextJob = getJob(jobId);
-    if (contextJob) setJob(contextJob);
-  }, [getJob, jobId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`, { signal: controller.signal });
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch (e: any) {
-        if (e?.name === "AbortError") return; // Expected on unmount
-        // Transient poll failures are expected during network blips; next tick retries.
-      }
-    };
-
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => { controller.abort(); if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId]);
-
+  const job = jobFromParent ?? getJob(jobId);
 
   if (!job) {
     return <LoadingState message="Loading job status..." />;
@@ -1058,7 +1035,33 @@ function CrossWorkspaceTogglePanel({
 
 function ClonePageInner() {
   const [step, setStep] = useState<Step>("source");
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  // Durable job tracking — survives page navigation and browser refresh.
+  // The hook keeps the job_id, the latest server-side progress dict, and a
+  // capped progress history in JobContext (sessionStorage-backed) so coming
+  // back to this page mid-clone restores progress instead of resetting.
+  const cloneJob = useDurableJob({
+    key: "clone",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Clone-Xs",
+  });
+  const activeJobId = cloneJob.jobId;
+  const setActiveJobId = (id: string | null) => {
+    if (id) {
+      // Used only by the recent-jobs deep link (no submit). Seed the entry so
+      // useDurableJob picks it up and starts polling.
+      cloneJob.start({}, async () => id);
+    } else {
+      cloneJob.clear();
+    }
+  };
+  // Mid-clone navigation: if the user comes back while a job is in flight,
+  // jump the wizard to the execute step so the progress card is visible.
+  useEffect(() => {
+    if (activeJobId && step !== "execute") setStep("execute");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobId]);
   const { favorites, addFavorite, removeFavorite } = useFavorites();
   const [showAddFav, setShowAddFav] = useState(false);
   const [favSource, setFavSource] = useState("");
@@ -1393,12 +1396,14 @@ function ClonePageInner() {
       payload.include_objects = selectedObjects;
     }
 
-    startClone.mutate(payload, {
-      onSuccess: (data: any) => {
-        setActiveJobId(data.job_id);
-        setStep("execute");
-      },
-    });
+    cloneJob.start(payload, () =>
+      new Promise<string>((resolve, reject) => {
+        startClone.mutate(payload, {
+          onSuccess: (data: any) => resolve(data.job_id),
+          onError: (e: any) => reject(e instanceof Error ? e : new Error(String(e))),
+        });
+      })
+    ).catch(() => { /* error already surfaced via cloneJob.entry.error */ });
     setStep("execute");
   };
 
@@ -1953,7 +1958,7 @@ function ClonePageInner() {
               </div>
             )}
 
-            {activeJobId && <JobProgress jobId={activeJobId} />}
+            {activeJobId && <JobProgress jobId={activeJobId} job={cloneJob.entry?.data} />}
 
             {startClone.isError && !activeJobId && (
               <div className="flex items-center gap-2 text-red-600">

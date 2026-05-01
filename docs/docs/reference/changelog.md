@@ -9,6 +9,38 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Demo Data Generator: Manage Catalogs tab + Schedule streaming as Databricks Job
+
+### Added
+- **New "Manage Catalogs" tab on `/demo-data`** — lists every catalog the user can read, with metadata (schemas / tables / demo-tables / owner) and a per-row drop action with a typed-confirmation modal (must type the catalog name to arm the destructive Confirm button). Reuses the existing `DELETE /demo-data/{catalog}` endpoint — no new destructive paths. "Demo only" toggle filters to catalogs flagged with `demo.generated_by = 'clone-xs'` TBLPROPERTIES on at least one table.
+- **New endpoint `GET /demo-data/catalogs`** in `api/routers/generate.py` — fans out per-catalog probes via `ThreadPoolExecutor(max_workers=5)`, queries `<catalog>.information_schema.table_properties` for the demo signal, returns `{catalogs: [...], demo_only, total}`. Per-catalog probe failures (auth denied on information_schema) surface as `error` on the row; one broken catalog doesn't hide the others. Top-level catalog enumeration failure returns `{catalogs: [], error}` rather than 500.
+- **Schedule streaming as a Databricks Job** — new "Schedule on Databricks" button beside Start/Stop on the Streaming tab. Opens a modal collecting Quartz cron + timezone + Job name + Serverless toggle + (advanced) notebook path. Submits to a new `POST /demo-data/streaming/schedule` endpoint that:
+  - Generates a self-contained Python notebook inlining the relevant device-profile generator + emission loop. The notebook reads its parameters via `dbutils.widgets.get(...)` so reruns can vary catalog/cadence without regenerating.
+  - Uploads the notebook to `/Users/<me>/clxs/streaming_<profile>_<isoZ>` via `client.workspace.upload(...)`.
+  - Creates a real Databricks Job via `client.jobs.create(...)` with the Quartz schedule + the uploaded notebook as a `notebook_task` + tags `created_by=clone-xs, kind=streaming-emit, profile=<profile>` so the existing `GET /clone-jobs` listing automatically includes scheduled streams.
+  - Defaults to **Serverless compute** so users don't need to provision a cluster; falls back to a Single-Node job cluster spec when the user opts out.
+- **`StreamingScheduleRequest` model** in `api/models/demo.py` — extends `StreamingEmissionRequest` (inherits catalog/schema/volume/profile/cadence/auto-create-bronze) and adds `name`, `schedule_quartz_cron` (with shape validator: 6 or 7 fields), `timezone_id`, `notebook_path`, `use_serverless`. Pydantic catches empty / wrong-field-count cron at request binding.
+- **Quick-pick cron presets** in the Schedule modal: Every 5 min, Top of hour, Weekdays 9am.
+- **`useDemoCatalogs`, `useDemoCatalogDrop`, `useStreamingSchedule` hooks** in `ui/src/hooks/useApi.ts`.
+
+### Non-breaking
+- The Batch tab's existing form is untouched — its 4 nested tabs (Basics / Catalog Options / Data Quality & ML / Architecture) already provided the logical grouping the original plan called out.
+- The existing in-process `POST /demo-data/streaming` Start/Stop flow is unchanged. "Schedule on Databricks" is a sibling action; users who never click it see no behaviour change.
+- The existing inline `window.confirm()` delete on the Batch tab is preserved for backwards compatibility. The Manage tab adds a stricter typed-confirm modal but doesn't remove the existing path.
+- All 1796 prior tests stay green; the 19 new tests only add coverage. Total: 1815 passing.
+
+### Tested
+- 4 new tests in `tests/test_demo_data_catalogs.py`: default listing returns all visible catalogs, `demo_only=true` filter works, per-catalog probe failure surfaces as `error` field (failure isolation), top-level `catalogs.list()` failure returns empty list with error.
+- 15 new tests in `tests/test_demo_streaming_schedule.py`: per-profile notebook content (no cross-contamination between profiles, dbutils.widgets coverage), `create_streaming_job` tags + schedule + Serverless skip-cluster path, end-to-end orchestration, `StreamingScheduleRequest` cron-shape validator + inherited validators, endpoint dispatch + 500 on SDK failure + 422 on empty cron.
+
+### Out of scope (deferred)
+- **Bulk drop on Manage tab** — single-catalog only in v1. Bulk select is a follow-up if users ask.
+- **Job lifecycle management** for scheduled streams (pause / resume / delete from Clone-Xs UI). v1 creates the Job and links to the Databricks Jobs UI for management.
+- **Packaging clone-xs as a wheel** so the scheduled notebook can `import` rather than inline. v1 inlines so the notebook is self-contained — wheel-based packaging is a follow-up that lets us ship richer features without ballooning the notebook.
+- **YAML-loadable custom device profiles** for the schedule path — the three built-in profiles cover today's IoT demo asks.
+
+---
+
 ## Unreleased — Demo Data Generator: streaming emission for IoT (file-based to UC Volume)
 
 ### Added

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   useCdfCheck, useSchedules, useCreateSchedule,
   usePauseSchedule, useResumeSchedule, useDeleteSchedule,
 } from "@/hooks/useApi";
+import { useDurableJob } from "@/hooks/useDurableJob";
 
 function actionColor(action: string) {
   switch (action?.toUpperCase()) {
@@ -40,24 +41,26 @@ function actionIcon(action: string) {
 }
 
 function SyncJobProgress({ jobId }: { jobId: string }) {
-  const [job, setJob] = useState<any>(null);
-  const [copied, setCopied] = useState(false);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-
+  // Polling lives in JobContext via useDurableJob, so navigating away mid-run
+  // and returning resumes from the latest server state instead of the local
+  // useState resetting to null.
+  const tracker = useDurableJob({
+    key: `sync-job-${jobId}`,
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Sync complete",
+  });
+  // Seed the tracker the first time we render this jobId — useDurableJob
+  // won't poll until it has a jobId in its entry, and we get jobId via prop
+  // (not via the user clicking submit).
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`);
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch {}
-    };
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId]);
+    if (!tracker.jobId && jobId) {
+      tracker.start({}, async () => jobId).catch(() => {});
+    }
+  }, [jobId, tracker]);
+  const job = tracker.entry?.data ?? null;
+  const [copied, setCopied] = useState(false);
 
   if (!job) {
     return (
@@ -292,7 +295,19 @@ export default function SyncPage() {
   const [cloneType, setCloneType] = useState<"DEEP" | "SHALLOW">("DEEP");
 
   const [showConfirm, setShowConfirm] = useState(false);
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  // Active sync job_id — persisted in sessionStorage so navigating away
+  // mid-sync and coming back keeps the progress card visible. The full
+  // server-side job state is fetched fresh on remount by SyncJobProgress.
+  const [activeJobId, _setActiveJobId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem("clxs-sync-active-job") || null; } catch { return null; }
+  });
+  const setActiveJobId = (id: string | null) => {
+    _setActiveJobId(id);
+    try {
+      if (id) sessionStorage.setItem("clxs-sync-active-job", id);
+      else sessionStorage.removeItem("clxs-sync-active-job");
+    } catch {}
+  };
 
   const startSync = useStartSync();
   const incCheck = useIncrementalCheck();

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,9 +63,26 @@ export default function ColumnLevelReconciliationPage() {
   // ── Batch mode ────────────────────────────────────────────────
   const [batchMode, setBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
-  const [batchJobId, setBatchJobId] = useState<string | null>(null);
-  const [batchProgress, setBatchProgress] = useState<any>(null);
   const [batchResults, setBatchResults] = usePersistedState<any>("gov-recon-col-batch-results", null);
+  // Durable batch tracker — survives page navigation. Progress dict lives in
+  // the entry data; results pulled into batchResults on completion.
+  const batchTracker = useDurableJob({
+    key: "gov-recon-col-batch",
+    pollUrl: (id) => `/reconciliation/batch-compare/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Comparison complete",
+    onComplete: (job) => {
+      if (job.status === "completed") {
+        setBatchResults(job.result);
+        toast.success("Batch comparison complete");
+      } else {
+        toast.error("Batch job failed: " + (job.error || "Unknown"));
+      }
+      setLoading(false);
+    },
+  });
+  const batchProgress = batchTracker.entry?.data?.progress ?? null;
 
   function addToBatch() {
     if (!sourceSchema || !sourceTable) return;
@@ -103,23 +121,23 @@ export default function ColumnLevelReconciliationPage() {
   async function runComparison() {
     if (!source || !dest) return;
 
-    // Batch mode: submit as background job
+    // Batch mode: submit as background job (durable — survives navigation)
     if (batchMode && batchQueue.length > 0) {
       setLoading(true);
       setBatchResults(null);
-      setBatchProgress(null);
       try {
-        const data = await api.post("/reconciliation/batch-compare", {
-          source_catalog: source,
-          destination_catalog: dest,
-          tables: batchQueue,
-          use_checksum: useChecksum,
-          max_workers: maxWorkers,
-          use_spark: useSpark,
+        await batchTracker.start({ source, dest, count: batchQueue.length }, async () => {
+          const data = await api.post("/reconciliation/batch-compare", {
+            source_catalog: source,
+            destination_catalog: dest,
+            tables: batchQueue,
+            use_checksum: useChecksum,
+            max_workers: maxWorkers,
+            use_spark: useSpark,
+          });
+          toast.success(`Batch job submitted: ${data.job_id}`);
+          return data.job_id;
         });
-        setBatchJobId(data.job_id);
-        toast.success(`Batch job submitted: ${data.job_id}`);
-        pollBatchJob(data.job_id);
       } catch (e: any) {
         toast.error(e.message || "Batch submission failed");
         setLoading(false);
@@ -156,27 +174,7 @@ export default function ColumnLevelReconciliationPage() {
     }
   }
 
-  async function pollBatchJob(jobId: string) {
-    const poll = async () => {
-      try {
-        const job = await api.get(`/reconciliation/batch-compare/${jobId}`);
-        setBatchProgress(job.progress);
-        if (job.status === "completed") {
-          setBatchResults(job.result);
-          setLoading(false);
-          toast.success("Batch comparison complete");
-        } else if (job.status === "failed") {
-          toast.error("Batch job failed: " + (job.error || "Unknown"));
-          setLoading(false);
-        } else {
-          setTimeout(poll, 2000);
-        }
-      } catch {
-        setLoading(false);
-      }
-    };
-    poll();
-  }
+  // Polling lives in batchTracker (useDurableJob) above.
 
 
   // ── Flatten schema comparison into rows ────────────────────────────

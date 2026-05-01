@@ -16,11 +16,12 @@ import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import FieldLabel, { InfoDot } from "@/components/FieldLabel";
 import { useCurrency } from "@/hooks/useSettings";
-import { useStreamingEmit, useStreamingStop, useVolumes } from "@/hooks/useApi";
+import { useStreamingEmit, useStreamingStop, useVolumes, useStreamingSchedule, useDemoCatalogs, useDemoCatalogDrop } from "@/hooks/useApi";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
-  ClipboardCopy, Check, Download, Radio, StopCircle,
+  ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
 } from "lucide-react";
 
 const INDUSTRIES = ["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"] as const;
@@ -273,11 +274,23 @@ export default function DemoDataPage() {
     return n.toFixed(0);
   };
 
-  // Job state
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<any>(null);
+  // Job state — durable across page navigation. The hook polls the server,
+  // persists job_id + latest server dict in JobContext, and reconnects to an
+  // in-flight job on remount so progress/logs resume mid-run.
+  const batchJob = useDurableJob({
+    key: "demo-data-batch",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Demo data ready",
+    onComplete: (d) => {
+      if (d.status === "completed") toast.success("Demo data generated successfully");
+      else toast.error(d.error || "Demo data generation failed");
+    },
+  });
+  const jobId = batchJob.jobId;
+  const job = batchJob.entry?.data ?? null;
   const [submitting, setSubmitting] = useState(false);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   // Top-level "which generator?" switch. The page houses two distinct
@@ -285,10 +298,36 @@ export default function DemoDataPage() {
   // tab so users aren't scrolling past inapplicable controls.
   // Persisted to sessionStorage so refresh keeps the user where they
   // were.
-  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming">(() => {
-    try { return (sessionStorage.getItem("clxs-demo-gen-tab") as "batch" | "streaming") || "batch"; }
-    catch { return "batch"; }
+  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "manage">(() => {
+    try {
+      const v = sessionStorage.getItem("clxs-demo-gen-tab");
+      if (v === "batch" || v === "streaming" || v === "manage") return v;
+    } catch {}
+    return "batch";
   });
+
+  // Manage Catalogs tab state — typed-confirm modal sits above the
+  // listing. The modal asks the user to type the catalog name to
+  // arm the destructive Confirm button (typed-confirm pattern, not
+  // a window.confirm() — we want the higher safety bar here than the
+  // existing Batch-tab inline delete).
+  const [manageDemoOnly, setManageDemoOnly] = useState(false);
+  const [dropModalCatalog, setDropModalCatalog] = useState<string | null>(null);
+  const [dropModalTyped, setDropModalTyped] = useState("");
+  const demoCatalogsQuery = useDemoCatalogs(manageDemoOnly);
+  const demoCatalogDrop = useDemoCatalogDrop();
+
+  // Schedule-streaming modal state — opened by the "Schedule on
+  // Databricks" button on the Streaming tab. All fields prefilled
+  // from sensible defaults; user only needs to click submit.
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleCron, setScheduleCron] = useState("0 */5 * * * ?");
+  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
+  const [scheduleUseServerless, setScheduleUseServerless] = useState(true);
+  const [scheduleNotebookPath, setScheduleNotebookPath] = useState("");
+  const [scheduleResult, setScheduleResult] = useState<any>(null);
+  const streamingSchedule = useStreamingSchedule();
 
   // Streaming-emission card state. Independent from the batch form
   // above — has its own catalog/schema/profile inputs and its own
@@ -325,7 +364,18 @@ export default function DemoDataPage() {
     enabled: !!streamCatalog && !streamCatalogCustom,
     staleTime: 1000 * 60 * 5,
   });
-  const [streamProfile, setStreamProfile] = useState<"generic_sensor" | "industrial_machine" | "car_obd2">("generic_sensor");
+  const [streamProfile, setStreamProfile] = useState<
+    | "generic_sensor"
+    | "industrial_machine"
+    | "car_obd2"
+    | "smart_meter"
+    | "wearable_health"
+    | "pos_terminal"
+    | "wind_turbine"
+    | "atm_transaction"
+    | "server_metrics"
+    | "clickstream"
+  >("generic_sensor");
   const [streamEventsPerBatch, setStreamEventsPerBatch] = useState(100);
   const [streamIntervalSeconds, setStreamIntervalSeconds] = useState(5);
   const [streamDurationSeconds, setStreamDurationSeconds] = useState(60);
@@ -338,18 +388,45 @@ export default function DemoDataPage() {
   // Legacy auto-create flag — derived from destination on submit. Kept
   // as state only to render the refresh-cadence input in volume_bronze mode.
   const [streamBronzeRefreshMinutes, setStreamBronzeRefreshMinutes] = useState(5);
-  const [streamingJobId, setStreamingJobId] = useState<string | null>(null);
-  const [streamingJob, setStreamingJob] = useState<any>(null);
-  const streamingPollRef = useRef<NodeJS.Timeout | null>(null);
-  // Per-tick throughput series captured from polling. Each entry is one
-  // emission tick; deduped by tick number so faster polling than the
-  // emit interval doesn't double-record.
-  const [streamingSeries, setStreamingSeries] = useState<Array<{
-    tick: number;
-    elapsed: number;
-    events: number;     // cumulative events emitted up to this tick
-    delta: number;      // events in this tick (cumulative diff)
-  }>>([]);
+  // Streaming job — durable. progressHistory replaces the previous local
+  // streamingSeries useState; the hook captures one snapshot per server tick
+  // and persists them so the throughput chart restores after navigation.
+  const streamJob = useDurableJob({
+    key: "demo-data-streaming",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    captureProgress: (d) => {
+      const prog = d?.progress;
+      if (!prog || typeof prog.ticks !== "number" || typeof prog.events_emitted !== "number") return null;
+      return {
+        tick: prog.ticks,
+        elapsed: typeof prog.elapsed_seconds === "number" ? prog.elapsed_seconds : 0,
+        events: prog.events_emitted,
+        // delta is filled in on read using the previous snapshot (see streamingSeries memo)
+      };
+    },
+    isProgressEqual: (a, b) => a?.tick === b?.tick,
+    historyCap: 600,
+    notificationTitle: "Streaming complete",
+    onComplete: (d) => {
+      if (d.status === "completed") toast.success("Streaming emission completed");
+      else toast.error(d.error || "Streaming emission failed");
+    },
+  });
+  const streamingJobId = streamJob.jobId;
+  const streamingJob = streamJob.entry?.data ?? null;
+  // Recompute deltas from the persisted history. The hook stores absolute
+  // counts; the chart wants per-tick deltas, so we derive them here.
+  const streamingSeries = (() => {
+    const hist = streamJob.progressHistory ?? [];
+    let lastEvents = 0;
+    return hist.map((p: any) => {
+      const delta = (p?.events ?? 0) - lastEvents;
+      lastEvents = p?.events ?? lastEvents;
+      return { ...p, delta };
+    });
+  })();
   const streamingEmit = useStreamingEmit();
   const streamingStop = useStreamingStop();
 
@@ -372,8 +449,7 @@ export default function DemoDataPage() {
     }
 
     setSubmitting(true);
-    setJob(null);
-    setJobId(null);
+    batchJob.clear();
 
     try {
       const body: any = {
@@ -405,13 +481,12 @@ export default function DemoDataPage() {
       if (endDate) body.end_date = endDate;
       if (destCatalog.trim()) body.dest_catalog = destCatalog.trim();
 
-      const res = await api.post("/generate/demo-data", body);
-      if (res.job_id) {
-        setJobId(res.job_id);
+      await batchJob.start(body, async () => {
+        const res = await api.post("/generate/demo-data", body);
+        if (!res.job_id) throw new Error("Unexpected response — no job_id returned");
         toast.success(`Demo data generation submitted (Job ${res.job_id})`);
-      } else {
-        toast.error("Unexpected response — no job_id returned");
-      }
+        return res.job_id;
+      });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -419,77 +494,8 @@ export default function DemoDataPage() {
     }
   };
 
-  // Poll for job status
-  useEffect(() => {
-    if (!jobId) return;
-
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${jobId}`);
-        setJob(data);
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "completed") {
-            toast.success("Demo data generated successfully");
-          } else {
-            toast.error(data.error || "Demo data generation failed");
-          }
-        }
-      } catch {
-        // Silently retry on poll errors
-      }
-    };
-
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [jobId]);
-
-  // Poll the streaming job — separate effect so the two job lifecycles
-  // don't interfere. Uses the same /clone/{id} endpoint since the
-  // JobManager surfaces all job types through it.
-  useEffect(() => {
-    if (!streamingJobId) return;
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${streamingJobId}`);
-        setStreamingJob(data);
-        // Capture this tick into the throughput series — dedupe by
-        // tick number so we don't get duplicate samples when the
-        // 2s poll fires faster than the emit interval.
-        const prog = data?.progress;
-        if (prog && typeof prog.ticks === "number" && typeof prog.events_emitted === "number") {
-          setStreamingSeries((prev) => {
-            if (prev.length && prev[prev.length - 1].tick === prog.ticks) return prev;
-            const lastEvents = prev.length ? prev[prev.length - 1].events : 0;
-            return [...prev, {
-              tick: prog.ticks,
-              elapsed: typeof prog.elapsed_seconds === "number" ? prog.elapsed_seconds : 0,
-              events: prog.events_emitted,
-              delta: prog.events_emitted - lastEvents,
-            }];
-          });
-        }
-        if (data.status === "completed" || data.status === "failed") {
-          if (streamingPollRef.current) clearInterval(streamingPollRef.current);
-          if (data.status === "completed") {
-            toast.success("Streaming emission completed");
-          } else {
-            toast.error(data.error || "Streaming emission failed");
-          }
-        }
-      } catch {
-        // ignore transient errors
-      }
-    };
-    poll();
-    streamingPollRef.current = setInterval(poll, 2000);
-    return () => {
-      if (streamingPollRef.current) clearInterval(streamingPollRef.current);
-    };
-  }, [streamingJobId]);
+  // Polling for both batch and streaming jobs is handled by useDurableJob —
+  // it lives in JobContext so it survives navigation.
 
   const handleStartStreaming = async () => {
     if (!streamCatalog.trim() || !streamSchema.trim()) {
@@ -497,11 +503,10 @@ export default function DemoDataPage() {
       return;
     }
     try {
-      setStreamingJob(null);
-      setStreamingJobId(null);
-      // Reset chart series on a new run so we don't merge runs visually.
-      setStreamingSeries([]);
-      const res = await streamingEmit.mutateAsync({
+      // Wipe previous streaming-job state (including chart history) so a new
+      // run starts clean visually instead of merging with the prior series.
+      streamJob.clear();
+      const params = {
         catalog: streamCatalog.trim(),
         schema: streamSchema.trim(),
         volume: streamVolume.trim() || "events_volume",
@@ -513,11 +518,12 @@ export default function DemoDataPage() {
         bronze_table: streamBronzeTable.trim(),
         auto_create_bronze: streamDestination === "volume_bronze",
         bronze_refresh_minutes: streamBronzeRefreshMinutes,
+      };
+      await streamJob.start(params, async () => {
+        const res = await streamingEmit.mutateAsync(params);
+        if (res?.job_id) toast.success(`Streaming emission started (Job ${res.job_id})`);
+        return res?.job_id;
       });
-      if (res?.job_id) {
-        setStreamingJobId(res.job_id);
-        toast.success(`Streaming emission started (Job ${res.job_id})`);
-      }
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -551,8 +557,7 @@ export default function DemoDataPage() {
   }, [job?.logs]);
 
   const handleReset = () => {
-    setJobId(null);
-    setJob(null);
+    batchJob.clear();
   };
 
   const handleCleanup = async () => {
@@ -621,6 +626,7 @@ export default function DemoDataPage() {
         {[
           { key: "batch", label: "Batch Catalog", icon: Database, hint: "Generate one-shot synthetic data across N industries" },
           { key: "streaming", label: "Streaming Events", icon: Radio, hint: "Continuously emit IoT events to a UC Volume" },
+          { key: "manage", label: "Manage Catalogs", icon: Trash2, hint: "List and drop existing demo catalogs" },
         ].map(({ key, label, icon: TabIcon, hint }) => (
           <button key={key}
             onClick={() => {
@@ -695,7 +701,7 @@ export default function DemoDataPage() {
 
             <TabsContent value="basics" className="space-y-5 mt-4">
           {/* Catalog Name */}
-          <div>
+          <div className="space-y-1.5">
             <FieldLabel hint="Name of the new demo catalog. Must not already exist unless 'Drop Existing' is checked.">
               Catalog Name <span className="text-red-500">*</span>
             </FieldLabel>
@@ -703,15 +709,15 @@ export default function DemoDataPage() {
               value={catalogName}
               onChange={(e) => setCatalogName(e.target.value)}
               placeholder="demo_catalog"
-              className="mt-1 max-w-md"
+              className="max-w-md"
               disabled={isRunning}
             />
           </div>
 
           {/* Industries */}
-          <div>
+          <div className="space-y-2">
             <FieldLabel hint="Each industry generates a domain-specific schema (e.g. healthcare gets patients, encounters, claims). Pick one for a quick demo, several for cross-domain analytics scenarios.">Industries</FieldLabel>
-            <div className="flex flex-wrap gap-3 mt-2">
+            <div className="flex flex-wrap gap-3">
               {INDUSTRIES.map((industry) => (
                 <label
                   key={industry}
@@ -731,13 +737,13 @@ export default function DemoDataPage() {
           </div>
 
           {/* Scale Factor */}
-          <div>
+          <div className="space-y-1.5">
             <FieldLabel hint="Multiplier on row counts. 0.01 = ~10M rows total (good for laptop demos); 1.0 = ~1B rows (production-scale benchmark).">Scale Factor</FieldLabel>
             <select
               value={scaleFactor}
               onChange={(e) => setScaleFactor(e.target.value)}
               disabled={isRunning}
-              className="flex h-9 w-full max-w-md rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring mt-1"
+              className="flex h-9 w-full max-w-md rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               {SCALE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -749,23 +755,21 @@ export default function DemoDataPage() {
 
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-4 max-w-xl">
-            <div>
+            <div className="space-y-1.5">
               <FieldLabel hint="Earliest date for generated transactional data (orders, claims, events).">Start Date</FieldLabel>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="mt-1"
                 disabled={isRunning}
               />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <FieldLabel hint="Latest date for generated transactional data. Window between start and end determines volume per day.">End Date</FieldLabel>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="mt-1"
                 disabled={isRunning}
               />
             </div>
@@ -774,42 +778,42 @@ export default function DemoDataPage() {
 
             <TabsContent value="catalog" className="space-y-5 mt-4">
           {/* Owner */}
-          <div>
+          <div className="space-y-1.5">
             <FieldLabel hint="Sets the catalog owner principal — usually a team email or group SCIM name. Defaults to the current user.">Owner</FieldLabel>
             <Input
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
               placeholder="team-name or user@domain.com"
-              className="mt-1 max-w-md"
+              className="max-w-md"
               disabled={isRunning}
             />
-            <p className="text-xs text-muted-foreground mt-1">Optional. Sets the catalog owner.</p>
+            <p className="text-xs text-muted-foreground">Optional. Sets the catalog owner.</p>
           </div>
 
           {/* Storage Location */}
-          <div>
+          <div className="space-y-1.5">
             <FieldLabel hint="External storage URI for managed tables. Required if the workspace doesn't have a default Unity Catalog storage root configured.">Storage Location</FieldLabel>
             <Input
               value={storageLocation}
               onChange={(e) => setStorageLocation(e.target.value)}
               placeholder="abfss://container@storage.dfs.core.windows.net/path"
-              className="mt-1 max-w-xl"
+              className="max-w-xl"
               disabled={isRunning}
             />
-            <p className="text-xs text-muted-foreground mt-1">Optional. Custom managed storage location for the catalog.</p>
+            <p className="text-xs text-muted-foreground">Optional. Custom managed storage location for the catalog.</p>
           </div>
 
           {/* Destination Catalog */}
-          <div>
+          <div className="space-y-1.5">
             <FieldLabel hint="If set, the generated catalog is auto-cloned to this destination after generation completes.">Destination Catalog</FieldLabel>
             <Input
               value={destCatalog}
               onChange={(e) => setDestCatalog(e.target.value)}
               placeholder="e.g. prod_catalog"
-              className="mt-1 max-w-xl"
+              className="max-w-xl"
               disabled={isRunning}
             />
-            <p className="text-xs text-muted-foreground mt-1">Optional. When filled, the generated catalog will be automatically cloned to this destination.</p>
+            <p className="text-xs text-muted-foreground">Optional. When filled, the generated catalog will be automatically cloned to this destination.</p>
           </div>
 
           {/* Drop Existing */}
@@ -1661,7 +1665,7 @@ export default function DemoDataPage() {
             Choose a built-in device profile or auto-create a streaming Bronze Delta table.
           </p>
         </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             {/* Destination mode — controls which downstream fields are visible
                 and what the runner does each tick. */}
             <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
@@ -1700,14 +1704,21 @@ export default function DemoDataPage() {
             </div>
 
             {/* Device profile */}
-            <div>
+            <div className="space-y-1.5">
               <FieldLabel>Device profile</FieldLabel>
-              <select className="w-full md:w-auto h-9 px-2 text-sm bg-background border border-input rounded-md mt-1"
+              <select className="block w-full md:w-72 h-9 px-3 text-sm bg-background border border-input rounded-md"
                 value={streamProfile}
                 onChange={(e) => setStreamProfile(e.target.value as typeof streamProfile)}>
                 <option value="generic_sensor">Generic IoT Sensor</option>
                 <option value="industrial_machine">Industrial Machine</option>
                 <option value="car_obd2">Car OBD-II</option>
+                <option value="smart_meter">Smart Meter (Energy)</option>
+                <option value="wearable_health">Wearable Health (Healthcare)</option>
+                <option value="pos_terminal">POS Terminal (Retail)</option>
+                <option value="wind_turbine">Wind Turbine (Energy)</option>
+                <option value="atm_transaction">ATM Transaction (Financial)</option>
+                <option value="server_metrics">Server Metrics (Infra)</option>
+                <option value="clickstream">Web Clickstream (Digital)</option>
               </select>
             </div>
 
@@ -1721,9 +1732,9 @@ export default function DemoDataPage() {
               <div className="mt-1 grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* Catalog */}
                 <div>
-                  <label className="text-xs text-muted-foreground">Catalog</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Catalog</label>
                   <select
-                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md mt-1"
+                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
                     value={streamCatalogCustom ? "__custom__" : streamCatalog}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -1757,9 +1768,9 @@ export default function DemoDataPage() {
 
                 {/* Schema */}
                 <div>
-                  <label className="text-xs text-muted-foreground">Schema</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Schema</label>
                   <select
-                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md mt-1"
+                    className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
                     value={streamSchemaCustom ? "__custom__" : streamSchema}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -1802,12 +1813,11 @@ export default function DemoDataPage() {
                 <div>
                   {streamDestination === "direct_table" ? (
                     <>
-                      <label className="text-xs text-muted-foreground">Bronze table</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Bronze table</label>
                       <Input
                         value={streamBronzeTable}
                         onChange={(e) => setStreamBronzeTable(e.target.value)}
                         placeholder={`bronze_${streamProfile}`}
-                        className="mt-1"
                       />
                       <p className="text-[10px] text-muted-foreground mt-1">
                         Delta table created in the chosen schema. Empty → defaults to <code className="text-[10px] bg-muted/50 px-1 rounded">bronze_{streamProfile}</code>. Each tick INSERTs one batch directly.
@@ -1815,7 +1825,7 @@ export default function DemoDataPage() {
                     </>
                   ) : (
                     <>
-                      <label className="text-xs text-muted-foreground">Volume</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Volume</label>
                       {(() => {
                         const matches = (volumesQuery.data || [])
                           .filter((v) => (!streamCatalog || v.catalog === streamCatalog)
@@ -1825,7 +1835,7 @@ export default function DemoDataPage() {
                         return (
                           <>
                             <select
-                              className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md mt-1"
+                              className="w-full h-9 px-2 text-sm bg-background border border-input rounded-md"
                               value={streamVolumeCustom ? "__custom__" : streamVolume}
                               onChange={(e) => {
                                 const v = e.target.value;
@@ -1871,24 +1881,21 @@ export default function DemoDataPage() {
             </div>
 
             {/* Cadence */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
                 <FieldLabel>Events per batch</FieldLabel>
                 <Input type="number" min={1} max={10000} value={streamEventsPerBatch}
-                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))}
-                  className="mt-1" />
+                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))} />
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <FieldLabel>Interval (seconds)</FieldLabel>
                 <Input type="number" min={1} max={300} value={streamIntervalSeconds}
-                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))}
-                  className="mt-1" />
+                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))} />
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <FieldLabel>Total duration (seconds, max 3600)</FieldLabel>
                 <Input type="number" min={1} max={3600} value={streamDurationSeconds}
-                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))}
-                  className="mt-1" />
+                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))} />
               </div>
             </div>
 
@@ -1901,11 +1908,11 @@ export default function DemoDataPage() {
                 <p className="text-xs">
                   Bronze table <code className="text-[10px] bg-muted/50 px-1 rounded">bronze_{streamProfile}</code> will be created via <code className="text-[10px] bg-muted/50 px-1 rounded">CREATE OR REFRESH STREAMING TABLE</code> on the cadence below. Requires DBSQL Serverless that supports the syntax (Free Edition does — uses CRON form).
                 </p>
-                <div className="mt-2 flex items-center gap-2">
+                <div className="mt-3 flex items-center gap-3">
                   <span className="text-xs text-muted-foreground">Refresh every</span>
                   <Input type="number" min={1} max={60} value={streamBronzeRefreshMinutes}
                     onChange={(e) => setStreamBronzeRefreshMinutes(Math.max(1, Math.min(60, parseInt(e.target.value) || 5)))}
-                    className="w-20 h-7 text-xs" />
+                    className="w-20 h-7 text-xs px-2.5" />
                   <span className="text-xs text-muted-foreground">minutes</span>
                 </div>
               </div>
@@ -1926,6 +1933,20 @@ export default function DemoDataPage() {
                   <StopCircle className="h-4 w-4 mr-2" />Stop
                 </Button>
               )}
+              {/* Sibling to Start — opens a modal that creates a real
+                  Databricks Job. The in-process Start is unchanged;
+                  users only click this when they need unattended runs. */}
+              <Button variant="outline" onClick={() => {
+                if (!streamCatalog.trim() || !streamSchema.trim()) {
+                  toast.error("Catalog and schema are required");
+                  return;
+                }
+                setScheduleResult(null);
+                setScheduleName(`clxs-stream-${streamProfile}`);
+                setScheduleModalOpen(true);
+              }}>
+                <Calendar className="h-4 w-4 mr-2" />Schedule on Databricks
+              </Button>
             </div>
 
             {/* Live progress */}
@@ -2062,6 +2083,293 @@ export default function DemoDataPage() {
           </CardContent>
       </Card>
       </>)}
+
+      {activeGenTab === "manage" && (() => {
+        const rows = (demoCatalogsQuery.data?.catalogs || []) as any[];
+        return (
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-[#E8453C]" />
+                Manage Catalogs
+                <Badge variant="outline" className="text-[10px] ml-1">{demoCatalogsQuery.data?.total ?? 0}</Badge>
+                <span className="ml-auto flex items-center gap-2 text-xs font-normal">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox"
+                      checked={manageDemoOnly}
+                      onChange={(e) => setManageDemoOnly(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                    Demo only
+                  </label>
+                  <Button size="sm" variant="ghost" onClick={() => demoCatalogsQuery.refetch()}>
+                    <RefreshCw className={`h-3.5 w-3.5 ${demoCatalogsQuery.isFetching ? "animate-spin" : ""}`} />
+                  </Button>
+                </span>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Lists every catalog you can read. Toggle <strong>Demo only</strong> to filter to catalogs tagged
+                with <code className="text-[10px] bg-muted/50 px-1 rounded">demo.generated_by = 'clone-xs'</code>.
+                Drop is permanent — confirm by typing the catalog name.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {demoCatalogsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Probing catalogs...
+                </div>
+              ) : demoCatalogsQuery.isError ? (
+                <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-md text-red-500 text-sm">
+                  {(demoCatalogsQuery.error as Error)?.message || "Failed to load catalogs"}
+                </div>
+              ) : rows.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">
+                  <Database className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">{manageDemoOnly ? "No demo catalogs found" : "No catalogs visible"}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border">
+                      <tr className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        <th className="px-3 py-2">Catalog</th>
+                        <th className="px-3 py-2">Demo?</th>
+                        <th className="px-3 py-2 text-right">Schemas</th>
+                        <th className="px-3 py-2 text-right">Demo Tables</th>
+                        <th className="px-3 py-2 text-right">All Tables</th>
+                        <th className="px-3 py-2">Owner</th>
+                        <th className="px-3 py-2 w-[80px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.name} className="border-b border-border/40 hover:bg-muted/20">
+                          <td className="px-3 py-2 font-mono text-sm">{r.name}</td>
+                          <td className="px-3 py-2">
+                            {r.is_demo
+                              ? <Badge variant="outline" className="text-[10px] border-[#E8453C]/30 text-[#E8453C]"><Check className="h-3 w-3 mr-1" />Demo</Badge>
+                              : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_schemas}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_demo_tables}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{r.num_tables}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]" title={r.owner}>{r.owner || "—"}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                              title={`Drop catalog ${r.name}`}
+                              onClick={() => { setDropModalCatalog(r.name); setDropModalTyped(""); }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Typed-confirm modal — Manage tab drop. Stricter than the
+          existing Batch-tab window.confirm() since this surface
+          encourages bulk cleanup; we want a deliberate keystroke
+          per drop, not a single OK click. */}
+      {dropModalCatalog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => !demoCatalogDrop.isPending && setDropModalCatalog(null)}>
+          <div className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-red-500" />
+                <h3 className="text-sm font-semibold text-foreground">Drop catalog</h3>
+              </div>
+              <button onClick={() => !demoCatalogDrop.isPending && setDropModalCatalog(null)}
+                className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm">
+                This will execute <code className="text-[11px] bg-muted/50 px-1 rounded">DROP CATALOG {dropModalCatalog} CASCADE</code>{" "}
+                and cannot be undone. Every schema, table, view, function, and volume below it will be deleted.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Type <code className="text-[11px] bg-muted/50 px-1 rounded">{dropModalCatalog}</code> to confirm:
+              </p>
+              <Input value={dropModalTyped} onChange={(e) => setDropModalTyped(e.target.value)}
+                placeholder={dropModalCatalog} autoFocus />
+              {demoCatalogDrop.isError && (
+                <div className="text-xs text-red-500">{(demoCatalogDrop.error as Error)?.message}</div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setDropModalCatalog(null)}
+                disabled={demoCatalogDrop.isPending}>Cancel</Button>
+              <Button size="sm"
+                disabled={dropModalTyped !== dropModalCatalog || demoCatalogDrop.isPending}
+                className="bg-red-500 hover:bg-red-600 text-white"
+                onClick={async () => {
+                  try {
+                    await demoCatalogDrop.mutateAsync({ catalog_name: dropModalCatalog });
+                    toast.success(`Dropped ${dropModalCatalog}`);
+                    setDropModalCatalog(null);
+                  } catch (e) {
+                    toast.error((e as Error).message || "Drop failed");
+                  }
+                }}>
+                {demoCatalogDrop.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Drop catalog
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule streaming on Databricks modal — collects cron +
+          submits to /demo-data/streaming/schedule. On success shows
+          the new Job's URL with a one-click open button. */}
+      {scheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => !streamingSchedule.isPending && setScheduleModalOpen(false)}>
+          <div className="bg-background border border-border rounded-lg shadow-xl max-w-2xl w-full mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#E8453C]" />
+                <h3 className="text-sm font-semibold text-foreground">Schedule streaming on Databricks</h3>
+              </div>
+              <button onClick={() => !streamingSchedule.isPending && setScheduleModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {!scheduleResult ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Generates a self-contained notebook in your workspace and creates a Databricks Job
+                    on the cron below. Emission runs on Databricks compute and survives API restarts.
+                    The Job is tagged <code className="text-[10px] bg-muted/50 px-1 rounded">created_by=clone-xs</code> so it shows in your Jobs list.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Job name</FieldLabel>
+                      <Input value={scheduleName} onChange={(e) => setScheduleName(e.target.value)}
+                        placeholder={`clxs-stream-${streamProfile}`} className="mt-1" />
+                    </div>
+                    <div>
+                      <FieldLabel>Timezone</FieldLabel>
+                      <Input value={scheduleTimezone} onChange={(e) => setScheduleTimezone(e.target.value)}
+                        placeholder="UTC" className="mt-1" />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Quartz cron expression</FieldLabel>
+                    <Input value={scheduleCron} onChange={(e) => setScheduleCron(e.target.value)}
+                      placeholder="0 */5 * * * ?" className="mt-1 font-mono text-xs" />
+                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground">Quick picks:</span>
+                      {[
+                        { label: "Every 5 min", cron: "0 */5 * * * ?" },
+                        { label: "Top of hour", cron: "0 0 * * * ?" },
+                        { label: "Weekdays 9am", cron: "0 0 9 ? * MON-FRI" },
+                      ].map((p) => (
+                        <button key={p.cron} onClick={() => setScheduleCron(p.cron)}
+                          className="text-[10px] text-[#E8453C] hover:underline px-1.5 py-0.5 rounded">
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={scheduleUseServerless}
+                      onChange={(e) => setScheduleUseServerless(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-[#E8453C] focus:ring-[#E8453C]" />
+                    Use Serverless compute (recommended)
+                  </label>
+                  <div>
+                    <FieldLabel>Notebook path (advanced)</FieldLabel>
+                    <Input value={scheduleNotebookPath} onChange={(e) => setScheduleNotebookPath(e.target.value)}
+                      placeholder={`/Users/<me>/clxs/streaming_${streamProfile}_<timestamp>`}
+                      className="mt-1 font-mono text-xs" />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Leave empty for the default per-user, timestamped path. Existing notebooks at the
+                      same path are overwritten.
+                    </p>
+                  </div>
+                  {streamingSchedule.isError && (
+                    <div className="text-xs text-red-500 p-2 bg-red-500/5 border border-red-500/20 rounded">
+                      {(streamingSchedule.error as Error).message}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-[#E8453C]" />
+                    Job created
+                  </div>
+                  <dl className="text-xs space-y-1.5">
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Job ID:</dt>
+                      <dd className="font-mono">{scheduleResult.job_id}</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Schedule:</dt>
+                      <dd className="font-mono">{scheduleResult.schedule_quartz_cron} ({scheduleResult.timezone_id})</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground w-32 shrink-0">Notebook:</dt>
+                      <dd className="font-mono text-[11px] break-all">{scheduleResult.notebook_path}</dd>
+                    </div>
+                  </dl>
+                  <a href={scheduleResult.run_url} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-[#E8453C] hover:underline">
+                    <ExternalLink className="h-3.5 w-3.5" />Open in Databricks Jobs
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+              <Button size="sm" variant="outline"
+                onClick={() => setScheduleModalOpen(false)}
+                disabled={streamingSchedule.isPending}>
+                {scheduleResult ? "Close" : "Cancel"}
+              </Button>
+              {!scheduleResult && (
+                <Button size="sm"
+                  disabled={streamingSchedule.isPending || !scheduleCron.trim()}
+                  onClick={async () => {
+                    try {
+                      const res = await streamingSchedule.mutateAsync({
+                        catalog: streamCatalog.trim(),
+                        schema: streamSchema.trim(),
+                        volume: streamVolume.trim() || "events_volume",
+                        profile: streamProfile,
+                        events_per_batch: streamEventsPerBatch,
+                        interval_seconds: streamIntervalSeconds,
+                        total_duration_seconds: streamDurationSeconds,
+                        auto_create_bronze: streamDestination === "volume_bronze",
+                        bronze_refresh_minutes: streamBronzeRefreshMinutes,
+                        name: scheduleName.trim() || undefined,
+                        schedule_quartz_cron: scheduleCron.trim(),
+                        timezone_id: scheduleTimezone.trim() || "UTC",
+                        notebook_path: scheduleNotebookPath.trim() || undefined,
+                        use_serverless: scheduleUseServerless,
+                      });
+                      setScheduleResult(res);
+                      toast.success(`Scheduled (Job ${res.job_id})`);
+                    } catch (e) {
+                      toast.error((e as Error).message || "Schedule failed");
+                    }
+                  }}>
+                  {streamingSchedule.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Calendar className="h-4 w-4 mr-2" />}
+                  Create scheduled Job
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

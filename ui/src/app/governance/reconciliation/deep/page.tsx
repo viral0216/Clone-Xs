@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -135,9 +136,25 @@ export default function DeepReconciliationPage() {
   // ── Batch mode ────────────────────────────────────────────────
   const [batchMode, setBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<{ schema_name: string; table_name: string }[]>([]);
-  const [batchJobId, setBatchJobId] = useState<string | null>(null);
-  const [batchProgress, setBatchProgress] = useState<any>(null);
   const [batchResults, setBatchResults] = useState<any>(null);
+  // Durable batch tracker for deep reconciliation — survives navigation.
+  const batchTracker = useDurableJob({
+    key: "gov-recon-deep-batch",
+    pollUrl: (id) => `/reconciliation/batch-deep-validate/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "Deep recon complete",
+    onComplete: (job) => {
+      if (job.status === "completed") {
+        setBatchResults(job.result);
+        toast.success("Batch deep reconciliation complete");
+      } else {
+        toast.error("Batch job failed: " + (job.error || "Unknown"));
+      }
+      setLoading(false);
+    },
+  });
+  const batchProgress = batchTracker.entry?.data?.progress ?? null;
   const [batchPreviewTable, setBatchPreviewTable] = useState("");
 
   function addToBatch() {
@@ -243,54 +260,34 @@ export default function DeepReconciliationPage() {
     }
   }
 
-  async function pollBatchDeepJob(jobId: string) {
-    const poll = async () => {
-      try {
-        const job = await api.get(`/reconciliation/batch-deep-validate/${jobId}`);
-        setBatchProgress(job.progress);
-        if (job.status === "completed") {
-          setBatchResults(job.result);
-          setLoading(false);
-          toast.success("Batch deep reconciliation complete");
-        } else if (job.status === "failed") {
-          toast.error("Batch job failed: " + (job.error || "Unknown"));
-          setLoading(false);
-        } else {
-          setTimeout(poll, 2000);
-        }
-      } catch {
-        setLoading(false);
-      }
-    };
-    poll();
-  }
+  // Polling lives in batchTracker (useDurableJob) above.
 
   // ── Run deep reconciliation ────────────────────────────────────
   async function runDeepReconciliation() {
-    // Batch mode: submit as background job
+    // Batch mode: submit as background job (durable)
     if (batchMode && batchQueue.length > 0) {
       setLoading(true);
       setBatchResults(null);
-      setBatchProgress(null);
       try {
-        const data = await api.post("/reconciliation/batch-deep-validate", {
-          source_catalog: source,
-          destination_catalog: dest,
-          tables: batchQueue,
-          key_columns: keyColumns,
-          include_columns: [...selectedCols],
-          ignore_columns: [...ignoredCols],
-          sample_diffs: sampleDiffs,
-          use_checksum: useChecksum,
-          max_workers: maxWorkers,
-          ignore_nulls: ignoreNulls,
-          ignore_case: ignoreCase,
-          ignore_whitespace: ignoreWhitespace,
-          decimal_precision: decimalPrecision,
+        await batchTracker.start({ source, dest, count: batchQueue.length }, async () => {
+          const data = await api.post("/reconciliation/batch-deep-validate", {
+            source_catalog: source,
+            destination_catalog: dest,
+            tables: batchQueue,
+            key_columns: keyColumns,
+            include_columns: [...selectedCols],
+            ignore_columns: [...ignoredCols],
+            sample_diffs: sampleDiffs,
+            use_checksum: useChecksum,
+            max_workers: maxWorkers,
+            ignore_nulls: ignoreNulls,
+            ignore_case: ignoreCase,
+            ignore_whitespace: ignoreWhitespace,
+            decimal_precision: decimalPrecision,
+          });
+          toast.success(`Batch job submitted: ${data.job_id}`);
+          return data.job_id;
         });
-        setBatchJobId(data.job_id);
-        toast.success(`Batch job submitted: ${data.job_id}`);
-        pollBatchDeepJob(data.job_id);
       } catch (e: any) {
         toast.error(e.message || "Batch submission failed");
         setLoading(false);

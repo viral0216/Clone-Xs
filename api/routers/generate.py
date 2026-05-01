@@ -4,7 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.demo import DemoDataRequest, StreamingEmissionRequest
+from api.models.demo import DemoDataRequest, StreamingEmissionRequest, StreamingScheduleRequest
 from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
@@ -287,6 +287,129 @@ async def get_streaming_auto_loader_sql(
         "table_fqn": f"{catalog}.{schema}.bronze_{profile}",
         "volume_path": f"/Volumes/{catalog}/{schema}/{volume}/{profile}/",
     }
+
+
+@router.post("/demo-data/streaming/schedule", summary="Schedule streaming as a Databricks Job")
+async def schedule_streaming(
+    req: StreamingScheduleRequest, client=Depends(get_db_client),
+):
+    """Generate a notebook + create a scheduled Databricks Job.
+
+    Unlike the in-process `POST /demo-data/streaming` path (which
+    runs as a thread inside the API server and dies on restart),
+    this creates a real Job that runs on Databricks compute and
+    survives API restarts. Tagged `created_by=clone-xs,
+    kind=streaming-emit, profile=<profile>` so the existing
+    `GET /clone-jobs` listing automatically includes scheduled streams.
+
+    Returns `{job_id, run_url, notebook_path, schedule_quartz_cron}`.
+    Failures (DBSQL Serverless not available, no CREATE JOB permission)
+    surface as HTTP 500 with the SDK error so the UI can fall back
+    to the manual SQL snippet path.
+    """
+    from src.demo_streaming_schedule import schedule_streaming_emission
+    payload = req.model_dump(by_alias=False)
+    # Pydantic stores the aliased `schema` field as `schema_name` —
+    # re-key for the helper which reads `schema` directly.
+    if "schema_name" in payload:
+        payload["schema"] = payload.pop("schema_name")
+    try:
+        return schedule_streaming_emission(client, payload)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to schedule streaming Job: {e}",
+        )
+
+
+@router.get("/demo-data/catalogs", summary="List catalogs (with demo signal + size)")
+async def list_demo_catalogs(
+    demo_only: bool = False, client=Depends(get_db_client),
+):
+    """List catalogs the caller can read, with metadata and a demo flag.
+
+    For each catalog: enumerates `client.catalogs.list()` and queries
+    `<catalog>.information_schema.table_properties` in parallel to
+    detect tables tagged with `demo.generated_by = 'clone-xs'`. Used
+    by the `/demo-data` page's "Manage Catalogs" tab.
+
+    `demo_only=true` filters the response to catalogs flagged as demo
+    catalogs. Per-catalog query failures don't abort — they're returned
+    in the per-catalog `error` field, mirroring the failure-isolation
+    contract used by `stats_multi`.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from src.client import execute_sql
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    try:
+        catalog_objs = list(client.catalogs.list())
+    except Exception as e:
+        return {"catalogs": [], "error": f"catalogs.list failed: {e}"}
+
+    def _probe(cat_obj) -> dict:
+        """Probe one catalog for demo signal + table/schema counts.
+
+        One bulk query against information_schema is cheaper than three
+        per-catalog calls; fall back to {is_demo: False} on any failure
+        so we surface the catalog without misleading numbers.
+        """
+        name = cat_obj.name or ""
+        out: dict = {
+            "name": name,
+            "owner": getattr(cat_obj, "owner", "") or "",
+            "comment": getattr(cat_obj, "comment", "") or "",
+            "created_at": str(getattr(cat_obj, "created_at", "") or ""),
+            "is_demo": False,
+            "num_demo_tables": 0,
+            "num_schemas": 0,
+            "num_tables": 0,
+            "error": None,
+        }
+        if not name or not wid:
+            return out
+        try:
+            rows = execute_sql(client, wid, f"""
+                SELECT
+                    (SELECT COUNT(DISTINCT table_schema)
+                       FROM `{name}`.information_schema.tables
+                      WHERE table_schema NOT IN ('information_schema','default'))
+                        AS num_schemas,
+                    (SELECT COUNT(*)
+                       FROM `{name}`.information_schema.tables
+                      WHERE table_schema NOT IN ('information_schema','default'))
+                        AS num_tables,
+                    (SELECT COUNT(DISTINCT table_name)
+                       FROM `{name}`.information_schema.table_properties
+                      WHERE property_key = 'demo.generated_by'
+                        AND property_value = 'clone-xs')
+                        AS num_demo_tables
+            """.strip())
+            r = rows[0] if rows else {}
+            out["num_schemas"] = int(r.get("num_schemas") or 0)
+            out["num_tables"] = int(r.get("num_tables") or 0)
+            out["num_demo_tables"] = int(r.get("num_demo_tables") or 0)
+            out["is_demo"] = out["num_demo_tables"] > 0
+        except Exception as e:
+            # Most often: "no rights on catalog" or
+            # "table_properties view missing on this UC version".
+            # Surface as error so the UI can show a hint without
+            # crashing the listing.
+            out["error"] = str(e)
+        return out
+
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        # 5-way fan-out matches `stats_multi` — comfortable on a Small
+        # warehouse, avoids hammering the metastore with N catalog
+        # queries when the user has dozens of catalogs.
+        rows = list(ex.map(_probe, catalog_objs))
+
+    if demo_only:
+        rows = [r for r in rows if r.get("is_demo")]
+
+    return {"catalogs": rows, "demo_only": demo_only, "total": len(rows)}
 
 
 @router.delete("/demo-data/{catalog_name}")

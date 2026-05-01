@@ -37,10 +37,40 @@ class TestDeviceProfiles:
     """The registry is the contract — UI dropdown reads keys, the
     runner dispatches on profile name. Drift here breaks both."""
 
-    def test_all_three_profiles_present(self):
+    def test_all_profiles_present(self):
         assert set(DEVICE_PROFILES.keys()) == {
             "generic_sensor", "industrial_machine", "car_obd2",
+            "smart_meter", "wearable_health", "pos_terminal",
+            "wind_turbine", "atm_transaction", "server_metrics",
+            "clickstream",
         }
+
+    def test_pydantic_literal_matches_registry(self):
+        """Guard against drift: the Pydantic `profile: Literal[...]`
+        on `StreamingEmissionRequest` MUST cover every key in
+        `DEVICE_PROFILES`. This test caught a real bug — the Literal
+        was outdated by 6 profiles, so users selecting (for example)
+        ``smart_meter`` from the UI got a 422 at the API layer."""
+        from typing import get_args
+        from api.models.demo import StreamingEmissionRequest
+        # Pull the Literal out of the field annotation.
+        ann = StreamingEmissionRequest.model_fields["profile"].annotation
+        literal_values = set(get_args(ann))
+        assert literal_values == set(DEVICE_PROFILES.keys()), (
+            "StreamingEmissionRequest.profile Literal is out of sync with "
+            "DEVICE_PROFILES — add or remove the missing keys in api/models/demo.py"
+        )
+
+    def test_schedule_notebook_source_covers_all_profiles(self):
+        """The scheduled-notebook generator must have an inlined source
+        block for every profile in DEVICE_PROFILES — otherwise users
+        scheduling that profile get a notebook that crashes at runtime
+        with NameError."""
+        from src.demo_streaming_schedule import _PROFILE_GENERATORS_SOURCE
+        assert set(_PROFILE_GENERATORS_SOURCE.keys()) == set(DEVICE_PROFILES.keys()), (
+            "_PROFILE_GENERATORS_SOURCE missing entries — add the inlined "
+            "generator source for the missing profile(s)"
+        )
 
     def test_profile_required_keys(self):
         """Every profile must carry the keys the runner depends on —
@@ -93,6 +123,125 @@ class TestGenerators:
         # VIN-shape: 17 chars, no I/O/Q.
         assert len(evt["vehicle_vin"]) == 17
         assert not (set(evt["vehicle_vin"]) & set("IOQ"))
+
+    def test_smart_meter_event_shape(self):
+        profile = DEVICE_PROFILES["smart_meter"]
+        state = profile["init_state"](5)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"meter_id", "captured_at", "kwh_cumulative",
+                "voltage_v", "current_a", "power_factor"} <= set(evt.keys())
+        # power_factor must stay in [0.85, 1.0] per generator.
+        assert 0.85 <= evt["power_factor"] <= 1.0
+
+    def test_smart_meter_kwh_is_monotonic(self):
+        """Cumulative kWh is the contract — must never decrease across
+        consecutive ticks for the same device."""
+        profile = DEVICE_PROFILES["smart_meter"]
+        state = profile["init_state"](1)
+        first = profile["generate_event"](state, 0, self._now())
+        second = profile["generate_event"](state, 0, self._now())
+        assert second["kwh_cumulative"] >= first["kwh_cumulative"]
+
+    def test_wearable_health_event_shape(self):
+        profile = DEVICE_PROFILES["wearable_health"]
+        state = profile["init_state"](3)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"wearable_id", "captured_at", "heart_rate_bpm", "spo2_pct",
+                "steps_cumulative", "calories_burned", "alert"} <= set(evt.keys())
+        # SpO2 clamped to [85, 100].
+        assert 85.0 <= evt["spo2_pct"] <= 100.0
+
+    def test_pos_terminal_event_shape(self):
+        profile = DEVICE_PROFILES["pos_terminal"]
+        state = profile["init_state"](4)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"terminal_id", "store_id", "captured_at", "transaction_id",
+                "amount_usd", "payment_method", "item_count", "status"} <= set(evt.keys())
+        assert evt["payment_method"] in {"card", "contactless", "mobile", "cash"}
+        assert evt["status"] in {"approved", "declined"}
+
+    def test_pos_terminal_terminal_store_binding_is_stable(self):
+        """A given terminal must always emit the same store_id — joins
+        depend on it."""
+        profile = DEVICE_PROFILES["pos_terminal"]
+        state = profile["init_state"](3)
+        e1 = profile["generate_event"](state, 0, self._now())
+        e2 = profile["generate_event"](state, 3, self._now())  # same device (3 % 3 == 0)
+        assert e1["terminal_id"] == e2["terminal_id"]
+        assert e1["store_id"] == e2["store_id"]
+
+    def test_wind_turbine_event_shape(self):
+        profile = DEVICE_PROFILES["wind_turbine"]
+        state = profile["init_state"](4)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"turbine_id", "captured_at", "wind_speed_ms", "rotor_rpm",
+                "power_output_kw", "blade_pitch_deg", "fault_code"} <= set(evt.keys())
+        # power_output_kw clamped to [0, rated_kw]; rated_kw is one of the
+        # discrete values in init_state.
+        assert evt["power_output_kw"] >= 0.0
+        assert evt["power_output_kw"] <= 3000.0
+
+    def test_atm_transaction_event_shape(self):
+        profile = DEVICE_PROFILES["atm_transaction"]
+        state = profile["init_state"](5)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"atm_id", "captured_at", "transaction_id", "account_hash",
+                "transaction_type", "amount_usd", "lat", "lng",
+                "is_fraud_suspected"} <= set(evt.keys())
+        assert evt["transaction_type"] in {"withdrawal", "deposit", "balance_inquiry"}
+        assert isinstance(evt["is_fraud_suspected"], bool)
+
+    def test_server_metrics_event_shape(self):
+        profile = DEVICE_PROFILES["server_metrics"]
+        state = profile["init_state"](3)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"host_id", "captured_at", "cpu_pct", "mem_used_gb",
+                "mem_total_gb", "disk_used_pct", "net_in_mbps",
+                "net_out_mbps", "status"} <= set(evt.keys())
+        assert 0.0 <= evt["cpu_pct"] <= 100.0
+        assert evt["status"] in {"healthy", "warning", "critical"}
+
+    def test_clickstream_event_shape(self):
+        profile = DEVICE_PROFILES["clickstream"]
+        state = profile["init_state"](5)
+        evt = profile["generate_event"](state, 0, self._now())
+        assert {"user_id", "session_id", "captured_at", "event_type",
+                "page_url", "referrer", "user_agent", "device_type"} <= set(evt.keys())
+        assert evt["event_type"] in {"page_view", "click", "scroll", "submit", "purchase"}
+        assert evt["device_type"] in {"desktop", "mobile", "tablet"}
+        assert evt["page_url"].startswith("/")
+
+    def test_clickstream_session_rotates_after_n_events(self):
+        """Sessions should rotate to a new session_id after ~30 events
+        per user — drives sessionization Bronze→Silver demos. Same user
+        emitting 31 events sees at least one session_id change."""
+        profile = DEVICE_PROFILES["clickstream"]
+        state = profile["init_state"](1)  # one user, every event hits them
+        first = profile["generate_event"](state, 0, self._now())
+        first_session = first["session_id"]
+        # Run 35 more events through the same user; session must rotate
+        # at least once (rollover at session_seq >= 30).
+        sessions = {first_session}
+        for i in range(1, 36):
+            e = profile["generate_event"](state, i, self._now())
+            sessions.add(e["session_id"])
+        assert len(sessions) >= 2, "session_id never rotated across 36 events"
+
+    def test_clickstream_user_agent_sticky_per_user(self):
+        """A given user_id should always emit the same user_agent —
+        per-user identity is preserved across events so analytics
+        joins on user are meaningful."""
+        profile = DEVICE_PROFILES["clickstream"]
+        state = profile["init_state"](3)
+        # Three users, hit each one twice (seq 0..5 → users 0,1,2,0,1,2).
+        events = [profile["generate_event"](state, i, self._now()) for i in range(6)]
+        # Group by user; assert all events for one user share user_agent.
+        from collections import defaultdict
+        by_user: dict[str, set] = defaultdict(set)
+        for e in events:
+            by_user[e["user_id"]].add(e["user_agent"])
+        for user, agents in by_user.items():
+            assert len(agents) == 1, f"user_agent not sticky for {user}: {agents}"
 
 
 # ─── emit_batch + write_batch_to_volume ───────────────────────────

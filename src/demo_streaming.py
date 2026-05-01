@@ -6,11 +6,18 @@ module fills that gap: it spawns a background loop that emits JSON
 event batches to a UC Volume on a tunable cadence, simulating IoT
 devices landing data that customers wire up to Auto Loader / DLT.
 
-Three built-in device profiles cover the common IoT demo asks:
+Built-in device profiles cover the common IoT and event-stream demo
+asks across the supported industries:
 
 - ``generic_sensor``     — temperature / humidity / pressure / vibration
 - ``industrial_machine`` — RPM, oil pressure, tool wear, occasional DTCs
 - ``car_obd2``           — OBD-II telemetry: speed, RPM, fuel, lat/lng
+- ``smart_meter``        — energy: cumulative kWh, voltage, current, power factor
+- ``wearable_health``    — healthcare: heart rate, SpO2, steps, alerts
+- ``pos_terminal``       — retail: POS sales (amount, payment method, status)
+- ``wind_turbine``       — energy: wind speed, RPM, power output, blade pitch, faults
+- ``atm_transaction``    — financial: ATM withdrawals/deposits, lat/lng, fraud flag
+- ``server_metrics``     — infra: CPU / memory / disk / network per host
 
 Optionally, after provisioning the Volume, the runner can also create
 a DBSQL **streaming Bronze table** that consumes the Volume via
@@ -117,6 +124,201 @@ def _gen_car_obd2(state: dict, seq: int, now: datetime) -> dict:
     }
 
 
+def _gen_smart_meter(state: dict, seq: int, now: datetime) -> dict:
+    """Smart electricity meter: cumulative kWh, voltage, current, PF.
+
+    `kwh_cumulative` increases monotonically per meter — realistic for
+    billing-aggregation and consumption-trend demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    d["kwh_cumulative"] = d["kwh_cumulative"] + random.uniform(0.001, 0.05)
+    return {
+        "meter_id": d["id"],
+        "captured_at": now.isoformat(),
+        "kwh_cumulative": round(d["kwh_cumulative"], 4),
+        "voltage_v": round(d["voltage_mean"] + random.uniform(-3.0, 3.0), 2),
+        "current_a": round(random.uniform(0.5, 25.0), 2),
+        "power_factor": round(random.uniform(0.85, 1.0), 3),
+    }
+
+
+def _gen_wearable_health(state: dict, seq: int, now: datetime) -> dict:
+    """Wearable health device: heart rate, SpO2, steps, calories, alerts.
+
+    `steps_cumulative` and `calories_burned` are monotonic per wearable
+    so trend dashboards see realistic accumulation. Rare alerts fire
+    when HR or SpO2 cross thresholds — useful for healthcare DQ demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    d["steps_cumulative"] = d["steps_cumulative"] + random.randint(0, 30)
+    d["calories"] = d["calories"] + random.uniform(0.0, 1.5)
+    hr = int(d["hr_baseline"] + random.uniform(-10.0, 25.0))
+    spo2 = round(max(85.0, min(100.0, 97.0 + random.uniform(-2.5, 1.5))), 1)
+    alert = None
+    if hr > 140:
+        alert = "high_hr"
+    elif spo2 < 92.0:
+        alert = "low_spo2"
+    return {
+        "wearable_id": d["id"],
+        "captured_at": now.isoformat(),
+        "heart_rate_bpm": hr,
+        "spo2_pct": spo2,
+        "steps_cumulative": d["steps_cumulative"],
+        "calories_burned": round(d["calories"], 2),
+        "alert": alert,
+    }
+
+
+def _gen_pos_terminal(state: dict, seq: int, now: datetime) -> dict:
+    """Retail POS terminal: store_id, amount, payment method, status.
+
+    Each terminal is bound to a stable `store_id` so joins to a
+    store-dimension table are meaningful. ~3% of transactions decline
+    (status='declined') for retail-DQ demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    methods = ["card", "contactless", "mobile", "cash"]
+    statuses = ["approved", "approved", "approved", "approved", "approved", "approved", "declined"]
+    return {
+        "terminal_id": d["id"],
+        "store_id": d["store_id"],
+        "captured_at": now.isoformat(),
+        "transaction_id": f"T-{seq:012d}",
+        "amount_usd": round(random.uniform(2.50, 250.00), 2),
+        "payment_method": random.choice(methods),
+        "item_count": random.randint(1, 12),
+        "status": random.choice(statuses),
+    }
+
+
+def _gen_wind_turbine(state: dict, seq: int, now: datetime) -> dict:
+    """Wind turbine telemetry: wind speed, RPM, power output, fault codes.
+
+    `power_output_kw` follows a simplified cubic-of-wind-speed curve
+    capped at the turbine's `rated_kw`. Rare fault codes (~0.5%)
+    surface for predictive-maintenance demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    wind = max(0.0, d["wind_baseline"] + random.uniform(-3.0, 3.0))
+    rpm = max(0.0, wind * 2.5 + random.uniform(-2.0, 2.0))
+    power_kw = max(0.0, min(d["rated_kw"], wind ** 2 * d["rated_kw"] / 144.0))
+    fault = None
+    if random.random() < 0.005:
+        fault = random.choice(["F101_BRAKE", "F202_YAW_DRIVE", "F305_GEARBOX_TEMP"])
+    return {
+        "turbine_id": d["id"],
+        "captured_at": now.isoformat(),
+        "wind_speed_ms": round(wind, 2),
+        "rotor_rpm": round(rpm, 2),
+        "power_output_kw": round(power_kw, 2),
+        "blade_pitch_deg": round(random.uniform(-2.0, 90.0), 2),
+        "fault_code": fault,
+    }
+
+
+def _gen_atm_transaction(state: dict, seq: int, now: datetime) -> dict:
+    """ATM transaction: type, amount, location (lat/lng), fraud flag.
+
+    Withdrawals are quantised to common cash-dispenser amounts; deposits
+    are continuous; balance-inquiries are 0. ~0.8% of events carry
+    `is_fraud_suspected=true` for fraud-detection demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    types = ["withdrawal", "withdrawal", "withdrawal", "balance_inquiry", "deposit"]
+    txn_type = random.choice(types)
+    if txn_type == "withdrawal":
+        amount = round(random.choice([20.0, 40.0, 60.0, 100.0, 200.0, 500.0]), 2)
+    elif txn_type == "deposit":
+        amount = round(random.uniform(50.0, 2000.0), 2)
+    else:
+        amount = 0.0
+    is_fraud = random.random() < 0.008
+    return {
+        "atm_id": d["id"],
+        "captured_at": now.isoformat(),
+        "transaction_id": f"ATM-{seq:012d}",
+        "account_hash": f"acct-{random.randint(0, 999999):06d}",
+        "transaction_type": txn_type,
+        "amount_usd": amount,
+        "lat": d["lat"],
+        "lng": d["lng"],
+        "is_fraud_suspected": is_fraud,
+    }
+
+
+def _gen_server_metrics(state: dict, seq: int, now: datetime) -> dict:
+    """Server / host telemetry: CPU, memory, disk, network, status.
+
+    Status escalates to 'warning' / 'critical' based on CPU and memory
+    thresholds — useful for observability-pipeline demos. Memory total
+    is per-host so dashboards can show used vs. capacity per node.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    cpu = max(0.0, min(100.0, d["cpu_baseline"] + random.uniform(-15.0, 25.0)))
+    mem = max(0.0, min(d["mem_total_gb"], d["mem_baseline"] + random.uniform(-2.0, 4.0)))
+    status = "healthy"
+    if cpu > 90.0 or mem / d["mem_total_gb"] > 0.95:
+        status = "critical"
+    elif cpu > 75.0:
+        status = "warning"
+    return {
+        "host_id": d["id"],
+        "captured_at": now.isoformat(),
+        "cpu_pct": round(cpu, 2),
+        "mem_used_gb": round(mem, 2),
+        "mem_total_gb": d["mem_total_gb"],
+        "disk_used_pct": round(random.uniform(20.0, 92.0), 2),
+        "net_in_mbps": round(random.uniform(0.0, 950.0), 2),
+        "net_out_mbps": round(random.uniform(0.0, 950.0), 2),
+        "status": status,
+    }
+
+
+def _gen_clickstream(state: dict, seq: int, now: datetime) -> dict:
+    """Web/mobile clickstream events: user_id, session_id, event_type,
+    page_url, referrer, device_type.
+
+    Sessions roll over every ~30 events per user so consumer demos see
+    realistic sessionization patterns (a user has multiple sessions
+    over time). Events bias toward 'page_view' (most common); 'submit'
+    and 'purchase' are rarer to mirror real funnel drop-off.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    # Rotate session id every ~30 events per user. The bonus quirk
+    # here: it generates believable Bronze→Silver sessionization data.
+    d["session_seq"] = d.get("session_seq", 0) + 1
+    if d["session_seq"] >= 30:
+        d["session_id"] = f"sess-{random.randint(10**8, 10**9 - 1)}"
+        d["session_seq"] = 0
+    pages = ["/home", "/products", "/products/abc", "/products/xyz",
+             "/cart", "/checkout", "/account", "/search?q=demo", "/blog/post-1"]
+    referrers = ["", "https://google.com", "https://bing.com",
+                 "https://twitter.com/share", "https://example.com/blog"]
+    # Weighted event type — page_view dominates, conversion funnel rare.
+    et = random.choices(
+        ["page_view", "click", "scroll", "submit", "purchase"],
+        weights=[60, 25, 10, 4, 1],
+    )[0]
+    return {
+        "user_id": d["id"],
+        "session_id": d["session_id"],
+        "captured_at": now.isoformat(),
+        "event_type": et,
+        "page_url": random.choice(pages),
+        "referrer": random.choice(referrers),
+        "user_agent": d["user_agent"],
+        "device_type": d["device_type"],
+    }
+
+
 def _init_state_generic_sensor(num_devices: int) -> dict:
     return {"devices": [
         {
@@ -156,6 +358,101 @@ def _init_state_car_obd2(num_devices: int) -> dict:
             "lng": random.uniform(-122.5, -122.4),
         }
         for _ in range(num_devices)
+    ]}
+
+
+def _init_state_smart_meter(num_devices: int) -> dict:
+    return {"devices": [
+        {
+            "id": f"meter-{i:06d}",
+            "kwh_cumulative": random.uniform(1000.0, 50000.0),
+            "voltage_mean": random.uniform(220.0, 240.0),
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_wearable_health(num_devices: int) -> dict:
+    return {"devices": [
+        {
+            "id": f"wearable-{i:05d}",
+            "hr_baseline": random.uniform(60.0, 85.0),
+            "steps_cumulative": random.randint(0, 5000),
+            "calories": random.uniform(0.0, 500.0),
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_pos_terminal(num_devices: int) -> dict:
+    """Each terminal is permanently assigned to one store — joins to a
+    store-dimension stay stable across batches."""
+    return {"devices": [
+        {
+            "id": f"pos-{i:05d}",
+            "store_id": f"store-{random.randint(1, 50):04d}",
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_wind_turbine(num_devices: int) -> dict:
+    return {"devices": [
+        {
+            "id": f"turbine-{i:04d}",
+            "wind_baseline": random.uniform(4.0, 12.0),
+            "rated_kw": random.choice([1500.0, 2000.0, 2500.0, 3000.0]),
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_atm_transaction(num_devices: int) -> dict:
+    """NYC-ish bounding box for ATM lat/lng — keeps fraud-geo demos
+    visually coherent on a city-scale map."""
+    return {"devices": [
+        {
+            "id": f"atm-{i:05d}",
+            "lat": round(random.uniform(40.5, 40.9), 6),
+            "lng": round(random.uniform(-74.05, -73.85), 6),
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_server_metrics(num_devices: int) -> dict:
+    return {"devices": [
+        {
+            "id": f"host-{i:04d}",
+            "cpu_baseline": random.uniform(20.0, 60.0),
+            "mem_baseline": random.uniform(8.0, 24.0),
+            "mem_total_gb": random.choice([16.0, 32.0, 64.0, 128.0]),
+        }
+        for i in range(num_devices)
+    ]}
+
+
+def _init_state_clickstream(num_devices: int) -> dict:
+    """Per-user state for clickstream — stable user_id + initial
+    session_id + a sticky user_agent / device_type so each user has
+    a believable identity across events."""
+    user_agents = [
+        "Mozilla/5.0 (Macintosh) Chrome/120.0",
+        "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+        "Mozilla/5.0 (iPhone) Safari/17.0",
+        "Mozilla/5.0 (Linux; Android 14) Chrome/120.0",
+        "Mozilla/5.0 (Macintosh) Firefox/121.0",
+    ]
+    device_types = ["desktop", "mobile", "tablet"]
+    return {"devices": [
+        {
+            "id": f"user-{i:06d}",
+            "session_id": f"sess-{random.randint(10**8, 10**9 - 1)}",
+            "session_seq": 0,
+            "user_agent": random.choice(user_agents),
+            "device_type": random.choice(device_types),
+        }
+        for i in range(num_devices)
     ]}
 
 
@@ -213,6 +510,123 @@ DEVICE_PROFILES: dict[str, dict[str, Any]] = {
             ("lat", "DOUBLE"),
             ("lng", "DOUBLE"),
             ("dtc", "STRING"),
+        ],
+    },
+    "smart_meter": {
+        "name": "Smart Meter (Energy)",
+        "comment": "Smart electricity meter telemetry (cumulative kWh, voltage, current, power factor)",
+        "default_devices": 200,
+        "init_state": _init_state_smart_meter,
+        "generate_event": _gen_smart_meter,
+        "columns": [
+            ("meter_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("kwh_cumulative", "DOUBLE"),
+            ("voltage_v", "DOUBLE"),
+            ("current_a", "DOUBLE"),
+            ("power_factor", "DOUBLE"),
+        ],
+    },
+    "wearable_health": {
+        "name": "Wearable Health (Healthcare)",
+        "comment": "Wearable health device telemetry (heart rate, SpO2, steps, calories, alerts)",
+        "default_devices": 100,
+        "init_state": _init_state_wearable_health,
+        "generate_event": _gen_wearable_health,
+        "columns": [
+            ("wearable_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("heart_rate_bpm", "BIGINT"),
+            ("spo2_pct", "DOUBLE"),
+            ("steps_cumulative", "BIGINT"),
+            ("calories_burned", "DOUBLE"),
+            ("alert", "STRING"),
+        ],
+    },
+    "pos_terminal": {
+        "name": "POS Terminal (Retail)",
+        "comment": "Retail POS transaction events (amount, payment method, status)",
+        "default_devices": 150,
+        "init_state": _init_state_pos_terminal,
+        "generate_event": _gen_pos_terminal,
+        "columns": [
+            ("terminal_id", "STRING"),
+            ("store_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("transaction_id", "STRING"),
+            ("amount_usd", "DOUBLE"),
+            ("payment_method", "STRING"),
+            ("item_count", "BIGINT"),
+            ("status", "STRING"),
+        ],
+    },
+    "wind_turbine": {
+        "name": "Wind Turbine (Energy)",
+        "comment": "Wind turbine telemetry (wind speed, RPM, power output, blade pitch, fault codes)",
+        "default_devices": 30,
+        "init_state": _init_state_wind_turbine,
+        "generate_event": _gen_wind_turbine,
+        "columns": [
+            ("turbine_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("wind_speed_ms", "DOUBLE"),
+            ("rotor_rpm", "DOUBLE"),
+            ("power_output_kw", "DOUBLE"),
+            ("blade_pitch_deg", "DOUBLE"),
+            ("fault_code", "STRING"),
+        ],
+    },
+    "atm_transaction": {
+        "name": "ATM Transaction (Financial)",
+        "comment": "ATM transaction events (withdrawals/deposits, lat/lng, suspected-fraud flag)",
+        "default_devices": 80,
+        "init_state": _init_state_atm_transaction,
+        "generate_event": _gen_atm_transaction,
+        "columns": [
+            ("atm_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("transaction_id", "STRING"),
+            ("account_hash", "STRING"),
+            ("transaction_type", "STRING"),
+            ("amount_usd", "DOUBLE"),
+            ("lat", "DOUBLE"),
+            ("lng", "DOUBLE"),
+            ("is_fraud_suspected", "BOOLEAN"),
+        ],
+    },
+    "server_metrics": {
+        "name": "Server Metrics (Infra)",
+        "comment": "Per-host server telemetry (CPU, memory, disk, network, health status)",
+        "default_devices": 50,
+        "init_state": _init_state_server_metrics,
+        "generate_event": _gen_server_metrics,
+        "columns": [
+            ("host_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("cpu_pct", "DOUBLE"),
+            ("mem_used_gb", "DOUBLE"),
+            ("mem_total_gb", "DOUBLE"),
+            ("disk_used_pct", "DOUBLE"),
+            ("net_in_mbps", "DOUBLE"),
+            ("net_out_mbps", "DOUBLE"),
+            ("status", "STRING"),
+        ],
+    },
+    "clickstream": {
+        "name": "Web Clickstream",
+        "comment": "Web/mobile clickstream events (user, session, page, event_type) — drives Bronze→Silver sessionization demos",
+        "default_devices": 500,
+        "init_state": _init_state_clickstream,
+        "generate_event": _gen_clickstream,
+        "columns": [
+            ("user_id", "STRING"),
+            ("session_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("event_type", "STRING"),
+            ("page_url", "STRING"),
+            ("referrer", "STRING"),
+            ("user_agent", "STRING"),
+            ("device_type", "STRING"),
         ],
     },
 }
@@ -466,9 +880,19 @@ def run_streaming_emission(
     # the Volume entirely (no files); for volume modes we always
     # provision the Volume and only build the Bronze STREAMING TABLE
     # when explicitly requested.
+    #
+    # Bronze auto-create is deferred until the first JSON batch has
+    # actually landed. ``read_files()`` infers schema from existing
+    # files, so creating the table against an empty Volume path raises
+    # ``CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE``. The deferred path applies
+    # uniformly across every profile (atm_transaction, smart_meter,
+    # car_obd2, …) because all profiles use the same Volume → JSON →
+    # ``read_files()`` pipeline.
     volume_path: str | None = None
     direct_table_fqn: str | None = None
     bronze_info: dict | None = None
+    bronze_pending = False
+    bronze_refresh_minutes = int(config.get("bronze_refresh_minutes", 5))
     if destination == "direct_table":
         direct_table_fqn = _ensure_direct_bronze_table(
             client, warehouse_id, catalog, schema, profile, bronze_table,
@@ -477,11 +901,7 @@ def run_streaming_emission(
     else:
         volume_path = _ensure_events_volume(client, warehouse_id, catalog, schema, profile, volume=volume)
         if destination == "volume_bronze":
-            bronze_info = create_bronze_streaming_table(
-                client, warehouse_id, catalog, schema, profile,
-                refresh_minutes=int(config.get("bronze_refresh_minutes", 5)),
-                volume=volume,
-            )
+            bronze_pending = True
 
     state = DEVICE_PROFILES[profile]["init_state"](num_devices)
 
@@ -517,6 +937,21 @@ def run_streaming_emission(
             events_emitted += events_per_batch
         except Exception as e:
             logger.warning(f"Streaming tick failed (continuing): {e}")
+
+        # Create the Bronze STREAMING TABLE after the first JSON batch has
+        # landed. read_files() needs at least one file present to infer the
+        # schema — creating it eagerly against an empty Volume hits
+        # CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE and the table never gets built.
+        # If creation soft-fails (permission / Serverless missing) we don't
+        # retry — bronze_pending flips false either way so we don't spam the
+        # warehouse on every tick.
+        if bronze_pending and files_written > 0:
+            bronze_info = create_bronze_streaming_table(
+                client, warehouse_id, catalog, schema, profile,
+                refresh_minutes=bronze_refresh_minutes,
+                volume=volume,
+            )
+            bronze_pending = False
 
         ticks += 1
         progress.update({

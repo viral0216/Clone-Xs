@@ -1,95 +1,83 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import CatalogPicker from "@/components/CatalogPicker";
 import PageHeader from "@/components/PageHeader";
+import { usePageJob } from "@/contexts/JobContext";
+import { useDurableJob } from "@/hooks/useDurableJob";
 import {
-  Wand2, Loader2, Copy, Download, FileCode, Boxes, CheckCircle, XCircle, Clock,
+  Wand2, Loader2, Copy, Download, FileCode, Boxes, XCircle, Clock,
 } from "lucide-react";
 
 export default function GeneratePage() {
-  // Workflow Generation state
+  // Workflow Generation — short-lived synchronous request, but still cached
+  // in JobContext so navigating away and back keeps the generated content.
+  const workflowJob = usePageJob("generate-workflow");
   const [workflowFormat, setWorkflowFormat] = useState("json");
-  const [workflowLoading, setWorkflowLoading] = useState(false);
-  const [workflowResult, setWorkflowResult] = useState<string | null>(null);
+  const workflowLoading = workflowJob.isRunning;
+  const workflowResult: string | null = workflowJob.job?.data ?? null;
 
-  // Terraform / Pulumi state
+  // Terraform / Pulumi — submitted as a server-side job, tracked durably so
+  // navigating away during generation doesn't lose the in-flight job.
   const [iacCatalog, setIacCatalog] = useState("");
   const [iacFormat, setIacFormat] = useState("terraform");
-  const [iacLoading, setIacLoading] = useState(false);
-  const [iacResult, setIacResult] = useState<string | null>(null);
-  const [iacJobId, setIacJobId] = useState<string | null>(null);
-  const [iacJob, setIacJob] = useState<any>(null);
-  const iacPollRef = useRef<NodeJS.Timeout | null>(null);
+  const iacTracker = useDurableJob({
+    key: "generate-iac",
+    pollUrl: (id) => `/clone/${id}`,
+    pollInterval: 2000,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
+    notificationTitle: "IaC ready",
+    onComplete: (d) => {
+      if (d.status === "completed") toast.success(`${iacFormat} generated successfully`);
+      else toast.error(d.error || "Generation failed");
+    },
+  });
+  const iacJobId = iacTracker.jobId;
+  const iacJob = iacTracker.entry?.data ?? null;
+  const iacLoading = iacTracker.isRunning;
+  const iacResult: string | null = (() => {
+    const r = iacJob?.result;
+    if (!r) return null;
+    return r.content ?? (typeof r === "string" ? r : JSON.stringify(r, null, 2));
+  })();
 
   const generateWorkflow = async () => {
-    setWorkflowLoading(true);
-    setWorkflowResult(null);
     try {
-      const res = await api.post("/generate/workflow", { format: workflowFormat });
-      const content = typeof res === "string" ? res : (res.content ?? res.workflow ?? JSON.stringify(res, null, 2));
-      setWorkflowResult(content);
-      toast.success("Workflow generated successfully");
+      await workflowJob.run({ format: workflowFormat }, async () => {
+        const res = await api.post("/generate/workflow", { format: workflowFormat });
+        const content = typeof res === "string" ? res : (res.content ?? res.workflow ?? JSON.stringify(res, null, 2));
+        toast.success("Workflow generated successfully");
+        return content;
+      });
     } catch (e) {
       toast.error((e as Error).message);
     }
-    setWorkflowLoading(false);
   };
 
   const generateIaC = async () => {
-    setIacLoading(true);
-    setIacResult(null);
-    setIacJob(null);
-    setIacJobId(null);
     try {
-      const res = await api.post("/generate/terraform", {
-        source_catalog: iacCatalog,
-        format: iacFormat,
-      });
-      if (res.job_id) {
-        setIacJobId(res.job_id);
-        toast.success(`${iacFormat} generation submitted (Job ${res.job_id})`);
-      } else {
-        const content = typeof res === "string" ? res : (res.content ?? JSON.stringify(res, null, 2));
-        setIacResult(content);
+      await iacTracker.start({ source_catalog: iacCatalog, format: iacFormat }, async () => {
+        const res = await api.post("/generate/terraform", {
+          source_catalog: iacCatalog,
+          format: iacFormat,
+        });
+        if (res.job_id) {
+          toast.success(`${iacFormat} generation submitted (Job ${res.job_id})`);
+          return res.job_id;
+        }
+        // Synchronous response (no job_id) — return whole payload, useDurableJob
+        // will treat it as a completed result.
         toast.success("Infrastructure code generated successfully");
-        setIacLoading(false);
-      }
+        return { result: res };
+      });
     } catch (e) {
       toast.error((e as Error).message);
-      setIacLoading(false);
     }
   };
-
-  // Poll for IaC job status
-  useEffect(() => {
-    if (!iacJobId) return;
-    const poll = async () => {
-      try {
-        const data = await api.get(`/clone/${iacJobId}`);
-        setIacJob(data);
-        if (data.status === "completed") {
-          if (iacPollRef.current) clearInterval(iacPollRef.current);
-          const content = data.result?.content || JSON.stringify(data.result, null, 2);
-          setIacResult(content);
-          setIacLoading(false);
-          toast.success(`${iacFormat} generated successfully`);
-        } else if (data.status === "failed") {
-          if (iacPollRef.current) clearInterval(iacPollRef.current);
-          setIacLoading(false);
-          toast.error(data.error || "Generation failed");
-        }
-      } catch {}
-    };
-    poll();
-    iacPollRef.current = setInterval(poll, 2000);
-    return () => { if (iacPollRef.current) clearInterval(iacPollRef.current); };
-  }, [iacJobId]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);

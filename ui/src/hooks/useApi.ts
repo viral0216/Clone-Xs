@@ -572,6 +572,59 @@ export function usePermissionsAudit() {
   });
 }
 
+/** List catalogs the user can read, with size + demo-flag metadata.
+ * Backs the Manage Catalogs tab on `/demo-data`. `demoOnly` filters to
+ * catalogs flagged with `demo.generated_by = 'clone-xs'` table tags. */
+export function useDemoCatalogs(demoOnly: boolean = false) {
+  return useQuery<{ catalogs: any[]; demo_only: boolean; total: number }>({
+    queryKey: ["demo-catalogs", demoOnly],
+    queryFn: () => api.get(`/generate/demo-data/catalogs${demoOnly ? "?demo_only=true" : ""}`),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Drop a demo catalog. Reuses the existing `DELETE /demo-data/{name}`
+ * endpoint (no new destructive path). Invalidates the listing on success
+ * so the row disappears from the Manage tab. */
+export function useDemoCatalogDrop() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, { catalog_name: string }>({
+    mutationFn: ({ catalog_name }) => api.delete(`/generate/demo-data/${encodeURIComponent(catalog_name)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["demo-catalogs"] }),
+  });
+}
+
+/** Schedule a streaming emission job on Databricks. Generates a
+ * notebook in the user's workspace + creates a Job that runs it on
+ * a Quartz cron. Survives API restarts. Returns
+ * `{job_id, run_url, notebook_path}`. */
+export function useStreamingSchedule() {
+  return useMutation({
+    mutationFn: (req: {
+      catalog: string;
+      schema: string;
+      volume?: string;
+      profile: "generic_sensor" | "industrial_machine" | "car_obd2"
+        | "smart_meter" | "wearable_health" | "pos_terminal"
+        | "wind_turbine" | "atm_transaction" | "server_metrics"
+        | "clickstream";
+      events_per_batch?: number;
+      interval_seconds?: number;
+      total_duration_seconds?: number;
+      num_devices?: number;
+      auto_create_bronze?: boolean;
+      bronze_refresh_minutes?: number;
+      warehouse_id?: string;
+      name?: string;
+      schedule_quartz_cron: string;
+      timezone_id?: string;
+      notebook_path?: string;
+      use_serverless?: boolean;
+    }) => api.post("/generate/demo-data/streaming/schedule", req),
+  });
+}
+
 /** Start a streaming-emission demo job. Spawns a background job that
  * writes JSON event batches to a UC Volume on a tunable cadence,
  * optionally also creating a DBSQL streaming Bronze table that
@@ -583,7 +636,10 @@ export function useStreamingEmit() {
       catalog: string;
       schema: string;
       volume?: string;
-      profile: "generic_sensor" | "industrial_machine" | "car_obd2";
+      profile: "generic_sensor" | "industrial_machine" | "car_obd2"
+        | "smart_meter" | "wearable_health" | "pos_terminal"
+        | "wind_turbine" | "atm_transaction" | "server_metrics"
+        | "clickstream";
       destination?: "volume" | "volume_bronze" | "direct_table";
       bronze_table?: string;
       events_per_batch?: number;

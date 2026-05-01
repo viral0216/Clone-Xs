@@ -153,7 +153,7 @@ This is tamper-evidence, not proof against an attacker with the secret. The HMAC
 
 ### How it works
 
-The existing `/ai/clone-builder` endpoint forwards your natural-language query plus the list of available catalogs to the configured AI backend (Databricks Model Serving or the Anthropic API — see [AI Assistant](./ai-assistant) for backend setup). The service returns a structured config JSON + a short explanation of which flags it picked and why.
+The existing `/ai/clone-builder` endpoint forwards your natural-language query plus the list of available catalogs to the configured AI backend (Databricks Model Serving or the Anthropic API — pick one via the `X-Databricks-Model` header on the request, or the `DATABRICKS_MODEL` / `ANTHROPIC_API_KEY` environment variables on the server). The service returns a structured config JSON + a short explanation of which flags it picked and why.
 
 ### Usage
 

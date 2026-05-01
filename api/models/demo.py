@@ -87,7 +87,7 @@ class StreamingEmissionRequest(BaseModel):
 
     The runner emits JSON event batches at `interval_seconds` cadence
     for `total_duration_seconds`. Each batch is one file under
-    `/Volumes/<catalog>/<schema>/events_volume/<profile>/`. Optionally
+    `/Volumes/<catalog>/<schema>/<volume>/<profile>/`. Optionally
     creates a streaming Bronze Delta table consuming the Volume via
     Auto Loader. See `src/demo_streaming.py` for the device profile
     registry and emission semantics.
@@ -98,6 +98,10 @@ class StreamingEmissionRequest(BaseModel):
     # Pydantic reserves `.schema` on BaseModel — use `schema_name`
     # internally and accept `schema` from the wire via the alias.
     schema_name: str = Field(..., alias="schema", description="Target schema")
+    # UC Volume name — created if missing. Default preserves the legacy
+    # path `/Volumes/<catalog>/<schema>/events_volume/<profile>/` for
+    # any existing API callers.
+    volume: str = Field(default="events_volume", description="UC Volume name (created if missing)")
     profile: Literal["generic_sensor", "industrial_machine", "car_obd2"] = Field(
         ..., description="Built-in device profile",
     )
@@ -111,8 +115,24 @@ class StreamingEmissionRequest(BaseModel):
         description="Override the profile's default device count",
     )
     warehouse_id: str | None = Field(default=None, description="Override SQL warehouse ID")
+    # Destination mode for emitted events:
+    #   "volume"        — write JSON files to the Volume only
+    #   "volume_bronze" — files + auto-create STREAMING TABLE Bronze
+    #   "direct_table"  — INSERT INTO Delta table directly (no Volume,
+    #                     no Auto Loader; works on Free Edition / any tier)
+    # Default preserves legacy behaviour by deferring to
+    # `auto_create_bronze` when destination is unset (see runner).
+    destination: Literal["volume", "volume_bronze", "direct_table"] | None = Field(
+        default=None,
+        description="Destination mode (volume | volume_bronze | direct_table)",
+    )
+    # Bronze table name for direct_table mode. Empty → defaults to
+    # `bronze_<profile>` at runtime.
+    bronze_table: str = Field(default="", description="Bronze table name (default: bronze_<profile>)")
     # Auto Loader Bronze: when true, runs CREATE OR REFRESH STREAMING
     # TABLE so files land in a Delta table automatically. Requires
     # DBSQL Serverless on the warehouse + CREATE TABLE on the schema.
+    # Kept for backwards compatibility — superseded by `destination`
+    # when set.
     auto_create_bronze: bool = Field(default=False)
     bronze_refresh_minutes: int = Field(default=5, ge=1, le=60)

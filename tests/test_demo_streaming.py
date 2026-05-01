@@ -242,7 +242,7 @@ class TestBronzeStreamingTable:
         )
         sql = mock_sql.call_args.args[2]
         assert "CREATE OR REFRESH STREAMING TABLE" in sql
-        assert "SCHEDULE EVERY 3 MINUTES" in sql
+        assert "SCHEDULE REFRESH CRON '0 0/3 * * * ?' AT TIME ZONE 'UTC'" in sql
         assert "STREAM read_files" in sql
         assert "/Volumes/main/iot/events_volume/generic_sensor/" in sql
         assert "format => 'json'" in sql
@@ -280,7 +280,7 @@ class TestAutoLoaderSql:
         snippet = get_auto_loader_sql("main", "iot", "industrial_machine", refresh_minutes=10)
         assert "CREATE OR REFRESH STREAMING TABLE" in snippet
         assert "`main`.`iot`.`bronze_industrial_machine`" in snippet
-        assert "SCHEDULE EVERY 10 MINUTES" in snippet
+        assert "SCHEDULE REFRESH CRON '0 0/10 * * * ?' AT TIME ZONE 'UTC'" in snippet
         assert "/Volumes/main/iot/events_volume/industrial_machine/" in snippet
 
 
@@ -371,4 +371,4 @@ class TestEndpointDispatch:
         body = resp.json()
         assert body["table_fqn"] == "main.iot.bronze_car_obd2"
         assert "STREAM read_files" in body["sql"]
-        assert "SCHEDULE EVERY 7 MINUTES" in body["sql"]
+        assert "SCHEDULE REFRESH CRON '0 0/7 * * * ?' AT TIME ZONE 'UTC'" in body["sql"]

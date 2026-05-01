@@ -21,7 +21,7 @@ SQL warehouse. Falls back gracefully when DBSQL Serverless isn't
 available; emission continues either way.
 
 Output paths follow:
-  /Volumes/<catalog>/<schema>/events_volume/<profile>/batch-<isoZ>-<seq>.json
+  /Volumes/<catalog>/<schema>/<volume>/<profile>/batch-<isoZ>-<seq>.json
 """
 
 from __future__ import annotations
@@ -169,6 +169,17 @@ DEVICE_PROFILES: dict[str, dict[str, Any]] = {
         "default_devices": 50,
         "init_state": _init_state_generic_sensor,
         "generate_event": _gen_generic_sensor,
+        # Column DDL for direct-to-table mode (mirrors _gen_generic_sensor
+        # output keys / types). Order matches the dict key order so the
+        # INSERT VALUES generator can rely on it.
+        "columns": [
+            ("device_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("temperature_c", "DOUBLE"),
+            ("humidity_pct", "DOUBLE"),
+            ("pressure_hpa", "DOUBLE"),
+            ("vibration_g", "DOUBLE"),
+        ],
     },
     "industrial_machine": {
         "name": "Industrial Machine",
@@ -176,6 +187,15 @@ DEVICE_PROFILES: dict[str, dict[str, Any]] = {
         "default_devices": 20,
         "init_state": _init_state_industrial_machine,
         "generate_event": _gen_industrial_machine,
+        "columns": [
+            ("machine_id", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("rpm", "BIGINT"),
+            ("oil_pressure_psi", "DOUBLE"),
+            ("coolant_temp_c", "DOUBLE"),
+            ("tool_wear_pct", "DOUBLE"),
+            ("error_code", "STRING"),
+        ],
     },
     "car_obd2": {
         "name": "Car OBD-II",
@@ -183,6 +203,17 @@ DEVICE_PROFILES: dict[str, dict[str, Any]] = {
         "default_devices": 100,
         "init_state": _init_state_car_obd2,
         "generate_event": _gen_car_obd2,
+        "columns": [
+            ("vehicle_vin", "STRING"),
+            ("captured_at", "TIMESTAMP"),
+            ("speed_kmh", "DOUBLE"),
+            ("engine_rpm", "BIGINT"),
+            ("coolant_temp_c", "DOUBLE"),
+            ("fuel_level_pct", "DOUBLE"),
+            ("lat", "DOUBLE"),
+            ("lng", "DOUBLE"),
+            ("dtc", "STRING"),
+        ],
     },
 }
 
@@ -229,12 +260,13 @@ def create_bronze_streaming_table(
     client: WorkspaceClient, warehouse_id: str,
     catalog: str, schema: str, profile: str,
     refresh_minutes: int = 5,
+    volume: str = "events_volume",
 ) -> dict:
     """Create-or-refresh a DBSQL streaming Bronze table over the Volume.
 
     Uses ``CREATE OR REFRESH STREAMING TABLE`` which runs on serverless
     DBSQL — no cluster or DLT pipeline required. The table reads from
-    ``read_files(...)`` over the events_volume path with format='json',
+    ``read_files(...)`` over the Volume path with format='json',
     so Auto Loader handles file discovery + schema inference.
 
     Failure isolation: ``execute_sql`` errors (most commonly "DBSQL
@@ -246,11 +278,16 @@ def create_bronze_streaming_table(
     """
     table_name = f"bronze_{profile}"
     table_fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
-    volume_path = f"/Volumes/{catalog}/{schema}/events_volume/{profile}/"
+    volume_path = f"/Volumes/{catalog}/{schema}/{volume}/{profile}/"
 
+    # Use Quartz CRON syntax (6 fields: sec min hour dom mon dow) for
+    # the refresh schedule — portable across all DBSQL editions including
+    # Free Edition. The legacy `SCHEDULE EVERY N MINUTES` shorthand only
+    # works on a subset of runtime versions / tiers.
+    cron_expr = f"0 0/{int(refresh_minutes)} * * * ?"
     sql = (
         f"CREATE OR REFRESH STREAMING TABLE {table_fqn} "
-        f"SCHEDULE EVERY {int(refresh_minutes)} MINUTES "
+        f"SCHEDULE REFRESH CRON '{cron_expr}' AT TIME ZONE 'UTC' "
         f"AS SELECT * FROM STREAM read_files("
         f"'{volume_path}', "
         f"format => 'json'"
@@ -279,9 +316,79 @@ def create_bronze_streaming_table(
 # ─── Top-level runner ──────────────────────────────────────────────
 
 
+# ─── Direct-to-table emission ─────────────────────────────────────
+
+
+def _ensure_direct_bronze_table(
+    client: WorkspaceClient, warehouse_id: str,
+    catalog: str, schema: str, profile: str, table_name: str,
+) -> str:
+    """Create catalog + schema + Delta table if missing for direct-to-table
+    streaming. Returns the fully-qualified table name.
+
+    Schema is derived from ``DEVICE_PROFILES[profile]["columns"]`` so the
+    INSERT-batch path and DDL stay in sync — mismatches would surface as
+    column-count errors at INSERT time.
+    """
+    cols = DEVICE_PROFILES[profile]["columns"]
+    col_ddl = ", ".join(f"`{name}` {sql_type}" for name, sql_type in cols)
+    fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
+    execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`")
+    execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+    comment = DEVICE_PROFILES[profile]["comment"]
+    execute_sql(
+        client, warehouse_id,
+        f"CREATE TABLE IF NOT EXISTS {fqn} ({col_ddl}) "
+        f"USING DELTA COMMENT 'Streaming demo events — {comment}'",
+    )
+    return f"{catalog}.{schema}.{table_name}"
+
+
+def _format_sql_value(v: Any) -> str:
+    """Render a Python value as a SQL literal for inline INSERT VALUES.
+
+    Single-quotes are escaped by doubling. Timestamps assumed already in
+    ISO-8601 (UTC) string form — TIMESTAMP literals work via implicit cast.
+    """
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    # Strings (incl. ISO timestamps): quote and escape embedded single quotes
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def insert_batch_direct(
+    client: WorkspaceClient, warehouse_id: str,
+    table_fqn: str, profile: str, batch: list[dict],
+) -> int:
+    """INSERT one batch of events into the bronze table via DBSQL.
+
+    Builds a single ``INSERT INTO … VALUES (…), (…), …`` statement so
+    each batch is one warehouse round-trip. Returns rows inserted.
+    """
+    if not batch:
+        return 0
+    col_names = [name for name, _ in DEVICE_PROFILES[profile]["columns"]]
+    col_list = ", ".join(f"`{c}`" for c in col_names)
+    rows_sql = ", ".join(
+        "(" + ", ".join(_format_sql_value(row.get(c)) for c in col_names) + ")"
+        for row in batch
+    )
+    sql = f"INSERT INTO {table_fqn} ({col_list}) VALUES {rows_sql}"
+    execute_sql(client, warehouse_id, sql)
+    return len(batch)
+
+
+# ─── File-based emission (Volume) ──────────────────────────────────
+
+
 def _ensure_events_volume(
     client: WorkspaceClient, warehouse_id: str,
     catalog: str, schema: str, profile: str,
+    volume: str = "events_volume",
 ) -> str:
     """Create the catalog + schema + Volume if missing. Returns the
     /Volumes/... path the emitter writes to.
@@ -294,11 +401,11 @@ def _ensure_events_volume(
     comment = DEVICE_PROFILES[profile]["comment"]
     execute_sql(
         client, warehouse_id,
-        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`events_volume` "
+        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}` "
         f"COMMENT 'Streaming demo events — {comment}'",
     )
     # Return the Profile-specific subpath the runner writes into.
-    return f"/Volumes/{catalog}/{schema}/events_volume/{profile}"
+    return f"/Volumes/{catalog}/{schema}/{volume}/{profile}"
 
 
 def run_streaming_emission(
@@ -325,7 +432,21 @@ def run_streaming_emission(
 
     catalog: str = config["catalog"]
     schema: str = config["schema"]
+    volume: str = config.get("volume") or "events_volume"
     profile: str = config["profile"]
+    # Destination mode controls where each tick lands data:
+    #   "volume"        — JSON files only, no Bronze
+    #   "volume_bronze" — JSON files + auto-create Bronze STREAMING TABLE
+    #   "direct_table"  — INSERT INTO Bronze table directly (no Volume)
+    # Defaults preserve legacy behaviour: no `destination` set →
+    # respect the legacy `auto_create_bronze` flag (volume_bronze when
+    # true, volume otherwise).
+    destination: str = config.get("destination") or (
+        "volume_bronze" if config.get("auto_create_bronze") else "volume"
+    )
+    if destination not in ("volume", "volume_bronze", "direct_table"):
+        raise ValueError(f"Unknown destination: {destination!r}")
+    bronze_table: str = (config.get("bronze_table") or "").strip() or f"bronze_{profile}"
     if profile not in DEVICE_PROFILES:
         raise ValueError(f"Unknown device profile: {profile!r}")
     events_per_batch: int = int(config.get("events_per_batch", 100))
@@ -341,22 +462,33 @@ def run_streaming_emission(
         f"duration={total_duration_seconds}s"
     )
 
-    volume_path = _ensure_events_volume(client, warehouse_id, catalog, schema, profile)
-
-    # Optional: spin up the Bronze streaming table BEFORE the loop so
-    # files start landing into the Delta table from tick 1.
+    # Provision destination(s) based on mode. For direct_table we skip
+    # the Volume entirely (no files); for volume modes we always
+    # provision the Volume and only build the Bronze STREAMING TABLE
+    # when explicitly requested.
+    volume_path: str | None = None
+    direct_table_fqn: str | None = None
     bronze_info: dict | None = None
-    if config.get("auto_create_bronze"):
-        bronze_info = create_bronze_streaming_table(
-            client, warehouse_id, catalog, schema, profile,
-            refresh_minutes=int(config.get("bronze_refresh_minutes", 5)),
+    if destination == "direct_table":
+        direct_table_fqn = _ensure_direct_bronze_table(
+            client, warehouse_id, catalog, schema, profile, bronze_table,
         )
+        logger.info(f"Direct-to-table mode: writing to {direct_table_fqn}")
+    else:
+        volume_path = _ensure_events_volume(client, warehouse_id, catalog, schema, profile, volume=volume)
+        if destination == "volume_bronze":
+            bronze_info = create_bronze_streaming_table(
+                client, warehouse_id, catalog, schema, profile,
+                refresh_minutes=int(config.get("bronze_refresh_minutes", 5)),
+                volume=volume,
+            )
 
     state = DEVICE_PROFILES[profile]["init_state"](num_devices)
 
     start = time.monotonic()
     events_emitted = 0
     files_written = 0
+    rows_inserted = 0
     ticks = 0
     last_path: str | None = None
     stopped_early = False
@@ -374,9 +506,15 @@ def run_streaming_emission(
 
         try:
             batch = emit_batch(profile, state, events_per_batch, base_seq=events_emitted)
-            last_path = write_batch_to_volume(client, volume_path, batch, ticks)
+            if destination == "direct_table":
+                rows_inserted += insert_batch_direct(
+                    client, warehouse_id, direct_table_fqn, profile, batch,
+                )
+                last_path = direct_table_fqn
+            else:
+                last_path = write_batch_to_volume(client, volume_path, batch, ticks)
+                files_written += 1
             events_emitted += events_per_batch
-            files_written += 1
         except Exception as e:
             logger.warning(f"Streaming tick failed (continuing): {e}")
 
@@ -384,6 +522,7 @@ def run_streaming_emission(
         progress.update({
             "events_emitted": events_emitted,
             "files_written": files_written,
+            "rows_inserted": rows_inserted,
             "current_batch_path": last_path,
             "elapsed_seconds": round(elapsed, 2),
             "ticks": ticks,
@@ -402,15 +541,18 @@ def run_streaming_emission(
     progress["stopped"] = stopped_early
     logger.info(
         f"Streaming emission done: events={events_emitted}, files={files_written}, "
-        f"duration={duration}s, stopped_early={stopped_early}"
+        f"rows_inserted={rows_inserted}, duration={duration}s, stopped_early={stopped_early}"
     )
     return {
         "profile": profile,
+        "destination": destination,
         "catalog": catalog,
         "schema": schema,
         "volume_path": volume_path,
+        "direct_table_fqn": direct_table_fqn,
         "events_emitted": events_emitted,
         "files_written": files_written,
+        "rows_inserted": rows_inserted,
         "ticks": ticks,
         "duration_seconds": duration,
         "stopped": stopped_early,
@@ -420,15 +562,19 @@ def run_streaming_emission(
     }
 
 
-def get_auto_loader_sql(catalog: str, schema: str, profile: str, refresh_minutes: int = 5) -> str:
+def get_auto_loader_sql(
+    catalog: str, schema: str, profile: str,
+    refresh_minutes: int = 5, volume: str = "events_volume",
+) -> str:
     """Build the copy-paste SQL the UI shows for the Auto Loader Bronze
     table — kept in one place so the UI snippet and the auto-create
     path always emit identical DDL."""
     table_name = f"bronze_{profile}"
-    volume_path = f"/Volumes/{catalog}/{schema}/events_volume/{profile}/"
+    volume_path = f"/Volumes/{catalog}/{schema}/{volume}/{profile}/"
+    cron_expr = f"0 0/{int(refresh_minutes)} * * * ?"
     return (
         f"CREATE OR REFRESH STREAMING TABLE `{catalog}`.`{schema}`.`{table_name}`\n"
-        f"SCHEDULE EVERY {int(refresh_minutes)} MINUTES\n"
+        f"SCHEDULE REFRESH CRON '{cron_expr}' AT TIME ZONE 'UTC'\n"
         f"AS SELECT * FROM STREAM read_files(\n"
         f"  '{volume_path}',\n"
         f"  format => 'json'\n"

@@ -231,6 +231,7 @@ async def start_streaming_emission(
     config = dict(await get_app_config())
     config["catalog"] = req.catalog
     config["schema"] = req.schema_name
+    config["volume"] = req.volume
     config["profile"] = req.profile
     config["events_per_batch"] = req.events_per_batch
     config["interval_seconds"] = req.interval_seconds
@@ -238,6 +239,8 @@ async def start_streaming_emission(
     config["num_devices"] = req.num_devices
     config["auto_create_bronze"] = req.auto_create_bronze
     config["bronze_refresh_minutes"] = req.bronze_refresh_minutes
+    config["destination"] = req.destination
+    config["bronze_table"] = req.bronze_table
     if req.warehouse_id:
         config["sql_warehouse_id"] = req.warehouse_id
     job_id = await jm.submit_job("streaming-emit", config, client)
@@ -264,7 +267,8 @@ async def stop_streaming_emission(
 
 @router.get("/demo-data/streaming/auto-loader-sql", summary="Get the Auto Loader SQL snippet")
 async def get_streaming_auto_loader_sql(
-    catalog: str, schema: str, profile: str, refresh_minutes: int = 5,
+    catalog: str, schema: str, profile: str,
+    refresh_minutes: int = 5, volume: str = "events_volume",
 ):
     """Return the copy-paste DBSQL snippet for a streaming Bronze table
     over the events Volume. Used by the UI's Auto Loader panel so users
@@ -278,10 +282,10 @@ async def get_streaming_auto_loader_sql(
             detail=f"Unknown profile {profile!r}; valid: {list(DEVICE_PROFILES)}",
         )
     return {
-        "sql": get_auto_loader_sql(catalog, schema, profile, refresh_minutes),
+        "sql": get_auto_loader_sql(catalog, schema, profile, refresh_minutes, volume=volume),
         "profile": profile,
         "table_fqn": f"{catalog}.{schema}.bronze_{profile}",
-        "volume_path": f"/Volumes/{catalog}/{schema}/events_volume/{profile}/",
+        "volume_path": f"/Volumes/{catalog}/{schema}/{volume}/{profile}/",
     }
 
 

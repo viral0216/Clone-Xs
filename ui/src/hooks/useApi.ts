@@ -582,7 +582,10 @@ export function useStreamingEmit() {
     mutationFn: (req: {
       catalog: string;
       schema: string;
+      volume?: string;
       profile: "generic_sensor" | "industrial_machine" | "car_obd2";
+      destination?: "volume" | "volume_bronze" | "direct_table";
+      bronze_table?: string;
       events_per_batch?: number;
       interval_seconds?: number;
       total_duration_seconds?: number;

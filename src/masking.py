@@ -7,6 +7,49 @@ from src.client import execute_sql
 logger = logging.getLogger(__name__)
 
 
+def build_pii_masking_rules(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    exclude_schemas: list[str] | None = None,
+) -> list[dict]:
+    """Auto-build masking rules from Unity Catalog PII tags on `catalog`.
+
+    Returns a list of rules in the shape consumed by `apply_masking_rules`,
+    one per detected PII column. Rule dicts include `schema` and `table`
+    so callers can filter to the table they're masking. Strategies come
+    from `pii_detection.SUGGESTED_MASKING` (email_mask for EMAIL, hash for
+    SSN / CREDIT_CARD, etc.); columns whose pii_type is not in the
+    suggestion map fall back to "redact".
+
+    Returns [] if PII detection fails (catalog has no column_tags table,
+    no warehouse access, etc.) so callers can call this unconditionally.
+    """
+    from src.pii_detection import detect_pii_from_uc_tags
+
+    try:
+        detections = detect_pii_from_uc_tags(
+            client, warehouse_id, catalog, exclude_schemas=exclude_schemas,
+        )
+    except Exception as e:
+        logger.warning(f"PII tag detection failed for {catalog}: {e}")
+        return []
+
+    rules: list[dict] = []
+    for d in detections:
+        strategy = d.get("suggested_masking") or "redact"
+        rules.append({
+            "schema": d["schema"],
+            "table": d["table"],
+            "column": d["column"],
+            "strategy": strategy,
+            "match_type": "exact",
+            "pii_type": d.get("pii_type", "PII_GENERIC"),
+            "source": "auto_pii_tag",
+        })
+    return rules
+
+
 def apply_masking_rules(
     client: WorkspaceClient,
     warehouse_id: str,

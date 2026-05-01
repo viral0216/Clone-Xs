@@ -125,6 +125,71 @@ async def cancel_job(job_id: str, jm: JobManager = Depends(get_job_manager)):
     return {"status": "cancelled", "job_id": job_id}
 
 
+@router.get("/{job_id}/cost", summary="Actual DBU cost for a completed clone job")
+async def get_job_cost(
+    job_id: str,
+    jm: JobManager = Depends(get_job_manager),
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+):
+    """Reconcile estimated vs actual cost for a clone job.
+
+    Queries `system.billing.usage` for DBU consumed on the clone's target
+    warehouse during the job's wall-clock window. Returns a 425 Too Early
+    when called before the job has timestamps to query against.
+
+    The response includes a `billing_data_incomplete` flag because system
+    billing lags real-time consumption by a few hours — early calls may
+    under-report actual cost.
+    """
+    job = jm.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.get("started_at") or not job.get("completed_at"):
+        raise HTTPException(
+            status_code=425,
+            detail="Job has not completed yet — cost is only available after completion",
+        )
+
+    # Pull the warehouse the clone wrote to (target side of the operation).
+    # For same-workspace clones this is just the request warehouse_id; for
+    # cross-workspace clones the actual write warehouse is on the target,
+    # which we don't have billing access to from here, so we fall back to
+    # the source warehouse (still useful — measures source-side egress DBU).
+    target_warehouse_id = (
+        job.get("destination_warehouse_id")
+        or app_config.get("sql_warehouse_id", "")
+    )
+    query_warehouse_id = app_config.get("sql_warehouse_id", "")
+
+    from src.clone_cost_actuals import (
+        query_clone_job_actual_cost,
+        reconcile_estimate_vs_actual,
+    )
+
+    actuals = query_clone_job_actual_cost(
+        client,
+        query_warehouse_id=query_warehouse_id,
+        target_warehouse_id=target_warehouse_id,
+        started_at=job["started_at"],
+        completed_at=job["completed_at"],
+    )
+
+    # If the job result already carried an estimate (the cost-estimator runs
+    # pre-clone and stashes it), include the variance breakdown.
+    estimated_cost = 0.0
+    result = job.get("result") or {}
+    if isinstance(result, dict):
+        estimated_cost = float(result.get("estimated_cost") or 0)
+
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        **actuals,
+        **reconcile_estimate_vs_actual(estimated_cost, actuals["actual_cost"]),
+    }
+
+
 @router.websocket("/ws/{job_id}")
 async def clone_progress_ws(websocket: WebSocket, job_id: str, jm: JobManager = Depends(get_job_manager)):
     """WebSocket endpoint for live clone progress."""

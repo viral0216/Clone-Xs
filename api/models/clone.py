@@ -154,6 +154,20 @@ class CloneRequest(BaseModel):
     # clone failure (no orphaned revocations). Safe to leave off for read-only
     # source catalogs or one-off CTAS-style migrations.
     quiesce_source: bool = False
+    # Auto-retry the clone on transient failures (network errors, throttling,
+    # 5xx responses). Logical errors (schema mismatch, validation, bad config)
+    # never retry — they signal something the next attempt won't fix. Bounded
+    # by `max_retries` (config, default 3). Set False to opt out.
+    enable_retry: bool = True
+    # Auto-detect PII columns via existing Unity Catalog tags
+    # (information_schema.column_tags) and mask them on the destination using
+    # the strategy from pii_detection.SUGGESTED_MASKING (e.g. email_mask for
+    # EMAIL, hash for SSN / CREDIT_CARD, partial for PHONE). Masking runs as
+    # a post-clone UPDATE through the existing src/masking.py pipeline, not
+    # as an inline CTAS — Delta history on the destination is preserved.
+    # The masked-data exposure window is bounded by the clone job itself
+    # (no external reader sees the table before the UPDATE commits).
+    auto_mask_pii: bool = False
     # Cross-workspace object-type toggles. Effective only when target_workspace
     # is set; same-workspace clone_catalog.py does not read these.
     clone_views: bool = True
@@ -230,3 +244,11 @@ class CloneJobStatus(BaseModel):
     created_at: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    # Retry tracking. `attempt` is the current (1-based) attempt; `max_attempts`
+    # is the bound from `max_retries` (1 when retry is disabled). `retry_history`
+    # has one entry per failed attempt that triggered a retry — each records
+    # the error class, message, timestamp, and the backoff delay used before
+    # the next attempt.
+    attempt: int = 1
+    max_attempts: int = 1
+    retry_history: list[dict] = []

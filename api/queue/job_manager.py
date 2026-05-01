@@ -2,15 +2,52 @@
 
 import asyncio
 import logging
+import random
 import re
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
+from typing import Callable
 
 from api.websocket.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
+
+
+# Exception classes that must NEVER trigger a retry. These signal logical
+# errors (bad input, schema mismatch, programming bug) that the next attempt
+# won't fix, so retrying just hides the real failure.
+_NON_RETRYABLE_EXC: tuple = (ValueError, KeyError, TypeError, AttributeError, AssertionError)
+
+# Substrings in str(exception) that indicate a transient failure. The
+# Databricks SDK raises domain-specific exception classes whose .__str__()
+# embeds the HTTP status / reason — so we match on message text rather than
+# importing the SDK's internal exception hierarchy.
+_TRANSIENT_SUBSTRINGS: tuple = (
+    "429", "throttl", "rate limit",
+    "timeout", "timed out",
+    "connection reset", "connection aborted", "connection refused",
+    "502", "503", "504", "service unavailable", "bad gateway",
+    "temporarily unavailable",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return True if `exc` should trigger a retry, False to fail immediately.
+
+    Conservative on purpose: unknown exception classes return False so that
+    logical errors don't get wrapped in retries and mask the real bug. Add
+    new transient signals to `_TRANSIENT_SUBSTRINGS` rather than broadening
+    the default.
+    """
+    if isinstance(exc, _NON_RETRYABLE_EXC):
+        return False
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    msg = str(exc).lower()
+    return any(s in msg for s in _TRANSIENT_SUBSTRINGS)
 
 
 class JobLogHandler(logging.Handler):
@@ -118,6 +155,9 @@ class JobManager:
             "created_at": now,
             "started_at": None,
             "completed_at": None,
+            "attempt": 1,
+            "max_attempts": 1,
+            "retry_history": [],
         }
 
         # Run in background thread
@@ -129,6 +169,67 @@ class JobManager:
         ).start()
 
         return job_id
+
+    def _execute_clone_with_retry(
+        self,
+        fn: Callable[[], dict],
+        job_id: str,
+        config: dict,
+        loop,
+        job_logs: list,
+        label: str,
+    ) -> dict:
+        """Run a clone callable with auto-retry on transient failures.
+
+        Bounded by `config['max_retries']` (default 3) and disabled entirely
+        when `config['enable_retry']` is False (single attempt). Only errors
+        classified by `_is_transient_error` trigger a retry; logical errors
+        re-raise on the first attempt so flaky upstreams don't mask real
+        bugs. On each retry the job's `attempt` field advances and a
+        `retry_history` entry is appended (visible via GET /clone/{id}).
+        """
+        enable_retry = bool(config.get("enable_retry", True))
+        max_attempts = max(1, int(config.get("max_retries", 3))) if enable_retry else 1
+        self.jobs[job_id]["max_attempts"] = max_attempts
+
+        last_exc: BaseException | None = None
+        for attempt in range(1, max_attempts + 1):
+            self.jobs[job_id]["attempt"] = attempt
+            try:
+                return fn()
+            except Exception as e:
+                last_exc = e
+                if not _is_transient_error(e) or attempt >= max_attempts:
+                    raise
+
+                # Exponential backoff with jitter, capped at 60s.
+                delay = min(2.0 * (2 ** (attempt - 1)), 60.0)
+                delay *= 0.5 + random.random() * 0.5
+
+                self.jobs[job_id]["retry_history"].append({
+                    "attempt": attempt,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "retried_at": datetime.now().isoformat(),
+                    "delay_s": round(delay, 1),
+                })
+                ts = datetime.now().strftime("%H:%M:%S")
+                job_logs.append(
+                    f"[{ts}] {label} attempt {attempt}/{max_attempts} failed "
+                    f"({type(e).__name__}: {e}). Retrying in {delay:.1f}s..."
+                )
+                self._broadcast_sync(loop, job_id, {
+                    "type": "retry",
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "error": str(e),
+                    "delay_s": round(delay, 1),
+                })
+                time.sleep(delay)
+
+        # Unreachable: loop either returns or raises; this just keeps
+        # type-checkers happy about the function always returning.
+        raise last_exc  # type: ignore[misc]
 
     def _run_job(self, job_id: str, job_type: str, config: dict, client, loop):
         """Execute the job in a background thread with log capture."""
@@ -178,31 +279,41 @@ class JobManager:
             self.jobs[job_id]["_audit_ready"] = audit_ready
 
             if job_type == "clone":
-                if config.get("serverless") and config.get("volume"):
-                    from src.serverless import submit_clone_job
-                    result = submit_clone_job(
-                        client,
-                        config,
-                        volume_path=config["volume"],
-                    )
-                elif (config.get("load_type") or "").upper() == "SELECTIVE":
-                    # Selective re-clone: only touch tables that have drifted
-                    # between source and target. Routed inside the "clone" job
-                    # type (rather than a new job_type) so existing /api/clone
-                    # callers can opt in by setting load_type=SELECTIVE without
-                    # changing endpoints, and the audit-trail / run-id flow
-                    # stays identical.
-                    from src.selective_reclone import selective_reclone_catalog
-                    result = selective_reclone_catalog(client, config)
-                else:
-                    from src.clone_catalog import clone_catalog
-                    result = clone_catalog(client, config)
+                def _do_clone():
+                    if config.get("serverless") and config.get("volume"):
+                        from src.serverless import submit_clone_job
+                        return submit_clone_job(
+                            client,
+                            config,
+                            volume_path=config["volume"],
+                        )
+                    elif (config.get("load_type") or "").upper() == "SELECTIVE":
+                        # Selective re-clone: only touch tables that have drifted
+                        # between source and target. Routed inside the "clone" job
+                        # type (rather than a new job_type) so existing /api/clone
+                        # callers can opt in by setting load_type=SELECTIVE without
+                        # changing endpoints, and the audit-trail / run-id flow
+                        # stays identical.
+                        from src.selective_reclone import selective_reclone_catalog
+                        return selective_reclone_catalog(client, config)
+                    else:
+                        from src.clone_catalog import clone_catalog
+                        return clone_catalog(client, config)
+                result = self._execute_clone_with_retry(
+                    _do_clone, job_id, config, loop, job_logs, "clone"
+                )
             elif job_type == "clone_cross_workspace":
                 from src.clone_cross_workspace import run_cross_workspace_clone
-                result = run_cross_workspace_clone(client, config)
+                result = self._execute_clone_with_retry(
+                    lambda: run_cross_workspace_clone(client, config),
+                    job_id, config, loop, job_logs, "clone_cross_workspace",
+                )
             elif job_type == "clone_fanout":
                 from src.clone_fanout import run_cross_workspace_fanout
-                result = run_cross_workspace_fanout(client, config)
+                result = self._execute_clone_with_retry(
+                    lambda: run_cross_workspace_fanout(client, config),
+                    job_id, config, loop, job_logs, "clone_fanout",
+                )
             elif job_type == "validate":
                 from src.validation import validate_catalog
                 result = validate_catalog(

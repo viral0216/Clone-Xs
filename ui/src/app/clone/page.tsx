@@ -335,6 +335,23 @@ function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }
   const { getJob } = useActiveJobs();
   const job = jobFromParent ?? getJob(jobId);
 
+  // Fetch actual DBU cost once the job completes. system.billing.usage lags
+  // real-time consumption by a few hours, so the response carries a
+  // billing_data_incomplete flag; when set the panel labels itself "partial".
+  const [actualCost, setActualCost] = useState<{
+    actual_cost: number; actual_dbus: number; currency: string;
+    variance_pct: number | null; billing_data_incomplete: boolean;
+    lag_warning: string | null; error?: string;
+  } | null>(null);
+  useEffect(() => {
+    if (job?.status !== "completed" || !jobId) return;
+    let cancelled = false;
+    api.get<typeof actualCost>(`/clone/${jobId}/cost`)
+      .then((r) => { if (!cancelled) setActualCost(r as any); })
+      .catch(() => { /* endpoint not available / no billing access — silently skip */ });
+    return () => { cancelled = true; };
+  }, [jobId, job?.status]);
+
   if (!job) {
     return <LoadingState message="Loading job status..." />;
   }
@@ -447,6 +464,45 @@ function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }
           </span>
         )}
       </div>
+
+      {/* Actual cost (post-clone reconciliation) */}
+      {actualCost && !actualCost.error && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 border rounded-md px-3 py-2 bg-gray-50">
+          <span className="font-medium">Actual Cost:</span>
+          <span>${actualCost.actual_cost.toFixed(2)} {actualCost.currency}</span>
+          <span className="text-gray-400">·</span>
+          <span>{actualCost.actual_dbus.toFixed(2)} DBUs</span>
+          {actualCost.variance_pct !== null && (
+            <>
+              <span className="text-gray-400">·</span>
+              <span className={actualCost.variance_pct > 0 ? "text-red-600" : "text-green-600"}>
+                {actualCost.variance_pct > 0 ? "+" : ""}{actualCost.variance_pct}% vs estimate
+              </span>
+            </>
+          )}
+          {actualCost.billing_data_incomplete && (
+            <span
+              className="text-amber-600"
+              title={actualCost.lag_warning ?? ""}
+            >
+              · partial (billing data lag)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Retry banner — surfaces transient-failure retries that happened mid-job */}
+      {Array.isArray(job.retry_history) && job.retry_history.length > 0 && (
+        <div className="text-xs text-amber-700 border border-amber-200 rounded-md px-3 py-2 bg-amber-50">
+          <span className="font-medium">Retried {job.retry_history.length}×:</span>{" "}
+          {job.retry_history.map((r: any, i: number) => (
+            <span key={`${r.attempt}-${r.retried_at ?? i}`}>
+              attempt {r.attempt} ({r.error_type}: {r.error?.slice(0, 80)})
+              {i < job.retry_history.length - 1 ? "; " : ""}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Result */}
       {job.status === "completed" && job.result && (() => {
@@ -1135,6 +1191,8 @@ function ClonePageInner() {
     copy_security: true,
     copy_constraints: true,
     copy_comments: true,
+    auto_mask_pii: false,
+    enable_retry: true,
     // Features
     enable_rollback: true,
     validate_after_clone: false,
@@ -1184,6 +1242,7 @@ function ClonePageInner() {
       "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
       "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
       "validate_after_clone", "validate_checksum", "dry_run", "force_reclone", "schema_only",
+      "auto_mask_pii", "enable_retry",
       "generate_report", "show_progress", "auto_rollback", "checkpoint",
       "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
     ];
@@ -1729,6 +1788,8 @@ function ClonePageInner() {
                   ["validate_checksum", "Checksum Validation"],
                   ["force_reclone", "Force Re-clone"],
                   ["schema_only", "Schema Only (empty tables)"],
+                  ["auto_mask_pii", "Auto-mask PII (from UC tags)"],
+                  ["enable_retry", "Auto-retry transient failures"],
                   ["generate_report", "Generate Report"],
                   ["show_progress", "Show Progress"],
                   ["checkpoint", "Enable Checkpoint"],

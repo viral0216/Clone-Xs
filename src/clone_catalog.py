@@ -276,18 +276,47 @@ def process_schema(
             tbl_properties=config.get("clone_tbl_properties"),
         )
 
-        # Apply data masking after table cloning
-        masking_rules = config.get("masking_rules")
-        if masking_rules and not dry_run:
+        # Apply data masking after table cloning. Two sources of rules:
+        #   1) User-supplied `masking_rules` (existing; column-pattern based,
+        #      applied to every table)
+        #   2) Auto-built rules from UC PII tags when `auto_mask_pii=True`
+        #      (per-(schema,table,column), built once per catalog and filtered
+        #      to the current schema)
+        manual_rules = list(config.get("masking_rules") or [])
+        auto_pii_rules: list[dict] = config.get("_auto_pii_rules") or []
+        # Cache the auto-built list on `config` so we only query column_tags
+        # once per clone job, not once per schema. The first schema processed
+        # populates the cache; subsequent schemas read it.
+        if config.get("auto_mask_pii") and "_auto_pii_rules" not in config:
+            from src.masking import build_pii_masking_rules
+            auto_pii_rules = build_pii_masking_rules(
+                client, warehouse_id, source,
+                exclude_schemas=exclude_schemas,
+            )
+            config["_auto_pii_rules"] = auto_pii_rules
+            if auto_pii_rules:
+                logger.info(
+                    f"  {SCHEMA} Auto-detected {len(auto_pii_rules)} PII columns "
+                    f"from UC tags in {source} — will mask post-clone"
+                )
+
+        if (manual_rules or auto_pii_rules) and not dry_run:
             from src.masking import apply_masking_rules
             # Get all tables that were just cloned
             tables = list_tables_sdk(client, dest, schema)
             tables = [t for t in tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
             for row in tables:
-                apply_masking_rules(
-                    client, warehouse_id, dest, schema, row["table_name"],
-                    masking_rules, dry_run=dry_run,
-                )
+                # Filter auto rules to this specific (schema, table); manual
+                # rules apply broadly so they're concatenated as-is.
+                table_rules = list(manual_rules) + [
+                    r for r in auto_pii_rules
+                    if r.get("schema") == schema and r.get("table") == row["table_name"]
+                ]
+                if table_rules:
+                    apply_masking_rules(
+                        client, warehouse_id, dest, schema, row["table_name"],
+                        table_rules, dry_run=dry_run,
+                    )
 
         # Record lineage for tables
         lineage_config = config.get("lineage")

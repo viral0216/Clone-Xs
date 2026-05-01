@@ -1,6 +1,66 @@
 from unittest.mock import MagicMock, patch
 
-from src.masking import apply_masking_rules, _get_mask_expression
+from src.masking import apply_masking_rules, _get_mask_expression, build_pii_masking_rules
+
+
+# ---------- build_pii_masking_rules (auto_mask_pii feature) ----------
+
+def test_build_pii_rules_maps_strategies_from_suggested_masking():
+    detections = [
+        {"schema": "s1", "table": "customers", "column": "email_addr",
+         "pii_type": "EMAIL", "suggested_masking": "email_mask"},
+        {"schema": "s1", "table": "customers", "column": "ssn",
+         "pii_type": "SSN", "suggested_masking": "hash"},
+        {"schema": "s2", "table": "orders", "column": "customer_phone",
+         "pii_type": "PHONE", "suggested_masking": "partial"},
+    ]
+    with patch("src.pii_detection.detect_pii_from_uc_tags", return_value=detections):
+        rules = build_pii_masking_rules(MagicMock(), "wh", "cat")
+
+    assert len(rules) == 3
+    assert rules[0]["strategy"] == "email_mask"
+    assert rules[0]["match_type"] == "exact"
+    assert rules[0]["source"] == "auto_pii_tag"
+    assert rules[1]["strategy"] == "hash"
+    assert rules[2]["strategy"] == "partial"
+    # Schema/table on rule lets clone_catalog filter per-table before applying
+    assert rules[0]["schema"] == "s1"
+    assert rules[0]["table"] == "customers"
+
+
+def test_build_pii_rules_returns_empty_on_detection_failure():
+    """Detection failure (no UC access, no column_tags table) shouldn't crash
+    the clone — return empty so the caller falls back to no masking."""
+    with patch("src.pii_detection.detect_pii_from_uc_tags",
+               side_effect=Exception("UC unavailable")):
+        rules = build_pii_masking_rules(MagicMock(), "wh", "cat")
+    assert rules == []
+
+
+def test_build_pii_rules_falls_back_to_redact_for_unknown_type():
+    with patch("src.pii_detection.detect_pii_from_uc_tags", return_value=[
+        {"schema": "s", "table": "t", "column": "c", "pii_type": "UNKNOWN_TYPE"},
+    ]):
+        rules = build_pii_masking_rules(MagicMock(), "wh", "cat")
+    assert rules[0]["strategy"] == "redact"
+
+
+def test_build_pii_rules_passes_exclude_schemas_through():
+    """The exclude_schemas filter should reach the underlying detector so the
+    same exclusion list used for the clone (e.g. information_schema) skips
+    PII detection too."""
+    captured = {}
+
+    def fake_detect(*_args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    with patch("src.pii_detection.detect_pii_from_uc_tags", side_effect=fake_detect):
+        build_pii_masking_rules(
+            MagicMock(), "wh", "cat",
+            exclude_schemas=["information_schema", "default"],
+        )
+    assert captured.get("exclude_schemas") == ["information_schema", "default"]
 
 
 # ---------- _get_mask_expression ----------

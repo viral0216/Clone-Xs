@@ -64,6 +64,92 @@ def test_endpoint_dry_run_bypasses_confirmation(client):
     assert body["skipped"] == 1
 
 
+# GET /history. Returns rows from convert_operations newest-first with
+# optional status/fqn/dry_run/operation_id filters. Failures from the
+# underlying query (missing audit table, perms) surface as empty rows
+# rather than 5xx — a fresh workspace shouldn't break the wizard's
+# Recent Runs panel.
+
+
+def test_history_returns_empty_when_no_rows(client):
+    """No history yet → 200 with `rows: []`. Important so the UI's
+    Recent Runs panel renders a friendly empty state rather than an
+    error toast on day-one workspaces."""
+    with patch("api.routers.convert_to_delta.query_convert_history") as mock_q:
+        mock_q.return_value = []
+        resp = client.get("/api/convert-to-delta/history")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"rows": [], "count": 0}
+
+
+def test_history_returns_rows_in_order(client):
+    """Newest-first ordering is the orchestrator's responsibility (SQL
+    `ORDER BY recorded_at DESC`). The endpoint preserves that ordering
+    and exposes per-row counts."""
+    with patch("api.routers.convert_to_delta.query_convert_history") as mock_q:
+        mock_q.return_value = [
+            {
+                "operation_id": "op-2",
+                "fqn": "edp.bronze.b",
+                "source_format": "ICEBERG",
+                "status": "converted",
+                "started_at": "2026-05-02 10:00:00",
+                "completed_at": "2026-05-02 10:00:12",
+                "duration_ms": 12000,
+                "user_name": "viral",
+                "host": "h",
+                "dry_run": False,
+                "trigger": "manual",
+                "error_message": None,
+                "recorded_at": "2026-05-02 10:00:12",
+            },
+            {
+                "operation_id": "op-1",
+                "fqn": "edp.bronze.a",
+                "source_format": "PARQUET",
+                "status": "failed",
+                "started_at": "2026-05-02 09:00:00",
+                "completed_at": "2026-05-02 09:00:01",
+                "duration_ms": 1000,
+                "user_name": "viral",
+                "host": "h",
+                "dry_run": False,
+                "trigger": "manual",
+                "error_message": "permission denied",
+                "recorded_at": "2026-05-02 09:00:01",
+            },
+        ]
+        resp = client.get("/api/convert-to-delta/history?limit=10")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    assert body["rows"][0]["operation_id"] == "op-2"
+    assert body["rows"][0]["status"] == "converted"
+    assert body["rows"][1]["status"] == "failed"
+    assert body["rows"][1]["error_message"] == "permission denied"
+
+
+def test_history_forwards_filters(client):
+    """Query params reach query_convert_history as keyword args. Asserts
+    the wire shape so a typo in the router signature surfaces here, not
+    silently ignored at runtime."""
+    with patch("api.routers.convert_to_delta.query_convert_history") as mock_q:
+        mock_q.return_value = []
+        resp = client.get(
+            "/api/convert-to-delta/history"
+            "?limit=25&status=failed&fqn_like=edp.bronze.%25"
+            "&dry_run=true&operation_id=abc-123"
+        )
+    assert resp.status_code == 200
+    kwargs = mock_q.call_args.kwargs
+    assert kwargs["limit"] == 25
+    assert kwargs["status"] == "failed"
+    assert kwargs["fqn_like"] == "edp.bronze.%"
+    assert kwargs["dry_run"] is True
+    assert kwargs["operation_id"] == "abc-123"
+
+
 def test_endpoint_forwards_confirmed_request(client):
     """confirm_destructive=True + targets → orchestrator is called with
     those exact args, response body mirrors the summary shape."""

@@ -265,6 +265,75 @@ def test_convert_table_swallows_audit_callback_exceptions(mock_sql):
     assert result.status == "converted"
 
 
+# query_convert_history — SQL emission, filter wiring, defensive
+# fallback to [] when the audit table doesn't exist. Endpoint-level
+# behaviour lives in test_router_convert_to_delta.
+
+
+@patch("src.audit_trail.execute_sql")
+def test_query_convert_history_emits_correct_select(mock_sql):
+    """Default call (no filters) emits an unfiltered SELECT ordered by
+    recorded_at DESC. Limit clamps to the request value."""
+    from src.audit_trail import query_convert_history
+
+    mock_sql.return_value = []
+    query_convert_history(MagicMock(), "wh-1", {}, limit=10)
+    sql = mock_sql.call_args[0][2]
+    assert "SELECT operation_id, fqn, source_format, status" in sql
+    assert "ORDER BY recorded_at DESC" in sql
+    assert "LIMIT 10" in sql
+    assert "WHERE" not in sql  # no filters supplied
+
+
+@patch("src.audit_trail.execute_sql")
+def test_query_convert_history_applies_filters(mock_sql):
+    """Each filter renders a corresponding WHERE clause. Single-quote
+    escaping is exercised to defend against SQL injection from user
+    input on `fqn_like`."""
+    from src.audit_trail import query_convert_history
+
+    mock_sql.return_value = []
+    query_convert_history(
+        MagicMock(),
+        "wh-1",
+        {},
+        status="failed",
+        fqn_like="edp.bronze.%'",  # smuggled quote — must be escaped
+        dry_run=False,
+        operation_id="op-abc",
+    )
+    sql = mock_sql.call_args[0][2]
+    assert "status = 'failed'" in sql
+    assert "edp.bronze.%''" in sql  # escaped doubled quote
+    assert "dry_run = false" in sql
+    assert "operation_id = 'op-abc'" in sql
+
+
+@patch("src.audit_trail.execute_sql")
+def test_query_convert_history_caps_limit(mock_sql):
+    """A caller asking for limit=99999 gets clamped to 1000. Protects
+    the warehouse against accidentally pulling the whole history table
+    in one round-trip."""
+    from src.audit_trail import query_convert_history
+
+    mock_sql.return_value = []
+    query_convert_history(MagicMock(), "wh-1", {}, limit=99999)
+    sql = mock_sql.call_args[0][2]
+    assert "LIMIT 1000" in sql
+
+
+@patch("src.audit_trail.execute_sql")
+def test_query_convert_history_returns_empty_on_query_failure(mock_sql):
+    """Audit table missing, permission denied, or any other SQL
+    failure → empty list, not exception. The history endpoint relies
+    on this for the no-rows-yet UX."""
+    from src.audit_trail import query_convert_history
+
+    mock_sql.side_effect = Exception("Table or view not found")
+    result = query_convert_history(MagicMock(), "wh-1", {}, limit=10)
+    assert result == []
+
+
 @patch("src.convert_to_delta.execute_sql")
 def test_convert_tables_propagates_audit_callback_to_each_target(mock_sql):
     """The batch orchestrator passes the same callback to each per-target

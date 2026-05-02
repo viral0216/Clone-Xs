@@ -509,6 +509,52 @@ curl -X POST http://localhost:8080/api/convert-to-delta \
   }'
 ```
 
+### `GET /api/convert-to-delta/history`
+
+List rows from the `convert_operations` audit table, newest first. One row per `(operation_id, fqn)` — a batch of N targets produces N rows linked by operation_id. Empty array (200) when the audit table doesn't exist yet (fresh workspace) — operators shouldn't see an error in the wizard's Recent Runs panel just because no convert has run yet.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `limit` | integer | No | `50` | Max rows. Hard-capped at 1000 server-side to protect the warehouse. |
+| `status` | string | No |  | Filter by `converted` / `failed` / `skipped`. |
+| `fqn_like` | string | No |  | SQL `LIKE` pattern on the `fqn` column — e.g. `"edp.bronze.%"` for everything in one schema. |
+| `dry_run` | boolean | No |  | Filter to dry-run rows (`true`) or live rows (`false`). |
+| `operation_id` | string | No |  | Pull every row in one batch, given its UUID. |
+
+**Response (200):**
+
+```json
+{
+  "rows": [
+    {
+      "operation_id": "7f3a-...",
+      "fqn": "edp_dev.bronze.events_iceberg",
+      "source_format": "ICEBERG",
+      "status": "converted",
+      "started_at": "2026-05-02 10:00:00",
+      "completed_at": "2026-05-02 10:00:12",
+      "duration_ms": 12480,
+      "user_name": "viral",
+      "host": "https://adb-….azuredatabricks.net",
+      "dry_run": false,
+      "trigger": "manual",
+      "error_message": null,
+      "recorded_at": "2026-05-02 10:00:12"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Status codes:**
+
+| Code | Cause |
+|---|---|
+| 200 | Returned (rows may be empty). |
+| 400 | `warehouse_id` missing from app config and not configurable from this endpoint — set the default in `clone_config.yaml` or via the Settings page. |
+
 ### `GET /api/catalogs/{catalog}/{schema}/tables/with-format`
 
 List tables in a UC schema with their `table_type` and `data_source_format`. Distinct from the bare `/api/catalogs/{catalog}/{schema}/tables` endpoint (which returns names only) — this one is consumed by the Convert to Delta wizard's picker so it can show format badges and disable already-Delta / non-convertible rows without a second round-trip.

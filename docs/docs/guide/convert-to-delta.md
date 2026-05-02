@@ -78,6 +78,16 @@ Two layers of "are you sure":
 - **One-way.** No `CONVERT TO ICEBERG` / `CONVERT TO PARQUET` reverse operation. If you need to roll back, you'd restore from a backup.
 - **History resets.** Delta time-travel starts at version 0 of the converted table. Pre-conversion history isn't carried over.
 
+## History
+
+Every batch generates one `operation_id` (UUID) and one row per target in `<audit_catalog>.logs.convert_operations` (sibling of the existing `clone_operations` table). The Convert to Delta page surfaces these in a **Recent runs** panel that auto-refreshes after every submit; you can also query them directly:
+
+```http
+GET /api/convert-to-delta/history?limit=50&status=failed&fqn_like=edp.bronze.%25
+```
+
+Filters: `limit` (capped at 1000 server-side), `status`, `fqn_like` (SQL LIKE), `dry_run`, `operation_id` (every row in one batch). Returns `{rows: [], count: 0}` rather than 404 when the audit table doesn't exist yet — fresh workspaces show an empty panel, not an error.
+
 ## When to use this vs. clone
 
 | Situation | Use |

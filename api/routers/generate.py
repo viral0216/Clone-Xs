@@ -3,7 +3,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.models.demo import DemoDataRequest, StreamingEmissionRequest, StreamingScheduleRequest
+from api.models.demo import (
+    DemoDataRequest,
+    StreamingEmissionRequest,
+    StreamingScheduleRequest,
+    ZerobusSnippetRequest,
+    ZerobusSnippetResponse,
+)
 from api.models.generate import CreateJobRequest, TerraformRequest, WorkflowRequest
 from api.queue.job_manager import JobManager
 
@@ -352,6 +358,71 @@ async def schedule_streaming(
             status_code=500,
             detail=f"Failed to schedule streaming Job: {e}",
         )
+
+
+@router.get(
+    "/demo-data/zerobus/availability",
+    summary="Whether the Zerobus runtime destination can be used",
+)
+async def zerobus_availability() -> dict:
+    """Return whether Zerobus can run as a destination from this server.
+
+    The UI calls this once at page-load to decide whether to enable the
+    fourth destination radio. When ``available=False`` the response
+    carries a human-readable ``reason`` so the UI can show a tooltip
+    explaining why the option is disabled rather than greying it out
+    silently.
+
+    See ``src/demo_streaming_zerobus_runtime.py:is_available`` for the
+    detection logic — currently always False because the official
+    ``databricks-zerobus`` Python SDK is not yet released.
+    """
+    from src.demo_streaming_zerobus_runtime import is_available
+
+    available, reason = is_available()
+    return {"available": available, "reason": reason}
+
+
+@router.post(
+    "/demo-data/zerobus-snippet",
+    summary="Render a Python snippet that emits via Databricks Zerobus",
+)
+async def zerobus_snippet(req: ZerobusSnippetRequest) -> ZerobusSnippetResponse:
+    """Return a self-contained Python snippet for Zerobus direct-append.
+
+    The snippet uses the same per-profile event generator as the in-process
+    emitter and the scheduled-Job notebook (see
+    ``src.demo_streaming_schedule._PROFILE_GENERATORS_SOURCE``) so behaviour
+    is consistent across all three paths.
+
+    Pure render — no backend dependency on the (unreleased) Zerobus SDK,
+    no warehouse round-trip. Users paste the snippet into their own
+    environment to try Zerobus before we wire it up as a runtime mode
+    (see Phase 2 of the plan).
+    """
+    from src.demo_streaming_zerobus import render_zerobus_snippet
+
+    try:
+        snippet = render_zerobus_snippet(
+            profile=req.profile,
+            catalog=req.catalog,
+            schema=req.schema_name,
+            table=req.table,
+            events_per_batch=req.events_per_batch,
+            interval_seconds=req.interval_seconds,
+            num_devices=req.num_devices,
+        )
+    except ValueError as e:
+        # Unknown profile is the only ValueError this helper raises;
+        # surface it as 400 so the UI can show a clean message.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    table_name = (req.table or f"bronze_{req.profile}").strip()
+    return ZerobusSnippetResponse(
+        snippet=snippet,
+        language="python",
+        filename_suggestion=f"zerobus_emit_{req.profile}_to_{table_name}.py",
+    )
 
 
 @router.get("/demo-data/catalogs", summary="List catalogs (with demo signal + size)")

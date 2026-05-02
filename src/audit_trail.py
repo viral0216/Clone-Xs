@@ -365,6 +365,69 @@ def log_convert_result(
         logger.warning(f"Failed to write convert audit row for {fqn_target}: {e}")
 
 
+def query_convert_history(
+    client,
+    warehouse_id: str,
+    config: dict,
+    *,
+    limit: int = 50,
+    status: str | None = None,
+    fqn_like: str | None = None,
+    dry_run: bool | None = None,
+    operation_id: str | None = None,
+) -> list[dict]:
+    """Query the convert-to-delta audit table with optional filters.
+
+    Returns rows ordered by ``recorded_at DESC`` so the UI can render
+    "most recent first" without client-side sorting. Filters are
+    optional — pass `None` to skip a predicate. Each row keeps the
+    column shape `ensure_convert_audit_table` defines, so the response
+    is JSON-friendly without further mapping.
+
+    Defensive: if the audit table doesn't exist (operator never ran a
+    convert, or audit init failed silently), returns ``[]`` rather
+    than raising. The history endpoint should not 500 on a fresh
+    workspace where the table simply doesn't exist yet.
+    """
+    audit_fqn = get_convert_audit_table_fqn(config)
+
+    def esc(s: str) -> str:
+        return (s or "").replace("'", "''")
+
+    where: list[str] = []
+    if status:
+        where.append(f"status = '{esc(status)}'")
+    if fqn_like:
+        # The operator-facing field is `fqn` (3-part). LIKE so the UI
+        # can filter by catalog or `catalog.schema` prefix without
+        # needing the full table name.
+        where.append(f"fqn LIKE '{esc(fqn_like)}'")
+    if dry_run is not None:
+        where.append(f"dry_run = {str(bool(dry_run)).lower()}")
+    if operation_id:
+        where.append(f"operation_id = '{esc(operation_id)}'")
+
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    # Cap at 1000 even if the caller asks for more — protects the
+    # warehouse and keeps the JSON response under a sensible size.
+    capped_limit = max(1, min(int(limit), 1000))
+
+    sql = f"""
+    SELECT operation_id, fqn, source_format, status,
+           started_at, completed_at, duration_ms,
+           user_name, host, dry_run, `trigger`, error_message, recorded_at
+    FROM {audit_fqn}
+    {where_sql}
+    ORDER BY recorded_at DESC
+    LIMIT {capped_limit}
+    """
+    try:
+        return execute_sql(client, warehouse_id, sql)
+    except Exception as e:
+        logger.warning(f"Failed to query convert history from {audit_fqn}: {e}")
+        return []
+
+
 def query_audit_history(
     client,
     warehouse_id: str,

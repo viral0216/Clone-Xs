@@ -396,7 +396,17 @@ export default function DemoDataPage() {
   //   "volume"        — JSON files only, no Bronze
   //   "volume_bronze" — files + auto-create Bronze STREAMING TABLE (default)
   //   "direct_table"  — INSERT INTO Delta table directly (no Volume)
-  const [streamDestination, setStreamDestination] = useState<"volume" | "volume_bronze" | "direct_table">("volume_bronze");
+  const [streamDestination, setStreamDestination] = useState<"volume" | "volume_bronze" | "direct_table" | "zerobus">("volume_bronze");
+  // Whether the Zerobus runtime destination is usable. Fetched once at
+  // page load from /demo-data/zerobus/availability — the radio renders
+  // disabled when `available === false` so the user sees the option exists
+  // but understands they need to fall back to the Phase 1 snippet panel.
+  const [zerobusAvailable, setZerobusAvailable] = useState<{ available: boolean; reason: string | null } | null>(null);
+  useEffect(() => {
+    api.get<{ available: boolean; reason: string | null }>("/generate/demo-data/zerobus/availability")
+      .then(setZerobusAvailable)
+      .catch(() => setZerobusAvailable({ available: false, reason: "availability check failed" }));
+  }, []);
   const [streamBronzeTable, setStreamBronzeTable] = useState("");
   // Legacy auto-create flag — derived from destination on submit. Kept
   // as state only to render the refresh-cadence input in volume_bronze mode.
@@ -1682,21 +1692,35 @@ export default function DemoDataPage() {
             {/* Destination mode — controls which downstream fields are visible
                 and what the runner does each tick. */}
             <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
-              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition.">
+              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition. Zerobus: direct gRPC append via the Databricks Zerobus low-latency API (requires the official `databricks-zerobus` SDK; today the radio is disabled and the snippet panel below shows the equivalent code to run yourself).">
                 Destination
               </FieldLabel>
-              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
-                {[
-                  { val: "volume", title: "Volume only", sub: "JSON files → Volume" },
-                  { val: "volume_bronze", title: "Volume + Bronze", sub: "Files + Auto Loader STREAMING TABLE" },
-                  { val: "direct_table", title: "Direct to table", sub: "INSERT each batch into Delta (no Volume)" },
-                ].map((opt) => (
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                {([
+                  { val: "volume", title: "Volume only", sub: "JSON files → Volume", disabled: false, disabledReason: null },
+                  { val: "volume_bronze", title: "Volume + Bronze", sub: "Files + Auto Loader STREAMING TABLE", disabled: false, disabledReason: null },
+                  { val: "direct_table", title: "Direct to table", sub: "INSERT each batch into Delta (no Volume)", disabled: false, disabledReason: null },
+                  {
+                    val: "zerobus",
+                    title: "Zerobus",
+                    sub: "Direct gRPC append (low-latency)",
+                    // Disabled until the availability check returns true.
+                    // While the check is in flight (zerobusAvailable===null)
+                    // we keep the option disabled too — better to render
+                    // disabled-then-enabled than enabled-then-disabled.
+                    disabled: !zerobusAvailable?.available,
+                    disabledReason: zerobusAvailable?.reason ?? "Checking availability...",
+                  },
+                ] as const).map((opt) => (
                   <label
                     key={opt.val}
-                    className={`flex items-start gap-2 p-2 border rounded-md cursor-pointer text-xs transition-colors ${
-                      streamDestination === opt.val
-                        ? "border-[#E8453C] bg-[#E8453C]/5"
-                        : "border-input hover:bg-muted/30"
+                    title={opt.disabled ? (opt.disabledReason ?? undefined) : undefined}
+                    className={`flex items-start gap-2 p-2 border rounded-md text-xs transition-colors ${
+                      opt.disabled
+                        ? "border-input bg-muted/20 opacity-60 cursor-not-allowed"
+                        : streamDestination === opt.val
+                          ? "border-[#E8453C] bg-[#E8453C]/5 cursor-pointer"
+                          : "border-input hover:bg-muted/30 cursor-pointer"
                     }`}
                   >
                     <input
@@ -1704,11 +1728,17 @@ export default function DemoDataPage() {
                       name="stream-destination"
                       value={opt.val}
                       checked={streamDestination === opt.val}
+                      disabled={opt.disabled}
                       onChange={() => setStreamDestination(opt.val as typeof streamDestination)}
                       className="mt-0.5 h-3.5 w-3.5 text-[#E8453C] focus:ring-[#E8453C]"
                     />
                     <div>
-                      <div className="font-medium">{opt.title}</div>
+                      <div className="font-medium flex items-center gap-1">
+                        {opt.title}
+                        {opt.val === "zerobus" && (
+                          <Badge variant="outline" className="text-[9px]">Preview</Badge>
+                        )}
+                      </div>
                       <div className="text-[10px] text-muted-foreground">{opt.sub}</div>
                     </div>
                   </label>
@@ -2194,6 +2224,21 @@ export default function DemoDataPage() {
                 <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre">{autoLoaderSnippet}</pre>
               </div>
             )}
+
+            {/* Try-with-Zerobus snippet panel — independent of the
+                selected destination (Zerobus is a parallel emit path,
+                not tied to any of the three current modes). Lazy-fetches
+                the snippet from /api/generate/demo-data/zerobus-snippet
+                only when the user expands the panel, then refetches
+                whenever the form values change. */}
+            <ZerobusSnippetPanel
+              profile={streamProfile}
+              catalog={streamCatalog.trim() || "main"}
+              schema={streamSchema.trim() || "iot"}
+              table={`bronze_${streamProfile}`}
+              eventsPerBatch={streamEventsPerBatch}
+              intervalSeconds={streamIntervalSeconds}
+            />
           </CardContent>
       </Card>
       </>)}
@@ -2633,6 +2678,150 @@ function StreamingPreview({
       <div className="text-[10px] text-muted-foreground">
         Showing {rows.length} most recent {rows.length === 1 ? "row" : "rows"}.
       </div>
+    </div>
+  );
+}
+
+
+// Try-with-Zerobus inline panel.
+//
+// Renders a copy-pastable Python snippet that emits the same per-profile
+// events to Delta via Databricks Zerobus (low-latency direct append).
+// Backend handles snippet rendering — see /api/generate/demo-data/zerobus-snippet
+// — so the per-profile generator code stays in one place
+// (src/demo_streaming_schedule._PROFILE_GENERATORS_SOURCE).
+//
+// The panel defaults collapsed to keep the completion card tight; expand
+// triggers a fetch with the current form values, and any form change
+// re-fetches as long as it stays expanded.
+function ZerobusSnippetPanel({
+  profile, catalog, schema, table,
+  eventsPerBatch, intervalSeconds,
+}: {
+  profile: string;
+  catalog: string;
+  schema: string;
+  table: string;
+  eventsPerBatch: number;
+  intervalSeconds: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [snippet, setSnippet] = useState<string>("");
+  const [filenameSuggestion, setFilenameSuggestion] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.post<{ snippet: string; language: string; filename_suggestion: string }>(
+      "/generate/demo-data/zerobus-snippet",
+      {
+        profile,
+        catalog,
+        schema,
+        table,
+        events_per_batch: eventsPerBatch,
+        interval_seconds: intervalSeconds,
+      },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        setSnippet(r.snippet);
+        setFilenameSuggestion(r.filename_suggestion);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setError(e?.message ?? "snippet unavailable");
+        setSnippet("");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, profile, catalog, schema, table, eventsPerBatch, intervalSeconds]);
+
+  function downloadAsFile() {
+    if (!snippet) return;
+    const blob = new Blob([snippet], { type: "text/x-python" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filenameSuggestion || `zerobus_emit_${profile}.py`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 text-left"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2">
+          <Radio className="h-3.5 w-3.5 text-[#E8453C]" />
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Try with Zerobus (low-latency direct append)
+          </span>
+          <Badge variant="outline" className="text-[10px]">Preview</Badge>
+        </span>
+        {open
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-muted-foreground">
+            Zerobus is Databricks' direct append API — no warehouse, no Volume,
+            no Auto Loader. The snippet below uses the same per-profile event
+            generator as this demo, configured for your current selections.
+            The official <code className="text-[10px] bg-background px-1 rounded">databricks-zerobus</code> Python SDK
+            is not yet released; the snippet's import line will start working
+            once it ships.
+          </p>
+
+          {loading && (
+            <div className="text-[11px] text-muted-foreground italic">
+              Rendering snippet...
+            </div>
+          )}
+
+          {error && (
+            <div className="text-[11px] text-amber-600 flex items-center gap-2">
+              <span>Snippet unavailable: {error}</span>
+              <Button size="sm" variant="ghost" onClick={() => {
+                setOpen(false);
+                setTimeout(() => setOpen(true), 0);
+              }}>
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!loading && !error && snippet && (
+            <>
+              <div className="flex items-center justify-end gap-1">
+                <Button size="sm" variant="ghost" onClick={() => copyToClipboard(snippet, "Snippet copied")}>
+                  <ClipboardCopy className="h-3.5 w-3.5 mr-1" />Copy
+                </Button>
+                <Button size="sm" variant="ghost" onClick={downloadAsFile}>
+                  <Download className="h-3.5 w-3.5 mr-1" />Download .py
+                </Button>
+              </div>
+              <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre max-h-96">
+                {snippet}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

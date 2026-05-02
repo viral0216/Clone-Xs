@@ -167,11 +167,16 @@ class StreamingEmissionRequest(BaseModel):
     #   "volume_bronze" — files + auto-create STREAMING TABLE Bronze
     #   "direct_table"  — INSERT INTO Delta table directly (no Volume,
     #                     no Auto Loader; works on Free Edition / any tier)
+    #   "zerobus"       — direct gRPC append via Databricks Zerobus.
+    #                     Requires the official `databricks-zerobus`
+    #                     Python SDK to be installed; the runner returns
+    #                     a 503 when it isn't (today). See
+    #                     src/demo_streaming_zerobus_runtime.py.
     # Default preserves legacy behaviour by deferring to
     # `auto_create_bronze` when destination is unset (see runner).
-    destination: Literal["volume", "volume_bronze", "direct_table"] | None = Field(
+    destination: Literal["volume", "volume_bronze", "direct_table", "zerobus"] | None = Field(
         default=None,
-        description="Destination mode (volume | volume_bronze | direct_table)",
+        description="Destination mode (volume | volume_bronze | direct_table | zerobus)",
     )
     # Bronze table name for direct_table mode. Empty → defaults to
     # `bronze_<profile>` at runtime.
@@ -234,3 +239,44 @@ class StreamingScheduleRequest(StreamingEmissionRequest):
                 f"got {len(parts)}: {v!r}"
             )
         return v
+
+
+class ZerobusSnippetRequest(BaseModel):
+    """Request to render a Python snippet that emits via Databricks Zerobus.
+
+    Pure render — produces text only. No backend dependency on the
+    (unreleased) Zerobus SDK; the user runs the snippet in their own
+    environment. See ``src.demo_streaming_zerobus.render_zerobus_snippet``.
+    """
+
+    model_config = {"populate_by_name": True}
+
+    profile: Literal[
+        "generic_sensor",
+        "industrial_machine",
+        "car_obd2",
+        "smart_meter",
+        "wearable_health",
+        "pos_terminal",
+        "wind_turbine",
+        "atm_transaction",
+        "server_metrics",
+        "clickstream",
+    ] = Field(..., description="Built-in device profile (matches StreamingEmissionRequest)")
+    catalog: str = Field(..., description="Target Unity Catalog catalog")
+    # Same Pydantic-reserved-attribute trick as StreamingEmissionRequest —
+    # accept `schema` on the wire, store as `schema_name` internally.
+    schema_name: str = Field(..., alias="schema", description="Target schema")
+    table: str | None = Field(
+        default=None,
+        description="Target table name. Defaults to bronze_<profile>.",
+    )
+    events_per_batch: int = Field(default=100, ge=1, le=10000)
+    interval_seconds: float = Field(default=5.0, ge=0.1, le=300.0)
+    num_devices: int = Field(default=10, ge=1, le=100000)
+
+
+class ZerobusSnippetResponse(BaseModel):
+    snippet: str
+    language: str = "python"
+    filename_suggestion: str

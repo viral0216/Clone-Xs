@@ -906,13 +906,17 @@ def run_streaming_emission(
     #   "volume"        — JSON files only, no Bronze
     #   "volume_bronze" — JSON files + auto-create Bronze STREAMING TABLE
     #   "direct_table"  — INSERT INTO Bronze table directly (no Volume)
+    #   "zerobus"       — direct gRPC append via Databricks Zerobus
+    #                     (requires the official SDK; raises 503-style
+    #                     NotImplementedError today — see
+    #                     src/demo_streaming_zerobus_runtime.py)
     # Defaults preserve legacy behaviour: no `destination` set →
     # respect the legacy `auto_create_bronze` flag (volume_bronze when
     # true, volume otherwise).
     destination: str = config.get("destination") or (
         "volume_bronze" if config.get("auto_create_bronze") else "volume"
     )
-    if destination not in ("volume", "volume_bronze", "direct_table"):
+    if destination not in ("volume", "volume_bronze", "direct_table", "zerobus"):
         raise ValueError(f"Unknown destination: {destination!r}")
     bronze_table: str = (config.get("bronze_table") or "").strip() or f"bronze_{profile}"
     if profile not in DEVICE_PROFILES:
@@ -957,6 +961,34 @@ def run_streaming_emission(
             bronze_table,
         )
         logger.info(f"Direct-to-table mode: writing to {direct_table_fqn}")
+    elif destination == "zerobus":
+        # Provision the same Delta target as direct_table — Zerobus
+        # appends to a regular Delta table, just over gRPC instead of
+        # SQL INSERT. The runtime call itself raises a clear
+        # NotImplementedError today; we still create the table so that
+        # when the SDK lands the first emission can land cleanly without
+        # a separate setup step.
+        from src.demo_streaming_zerobus_runtime import (
+            ensure_zerobus_table,
+            is_available as _zb_is_available,
+        )
+
+        direct_table_fqn = ensure_zerobus_table(
+            client,
+            warehouse_id,
+            catalog,
+            schema,
+            profile,
+            bronze_table,
+        )
+        avail, reason = _zb_is_available()
+        if not avail:
+            # Fail fast at the start of the run (rather than tick 1) so
+            # the user sees a clean error in the job log before any
+            # warehouse work happens. The reason text is the same one
+            # the availability endpoint returns.
+            raise NotImplementedError(reason or "Zerobus runtime not available")
+        logger.info(f"Zerobus mode: appending to {direct_table_fqn}")
     else:
         volume_path = _ensure_events_volume(
             client, warehouse_id, catalog, schema, profile, volume=volume
@@ -991,6 +1023,21 @@ def run_streaming_emission(
                 rows_inserted += insert_batch_direct(
                     client,
                     warehouse_id,
+                    direct_table_fqn,
+                    profile,
+                    batch,
+                )
+                last_path = direct_table_fqn
+            elif destination == "zerobus":
+                # Same row-count semantics as direct_table — Zerobus
+                # appends a batch atomically; rows_inserted advances by
+                # the batch size on success. The runtime call raises
+                # NotImplementedError today (gated at run start above),
+                # so this elif is effectively dead until the SDK ships.
+                from src.demo_streaming_zerobus_runtime import insert_batch_zerobus
+
+                rows_inserted += insert_batch_zerobus(
+                    client,
                     direct_table_fqn,
                     profile,
                     batch,

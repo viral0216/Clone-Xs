@@ -67,3 +67,40 @@ class ConvertSummaryResponse(BaseModel):
     failed: int
     skipped: int
     results: list[ConvertResultResponse]
+
+
+class ConvertHistoryRow(BaseModel):
+    """One row from the convert_operations audit table.
+
+    Mirrors the shape `ensure_convert_audit_table` defines so the
+    response can be parsed straight from the warehouse query result
+    without bespoke mapping. Datetime fields are returned as strings
+    (UTC, ``YYYY-MM-DD HH:MM:SS``) — Pydantic will coerce them to
+    ``datetime`` if the consumer types this model that way.
+    """
+
+    operation_id: str
+    fqn: str
+    source_format: str
+    status: Literal["converted", "failed", "skipped"]
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
+    user_name: str | None = None
+    host: str | None = None
+    dry_run: bool | None = None
+    trigger: str | None = None
+    error_message: str | None = None
+    recorded_at: str | None = None
+
+
+class ConvertHistoryResponse(BaseModel):
+    """Response from GET /api/convert-to-delta/history.
+
+    Wrapped in a top-level object (rather than a bare list) so we can
+    add summary fields later — total count, scanned date range,
+    earliest/latest timestamps — without breaking the wire format.
+    """
+
+    rows: list[ConvertHistoryRow]
+    count: int

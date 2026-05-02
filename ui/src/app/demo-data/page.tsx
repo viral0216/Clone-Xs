@@ -413,6 +413,99 @@ export default function DemoDataPage() {
   const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
   const [zerobusClientId, setZerobusClientId] = useState("");
   const [zerobusClientSecret, setZerobusClientSecret] = useState("");
+  // Helper: paste a Databricks workspace URL → server-side resolver
+  // parses it, DNS-probes the AWS region, and auto-fills the Server
+  // endpoint field. Browsers can't do DNS, so we delegate.
+  const [zerobusDeriveUrl, setZerobusDeriveUrl] = useState("");
+  const [zerobusDeriving, setZerobusDeriving] = useState(false);
+  const [zerobusDeriveError, setZerobusDeriveError] = useState<string | null>(null);
+  // Verify-credentials helper — runs the OAuth client_credentials
+  // exchange against the workspace's /oidc/v1/token endpoint, same
+  // call the SDK does internally. Decouples credential debugging from
+  // a full streaming run (no need to read job logs to know if creds
+  // are bad).
+  const [zerobusVerifying, setZerobusVerifying] = useState(false);
+  const [zerobusVerifyResult, setZerobusVerifyResult] = useState<
+    null | { ok: boolean; status_code: number | null; error: string | null; hint: string | null }
+  >(null);
+  async function verifyZerobusCredentials() {
+    if (!zerobusDeriveUrl.trim()) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: "Paste your workspace URL in the field above first — the verifier needs it to know which OAuth endpoint to hit.",
+        hint: null,
+      });
+      return;
+    }
+    if (!zerobusClientId.trim() || !zerobusClientSecret.trim()) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: "Fill in Client ID and Client secret first.",
+        hint: null,
+      });
+      return;
+    }
+    setZerobusVerifying(true);
+    setZerobusVerifyResult(null);
+    try {
+      // The endpoint only needs the workspace ROOT URL, not the path/query.
+      // Strip whatever the user pasted down to scheme+host.
+      let root = zerobusDeriveUrl.trim();
+      try {
+        const u = new URL(root.startsWith("http") ? root : `https://${root}`);
+        root = `${u.protocol}//${u.host}`;
+      } catch { /* leave as-is, backend will still try */ }
+
+      const r = await api.post<{ ok: boolean; status_code: number | null; error: string | null; hint: string | null }>(
+        "/generate/demo-data/zerobus/verify-credentials",
+        {
+          workspace_url: root,
+          client_id: zerobusClientId.trim(),
+          client_secret: zerobusClientSecret.trim(),
+        },
+      );
+      setZerobusVerifyResult(r);
+      if (r.ok) toast.success("Zerobus credentials are valid");
+    } catch (e: any) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: e?.message ?? "Verify request failed",
+        hint: null,
+      });
+    } finally {
+      setZerobusVerifying(false);
+    }
+  }
+
+  async function deriveZerobusEndpoint() {
+    const url = zerobusDeriveUrl.trim();
+    if (!url) {
+      setZerobusDeriveError("Paste a workspace URL first");
+      return;
+    }
+    setZerobusDeriving(true);
+    setZerobusDeriveError(null);
+    try {
+      const r = await api.post<{
+        server_endpoint: string | null;
+        workspace_id: string | null;
+        region: string | null;
+        cloud: string;
+        error: string | null;
+      }>("/generate/demo-data/zerobus/derive-endpoint", { workspace_url: url });
+      if (r.server_endpoint) {
+        setZerobusServerEndpoint(r.server_endpoint);
+        toast.success(`Resolved (${r.cloud} ${r.region}): ${r.server_endpoint}`);
+        setZerobusDeriveError(null);
+      } else {
+        setZerobusDeriveError(r.error ?? "Could not derive endpoint");
+      }
+    } catch (e: any) {
+      setZerobusDeriveError(e?.message ?? "Derive request failed");
+    } finally {
+      setZerobusDeriving(false);
+    }
+  }
   const [streamBronzeTable, setStreamBronzeTable] = useState("");
   // Legacy auto-create flag — derived from destination on submit. Kept
   // as state only to render the refresh-cadence input in volume_bronze mode.
@@ -1789,6 +1882,43 @@ export default function DemoDataPage() {
                   rest of the app. Secrets stay in your browser session and are
                   sent only when starting a Zerobus run.
                 </p>
+
+                {/* Helper: derive the server endpoint from a workspace URL.
+                    Backend resolves DNS to find the AWS region; the result
+                    pre-fills the Server endpoint input below. */}
+                <div className="space-y-1 border-l-2 border-[#E8453C]/40 pl-3">
+                  <label className="text-[11px] text-muted-foreground" htmlFor="zb-derive-url">
+                    Don't know the server endpoint? Paste your workspace URL:
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="zb-derive-url"
+                      placeholder="https://dbc-….cloud.databricks.com/?o=… (or Azure / GCP equivalent)"
+                      value={zerobusDeriveUrl}
+                      onChange={(e) => setZerobusDeriveUrl(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); deriveZerobusEndpoint(); } }}
+                      className="flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={deriveZerobusEndpoint}
+                      disabled={zerobusDeriving || !zerobusDeriveUrl.trim()}
+                    >
+                      {zerobusDeriving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1" />}
+                      {zerobusDeriving ? "Resolving..." : "Derive endpoint"}
+                    </Button>
+                  </div>
+                  {zerobusDeriveError && (
+                    <p className="text-[11px] text-amber-600">{zerobusDeriveError}</p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">
+                    AWS workspaces only expose the workspace ID after login —
+                    open any page in the workspace and copy the URL with
+                    <code className="bg-background px-1 rounded mx-0.5">?o=…</code>
+                    appended.
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-muted-foreground" htmlFor="zb-endpoint">
@@ -1826,6 +1956,49 @@ export default function DemoDataPage() {
                     />
                   </div>
                 </div>
+
+                {/* Verify-credentials affordance — short-circuits the
+                    "start a streaming run, read the job log, find the
+                    auth error" loop with a one-click OAuth check. */}
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={verifyZerobusCredentials}
+                    disabled={zerobusVerifying}
+                  >
+                    {zerobusVerifying
+                      ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                    {zerobusVerifying ? "Verifying..." : "Verify credentials"}
+                  </Button>
+                  <span className="text-[10px] text-muted-foreground">
+                    Tests the OAuth client_credentials exchange — same call the SDK does internally.
+                  </span>
+                </div>
+                {zerobusVerifyResult && (
+                  zerobusVerifyResult.ok ? (
+                    <div className="text-[11px] text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Credentials valid — Databricks issued a token successfully.
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-600 space-y-1 border border-amber-200 rounded-md px-2 py-1.5 bg-amber-50/50">
+                      <div className="flex items-start gap-1">
+                        <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-medium">
+                            Failed{zerobusVerifyResult.status_code ? ` (HTTP ${zerobusVerifyResult.status_code})` : ""}
+                          </span>
+                          {zerobusVerifyResult.error && <>: {zerobusVerifyResult.error}</>}
+                        </div>
+                      </div>
+                      {zerobusVerifyResult.hint && (
+                        <div className="pl-4 text-muted-foreground">{zerobusVerifyResult.hint}</div>
+                      )}
+                    </div>
+                  )
+                )}
               </div>
             )}
 

@@ -662,6 +662,75 @@ panel below the completion card always works regardless — it produces
 a copy-pastable Python script that runs Zerobus from any environment
 where the SDK is installable.
 
+### Setting up Zerobus credentials
+
+Picking the **Zerobus** destination reveals three credential inputs
+(server endpoint, Client ID, Client secret). Here's how to gather each.
+
+#### 1. Server endpoint
+
+A region-specific gRPC URL — distinct from your workspace URL — built as:
+
+| Cloud | Endpoint format |
+|---|---|
+| **AWS** | `https://<workspace_id>.zerobus.<region>.cloud.databricks.com` |
+| **Azure** | `https://<workspace_id>.zerobus.<region>.azuredatabricks.net` |
+| **GCP** | `https://<workspace_id>.zerobus.<region>.gcp.databricks.com` |
+
+- **`<workspace_id>`**: the long numeric ID. From your workspace URL:
+  - AWS: `https://dbc-a1b2c3d4-e5f6.cloud.databricks.com/o=<workspace_id>` — the part after `/o=`.
+  - Azure: `https://adb-<workspace_id>.<n>.azuredatabricks.net` — the digits between `adb-` and the next dot.
+- **`<region>`**: your cloud's region slug (e.g. `us-west-2`, `eastus`, `westeurope`, `eastus2`). On Azure it's not in the workspace URL — find it in the **Azure Portal** under your Databricks resource's **Overview > Location** field, or via `az databricks workspace show --resource-group <rg> --name <ws> --query location -o tsv`. On AWS / GCP it's part of the workspace URL or visible in the Account Console.
+
+> **Note**: The Zerobus SDK README only documents the AWS endpoint format. The Azure and GCP forms above follow the standard Databricks subdomain pattern but are best confirmed with your workspace admin or your Databricks Solutions Architect before going to production.
+
+#### 2. Service Principal (Client ID + Client secret)
+
+Zerobus uses OAuth client-credentials, not the workspace PAT used by the
+rest of this app. Create a dedicated service principal once per workspace:
+
+1. Open the Databricks Web UI → **Settings** (top-right gear) →
+   **Identity and Access** → **Service principals**.
+2. Click **Add service principal**, give it a recognisable name like
+   `clxs-zerobus-demo`, click **Add**.
+3. Open the new SP → **Secrets** tab → **Generate secret**.
+   - **Copy the secret immediately** — Databricks shows it once and
+     never displays it again. If you lose it, you need to generate a
+     new one.
+4. The SP's **Application ID** (a UUID like `6a83b1a4-...`) is your
+   **Client ID**. The value from step 3 is your **Client secret**.
+
+#### 3. Grant the SP table-level permissions
+
+Zerobus appends to a regular Delta table — the SP needs Unity Catalog
+grants to write to it. Run this in Databricks SQL, substituting your
+catalog / schema / table:
+
+```sql
+GRANT USE_CATALOG ON CATALOG `machine` TO `<application-id>`;
+GRANT USE_SCHEMA  ON SCHEMA  `machine`.`iot` TO `<application-id>`;
+GRANT MODIFY, SELECT ON TABLE `machine`.`iot`.`bronze_generic_sensor` TO `<application-id>`;
+```
+
+Backticks around the principal are required because of the dashes in
+the UUID.
+
+#### 4. Putting it together
+
+Paste the three values into the form:
+
+| Field | Example |
+|---|---|
+| Server endpoint | `https://1134642475632994.zerobus.eastus2.azuredatabricks.net` |
+| Client ID | `6a83b1a4-1234-5678-9012-3a4b5c6d7e8f` |
+| Client secret | the value copied at SP-creation time |
+
+Click **Start streaming**. The runner opens **one** long-lived gRPC
+stream against the table, ingests records via
+`stream.ingest_record_offset(record)` per tick, and closes the stream
+in a `finally` when the run ends or you click **Stop** — so a stream
+never leaks even on interrupt or exception.
+
 ### Auto Loader (Bronze table)
 
 The Streaming card includes an opt-in **"Auto-create streaming Bronze

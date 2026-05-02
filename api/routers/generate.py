@@ -261,6 +261,17 @@ async def start_streaming_emission(
     config["bronze_table"] = req.bronze_table
     if req.warehouse_id:
         config["sql_warehouse_id"] = req.warehouse_id
+    # Zerobus credentials — only meaningful when destination='zerobus',
+    # but copied unconditionally so the runner sees the same shape it
+    # would see from a programmatic config dict. Pydantic has already
+    # rejected the request if any of the three are blank when
+    # destination='zerobus' (see api/models/demo.py validator).
+    if req.zerobus_server_endpoint:
+        config["zerobus_server_endpoint"] = req.zerobus_server_endpoint
+    if req.zerobus_client_id:
+        config["zerobus_client_id"] = req.zerobus_client_id
+    if req.zerobus_client_secret:
+        config["zerobus_client_secret"] = req.zerobus_client_secret
     job_id = await jm.submit_job("streaming-emit", config, client)
     return {"job_id": job_id, "status": "queued", "message": "Streaming emission submitted"}
 
@@ -358,6 +369,130 @@ async def schedule_streaming(
             status_code=500,
             detail=f"Failed to schedule streaming Job: {e}",
         )
+
+
+@router.post(
+    "/demo-data/zerobus/verify-credentials",
+    summary="Test Zerobus credentials against the workspace's OAuth token endpoint",
+)
+async def zerobus_verify_credentials(req: dict) -> dict:
+    """Run the same OAuth client_credentials exchange the SDK does internally.
+
+    Sends `POST <workspace_url>/oidc/v1/token` with `grant_type=client_credentials`
+    and `scope=all-apis`, using HTTP Basic auth = `(client_id, client_secret)`.
+    Returns a structured `{ok, status_code, error, hint}` so the UI can
+    show actionable feedback without surfacing raw HTTP. Common 401 causes
+    are mapped to friendly hints.
+
+    Always returns 200 — the OAuth result lives in the `ok` field. Same
+    convention as `/derive-endpoint` for the same reason.
+    """
+    import httpx
+
+    workspace_url = (req.get("workspace_url") or "").strip().rstrip("/")
+    client_id = (req.get("client_id") or "").strip()
+    client_secret = (req.get("client_secret") or "").strip()
+
+    missing = [
+        name
+        for name, val in (
+            ("workspace_url", workspace_url),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+        )
+        if not val
+    ]
+    if missing:
+        return {
+            "ok": False,
+            "status_code": None,
+            "error": f"missing required fields: {', '.join(missing)}",
+            "hint": None,
+        }
+
+    token_url = f"{workspace_url}/oidc/v1/token"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                token_url,
+                auth=(client_id, client_secret),
+                data={"grant_type": "client_credentials", "scope": "all-apis"},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except httpx.RequestError as e:
+        return {
+            "ok": False,
+            "status_code": None,
+            "error": f"could not reach {token_url}: {e}",
+            "hint": "Check the workspace URL is reachable from this server (no VPN / firewall blocking it).",
+        }
+
+    if resp.status_code == 200:
+        data = (
+            resp.json()
+            if resp.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
+        return {
+            "ok": True,
+            "status_code": 200,
+            "error": None,
+            "hint": None,
+            "token_type": data.get("token_type"),
+            "expires_in": data.get("expires_in"),
+        }
+
+    # Failure — map the common error codes to friendly hints. The body
+    # is usually `{"error": "invalid_client", "error_description": "..."}`.
+    body_text = resp.text or ""
+    body: dict = {}
+    try:
+        body = resp.json()
+    except Exception:
+        pass
+    err_code = body.get("error", "")
+    hint = None
+    if resp.status_code == 401 or err_code in ("invalid_client", "invalid_request"):
+        hint = (
+            "Databricks rejected the credentials. Most common causes: "
+            "(1) wrong/stale client_secret — regenerate on the SP and re-paste; "
+            "(2) the service principal exists in the Account but hasn't been "
+            "added to this workspace (Settings → Identity and Access → "
+            "Service principals → Add → Existing); "
+            "(3) wrong UUID — make sure client_id is the SP's Application ID, "
+            "not its internal Databricks ID or a Microsoft Entra ID."
+        )
+    elif resp.status_code == 403:
+        hint = "Token endpoint reached but access is forbidden. Check that the SP has any workspace grants at all."
+    return {
+        "ok": False,
+        "status_code": resp.status_code,
+        "error": body.get("error_description") or err_code or body_text[:200],
+        "hint": hint,
+    }
+
+
+@router.post(
+    "/demo-data/zerobus/derive-endpoint",
+    summary="Derive the Zerobus server endpoint from a Databricks workspace URL",
+)
+async def zerobus_derive_endpoint(req: dict) -> dict:
+    """Resolve `{workspace_url}` → `{server_endpoint, workspace_id, region, cloud, notes, error}`.
+
+    Browsers can't perform DNS lookups directly, so the UI delegates to
+    this endpoint when the user pastes a workspace URL on the demo-data
+    Zerobus credentials panel. See ``src/zerobus_endpoint_resolver.py``
+    for the parsing + DNS-resolution logic.
+
+    Always returns 200 — even on failure. Inspect ``error`` (str | null)
+    and ``server_endpoint`` (str | null) on the client. This shape lets
+    the UI render a friendly message instead of having to deal with HTTP
+    error codes for what are really user-input validation problems.
+    """
+    from src.zerobus_endpoint_resolver import derive_zerobus_endpoint
+
+    workspace_url = (req.get("workspace_url") or "").strip()
+    return derive_zerobus_endpoint(workspace_url).to_dict()
 
 
 @router.get(

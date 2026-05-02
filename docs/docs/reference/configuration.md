@@ -29,6 +29,7 @@ load_type: "FULL"             # FULL or INCREMENTAL
 
 # ── Managed location (required for some workspaces) ───
 catalog_location: ""          # e.g. "abfss://catalog@storage.dfs.core.windows.net/staging"
+                              # API field name: `location` (the router maps `location` → `catalog_location` internally)
 
 # ── Parallelism ───────────────────────────────────────
 max_workers: 4                # Concurrent clone operations
@@ -152,7 +153,7 @@ clone_volumes: true           # recreate volumes and copy files via the Files AP
 volume_max_file_mb: 500       # skip files larger than this during volume copy
 
 # ── Ordering ─────────────────────────────────────────
-order_by_size: false          # Clone largest tables first
+order_by_size: "desc"         # "desc" = biggest first (fail fast on storage), "asc" = small tables finish early, "" = unordered
 
 # ── Notifications ────────────────────────────────────
 notifications:
@@ -269,7 +270,15 @@ Every field in the Clone page's **Options** step (and the matching YAML key). Ho
 | Field | YAML key | Description |
 |---|---|---|
 | Clone Type | `clone_type` | `DEEP` copies all data files into the destination (independent of source). `SHALLOW` only copies metadata — destination points at source files. |
-| Load Type | `load_type` | `FULL` re-clones every table on each run. `INCREMENTAL` only clones tables whose Delta version advanced since the last run. |
+| Load Type | `load_type` | `FULL` re-clones every table on each run. `INCREMENTAL` only clones tables whose Delta version advanced since the last run. `SELECTIVE` re-clones only tables that drifted since the last clone — see [Selective re-clone](../guide/clone#selective-re-clone-load_type-selective) in the clone guide. |
+| Dry Run | `dry_run` | Render every SQL statement but don't execute. Outputs the same logs and metrics as a real run, prefixed with `[DRY RUN]`. Use for review before executing destructive operations. Default `false`. |
+
+### Target format (Iceberg)
+
+| Field | YAML key | Description |
+|---|---|---|
+| Target Format | `target_format` | `DELTA` (default) or `ICEBERG`. With `ICEBERG`, the destination stays Delta but UniForm metadata (`delta.universalFormat.enabledFormats=iceberg` + `IcebergCompatV2` + `columnMapping=name`) is enabled post-clone so external Iceberg engines can read it. Only effective on Delta sources — non-Delta sources skip with a `WARN`. |
+| Physical Iceberg | `iceberg_physical` | Only meaningful with `target_format: ICEBERG`. When `true`, swaps the UniForm path for `CREATE TABLE … USING iceberg AS SELECT …` so UC reports the destination as `Data source: Iceberg`. **Loses Delta history**, ignores time-travel arguments, requires DBR 15+ with Iceberg-managed-table support. Default `false`. |
 
 ### Compute
 
@@ -321,6 +330,11 @@ Controls which metadata flows from source to destination. All default to `true`.
 | Skip Unused Tables | `skip_unused` | Skip tables with zero recent usage in `system.access.table_lineage`. Trims the scope of dev-refresh jobs. |
 | Verbose Logging | `verbose` | Emit DEBUG-level logs for every SQL statement. Large output volume — use for troubleshooting only. |
 | Rollback Threshold (%) | `rollback_threshold` | Maximum percentage of row mismatches tolerated before **Auto Rollback on Fail** kicks in. Only shown when auto-rollback is enabled. |
+| Auto-mask PII | `auto_mask_pii` | Auto-detect PII columns via UC `column_tags` (EMAIL / SSN / CREDIT_CARD / PHONE) and mask them on the destination via the existing `src/masking.py` pipeline. Masking runs as a post-clone `UPDATE` — bounded exposure window. Default `false`. |
+| Auto-retry transient failures | `enable_retry` | Retry transient clone failures (network, throttle, HTTP 429 / 5xx) with exponential backoff. Logical errors (schema mismatch, permission, validation) never retry. Bounded by `max_retries`. Default `true`. |
+| Compare DQ after clone | `compare_dq_after_clone` | Run a column-level DQ comparison after each schema clones — row count + per-column NULL counts on source vs target. Combined with `auto_rollback`, max-drift exceeding `dq_drift_rollback_pct` triggers Delta `RESTORE`. Adds one warehouse round-trip per cloned table. Default `false`. |
+| DQ drift rollback % | `dq_drift_rollback_pct` | Drift threshold (0–100) for `compare_dq_after_clone`. Default `5.0` — matches the row-count `rollback_threshold` so operators have one mental model for "acceptable drift." |
+| Pre-clone source quiesce | `quiesce_source` | Snapshot + revoke write privileges on the source schemas at clone start, re-grant in a `finally` block at clone end. Prevents concurrent writes from landing mid-clone (silent partial-time-travel divergence between tables). Default `false`. See [clone guide — pre-clone quiesce](../guide/clone#pre-clone-source-quiesce). |
 
 ### Filtering
 
@@ -342,12 +356,17 @@ Controls which metadata flows from source to destination. All default to `true`.
 
 | Field | YAML key | Description |
 |---|---|---|
-| WHERE Clause | `where_clause` | Per-table row predicate applied to DEEP clones. Only rows matching the predicate are copied to the destination. |
+| WHERE Clauses | `where_clauses` | **Dict**, not a single string. Per-table row predicates keyed by `"schema.table"` (or `"*"` wildcard for all). Forces the matched per-table CLONE to a CTAS path (`CREATE TABLE … AS SELECT * FROM src WHERE …`) — **loses Delta source history**. DEEP-only; ignored on SHALLOW with a `WARN`. Example: `{"bronze.events": "date >= '2026-01-01'", "*": "is_deleted = false"}`. |
+| TBLPROPERTIES override | `clone_tbl_properties` | Dict of `TBLPROPERTIES (...)` rendered onto every per-table CLONE statement. Required for properties that must be on the *first commit* (e.g. `delta.logRetentionDuration`, `delta.deletedFileRetentionDuration` for archival retention) — setting these via post-clone `ALTER TABLE` is too late. Single quotes in values are SQL-escaped by doubling. |
 | TTL | `ttl` | Auto-expiry for the destination catalog (e.g. `7d`, `30d`, `2w`). A background cleanup job drops expired catalogs. |
 | Template | `template` | Named config preset (e.g. `dev-refresh`, `dr-replica`) that overrides common flags. See `clxs templates list` for available presets. |
 | Max duration (min) | `max_duration_min` | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. `null` = no limit. Checked between schemas. |
 | Max tables | `max_tables` | Runtime guardrail — abort after this many tables have been touched (success/failed/skipped). Safety net against runaway scope changes. |
 | Source snapshot ID | `source_snapshot_id` | Clone from a named snapshot instead of the catalog's current state. The snapshot's `captured_at` is applied as `as_of_timestamp`. See [Clone Snapshots](../guide/snapshots). |
+| Databricks CLI profile | `profile` | Optional `~/.databrickscfg` profile name to authenticate with. Distinct from `target_workspace.profile` (which selects a profile for cross-workspace auth). Falls back to the default profile when unset. |
+| Scope picker selection | `include_objects` | Granular per-object selection — list of `{schema, name, type}` records where `type` is `table`, `view`, `function`, or `volume`. Translated by the API router into `include_schemas` + an anchored `include_tables_regex`. Use when the wizard's Scope Picker is in "Select schemas + objects" mode. |
+| Multi-target fanout | `target_workspaces` | List of `target_workspace` objects (same shape as the singular field). When set, routes to the multi-target fanout orchestrator — runs N cross-workspace clones in parallel, one per target. Mutually exclusive with `target_workspace` (Pydantic XOR validator rejects setting both). |
+| Fanout max parallel | `fanout_max_parallel` | Cap on simultaneous target clones in fanout mode. Higher values increase source-side egress bandwidth pressure; lower values serialize. Default `5` matches typical N-region DR fanout (us, eu, apac, etc.). |
 
 ---
 

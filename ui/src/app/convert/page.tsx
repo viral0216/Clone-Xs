@@ -55,13 +55,20 @@ import {
 type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA" | "HUDI";
 type TargetFormat = "DELTA" | "ICEBERG" | "PARQUET" | "HUDI";
 
-// Pairs the API actually executes today (D1 of #9 N×N converter).
-// Anything outside this set is rejected by the request validator with
-// a 422 — the UI uses it to render not-yet-supported badges in the
-// cart row before the user even clicks submit.
+// Pairs the API actually executes today (D1 + D2 of #9 N×N converter).
+// Keep in sync with src/convert_to_delta.py:SUPPORTED_PAIRS — anything
+// outside this set is rejected by the request validator with a 422,
+// and the UI uses it to render not-yet-supported badges in the cart
+// row before the user even clicks submit.
 const SUPPORTED_PAIRS: ReadonlySet<string> = new Set([
+  // D1
   "PARQUET→DELTA",
   "ICEBERG→DELTA",
+  // D2 — new this round
+  "DELTA→ICEBERG",
+  "PARQUET→ICEBERG",
+  "DELTA→PARQUET",
+  "ICEBERG→PARQUET",
 ]);
 
 function pairKey(source: string, target: string): string {
@@ -88,6 +95,8 @@ interface TableRow {
 interface ResultRow {
   fqn: string;
   source_format: string;
+  destination_format?: string;
+  strategy_used?: string;
   status: "converted" | "failed" | "skipped";
   duration_ms: number;
   error?: string | null;
@@ -113,6 +122,8 @@ interface HistoryRow {
   operation_id: string;
   fqn: string;
   source_format: string;
+  destination_format?: string;
+  strategy_used?: string;
   status: "converted" | "failed" | "skipped";
   started_at?: string | null;
   completed_at?: string | null;
@@ -133,15 +144,18 @@ const CONFIRM_PHRASE = "CONVERT";
 
 // Returns null when the row is convertible; returns a short reason
 // string otherwise. Captioned inline in the table so users know why a
-// row is greyed out.
-function nonConvertibleReason(row: TableRow): string | null {
+// row is greyed out. The `target` arg lets the function correctly mark
+// identity rows (source already matches the chosen target) — without
+// it, DELTA sources would always read as "already Delta" even when the
+// user wants to convert them to Iceberg/Parquet.
+function nonConvertibleReason(row: TableRow, target: TargetFormat): string | null {
   const fmt = (row.data_source_format || "").toUpperCase();
   const kind = (row.table_type || "").toUpperCase();
   if (kind === "STREAMING_TABLE") return "streaming table — pipeline-owned";
   if (kind === "MATERIALIZED_VIEW") return "materialized view — pipeline-owned";
   if (kind === "VIEW") return "view — no underlying files to convert";
-  if (fmt === "DELTA") return "already Delta";
-  if (fmt && fmt !== "ICEBERG" && fmt !== "PARQUET") {
+  if (fmt && fmt === target.toUpperCase()) return `already ${target}`;
+  if (fmt && fmt !== "ICEBERG" && fmt !== "PARQUET" && fmt !== "DELTA") {
     return `unsupported format ${fmt}`;
   }
   return null;
@@ -203,6 +217,18 @@ export default function ConvertToDeltaPage() {
 
   // Submit state.
   const [dryRun, setDryRun] = useState(true);
+
+  // D2 flags. Both apply to the *batch* — server-side they're on
+  // ConvertToDeltaRequest, not per-target.
+  //
+  // - icebergPhysical only matters for Delta→Iceberg rows. False
+  //   (default) picks UniForm-update (no data movement); True picks
+  //   the temp+rename CTAS path that produces a real Iceberg table.
+  // - keepBackup applies to every CTAS pair (any → ICEBERG/PARQUET):
+  //   True (default) renames the source to {fqn}_pre_convert_<utc>
+  //   for reversibility, False drops the source after rename.
+  const [icebergPhysical, setIcebergPhysical] = useState(false);
+  const [keepBackup, setKeepBackup] = useState(true);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState("");
@@ -349,6 +375,8 @@ export default function ConvertToDeltaPage() {
         })),
         warehouse_id: effectiveWarehouseId || undefined,
         dry_run: dryRun,
+        iceberg_physical: icebergPhysical,
+        keep_backup: keepBackup,
         confirm_destructive: !dryRun,
       };
       const res = await api.post<SummaryResponse>(
@@ -392,10 +420,11 @@ export default function ConvertToDeltaPage() {
         <div className="text-sm">
           <p className="font-semibold text-amber-700 dark:text-amber-200">Destructive on source</p>
           <p className="text-amber-800 dark:text-amber-100 mt-1">
-            Each target's underlying files are rewritten to Delta in place. The same FQN
-            keeps pointing at the same data, but downstream Iceberg / Parquet readers will
-            stop working. Coordinate with upstream writers — concurrent writes during the
-            conversion can corrupt the resulting Delta log.
+            Each target is rewritten in place to the chosen target format. The FQN keeps
+            pointing at the same data, but downstream readers expecting the original format
+            (e.g. Iceberg readers after a → Delta conversion, Delta readers after a →
+            Parquet conversion) will stop working. Coordinate with upstream writers —
+            concurrent writes during the conversion can corrupt the resulting table log.
           </p>
         </div>
       </div>
@@ -448,6 +477,7 @@ export default function ConvertToDeltaPage() {
                 tables={tables}
                 catalog={catalog}
                 selectedFqns={selectedFqns}
+                defaultTarget={defaultTarget}
                 onToggle={(row, fqn, isSelected) =>
                   isSelected ? removeTarget(fqn) : addFromBrowser(row)
                 }
@@ -475,6 +505,7 @@ export default function ConvertToDeltaPage() {
                 >
                   <option value="ICEBERG">ICEBERG</option>
                   <option value="PARQUET">PARQUET</option>
+                  <option value="DELTA">DELTA</option>
                 </select>
                 <Button variant="outline" size="sm" onClick={addManual}>
                   <Plus className="h-4 w-4 mr-1" /> Add
@@ -514,11 +545,13 @@ export default function ConvertToDeltaPage() {
                 value={defaultTarget}
                 onChange={(e) => setDefaultTarget(e.target.value as TargetFormat)}
               >
-                <option value="DELTA">DELTA — fully supported (D1)</option>
-                <option value="ICEBERG">ICEBERG — coming in D2</option>
-                <option value="PARQUET">PARQUET — coming in D2</option>
+                <option value="DELTA">DELTA — CONVERT TO DELTA (in-place)</option>
+                <option value="ICEBERG">
+                  ICEBERG — UniForm metadata, or physical CTAS (toggle below)
+                </option>
+                <option value="PARQUET">PARQUET — CTAS (loses Delta history)</option>
                 <option value="HUDI" disabled>
-                  HUDI — needs Job-cluster runtime (D3, gated)
+                  HUDI — needs Job-cluster runtime (gated)
                 </option>
               </select>
             </div>
@@ -572,7 +605,7 @@ export default function ConvertToDeltaPage() {
                             {!supported && (
                               <div
                                 className="text-xs text-amber-400 mt-0.5"
-                                title="The request validator will reject this pair with a 422. Pick DELTA to execute today, or wait for D2."
+                                title="The request validator will reject this pair with a 422. Hudi pairs are gated until a Job-cluster runtime is sponsored; other unsupported pairs aren't on the roadmap."
                               >
                                 pair not yet supported
                               </div>
@@ -665,6 +698,58 @@ export default function ConvertToDeltaPage() {
               </span>
             </label>
 
+            {/* D2 — physical-Iceberg toggle. Only meaningful for any
+                Delta→Iceberg row in the cart; ignored for other pairs.
+                The label is muted when no Delta→Iceberg row exists so
+                users aren't distracted by a knob that won't fire. */}
+            {targets.some(
+              (t) =>
+                t.source_format.toUpperCase() === "DELTA" &&
+                t.target_format.toUpperCase() === "ICEBERG",
+            ) && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={icebergPhysical}
+                  onChange={(e) => setIcebergPhysical(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Physical Iceberg target</span>
+                  {" — use "}
+                  <code className="px-1 bg-gray-800/40 rounded">CREATE TABLE … USING iceberg AS SELECT</code>
+                  {" instead of UniForm metadata. UC reports "}
+                  <code className="px-1 bg-gray-800/40 rounded">Data source: Iceberg</code>
+                  {" but Delta history is lost. Default off (UniForm path — no data movement)."}
+                </span>
+              </label>
+            )}
+
+            {/* D2 — backup-on-rename. Only meaningful when at least one
+                cart row goes through the temp+rename CTAS path (any →
+                ICEBERG/PARQUET when not UniForm). Default ON because
+                CTAS+rename without a backup is non-recoverable. */}
+            {targets.some(
+              (t) =>
+                t.target_format.toUpperCase() === "PARQUET" ||
+                (t.target_format.toUpperCase() === "ICEBERG" && icebergPhysical) ||
+                (t.target_format.toUpperCase() === "ICEBERG" &&
+                  t.source_format.toUpperCase() !== "DELTA"),
+            ) && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={keepBackup}
+                  onChange={(e) => setKeepBackup(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Keep backup of source</span> — rename
+                  source aside as <code className="px-1 bg-gray-800/40 rounded">{"{fqn}_pre_convert_<utc>"}</code>{" "}
+                  instead of dropping it. Default on. Disable only if you accept
+                  non-recoverable conversion.
+                </span>
+              </label>
+            )}
+
             <div className="flex gap-3 items-center">
               <Button
                 onClick={onRunClick}
@@ -705,7 +790,8 @@ export default function ConvertToDeltaPage() {
                 <thead className="bg-gray-800/40">
                   <tr>
                     <th className="text-left p-2">FQN</th>
-                    <th className="text-left p-2">Source</th>
+                    <th className="text-left p-2">Source → Target</th>
+                    <th className="text-left p-2">Strategy</th>
                     <th className="text-left p-2">Status</th>
                     <th className="text-left p-2">Duration</th>
                     <th className="text-left p-2">Detail</th>
@@ -715,7 +801,14 @@ export default function ConvertToDeltaPage() {
                   {summary.results.map((r) => (
                     <tr key={r.fqn} className="border-t">
                       <td className="p-2 font-mono">{r.fqn}</td>
-                      <td className="p-2">{r.source_format}</td>
+                      <td className="p-2 text-xs">
+                        {r.source_format}
+                        <span className="mx-1 text-gray-500">→</span>
+                        {r.destination_format || "DELTA"}
+                      </td>
+                      <td className="p-2 text-xs text-gray-400">
+                        {r.strategy_used || "—"}
+                      </td>
                       <td className="p-2">
                         <Badge className={statusBadgeClass(r.status)}>
                           {r.status}
@@ -778,7 +871,8 @@ export default function ConvertToDeltaPage() {
                     <tr>
                       <th className="text-left p-2">When</th>
                       <th className="text-left p-2">FQN</th>
-                      <th className="text-left p-2">Source</th>
+                      <th className="text-left p-2">Source → Target</th>
+                      <th className="text-left p-2">Strategy</th>
                       <th className="text-left p-2">Status</th>
                       <th className="text-left p-2">Duration</th>
                       <th className="text-left p-2">User</th>
@@ -791,7 +885,14 @@ export default function ConvertToDeltaPage() {
                       <tr key={`${r.operation_id}:${r.fqn}`} className="border-t">
                         <td className="p-2 text-xs text-gray-400">{r.recorded_at || "—"}</td>
                         <td className="p-2 font-mono">{r.fqn}</td>
-                        <td className="p-2">{r.source_format}</td>
+                        <td className="p-2 text-xs">
+                          {r.source_format}
+                          <span className="mx-1 text-gray-500">→</span>
+                          {r.destination_format || "DELTA"}
+                        </td>
+                        <td className="p-2 text-xs text-gray-400">
+                          {r.strategy_used || "—"}
+                        </td>
                         <td className="p-2">
                           <Badge className={statusBadgeClass(r.status)}>{r.status}</Badge>
                         </td>
@@ -828,8 +929,9 @@ export default function ConvertToDeltaPage() {
               <span className="block">
                 You're about to rewrite{" "}
                 <strong>{targets.length}</strong> table
-                {targets.length === 1 ? "" : "s"} to Delta in place. Iceberg and
-                Parquet readers downstream will stop working.
+                {targets.length === 1 ? "" : "s"} in place to the chosen target
+                format{targets.length === 1 ? "" : "s"}. Downstream readers
+                expecting the original format will stop working at the same FQN.
               </span>
               <span className="block">
                 Type <code className="px-1 bg-gray-800/40 rounded">{CONFIRM_PHRASE}</code>{" "}
@@ -870,6 +972,7 @@ function TableBrowserBody({
   tables,
   catalog,
   selectedFqns,
+  defaultTarget,
   onToggle,
 }: {
   schema: string;
@@ -877,6 +980,7 @@ function TableBrowserBody({
   tables: TableRow[];
   catalog: string;
   selectedFqns: Set<string>;
+  defaultTarget: TargetFormat;
   onToggle: (row: TableRow, fqn: string, isSelected: boolean) => void;
 }) {
   if (!schema) {
@@ -909,7 +1013,7 @@ function TableBrowserBody({
       </thead>
       <tbody>
         {tables.map((row) => {
-          const reason = nonConvertibleReason(row);
+          const reason = nonConvertibleReason(row, defaultTarget);
           const fqn = `${catalog}.${schema}.${row.name}`;
           const isSelected = selectedFqns.has(fqn);
           const disabled = Boolean(reason);

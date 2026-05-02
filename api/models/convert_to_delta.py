@@ -48,6 +48,18 @@ class ConvertToDeltaRequest(BaseModel):
     # applies the same gate as a defence in depth.
     confirm_destructive: bool = False
     dry_run: bool = False
+    # D2 — Delta→Iceberg has two physical paths:
+    #   - UniForm (default, no data movement, table stays Delta)
+    #   - Physical CTAS (real Iceberg table, loses Delta history)
+    # iceberg_physical=True picks the second. Only meaningful for any
+    # row whose target_format is ICEBERG; ignored for other targets.
+    iceberg_physical: bool = False
+    # D2 — for temp+rename CTAS pairs (any → ICEBERG/PARQUET via CTAS),
+    # rename the source aside as `{fqn}_pre_convert_<utc>` instead of
+    # dropping it. Default True so the conversion is reversible — the
+    # operator can rename the backup back if they need to roll back.
+    # Set False to drop the source (non-recoverable).
+    keep_backup: bool = True
 
     @model_validator(mode="after")
     def _confirmed_or_dry_run(self) -> "ConvertToDeltaRequest":
@@ -95,11 +107,18 @@ class ConvertResultResponse(BaseModel):
     ``destination_format`` defaults to ``"DELTA"`` so callers parsing
     historic responses (where the field didn't exist) keep the right
     semantic — those operations were always-Delta-target by design.
+
+    ``strategy_used`` (D2) names the physical path the orchestrator
+    picked. Multiple strategies can produce the same destination
+    format with different physical outcomes; the canonical case is
+    Delta→Iceberg, where ``"uniform"`` leaves data files alone but
+    ``"ctas_iceberg"`` replaces them. Empty for skipped rows.
     """
 
     fqn: str
     source_format: str
     destination_format: str = "DELTA"
+    strategy_used: str = ""
     status: Literal["converted", "failed", "skipped"]
     duration_ms: int
     error: str | None = None
@@ -129,6 +148,7 @@ class ConvertHistoryRow(BaseModel):
     fqn: str
     source_format: str
     destination_format: str = "DELTA"
+    strategy_used: str = ""
     status: Literal["converted", "failed", "skipped"]
     started_at: str | None = None
     completed_at: str | None = None

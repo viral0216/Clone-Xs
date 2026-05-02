@@ -10,14 +10,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.convert_to_delta import (
+    SUPPORTED_PAIRS,
     SUPPORTED_SOURCE_FORMATS,
     ConvertToDeltaError,
+    convert_table_format,
     convert_table_to_delta,
     convert_tables_to_delta,
 )
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_emits_correct_sql_for_iceberg(mock_sql):
     """Iceberg source → ``CONVERT TO DELTA `cat`.`schema`.`tbl```. The
     backticks are added by ``_qualify`` so reserved-word table names
@@ -34,7 +36,7 @@ def test_convert_table_emits_correct_sql_for_iceberg(mock_sql):
     assert sql == "CONVERT TO DELTA `edp_dev`.`bronze`.`events_iceberg`"
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_skips_already_delta_with_no_sql(mock_sql):
     """Delta sources are obvious no-ops. Important: we must not run any
     SQL at all — running CONVERT TO DELTA on a Delta table errors out
@@ -54,7 +56,7 @@ def test_convert_table_skips_already_delta_with_no_sql(mock_sql):
     assert mock_sql.call_count == 0
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_skips_unsupported_format_with_no_sql(mock_sql):
     """``CONVERT TO DELTA`` doesn't accept arbitrary formats — only
     Parquet and Iceberg. Anything else (CSV, JSON, materialised views)
@@ -75,7 +77,7 @@ def test_convert_table_skips_unsupported_format_with_no_sql(mock_sql):
     assert mock_sql.call_count == 0
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_dry_run_does_not_execute(mock_sql):
     """Dry-run logs the SQL but never hits the warehouse. Wizard preview
     relies on this to show users exactly what would run."""
@@ -91,7 +93,7 @@ def test_convert_table_dry_run_does_not_execute(mock_sql):
     assert mock_sql.call_count == 0
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_failure_is_captured_not_raised(mock_sql):
     """Per-table failures must be captured in the result (status='failed',
     error=str) rather than raised — the orchestrator continues with
@@ -141,7 +143,7 @@ def test_convert_tables_dry_run_bypasses_confirm_gate():
     assert summary.skipped == 1  # dry-run rows always count as skipped
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_tables_aggregates_mixed_outcomes(mock_sql):
     """A batch with success + failure + skip produces a summary that
     breaks down each bucket. Important so callers can tell whether to
@@ -179,7 +181,7 @@ def test_supported_source_formats_set_is_complete():
 # assert the call shape independently of the audit-table SQL.
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_fires_audit_callback_on_success(mock_sql):
     """A successful CONVERT TO DELTA fires the callback exactly once with
     status='converted' and timestamps that bracket the call."""
@@ -203,7 +205,7 @@ def test_convert_table_fires_audit_callback_on_success(mock_sql):
     assert completed_at >= started_at  # not strict because mocks run < 1ms
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_fires_audit_callback_on_failure(mock_sql):
     """Failed conversions also produce an audit row — auditing only
     successes would let silent failures hide forever."""
@@ -225,7 +227,7 @@ def test_convert_table_fires_audit_callback_on_failure(mock_sql):
     assert "permission denied" in (captured[0][0].error or "")
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_fires_audit_callback_on_skip(mock_sql):
     """Already-Delta and unsupported-format skips both produce audit
     rows so a per-table report shows the full set of input tables, not
@@ -253,7 +255,7 @@ def test_convert_table_fires_audit_callback_on_skip(mock_sql):
     assert mock_sql.call_count == 0
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_table_swallows_audit_callback_exceptions(mock_sql):
     """If the audit callback raises, the conversion result is still
     returned — audit failures must never fail the conversion. (Defence
@@ -350,7 +352,7 @@ def test_query_convert_history_returns_empty_on_query_failure(mock_sql):
     assert result == []
 
 
-@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
 def test_convert_tables_propagates_audit_callback_to_each_target(mock_sql):
     """The batch orchestrator passes the same callback to each per-target
     convert. Important so callers wire audit once and get one row per
@@ -372,3 +374,202 @@ def test_convert_tables_propagates_audit_callback_to_each_target(mock_sql):
         audit_callback=cb,
     )
     assert captured_fqns == ["edp_dev.bronze.a", "edp_dev.bronze.b"]
+
+
+# --- D2 per-pair tests -------------------------------------------------
+#
+# One test per new (source, target) cell unlocked in D2. Each asserts:
+#   1. The right strategy label surfaces in the result (so the audit row
+#      records which physical path ran).
+#   2. The expected SQL fragments hit the warehouse — enough to catch a
+#      regression where someone reorders or collapses Plan steps.
+#
+# `check_pair_compat` is patched to a clean pass on every test so the
+# preflight DESCRIBE doesn't dominate the mock setup; a dedicated test
+# below exercises the refusal path.
+
+
+def test_supported_pairs_covers_d1_and_d2_cells():
+    """D2 ships the four CTAS cells on top of D1's two CONVERT TO DELTA
+    cells. Six total. This test fails loudly if a future PR forgets to
+    update the registry when adding a new pair (or, conversely, removes
+    a cell without updating tests downstream)."""
+    assert SUPPORTED_PAIRS == frozenset(
+        {
+            ("PARQUET", "DELTA"),
+            ("ICEBERG", "DELTA"),
+            ("DELTA", "ICEBERG"),
+            ("PARQUET", "ICEBERG"),
+            ("DELTA", "PARQUET"),
+            ("ICEBERG", "PARQUET"),
+        }
+    )
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_delta_to_iceberg_uniform_path(mock_sql, _mock_compat):
+    """Default Delta→Iceberg picks UniForm (no data movement) — three
+    ALTERs in order: disable DV → REORG PURGE → SET props. Strategy
+    label is `uniform` so the audit row distinguishes this from the
+    physical CTAS sibling."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="ICEBERG",
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "uniform"
+    assert mock_sql.call_count == 3
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert "delta.enableDeletionVectors" in sqls[0]
+    assert "REORG TABLE" in sqls[1]
+    assert "delta.universalFormat.enabledFormats" in sqls[2]
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_delta_to_iceberg_physical_path(mock_sql, _mock_compat):
+    """`iceberg_physical=True` swaps the strategy from UniForm to a
+    temp+rename CTAS that produces a real Iceberg table. Different
+    physical outcome — the audit row's `strategy_used` lets operators
+    tell post-hoc which path ran."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="ICEBERG",
+        iceberg_physical=True,
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "ctas_iceberg"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING iceberg" in s for s in sqls)
+    assert any("RENAME TO" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_parquet_to_iceberg_uses_ctas(mock_sql, _mock_compat):
+    """Parquet→Iceberg has no UniForm option (UniForm requires Delta
+    base), so this pair always picks the CTAS path."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "PARQUET",
+        target_format="ICEBERG",
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "ctas_iceberg"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING iceberg" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_delta_to_parquet(mock_sql, _mock_compat):
+    """Delta→Parquet uses CTAS+rename. Loses Delta history / DV / time
+    travel — the API request validator gates this, so by here we trust
+    the caller meant it."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="PARQUET",
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "ctas_parquet"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING parquet" in s for s in sqls)
+    assert any("_pre_convert_" in s for s in sqls)  # default keep_backup=True
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_iceberg_to_parquet(mock_sql, _mock_compat):
+    """Iceberg→Parquet is the same shape as Delta→Parquet — same plan
+    builder, only the source the SELECT reads from differs."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "ICEBERG",
+        target_format="PARQUET",
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "ctas_parquet"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING parquet" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_keep_backup_off_drops_source(mock_sql, _mock_compat):
+    """`keep_backup=False` swaps the rename-to-backup step for a DROP
+    TABLE. Non-recoverable — surfaced in the UI behind a confirmation
+    so the operator picks it knowingly."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="PARQUET",
+        keep_backup=False,
+    )
+    assert result.status == "converted"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any(s.startswith("DROP TABLE ") for s in sqls)
+    assert not any("_pre_convert_" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat")
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_compat_preflight_refuses_generated_column(mock_sql, mock_compat):
+    """When the compat preflight returns reasons (e.g. Delta GENERATED
+    column targeting Iceberg), the orchestrator skips the table with a
+    structured error and never hits the warehouse. Crucial: SQL must
+    not run after a refusal — that's the whole point of the preflight."""
+    mock_compat.return_value = [
+        "column `year` is GENERATED ALWAYS — Iceberg has no equivalent",
+    ]
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="ICEBERG",
+    )
+    assert result.status == "skipped"
+    assert "compat preflight refused" in (result.error or "")
+    assert "GENERATED" in (result.error or "")
+    assert mock_sql.call_count == 0
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_dry_run_skips_compat_preflight(mock_sql, mock_compat):
+    """Dry-run skips the compat preflight so the operator can preview
+    the plan even when the source has known incompatibilities. The
+    point of dry-run is to see what *would* run; a refusal at preview
+    time would defeat the purpose."""
+    convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="ICEBERG",
+        dry_run=True,
+    )
+    assert mock_compat.call_count == 0
+    assert mock_sql.call_count == 0  # dry_run never calls execute_sql

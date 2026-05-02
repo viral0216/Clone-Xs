@@ -33,7 +33,13 @@ from typing import Literal
 
 from databricks.sdk import WorkspaceClient
 
-from src.client import execute_sql
+from src.format_compat import check_pair_compat
+from src.format_strategies import (
+    Plan,
+    ctas_iceberg_inplace_plan,
+    ctas_parquet_inplace_plan,
+    enable_uniform_plan,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +60,21 @@ ConvertAuditCallback = Callable[
 SUPPORTED_SOURCE_FORMATS: frozenset[str] = frozenset({"PARQUET", "ICEBERG"})
 
 
-# Format pairs the converter knows how to execute. Each pair maps to one
-# SQL strategy (see _dispatch_strategy). D1 ships only the two
-# pre-existing CONVERT TO DELTA cells; D2 adds the four CTAS cells
-# (Delta→Iceberg, Parquet→Iceberg, Delta→Parquet, Iceberg→Parquet) once
-# format_strategies.py lands.
+# Format pairs the converter knows how to execute. Each pair maps to a
+# Plan (see _dispatch_strategy). D2 adds the four CTAS cells on top of
+# D1's CONVERT TO DELTA pair; D3 will add the four Hudi cells once a
+# Job-cluster runtime sponsor is identified.
 SUPPORTED_PAIRS: frozenset[tuple[str, str]] = frozenset(
     {
+        # D1
         ("PARQUET", "DELTA"),
         ("ICEBERG", "DELTA"),
+        # D2 — temp+rename CTAS for non-Delta targets, plus UniForm
+        # metadata for Delta→Iceberg without data movement.
+        ("DELTA", "ICEBERG"),
+        ("PARQUET", "ICEBERG"),
+        ("DELTA", "PARQUET"),
+        ("ICEBERG", "PARQUET"),
     }
 )
 
@@ -105,6 +117,10 @@ class ConvertResult:
     ``destination_format`` defaults to ``"DELTA"`` so older callers (and
     audit rows recorded before D1) keep their semantics. The strategy
     dispatch fills it explicitly for new pairs.
+
+    ``strategy_used`` (added in D2) names which physical path the
+    dispatch picked — e.g. "uniform" vs "ctas_iceberg" for the same
+    Delta→Iceberg destination. Empty string for skipped/identity rows.
     """
 
     fqn: str
@@ -113,6 +129,7 @@ class ConvertResult:
     duration_ms: int = 0
     error: str | None = None
     destination_format: str = "DELTA"
+    strategy_used: str = ""
 
 
 @dataclass
@@ -136,23 +153,91 @@ def _qualify(fqn: str) -> str:
     return ".".join(p if p.startswith("`") else f"`{p}`" for p in parts)
 
 
-def _dispatch_strategy(source_format: str, target_format: str, qualified: str) -> str | None:
-    """Return the SQL string for a given (source, target) pair, or None.
+@dataclass
+class StrategyChoice:
+    """The Plan picked by `_dispatch_strategy` plus a short label that
+    surfaces in the audit row's `strategy_used` column.
 
-    None means the pair is not supported in this phase. The orchestrator
-    converts that into a ``"skipped"`` result with a not-yet-supported
-    error reason. D1 only handles the two CONVERT TO DELTA cells;
-    additional pairs (Delta→Iceberg, Parquet→Iceberg, *→Parquet) land
-    in D2 once ``src/format_strategies.py`` extracts the CTAS+UniForm
-    primitives from ``src/clone_tables.py``.
+    Multiple strategies can produce the same destination format with
+    different physical outcomes — the canonical case is Delta→Iceberg,
+    where UniForm-update leaves data files alone but a CTAS-based
+    physical Iceberg replaces them entirely. The `strategy` label lets
+    operators tell post-hoc which path a given run took.
+    """
+
+    plan: Plan
+    strategy: str  # e.g. "convert_to_delta", "uniform", "ctas_iceberg", "ctas_parquet"
+
+
+def _dispatch_strategy(
+    source_format: str,
+    target_format: str,
+    qualified: str,
+    *,
+    iceberg_physical: bool = False,
+    keep_backup: bool = True,
+) -> StrategyChoice | None:
+    """Return the Plan for a (source, target) pair, or None if unsupported.
+
+    The orchestrator converts None into a ``"skipped"`` result with a
+    not-yet-supported reason. The flags are decision points specific to
+    a target format:
+
+    - `iceberg_physical` chooses between the UniForm-update path (Delta
+      target stays Delta + adds Iceberg metadata) and the temp+rename
+      CTAS path (replaces the underlying table with `USING iceberg`).
+      Only meaningful for Delta→Iceberg.
+    - `keep_backup` controls whether the temp+rename CTAS pairs rename
+      the source aside (recoverable) or drop it (non-recoverable).
+      Default True everywhere.
     """
     src = source_format.upper()
     tgt = target_format.upper()
 
-    if (src, tgt) == ("PARQUET", "DELTA"):
-        return f"CONVERT TO DELTA {qualified}"
-    if (src, tgt) == ("ICEBERG", "DELTA"):
-        return f"CONVERT TO DELTA {qualified}"
+    # D1: in-place CONVERT TO DELTA. Wrap as a single-step Plan so the
+    # orchestrator's plan-execution path is uniform across all cells.
+    if (src, tgt) in {("PARQUET", "DELTA"), ("ICEBERG", "DELTA")}:
+        plan = Plan()
+        plan.add(
+            f"convert {src.lower()} to delta in place",
+            f"CONVERT TO DELTA {qualified}",
+        )
+        return StrategyChoice(plan=plan, strategy="convert_to_delta")
+
+    # D2: Delta → UniForm-Iceberg-readable Delta. Three-step ALTER
+    # chain; data files don't move. Default for Delta→Iceberg unless
+    # the caller asked for physical Iceberg.
+    if (src, tgt) == ("DELTA", "ICEBERG") and not iceberg_physical:
+        return StrategyChoice(
+            plan=enable_uniform_plan(qualified),
+            strategy="uniform",
+        )
+
+    # D2: Delta → physical Iceberg via temp+rename CTAS. UC reports
+    # `Data source: Iceberg`. Loses Delta history.
+    if (src, tgt) == ("DELTA", "ICEBERG") and iceberg_physical:
+        return StrategyChoice(
+            plan=ctas_iceberg_inplace_plan(qualified, keep_backup=keep_backup),
+            strategy="ctas_iceberg",
+        )
+
+    # D2: Parquet → physical Iceberg. UniForm needs Delta as a base, so
+    # CTAS is the only physical path here.
+    if (src, tgt) == ("PARQUET", "ICEBERG"):
+        return StrategyChoice(
+            plan=ctas_iceberg_inplace_plan(qualified, keep_backup=keep_backup),
+            strategy="ctas_iceberg",
+        )
+
+    # D2: → Parquet. Loses every Delta-only feature (history, DV, change
+    # feed, time travel). Caller must have set `acknowledge_history_loss`
+    # (gated at the API request level — by here we trust it's set).
+    if (src, tgt) in {("DELTA", "PARQUET"), ("ICEBERG", "PARQUET")}:
+        return StrategyChoice(
+            plan=ctas_parquet_inplace_plan(qualified, keep_backup=keep_backup),
+            strategy="ctas_parquet",
+        )
+
     return None
 
 
@@ -163,6 +248,8 @@ def convert_table_format(
     source_format: str,
     *,
     target_format: str = "DELTA",
+    iceberg_physical: bool = False,
+    keep_backup: bool = True,
     dry_run: bool = False,
     audit_callback: ConvertAuditCallback | None = None,
 ) -> ConvertResult:
@@ -178,6 +265,13 @@ def convert_table_format(
             HUDI) are accepted by the API surface but only cells in
             ``SUPPORTED_PAIRS`` actually execute — the rest skip with
             ``"not yet supported"``.
+        iceberg_physical: Only meaningful for Delta→Iceberg. False
+            (default) picks the UniForm-update path; True picks the
+            CTAS+rename path that produces a real Iceberg table.
+        keep_backup: For temp+rename pairs (any → ICEBERG/PARQUET via
+            CTAS), True (default) renames the source aside as
+            ``{fqn}_pre_convert_<utc>`` so the conversion is reversible.
+            False drops the source after rename — non-recoverable.
         dry_run: When True, log the SQL and return a ``"skipped"`` result
             with status reason in ``error``. Intended for the wizard's
             preview step.
@@ -192,7 +286,7 @@ def convert_table_format(
     tgt_fmt = (target_format or "DELTA").upper()
     started_at = datetime.now(timezone.utc)
 
-    def _finish(status: str, error: str | None = None) -> ConvertResult:
+    def _finish(status: str, error: str | None = None, strategy: str = "") -> ConvertResult:
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)
         result = ConvertResult(
@@ -202,6 +296,7 @@ def convert_table_format(
             status=status,  # type: ignore[arg-type]
             error=error,
             duration_ms=duration_ms,
+            strategy_used=strategy,
         )
         if audit_callback is not None:
             try:
@@ -217,9 +312,29 @@ def convert_table_format(
         return _finish("skipped", f"already {tgt_fmt}")
 
     qualified = _qualify(fqn)
-    sql = _dispatch_strategy(src_fmt, tgt_fmt, qualified)
 
-    if sql is None:
+    # Cross-format compat preflight — refuse hidden Iceberg
+    # partitioning, refuse GENERATED/IDENTITY Delta columns when
+    # target can't represent them. Skip in dry-run so the operator
+    # can preview the SQL even when the source has known
+    # incompatibilities (some users want to see the dry-run plan
+    # before deciding whether to refactor the source).
+    if not dry_run:
+        compat_reasons = check_pair_compat(client, warehouse_id, qualified, src_fmt, tgt_fmt)
+        if compat_reasons:
+            joined = "; ".join(compat_reasons)
+            logger.warning(f"  Refusing {fqn} on compat preflight: {joined}")
+            return _finish("skipped", f"compat preflight refused: {joined}")
+
+    choice = _dispatch_strategy(
+        src_fmt,
+        tgt_fmt,
+        qualified,
+        iceberg_physical=iceberg_physical,
+        keep_backup=keep_backup,
+    )
+
+    if choice is None:
         # Pair not in SUPPORTED_PAIRS. The API request-validator will
         # usually catch this earlier (returning 422), but the
         # orchestrator double-checks so callers bypassing the API
@@ -229,16 +344,19 @@ def convert_table_format(
         return _finish("skipped", msg)
 
     if dry_run:
-        logger.info(f"[DRY RUN] {sql}")
-        return _finish("skipped", "dry-run")
+        # Render every step so the operator sees the full multi-statement
+        # plan, not just the first SQL.
+        for step in choice.plan.steps:
+            logger.info(f"[DRY RUN] [{step.label}] {step.sql}")
+        return _finish("skipped", "dry-run", strategy=choice.strategy)
 
     try:
-        execute_sql(client, warehouse_id, sql)
-        logger.info(f"  ✓ Converted {fqn} ({src_fmt} → {tgt_fmt})")
-        return _finish("converted")
+        choice.plan.execute(client, warehouse_id, dry_run=False)
+        logger.info(f"  ✓ Converted {fqn} ({src_fmt} → {tgt_fmt}) via {choice.strategy}")
+        return _finish("converted", strategy=choice.strategy)
     except Exception as e:
         logger.error(f"  ✗ Convert failed for {fqn}: {e}")
-        return _finish("failed", str(e))
+        return _finish("failed", str(e), strategy=choice.strategy)
 
 
 # --- Back-compat shim --------------------------------------------------
@@ -276,6 +394,8 @@ def convert_tables_format(
     confirm_destructive: bool,
     dry_run: bool = False,
     audit_callback: ConvertAuditCallback | None = None,
+    iceberg_physical: bool = False,
+    keep_backup: bool = True,
 ) -> ConvertSummary:
     """Run convert-format across a list of targets.
 
@@ -322,6 +442,8 @@ def convert_tables_format(
             fqn,
             src_fmt,
             target_format=tgt_fmt,
+            iceberg_physical=iceberg_physical,
+            keep_backup=keep_backup,
             dry_run=dry_run,
             audit_callback=audit_callback,
         )

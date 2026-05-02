@@ -61,27 +61,48 @@ def test_endpoint_rejects_unsupported_target_pair(client):
     assert body["skipped"] == 1
 
 
-def test_endpoint_rejects_iceberg_target(client):
-    """Delta→Iceberg lands in D2; until then the validator refuses with
-    a structured 422 naming the pair."""
-    resp = client.post(
-        "/api/convert-to-delta",
-        json={
-            "targets": [
-                {
-                    "fqn": "edp_dev.bronze.events",
-                    "source_format": "DELTA",
-                    "target_format": "ICEBERG",
-                }
+def test_endpoint_accepts_delta_to_iceberg_pair_in_d2(client):
+    """D2 added Delta→Iceberg to SUPPORTED_PAIRS (UniForm or physical
+    CTAS based on a per-row flag — see format_strategies.py). The
+    request validator now accepts the pair; the orchestrator picks the
+    physical path and the dispatch decides UniForm vs CTAS. This was
+    a 422 in D1 — keeping the test as a regression-pin so anyone
+    rolling Delta→Iceberg back to skipped can see the contract change."""
+    with patch("api.routers.convert_to_delta.convert_tables_format") as mock_convert:
+        from src.convert_to_delta import ConvertResult, ConvertSummary
+
+        mock_convert.return_value = ConvertSummary(
+            total=1,
+            converted=1,
+            results=[
+                ConvertResult(
+                    fqn="edp_dev.bronze.events",
+                    source_format="DELTA",
+                    destination_format="ICEBERG",
+                    status="converted",
+                    duration_ms=1000,
+                    strategy_used="uniform",
+                )
             ],
-            "warehouse_id": "wh-1",
-            "confirm_destructive": True,
-        },
-    )
-    assert resp.status_code == 422
-    detail = str(resp.json()["detail"]).lower()
-    assert "edp_dev.bronze.events" in detail
-    assert "delta" in detail and "iceberg" in detail
+        )
+        resp = client.post(
+            "/api/convert-to-delta",
+            json={
+                "targets": [
+                    {
+                        "fqn": "edp_dev.bronze.events",
+                        "source_format": "DELTA",
+                        "target_format": "ICEBERG",
+                    }
+                ],
+                "warehouse_id": "wh-1",
+                "confirm_destructive": True,
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["converted"] == 1
+    assert body["results"][0]["destination_format"] == "ICEBERG"
 
 
 def test_endpoint_rejects_hudi_target(client):

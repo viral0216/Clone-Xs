@@ -82,6 +82,7 @@ def _build_audit_callback(
             fqn_target=result.fqn,
             source_format=result.source_format,
             destination_format=result.destination_format,
+            strategy_used=result.strategy_used,
             status=result.status,
             started_at=started_at,
             completed_at=completed_at,
@@ -139,6 +140,8 @@ def post_convert_to_delta(
             confirm_destructive=req.confirm_destructive,
             dry_run=req.dry_run,
             audit_callback=audit_callback,
+            iceberg_physical=req.iceberg_physical,
+            keep_backup=req.keep_backup,
         )
     except ConvertToDeltaError as e:
         # Refusal (confirm_destructive missing) → 400, callers can reflect
@@ -155,6 +158,7 @@ def post_convert_to_delta(
                 fqn=r.fqn,
                 source_format=r.source_format,
                 destination_format=r.destination_format,
+                strategy_used=r.strategy_used,
                 status=r.status,
                 duration_ms=r.duration_ms,
                 error=r.error,
@@ -221,6 +225,7 @@ def get_convert_history(
             fqn=r.get("fqn") or "",
             source_format=r.get("source_format") or "",
             destination_format=r.get("destination_format") or "DELTA",
+            strategy_used=r.get("strategy_used") or "",
             status=r.get("status") or "skipped",
             started_at=str(r.get("started_at")) if r.get("started_at") else None,
             completed_at=str(r.get("completed_at")) if r.get("completed_at") else None,

@@ -295,6 +295,7 @@ def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
         fqn STRING,
         source_format STRING,
         destination_format STRING,
+        strategy_used STRING,
         status STRING,
         started_at TIMESTAMP,
         completed_at TIMESTAMP,
@@ -315,9 +316,10 @@ def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
     """
     execute_sql(client, warehouse_id, create_sql)
 
-    # In-place upgrade for tables created before D1. ADD COLUMN IF NOT
-    # EXISTS is idempotent on Delta. The backfill UPDATE only touches
-    # rows where the column is NULL — also idempotent.
+    # In-place upgrades for tables created before each phase. ADD COLUMN
+    # IF NOT EXISTS and the backfill UPDATE are idempotent on Delta.
+    #   D1 added: destination_format
+    #   D2 added: strategy_used (UniForm vs CTAS vs CONVERT TO DELTA)
     try:
         execute_sql(
             client,
@@ -329,11 +331,20 @@ def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
             warehouse_id,
             f"UPDATE {fqn} SET destination_format = 'DELTA' WHERE destination_format IS NULL",
         )
+        execute_sql(
+            client,
+            warehouse_id,
+            f"ALTER TABLE {fqn} ADD COLUMN IF NOT EXISTS strategy_used STRING",
+        )
+        # No backfill on `strategy_used` — historical rows pre-date the
+        # strategy registry, and "" is the right value for those (better
+        # than guessing "convert_to_delta" since some old rows might be
+        # dry-run skips that never picked a strategy).
     except Exception as e:
         # Best-effort: if the migration fails (rare — column already
         # exists, transient warehouse error), log and continue. The
         # write path tolerates NULL destination_format on old rows.
-        logger.warning(f"convert audit destination_format migration failed: {e}")
+        logger.warning(f"convert audit migration failed: {e}")
 
     logger.info(f"Convert audit table ready: {fqn}")
     return fqn
@@ -355,6 +366,7 @@ def log_convert_result(
     trigger: str = "manual",
     error_message: str | None = None,
     destination_format: str = "DELTA",
+    strategy_used: str = "",
 ) -> None:
     """Write one convert audit row. Best-effort — failures don't break
     the conversion (we already converted the table; the audit row is
@@ -383,12 +395,12 @@ def log_convert_result(
 
     sql = f"""
     INSERT INTO {audit_fqn}
-    (operation_id, fqn, source_format, destination_format, status,
-     started_at, completed_at, duration_ms, user_name, host, dry_run,
+    (operation_id, fqn, source_format, destination_format, strategy_used,
+     status, started_at, completed_at, duration_ms, user_name, host, dry_run,
      `trigger`, error_message, recorded_at)
     VALUES
     ('{esc(operation_id)}', '{esc(fqn_target)}', '{esc(source_format)}',
-     '{esc(destination_format)}', '{esc(status)}',
+     '{esc(destination_format)}', '{esc(strategy_used)}', '{esc(status)}',
      '{started_str}', '{completed_str}',
      {int(duration_ms)}, '{esc(user)}', '{esc(host)}',
      {str(bool(dry_run)).lower()}, '{esc(trigger)}',
@@ -457,7 +469,8 @@ def query_convert_history(
     capped_limit = max(1, min(int(limit), 1000))
 
     sql = f"""
-    SELECT operation_id, fqn, source_format, destination_format, status,
+    SELECT operation_id, fqn, source_format, destination_format,
+           strategy_used, status,
            started_at, completed_at, duration_ms,
            user_name, host, dry_run, `trigger`, error_message, recorded_at
     FROM {audit_fqn}

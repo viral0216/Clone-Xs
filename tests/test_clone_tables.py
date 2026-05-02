@@ -310,6 +310,100 @@ def test_clone_table_uniform_emitted_for_delta_source(mock_sql):
     assert "delta.enableIcebergCompatV2" in sqls[3]
 
 
+# Phase C2 of #9 — physical Iceberg target. When `iceberg_physical=True`,
+# clone_table() emits `CREATE TABLE dst USING iceberg AS SELECT * FROM src`
+# instead of the Delta CLONE + UniForm path. UC then reports
+# `Data source: Iceberg` rather than Delta. Trade-offs covered in the
+# CloneRequest field comment.
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_physical_iceberg_emits_using_iceberg_ctas(mock_sql):
+    """`iceberg_physical=True` produces a CTAS with `USING iceberg`. No
+    DEEP CLONE, no UniForm ALTER chain — the target IS Iceberg natively."""
+    mock_sql.return_value = []
+    success, metrics = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        target_format="ICEBERG",
+        source_format="DELTA",
+        iceberg_physical=True,
+    )
+    assert success is True
+    # CTAS path returns no metrics (no Databricks CLONE counters).
+    assert metrics is None
+    # Single SQL call: the CTAS itself. No CLONE, no DV-disable, no
+    # REORG, no UniForm ALTER — those are all Delta-target-only.
+    assert mock_sql.call_count == 1
+    sql = mock_sql.call_args[0][2]
+    assert "USING iceberg" in sql
+    assert "AS SELECT * FROM" in sql
+    assert "DEEP CLONE" not in sql
+    assert "delta.universalFormat" not in sql
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_physical_iceberg_ignored_when_target_is_delta(mock_sql):
+    """`iceberg_physical=True` only takes effect when target_format=ICEBERG.
+    With the default DELTA target, the flag is a no-op — the regular Delta
+    CLONE path runs, leaving downstream behaviour unchanged."""
+    mock_sql.return_value = []
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        target_format="DELTA",
+        source_format="DELTA",
+        iceberg_physical=True,  # ignored — target is DELTA
+    )
+    assert success is True
+    sql = mock_sql.call_args[0][2]
+    # Standard Delta CLONE path ran, not the iceberg CTAS.
+    assert "DEEP CLONE" in sql
+    assert "USING iceberg" not in sql
+
+
+@patch("src.clone_tables.execute_sql")
+def test_clone_table_physical_iceberg_ignores_time_travel_with_warning(mock_sql, caplog):
+    """`USING iceberg AS SELECT` doesn't accept TIMESTAMP/VERSION AS OF.
+    Asserting we drop the time-travel arg AND log it (silent loss would be
+    a bug — users would think they cloned a historical snapshot)."""
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="src.clone_tables")
+    mock_sql.return_value = []
+    success, _ = clone_table(
+        MagicMock(),
+        "wh-123",
+        "src",
+        "dst",
+        "schema1",
+        "table1",
+        "DEEP",
+        as_of_timestamp="2026-01-15T00:00:00",
+        target_format="ICEBERG",
+        source_format="DELTA",
+        iceberg_physical=True,
+    )
+    assert success is True
+    sql = mock_sql.call_args[0][2]
+    # Time-travel is silently absent from the CTAS.
+    assert "TIMESTAMP AS OF" not in sql
+    assert "VERSION AS OF" not in sql
+    # But there's a WARN line saying so.
+    warns = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("Time-travel ignored" in m for m in warns)
+
+
 @patch("src.clone_tables.execute_sql")
 def test_clone_table_uniform_skipped_for_non_delta_source(mock_sql):
     """target_format=ICEBERG with a non-Delta source falls back to a plain

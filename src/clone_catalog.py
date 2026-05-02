@@ -318,6 +318,7 @@ def process_schema(
             tables_progress=config.get("_tables_progress"),
             tbl_properties=config.get("clone_tbl_properties"),
             target_format=config.get("target_format", "DELTA"),
+            iceberg_physical=config.get("iceberg_physical", False),
         )
 
         # Apply data masking after table cloning. Two sources of rules:

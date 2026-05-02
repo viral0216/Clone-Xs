@@ -161,6 +161,7 @@ def clone_table(
     tbl_properties: dict[str, str] | None = None,
     target_format: str = "DELTA",
     source_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> tuple[bool, dict | None]:
     """Clone a single table from source to destination catalog.
 
@@ -228,6 +229,55 @@ def clone_table(
             preflight_iceberg_source(client, warehouse_id, source)
         except IcebergPreflightError as pe:
             logger.error(f"{FAIL} {pe}")
+            return False, None
+
+    # Physical Iceberg target (Phase C2 of #9). When the user wants the
+    # destination to actually be an Iceberg table — UC reports
+    # `Data source: Iceberg`, not `Delta` — we emit a CTAS with
+    # `USING iceberg` instead of CLONE + UniForm. Trade-offs documented on
+    # the CloneRequest.iceberg_physical field. Time-travel and WHERE-filter
+    # arguments are ignored on this path because Iceberg targets don't
+    # share Delta's snapshot semantics; we log when we drop them so it's
+    # not silent.
+    if target_format.upper() == "ICEBERG" and iceberg_physical:
+        if source_format.upper() == "ICEBERG":
+            logger.info(f"  {OK} Source {source} is already Iceberg — physical clone uses CTAS")
+        if as_of_timestamp or as_of_version:
+            logger.warning(
+                f"{WARN} Time-travel ignored for physical Iceberg target ({source}); "
+                f"`USING iceberg AS SELECT` doesn't accept TIMESTAMP/VERSION AS OF."
+            )
+        if where_clause:
+            logger.info(f"  Applying WHERE filter to physical Iceberg CTAS for {source}")
+        select_clause = f"SELECT * FROM {source}"
+        if where_clause:
+            select_clause += f" WHERE {where_clause}"
+        physical_sql = f"CREATE TABLE IF NOT EXISTS {dest} USING iceberg AS {select_clause}"
+        try:
+            execute_sql(client, warehouse_id, physical_sql, dry_run=dry_run)
+            # CTAS doesn't take TBLPROPERTIES inline; apply via ALTER if asked.
+            # Iceberg tables don't accept the same property set as Delta, so
+            # this is best-effort and we surface failures as warnings rather
+            # than fail the whole clone.
+            if tbl_properties and not dry_run:
+                try:
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
+                        dry_run=dry_run,
+                    )
+                except Exception as alter_e:
+                    logger.warning(
+                        f"{WARN} ALTER TABLE SET TBLPROPERTIES on Iceberg target {dest} failed: {alter_e}"
+                    )
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table (physical Iceberg): "
+                f"{source} {ARROW} {dest} {dim('(USING iceberg, no Delta history)')}"
+            )
+            return True, None
+        except Exception as e:
+            logger.error(f"{FAIL} Physical Iceberg clone failed for {source}: {e}")
             return False, None
 
     # If where_clause is provided and clone_type is DEEP, use CTAS
@@ -413,6 +463,7 @@ def _clone_single_table(
     tbl_properties: dict[str, str] | None = None,
     target_format: str = "DELTA",
     source_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> tuple[str, bool, dict | None]:
     """Clone a single table with all post-clone operations.
 
@@ -447,6 +498,7 @@ def _clone_single_table(
         tbl_properties=tbl_properties,
         target_format=target_format,
         source_format=source_format,
+        iceberg_physical=iceberg_physical,
     )
 
     if not success:
@@ -555,6 +607,7 @@ def clone_tables_in_schema(
     tables_progress=None,
     tbl_properties: dict[str, str] | None = None,
     target_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -732,6 +785,7 @@ def clone_tables_in_schema(
                     tbl_properties,
                     target_format,
                     format_by_name.get(tname, "DELTA"),
+                    iceberg_physical,
                 ): tname
                 for tname in tables_to_clone
             }
@@ -772,6 +826,7 @@ def clone_tables_in_schema(
                 tbl_properties,
                 target_format,
                 format_by_name.get(tname, "DELTA"),
+                iceberg_physical,
             )
             _add_metrics(metrics)
             if success:

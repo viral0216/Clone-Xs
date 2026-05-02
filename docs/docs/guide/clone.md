@@ -169,6 +169,38 @@ Constraints worth knowing:
 - **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
 - **Cross-workspace clones** (Delta Sharing path) honour `target_format: ICEBERG` too — UniForm is enabled on the target after each successful DEEP CLONE through the share.
 
+##### `iceberg_physical: true` — physical Iceberg target (Phase C2 of #9)
+
+UniForm makes a Delta table *readable* by Iceberg engines but UC still reports `Data source: Delta`. If you need UC itself to recognise the table as Iceberg (so it shows `Data source: Iceberg` and behaves like a managed Iceberg table for downstream Iceberg-native tooling), set `iceberg_physical: true` (or check the **Physical Iceberg target** box in the wizard, visible only when ICEBERG is selected).
+
+What changes mechanically: instead of `DEEP CLONE … then ALTER TBLPROPERTIES` (UniForm), Clone-Xs emits
+
+```sql
+CREATE TABLE IF NOT EXISTS `dst`.`schema`.`table`
+  USING iceberg
+  AS SELECT * FROM `src`.`schema`.`table`;
+```
+
+Trade-offs you accept by enabling this:
+
+| Lost | Why |
+|---|---|
+| **Delta history** | Target starts at version 0 — CTAS doesn't carry source Delta log. |
+| **Time-travel arguments** | `TIMESTAMP AS OF` / `VERSION AS OF` ignored with a `WARN` log line. Iceberg has its own snapshot model not addressable via Delta time-travel syntax. |
+| **Delta-only features on the target** | Deletion vectors, change feed, row tracking — can't be applied to an Iceberg table. |
+| **Per-CLONE metrics** | The Databricks per-statement counters Clone-Xs surfaces for DEEP CLONE aren't emitted by CTAS. |
+
+What you **gain**: UC sees the table as Iceberg, downstream Iceberg-native tooling (snapshot pruning, Iceberg-spec-compliant compaction, etc.) works directly without the metadata bridge.
+
+**Verify in your workspace before committing to this for a full catalog clone:** Iceberg-managed-table support requires DBR 15+ and is not enabled in every region/billing tier. Try it on one table first:
+
+```sql
+CREATE TABLE my_test_iceberg USING iceberg AS SELECT * FROM source.delta_table LIMIT 1000;
+DESCRIBE EXTENDED my_test_iceberg;  -- confirm `Provider: iceberg`
+```
+
+If your workspace doesn't support this, the clone will fail with a clear `CREATE TABLE … USING iceberg` error. Drop back to the default UniForm path (`iceberg_physical: false`) — it works on every Databricks SQL warehouse.
+
 #### Iceberg source preflight (Phase B)
 
 When the source is Iceberg, Clone-Xs runs `DESCRIBE TABLE EXTENDED` before the CLONE statement and refuses tables that use hidden-partition transforms. The refusal is deliberate — see [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full check. The error message names the offending transform and points at the workaround:

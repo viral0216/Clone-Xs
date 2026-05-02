@@ -1177,6 +1177,7 @@ function ClonePageInner() {
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
     load_type: "FULL" as "FULL" | "INCREMENTAL",
     target_format: "DELTA" as "DELTA" | "ICEBERG",
+    iceberg_physical: false,
     dry_run: false,
     max_workers: 4,
     parallel_tables: 1,
@@ -1675,10 +1676,35 @@ function ClonePageInner() {
                 ))}
               </div>
               {config.target_format === "ICEBERG" && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Target stays Delta but is readable by external Iceberg engines via UniForm.
-                  Non-Delta source tables in this clone fall back to DELTA with a warning.
-                </p>
+                <>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Target stays Delta but is readable by external Iceberg engines via UniForm.
+                    Non-Delta source tables in this clone fall back to DELTA with a warning.
+                  </p>
+                  {/* Phase C2 of #9: opt-in for physical Iceberg target.
+                      Hidden under DELTA mode because it doesn't apply there. */}
+                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={config.iceberg_physical}
+                      onChange={(e) =>
+                        setConfig({ ...config, iceberg_physical: e.target.checked })
+                      }
+                    />
+                    <span>
+                      <span className="font-medium">Physical Iceberg target</span>
+                      {" — UC reports "}
+                      <code className="mx-1 px-1 bg-gray-800/40 rounded">Data source: Iceberg</code>
+                      {" instead of Delta+UniForm."}
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {"Uses "}
+                        <code>CREATE TABLE … USING iceberg AS SELECT</code>
+                        {". Loses Delta history and time-travel; requires DBR 15+ with Iceberg-managed-table support enabled on the workspace. Verify with one table before running a full catalog clone."}
+                      </span>
+                    </span>
+                  </label>
+                </>
               )}
             </div>
 

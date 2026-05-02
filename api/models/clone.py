@@ -218,6 +218,16 @@ class CloneRequest(BaseModel):
     # logged at clone time. Phase A: Delta source only. Phase B (TBD) adds
     # Iceberg→Delta and full bidirectional rewrite.
     target_format: Literal["DELTA", "ICEBERG"] = "DELTA"
+    # When `target_format=ICEBERG` AND `iceberg_physical=True`, the clone
+    # bypasses UniForm and emits `CREATE TABLE dst USING iceberg AS SELECT
+    # * FROM src` so the target lands as a *real* Iceberg table (UC reports
+    # `Data source: Iceberg`, not `Delta`). Trade-offs:
+    #   - Loses Delta history (target starts at version 0).
+    #   - Loses Delta-only features (DV, change feed, deletion vectors).
+    #   - Requires DBR 15+ and Iceberg-managed-table support enabled on the
+    #     workspace; some regions / billing tiers don't have it.
+    # Default False keeps the existing UniForm behaviour, which is safer.
+    iceberg_physical: bool = False
 
     @model_validator(mode="after")
     def _different_catalogs(self) -> "CloneRequest":

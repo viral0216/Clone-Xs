@@ -261,6 +261,17 @@ async def start_streaming_emission(
     config["bronze_table"] = req.bronze_table
     if req.warehouse_id:
         config["sql_warehouse_id"] = req.warehouse_id
+    # Override the leftover clone-wizard defaults that get inherited from
+    # `clone_config.yaml`. JobManager records `source_catalog` /
+    # `destination_catalog` on every job dict regardless of type — without
+    # this override the streaming-emit job's status card / error messages
+    # would say "supplier_portal → supplier_portal_clone" (the clone
+    # defaults) instead of the actual streaming target. The runner itself
+    # reads from `config["catalog"]` / `config["profile"]`, not these
+    # fields, so overwriting them is display-only and safe.
+    target_table = (req.bronze_table or f"bronze_{req.profile}").strip()
+    config["source_catalog"] = req.profile
+    config["destination_catalog"] = f"{req.catalog}.{req.schema_name}.{target_table}"
     # Zerobus credentials — only meaningful when destination='zerobus',
     # but copied unconditionally so the runner sees the same shape it
     # would see from a programmatic config dict. Pydantic has already
@@ -272,6 +283,8 @@ async def start_streaming_emission(
         config["zerobus_client_id"] = req.zerobus_client_id
     if req.zerobus_client_secret:
         config["zerobus_client_secret"] = req.zerobus_client_secret
+    if req.zerobus_table_location:
+        config["zerobus_table_location"] = req.zerobus_table_location
     job_id = await jm.submit_job("streaming-emit", config, client)
     return {"job_id": job_id, "status": "queued", "message": "Streaming emission submitted"}
 

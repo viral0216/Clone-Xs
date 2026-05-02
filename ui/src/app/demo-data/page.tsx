@@ -413,6 +413,11 @@ export default function DemoDataPage() {
   const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
   const [zerobusClientId, setZerobusClientId] = useState("");
   const [zerobusClientSecret, setZerobusClientSecret] = useState("");
+  // Optional: cloud-storage URI prefix where the destination table
+  // gets created as EXTERNAL. Required on workspaces whose schema
+  // has no managed-storage location configured (Zerobus rejects
+  // tables in metastore default storage).
+  const [zerobusTableLocation, setZerobusTableLocation] = useState("");
   // Helper: paste a Databricks workspace URL → server-side resolver
   // parses it, DNS-probes the AWS region, and auto-fills the Server
   // endpoint field. Browsers can't do DNS, so we delegate.
@@ -657,6 +662,9 @@ export default function DemoDataPage() {
           zerobus_server_endpoint: zerobusServerEndpoint.trim(),
           zerobus_client_id: zerobusClientId.trim(),
           zerobus_client_secret: zerobusClientSecret.trim(),
+          ...(zerobusTableLocation.trim() && {
+            zerobus_table_location: zerobusTableLocation.trim(),
+          }),
         }),
       };
       await streamJob.start(params, async () => {
@@ -1955,6 +1963,29 @@ export default function DemoDataPage() {
                       autoComplete="new-password"
                     />
                   </div>
+                </div>
+
+                {/* Optional table-storage URL. Required on workspaces
+                    whose schema/catalog has no managed storage — Zerobus
+                    rejects tables in metastore default storage. Leave
+                    empty if your schema has a managed location set. */}
+                <div className="space-y-1 pt-1">
+                  <label className="text-[11px] text-muted-foreground" htmlFor="zb-table-location">
+                    Table storage URI
+                    <span className="text-[10px] text-muted-foreground/70 ml-1">(optional — required on workspaces without schema-level managed storage)</span>
+                  </label>
+                  <Input
+                    id="zb-table-location"
+                    placeholder="s3://my-bucket/zerobus  (or abfss://…, gs://…)"
+                    value={zerobusTableLocation}
+                    onChange={(e) => setZerobusTableLocation(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    When set, the table is created as EXTERNAL at
+                    <code className="bg-background px-1 mx-0.5 rounded">{"<URI>/<table_name>"}</code>.
+                    Must be a UC <strong>External Location</strong> the SP can write to —
+                    grant <code className="bg-background px-1 rounded">READ FILES, WRITE FILES</code> on it.
+                  </p>
                 </div>
 
                 {/* Verify-credentials affordance — short-circuits the

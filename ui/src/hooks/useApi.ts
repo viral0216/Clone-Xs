@@ -653,6 +653,9 @@ export function useStreamingEmit() {
       zerobus_server_endpoint?: string;
       zerobus_client_id?: string;
       zerobus_client_secret?: string;
+      // Optional cloud-storage URI prefix (s3://, abfss://, gs://) for
+      // the destination table. Skip on workspaces with managed storage.
+      zerobus_table_location?: string;
     }) => api.post("/generate/demo-data/streaming", req),
   });
 }

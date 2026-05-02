@@ -113,6 +113,271 @@ class TestCloseStream:
 # ----------------- request-model validation -----------------
 
 
+class TestEnsureZerobusTable:
+    """Verify the table-DDL chain ensure_zerobus_table emits.
+
+    The runner uses different DDL depending on whether the caller passed
+    an explicit `location`:
+      - `location=None`  → `CREATE TABLE … USING DELTA` (managed table,
+        relies on the schema's managed storage being set up)
+      - `location="s3://..."` → `CREATE TABLE … USING DELTA LOCATION
+        '<location>/<table>'` (external table — what most workspaces need)
+
+    Both paths still create the catalog/schema/volume idempotently.
+    """
+
+    def _capture(self):
+        executed: list[str] = []
+
+        def capture(_client, _wid, sql, **_kw):
+            executed.append(sql.strip())
+            return []
+
+        return executed, capture
+
+    def test_managed_table_when_no_location(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            fqn = ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+            )
+        assert fqn == "machine.iot.bronze_car_obd2"
+        # Catalog + schema + volume are always created
+        assert any("CREATE CATALOG IF NOT EXISTS `machine`" in s for s in executed)
+        assert any("CREATE SCHEMA IF NOT EXISTS `machine`.`iot`" in s for s in executed)
+        assert any(
+            "CREATE VOLUME IF NOT EXISTS `machine`.`iot`.`events_volume`" in s for s in executed
+        )
+        # No LOCATION clause when the caller didn't supply one
+        ct = next(s for s in executed if "CREATE TABLE" in s)
+        assert "LOCATION" not in ct
+
+    def test_external_table_when_location_set(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                location="s3://my-bucket/zerobus",
+            )
+        ct = next(s for s in executed if "CREATE TABLE" in s)
+        # Table-name suffix appended to the location prefix automatically.
+        assert "LOCATION 's3://my-bucket/zerobus/bronze_car_obd2'" in ct
+
+    def test_volume_path_in_location_rejected(self):
+        # /Volumes/... isn't accepted by Databricks as a CREATE TABLE
+        # LOCATION (needs a cloud-storage URI). We catch this at our
+        # boundary so users get a clear error instead of the cryptic
+        # "Missing cloud file system scheme" from the warehouse.
+        from unittest.mock import MagicMock
+
+        import pytest
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        with pytest.raises(ValueError, match="UC Volume paths are not accepted"):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                location="/Volumes/machine/iot/events_volume/zerobus",
+            )
+
+    def test_location_whitespace_treated_as_empty(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                location="   ",
+            )
+        ct = next(s for s in executed if "CREATE TABLE" in s)
+        assert "LOCATION" not in ct  # whitespace-only location → managed table
+
+    def test_unknown_profile_rejected(self):
+        from unittest.mock import MagicMock
+
+        import pytest
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        with pytest.raises(ValueError, match="Unknown profile"):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "not_a_profile",
+                "tbl",
+            )
+
+
+class TestZerobusAutoGrant:
+    """Verify the runner auto-GRANTs the SP everything Zerobus needs.
+
+    Without these grants, every fresh table → fresh-SP combo lands in
+    the `invalid_authorization_details` 401 loop. The runner runs
+    them as the workspace user (admin or table owner) so the SP can
+    actually ingest.
+    """
+
+    def _capture(self):
+        executed: list[str] = []
+
+        def cap(_client, _wid, sql, **_kw):
+            executed.append(sql.strip())
+            return []
+
+        return executed, cap
+
+    def test_no_grants_when_sp_id_omitted(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+            )
+        # Catalog/schema/volume/table emitted, but no GRANT statements
+        assert not any("GRANT" in s for s in executed)
+
+    def test_all_four_grants_emitted_when_sp_id_set(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                service_principal_id="bd9eaccf-212c-41f2-9acf-000407639c60",
+            )
+        sp = "bd9eaccf-212c-41f2-9acf-000407639c60"
+        assert any(f"GRANT USE_CATALOG ON CATALOG `machine` TO `{sp}`" in s for s in executed)
+        assert any(f"GRANT USE_SCHEMA ON SCHEMA `machine`.`iot` TO `{sp}`" in s for s in executed)
+        assert any(
+            f"GRANT READ_VOLUME, WRITE_VOLUME ON VOLUME `machine`.`iot`.`events_volume` TO `{sp}`"
+            in s
+            for s in executed
+        )
+        assert any(
+            f"GRANT MODIFY, SELECT ON TABLE `machine`.`iot`.`bronze_car_obd2` TO `{sp}`" in s
+            for s in executed
+        )
+
+    def test_grants_run_after_create_table(self):
+        # Order matters: GRANT on a non-existent table errors out, so
+        # the GRANTs must come after the CREATE.
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                service_principal_id="sp-id",
+            )
+        create_idx = next(i for i, s in enumerate(executed) if "CREATE TABLE" in s)
+        first_grant_idx = next(i for i, s in enumerate(executed) if "GRANT" in s)
+        assert first_grant_idx > create_idx
+
+    def test_partial_grant_failure_does_not_abort(self):
+        # If the user has manage on the schema but not the catalog,
+        # the catalog-level GRANT will fail — but the schema/volume/
+        # table grants should still apply.
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed: list[str] = []
+
+        def cap(_client, _wid, sql, **_kw):
+            executed.append(sql.strip())
+            if "GRANT USE_CATALOG" in sql:
+                raise Exception("permission denied on catalog")
+            return []
+
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                service_principal_id="sp-id",
+            )
+        # Catalog GRANT was attempted but raised; schema/volume/table
+        # GRANTs still ran (verified by counting GRANT statements).
+        grants = [s for s in executed if s.startswith("GRANT")]
+        assert len(grants) == 4  # all four attempted
+        # Function returned normally (didn't propagate the exception).
+
+    def test_whitespace_sp_id_treated_as_omitted(self):
+        from unittest.mock import MagicMock, patch
+
+        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
+
+        executed, cap = self._capture()
+        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
+            ensure_zerobus_table(
+                MagicMock(),
+                "wh",
+                "machine",
+                "iot",
+                "car_obd2",
+                "bronze_car_obd2",
+                service_principal_id="   ",
+            )
+        assert not any("GRANT" in s for s in executed)
+
+
 class TestStreamingRequestZerobusValidation:
     def test_missing_creds_rejected(self):
         from api.models.demo import StreamingEmissionRequest

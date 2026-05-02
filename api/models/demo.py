@@ -210,6 +210,19 @@ class StreamingEmissionRequest(BaseModel):
         default=None,
         description="Service-principal client_secret for Zerobus OAuth. Required when destination='zerobus'.",
     )
+    # Optional cloud-storage URI (s3://, abfss://, gs://) where the
+    # Zerobus-target Delta table will be created as EXTERNAL. Required
+    # on workspaces whose catalog/schema have no managed-storage path
+    # configured — without it Databricks creates the table in default
+    # storage and Zerobus rejects it with `Error Code: 4024`.
+    zerobus_table_location: str | None = Field(
+        default=None,
+        description=(
+            "Optional cloud-storage URI prefix (e.g. s3://my-bucket/zerobus) "
+            "for the destination table. Leave empty if the schema has its "
+            "own managed storage configured."
+        ),
+    )
 
     @model_validator(mode="after")
     def _zerobus_requires_credentials(self) -> "StreamingEmissionRequest":

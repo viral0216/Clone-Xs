@@ -95,13 +95,40 @@ def ensure_zerobus_table(
     schema: str,
     profile: str,
     table_name: str,
+    volume: str = "events_volume",
+    location: str | None = None,
+    service_principal_id: str | None = None,
 ) -> str:
-    """Create catalog + schema + Delta table if missing for Zerobus emission.
+    """Create catalog + schema + (optional) Volume + Delta table for Zerobus.
 
-    Schema mirrors :func:`src.demo_streaming._ensure_direct_bronze_table` —
-    Zerobus appends to a regular Delta table, so the DDL is identical.
-    Kept as a separate function so a future Zerobus-specific schema
-    change (e.g. required ``__zb_seq`` column) only touches one file.
+    Zerobus rejects tables in metastore default storage
+    (``Unsupported table kind. Tables created in default storage are
+    not supported. Error Code: 4024``). The caller has three ways to
+    avoid this:
+
+      A. Pass ``location='s3://bucket/path'`` (or ``abfss://``,
+         ``gs://``) — we create the table as EXTERNAL at that path.
+         **Recommended** when the workspace's catalog/schema have no
+         configured managed storage.
+      B. Configure managed storage on the schema/catalog before the
+         first run — leave ``location=None`` and the table lands in
+         the schema's managed location, which Zerobus accepts.
+      C. Leave ``location=None`` on a workspace whose metastore has
+         no managed storage at all — table lands in default storage
+         and Zerobus rejects it. The runner then surfaces the
+         underlying error (``Error Code: 4024``).
+
+    Notes:
+      - ``LOCATION '/Volumes/...'`` is NOT a valid value here despite
+        being a real path — Databricks needs a cloud-storage URI in
+        the LOCATION clause. The previous attempt to use the Volume
+        path failed with INVALID_PARAMETER_VALUE "Missing cloud file
+        system scheme."
+      - ``volume`` is created idempotently regardless of which path
+        you pick — keeps things consistent with the file-based modes
+        and lets you reuse the same Volume for other purposes.
+
+    Returns the fully-qualified table name (no backticks).
     """
     if profile not in DEVICE_PROFILES:
         raise ValueError(f"Unknown profile: {profile!r}")
@@ -110,14 +137,102 @@ def ensure_zerobus_table(
     fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
     execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`")
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+    # Volume — same one the file-based modes create, so users see one
+    # consistent storage object regardless of which destination they pick.
+    execute_sql(
+        client,
+        warehouse_id,
+        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}` "
+        f"COMMENT 'Streaming demo events'",
+    )
     comment = DEVICE_PROFILES[profile]["comment"]
+    location_clause = ""
+    if location and (loc := location.strip()):
+        # Defense against caller mistakes: reject `/Volumes/...`
+        # paths (the runtime needs a cloud-storage URI here).
+        if loc.startswith("/Volumes/"):
+            raise ValueError(
+                "Zerobus table LOCATION must be a cloud-storage URI "
+                f"(s3://, abfss://, gs://) — got {loc!r}. "
+                "UC Volume paths are not accepted by CREATE TABLE."
+            )
+        location_clause = f" LOCATION '{loc}/{table_name}'"
     execute_sql(
         client,
         warehouse_id,
         f"CREATE TABLE IF NOT EXISTS {fqn} ({col_ddl}) "
-        f"USING DELTA COMMENT 'Streaming demo events (Zerobus) — {comment}'",
+        f"USING DELTA"
+        f"{location_clause}"
+        f" COMMENT 'Streaming demo events (Zerobus) — {comment}'",
     )
+
+    # Auto-grant the service principal everything Zerobus needs.
+    # The streaming-emit caller has already authenticated as a workspace
+    # admin (or someone with manage privileges); the SP that's about to
+    # ingest via Zerobus has no privileges yet by default. Without these
+    # grants Databricks rejects the create-stream call with
+    # `invalid_authorization_details`.
+    #
+    # Each GRANT runs in its own try/except so a partial-permission
+    # caller (e.g. table owner but not catalog admin) gets as far as
+    # they can — the runner will surface the same auth error from
+    # Zerobus if a critical grant didn't take, but at least the
+    # successful grants stick.
+    if service_principal_id and (sp := service_principal_id.strip()):
+        _grant_zerobus_perms(
+            client,
+            warehouse_id,
+            sp=sp,
+            catalog=catalog,
+            schema=schema,
+            volume=volume,
+            fqn=fqn,
+        )
+
     return f"{catalog}.{schema}.{table_name}"
+
+
+def _grant_zerobus_perms(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    *,
+    sp: str,
+    catalog: str,
+    schema: str,
+    volume: str,
+    fqn: str,
+) -> None:
+    """Grant the SP every privilege Zerobus needs to ingest.
+
+    The grants required by Zerobus + UC for an external Delta target
+    backed by a Volume are:
+      - USE_CATALOG on the catalog
+      - USE_SCHEMA on the schema
+      - READ_VOLUME, WRITE_VOLUME on the volume
+      - MODIFY, SELECT on the table
+
+    We swallow per-grant exceptions so a caller without manage perms
+    on (say) the catalog still gets the schema / volume / table grants
+    applied. Failures are logged so they're discoverable in the job log.
+    """
+    grants = [
+        ("catalog", f"GRANT USE_CATALOG ON CATALOG `{catalog}` TO `{sp}`"),
+        ("schema", f"GRANT USE_SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{sp}`"),
+        (
+            "volume",
+            f"GRANT READ_VOLUME, WRITE_VOLUME ON VOLUME `{catalog}`.`{schema}`.`{volume}` TO `{sp}`",
+        ),
+        ("table", f"GRANT MODIFY, SELECT ON TABLE {fqn} TO `{sp}`"),
+    ]
+    for level, sql in grants:
+        try:
+            execute_sql(client, warehouse_id, sql)
+            logger.info(f"Granted Zerobus {level} perms to SP {sp}")
+        except Exception as e:
+            logger.warning(
+                f"Could not grant {level} perms to SP {sp} "
+                f"(continuing — Zerobus may still reject the run): {e}"
+            )
 
 
 def open_zerobus_stream(

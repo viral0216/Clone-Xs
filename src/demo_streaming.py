@@ -977,6 +977,13 @@ def run_streaming_emission(
             schema,
             profile,
             bronze_table,
+            volume=volume,
+            location=(config.get("zerobus_table_location") or "").strip() or None,
+            # Pass the SP's client_id so the runner can auto-GRANT it
+            # the perms Zerobus needs to write to the table. Avoids the
+            # `invalid_authorization_details` 401 loop for users who'd
+            # otherwise have to GRANT manually after every table create.
+            service_principal_id=(config.get("zerobus_client_id") or "").strip() or None,
         )
         avail, reason = _zb_is_available()
         if not avail:

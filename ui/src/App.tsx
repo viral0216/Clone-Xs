@@ -11,6 +11,7 @@ import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
 import Dashboard from "@/app/page";
 import ClonePage from "@/app/clone/page";
+import ConvertToDeltaPage from "@/app/convert-to-delta/page";
 import ExplorePage from "@/app/explore/page";
 const DiffPage = lazy(() => import("@/app/diff/page"));
 import MonitorPage from "@/app/monitor/page";
@@ -277,6 +278,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />
+              <Route path="/convert-to-delta" element={<ConvertToDeltaPage />} />
               <Route path="/explore" element={<ExplorePage />} />
               <Route path="/diff" element={<Suspense fallback={<PageFallback />}><DiffPage /></Suspense>} />
               <Route path="/monitor" element={<MonitorPage />} />

@@ -42,7 +42,7 @@ export const allNavSections: NavSection[] = [
     title: "Operations",
     items: [
       { href: "/clone", label: "Clone", icon: Copy },
-      { href: "/convert-to-delta", label: "Convert to Delta", icon: ArrowRightLeft },
+      { href: "/convert", label: "Convert table format", icon: ArrowRightLeft },
       { href: "/sync", label: "Sync", icon: RefreshCw },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
       { href: "/demo-data", label: "Demo Data", icon: Database },

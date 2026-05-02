@@ -46,7 +46,11 @@ def test_convert_table_skips_already_delta_with_no_sql(mock_sql):
         "DELTA",
     )
     assert result.status == "skipped"
-    assert "already Delta" in (result.error or "")
+    # Message is upper-cased now ("already DELTA") since the per-table
+    # function normalises the format string before rendering. Same
+    # semantic — already-target tables are no-ops.
+    assert "already" in (result.error or "")
+    assert "DELTA" in (result.error or "")
     assert mock_sql.call_count == 0
 
 
@@ -62,7 +66,12 @@ def test_convert_table_skips_unsupported_format_with_no_sql(mock_sql):
         "CSV",
     )
     assert result.status == "skipped"
-    assert "unsupported source format CSV" in (result.error or "")
+    # Pair-aware semantics now: the skip reason references the
+    # (source, target) pair instead of just the source format. CSV→DELTA
+    # isn't in SUPPORTED_PAIRS, so it surfaces as "pair CSV→DELTA not
+    # yet supported".
+    assert "CSV" in (result.error or "")
+    assert "not yet supported" in (result.error or "")
     assert mock_sql.call_count == 0
 
 
@@ -279,7 +288,14 @@ def test_query_convert_history_emits_correct_select(mock_sql):
     mock_sql.return_value = []
     query_convert_history(MagicMock(), "wh-1", {}, limit=10)
     sql = mock_sql.call_args[0][2]
-    assert "SELECT operation_id, fqn, source_format, status" in sql
+    # D1 added `destination_format` to the SELECT list — assert the
+    # critical columns are present rather than the exact prefix string,
+    # so future column additions don't break this test.
+    assert "operation_id" in sql
+    assert "fqn" in sql
+    assert "source_format" in sql
+    assert "destination_format" in sql
+    assert "status" in sql
     assert "ORDER BY recorded_at DESC" in sql
     assert "LIMIT 10" in sql
     assert "WHERE" not in sql  # no filters supplied

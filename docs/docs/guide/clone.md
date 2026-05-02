@@ -129,7 +129,7 @@ Format-specific gotchas inherited from Databricks CLONE. **Phase B of the Iceber
 
 - **Iceberg + partition evolution** — Clone-Xs auto-retries as `CREATE TABLE … AS SELECT * FROM source` (CTAS) when it sees this error class. The recovered target lands as Delta but **starts at version 0** — Delta source history is lost. A `WARN` line in the run log makes the fallback explicit.
 - **Iceberg with truncated decimal partitions** — same auto-CTAS recovery as above. Truncated partitions on string / long / int columns work natively on DBR 13.3+; the CTAS fallback covers older runtimes.
-- **Iceberg with hidden partitioning** (`bucket(N, col)`, `truncate(N, col)`, `years(col)`, `months(col)`, `days(col)`, `hours(col)`) — **refused at preflight, before any DDL runs.** Hidden partition transforms have no Delta equivalent, and silently dropping them would break partition pruning on the target. Use the [Convert to Delta](convert-to-delta.md) endpoint to rewrite the source in place, then re-clone — or write a manual CTAS that materialises the transform as a Delta generated column.
+- **Iceberg with hidden partitioning** (`bucket(N, col)`, `truncate(N, col)`, `years(col)`, `months(col)`, `days(col)`, `hours(col)`) — **refused at preflight, before any DDL runs.** Hidden partition transforms have no Delta equivalent, and silently dropping them would break partition pruning on the target. Use the [Convert table format](convert.md) endpoint to rewrite the source in place, then re-clone — or write a manual CTAS that materialises the transform as a Delta generated column.
 - **Partitioned Parquet referenced by path** — clone fails. Register the table to UC by name first.
 - **Glob/wildcard paths** — not supported by Databricks CLONE for any format.
 
@@ -215,7 +215,7 @@ Workarounds:
   3) Use CONVERT TO DELTA on the source (in-place; destructive) and then clone normally.
 ```
 
-Option 3 has a dedicated endpoint and UI page — see the [Convert to Delta](convert-to-delta.md) guide.
+Option 3 has a dedicated endpoint and UI page — see the [Convert table format](convert.md) guide.
 
 Type-level differences (`time`, `uuid`, `fixed(L)`, `timestamptz`) are *not* refusal cases — they map through CLONE with documented losses (uuid → string, fixed → binary, etc.). See `ICEBERG_TYPE_NOTES` in [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full table.
 

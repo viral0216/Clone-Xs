@@ -426,7 +426,7 @@ WebSocket endpoint for live clone progress updates. Send `"ping"` to keep the co
 
 In-place format conversion from Parquet / Iceberg to Delta. Distinct from `/api/clone` because the operation is **destructive on source** (no destination FQN — the same FQN keeps pointing at the same data, but the underlying format changes), and synchronous (no job queue — typical workloads are a handful of tables and operators want immediate feedback).
 
-See [Convert to Delta guide](../guide/convert-to-delta) for ergonomics, when to use this vs. clone, and limitations.
+See [Convert table format guide](../guide/convert) for ergonomics, when to use this vs. clone, and limitations.
 
 ### `POST /api/convert-to-delta`
 

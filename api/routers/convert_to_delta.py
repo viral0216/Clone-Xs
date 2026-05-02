@@ -36,7 +36,7 @@ from src.audit_trail import (
 from src.convert_to_delta import (
     ConvertResult,
     ConvertToDeltaError,
-    convert_tables_to_delta,
+    convert_tables_format,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,7 @@ def _build_audit_callback(
             operation_id=operation_id,
             fqn_target=result.fqn,
             source_format=result.source_format,
+            destination_format=result.destination_format,
             status=result.status,
             started_at=started_at,
             completed_at=completed_at,
@@ -123,9 +124,15 @@ def post_convert_to_delta(
         dry_run=req.dry_run,
     )
 
-    targets = [(t.fqn, t.source_format) for t in req.targets]
+    # 3-tuples (fqn, source_format, target_format) — `convert_tables_format`
+    # accepts both 2- and 3-tuples; we always send 3 in the API path so
+    # the audit row carries the right destination_format. The model
+    # validator already rejected unsupported pairs with 422, so by here
+    # every entry is either supported or identity (which the orchestrator
+    # short-circuits as "skipped").
+    targets = [(t.fqn, t.source_format, t.target_format) for t in req.targets]
     try:
-        summary = convert_tables_to_delta(
+        summary = convert_tables_format(
             client,
             warehouse_id,
             targets,
@@ -147,6 +154,7 @@ def post_convert_to_delta(
             ConvertResultResponse(
                 fqn=r.fqn,
                 source_format=r.source_format,
+                destination_format=r.destination_format,
                 status=r.status,
                 duration_ms=r.duration_ms,
                 error=r.error,
@@ -163,6 +171,7 @@ def get_convert_history(
     fqn_like: str | None = None,
     dry_run: bool | None = None,
     operation_id: str | None = None,
+    destination_format: str | None = None,
     client=Depends(get_db_client),
     app_config=Depends(get_app_config),
 ) -> ConvertHistoryResponse:
@@ -198,16 +207,20 @@ def get_convert_history(
         fqn_like=fqn_like,
         dry_run=dry_run,
         operation_id=operation_id,
+        destination_format=destination_format,
     )
 
     # The warehouse returns datetimes as strings already (see
     # `_normalize_format` etc. in client.py), so we pass them through
     # unchanged. Pydantic accepts them as the `str | None` field type.
+    # ``destination_format`` defaults to "DELTA" for rows that pre-date
+    # the D1 column migration — see ensure_convert_audit_table.
     typed_rows = [
         ConvertHistoryRow(
             operation_id=r.get("operation_id") or "",
             fqn=r.get("fqn") or "",
             source_format=r.get("source_format") or "",
+            destination_format=r.get("destination_format") or "DELTA",
             status=r.get("status") or "skipped",
             started_at=str(r.get("started_at")) if r.get("started_at") else None,
             completed_at=str(r.get("completed_at")) if r.get("completed_at") else None,

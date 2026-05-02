@@ -274,7 +274,13 @@ def get_convert_audit_table_fqn(config: dict) -> str:
 
 
 def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
-    """Create the convert audit table if it doesn't exist. Idempotent."""
+    """Create the convert audit table if it doesn't exist. Idempotent.
+
+    D1 of CLONE_BACKLOG #9 N×N converter adds a ``destination_format``
+    column. For tables that pre-date D1, an `ALTER TABLE ADD COLUMN`
+    + backfill upgrades them in place — old rows get ``"DELTA"`` so
+    history queries don't surface NULLs that mean "we don't know."
+    """
     fqn = get_convert_audit_table_fqn(config)
     catalog = get_catalog(config)
     schema_fqn = get_schema_fqn(config, "logs")
@@ -288,6 +294,7 @@ def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
         operation_id STRING,
         fqn STRING,
         source_format STRING,
+        destination_format STRING,
         status STRING,
         started_at TIMESTAMP,
         completed_at TIMESTAMP,
@@ -300,13 +307,34 @@ def ensure_convert_audit_table(client, warehouse_id: str, config: dict) -> str:
         recorded_at TIMESTAMP
     )
     USING DELTA
-    COMMENT 'Audit trail for Clone-Xs convert-to-delta operations'
+    COMMENT 'Audit trail for Clone-Xs convert-format operations'
     TBLPROPERTIES (
         'delta.enableChangeDataFeed' = 'true',
         'delta.autoOptimize.optimizeWrite' = 'true'
     )
     """
     execute_sql(client, warehouse_id, create_sql)
+
+    # In-place upgrade for tables created before D1. ADD COLUMN IF NOT
+    # EXISTS is idempotent on Delta. The backfill UPDATE only touches
+    # rows where the column is NULL — also idempotent.
+    try:
+        execute_sql(
+            client,
+            warehouse_id,
+            f"ALTER TABLE {fqn} ADD COLUMN IF NOT EXISTS destination_format STRING",
+        )
+        execute_sql(
+            client,
+            warehouse_id,
+            f"UPDATE {fqn} SET destination_format = 'DELTA' WHERE destination_format IS NULL",
+        )
+    except Exception as e:
+        # Best-effort: if the migration fails (rare — column already
+        # exists, transient warehouse error), log and continue. The
+        # write path tolerates NULL destination_format on old rows.
+        logger.warning(f"convert audit destination_format migration failed: {e}")
+
     logger.info(f"Convert audit table ready: {fqn}")
     return fqn
 
@@ -326,6 +354,7 @@ def log_convert_result(
     dry_run: bool,
     trigger: str = "manual",
     error_message: str | None = None,
+    destination_format: str = "DELTA",
 ) -> None:
     """Write one convert audit row. Best-effort — failures don't break
     the conversion (we already converted the table; the audit row is
@@ -333,6 +362,11 @@ def log_convert_result(
 
     Each (operation_id, fqn_target) pair is a row. Status mirrors the
     ConvertResult statuses: converted / failed / skipped.
+
+    ``destination_format`` defaults to ``"DELTA"`` so callers from
+    before the D1 generalisation (CONVERT TO DELTA only) keep working
+    unchanged. New callers (the convert-format path) pass through the
+    value the orchestrator picked.
     """
     audit_fqn = get_convert_audit_table_fqn(config)
     host = os.environ.get("DATABRICKS_HOST", "unknown")
@@ -349,11 +383,13 @@ def log_convert_result(
 
     sql = f"""
     INSERT INTO {audit_fqn}
-    (operation_id, fqn, source_format, status, started_at, completed_at,
-     duration_ms, user_name, host, dry_run, `trigger`, error_message, recorded_at)
+    (operation_id, fqn, source_format, destination_format, status,
+     started_at, completed_at, duration_ms, user_name, host, dry_run,
+     `trigger`, error_message, recorded_at)
     VALUES
     ('{esc(operation_id)}', '{esc(fqn_target)}', '{esc(source_format)}',
-     '{esc(status)}', '{started_str}', '{completed_str}',
+     '{esc(destination_format)}', '{esc(status)}',
+     '{started_str}', '{completed_str}',
      {int(duration_ms)}, '{esc(user)}', '{esc(host)}',
      {str(bool(dry_run)).lower()}, '{esc(trigger)}',
      {f"'{esc(error_message)}'" if error_message else "NULL"},
@@ -375,14 +411,20 @@ def query_convert_history(
     fqn_like: str | None = None,
     dry_run: bool | None = None,
     operation_id: str | None = None,
+    destination_format: str | None = None,
 ) -> list[dict]:
-    """Query the convert-to-delta audit table with optional filters.
+    """Query the convert audit table with optional filters.
 
     Returns rows ordered by ``recorded_at DESC`` so the UI can render
     "most recent first" without client-side sorting. Filters are
     optional — pass `None` to skip a predicate. Each row keeps the
     column shape `ensure_convert_audit_table` defines, so the response
     is JSON-friendly without further mapping.
+
+    The ``destination_format`` filter (added in D1 of #9 N×N converter)
+    lets the UI surface only Delta-target conversions, only Iceberg-
+    target conversions, etc. — useful once D2 lands and the same
+    history table holds rows from multiple cells of the matrix.
 
     Defensive: if the audit table doesn't exist (operator never ran a
     convert, or audit init failed silently), returns ``[]`` rather
@@ -406,6 +448,8 @@ def query_convert_history(
         where.append(f"dry_run = {str(bool(dry_run)).lower()}")
     if operation_id:
         where.append(f"operation_id = '{esc(operation_id)}'")
+    if destination_format:
+        where.append(f"destination_format = '{esc(destination_format)}'")
 
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     # Cap at 1000 even if the caller asks for more — protects the
@@ -413,7 +457,7 @@ def query_convert_history(
     capped_limit = max(1, min(int(limit), 1000))
 
     sql = f"""
-    SELECT operation_id, fqn, source_format, status,
+    SELECT operation_id, fqn, source_format, destination_format, status,
            started_at, completed_at, duration_ms,
            user_name, host, dry_run, `trigger`, error_message, recorded_at
     FROM {audit_fqn}

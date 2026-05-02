@@ -28,6 +28,85 @@ def test_endpoint_rejects_without_confirm_destructive_or_dry_run(client):
     assert "confirm_destructive" in msg or "destructive" in msg
 
 
+# D1 of #9 N×N converter — the request validator rejects pairs not in
+# SUPPORTED_PAIRS with a 422 referencing the offending FQN. Hudi pairs
+# are rejected here with a "needs runtime sponsorship" hint so the UI
+# can surface the disabled-with-tooltip state inline rather than as a
+# generic toast after submit.
+
+
+def test_endpoint_rejects_unsupported_target_pair(client):
+    """Iceberg→Iceberg (or any pair not in SUPPORTED_PAIRS) is rejected
+    at validation time with a 422. The error message names the offending
+    FQN + pair so the UI can render it next to the cart row."""
+    resp = client.post(
+        "/api/convert-to-delta",
+        json={
+            "targets": [
+                {
+                    "fqn": "edp_dev.bronze.events",
+                    "source_format": "ICEBERG",
+                    "target_format": "ICEBERG",
+                }
+            ],
+            "warehouse_id": "wh-1",
+            "confirm_destructive": True,
+        },
+    )
+    # Identity (source == target) is short-circuited as "skipped",
+    # not refused. Cross-checking that the validator only refuses
+    # genuine non-identity unsupported pairs.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["skipped"] == 1
+
+
+def test_endpoint_rejects_iceberg_target(client):
+    """Delta→Iceberg lands in D2; until then the validator refuses with
+    a structured 422 naming the pair."""
+    resp = client.post(
+        "/api/convert-to-delta",
+        json={
+            "targets": [
+                {
+                    "fqn": "edp_dev.bronze.events",
+                    "source_format": "DELTA",
+                    "target_format": "ICEBERG",
+                }
+            ],
+            "warehouse_id": "wh-1",
+            "confirm_destructive": True,
+        },
+    )
+    assert resp.status_code == 422
+    detail = str(resp.json()["detail"]).lower()
+    assert "edp_dev.bronze.events" in detail
+    assert "delta" in detail and "iceberg" in detail
+
+
+def test_endpoint_rejects_hudi_target(client):
+    """Hudi (any pair) is gated behind D3 runtime sponsorship. The
+    validator returns 422 with a 'Hudi' mention so the UI can render
+    a sponsor-needed message rather than the generic copy."""
+    resp = client.post(
+        "/api/convert-to-delta",
+        json={
+            "targets": [
+                {
+                    "fqn": "edp_dev.bronze.events",
+                    "source_format": "DELTA",
+                    "target_format": "HUDI",
+                }
+            ],
+            "warehouse_id": "wh-1",
+            "confirm_destructive": True,
+        },
+    )
+    assert resp.status_code == 422
+    detail = str(resp.json()["detail"]).lower()
+    assert "hudi" in detail
+
+
 def test_endpoint_rejects_empty_targets_list(client):
     """At least one target required — `targets: []` is a no-op that
     almost always indicates a UI bug. Better to fail loud."""
@@ -46,7 +125,7 @@ def test_endpoint_dry_run_bypasses_confirmation(client):
     """Dry-run is safe by definition (no SQL executes). The endpoint must
     accept dry_run=True without confirm_destructive — wizard previews
     rely on this so users can see what would happen before committing."""
-    with patch("api.routers.convert_to_delta.convert_tables_to_delta") as mock_convert:
+    with patch("api.routers.convert_to_delta.convert_tables_format") as mock_convert:
         from src.convert_to_delta import ConvertSummary
 
         mock_convert.return_value = ConvertSummary(total=1, skipped=1)
@@ -152,8 +231,12 @@ def test_history_forwards_filters(client):
 
 def test_endpoint_forwards_confirmed_request(client):
     """confirm_destructive=True + targets → orchestrator is called with
-    those exact args, response body mirrors the summary shape."""
-    with patch("api.routers.convert_to_delta.convert_tables_to_delta") as mock_convert:
+    those exact args, response body mirrors the summary shape.
+
+    Post-D1 the router sends 3-tuples (fqn, source_format, target_format)
+    rather than the old 2-tuples. This asserts the wire shape so a
+    typo in the router signature surfaces here, not silently."""
+    with patch("api.routers.convert_to_delta.convert_tables_format") as mock_convert:
         from src.convert_to_delta import ConvertResult, ConvertSummary
 
         mock_convert.return_value = ConvertSummary(
@@ -163,6 +246,7 @@ def test_endpoint_forwards_confirmed_request(client):
                 ConvertResult(
                     fqn="edp_dev.bronze.events",
                     source_format="ICEBERG",
+                    destination_format="DELTA",
                     status="converted",
                     duration_ms=1234,
                 )
@@ -182,10 +266,11 @@ def test_endpoint_forwards_confirmed_request(client):
     assert body["results"][0]["fqn"] == "edp_dev.bronze.events"
     assert body["results"][0]["status"] == "converted"
     assert body["results"][0]["duration_ms"] == 1234
+    assert body["results"][0]["destination_format"] == "DELTA"
 
-    # Forwarded args: targets list, confirm flag honoured.
+    # Forwarded args: targets list (now 3-tuples), confirm flag honoured.
     call_kwargs = mock_convert.call_args.kwargs
     assert call_kwargs["confirm_destructive"] is True
     assert call_kwargs["dry_run"] is False
     forwarded_targets = mock_convert.call_args.args[2]
-    assert forwarded_targets == [("edp_dev.bronze.events", "ICEBERG")]
+    assert forwarded_targets == [("edp_dev.bronze.events", "ICEBERG", "DELTA")]

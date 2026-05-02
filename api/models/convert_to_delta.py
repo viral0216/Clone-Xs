@@ -14,10 +14,21 @@ from pydantic import BaseModel, Field, model_validator
 class ConvertTargetRef(BaseModel):
     """A single UC table to convert. ``source_format`` is what UC currently
     reports for the table; we don't re-detect server-side because callers
-    typically pre-screen via the catalog explorer."""
+    typically pre-screen via the catalog explorer.
+
+    ``target_format`` (added in D1 of #9 N×N converter) defaults to
+    ``"DELTA"`` so old clients sending no field get the previous
+    behaviour. Only pairs in ``src.convert_to_delta.SUPPORTED_PAIRS``
+    actually execute — others are rejected at request-validation time
+    with a 422 referencing the unsupported pair. ``"HUDI"`` is
+    accepted by the model so the UI can render it disabled with a
+    "needs Job-cluster runtime" tooltip, but the validator rejects
+    every Hudi pair until D3 lands.
+    """
 
     fqn: str = Field(..., description="3-part fully qualified name, e.g. catalog.schema.table")
-    source_format: Literal["PARQUET", "ICEBERG", "DELTA"] = "ICEBERG"
+    source_format: Literal["PARQUET", "ICEBERG", "DELTA", "HUDI"] = "ICEBERG"
+    target_format: Literal["DELTA", "ICEBERG", "PARQUET", "HUDI"] = "DELTA"
 
 
 class ConvertToDeltaRequest(BaseModel):
@@ -48,12 +59,47 @@ class ConvertToDeltaRequest(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _all_pairs_supported(self) -> "ConvertToDeltaRequest":
+        """Reject targets whose (source_format, target_format) pair is
+        not yet executable. D1 ships only the two CONVERT TO DELTA cells;
+        every other pair surfaces here as a 422 with a structured
+        message that names the offending pair so the UI can render it
+        inline rather than as a generic toast.
+
+        Imported lazily to avoid a circular dependency between the
+        models package and the orchestrator module.
+        """
+        from src.convert_to_delta import is_pair_supported
+
+        unsupported: list[str] = []
+        for t in self.targets:
+            # Skip identity pairs (already-target rows) — the orchestrator
+            # short-circuits these with a benign "skipped" result.
+            if t.source_format.upper() == t.target_format.upper():
+                continue
+            if not is_pair_supported(t.source_format, t.target_format):
+                unsupported.append(f"{t.fqn} ({t.source_format}→{t.target_format})")
+        if unsupported:
+            raise ValueError(
+                "Some target pairs are not yet supported in this release. "
+                "Hudi conversions are gated on a future runtime decision; "
+                "other format pairs land in D2. Offending targets: " + ", ".join(unsupported)
+            )
+        return self
+
 
 class ConvertResultResponse(BaseModel):
-    """Per-table outcome — flattened from src.convert_to_delta.ConvertResult."""
+    """Per-table outcome — flattened from src.convert_to_delta.ConvertResult.
+
+    ``destination_format`` defaults to ``"DELTA"`` so callers parsing
+    historic responses (where the field didn't exist) keep the right
+    semantic — those operations were always-Delta-target by design.
+    """
 
     fqn: str
     source_format: str
+    destination_format: str = "DELTA"
     status: Literal["converted", "failed", "skipped"]
     duration_ms: int
     error: str | None = None
@@ -82,6 +128,7 @@ class ConvertHistoryRow(BaseModel):
     operation_id: str
     fqn: str
     source_format: str
+    destination_format: str = "DELTA"
     status: Literal["converted", "failed", "skipped"]
     started_at: str | None = None
     completed_at: str | None = None

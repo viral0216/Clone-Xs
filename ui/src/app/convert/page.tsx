@@ -52,11 +52,31 @@ import {
   Trash2,
 } from "lucide-react";
 
-type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA";
+type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA" | "HUDI";
+type TargetFormat = "DELTA" | "ICEBERG" | "PARQUET" | "HUDI";
+
+// Pairs the API actually executes today (D1 of #9 N×N converter).
+// Anything outside this set is rejected by the request validator with
+// a 422 — the UI uses it to render not-yet-supported badges in the
+// cart row before the user even clicks submit.
+const SUPPORTED_PAIRS: ReadonlySet<string> = new Set([
+  "PARQUET→DELTA",
+  "ICEBERG→DELTA",
+]);
+
+function pairKey(source: string, target: string): string {
+  return `${source.toUpperCase()}→${target.toUpperCase()}`;
+}
+
+function isPairSupported(source: string, target: string): boolean {
+  if (source.toUpperCase() === target.toUpperCase()) return true; // identity = no-op skip
+  return SUPPORTED_PAIRS.has(pairKey(source, target));
+}
 
 interface Target {
   fqn: string;
   source_format: SourceFormat;
+  target_format: TargetFormat;
 }
 
 interface TableRow {
@@ -159,6 +179,12 @@ export default function ConvertToDeltaPage() {
   // buttons stay stable.
   const [targets, setTargets] = useState<Target[]>([]);
 
+  // Global target-format selector. Applies to every newly-added cart
+  // row; existing rows keep their original target until removed +
+  // re-added. Default DELTA so first-time users land on the only
+  // execute-able cell without thinking about it.
+  const [defaultTarget, setDefaultTarget] = useState<TargetFormat>("DELTA");
+
   // Manual-FQN escape hatch (collapsible).
   const [manualFqn, setManualFqn] = useState("");
   const [manualFmt, setManualFmt] = useState<SourceFormat>("ICEBERG");
@@ -260,7 +286,10 @@ export default function ConvertToDeltaPage() {
     const fqn = `${catalog}.${schema}.${row.name}`;
     if (selectedFqns.has(fqn)) return;
     const fmt = (row.data_source_format || "ICEBERG").toUpperCase() as SourceFormat;
-    setTargets([...targets, { fqn, source_format: fmt }]);
+    setTargets([
+      ...targets,
+      { fqn, source_format: fmt, target_format: defaultTarget },
+    ]);
   };
 
   const removeTarget = (fqn: string) => {
@@ -274,9 +303,23 @@ export default function ConvertToDeltaPage() {
       return;
     }
     if (selectedFqns.has(fqn)) return;
-    setTargets([...targets, { fqn, source_format: manualFmt }]);
+    setTargets([
+      ...targets,
+      { fqn, source_format: manualFmt, target_format: defaultTarget },
+    ]);
     setManualFqn("");
     setError("");
+  };
+
+  // Per-cart-row target override. Lets the user mix targets in one
+  // batch (e.g. some rows → Delta, others → Iceberg) once D2 ships
+  // those pairs. In D1 only DELTA executes; other targets show a
+  // not-yet-supported badge in the cart row but the dropdown is still
+  // enabled so users can plan ahead.
+  const updateTargetFormat = (fqn: string, target_format: TargetFormat) => {
+    setTargets(
+      targets.map((t) => (t.fqn === fqn ? { ...t, target_format } : t)),
+    );
   };
 
   // Pick the actual warehouse_id to send. `default` mode → empty
@@ -285,7 +328,13 @@ export default function ConvertToDeltaPage() {
   const effectiveWarehouseId =
     warehouseMode === "default" ? "" : warehouseId.trim();
 
-  const canSubmit = !running && targets.length > 0;
+  // Submit is gated on (a) something to submit, (b) every selected row
+  // is a pair the API will accept. Identity pairs are fine — the
+  // orchestrator short-circuits them as "skipped" rather than refusing.
+  const allPairsValid = targets.every((t) =>
+    isPairSupported(t.source_format, t.target_format),
+  );
+  const canSubmit = !running && targets.length > 0 && allPairsValid;
 
   const submit = async () => {
     setRunning(true);
@@ -296,6 +345,7 @@ export default function ConvertToDeltaPage() {
         targets: targets.map((t) => ({
           fqn: t.fqn,
           source_format: t.source_format,
+          target_format: t.target_format,
         })),
         warehouse_id: effectiveWarehouseId || undefined,
         dry_run: dryRun,
@@ -329,8 +379,8 @@ export default function ConvertToDeltaPage() {
   return (
     <div className="p-6 space-y-6 max-w-7xl">
       <PageHeader
-        title="Convert to Delta"
-        description="In-place conversion of Iceberg / Parquet tables to Delta. Destructive on source."
+        title="Convert table format"
+        description="In-place conversion between Delta, Iceberg, Parquet (Hudi gated). Destructive on source."
         icon={ArrowRightLeft}
       />
 
@@ -445,6 +495,34 @@ export default function ConvertToDeltaPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Default target-format selector. Picks the format applied
+                to newly-added cart rows. Existing rows can be overridden
+                per-row in the cart table below. Hudi is included so the
+                UI is honest about the matrix, but disabled with a
+                tooltip — the request validator rejects every Hudi pair
+                until D3 lands. */}
+            <div>
+              <label
+                htmlFor="default-target-format"
+                className="text-sm font-medium mb-1 block"
+              >
+                Default target format (for new rows)
+              </label>
+              <select
+                id="default-target-format"
+                className="w-full border rounded-md bg-transparent px-2 py-1.5 text-sm"
+                value={defaultTarget}
+                onChange={(e) => setDefaultTarget(e.target.value as TargetFormat)}
+              >
+                <option value="DELTA">DELTA — fully supported (D1)</option>
+                <option value="ICEBERG">ICEBERG — coming in D2</option>
+                <option value="PARQUET">PARQUET — coming in D2</option>
+                <option value="HUDI" disabled>
+                  HUDI — needs Job-cluster runtime (D3, gated)
+                </option>
+              </select>
+            </div>
+
             {targets.length === 0 ? (
               <div className="p-4 text-sm text-gray-500 border rounded-md">
                 No targets selected. Pick tables from the browser on the left.
@@ -456,28 +534,63 @@ export default function ConvertToDeltaPage() {
                     <tr>
                       <th className="text-left p-2">FQN</th>
                       <th className="text-left p-2">Source</th>
+                      <th className="text-left p-2">Target</th>
                       <th className="text-left p-2 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {targets.map((t) => (
-                      <tr key={t.fqn} className="border-t">
-                        <td className="p-2 font-mono">{t.fqn}</td>
-                        <td className="p-2">
-                          <Badge variant="outline">{t.source_format}</Badge>
-                        </td>
-                        <td className="p-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeTarget(t.fqn)}
-                            aria-label={`Remove ${t.fqn}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {targets.map((t) => {
+                      const supported = isPairSupported(
+                        t.source_format,
+                        t.target_format,
+                      );
+                      return (
+                        <tr key={t.fqn} className="border-t">
+                          <td className="p-2 font-mono">{t.fqn}</td>
+                          <td className="p-2">
+                            <Badge variant="outline">{t.source_format}</Badge>
+                          </td>
+                          <td className="p-2">
+                            <select
+                              aria-label={`Target format for ${t.fqn}`}
+                              className="border rounded-md bg-transparent px-1.5 py-1 text-xs"
+                              value={t.target_format}
+                              onChange={(e) =>
+                                updateTargetFormat(
+                                  t.fqn,
+                                  e.target.value as TargetFormat,
+                                )
+                              }
+                            >
+                              <option value="DELTA">DELTA</option>
+                              <option value="ICEBERG">ICEBERG</option>
+                              <option value="PARQUET">PARQUET</option>
+                              <option value="HUDI" disabled>
+                                HUDI
+                              </option>
+                            </select>
+                            {!supported && (
+                              <div
+                                className="text-xs text-amber-400 mt-0.5"
+                                title="The request validator will reject this pair with a 422. Pick DELTA to execute today, or wait for D2."
+                              >
+                                pair not yet supported
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeTarget(t.fqn)}
+                              aria-label={`Remove ${t.fqn}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
@@ -11,7 +11,7 @@ import HeaderBar from "@/components/layout/HeaderBar";
 import Sidebar from "@/components/layout/Sidebar";
 import Dashboard from "@/app/page";
 import ClonePage from "@/app/clone/page";
-import ConvertToDeltaPage from "@/app/convert-to-delta/page";
+import ConvertPage from "@/app/convert/page";
 import ExplorePage from "@/app/explore/page";
 const DiffPage = lazy(() => import("@/app/diff/page"));
 import MonitorPage from "@/app/monitor/page";
@@ -278,7 +278,11 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clone" element={<ClonePage />} />
-              <Route path="/convert-to-delta" element={<ConvertToDeltaPage />} />
+              <Route path="/convert" element={<ConvertPage />} />
+              {/* Back-compat: old bookmarks / dashboards / scripts that
+                  link to /convert-to-delta keep working. The page label
+                  + URL slug were renamed in D1 of the N×N converter. */}
+              <Route path="/convert-to-delta" element={<Navigate to="/convert" replace />} />
               <Route path="/explore" element={<ExplorePage />} />
               <Route path="/diff" element={<Suspense fallback={<PageFallback />}><DiffPage /></Suspense>} />
               <Route path="/monitor" element={<MonitorPage />} />

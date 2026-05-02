@@ -9,6 +9,42 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## v0.8.0 — Iceberg cross-format clone, in-place CONVERT TO DELTA, format-aware audit
+
+Closes [CLONE_BACKLOG #9](https://github.com/viral0216/Clone-Xs/blob/main/CLONE_BACKLOG.md) (Iceberg ↔ Delta) and the two follow-ups #12 (physical Iceberg target) and #13 (CONVERT TO DELTA). All paths shipped behind explicit opt-in flags; defaults are unchanged from v0.7.x.
+
+### Added — Iceberg cross-format clone (#9)
+- **`target_format: ICEBERG` on `CloneRequest`.** When the source is Delta, after a successful DEEP CLONE the target gets a 3-step UniForm enable: disable `delta.enableDeletionVectors`, `REORG TABLE … APPLY (PURGE)`, then `SET TBLPROPERTIES` for `delta.universalFormat.enabledFormats=iceberg` + `delta.enableIcebergCompatV2=true` + `delta.columnMapping.mode=name`. External Iceberg engines (Snowflake, Trino, Athena, Iceberg-aware Spark) can now read the Delta destination without a separate copy. The 3-step ordering is mandatory — Databricks' IcebergCompatV2 validator rejects any other sequence with `DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED`.
+- **Iceberg-source preflight refusal (Phase B).** New module `src/clone_iceberg.py` runs `DESCRIBE TABLE EXTENDED` before any DDL and refuses sources that use hidden-partition transforms (`bucket(N, col)`, `truncate(N, col)`, `years(col)`, `months(col)`, `days(col)`, `hours(col)`). Hidden partitioning has no Delta equivalent; silently dropping it would change partition pruning semantics on the target. The error message names the offending transform and points at `CONVERT TO DELTA` as the workaround.
+- **Auto-CTAS recovery for known Iceberg failures (Phase B).** When `CREATE TABLE … DEEP CLONE` fails with `partition evolution` or `truncated`-decimal errors on an Iceberg source, Clone-Xs automatically retries as `CREATE TABLE … AS SELECT * FROM source`. The recovered target lands at Delta version 0 (history is lost) — a `WARN` line in the run log makes the fallback explicit.
+- **Cross-workspace UniForm.** Delta-Sharing-based clones (`clone_cross_workspace.py`) honour `target_format: ICEBERG` too — UniForm enable runs on the target after each successful share-based DEEP CLONE.
+- **Iceberg type-mapping caveats log (Phase C1).** Every Iceberg-source clone emits one INFO line listing the lossy mappings (`uuid → string`, `fixed → binary`, `time` unsupported, `timestamptz` zone loss). It's a log, not a runtime detector — UC surfaces Iceberg types as their already-Sparkified equivalents, so a programmatic schema scan can't see them.
+
+### Added — Physical Iceberg target (#12)
+- **`iceberg_physical: true` on `CloneRequest`.** New flag that, combined with `target_format: ICEBERG`, swaps the UniForm path for `CREATE TABLE dst USING iceberg AS SELECT * FROM src`. UC reports the destination as `Data source: Iceberg` rather than Delta. Trade-offs: loses Delta history, loses Delta-only features (deletion vectors, change feed, row tracking), ignores time-travel arguments with a `WARN` (CTAS doesn't accept `TIMESTAMP/VERSION AS OF`). Requires DBR 15+ and Iceberg-managed-table support enabled on the workspace.
+- **UI toggle in the clone wizard.** New "Physical Iceberg target" checkbox under the Target Format radio group, visible only when `ICEBERG` is selected. Inline help text spells out the trade-offs and the workspace-capability requirement.
+
+### Added — In-place CONVERT TO DELTA (#13)
+- **`POST /api/convert-to-delta` endpoint.** New synchronous endpoint that mutates Iceberg / Parquet sources to Delta in-place. Distinct from `/api/clone` because there's no destination — the same FQN keeps pointing at the same data, but the underlying format changes. Two-layer safety gate: Pydantic validator rejects requests without `confirm_destructive: true` (or `dry_run: true`); module-level check in `convert_tables_to_delta` re-checks the same flag.
+- **Auto-skip non-convertible inputs.** Already-Delta tables, `STREAMING_TABLE`, `MATERIALIZED_VIEW`, `VIEW`, and unsupported formats (CSV, JSON, etc.) skip with a clear reason — no SQL is sent to the warehouse for these.
+- **Audit trail** (`convert_operations` Delta table). New helpers `ensure_convert_audit_table` + `log_convert_result` in `src/audit_trail.py`, sibling to the existing `clone_operations` table. One row per `(operation_id, target_fqn)` with status / source_format / dry_run / duration / error captured. Init failures fall through to running without audit (best-effort, matches the clone path).
+- **Web UI** (`ui/src/app/convert-to-delta/page.tsx`). Two-column layout: catalog → schema → tables browser on the left (powered by a new `GET /catalogs/{c}/{s}/tables/with-format` endpoint that surfaces `data_source_format` for picker auto-fill), selected-targets cart on the right. Non-convertible rows are visible-but-disabled with inline reason captions. Free-text manual-FQN entry is anchored as an escape hatch for cross-catalog batches. Confirmation modal requires the user to type `CONVERT` before the destructive submit unlocks; `dry_run` defaults to `true`.
+- **Sidebar entry.** New "Convert to Delta" item under Operations, between Clone and Sync.
+
+### Added — Operability fixes
+- **Streaming-table skip is now logged + counted.** Previously `clone_tables_in_schema` silently dropped non-`MANAGED`/`EXTERNAL` table types in `get_tables()`, producing confusing "1 table planned, 0/0/0 results" runs. Now skip lines like `[SKIP] Skipping non-clonable table type STREAMING_TABLE: iot.bronze_pos_terminal` appear in the log and the skipped counter is bumped, matching the existing skip paths for excluded / regex-filtered / DLT-prefix tables.
+- **`DataSourceFormat` SDK enum normalised at the boundary.** New `_normalize_format` helper in `src/client.py` unwraps the SDK's `DataSourceFormat` enum to its `.value` string before downstream code sees it. Fixes a `'DataSourceFormat' object has no attribute 'upper'` crash in the per-schema format-rollup that surfaced once non-clonable tables stopped being pre-filtered.
+- **UniForm 3-step ordering documented in `clone.md`.** New subsection under "Mixed-format sources" explains why `disable DV → REORG PURGE → SET IcebergCompatV2` is mandatory. Earlier docs only mentioned the final `SET TBLPROPERTIES`.
+
+### Fixed
+- **Free Edition daily-limit error gets a friendly toast.** UI client (`ui/src/lib/api-client.ts`) now matches `free edition` / `daily compute limit` keywords in error responses and surfaces a clear "your workspace has used up its free daily compute" message instead of the raw backend exception. 10s toast duration so users have time to read it.
+- **`exclude_schemas` undefined name in `clone_catalog.process_schema`.** Pulled from `config` like the rest of the schema-level options. Was an F821 ruff failure on `feature/enhance-clone-functionality`.
+
+### Tested
+- 1967 unit + integration tests pass (was 1900 pre-session). New coverage: 17 tests for Iceberg preflight + CTAS fallback (`test_clone_iceberg.py`), 14 tests for CONVERT TO DELTA module + endpoint (`test_convert_to_delta.py`, `test_router_convert_to_delta.py`), 3 tests for the format-enum normaliser, 4 for streaming-table skip path, 5 for the audit callback wiring, 3 for the physical Iceberg path, 3 for the UniForm 3-step DDL.
+
+---
+
 ## v0.7.1 — UI state persistence, deferred Bronze auto-create, Data Lab deep-links
 
 ### Added

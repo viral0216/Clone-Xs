@@ -161,3 +161,129 @@ def test_supported_source_formats_set_is_complete():
     """Sanity-check the supported-format whitelist. If Databricks adds a
     new convertible format, this test reminds us to update the constant."""
     assert SUPPORTED_SOURCE_FORMATS == {"PARQUET", "ICEBERG"}
+
+
+# Audit callback (#13 follow-up). The orchestrator fires audit_callback
+# once per target with (result, started_at, completed_at). The API layer
+# constructs a callback that writes to the convert_operations Delta
+# table; the unit tests below use a list-collecting closure so we can
+# assert the call shape independently of the audit-table SQL.
+
+
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_table_fires_audit_callback_on_success(mock_sql):
+    """A successful CONVERT TO DELTA fires the callback exactly once with
+    status='converted' and timestamps that bracket the call."""
+    mock_sql.return_value = []
+    captured: list[tuple] = []
+
+    def cb(result, started_at, completed_at):
+        captured.append((result, started_at, completed_at))
+
+    convert_table_to_delta(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "ICEBERG",
+        audit_callback=cb,
+    )
+    assert len(captured) == 1
+    result, started_at, completed_at = captured[0]
+    assert result.status == "converted"
+    assert result.fqn == "edp_dev.bronze.events"
+    assert completed_at >= started_at  # not strict because mocks run < 1ms
+
+
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_table_fires_audit_callback_on_failure(mock_sql):
+    """Failed conversions also produce an audit row — auditing only
+    successes would let silent failures hide forever."""
+    mock_sql.side_effect = Exception("permission denied")
+    captured: list[tuple] = []
+
+    def cb(result, started_at, completed_at):
+        captured.append((result, started_at, completed_at))
+
+    convert_table_to_delta(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "ICEBERG",
+        audit_callback=cb,
+    )
+    assert len(captured) == 1
+    assert captured[0][0].status == "failed"
+    assert "permission denied" in (captured[0][0].error or "")
+
+
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_table_fires_audit_callback_on_skip(mock_sql):
+    """Already-Delta and unsupported-format skips both produce audit
+    rows so a per-table report shows the full set of input tables, not
+    just the ones we attempted to mutate."""
+    captured: list[tuple] = []
+
+    def cb(result, _start, _end):
+        captured.append(result)
+
+    convert_table_to_delta(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.x",
+        "DELTA",
+        audit_callback=cb,
+    )
+    convert_table_to_delta(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.y",
+        "CSV",
+        audit_callback=cb,
+    )
+    assert [r.status for r in captured] == ["skipped", "skipped"]
+    assert mock_sql.call_count == 0
+
+
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_table_swallows_audit_callback_exceptions(mock_sql):
+    """If the audit callback raises, the conversion result is still
+    returned — audit failures must never fail the conversion. (Defence
+    in depth: the API layer's callback already swallows internally, but
+    a buggy custom callback shouldn't break the operation.)"""
+    mock_sql.return_value = []
+
+    def bad_cb(*_args, **_kwargs):
+        raise RuntimeError("audit table dropped under us")
+
+    result = convert_table_to_delta(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "ICEBERG",
+        audit_callback=bad_cb,
+    )
+    assert result.status == "converted"
+
+
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_tables_propagates_audit_callback_to_each_target(mock_sql):
+    """The batch orchestrator passes the same callback to each per-target
+    convert. Important so callers wire audit once and get one row per
+    target, not zero or duplicates."""
+    mock_sql.return_value = []
+    captured_fqns: list[str] = []
+
+    def cb(result, _start, _end):
+        captured_fqns.append(result.fqn)
+
+    convert_tables_to_delta(
+        MagicMock(),
+        "wh-1",
+        [
+            ("edp_dev.bronze.a", "ICEBERG"),
+            ("edp_dev.bronze.b", "PARQUET"),
+        ],
+        confirm_destructive=True,
+        audit_callback=cb,
+    )
+    assert captured_fqns == ["edp_dev.bronze.a", "edp_dev.bronze.b"]

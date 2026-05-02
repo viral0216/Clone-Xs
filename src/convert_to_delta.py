@@ -26,8 +26,9 @@ callers. Keep them separate; share nothing.
 from __future__ import annotations
 
 import logging
-import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Literal
 
 from databricks.sdk import WorkspaceClient
@@ -35,6 +36,16 @@ from databricks.sdk import WorkspaceClient
 from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
+
+
+# Per-table audit callback shape. Caller supplies a closure that captures
+# `client`, `warehouse_id`, `config`, and `operation_id` so this module
+# stays free of audit-table coupling. Called once per target after the
+# conversion finishes (whether converted, failed, or skipped).
+ConvertAuditCallback = Callable[
+    ["ConvertResult", datetime, datetime],  # result, started_at, completed_at
+    None,
+]
 
 
 # Source formats Databricks ``CONVERT TO DELTA`` accepts. (Parquet works
@@ -94,6 +105,7 @@ def convert_table_to_delta(
     source_format: str,
     *,
     dry_run: bool = False,
+    audit_callback: ConvertAuditCallback | None = None,
 ) -> ConvertResult:
     """Run ``CONVERT TO DELTA`` on a single UC-registered table.
 
@@ -114,58 +126,51 @@ def convert_table_to_delta(
         (missing warehouse, bad client).
     """
     fmt = (source_format or "").upper()
-    started_at = time.time()
+    started_at = datetime.now(timezone.utc)
+
+    # Single-exit helper. Builds the result, fires the audit callback if
+    # the caller supplied one, then hands the result back. Defined inline
+    # so it closes over ``fqn`` / ``fmt`` / ``started_at`` and the
+    # callback. Audit failures are swallowed (warned) — the conversion
+    # already succeeded; an audit-write failure shouldn't fail the call.
+    def _finish(status: str, error: str | None = None) -> ConvertResult:
+        completed_at = datetime.now(timezone.utc)
+        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+        result = ConvertResult(
+            fqn=fqn,
+            source_format=fmt,
+            status=status,  # type: ignore[arg-type]  # narrow to Literal at call sites
+            error=error,
+            duration_ms=duration_ms,
+        )
+        if audit_callback is not None:
+            try:
+                audit_callback(result, started_at, completed_at)
+            except Exception as audit_e:
+                logger.warning(f"convert audit callback failed for {fqn}: {audit_e}")
+        return result
 
     if fmt == "DELTA":
         logger.info(f"  Skipping {fqn} — already Delta")
-        return ConvertResult(
-            fqn=fqn,
-            source_format=fmt,
-            status="skipped",
-            error="already Delta",
-            duration_ms=int((time.time() - started_at) * 1000),
-        )
+        return _finish("skipped", "already Delta")
 
     if fmt not in SUPPORTED_SOURCE_FORMATS:
         logger.warning(f"  Skipping {fqn} — unsupported source format {fmt}")
-        return ConvertResult(
-            fqn=fqn,
-            source_format=fmt,
-            status="skipped",
-            error=f"unsupported source format {fmt}",
-            duration_ms=int((time.time() - started_at) * 1000),
-        )
+        return _finish("skipped", f"unsupported source format {fmt}")
 
     qualified = _qualify(fqn)
     sql = f"CONVERT TO DELTA {qualified}"
     if dry_run:
         logger.info(f"[DRY RUN] {sql}")
-        return ConvertResult(
-            fqn=fqn,
-            source_format=fmt,
-            status="skipped",
-            error="dry-run",
-            duration_ms=int((time.time() - started_at) * 1000),
-        )
+        return _finish("skipped", "dry-run")
 
     try:
         execute_sql(client, warehouse_id, sql)
         logger.info(f"  ✓ Converted {fqn} ({fmt} → DELTA)")
-        return ConvertResult(
-            fqn=fqn,
-            source_format=fmt,
-            status="converted",
-            duration_ms=int((time.time() - started_at) * 1000),
-        )
+        return _finish("converted")
     except Exception as e:
         logger.error(f"  ✗ Convert failed for {fqn}: {e}")
-        return ConvertResult(
-            fqn=fqn,
-            source_format=fmt,
-            status="failed",
-            error=str(e),
-            duration_ms=int((time.time() - started_at) * 1000),
-        )
+        return _finish("failed", str(e))
 
 
 def convert_tables_to_delta(
@@ -175,6 +180,7 @@ def convert_tables_to_delta(
     *,
     confirm_destructive: bool,
     dry_run: bool = False,
+    audit_callback: ConvertAuditCallback | None = None,
 ) -> ConvertSummary:
     """Run CONVERT TO DELTA across a list of (fqn, source_format) tuples.
 
@@ -187,6 +193,11 @@ def convert_tables_to_delta(
     failure handling (CONVERT TO DELTA writes data files; an interrupted
     conversion leaves an inconsistent state) and the workload is
     typically small (handfuls of tables, not thousands).
+
+    audit_callback (optional): fires once per target after that target's
+    conversion finishes. Receives ``(result, started_at, completed_at)``
+    so callers writing to an audit Delta table have the timestamps as
+    native ``datetime`` values without recomputing from duration_ms.
     """
     if not dry_run and not confirm_destructive:
         raise ConvertToDeltaError(
@@ -197,7 +208,14 @@ def convert_tables_to_delta(
 
     summary = ConvertSummary(total=len(targets))
     for fqn, fmt in targets:
-        result = convert_table_to_delta(client, warehouse_id, fqn, fmt, dry_run=dry_run)
+        result = convert_table_to_delta(
+            client,
+            warehouse_id,
+            fqn,
+            fmt,
+            dry_run=dry_run,
+            audit_callback=audit_callback,
+        )
         summary.results.append(result)
         if result.status == "converted":
             summary.converted += 1

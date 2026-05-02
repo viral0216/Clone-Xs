@@ -1,15 +1,21 @@
 // @ts-nocheck
 //
 // UI surface for backlog item #13 — POST /api/convert-to-delta.
-// This is destructive on the source table, so the page does extra work
-// the clone wizard doesn't:
-//   - Defaults `dry_run = true` so the first submission is always safe.
-//   - Shows a typed-confirmation modal when dry-run is off.
-//   - Renders a per-table results table after the call returns so partial
-//     successes are observable.
-import { useState } from "react";
+// Two-column layout:
+//   * Left: catalog → schema → tables browser. Format auto-detected from
+//     the /catalogs/{c}/{s}/tables/with-format endpoint; non-convertible
+//     rows (already Delta, STREAMING_TABLE, MATERIALIZED_VIEW, VIEW) are
+//     visible but disabled with a caption explaining why.
+//   * Right: selected targets list ("the cart") with remove buttons,
+//     warehouse override, dry-run toggle, and the destructive submit.
+//
+// Free-text FQN entry is still available as an escape hatch for cross-
+// catalog batches and tables the picker can't reach (e.g. workspace-
+// federation views).
+import { useEffect, useState, useMemo } from "react";
 
 import PageHeader from "@/components/PageHeader";
+import CatalogPicker from "@/components/CatalogPicker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,14 +29,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
-import { ArrowRightLeft, Plus, Trash2, AlertTriangle, Play } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  Play,
+  Loader2,
+} from "lucide-react";
 
-type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA";
+type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA" | string;
 
 interface Target {
-  id: string;
   fqn: string;
   source_format: SourceFormat;
+}
+
+interface TableRow {
+  name: string;
+  table_type: string;
+  data_source_format: string;
 }
 
 interface ResultRow {
@@ -49,46 +67,113 @@ interface SummaryResponse {
   results: ResultRow[];
 }
 
-let nextId = 1;
-const newRow = (): Target => ({
-  id: String(nextId++),
-  fqn: "",
-  source_format: "ICEBERG",
-});
-
-// User must type this exact word in the confirmation modal before the
-// destructive submit unlocks. Keep it short but specific — if a future
-// admin's autocomplete suggests "CONVERT" they should still consciously
-// hit Enter, not click through accidentally.
 const CONFIRM_PHRASE = "CONVERT";
 
+// Returns null when the row is convertible (Iceberg/Parquet, MANAGED or
+// EXTERNAL); returns a short reason string otherwise. Used both to grey
+// out non-convertible rows and to caption them so users know why.
+function nonConvertibleReason(row: TableRow): string | null {
+  const fmt = (row.data_source_format || "").toUpperCase();
+  const kind = (row.table_type || "").toUpperCase();
+  if (kind === "STREAMING_TABLE") return "streaming table — pipeline-owned";
+  if (kind === "MATERIALIZED_VIEW") return "materialized view — pipeline-owned";
+  if (kind === "VIEW") return "view — no underlying files to convert";
+  if (fmt === "DELTA") return "already Delta";
+  if (fmt && fmt !== "ICEBERG" && fmt !== "PARQUET") {
+    return `unsupported format ${fmt}`;
+  }
+  return null;
+}
+
 export default function ConvertToDeltaPage() {
-  const [targets, setTargets] = useState<Target[]>([newRow()]);
+  // Browser state — three-level drill-down.
+  const [catalog, setCatalog] = useState("");
+  const [schema, setSchema] = useState("");
+  const [schemas, setSchemas] = useState<string[]>([]);
+  const [schemasLoading, setSchemasLoading] = useState(false);
+  const [tables, setTables] = useState<TableRow[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+
+  // Cart state — list of FQNs the user has elected to convert. Stored as
+  // ordered array (not Set) so the rendered list stays in selection order
+  // and the remove button targets a specific row.
+  const [targets, setTargets] = useState<Target[]>([]);
+
+  // Manual-FQN escape hatch.
+  const [manualFqn, setManualFqn] = useState("");
+  const [manualFmt, setManualFmt] = useState<SourceFormat>("ICEBERG");
+
+  // Submit state.
   const [warehouseId, setWarehouseId] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState("");
 
-  // Confirmation dialog state. Opened only when user submits with
-  // dryRun=false — the dry-run path bypasses it because the server
-  // can't damage anything. typedConfirm tracks the input box value
-  // so we can disable the destructive button until it matches.
+  // Confirmation dialog.
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [typedConfirm, setTypedConfirm] = useState("");
 
-  const addTarget = () => setTargets([...targets, newRow()]);
-  const removeTarget = (id: string) =>
-    setTargets(targets.filter((t) => t.id !== id));
-  const updateTarget = (id: string, patch: Partial<Target>) =>
-    setTargets(targets.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  // Quick lookup so the "Add" checkbox in the table list reflects current
+  // selection state in O(1) per row.
+  const selectedFqns = useMemo(
+    () => new Set(targets.map((t) => t.fqn)),
+    [targets],
+  );
 
-  // Both the validate (FQN is 3-part) and the submit-disabled checks
-  // live in this one predicate so the button state matches reality.
-  const canSubmit =
-    !running &&
-    targets.length > 0 &&
-    targets.every((t) => t.fqn.split(".").length === 3 && t.fqn.trim());
+  useEffect(() => {
+    if (!catalog) {
+      setSchemas([]);
+      setSchema("");
+      return;
+    }
+    setSchemasLoading(true);
+    api
+      .get<string[]>(`/catalogs/${encodeURIComponent(catalog)}/schemas`)
+      .then((data) => setSchemas(data || []))
+      .catch(() => setSchemas([]))
+      .finally(() => setSchemasLoading(false));
+  }, [catalog]);
+
+  useEffect(() => {
+    if (!catalog || !schema) {
+      setTables([]);
+      return;
+    }
+    setTablesLoading(true);
+    api
+      .get<TableRow[]>(
+        `/catalogs/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}/tables/with-format`,
+      )
+      .then((data) => setTables(data || []))
+      .catch(() => setTables([]))
+      .finally(() => setTablesLoading(false));
+  }, [catalog, schema]);
+
+  const addFromBrowser = (row: TableRow) => {
+    const fqn = `${catalog}.${schema}.${row.name}`;
+    if (selectedFqns.has(fqn)) return;
+    const fmt = (row.data_source_format || "ICEBERG").toUpperCase();
+    setTargets([...targets, { fqn, source_format: fmt }]);
+  };
+
+  const removeTarget = (fqn: string) => {
+    setTargets(targets.filter((t) => t.fqn !== fqn));
+  };
+
+  const addManual = () => {
+    const fqn = manualFqn.trim();
+    if (!fqn || fqn.split(".").length !== 3) {
+      setError("Manual FQN must be `catalog.schema.table` (3 parts).");
+      return;
+    }
+    if (selectedFqns.has(fqn)) return;
+    setTargets([...targets, { fqn, source_format: manualFmt }]);
+    setManualFqn("");
+    setError("");
+  };
+
+  const canSubmit = !running && targets.length > 0;
 
   const submit = async () => {
     setRunning(true);
@@ -97,12 +182,12 @@ export default function ConvertToDeltaPage() {
     try {
       const payload = {
         targets: targets.map((t) => ({
-          fqn: t.fqn.trim(),
+          fqn: t.fqn,
           source_format: t.source_format,
         })),
         warehouse_id: warehouseId || undefined,
         dry_run: dryRun,
-        confirm_destructive: !dryRun, // model rejects without this when dry_run=false
+        confirm_destructive: !dryRun,
       };
       const res = await api.post<SummaryResponse>(
         "/convert-to-delta",
@@ -118,8 +203,6 @@ export default function ConvertToDeltaPage() {
     }
   };
 
-  // Single click handler so the Run button does the right thing for both
-  // safe (dry-run) and destructive submits — modal only gates the latter.
   const onRunClick = () => {
     if (dryRun) {
       submit();
@@ -132,19 +215,17 @@ export default function ConvertToDeltaPage() {
   const statusVariant = (s: ResultRow["status"]) => {
     if (s === "converted") return "default";
     if (s === "failed") return "destructive";
-    return "outline"; // skipped
+    return "outline";
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-6 space-y-6 max-w-7xl">
       <PageHeader
         title="Convert to Delta"
         description="In-place conversion of Iceberg / Parquet tables to Delta. Destructive on source."
         icon={ArrowRightLeft}
       />
 
-      {/* Persistent destructive-action banner. Visible whether dry-run is
-          on or off so users never forget the underlying semantic. */}
       <div className="border border-amber-500/40 bg-amber-500/10 rounded-md p-3 flex gap-3 items-start">
         <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
         <div className="text-sm">
@@ -158,85 +239,214 @@ export default function ConvertToDeltaPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Targets</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {targets.map((t, idx) => (
-            <div key={t.id} className="flex gap-2 items-center">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: catalog/schema/tables browser */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Browse</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <CatalogPicker value={catalog} onChange={setCatalog} />
+
+            <div>
+              <label className="text-sm font-medium mb-1 block">Schema</label>
+              <select
+                disabled={!catalog || schemasLoading}
+                className="w-full border rounded-md bg-transparent px-2 py-1.5 text-sm disabled:opacity-50"
+                value={schema}
+                onChange={(e) => setSchema(e.target.value)}
+              >
+                <option value="">
+                  {schemasLoading ? "Loading…" : "Select schema…"}
+                </option>
+                {schemas.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="border rounded-md max-h-96 overflow-auto">
+              {!schema ? (
+                <div className="p-4 text-sm text-gray-500">
+                  Pick a catalog and schema to list tables.
+                </div>
+              ) : tablesLoading ? (
+                <div className="p-4 text-sm text-gray-500 flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading tables…
+                </div>
+              ) : tables.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">
+                  No tables in this schema.
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-800/40 sticky top-0">
+                    <tr>
+                      <th className="text-left p-2 w-10"></th>
+                      <th className="text-left p-2">Table</th>
+                      <th className="text-left p-2">Format</th>
+                      <th className="text-left p-2">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tables.map((row) => {
+                      const reason = nonConvertibleReason(row);
+                      const fqn = `${catalog}.${schema}.${row.name}`;
+                      const isSelected = selectedFqns.has(fqn);
+                      return (
+                        <tr
+                          key={row.name}
+                          className={`border-t ${reason ? "opacity-50" : ""}`}
+                        >
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              disabled={!!reason}
+                              checked={isSelected}
+                              onChange={() =>
+                                isSelected ? removeTarget(fqn) : addFromBrowser(row)
+                              }
+                            />
+                          </td>
+                          <td className="p-2 font-mono">{row.name}</td>
+                          <td className="p-2">
+                            {row.data_source_format ? (
+                              <Badge variant="outline">
+                                {row.data_source_format.toUpperCase()}
+                              </Badge>
+                            ) : (
+                              <span className="text-gray-500">—</span>
+                            )}
+                            {reason && (
+                              <div className="text-xs text-gray-500 mt-0.5">{reason}</div>
+                            )}
+                          </td>
+                          <td className="p-2 text-xs text-gray-400">
+                            {row.table_type}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Manual-FQN escape hatch. Anchored at the bottom of the
+                browse panel so it's discoverable but doesn't compete with
+                the picker for primary attention. */}
+            <details className="text-sm">
+              <summary className="cursor-pointer text-gray-500">
+                Add manual FQN (cross-catalog batches, foreign tables, …)
+              </summary>
+              <div className="flex gap-2 mt-2">
+                <Input
+                  placeholder="catalog.schema.table"
+                  value={manualFqn}
+                  onChange={(e) => setManualFqn(e.target.value)}
+                  className="font-mono"
+                />
+                <select
+                  className="border rounded-md bg-transparent px-2 py-1.5 text-sm"
+                  value={manualFmt}
+                  onChange={(e) => setManualFmt(e.target.value as SourceFormat)}
+                >
+                  <option value="ICEBERG">ICEBERG</option>
+                  <option value="PARQUET">PARQUET</option>
+                </select>
+                <Button variant="outline" size="sm" onClick={addManual}>
+                  <Plus className="h-4 w-4 mr-1" /> Add
+                </Button>
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+
+        {/* Right: selected targets cart + run controls */}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Selected targets{" "}
+              <span className="text-sm text-gray-500 font-normal">
+                ({targets.length})
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {targets.length === 0 ? (
+              <div className="p-4 text-sm text-gray-500 border rounded-md">
+                No targets selected. Pick tables from the browser on the left.
+              </div>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-800/40">
+                    <tr>
+                      <th className="text-left p-2">FQN</th>
+                      <th className="text-left p-2">Source</th>
+                      <th className="text-left p-2 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {targets.map((t) => (
+                      <tr key={t.fqn} className="border-t">
+                        <td className="p-2 font-mono">{t.fqn}</td>
+                        <td className="p-2">
+                          <Badge variant="outline">{t.source_format}</Badge>
+                        </td>
+                        <td className="p-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeTarget(t.fqn)}
+                            aria-label={`Remove ${t.fqn}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div>
+              <label className="text-sm font-medium mb-1 block">
+                Warehouse ID (optional)
+              </label>
               <Input
-                placeholder="catalog.schema.table"
-                value={t.fqn}
-                onChange={(e) => updateTarget(t.id, { fqn: e.target.value })}
+                placeholder="leave blank to use default from config"
+                value={warehouseId}
+                onChange={(e) => setWarehouseId(e.target.value)}
                 className="font-mono"
               />
-              <select
-                className="border rounded-md bg-transparent px-2 py-1.5 text-sm"
-                value={t.source_format}
-                onChange={(e) =>
-                  updateTarget(t.id, {
-                    source_format: e.target.value as SourceFormat,
-                  })
-                }
-              >
-                <option value="ICEBERG">ICEBERG</option>
-                <option value="PARQUET">PARQUET</option>
-                <option value="DELTA">DELTA (skip)</option>
-              </select>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeTarget(t.id)}
-                disabled={targets.length === 1 && idx === 0}
-                aria-label="Remove target"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
             </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={addTarget}>
-            <Plus className="h-4 w-4 mr-1" /> Add target
-          </Button>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <label className="text-sm font-medium mb-1 block">
-              Warehouse ID (optional)
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={dryRun}
+                onChange={(e) => setDryRun(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Dry-run</span> — preview the SQL only,
+                don't execute. Recommended for the first attempt.
+              </span>
             </label>
-            <Input
-              placeholder="leave blank to use default from config"
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={dryRun}
-              onChange={(e) => setDryRun(e.target.checked)}
-            />
-            <span>
-              <span className="font-medium">Dry-run</span> — preview the SQL only,
-              don't execute. Recommended for the first attempt.
-            </span>
-          </label>
-        </CardContent>
-      </Card>
 
-      <div className="flex gap-3 items-center">
-        <Button onClick={onRunClick} disabled={!canSubmit} size="lg">
-          <Play className="h-4 w-4 mr-2" />
-          {dryRun ? "Run dry-run" : "Convert"}
-        </Button>
-        {error && <span className="text-sm text-red-400">{error}</span>}
+            <div className="flex gap-3 items-center">
+              <Button onClick={onRunClick} disabled={!canSubmit} size="lg">
+                <Play className="h-4 w-4 mr-2" />
+                {dryRun ? "Run dry-run" : "Convert"}
+              </Button>
+              {error && <span className="text-sm text-red-400">{error}</span>}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {summary && (

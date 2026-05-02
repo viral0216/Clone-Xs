@@ -377,6 +377,42 @@ async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
         return []
 
 
+@router.get("/catalogs/{catalog}/{schema}/tables/with-format")
+async def list_tables_with_format(catalog: str, schema: str, client=Depends(get_db_client)):
+    """List tables in a schema with their `table_type` and `data_source_format`.
+
+    Returns ``[{name, table_type, data_source_format}]``. Distinct from the
+    bare ``/tables`` endpoint above because:
+
+      * convert-to-delta needs the format to skip already-Delta tables and
+        to pre-fill the ``source_format`` field without a second round-trip,
+      * the bare endpoint is consumed by other surfaces that just want
+        names and have no use for the extra columns — keeping shapes
+        separate avoids breaking them.
+
+    The ``data_source_format`` field is normalised at the client layer
+    (``src/client.py:_normalize_format``) so the SDK enum is already a
+    string by the time it reaches the response.
+    """
+    from src.client import list_tables_sdk
+
+    try:
+        tables = list_tables_sdk(client, catalog, schema)
+        return sorted(
+            [
+                {
+                    "name": t["table_name"],
+                    "table_type": t.get("table_type") or "UNKNOWN",
+                    "data_source_format": t.get("data_source_format") or "",
+                }
+                for t in tables
+            ],
+            key=lambda r: r["name"],
+        )
+    except Exception:
+        return []
+
+
 @router.get("/catalogs/{catalog}/{schema}/objects")
 async def list_schema_objects(catalog: str, schema: str, client=Depends(get_db_client)):
     """List every cloneable object in a schema: tables, views, functions, volumes.

@@ -13,17 +13,22 @@ This module probes for it at import time and flips
   2. Both required symbols import: ``zerobus.sdk.sync.ZerobusSdk``
      and ``zerobus.sdk.shared.{RecordType, StreamConfigurationOptions, TableProperties}``.
 
-Even when the SDK is installed, an actual emission also needs three
-caller-supplied secrets that the demo-data form does NOT yet collect:
+Per-request, an actual emission also needs three caller-supplied
+secrets that the form collects when ``destination="zerobus"`` is
+picked:
 
-  - ``ZEROBUS_SERVER_ENDPOINT`` (region-specific gRPC endpoint)
-  - ``DATABRICKS_CLIENT_ID``    (service-principal app ID)
-  - ``DATABRICKS_CLIENT_SECRET``
+  - ``zerobus_server_endpoint`` — region-specific gRPC URL, format
+    ``https://<workspace_id>.zerobus.<region>.cloud.databricks.com``
+  - ``zerobus_client_id``       — service-principal app ID
+  - ``zerobus_client_secret``   — service-principal secret
 
-Until the form learns to ask for those, the runtime call still raises
-``NotImplementedError`` pointing the user at the Phase 1 snippet (which
-documents exactly which env vars to set). The credential-plumbing PR
-is the natural next step.
+Stream lifecycle is **open once, ingest many, close at end** — opening
+a fresh stream per batch defeats the point of Zerobus. The dispatch in
+``demo_streaming.py`` calls :func:`open_zerobus_stream` before the
+emission loop starts, hands the resulting handle to
+:func:`ingest_batch_zerobus` for each tick, and calls
+:func:`close_zerobus_stream` in a ``finally`` so streams don't leak
+when the loop is interrupted.
 """
 
 from __future__ import annotations
@@ -52,12 +57,12 @@ _UNAVAILABLE_REASON: str | None = (
 )
 try:
     # Real SDK API — both modules must import cleanly.
-    from zerobus.sdk.shared import (  # noqa: F401
+    from zerobus.sdk.shared import (
         RecordType,
         StreamConfigurationOptions,
         TableProperties,
     )
-    from zerobus.sdk.sync import ZerobusSdk  # noqa: F401
+    from zerobus.sdk.sync import ZerobusSdk
 
     ZEROBUS_AVAILABLE = True
     _UNAVAILABLE_REASON = None
@@ -65,6 +70,11 @@ except Exception:
     # SDK not installed (or a partial install). Phase 1's snippet
     # panel still gives the user a working code path.
     ZEROBUS_AVAILABLE = False
+    # Late binding to satisfy type checkers when SDK isn't installed.
+    RecordType = None  # type: ignore[assignment]
+    StreamConfigurationOptions = None  # type: ignore[assignment]
+    TableProperties = None  # type: ignore[assignment]
+    ZerobusSdk = None  # type: ignore[assignment]
 
 
 def is_available() -> tuple[bool, str | None]:
@@ -110,65 +120,60 @@ def ensure_zerobus_table(
     return f"{catalog}.{schema}.{table_name}"
 
 
-def insert_batch_zerobus(
-    client: WorkspaceClient,
+def open_zerobus_stream(
+    workspace_url: str,
+    server_endpoint: str,
+    client_id: str,
+    client_secret: str,
     table_fqn: str,
-    profile: str,
-    batch: list[dict[str, Any]],
-) -> int:
-    """Append ``batch`` to ``table_fqn`` via Zerobus. Returns rows appended.
+):
+    """Open a long-lived Zerobus stream against ``table_fqn``.
 
-    Mirrors :func:`src.demo_streaming.insert_batch_direct` — same
-    signature shape so the dispatch code in ``demo_streaming.py`` can
-    call either path interchangeably.
+    Returns the SDK's stream object (a `zerobus.sdk.sync.Stream`) which
+    supports ``ingest_record_offset(record)`` per tick and ``close()``
+    at the end. The caller is responsible for ``close()``-ing in a
+    ``finally`` so the stream doesn't leak.
 
-    Today this raises ``NotImplementedError`` because the SDK is not
-    yet released. When the SDK lands, replace the body with the real
-    Zerobus call (see :func:`_real_zerobus_append` below).
+    Raises ``NotImplementedError`` if the SDK isn't installed — the
+    caller (dispatch) checks ``is_available()`` upfront, but defending
+    here too keeps the runtime contract explicit.
     """
     if not ZEROBUS_AVAILABLE:
         raise NotImplementedError(_UNAVAILABLE_REASON or "Zerobus runtime not available")
-    return _real_zerobus_append(client, table_fqn, profile, batch)
 
-
-def _real_zerobus_append(
-    client: WorkspaceClient,
-    table_fqn: str,
-    profile: str,
-    batch: list[dict[str, Any]],
-) -> int:
-    """Real Zerobus append — pending credential-plumbing PR.
-
-    The SDK requires three caller-supplied secrets that the demo-data
-    form does NOT yet collect: a region-specific gRPC server endpoint,
-    a service-principal client_id, and the corresponding client_secret.
-    See https://github.com/databricks/zerobus-sdk/blob/main/python/README.md.
-
-    Once the form learns to ask for those (next Phase 2 PR), the body
-    becomes::
-
-        from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
-        from zerobus.sdk.sync import ZerobusSdk
-
-        sdk = ZerobusSdk(server_endpoint, workspace_url)
-        stream = sdk.create_stream(
-            client_id, client_secret,
-            TableProperties(table_fqn),
-            StreamConfigurationOptions(record_type=RecordType.JSON),
-        )
-        try:
-            for record in batch:
-                stream.ingest_record_offset(record)
-        finally:
-            stream.close()
-        return len(batch)
-
-    For now we raise so the dispatch fails fast with a helpful message
-    rather than silently dropping events.
-    """
-    raise NotImplementedError(
-        "Zerobus SDK is installed, but the demo-data form does not yet "
-        "collect the required credentials (server_endpoint, client_id, "
-        "client_secret). Use the 'Try with Zerobus' snippet on the demo-"
-        "data page in the meantime — it includes the env vars to set."
+    sdk = ZerobusSdk(server_endpoint, workspace_url)
+    stream = sdk.create_stream(
+        client_id,
+        client_secret,
+        TableProperties(table_fqn),
+        StreamConfigurationOptions(record_type=RecordType.JSON),
     )
+    logger.info(f"Zerobus stream opened against {table_fqn}")
+    return stream
+
+
+def ingest_batch_zerobus(stream: Any, batch: list[dict[str, Any]]) -> int:
+    """Ingest one batch of records into an open Zerobus stream.
+
+    Calls ``stream.ingest_record_offset(record)`` for each record.
+    Returns the count of records ingested. Per-record exceptions
+    propagate — the caller decides whether to retry the batch.
+    """
+    if stream is None:
+        raise RuntimeError("Zerobus stream is None — open_zerobus_stream() must be called first.")
+    for record in batch:
+        stream.ingest_record_offset(record)
+    return len(batch)
+
+
+def close_zerobus_stream(stream: Any) -> None:
+    """Best-effort close. Swallows exceptions so the dispatch's
+    ``finally`` block never raises secondarily.
+    """
+    if stream is None:
+        return
+    try:
+        stream.close()
+        logger.info("Zerobus stream closed")
+    except Exception as e:
+        logger.warning(f"Failed to close Zerobus stream cleanly: {e}")

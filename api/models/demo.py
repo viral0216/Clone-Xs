@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DemoDataRequest(BaseModel):
@@ -190,6 +190,48 @@ class StreamingEmissionRequest(BaseModel):
     # when set.
     auto_create_bronze: bool = Field(default=False)
     bronze_refresh_minutes: int = Field(default=5, ge=1, le=60)
+
+    # ── Zerobus (only relevant when destination="zerobus") ──
+    # Zerobus uses a region-specific gRPC endpoint that is NOT the
+    # workspace URL — format e.g.
+    # https://<workspace_id>.zerobus.<region>.cloud.databricks.com
+    zerobus_server_endpoint: str | None = Field(
+        default=None,
+        description="Zerobus gRPC endpoint URL. Required when destination='zerobus'.",
+    )
+    # Service-principal credentials. Zerobus uses OAuth client-credentials
+    # flow rather than the workspace PAT/SP the rest of the app uses,
+    # which is why we collect them per-request.
+    zerobus_client_id: str | None = Field(
+        default=None,
+        description="Service-principal client_id for Zerobus OAuth. Required when destination='zerobus'.",
+    )
+    zerobus_client_secret: str | None = Field(
+        default=None,
+        description="Service-principal client_secret for Zerobus OAuth. Required when destination='zerobus'.",
+    )
+
+    @model_validator(mode="after")
+    def _zerobus_requires_credentials(self) -> "StreamingEmissionRequest":
+        """When destination='zerobus', all three Zerobus creds must be set.
+
+        Validating here rather than in the runner means the form gets a
+        clean 422 with field paths instead of a 500 mid-stream — much
+        nicer feedback loop than waiting for the runner to barf.
+        """
+        if self.destination == "zerobus":
+            missing = [
+                name
+                for name, val in (
+                    ("zerobus_server_endpoint", self.zerobus_server_endpoint),
+                    ("zerobus_client_id", self.zerobus_client_id),
+                    ("zerobus_client_secret", self.zerobus_client_secret),
+                )
+                if not (val or "").strip()
+            ]
+            if missing:
+                raise ValueError(f"destination='zerobus' requires: {', '.join(missing)}")
+        return self
 
 
 class StreamingScheduleRequest(StreamingEmissionRequest):

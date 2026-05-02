@@ -407,6 +407,12 @@ export default function DemoDataPage() {
       .then(setZerobusAvailable)
       .catch(() => setZerobusAvailable({ available: false, reason: "availability check failed" }));
   }, []);
+  // Per-request Zerobus credentials. Required only when the user picks
+  // destination="zerobus"; the form gates Start/Schedule on these being
+  // present (matches the Pydantic validator on the request model).
+  const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
+  const [zerobusClientId, setZerobusClientId] = useState("");
+  const [zerobusClientSecret, setZerobusClientSecret] = useState("");
   const [streamBronzeTable, setStreamBronzeTable] = useState("");
   // Legacy auto-create flag — derived from destination on submit. Kept
   // as state only to render the refresh-cadence input in volume_bronze mode.
@@ -525,6 +531,16 @@ export default function DemoDataPage() {
       toast.error("Catalog and schema are required");
       return;
     }
+    if (streamDestination === "zerobus") {
+      const missing: string[] = [];
+      if (!zerobusServerEndpoint.trim()) missing.push("server endpoint");
+      if (!zerobusClientId.trim()) missing.push("client ID");
+      if (!zerobusClientSecret.trim()) missing.push("client secret");
+      if (missing.length) {
+        toast.error(`Zerobus requires: ${missing.join(", ")}`);
+        return;
+      }
+    }
     try {
       // Wipe previous streaming-job state (including chart history) so a new
       // run starts clean visually instead of merging with the prior series.
@@ -541,6 +557,14 @@ export default function DemoDataPage() {
         bronze_table: streamBronzeTable.trim(),
         auto_create_bronze: streamDestination === "volume_bronze",
         bronze_refresh_minutes: streamBronzeRefreshMinutes,
+        // Only thread Zerobus creds when it's actually selected. Sending
+        // them on every payload would log secrets unnecessarily and the
+        // backend ignores them when destination !== "zerobus".
+        ...(streamDestination === "zerobus" && {
+          zerobus_server_endpoint: zerobusServerEndpoint.trim(),
+          zerobus_client_id: zerobusClientId.trim(),
+          zerobus_client_secret: zerobusClientSecret.trim(),
+        }),
       };
       await streamJob.start(params, async () => {
         const res = await streamingEmit.mutateAsync(params);
@@ -1745,6 +1769,65 @@ export default function DemoDataPage() {
                 ))}
               </div>
             </div>
+
+            {/* Zerobus credentials — visible only when destination=zerobus
+                AND the SDK is available. The form's Pydantic validator on
+                the backend will 422 if any of these are blank, but we also
+                client-side guard handleStartStreaming to fail earlier. */}
+            {streamDestination === "zerobus" && zerobusAvailable?.available && (
+              <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Radio className="h-3.5 w-3.5 text-[#E8453C]" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Zerobus credentials
+                  </span>
+                  <Badge variant="outline" className="text-[10px]">Required</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Zerobus uses a region-specific gRPC endpoint and OAuth via a
+                  service principal — distinct from the workspace PAT used by the
+                  rest of the app. Secrets stay in your browser session and are
+                  sent only when starting a Zerobus run.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-endpoint">
+                      Server endpoint
+                    </label>
+                    <Input
+                      id="zb-endpoint"
+                      placeholder="https://<wsid>.zerobus.<region>.cloud.databricks.com"
+                      value={zerobusServerEndpoint}
+                      onChange={(e) => setZerobusServerEndpoint(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-id">
+                      Client ID
+                    </label>
+                    <Input
+                      id="zb-client-id"
+                      placeholder="service-principal app id"
+                      value={zerobusClientId}
+                      onChange={(e) => setZerobusClientId(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-secret">
+                      Client secret
+                    </label>
+                    <Input
+                      id="zb-client-secret"
+                      type="password"
+                      placeholder="service-principal secret"
+                      value={zerobusClientSecret}
+                      onChange={(e) => setZerobusClientSecret(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Device profile */}
             <div className="space-y-1.5">

@@ -948,7 +948,6 @@ def run_streaming_emission(
     # ``read_files()`` pipeline.
     volume_path: str | None = None
     direct_table_fqn: str | None = None
-    bronze_info: dict | None = None
     bronze_pending = False
     bronze_refresh_minutes = int(config.get("bronze_refresh_minutes", 5))
     if destination == "direct_table":
@@ -964,10 +963,8 @@ def run_streaming_emission(
     elif destination == "zerobus":
         # Provision the same Delta target as direct_table — Zerobus
         # appends to a regular Delta table, just over gRPC instead of
-        # SQL INSERT. The runtime call itself raises a clear
-        # NotImplementedError today; we still create the table so that
-        # when the SDK lands the first emission can land cleanly without
-        # a separate setup step.
+        # SQL INSERT. We open the long-lived stream below (not here),
+        # so the table exists by the time the SDK tries to bind to it.
         from src.demo_streaming_zerobus_runtime import (
             ensure_zerobus_table,
             is_available as _zb_is_available,
@@ -988,6 +985,17 @@ def run_streaming_emission(
             # warehouse work happens. The reason text is the same one
             # the availability endpoint returns.
             raise NotImplementedError(reason or "Zerobus runtime not available")
+        # Validate per-request creds — duplicates the Pydantic
+        # validator on StreamingEmissionRequest, but the runner is
+        # also reachable from places that bypass the model (e.g.
+        # programmatic config dicts), so re-check defensively.
+        missing = [
+            k
+            for k in ("zerobus_server_endpoint", "zerobus_client_id", "zerobus_client_secret")
+            if not (config.get(k) or "").strip()
+        ]
+        if missing:
+            raise ValueError(f"destination='zerobus' requires {', '.join(missing)} in the config")
         logger.info(f"Zerobus mode: appending to {direct_table_fqn}")
     else:
         volume_path = _ensure_events_volume(
@@ -999,12 +1007,89 @@ def run_streaming_emission(
     state = DEVICE_PROFILES[profile]["init_state"](num_devices)
 
     start = time.monotonic()
+
+    # Open the Zerobus stream once before the loop. The SDK bills this
+    # as a long-lived gRPC connection: opening per-batch would defeat
+    # its purpose. Closed in the finally below so an interrupt /
+    # exception never leaks the stream.
+    zerobus_stream = None
+    if destination == "zerobus":
+        from src.demo_streaming_zerobus_runtime import open_zerobus_stream
+
+        workspace_url = (getattr(getattr(client, "config", None), "host", "") or "").rstrip("/")
+        zerobus_stream = open_zerobus_stream(
+            workspace_url=workspace_url,
+            server_endpoint=str(config["zerobus_server_endpoint"]).rstrip("/"),
+            client_id=str(config["zerobus_client_id"]),
+            client_secret=str(config["zerobus_client_secret"]),
+            table_fqn=direct_table_fqn or "",
+        )
+
+    try:
+        return _run_emission_loop(
+            client=client,
+            warehouse_id=warehouse_id,
+            destination=destination,
+            profile=profile,
+            catalog=catalog,
+            schema=schema,
+            volume=volume,
+            volume_path=volume_path,
+            direct_table_fqn=direct_table_fqn,
+            zerobus_stream=zerobus_stream,
+            state=state,
+            events_per_batch=events_per_batch,
+            interval_seconds=interval_seconds,
+            total_duration_seconds=total_duration_seconds,
+            bronze_pending=bronze_pending,
+            bronze_refresh_minutes=bronze_refresh_minutes,
+            stopped_cb=stopped_cb,
+            progress=progress,
+            start=start,
+        )
+    finally:
+        # Close the Zerobus stream even on exceptions / KeyboardInterrupt.
+        # close_zerobus_stream swallows its own errors so this finally
+        # never raises secondarily.
+        if zerobus_stream is not None:
+            from src.demo_streaming_zerobus_runtime import close_zerobus_stream
+
+            close_zerobus_stream(zerobus_stream)
+
+
+def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored from old in-line loop)
+    *,
+    client,
+    warehouse_id,
+    destination,
+    profile,
+    catalog,
+    schema,
+    volume,
+    volume_path,
+    direct_table_fqn,
+    zerobus_stream,
+    state,
+    events_per_batch,
+    interval_seconds,
+    total_duration_seconds,
+    bronze_pending,
+    bronze_refresh_minutes,
+    stopped_cb,
+    progress,
+    start,
+):
+    """Inner emission loop, lifted from run_streaming_emission to allow
+    a clean ``try/finally`` around stream lifecycle without further
+    growing the cognitive complexity of the outer function.
+    """
     events_emitted = 0
     files_written = 0
     rows_inserted = 0
     ticks = 0
     last_path: str | None = None
     stopped_early = False
+    bronze_info: dict | None = None
 
     while True:
         if stopped_cb():
@@ -1030,18 +1115,13 @@ def run_streaming_emission(
                 last_path = direct_table_fqn
             elif destination == "zerobus":
                 # Same row-count semantics as direct_table — Zerobus
-                # appends a batch atomically; rows_inserted advances by
-                # the batch size on success. The runtime call raises
-                # NotImplementedError today (gated at run start above),
-                # so this elif is effectively dead until the SDK ships.
-                from src.demo_streaming_zerobus_runtime import insert_batch_zerobus
+                # ingests one record at a time over a single long-lived
+                # stream. The stream was opened once before this loop
+                # and is closed in the outer `finally`, so a per-batch
+                # exception only loses the current batch.
+                from src.demo_streaming_zerobus_runtime import ingest_batch_zerobus
 
-                rows_inserted += insert_batch_zerobus(
-                    client,
-                    direct_table_fqn,
-                    profile,
-                    batch,
-                )
+                rows_inserted += ingest_batch_zerobus(zerobus_stream, batch)
                 last_path = direct_table_fqn
             else:
                 last_path = write_batch_to_volume(client, volume_path, batch, ticks)

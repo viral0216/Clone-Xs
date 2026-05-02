@@ -647,6 +647,21 @@ curl -X POST http://localhost:8000/api/generate/demo-data/streaming \
   }'
 ```
 
+### Destination modes
+
+| `destination` | What happens per tick | Requires |
+|---|---|---|
+| `volume` | One JSON file per batch in `/Volumes/<cat>/<sch>/<vol>/<profile>/` | UC volume create permission |
+| `volume_bronze` | Same files plus an auto-created `CREATE OR REFRESH STREAMING TABLE` over `read_files()` | DBSQL Serverless (for the streaming table) |
+| `direct_table` | `INSERT INTO <bronze_table> VALUES …` per batch — no Volume, no Auto Loader | Any tier (works on Free Edition) |
+| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table. **No macOS wheels** — see README for the snippet-panel workaround. |
+
+When the Zerobus SDK is absent the destination radio renders disabled
+with a tooltip explaining why; the **Try with Zerobus** code snippet
+panel below the completion card always works regardless — it produces
+a copy-pastable Python script that runs Zerobus from any environment
+where the SDK is installable.
+
 ### Auto Loader (Bronze table)
 
 The Streaming card includes an opt-in **"Auto-create streaming Bronze

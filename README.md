@@ -130,6 +130,39 @@ pip install -e .
 clxs clone --source my_catalog --dest my_catalog_clone
 ```
 
+### Optional: Zerobus runtime destination
+
+The streaming-emission demo (`/demo-data` → Streaming tab) supports
+**Zerobus** — Databricks' low-latency direct-append API — as a
+fourth destination, alongside `volume`, `volume_bronze`, and
+`direct_table`. Enabling it requires the Zerobus Python SDK, which
+ships prebuilt wheels for **Linux x86_64 / aarch64** and **Windows
+x86_64** only:
+
+```bash
+pip install -e ".[zerobus]"   # Linux / Windows: pulls databricks-zerobus-ingest-sdk
+```
+
+**macOS users:** the SDK does not currently publish macOS wheels (see
+[databricks/zerobus-sdk](https://github.com/databricks/zerobus-sdk)).
+Two options:
+
+1. **Use the *Try with Zerobus* code snippet panel** on the demo-data
+   page — it renders a copy-pastable Python script (using your selected
+   profile + cadence) that runs Zerobus from any environment where the
+   SDK is installable. No backend dep needed.
+2. **Run the API server in Docker (Linux x86_64 base)** — the SDK
+   installs cleanly inside the container and the radio enables
+   automatically.
+3. **Build the SDK from source** — clone the repo, install the Rust
+   toolchain, run `maturin build`, install the resulting wheel. Brittle
+   across SDK upgrades; not recommended unless you need native
+   performance on your dev Mac.
+
+When the SDK is absent, the Zerobus radio renders disabled with an
+inline tooltip explaining why; the rest of the streaming demo is
+unaffected.
+
 ---
 
 ## Required Setup (after installation)

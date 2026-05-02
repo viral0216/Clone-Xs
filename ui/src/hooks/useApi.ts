@@ -640,7 +640,7 @@ export function useStreamingEmit() {
         | "smart_meter" | "wearable_health" | "pos_terminal"
         | "wind_turbine" | "atm_transaction" | "server_metrics"
         | "clickstream";
-      destination?: "volume" | "volume_bronze" | "direct_table";
+      destination?: "volume" | "volume_bronze" | "direct_table" | "zerobus";
       bronze_table?: string;
       events_per_batch?: number;
       interval_seconds?: number;
@@ -649,6 +649,10 @@ export function useStreamingEmit() {
       auto_create_bronze?: boolean;
       bronze_refresh_minutes?: number;
       warehouse_id?: string;
+      // Required when destination === "zerobus" — see api/models/demo.py
+      zerobus_server_endpoint?: string;
+      zerobus_client_id?: string;
+      zerobus_client_secret?: string;
     }) => api.post("/generate/demo-data/streaming", req),
   });
 }

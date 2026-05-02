@@ -18,9 +18,12 @@ helper. We:
        → <elb>.<region>.amazonaws.com      (e.g. ``…us-east-2.amazonaws.com``)
 3. Build the Zerobus URL from (workspace_id, region, cloud).
 
-Azure / GCP don't always expose the region via DNS so this helper
-returns a structured failure (``cloud="azure"``, ``region=None``) and
-the UI prompts the user for it.
+Azure exposes the region in the CNAME chain too — workspace hostnames
+alias through ``<region>.azuredatabricks.net`` (e.g. ``uksouth``,
+``eastus2``) before terminating at ``ingress.<region>.azuredatabricks.net``.
+GCP doesn't always leak the region via DNS so this helper returns a
+structured failure for GCP (``cloud="gcp"``, ``region=None``) and the
+UI prompts the user for it.
 """
 
 from __future__ import annotations
@@ -176,6 +179,44 @@ def _resolve_aws_region(host: str) -> tuple[str | None, list[str]]:
     return None, notes
 
 
+def _resolve_azure_region(host: str) -> tuple[str | None, list[str]]:
+    """Walk the CNAME chain for `host` to find the Azure region.
+
+    Azure Databricks workspaces alias through a region-named hostname
+    of the form ``<region>.azuredatabricks.net`` (e.g.
+    ``uksouth.azuredatabricks.net``, ``eastus2.azuredatabricks.net``)
+    on the way to ``ingress.<region>.azuredatabricks.net``. Either name
+    in the chain leaks the region; we accept both.
+
+    Returns (region | None, notes_list_for_diagnostics).
+    """
+    notes: list[str] = []
+    try:
+        canonical, aliases, ips = socket.gethostbyname_ex(host)
+        chain = [host, *aliases, canonical]
+        notes.append(f"DNS chain: {' → '.join(chain)}")
+        notes.append(f"IPs: {', '.join(ips)}")
+    except socket.gaierror as e:
+        return None, [f"DNS resolution failed for {host}: {e}"]
+
+    # Match either ``<region>.azuredatabricks.net`` (the friendly
+    # region alias) or ``ingress.<region>.azuredatabricks.net`` (the
+    # canonical). Region tokens are lowercase alphanumerics, no dots —
+    # `eastus2`, `northeurope`, `uksouth`, etc.
+    region_re = re.compile(
+        r"^(?:ingress\.)?([a-z0-9]+)\.azuredatabricks\.net$",
+        re.IGNORECASE,
+    )
+    for name in chain:
+        m = region_re.match(name.strip(".").lower())
+        if m and m.group(1) not in {"adb", "ingress"}:
+            region = m.group(1)
+            notes.append(f"matched region {region!r} from CNAME {name!r}")
+            return region, notes
+
+    return None, notes
+
+
 def derive_zerobus_endpoint(workspace_url: str) -> ResolvedEndpoint:
     """Derive a Zerobus server endpoint from a Databricks workspace URL.
 
@@ -257,8 +298,10 @@ def derive_zerobus_endpoint(workspace_url: str) -> ResolvedEndpoint:
         # GCP region detection via DNS is patchy — defer to the user.
         endpoint_tld = "gcp.databricks.com"
     else:  # azure
-        # Azure region isn't in the URL or DNS chain — only the Azure
-        # Resource Manager API knows it. User has to look it up.
+        # Azure DOES leak the region via the CNAME chain (workspace
+        # hostnames alias through `<region>.azuredatabricks.net`).
+        region, region_notes = _resolve_azure_region(host)
+        notes.extend(region_notes)
         endpoint_tld = "azuredatabricks.net"
 
     if not region:

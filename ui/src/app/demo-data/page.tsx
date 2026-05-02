@@ -139,6 +139,59 @@ const INDUSTRY_TABLES: Record<string, { name: string; rows: number }[]> = {
   ],
 };
 
+// Numbered step in the Zerobus credentials block. Renders a circle
+// (number when pending, green check when done) on the left, the title
+// + optional/done badges on the right, and the step body underneath.
+// Used only by the Zerobus form — kept here at module scope so the
+// main page component doesn't grow another render helper.
+function ZerobusStep({
+  number,
+  title,
+  done,
+  optional = false,
+  children,
+}: Readonly<{
+  number: number;
+  title: string;
+  done: boolean;
+  optional?: boolean;
+  children: React.ReactNode;
+}>) {
+  return (
+    <div className="flex gap-3">
+      <div
+        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+          done
+            ? "bg-emerald-500 text-white border border-emerald-500"
+            : "bg-background text-muted-foreground border border-border"
+        }`}
+        aria-label={done ? `Step ${number} done` : `Step ${number}`}
+      >
+        {done ? <CheckCircle2 className="h-4 w-4" /> : number}
+      </div>
+      <div className="flex-1 space-y-1.5 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-[13px]">{title}</span>
+          {optional && (
+            <Badge variant="outline" className="text-[10px]">
+              Optional
+            </Badge>
+          )}
+          {done && !optional && (
+            <Badge
+              variant="outline"
+              className="text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50"
+            >
+              Done
+            </Badge>
+          )}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function statusBadge(status: string) {
   switch (status?.toLowerCase()) {
     case "completed":
@@ -410,9 +463,24 @@ export default function DemoDataPage() {
   // Per-request Zerobus credentials. Required only when the user picks
   // destination="zerobus"; the form gates Start/Schedule on these being
   // present (matches the Pydantic validator on the request model).
+  //
+  // Two auth modes — "oauth" uses an SP's client_id/client_secret (the
+  // original path; works on Premium/Enterprise tiers). "pat" reuses the
+  // PAT the user logged into the app with — no SP needed, but the
+  // Zerobus server may still reject PATs that lack the right scopes.
+  // Default "oauth" preserves the existing flow for users who already
+  // have a working SP.
+  const [zerobusAuthMode, setZerobusAuthMode] = useState<"oauth" | "pat">("oauth");
   const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
   const [zerobusClientId, setZerobusClientId] = useState("");
   const [zerobusClientSecret, setZerobusClientSecret] = useState("");
+  // Optional MANAGED LOCATION for new catalogs. Required only when the
+  // workspace metastore has no default storage root — without it the
+  // CREATE CATALOG IF NOT EXISTS fails with INVALID_STATE. Cloud-
+  // agnostic: s3://, abfss://, gs:// all work as long as a UC external
+  // location / storage credential covers the path. Leave blank when
+  // the catalog already exists or the metastore has a default root.
+  const [zerobusCatalogLocation, setZerobusCatalogLocation] = useState("");
   // Helper: paste a Databricks workspace URL → server-side resolver
   // parses it, DNS-probes the AWS region, and auto-fills the Server
   // endpoint field. Browsers can't do DNS, so we delegate.
@@ -627,8 +695,13 @@ export default function DemoDataPage() {
     if (streamDestination === "zerobus") {
       const missing: string[] = [];
       if (!zerobusServerEndpoint.trim()) missing.push("server endpoint");
-      if (!zerobusClientId.trim()) missing.push("client ID");
-      if (!zerobusClientSecret.trim()) missing.push("client secret");
+      // SP creds are only required in OAuth mode. PAT mode pulls the
+      // bearer token from the logged-in client at runtime, so the
+      // form doesn't need to collect anything beyond the endpoint.
+      if (zerobusAuthMode === "oauth") {
+        if (!zerobusClientId.trim()) missing.push("client ID");
+        if (!zerobusClientSecret.trim()) missing.push("client secret");
+      }
       if (missing.length) {
         toast.error(`Zerobus requires: ${missing.join(", ")}`);
         return;
@@ -652,11 +725,22 @@ export default function DemoDataPage() {
         bronze_refresh_minutes: streamBronzeRefreshMinutes,
         // Only thread Zerobus creds when it's actually selected. Sending
         // them on every payload would log secrets unnecessarily and the
-        // backend ignores them when destination !== "zerobus".
+        // backend ignores them when destination !== "zerobus". The
+        // SP fields are only sent in oauth mode — the API validator
+        // doesn't accept them as required when auth_mode='pat', and we
+        // don't want stale form state to confuse the request shape.
         ...(streamDestination === "zerobus" && {
           zerobus_server_endpoint: zerobusServerEndpoint.trim(),
-          zerobus_client_id: zerobusClientId.trim(),
-          zerobus_client_secret: zerobusClientSecret.trim(),
+          zerobus_auth_mode: zerobusAuthMode,
+          ...(zerobusAuthMode === "oauth" && {
+            zerobus_client_id: zerobusClientId.trim(),
+            zerobus_client_secret: zerobusClientSecret.trim(),
+          }),
+          // Only send when populated — empty string = "let UC pick the
+          // default storage root". The runner treats blank as omitted.
+          ...(zerobusCatalogLocation.trim() && {
+            zerobus_catalog_location: zerobusCatalogLocation.trim(),
+          }),
         }),
       };
       await streamJob.start(params, async () => {
@@ -1866,9 +1950,27 @@ export default function DemoDataPage() {
             {/* Zerobus credentials — visible only when destination=zerobus
                 AND the SDK is available. The form's Pydantic validator on
                 the backend will 422 if any of these are blank, but we also
-                client-side guard handleStartStreaming to fail earlier. */}
-            {streamDestination === "zerobus" && zerobusAvailable?.available && (
-              <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+                client-side guard handleStartStreaming to fail earlier.
+                Step-by-step layout: numbered circles that turn into green
+                checks once each step's "done" predicate is satisfied. The
+                step numbers are computed (not hard-coded) because step 4
+                only exists in OAuth mode — PAT mode skips Verify and the
+                storage step renumbers down. */}
+            {streamDestination === "zerobus" && zerobusAvailable?.available && (() => {
+              // Per-step done predicates. These drive the numbered-circle →
+              // green-check transition AND let us decide which steps still
+              // hold the user back from clicking Start streaming.
+              const step1Done = true; // auth mode always picked (default oauth)
+              const step2Done = !!zerobusServerEndpoint.trim();
+              const step3Done = zerobusAuthMode === "pat"
+                || (!!zerobusClientId.trim() && !!zerobusClientSecret.trim());
+              const step4Done = zerobusVerifyResult?.ok === true;
+              const showVerifyStep = zerobusAuthMode === "oauth";
+              // Step 5 (storage) is optional → never affects the "all done"
+              // computation but still gets a number for orientation.
+              const storageStepNumber = showVerifyStep ? 5 : 4;
+              return (
+              <div className="border border-border rounded-md bg-muted/20 p-3 space-y-3">
                 <div className="flex items-center gap-2">
                   <Radio className="h-3.5 w-3.5 text-[#E8453C]" />
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -1877,49 +1979,115 @@ export default function DemoDataPage() {
                   <Badge variant="outline" className="text-[10px]">Required</Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Zerobus uses a region-specific gRPC endpoint and OAuth via a
-                  service principal — distinct from the workspace PAT used by the
-                  rest of the app. Secrets stay in your browser session and are
-                  sent only when starting a Zerobus run.
+                  Zerobus uses a region-specific gRPC endpoint. Two auth modes:
+                  pick <strong>OAuth</strong> if you have a service principal already
+                  set up (the original Zerobus contract), or <strong>PAT</strong> to
+                  reuse the token you logged into this app with — no SP needed.
+                  Secrets stay in your browser session and are sent only when
+                  starting a Zerobus run.
                 </p>
 
-                {/* Helper: derive the server endpoint from a workspace URL.
-                    Backend resolves DNS to find the AWS region; the result
-                    pre-fills the Server endpoint input below. */}
-                <div className="space-y-1 border-l-2 border-[#E8453C]/40 pl-3">
-                  <label className="text-[11px] text-muted-foreground" htmlFor="zb-derive-url">
-                    Don't know the server endpoint? Paste your workspace URL:
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="zb-derive-url"
-                      placeholder="https://dbc-….cloud.databricks.com/?o=… (or Azure / GCP equivalent)"
-                      value={zerobusDeriveUrl}
-                      onChange={(e) => setZerobusDeriveUrl(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); deriveZerobusEndpoint(); } }}
-                      className="flex-1"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={deriveZerobusEndpoint}
-                      disabled={zerobusDeriving || !zerobusDeriveUrl.trim()}
-                    >
-                      {zerobusDeriving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1" />}
-                      {zerobusDeriving ? "Resolving..." : "Derive endpoint"}
-                    </Button>
+                {/* Prerequisites (one-time admin work outside the form).
+                    Collapsed by default — most users only need it once and
+                    don't need to re-read it on every visit. Click to expand. */}
+                <details className="text-[11px] text-muted-foreground border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-sm">
+                  <summary className="cursor-pointer text-amber-700 font-medium">
+                    One-time admin prerequisite (Premium/Enterprise tier)
+                  </summary>
+                  <div className="space-y-1 mt-1.5">
+                    <div>
+                      Zerobus only writes to managed Delta tables in non-default
+                      storage. As a workspace admin, run once on the destination
+                      schema:
+                    </div>
+                    <pre className="text-[10px] bg-background border border-border rounded p-1.5 overflow-x-auto">{`ALTER SCHEMA \`<catalog>\`.\`<schema>\` SET MANAGED LOCATION 's3://your-bucket/path';`}</pre>
+                    <div>
+                      Without this, the run fails with{" "}
+                      <code className="bg-background px-1 rounded">
+                        Error Code: 4024 — Unsupported table kind
+                      </code>.
+                    </div>
+                    <div className="border-t border-amber-300/50 pt-1 mt-1">
+                      <strong className="text-amber-700">On Databricks Free Edition?</strong>{" "}
+                      You can&apos;t run{" "}
+                      <code className="bg-background px-1 rounded">
+                        ALTER SCHEMA … SET MANAGED LOCATION
+                      </code>{" "}
+                      there (no External Locations / paid SKU). Either switch the
+                      destination to <strong>Direct to table</strong> (works on any
+                      tier), or copy the snippet from the{" "}
+                      <strong>Try with Zerobus</strong> panel below and run it from
+                      a Premium workspace.
+                    </div>
                   </div>
-                  {zerobusDeriveError && (
-                    <p className="text-[11px] text-amber-600">{zerobusDeriveError}</p>
-                  )}
-                  <p className="text-[10px] text-muted-foreground">
-                    AWS workspaces only expose the workspace ID after login —
-                    open any page in the workspace and copy the URL with
-                    <code className="bg-background px-1 rounded mx-0.5">?o=…</code>
-                    appended.
-                  </p>
-                </div>
+                </details>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {/* Step 1 — Auth mode */}
+                <ZerobusStep number={1} title="Choose auth mode" done={step1Done}>
+                  <div className="flex gap-3 text-[12px]">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="zb-auth-mode"
+                        checked={zerobusAuthMode === "oauth"}
+                        onChange={() => setZerobusAuthMode("oauth")}
+                      />
+                      <span>OAuth (service principal)</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="zb-auth-mode"
+                        checked={zerobusAuthMode === "pat"}
+                        onChange={() => setZerobusAuthMode("pat")}
+                      />
+                      <span>PAT (logged-in user)</span>
+                    </label>
+                  </div>
+                  {zerobusAuthMode === "pat" && (
+                    <p className="text-[11px] text-amber-600">
+                      Zerobus' server may still reject PATs that lack the right
+                      scopes. If you get{" "}
+                      <code className="bg-background px-1 rounded">invalid_client</code>{" "}
+                      with PAT mode, switch back to OAuth and supply an SP.
+                    </p>
+                  )}
+                </ZerobusStep>
+
+                {/* Step 2 — Server endpoint (with derive helper). */}
+                <ZerobusStep number={2} title="Set the Zerobus server endpoint" done={step2Done}>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-derive-url">
+                      Don't know it? Paste your workspace URL and let us derive it:
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="zb-derive-url"
+                        placeholder="https://dbc-….cloud.databricks.com/?o=… (or Azure / GCP equivalent)"
+                        value={zerobusDeriveUrl}
+                        onChange={(e) => setZerobusDeriveUrl(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); deriveZerobusEndpoint(); } }}
+                        className="flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={deriveZerobusEndpoint}
+                        disabled={zerobusDeriving || !zerobusDeriveUrl.trim()}
+                      >
+                        {zerobusDeriving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1" />}
+                        {zerobusDeriving ? "Resolving..." : "Derive endpoint"}
+                      </Button>
+                    </div>
+                    {zerobusDeriveError && (
+                      <p className="text-[11px] text-amber-600">{zerobusDeriveError}</p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      AWS workspaces only expose the workspace ID after login —
+                      open any page in the workspace and copy the URL with
+                      <code className="bg-background px-1 rounded mx-0.5">?o=…</code>
+                      appended.
+                    </p>
+                  </div>
                   <div className="space-y-1">
                     <label className="text-[11px] text-muted-foreground" htmlFor="zb-endpoint">
                       Server endpoint
@@ -1931,78 +2099,114 @@ export default function DemoDataPage() {
                       onChange={(e) => setZerobusServerEndpoint(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-id">
-                      Client ID
-                    </label>
-                    <Input
-                      id="zb-client-id"
-                      placeholder="service-principal app id"
-                      value={zerobusClientId}
-                      onChange={(e) => setZerobusClientId(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-secret">
-                      Client secret
-                    </label>
-                    <Input
-                      id="zb-client-secret"
-                      type="password"
-                      placeholder="service-principal secret"
-                      value={zerobusClientSecret}
-                      onChange={(e) => setZerobusClientSecret(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </div>
-                </div>
+                </ZerobusStep>
 
-                {/* Schema managed-storage prerequisite (one-time, admin).
-                    Per the Zerobus docs, the connector only writes to
-                    managed Delta tables that are NOT in default storage —
-                    so the destination schema must have its own managed
-                    location configured before the first run. We can't do
-                    this from the form (workspace-admin SQL only); we
-                    just point at the runbook. */}
-                <div className="text-[11px] text-muted-foreground border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-sm space-y-1">
-                  <div>
-                    <strong className="text-amber-700">One-time setup (Premium/Enterprise tier):</strong> Zerobus only writes to managed Delta tables in non-default storage.
-                    As a workspace admin, run once on the destination schema:
-                  </div>
-                  <pre className="text-[10px] bg-background border border-border rounded p-1.5 overflow-x-auto">{`ALTER SCHEMA \`<catalog>\`.\`<schema>\` SET MANAGED LOCATION 's3://your-bucket/path';`}</pre>
-                  <div>Without this, the run fails with <code className="bg-background px-1 rounded">Error Code: 4024 — Unsupported table kind</code>.</div>
-                  <div className="border-t border-amber-300/50 pt-1 mt-1">
-                    <strong className="text-amber-700">On Databricks Free Edition?</strong> You can&apos;t run <code className="bg-background px-1 rounded">ALTER SCHEMA … SET MANAGED LOCATION</code> there (no External Locations / paid SKU). Either switch the destination to <strong>Direct to table</strong> (works on any tier), or copy the snippet from the <strong>Try with Zerobus</strong> panel below and run it from a Premium workspace.
-                  </div>
-                </div>
+                {/* Step 3 — Credentials. Shape depends on auth mode:
+                    OAuth wants client_id + client_secret; PAT auto-lifts
+                    the token off the logged-in WorkspaceClient. */}
+                <ZerobusStep
+                  number={3}
+                  title={zerobusAuthMode === "oauth" ? "Service principal credentials" : "PAT (auto-lifted)"}
+                  done={step3Done}
+                >
+                  {zerobusAuthMode === "oauth" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-id">
+                          Client ID
+                        </label>
+                        <Input
+                          id="zb-client-id"
+                          placeholder="service-principal app id"
+                          value={zerobusClientId}
+                          onChange={(e) => setZerobusClientId(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-secret">
+                          Client secret
+                        </label>
+                        <Input
+                          id="zb-client-secret"
+                          type="password"
+                          placeholder="service-principal secret"
+                          value={zerobusClientSecret}
+                          onChange={(e) => setZerobusClientSecret(e.target.value)}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      The Zerobus SDK call uses your logged-in PAT directly via a
+                      custom <code className="bg-background px-1 rounded">HeadersProvider</code>.
+                      No fields to fill in here.
+                    </p>
+                  )}
+                </ZerobusStep>
 
-                {/* Verify-credentials affordance — short-circuits the
-                    "start a streaming run, read the job log, find the
-                    auth error" loop with a one-click OAuth check. */}
-                <div className="flex items-center gap-2 pt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={verifyZerobusCredentials}
-                    disabled={zerobusVerifying}
+                {/* Step 4 — Verify (OAuth only; PAT has no equivalent). */}
+                {showVerifyStep && (
+                  <ZerobusStep
+                    number={4}
+                    title="Verify credentials"
+                    done={step4Done}
+                    optional
                   >
-                    {zerobusVerifying
-                      ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
-                    {zerobusVerifying ? "Verifying..." : "Verify credentials"}
-                  </Button>
-                  <span className="text-[10px] text-muted-foreground">
-                    Tests the OAuth client_credentials exchange — same call the SDK does internally.
-                  </span>
-                </div>
-                {zerobusVerifyResult && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={verifyZerobusCredentials}
+                        disabled={zerobusVerifying}
+                      >
+                        {zerobusVerifying
+                          ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                        {zerobusVerifying ? "Verifying..." : "Verify credentials"}
+                      </Button>
+                      <span className="text-[10px] text-muted-foreground">
+                        Tests the OAuth client_credentials exchange — same call the SDK does internally.
+                      </span>
+                    </div>
+                  </ZerobusStep>
+                )}
+
+                {/* Step (4 or 5) — Optional catalog storage location. */}
+                <ZerobusStep
+                  number={storageStepNumber}
+                  title="Catalog storage location"
+                  done={!!zerobusCatalogLocation.trim()}
+                  optional
+                >
+                  <Input
+                    id="zb-catalog-loc"
+                    placeholder="abfss://container@account.dfs.core.windows.net/path  ·  s3://bucket/path  ·  gs://bucket/path"
+                    value={zerobusCatalogLocation}
+                    onChange={(e) => setZerobusCatalogLocation(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Required only when CREATE CATALOG fails with{" "}
+                    <code className="bg-background px-1 rounded">INVALID_STATE</code> —
+                    workspaces without a metastore default storage root need an explicit{" "}
+                    <code className="bg-background px-1 rounded">MANAGED LOCATION</code>.
+                    A UC external location / storage credential must already cover the path.
+                    Ignored when the catalog already exists.
+                  </p>
+                </ZerobusStep>
+
+                {/* Verify result — kept outside the Step 4 button block
+                    so a long failure hint doesn't push the next step out
+                    of view, but rendered just below it visually. */}
+                {showVerifyStep && zerobusVerifyResult && (
                   zerobusVerifyResult.ok ? (
-                    <div className="text-[11px] text-green-600 flex items-center gap-1">
+                    <div className="text-[11px] text-green-600 flex items-center gap-1 ml-9">
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       Credentials valid — Databricks issued a token successfully.
                     </div>
                   ) : (
-                    <div className="text-[11px] text-amber-600 space-y-1 border border-amber-200 rounded-md px-2 py-1.5 bg-amber-50/50">
+                    <div className="text-[11px] text-amber-600 space-y-1 border border-amber-200 rounded-md px-2 py-1.5 bg-amber-50/50 ml-9">
                       <div className="flex items-start gap-1">
                         <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                         <div>
@@ -2019,7 +2223,8 @@ export default function DemoDataPage() {
                   )
                 )}
               </div>
-            )}
+              );
+            })()}
 
             {/* Device profile */}
             <div className="space-y-1.5">
@@ -2312,33 +2517,53 @@ export default function DemoDataPage() {
                       streamDestination === "volume_bronze"
                       && rowsInserted === 0
                       && filesWritten > 0;
+                    // Per-tick error bubbled up from the runner's
+                    // try/except so the UI doesn't silently report
+                    // "Completed — 0 events" when every tick threw.
+                    // The user previously had to comb the API server
+                    // logs to see the real cause.
+                    const tickErrors = Number(streamingJob.progress.tick_errors ?? 0);
+                    const lastError = (streamingJob.progress.last_error ?? "") as string;
                     return (
-                      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
-                        <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{events}</span></div>
-                        <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{filesWritten}</span></div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-muted-foreground">Rows inserted:</span>
-                          <span className="font-mono">{rowsInserted}</span>
-                          {showRowsHint && (
-                            <Info
-                              className="h-3 w-3 text-muted-foreground cursor-help"
-                              aria-label="Rows-inserted explainer"
-                              title="Rows are inserted by the bronze streaming table's refresh job, not by this emitter. They'll appear after the next refresh cycle (configured above)."
-                            />
-                          )}
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+                          <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{events}</span></div>
+                          <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{filesWritten}</span></div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-muted-foreground">Rows inserted:</span>
+                            <span className="font-mono">{rowsInserted}</span>
+                            {showRowsHint && (
+                              <Info
+                                className="h-3 w-3 text-muted-foreground cursor-help"
+                                aria-label="Rows-inserted explainer"
+                                title="Rows are inserted by the bronze streaming table's refresh job, not by this emitter. They'll appear after the next refresh cycle (configured above)."
+                              />
+                            )}
+                          </div>
+                          <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
+                          <div><span className="text-muted-foreground">Events/s:</span> <span className="font-mono">{eventsPerSec}</span></div>
+                          <div>
+                            <span className="text-muted-foreground">Elapsed:</span>{" "}
+                            <span className="font-mono">{elapsed}s</span>
+                            {remaining !== null && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">
+                                · {remaining}s left
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
-                        <div><span className="text-muted-foreground">Events/s:</span> <span className="font-mono">{eventsPerSec}</span></div>
-                        <div>
-                          <span className="text-muted-foreground">Elapsed:</span>{" "}
-                          <span className="font-mono">{elapsed}s</span>
-                          {remaining !== null && (
-                            <span className="ml-1 text-[10px] text-muted-foreground">
-                              · {remaining}s left
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                        {tickErrors > 0 && lastError && (
+                          <div className="mt-2 border border-amber-300 rounded-md px-2 py-1.5 bg-amber-50/50 text-[11px] space-y-0.5">
+                            <div className="text-amber-700">
+                              <strong>{tickErrors}</strong> tick{tickErrors === 1 ? "" : "s"} failed.
+                              Last error:
+                            </div>
+                            <code className="block font-mono text-amber-900 whitespace-pre-wrap break-words">
+                              {lastError}
+                            </code>
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
 

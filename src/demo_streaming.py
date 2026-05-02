@@ -982,6 +982,11 @@ def run_streaming_emission(
             # `invalid_authorization_details` 401 loop for users who'd
             # otherwise have to GRANT manually after every table create.
             service_principal_id=(config.get("zerobus_client_id") or "").strip() or None,
+            # Optional storage location for new catalogs. Threaded
+            # through the form for workspaces whose metastore has no
+            # default storage root — without it, CREATE CATALOG fails
+            # with INVALID_STATE.
+            catalog_storage_location=(config.get("zerobus_catalog_location") or "").strip(),
         )
         avail, reason = _zb_is_available()
         if not avail:
@@ -990,17 +995,24 @@ def run_streaming_emission(
             # warehouse work happens. The reason text is the same one
             # the availability endpoint returns.
             raise NotImplementedError(reason or "Zerobus runtime not available")
-        # Validate per-request creds — duplicates the Pydantic
-        # validator on StreamingEmissionRequest, but the runner is
-        # also reachable from places that bypass the model (e.g.
-        # programmatic config dicts), so re-check defensively.
-        missing = [
-            k
-            for k in ("zerobus_server_endpoint", "zerobus_client_id", "zerobus_client_secret")
-            if not (config.get(k) or "").strip()
-        ]
+        # Validate per-request creds — duplicates the Pydantic validator
+        # on StreamingEmissionRequest, but the runner is also reachable
+        # from places that bypass the model (e.g. programmatic config
+        # dicts), so re-check defensively. Required field set depends
+        # on the auth mode:
+        #   - oauth: server_endpoint + client_id + client_secret
+        #   - pat:   server_endpoint only (PAT comes off the
+        #            WorkspaceClient at stream-open time)
+        zb_auth_mode = (config.get("zerobus_auth_mode") or "oauth").lower()
+        required_keys = ["zerobus_server_endpoint"]
+        if zb_auth_mode == "oauth":
+            required_keys += ["zerobus_client_id", "zerobus_client_secret"]
+        missing = [k for k in required_keys if not (config.get(k) or "").strip()]
         if missing:
-            raise ValueError(f"destination='zerobus' requires {', '.join(missing)} in the config")
+            raise ValueError(
+                f"destination='zerobus' (auth_mode={zb_auth_mode!r}) requires "
+                f"{', '.join(missing)} in the config"
+            )
         logger.info(f"Zerobus mode: appending to {direct_table_fqn}")
     else:
         volume_path = _ensure_events_volume(
@@ -1017,18 +1029,54 @@ def run_streaming_emission(
     # as a long-lived gRPC connection: opening per-batch would defeat
     # its purpose. Closed in the finally below so an interrupt /
     # exception never leaks the stream.
-    zerobus_stream = None
+    # Use a mutable one-element list so the inner loop can hot-swap
+    # the stream when the server tears it down with `Stream is closed:
+    # Internal`. Without this, the first successful batch lands and
+    # subsequent ticks all fail because nobody reopens the gRPC stream.
+    # The SDK's built-in `recovery=True` is supposed to handle this but
+    # doesn't fire reliably for the Internal status, so we layer an
+    # explicit reopen on top.
+    zb_holder: list = [None]
+    reopen_zerobus: object = None
     if destination == "zerobus":
         from src.demo_streaming_zerobus_runtime import open_zerobus_stream
 
         workspace_url = (getattr(getattr(client, "config", None), "host", "") or "").rstrip("/")
-        zerobus_stream = open_zerobus_stream(
-            workspace_url=workspace_url,
-            server_endpoint=str(config["zerobus_server_endpoint"]).rstrip("/"),
-            client_id=str(config["zerobus_client_id"]),
-            client_secret=str(config["zerobus_client_secret"]),
-            table_fqn=direct_table_fqn or "",
-        )
+        # Two auth modes; default "oauth" preserves the legacy contract
+        # for callers that don't set the field. When "pat", we lift the
+        # token off the logged-in WorkspaceClient — same token the rest
+        # of the app uses for warehouse / UC calls — so no extra form
+        # field is needed. Falls back to OAuth if the client has no PAT
+        # to surface (e.g. SDK auth via env vars without a token).
+        auth_mode = (config.get("zerobus_auth_mode") or "oauth").lower()
+        pat: str | None = None
+        if auth_mode == "pat":
+            pat = (getattr(getattr(client, "config", None), "token", "") or "").strip() or None
+            if not pat:
+                raise ValueError(
+                    "zerobus_auth_mode='pat' but the logged-in client has no PAT to lift "
+                    "(client.config.token is empty). Log in with a PAT or switch back to "
+                    "auth_mode='oauth' and supply zerobus_client_id/zerobus_client_secret."
+                )
+
+        # Bind the open args once so the inner loop can call into
+        # this without us re-threading every parameter through.
+        _open_args = {
+            "workspace_url": workspace_url,
+            "server_endpoint": str(config["zerobus_server_endpoint"]).rstrip("/"),
+            "client_id": str(config.get("zerobus_client_id") or ""),
+            "client_secret": str(config.get("zerobus_client_secret") or ""),
+            "table_fqn": direct_table_fqn or "",
+            "pat": pat,
+        }
+
+        def _open_and_track() -> object:
+            new_stream = open_zerobus_stream(**_open_args)
+            zb_holder[0] = new_stream
+            return new_stream
+
+        reopen_zerobus = _open_and_track
+        _open_and_track()  # initial open
 
     try:
         return _run_emission_loop(
@@ -1041,7 +1089,8 @@ def run_streaming_emission(
             volume=volume,
             volume_path=volume_path,
             direct_table_fqn=direct_table_fqn,
-            zerobus_stream=zerobus_stream,
+            zerobus_stream=zb_holder[0],
+            zerobus_reopen=reopen_zerobus,
             state=state,
             events_per_batch=events_per_batch,
             interval_seconds=interval_seconds,
@@ -1054,12 +1103,15 @@ def run_streaming_emission(
         )
     finally:
         # Close the Zerobus stream even on exceptions / KeyboardInterrupt.
+        # `zb_holder[0]` is whichever stream the loop last swapped in —
+        # closing the *current* stream rather than the originally-opened
+        # one prevents leaking a hot-swapped recreation.
         # close_zerobus_stream swallows its own errors so this finally
         # never raises secondarily.
-        if zerobus_stream is not None:
+        if zb_holder[0] is not None:
             from src.demo_streaming_zerobus_runtime import close_zerobus_stream
 
-            close_zerobus_stream(zerobus_stream)
+            close_zerobus_stream(zb_holder[0])
 
 
 def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored from old in-line loop)
@@ -1074,6 +1126,7 @@ def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored fr
     volume_path,
     direct_table_fqn,
     zerobus_stream,
+    zerobus_reopen=None,
     state,
     events_per_batch,
     interval_seconds,
@@ -1095,6 +1148,22 @@ def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored fr
     last_path: str | None = None
     stopped_early = False
     bronze_info: dict | None = None
+    # Track the last per-tick exception so the job summary surfaces it
+    # in the UI. Without this the runner reports "Completed — 0 events"
+    # for a job where every tick failed silently, which is impossible
+    # to diagnose without combing the API server logs.
+    last_error: str | None = None
+    tick_errors: int = 0
+    # Counts how many times we hot-swapped the Zerobus stream after the
+    # server tore it down with `Stream is closed: Internal`. Surfaced in
+    # progress so an operator watching repeated reopens knows there's a
+    # server-side instability worth investigating, even when subsequent
+    # ticks succeed against the recreated stream.
+    stream_reopens: int = 0
+    # Local rebinding so the loop can swap in a fresh stream after a
+    # close; we update both the local var and the caller's holder via
+    # `zerobus_reopen()` so the outer finally closes the current one.
+    current_zerobus_stream = zerobus_stream
 
     while True:
         if stopped_cb():
@@ -1121,19 +1190,64 @@ def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored fr
             elif destination == "zerobus":
                 # Same row-count semantics as direct_table — Zerobus
                 # ingests one record at a time over a single long-lived
-                # stream. The stream was opened once before this loop
-                # and is closed in the outer `finally`, so a per-batch
-                # exception only loses the current batch.
-                from src.demo_streaming_zerobus_runtime import ingest_batch_zerobus
+                # stream. The stream is hot-swapped via `zerobus_reopen`
+                # in the except block when the server tears it down,
+                # so a per-batch exception only loses the current batch
+                # and the next tick gets a fresh stream.
+                #
+                # Encode TIMESTAMP/DATE fields to int64/int32 per the
+                # Zerobus type-mapping rules — the shared generators
+                # emit ISO strings (which work for volume / direct_table
+                # paths) and the encoder rewrites them at the SDK
+                # boundary. Without this the server rejects the JSON
+                # with `invalid digit found in string` at the timestamp.
+                from src.demo_streaming_zerobus_runtime import (
+                    encode_record_for_zerobus,
+                    ingest_batch_zerobus,
+                )
 
-                rows_inserted += ingest_batch_zerobus(zerobus_stream, batch)
+                profile_columns = DEVICE_PROFILES[profile]["columns"]
+                encoded_batch = [encode_record_for_zerobus(r, profile_columns) for r in batch]
+                rows_inserted += ingest_batch_zerobus(current_zerobus_stream, encoded_batch)
                 last_path = direct_table_fqn
             else:
                 last_path = write_batch_to_volume(client, volume_path, batch, ticks)
                 files_written += 1
             events_emitted += events_per_batch
         except Exception as e:
-            logger.warning(f"Streaming tick failed (continuing): {e}")
+            # Surface the error in the job summary as well as the log.
+            # The UI's job panel reads progress["last_error"], so the
+            # operator sees what's actually wrong instead of "Completed
+            # — 0 events" with the real cause buried in API server logs.
+            last_error = f"{type(e).__name__}: {e}"
+            tick_errors += 1
+            logger.warning(f"Streaming tick failed (continuing): {last_error}")
+            # Zerobus-specific: when the server tears down the gRPC
+            # stream with `Stream is closed: Internal` (or any close
+            # signature) the *next* tick would also fail unless we
+            # reopen. The SDK's `recovery=True` is supposed to handle
+            # this but doesn't fire reliably for the Internal status
+            # we observe in practice. Hot-swap a fresh stream so
+            # subsequent ticks get a working one.
+            if (
+                destination == "zerobus"
+                and zerobus_reopen is not None
+                and ("Stream is closed" in last_error or "Stream closed" in last_error)
+            ):
+                try:
+                    current_zerobus_stream = zerobus_reopen()
+                    stream_reopens += 1
+                    logger.info(
+                        f"Zerobus stream reopened after close ({stream_reopens} reopen(s) so far)"
+                    )
+                except Exception as reopen_err:
+                    # If reopening also fails (e.g. auth genuinely
+                    # rejected on the second handshake), the next tick
+                    # will fail again with the same close error and
+                    # we'll keep retrying. Surfacing both errors in
+                    # last_error helps the operator see the cascade.
+                    last_error = f"{last_error}; reopen also failed: {reopen_err}"
+                    logger.warning(f"Zerobus stream reopen failed: {reopen_err}")
 
         # Create the Bronze STREAMING TABLE after the first JSON batch has
         # landed. read_files() needs at least one file present to infer the
@@ -1163,6 +1277,9 @@ def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored fr
                 "current_batch_path": last_path,
                 "elapsed_seconds": round(elapsed, 2),
                 "ticks": ticks,
+                "tick_errors": tick_errors,
+                "last_error": last_error,
+                "stream_reopens": stream_reopens,
                 "stopped": False,
             }
         )
@@ -1192,6 +1309,9 @@ def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored fr
         "files_written": files_written,
         "rows_inserted": rows_inserted,
         "ticks": ticks,
+        "tick_errors": tick_errors,
+        "last_error": last_error,
+        "stream_reopens": stream_reopens,
         "duration_seconds": duration,
         "stopped": stopped_early,
         "bronze_status": bronze_info["status"] if bronze_info else None,

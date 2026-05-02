@@ -199,38 +199,62 @@ class StreamingEmissionRequest(BaseModel):
         default=None,
         description="Zerobus gRPC endpoint URL. Required when destination='zerobus'.",
     )
-    # Service-principal credentials. Zerobus uses OAuth client-credentials
-    # flow rather than the workspace PAT/SP the rest of the app uses,
-    # which is why we collect them per-request.
+    # Optional MANAGED LOCATION for the catalog when the runner has to
+    # create it. Required on metastores with no default storage root —
+    # CREATE CATALOG IF NOT EXISTS fails there with INVALID_STATE
+    # unless a location is supplied. Cloud-agnostic: s3://, abfss://,
+    # gs:// all work as long as a UC external location / storage
+    # credential covers the path.
+    zerobus_catalog_location: str | None = Field(
+        default=None,
+        description="Optional MANAGED LOCATION for new catalogs (e.g. abfss://… or s3://…). Required only on metastores without a default storage root.",
+    )
+    # Auth mode for the Zerobus SDK call. "oauth" (default) uses the SP
+    # client_id/client_secret below. "pat" lifts the token off the
+    # logged-in user's WorkspaceClient and passes it via a custom
+    # HeadersProvider — no SP fields needed. Caveat: Zerobus' server
+    # may still reject PATs that lack the right scopes; this is a
+    # convenience for users who already have a working PAT, not a
+    # blanket replacement for the SP path.
+    zerobus_auth_mode: Literal["oauth", "pat"] = Field(
+        default="oauth",
+        description="Zerobus auth mode. 'oauth' (default) uses the SP creds below; 'pat' uses the logged-in user's PAT.",
+    )
+    # Service-principal credentials. Required only when zerobus_auth_mode='oauth'.
+    # Left blank in 'pat' mode — the runner ignores them.
     zerobus_client_id: str | None = Field(
         default=None,
-        description="Service-principal client_id for Zerobus OAuth. Required when destination='zerobus'.",
+        description="Service-principal client_id for Zerobus OAuth. Required when destination='zerobus' and auth_mode='oauth'.",
     )
     zerobus_client_secret: str | None = Field(
         default=None,
-        description="Service-principal client_secret for Zerobus OAuth. Required when destination='zerobus'.",
+        description="Service-principal client_secret for Zerobus OAuth. Required when destination='zerobus' and auth_mode='oauth'.",
     )
 
     @model_validator(mode="after")
     def _zerobus_requires_credentials(self) -> "StreamingEmissionRequest":
-        """When destination='zerobus', all three Zerobus creds must be set.
+        """When destination='zerobus', the required field set depends
+        on auth mode:
+          - oauth: server_endpoint + client_id + client_secret
+          - pat:   server_endpoint only (PAT comes from the logged-in
+                   client at runtime; not collected via the form)
 
-        Validating here rather than in the runner means the form gets a
-        clean 422 with field paths instead of a 500 mid-stream — much
-        nicer feedback loop than waiting for the runner to barf.
+        Validating here rather than in the runner means the form gets
+        a clean 422 with field paths instead of a 500 mid-stream.
         """
-        if self.destination == "zerobus":
-            missing = [
-                name
-                for name, val in (
-                    ("zerobus_server_endpoint", self.zerobus_server_endpoint),
-                    ("zerobus_client_id", self.zerobus_client_id),
-                    ("zerobus_client_secret", self.zerobus_client_secret),
-                )
-                if not (val or "").strip()
+        if self.destination != "zerobus":
+            return self
+        required = [("zerobus_server_endpoint", self.zerobus_server_endpoint)]
+        if self.zerobus_auth_mode == "oauth":
+            required += [
+                ("zerobus_client_id", self.zerobus_client_id),
+                ("zerobus_client_secret", self.zerobus_client_secret),
             ]
-            if missing:
-                raise ValueError(f"destination='zerobus' requires: {', '.join(missing)}")
+        missing = [name for name, val in required if not (val or "").strip()]
+        if missing:
+            raise ValueError(
+                f"destination='zerobus' (auth_mode={self.zerobus_auth_mode!r}) requires: {', '.join(missing)}"
+            )
         return self
 
 

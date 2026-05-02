@@ -283,6 +283,12 @@ async def start_streaming_emission(
         config["zerobus_client_id"] = req.zerobus_client_id
     if req.zerobus_client_secret:
         config["zerobus_client_secret"] = req.zerobus_client_secret
+    if req.zerobus_catalog_location:
+        config["zerobus_catalog_location"] = req.zerobus_catalog_location
+    # Auth-mode is always copied (even when "oauth" — the runner's
+    # default — so the runner sees an explicit value rather than
+    # inferring from missing keys).
+    config["zerobus_auth_mode"] = req.zerobus_auth_mode
     job_id = await jm.submit_job("streaming-emit", config, client)
     return {"job_id": job_id, "status": "queued", "message": "Streaming emission submitted"}
 

@@ -162,11 +162,18 @@ function nonConvertibleReason(row: TableRow, target: TargetFormat): string | nul
 }
 
 // Decide which Tailwind colour pair to give a status badge so converted
-// rows read green, failed read red, skipped read neutral.
+// rows read green, failed read red, skipped read neutral. Always paired
+// with `variant="outline"` on the <Badge>: the default badge variant
+// applies `bg-primary text-primary-foreground` (the app's brand red),
+// which competes with these utility classes via `tailwind-merge` and
+// renders the wrong colour. The outline variant has no background, so
+// the classes below win cleanly.
 function statusBadgeClass(s: ResultRow["status"]): string {
-  if (s === "converted") return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
-  if (s === "failed") return "bg-red-500/15 text-red-300 border-red-500/30";
-  return "bg-gray-500/15 text-gray-300 border-gray-500/30";
+  if (s === "converted")
+    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40";
+  if (s === "failed")
+    return "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40";
+  return "bg-gray-500/15 text-gray-700 dark:text-gray-300 border-gray-500/40";
 }
 
 // Pretty-print a duration_ms — the audit table stores raw milliseconds,
@@ -775,13 +782,13 @@ export default function ConvertToDeltaPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2 text-sm">
-              <Badge className={statusBadgeClass("converted")}>
+              <Badge variant="outline" className={statusBadgeClass("converted")}>
                 {summary.converted} converted
               </Badge>
-              <Badge className={statusBadgeClass("failed")}>
+              <Badge variant="outline" className={statusBadgeClass("failed")}>
                 {summary.failed} failed
               </Badge>
-              <Badge className={statusBadgeClass("skipped")}>
+              <Badge variant="outline" className={statusBadgeClass("skipped")}>
                 {summary.skipped} skipped
               </Badge>
             </div>
@@ -810,7 +817,7 @@ export default function ConvertToDeltaPage() {
                         {r.strategy_used || "—"}
                       </td>
                       <td className="p-2">
-                        <Badge className={statusBadgeClass(r.status)}>
+                        <Badge variant="outline" className={statusBadgeClass(r.status)}>
                           {r.status}
                         </Badge>
                       </td>
@@ -894,7 +901,7 @@ export default function ConvertToDeltaPage() {
                           {r.strategy_used || "—"}
                         </td>
                         <td className="p-2">
-                          <Badge className={statusBadgeClass(r.status)}>{r.status}</Badge>
+                          <Badge variant="outline" className={statusBadgeClass(r.status)}>{r.status}</Badge>
                         </td>
                         <td className="p-2">{formatDuration(r.duration_ms)}</td>
                         <td className="p-2 text-xs text-gray-400">{r.user_name || "—"}</td>

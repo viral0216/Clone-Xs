@@ -123,10 +123,44 @@ class TestDeriveEndpoint:
         assert r.server_endpoint is None
         assert r.cloud == "aws"
 
-    def test_azure_url_returns_workspace_id_but_region_unknown(self):
-        # Azure URLs carry the wsid in the hostname but DNS doesn't
-        # leak the region — caller has to provide it.
-        r = derive_zerobus_endpoint("https://adb-1134642475632994.14.azuredatabricks.net")
+    def test_azure_url_resolves_region_via_dns_chain(self):
+        # Azure workspaces alias through `<region>.azuredatabricks.net`
+        # (e.g. uksouth.azuredatabricks.net) before terminating at
+        # `ingress.<region>.azuredatabricks.net`. The resolver walks
+        # this chain to extract the region, same shape as the AWS path.
+        with patch(
+            "src.zerobus_endpoint_resolver.socket.gethostbyname_ex",
+            return_value=(
+                "ingress.uksouth.azuredatabricks.net",
+                [
+                    "adb-1134642475632994.14.azuredatabricks.net",
+                    "uksouth.azuredatabricks.net",
+                ],
+                ["4.158.9.160"],
+            ),
+        ):
+            r = derive_zerobus_endpoint("https://adb-1134642475632994.14.azuredatabricks.net")
+        assert r.error is None
+        assert r.cloud == "azure"
+        assert r.workspace_id == "1134642475632994"
+        assert r.region == "uksouth"
+        assert r.server_endpoint == "https://1134642475632994.zerobus.uksouth.azuredatabricks.net"
+
+    def test_azure_url_falls_back_when_dns_doesnt_expose_region(self):
+        # Defensive: if a future Azure DNS topology stops aliasing
+        # through `<region>.azuredatabricks.net` (or the resolver runs
+        # somewhere DNS is sandboxed), the helper still returns the
+        # workspace_id and a structured error pointing the user at
+        # the Azure Portal.
+        with patch(
+            "src.zerobus_endpoint_resolver.socket.gethostbyname_ex",
+            return_value=(
+                "some-private-host.internal",
+                [],
+                ["10.0.0.1"],
+            ),
+        ):
+            r = derive_zerobus_endpoint("https://adb-1134642475632994.14.azuredatabricks.net")
         assert r.cloud == "azure"
         assert r.workspace_id == "1134642475632994"
         assert r.region is None

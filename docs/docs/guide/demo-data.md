@@ -654,7 +654,7 @@ curl -X POST http://localhost:8000/api/generate/demo-data/streaming \
 | `volume` | One JSON file per batch in `/Volumes/<cat>/<sch>/<vol>/<profile>/` | UC volume create permission |
 | `volume_bronze` | Same files plus an auto-created `CREATE OR REFRESH STREAMING TABLE` over `read_files()` | DBSQL Serverless (for the streaming table) |
 | `direct_table` | `INSERT INTO <bronze_table> VALUES …` per batch — no Volume, no Auto Loader | Any tier (works on Free Edition) |
-| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table. **No macOS wheels** — see README for the snippet-panel workaround. |
+| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table + the destination schema must have a **managed storage location** configured (Zerobus rejects tables in default storage — see "Setting up Zerobus credentials" below). **No macOS wheels** — see README for the snippet-panel workaround. |
 
 When the Zerobus SDK is absent the destination radio renders disabled
 with a tooltip explaining why; the **Try with Zerobus** code snippet
@@ -665,7 +665,40 @@ where the SDK is installable.
 ### Setting up Zerobus credentials
 
 Picking the **Zerobus** destination reveals three credential inputs
-(server endpoint, Client ID, Client secret). Here's how to gather each.
+(server endpoint, Client ID, Client secret). Here's how to gather each
+plus the one-time workspace setup the destination needs.
+
+#### 0. One-time: configure managed storage on the destination schema
+
+Per the [Zerobus connector limitations](https://docs.databricks.com/aws/en/ingestion/zerobus-limits),
+the connector **only writes to managed Delta tables that are NOT in
+default storage**. So the destination schema must have its own managed
+storage location set before any Zerobus run, otherwise the table
+ends up in metastore default storage and the SDK rejects it with:
+
+```
+Error Code: 4024 — Unsupported table kind. Tables created in default storage are not supported.
+```
+
+Run this **once per destination schema** as a workspace admin (with an
+existing UC External Location URL the workspace can write to):
+
+```sql
+ALTER SCHEMA `machine`.`iot`
+  SET MANAGED LOCATION 's3://your-bucket/clxs-zerobus';
+```
+
+After this, every `CREATE TABLE` in `machine.iot` lands in the
+configured location and Zerobus accepts it. The Clone-Xs runner does
+the rest of the setup (catalog, schema, table, GRANTs) at run time.
+
+> **Databricks Free Edition is not supported.** Free Edition workspaces
+> can't create UC External Locations / Storage Credentials, so
+> `ALTER SCHEMA … SET MANAGED LOCATION` won't work — Zerobus's "no
+> default storage" requirement can't be met. Use the **Direct to
+> table** destination instead (works on any tier), or copy the rendered
+> Python from the **Try with Zerobus** snippet panel and run it from a
+> Premium / Enterprise workspace.
 
 #### 1. Server endpoint
 
@@ -702,18 +735,24 @@ rest of this app. Create a dedicated service principal once per workspace:
 
 #### 3. Grant the SP table-level permissions
 
-Zerobus appends to a regular Delta table — the SP needs Unity Catalog
-grants to write to it. Run this in Databricks SQL, substituting your
-catalog / schema / table:
+The Clone-Xs runner **auto-grants** the three privileges Zerobus needs
+right after creating the table:
 
 ```sql
-GRANT USE_CATALOG ON CATALOG `machine` TO `<application-id>`;
-GRANT USE_SCHEMA  ON SCHEMA  `machine`.`iot` TO `<application-id>`;
-GRANT MODIFY, SELECT ON TABLE `machine`.`iot`.`bronze_generic_sensor` TO `<application-id>`;
+GRANT USE CATALOG ON CATALOG `<cat>`        TO `<application-id>`;
+GRANT USE SCHEMA  ON SCHEMA  `<cat>.<sch>`  TO `<application-id>`;
+GRANT MODIFY, SELECT ON TABLE `<cat>.<sch>.<table>` TO `<application-id>`;
 ```
 
-Backticks around the principal are required because of the dashes in
-the UUID.
+You only need to run them yourself if the user account starting the
+streaming run **isn't** an admin / table owner — in that case the
+auto-GRANT step logs a warning and you'll need to run the three
+statements above as someone who has manage privileges. Backticks
+around the principal are required because of the dashes in the UUID.
+
+> The Databricks docs note: *"You must grant `MODIFY` and `SELECT`
+> privileges on the table, even for tables with `ALL PRIVILEGES`
+> granted."* — [Zerobus overview](https://docs.databricks.com/aws/en/ingestion/zerobus-overview)
 
 #### 4. Putting it together
 

@@ -95,38 +95,30 @@ def ensure_zerobus_table(
     schema: str,
     profile: str,
     table_name: str,
-    volume: str = "events_volume",
-    location: str | None = None,
     service_principal_id: str | None = None,
 ) -> str:
-    """Create catalog + schema + (optional) Volume + Delta table for Zerobus.
+    """Create catalog + schema + managed Delta table for Zerobus.
 
-    Zerobus rejects tables in metastore default storage
-    (``Unsupported table kind. Tables created in default storage are
-    not supported. Error Code: 4024``). The caller has three ways to
-    avoid this:
+    Per the Zerobus connector docs, only **managed** Delta tables
+    in non-default storage are supported:
 
-      A. Pass ``location='s3://bucket/path'`` (or ``abfss://``,
-         ``gs://``) — we create the table as EXTERNAL at that path.
-         **Recommended** when the workspace's catalog/schema have no
-         configured managed storage.
-      B. Configure managed storage on the schema/catalog before the
-         first run — leave ``location=None`` and the table lands in
-         the schema's managed location, which Zerobus accepts.
-      C. Leave ``location=None`` on a workspace whose metastore has
-         no managed storage at all — table lands in default storage
-         and Zerobus rejects it. The runner then surfaces the
-         underlying error (``Error Code: 4024``).
+        > "The connector supports writing only to managed Delta tables."
+        > "Writing to default storage is not supported."
+        — https://docs.databricks.com/aws/en/ingestion/zerobus-limits
 
-    Notes:
-      - ``LOCATION '/Volumes/...'`` is NOT a valid value here despite
-        being a real path — Databricks needs a cloud-storage URI in
-        the LOCATION clause. The previous attempt to use the Volume
-        path failed with INVALID_PARAMETER_VALUE "Missing cloud file
-        system scheme."
-      - ``volume`` is created idempotently regardless of which path
-        you pick — keeps things consistent with the file-based modes
-        and lets you reuse the same Volume for other purposes.
+    To satisfy both, the schema (or catalog) must have its own
+    managed storage location configured. The user does that **once
+    per schema** as a workspace admin, before any Zerobus run:
+
+        ALTER SCHEMA `<cat>`.`<sch>`
+          SET MANAGED LOCATION 's3://<bucket>/<path>';
+
+    Once that's in place, every CREATE TABLE in that schema lands in
+    the configured location and Zerobus accepts it. If the schema
+    has no managed location, the CREATE TABLE here succeeds (table
+    lands in metastore default storage) but the Zerobus
+    ``create_stream`` call later fails with
+    ``Error Code: 4024  Unsupported table kind``.
 
     Returns the fully-qualified table name (no backticks).
     """
@@ -137,33 +129,13 @@ def ensure_zerobus_table(
     fqn = f"`{catalog}`.`{schema}`.`{table_name}`"
     execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`")
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
-    # Volume — same one the file-based modes create, so users see one
-    # consistent storage object regardless of which destination they pick.
-    execute_sql(
-        client,
-        warehouse_id,
-        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}` "
-        f"COMMENT 'Streaming demo events'",
-    )
     comment = DEVICE_PROFILES[profile]["comment"]
-    location_clause = ""
-    if location and (loc := location.strip()):
-        # Defense against caller mistakes: reject `/Volumes/...`
-        # paths (the runtime needs a cloud-storage URI here).
-        if loc.startswith("/Volumes/"):
-            raise ValueError(
-                "Zerobus table LOCATION must be a cloud-storage URI "
-                f"(s3://, abfss://, gs://) — got {loc!r}. "
-                "UC Volume paths are not accepted by CREATE TABLE."
-            )
-        location_clause = f" LOCATION '{loc}/{table_name}'"
     execute_sql(
         client,
         warehouse_id,
         f"CREATE TABLE IF NOT EXISTS {fqn} ({col_ddl}) "
-        f"USING DELTA"
-        f"{location_clause}"
-        f" COMMENT 'Streaming demo events (Zerobus) — {comment}'",
+        f"USING DELTA "
+        f"COMMENT 'Streaming demo events (Zerobus) — {comment}'",
     )
 
     # Auto-grant the service principal everything Zerobus needs.
@@ -185,7 +157,6 @@ def ensure_zerobus_table(
             sp=sp,
             catalog=catalog,
             schema=schema,
-            volume=volume,
             fqn=fqn,
         )
 
@@ -199,29 +170,26 @@ def _grant_zerobus_perms(
     sp: str,
     catalog: str,
     schema: str,
-    volume: str,
     fqn: str,
 ) -> None:
     """Grant the SP every privilege Zerobus needs to ingest.
 
-    The grants required by Zerobus + UC for an external Delta target
-    backed by a Volume are:
-      - USE_CATALOG on the catalog
-      - USE_SCHEMA on the schema
-      - READ_VOLUME, WRITE_VOLUME on the volume
+    Per the official docs (https://docs.databricks.com/aws/en/ingestion/zerobus-overview)
+    the SP needs exactly three grants:
+      - USE CATALOG on the catalog
+      - USE SCHEMA on the schema
       - MODIFY, SELECT on the table
 
+    The doc explicitly notes: "You must grant MODIFY and SELECT
+    privileges on the table, even for tables with ALL PRIVILEGES granted."
+
     We swallow per-grant exceptions so a caller without manage perms
-    on (say) the catalog still gets the schema / volume / table grants
-    applied. Failures are logged so they're discoverable in the job log.
+    on (say) the catalog still gets the schema / table grants applied.
+    Failures are logged so they're discoverable in the job log.
     """
     grants = [
-        ("catalog", f"GRANT USE_CATALOG ON CATALOG `{catalog}` TO `{sp}`"),
-        ("schema", f"GRANT USE_SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{sp}`"),
-        (
-            "volume",
-            f"GRANT READ_VOLUME, WRITE_VOLUME ON VOLUME `{catalog}`.`{schema}`.`{volume}` TO `{sp}`",
-        ),
+        ("catalog", f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp}`"),
+        ("schema", f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{sp}`"),
         ("table", f"GRANT MODIFY, SELECT ON TABLE {fqn} TO `{sp}`"),
     ]
     for level, sql in grants:

@@ -135,7 +135,13 @@ class TestEnsureZerobusTable:
 
         return executed, capture
 
-    def test_managed_table_when_no_location(self):
+    def test_managed_table_only(self):
+        # Per Databricks docs, Zerobus only writes to managed Delta
+        # tables — never external. The runner emits a plain
+        # `CREATE TABLE … USING DELTA` (no LOCATION). The schema must
+        # have its own managed location configured by the user before
+        # the first run; otherwise the table lands in default storage
+        # and Zerobus rejects with Error Code 4024.
         from unittest.mock import MagicMock, patch
 
         from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
@@ -151,76 +157,16 @@ class TestEnsureZerobusTable:
                 "bronze_car_obd2",
             )
         assert fqn == "machine.iot.bronze_car_obd2"
-        # Catalog + schema + volume are always created
+        # Catalog + schema are always created
         assert any("CREATE CATALOG IF NOT EXISTS `machine`" in s for s in executed)
         assert any("CREATE SCHEMA IF NOT EXISTS `machine`.`iot`" in s for s in executed)
-        assert any(
-            "CREATE VOLUME IF NOT EXISTS `machine`.`iot`.`events_volume`" in s for s in executed
-        )
-        # No LOCATION clause when the caller didn't supply one
+        # CREATE TABLE emitted without a LOCATION clause (managed table)
         ct = next(s for s in executed if "CREATE TABLE" in s)
         assert "LOCATION" not in ct
-
-    def test_external_table_when_location_set(self):
-        from unittest.mock import MagicMock, patch
-
-        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
-
-        executed, cap = self._capture()
-        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
-            ensure_zerobus_table(
-                MagicMock(),
-                "wh",
-                "machine",
-                "iot",
-                "car_obd2",
-                "bronze_car_obd2",
-                location="s3://my-bucket/zerobus",
-            )
-        ct = next(s for s in executed if "CREATE TABLE" in s)
-        # Table-name suffix appended to the location prefix automatically.
-        assert "LOCATION 's3://my-bucket/zerobus/bronze_car_obd2'" in ct
-
-    def test_volume_path_in_location_rejected(self):
-        # /Volumes/... isn't accepted by Databricks as a CREATE TABLE
-        # LOCATION (needs a cloud-storage URI). We catch this at our
-        # boundary so users get a clear error instead of the cryptic
-        # "Missing cloud file system scheme" from the warehouse.
-        from unittest.mock import MagicMock
-
-        import pytest
-
-        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
-
-        with pytest.raises(ValueError, match="UC Volume paths are not accepted"):
-            ensure_zerobus_table(
-                MagicMock(),
-                "wh",
-                "machine",
-                "iot",
-                "car_obd2",
-                "bronze_car_obd2",
-                location="/Volumes/machine/iot/events_volume/zerobus",
-            )
-
-    def test_location_whitespace_treated_as_empty(self):
-        from unittest.mock import MagicMock, patch
-
-        from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
-
-        executed, cap = self._capture()
-        with patch("src.demo_streaming_zerobus_runtime.execute_sql", side_effect=cap):
-            ensure_zerobus_table(
-                MagicMock(),
-                "wh",
-                "machine",
-                "iot",
-                "car_obd2",
-                "bronze_car_obd2",
-                location="   ",
-            )
-        ct = next(s for s in executed if "CREATE TABLE" in s)
-        assert "LOCATION" not in ct  # whitespace-only location → managed table
+        assert "USING DELTA" in ct
+        # No CREATE VOLUME — Zerobus doesn't need one (external Volumes
+        # would back external tables, which Zerobus rejects anyway).
+        assert not any("CREATE VOLUME" in s for s in executed)
 
     def test_unknown_profile_rejected(self):
         from unittest.mock import MagicMock
@@ -276,7 +222,10 @@ class TestZerobusAutoGrant:
         # Catalog/schema/volume/table emitted, but no GRANT statements
         assert not any("GRANT" in s for s in executed)
 
-    def test_all_four_grants_emitted_when_sp_id_set(self):
+    def test_three_grants_emitted_when_sp_id_set(self):
+        # Per Databricks docs, Zerobus needs exactly three privileges
+        # on the SP: USE CATALOG, USE SCHEMA, MODIFY+SELECT.
+        # https://docs.databricks.com/aws/en/ingestion/zerobus-overview
         from unittest.mock import MagicMock, patch
 
         from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
@@ -293,17 +242,17 @@ class TestZerobusAutoGrant:
                 service_principal_id="bd9eaccf-212c-41f2-9acf-000407639c60",
             )
         sp = "bd9eaccf-212c-41f2-9acf-000407639c60"
-        assert any(f"GRANT USE_CATALOG ON CATALOG `machine` TO `{sp}`" in s for s in executed)
-        assert any(f"GRANT USE_SCHEMA ON SCHEMA `machine`.`iot` TO `{sp}`" in s for s in executed)
-        assert any(
-            f"GRANT READ_VOLUME, WRITE_VOLUME ON VOLUME `machine`.`iot`.`events_volume` TO `{sp}`"
-            in s
-            for s in executed
-        )
+        assert any(f"GRANT USE CATALOG ON CATALOG `machine` TO `{sp}`" in s for s in executed)
+        assert any(f"GRANT USE SCHEMA ON SCHEMA `machine`.`iot` TO `{sp}`" in s for s in executed)
         assert any(
             f"GRANT MODIFY, SELECT ON TABLE `machine`.`iot`.`bronze_car_obd2` TO `{sp}`" in s
             for s in executed
         )
+        # No volume grant — Zerobus doesn't need it (no Volume created either)
+        assert not any("GRANT READ_VOLUME" in s or "GRANT WRITE_VOLUME" in s for s in executed)
+        # Exactly 3 GRANTs total
+        grants = [s for s in executed if s.startswith("GRANT")]
+        assert len(grants) == 3
 
     def test_grants_run_after_create_table(self):
         # Order matters: GRANT on a non-existent table errors out, so
@@ -329,8 +278,8 @@ class TestZerobusAutoGrant:
 
     def test_partial_grant_failure_does_not_abort(self):
         # If the user has manage on the schema but not the catalog,
-        # the catalog-level GRANT will fail — but the schema/volume/
-        # table grants should still apply.
+        # the catalog-level GRANT will fail — but the schema/table
+        # grants should still apply.
         from unittest.mock import MagicMock, patch
 
         from src.demo_streaming_zerobus_runtime import ensure_zerobus_table
@@ -339,7 +288,7 @@ class TestZerobusAutoGrant:
 
         def cap(_client, _wid, sql, **_kw):
             executed.append(sql.strip())
-            if "GRANT USE_CATALOG" in sql:
+            if "GRANT USE CATALOG" in sql:
                 raise Exception("permission denied on catalog")
             return []
 
@@ -353,10 +302,10 @@ class TestZerobusAutoGrant:
                 "bronze_car_obd2",
                 service_principal_id="sp-id",
             )
-        # Catalog GRANT was attempted but raised; schema/volume/table
-        # GRANTs still ran (verified by counting GRANT statements).
+        # Catalog GRANT was attempted but raised; schema/table grants
+        # still ran (verified by counting GRANT statements).
         grants = [s for s in executed if s.startswith("GRANT")]
-        assert len(grants) == 4  # all four attempted
+        assert len(grants) == 3  # all three attempted
         # Function returned normally (didn't propagate the exception).
 
     def test_whitespace_sp_id_treated_as_omitted(self):

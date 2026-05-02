@@ -649,13 +649,13 @@ export function useStreamingEmit() {
       auto_create_bronze?: boolean;
       bronze_refresh_minutes?: number;
       warehouse_id?: string;
-      // Required when destination === "zerobus" — see api/models/demo.py
+      // Required when destination === "zerobus" — see api/models/demo.py.
+      // The destination schema must already have a managed storage location
+      // configured (ALTER SCHEMA … SET MANAGED LOCATION) — Zerobus only
+      // writes to managed Delta tables in non-default storage.
       zerobus_server_endpoint?: string;
       zerobus_client_id?: string;
       zerobus_client_secret?: string;
-      // Optional cloud-storage URI prefix (s3://, abfss://, gs://) for
-      // the destination table. Skip on workspaces with managed storage.
-      zerobus_table_location?: string;
     }) => api.post("/generate/demo-data/streaming", req),
   });
 }

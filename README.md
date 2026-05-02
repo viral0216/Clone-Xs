@@ -163,6 +163,23 @@ When the SDK is absent, the Zerobus radio renders disabled with an
 inline tooltip explaining why; the rest of the streaming demo is
 unaffected.
 
+**One-time workspace prerequisite for Zerobus runs.** Per the
+[Zerobus connector limitations](https://docs.databricks.com/aws/en/ingestion/zerobus-limits),
+the connector only writes to managed Delta tables in non-default
+storage. As a workspace admin, set a managed location on the
+destination schema **once** before the first Zerobus run:
+
+```sql
+ALTER SCHEMA `<catalog>`.`<schema>`
+  SET MANAGED LOCATION 's3://your-bucket/clxs-zerobus';
+```
+
+Without this, the run fails with
+`Error Code: 4024 — Unsupported table kind`. The full setup
+walkthrough (server endpoint, service principal, GRANTs the runner
+auto-applies) lives in
+[docs/docs/guide/demo-data.md](docs/docs/guide/demo-data.md#setting-up-zerobus-credentials).
+
 ---
 
 ## Required Setup (after installation)

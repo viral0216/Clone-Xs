@@ -413,11 +413,6 @@ export default function DemoDataPage() {
   const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
   const [zerobusClientId, setZerobusClientId] = useState("");
   const [zerobusClientSecret, setZerobusClientSecret] = useState("");
-  // Optional: cloud-storage URI prefix where the destination table
-  // gets created as EXTERNAL. Required on workspaces whose schema
-  // has no managed-storage location configured (Zerobus rejects
-  // tables in metastore default storage).
-  const [zerobusTableLocation, setZerobusTableLocation] = useState("");
   // Helper: paste a Databricks workspace URL → server-side resolver
   // parses it, DNS-probes the AWS region, and auto-fills the Server
   // endpoint field. Browsers can't do DNS, so we delegate.
@@ -662,9 +657,6 @@ export default function DemoDataPage() {
           zerobus_server_endpoint: zerobusServerEndpoint.trim(),
           zerobus_client_id: zerobusClientId.trim(),
           zerobus_client_secret: zerobusClientSecret.trim(),
-          ...(zerobusTableLocation.trim() && {
-            zerobus_table_location: zerobusTableLocation.trim(),
-          }),
         }),
       };
       await streamJob.start(params, async () => {
@@ -1817,7 +1809,7 @@ export default function DemoDataPage() {
             {/* Destination mode — controls which downstream fields are visible
                 and what the runner does each tick. */}
             <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
-              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition. Zerobus: direct gRPC append via the Databricks Zerobus low-latency API (requires the official `databricks-zerobus` SDK; today the radio is disabled and the snippet panel below shows the equivalent code to run yourself).">
+              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition. Zerobus: direct gRPC append via the Databricks Zerobus low-latency API. Requires Premium/Enterprise tier with a UC External Location + the destination schema configured with managed storage — NOT compatible with Free Edition. On Free Edition, use Direct to table instead, or paste the snippet panel below into a Premium workspace.">
                 Destination
               </FieldLabel>
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -1828,7 +1820,7 @@ export default function DemoDataPage() {
                   {
                     val: "zerobus",
                     title: "Zerobus",
-                    sub: "Direct gRPC append (low-latency)",
+                    sub: "Direct gRPC append (low-latency) — Premium/Enterprise tier",
                     // Disabled until the availability check returns true.
                     // While the check is in flight (zerobusAvailable===null)
                     // we keep the option disabled too — better to render
@@ -1965,27 +1957,23 @@ export default function DemoDataPage() {
                   </div>
                 </div>
 
-                {/* Optional table-storage URL. Required on workspaces
-                    whose schema/catalog has no managed storage — Zerobus
-                    rejects tables in metastore default storage. Leave
-                    empty if your schema has a managed location set. */}
-                <div className="space-y-1 pt-1">
-                  <label className="text-[11px] text-muted-foreground" htmlFor="zb-table-location">
-                    Table storage URI
-                    <span className="text-[10px] text-muted-foreground/70 ml-1">(optional — required on workspaces without schema-level managed storage)</span>
-                  </label>
-                  <Input
-                    id="zb-table-location"
-                    placeholder="s3://my-bucket/zerobus  (or abfss://…, gs://…)"
-                    value={zerobusTableLocation}
-                    onChange={(e) => setZerobusTableLocation(e.target.value)}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    When set, the table is created as EXTERNAL at
-                    <code className="bg-background px-1 mx-0.5 rounded">{"<URI>/<table_name>"}</code>.
-                    Must be a UC <strong>External Location</strong> the SP can write to —
-                    grant <code className="bg-background px-1 rounded">READ FILES, WRITE FILES</code> on it.
-                  </p>
+                {/* Schema managed-storage prerequisite (one-time, admin).
+                    Per the Zerobus docs, the connector only writes to
+                    managed Delta tables that are NOT in default storage —
+                    so the destination schema must have its own managed
+                    location configured before the first run. We can't do
+                    this from the form (workspace-admin SQL only); we
+                    just point at the runbook. */}
+                <div className="text-[11px] text-muted-foreground border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-sm space-y-1">
+                  <div>
+                    <strong className="text-amber-700">One-time setup (Premium/Enterprise tier):</strong> Zerobus only writes to managed Delta tables in non-default storage.
+                    As a workspace admin, run once on the destination schema:
+                  </div>
+                  <pre className="text-[10px] bg-background border border-border rounded p-1.5 overflow-x-auto">{`ALTER SCHEMA \`<catalog>\`.\`<schema>\` SET MANAGED LOCATION 's3://your-bucket/path';`}</pre>
+                  <div>Without this, the run fails with <code className="bg-background px-1 rounded">Error Code: 4024 — Unsupported table kind</code>.</div>
+                  <div className="border-t border-amber-300/50 pt-1 mt-1">
+                    <strong className="text-amber-700">On Databricks Free Edition?</strong> You can&apos;t run <code className="bg-background px-1 rounded">ALTER SCHEMA … SET MANAGED LOCATION</code> there (no External Locations / paid SKU). Either switch the destination to <strong>Direct to table</strong> (works on any tier), or copy the snippet from the <strong>Try with Zerobus</strong> panel below and run it from a Premium workspace.
+                  </div>
                 </div>
 
                 {/* Verify-credentials affordance — short-circuits the

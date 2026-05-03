@@ -142,6 +142,7 @@ def post_convert_to_delta(
             audit_callback=audit_callback,
             iceberg_physical=req.iceberg_physical,
             keep_backup=req.keep_backup,
+            copy_permissions=req.copy_permissions,
         )
     except ConvertToDeltaError as e:
         # Refusal (confirm_destructive missing) → 400, callers can reflect

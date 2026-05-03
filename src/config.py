@@ -1,3 +1,5 @@
+import json
+import os
 import time
 import threading
 
@@ -43,8 +45,6 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
 
     The returned dict conforms to :class:`src.types.CloneConfig` (TypedDict).
     """
-    import os
-
     if not os.path.exists(config_path):
         raw = {}
     else:
@@ -254,3 +254,116 @@ def load_config(config_path: str = "config/clone_config.yaml", profile: str | No
     config["clone_type"] = clone_type
 
     return config
+
+
+# ── Streaming-emit form bounds ──────────────────────────────────────
+# Stored in `config/streaming_limits.json` — kept SEPARATE from
+# clone_config.yaml because these are UX form bounds (admin policy
+# editable from the Settings page), not clone-orchestration config.
+# The file is created on first save via the Settings page; until then
+# the API serves _STREAMING_LIMITS_FALLBACK so the form always works.
+_STREAMING_LIMITS_PATH = "config/streaming_limits.json"
+
+_STREAMING_LIMITS_FALLBACK = {
+    "events_per_batch": {"default": 100, "min": 1, "max": 10000},
+    # interval_seconds.min is fractional (matches the legacy Pydantic
+    # ge=0.1) so sub-second cadence stays reachable on direct API
+    # calls — the UI is integer-only via parseInt regardless.
+    "interval_seconds": {"default": 5, "min": 0.1, "max": 300},
+    "total_duration_seconds": {"default": 60, "min": 1, "max": 3600},
+}
+
+# Per-field cache so reads don't hit disk on every API request.
+_streaming_limits_cache: dict | None = None
+_streaming_limits_mtime: float = 0.0
+
+
+def _read_streaming_limits_file() -> dict:
+    """Read the JSON file, returning {} on any failure (missing / corrupt)."""
+    if not os.path.exists(_STREAMING_LIMITS_PATH):
+        return {}
+    try:
+        with open(_STREAMING_LIMITS_PATH) as f:
+            return json.load(f) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def get_streaming_limits() -> dict:
+    """Return streaming-emit form bounds: ``{field: {default, min, max}}``.
+
+    Reads ``config/streaming_limits.json``. When the file is missing
+    or a field is unset, falls back to ``_STREAMING_LIMITS_FALLBACK``
+    per-field — so a partial save (e.g. only ``events_per_batch.max``)
+    still produces a complete dict.
+
+    Cached by mtime — re-reads only when the file is touched, so the
+    Settings-page save is reflected immediately without a 60s wait.
+    """
+    global _streaming_limits_cache, _streaming_limits_mtime
+    try:
+        mtime = os.path.getmtime(_STREAMING_LIMITS_PATH)
+    except OSError:
+        mtime = 0.0
+    if _streaming_limits_cache is not None and mtime == _streaming_limits_mtime:
+        return dict(_streaming_limits_cache)
+
+    raw = _read_streaming_limits_file()
+    out = {}
+    for field, fallback in _STREAMING_LIMITS_FALLBACK.items():
+        block = raw.get(field) or {}
+        out[field] = {
+            "default": block.get("default", fallback["default"]),
+            "min": block.get("min", fallback["min"]),
+            "max": block.get("max", fallback["max"]),
+        }
+    _streaming_limits_cache = out
+    _streaming_limits_mtime = mtime
+    return dict(out)
+
+
+def set_streaming_limits(limits: dict) -> dict:
+    """Persist a partial / full streaming-limits update to the JSON file.
+
+    Merges ``limits`` over the current file contents so callers can
+    PATCH a single field (e.g. ``{"events_per_batch": {"max": 50000}}``)
+    without resending the whole shape. Returns the merged result that
+    will be used by future ``get_streaming_limits()`` calls.
+
+    Raises ``ValueError`` when min > max or default is outside
+    [min, max] for any field — keeps the file from getting written
+    into a state that would 422 every subsequent request.
+    """
+    if not isinstance(limits, dict):
+        raise ValueError("limits must be a dict")
+
+    current = _read_streaming_limits_file()
+    merged: dict = {}
+    for field, fallback in _STREAMING_LIMITS_FALLBACK.items():
+        cur_block = current.get(field) or {}
+        new_block = (limits.get(field) or {}) if isinstance(limits.get(field), dict) else {}
+        merged[field] = {
+            "default": new_block.get("default", cur_block.get("default", fallback["default"])),
+            "min": new_block.get("min", cur_block.get("min", fallback["min"])),
+            "max": new_block.get("max", cur_block.get("max", fallback["max"])),
+        }
+        b = merged[field]
+        if b["min"] > b["max"]:
+            raise ValueError(f"{field}: min ({b['min']}) must be <= max ({b['max']})")
+        if not (b["min"] <= b["default"] <= b["max"]):
+            raise ValueError(
+                f"{field}: default ({b['default']}) must be in [{b['min']}, {b['max']}]"
+            )
+
+    os.makedirs(os.path.dirname(_STREAMING_LIMITS_PATH) or ".", exist_ok=True)
+    tmp = _STREAMING_LIMITS_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(merged, f, indent=2)
+    os.replace(tmp, _STREAMING_LIMITS_PATH)
+
+    # Invalidate cache so the next get_streaming_limits() picks up the
+    # write without waiting for the mtime check (mtime granularity on
+    # some filesystems is 1s — same-second writes can race).
+    global _streaming_limits_cache
+    _streaming_limits_cache = None
+    return merged

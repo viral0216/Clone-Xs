@@ -101,7 +101,6 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright \u00a9 ${new Date().getFullYear()} Clone-Xs Contributors. Docs built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

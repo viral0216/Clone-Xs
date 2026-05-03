@@ -60,6 +60,15 @@ class ConvertToDeltaRequest(BaseModel):
     # operator can rename the backup back if they need to roll back.
     # Set False to drop the source (non-recoverable).
     keep_backup: bool = True
+    # CTAS strategies replace the underlying table, so the new table at
+    # the original FQN starts with no GRANTs and is owned by the caller.
+    # When True (default), the orchestrator captures `SHOW GRANTS` +
+    # owner before the plan and replays both after — the new table looks
+    # identical to the source from a permissions standpoint. Best-effort
+    # per-grant: a partial-permission caller still gets the grants they
+    # can apply. No-op for non-CTAS strategies (convert_to_delta,
+    # uniform — same physical table, grants preserved automatically).
+    copy_permissions: bool = True
 
     @model_validator(mode="after")
     def _confirmed_or_dry_run(self) -> "ConvertToDeltaRequest":

@@ -169,7 +169,7 @@ Constraints worth knowing:
 - **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
 - **Cross-workspace clones** (Delta Sharing path) honour `target_format: ICEBERG` too — UniForm is enabled on the target after each successful DEEP CLONE through the share.
 
-##### `iceberg_physical: true` — physical Iceberg target (Phase C2 of #9)
+##### `iceberg_physical: true` — physical Iceberg target
 
 UniForm makes a Delta table *readable* by Iceberg engines but UC still reports `Data source: Delta`. If you need UC itself to recognise the table as Iceberg (so it shows `Data source: Iceberg` and behaves like a managed Iceberg table for downstream Iceberg-native tooling), set `iceberg_physical: true` (or check the **Physical Iceberg target** box in the wizard, visible only when ICEBERG is selected).
 
@@ -219,7 +219,7 @@ Option 3 has a dedicated endpoint and UI page — see the [Convert table format]
 
 Type-level differences (`time`, `uuid`, `fixed(L)`, `timestamptz`) are *not* refusal cases — they map through CLONE with documented losses (uuid → string, fixed → binary, etc.). See `ICEBERG_TYPE_NOTES` in [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full table.
 
-Phase C of #9 adds an informational log line when the source is Iceberg, listing the same caveats inline so operators see them in the run output (not just the docs):
+When the source is Iceberg, the runner emits an informational log line listing the same caveats inline so operators see them in the run output (not just the docs):
 
 ```
 INFO Iceberg source `src`.`s`.`t` — type-mapping caveats may apply: time:

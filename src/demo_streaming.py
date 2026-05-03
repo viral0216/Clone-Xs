@@ -921,9 +921,22 @@ def run_streaming_emission(
     bronze_table: str = (config.get("bronze_table") or "").strip() or f"bronze_{profile}"
     if profile not in DEVICE_PROFILES:
         raise ValueError(f"Unknown device profile: {profile!r}")
-    events_per_batch: int = int(config.get("events_per_batch", 100))
-    interval_seconds: float = float(config.get("interval_seconds", 5.0))
-    total_duration_seconds: int = int(config.get("total_duration_seconds", 60))
+    # Defaults pulled from clone_config.yaml `streaming_limits` so the
+    # runner stays consistent with the Pydantic / UI defaults when the
+    # caller's config dict omits a field. Falls back to the legacy
+    # hardcoded numbers if the YAML can't be read.
+    from src.config import get_streaming_limits
+
+    _limits = get_streaming_limits()
+    events_per_batch: int = int(
+        config.get("events_per_batch", _limits["events_per_batch"]["default"])
+    )
+    interval_seconds: float = float(
+        config.get("interval_seconds", _limits["interval_seconds"]["default"])
+    )
+    total_duration_seconds: int = int(
+        config.get("total_duration_seconds", _limits["total_duration_seconds"]["default"])
+    )
     num_devices: int = int(
         config.get("num_devices") or DEVICE_PROFILES[profile]["default_devices"],
     )

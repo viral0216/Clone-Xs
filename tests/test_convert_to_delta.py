@@ -533,6 +533,96 @@ def test_convert_d2_keep_backup_off_drops_source(mock_sql, _mock_compat):
     assert not any("_pre_convert_" in s for s in sqls)
 
 
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_ctas_replays_grants_and_owner(
+    mock_strategies_sql, mock_convert_sql, _mock_compat
+):
+    # CTAS strategies replace the table entirely, so the new table at
+    # the original FQN starts with no GRANTs and creator-owned. The
+    # orchestrator captures GRANTs + owner before the plan and replays
+    # them after — pin the round-trip so a future refactor that drops
+    # the capture/replay step trips this test.
+    from unittest.mock import MagicMock
+
+    # Plan execution goes through src.format_strategies.execute_sql,
+    # which is mocked separately above.
+    mock_strategies_sql.return_value = []
+    # Capture phase: SHOW GRANTS returns two rows; the GRANT + ALTER
+    # OWNER replays go through src.convert_to_delta.execute_sql.
+    mock_convert_sql.return_value = [
+        {"Principal": "alice@example.com", "ActionType": "SELECT"},
+        {"Principal": "data_eng_group", "ActionType": "MODIFY"},
+    ]
+
+    fake_client = MagicMock()
+    fake_client.tables.get.return_value = MagicMock(owner="owner@example.com")
+
+    result = convert_table_format(
+        fake_client,
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="PARQUET",
+    )
+    assert result.status == "converted"
+
+    # Replay produced one GRANT per captured row + one ALTER OWNER.
+    replay_sqls = [c[0][2] for c in mock_convert_sql.call_args_list]
+    assert any("GRANT SELECT ON TABLE" in s and "alice@example.com" in s for s in replay_sqls)
+    assert any("GRANT MODIFY ON TABLE" in s and "data_eng_group" in s for s in replay_sqls)
+    assert any("OWNER TO `owner@example.com`" in s for s in replay_sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_uniform_skips_permission_replay(
+    mock_strategies_sql, mock_convert_sql, _mock_compat
+):
+    # Non-CTAS strategies (uniform, convert_to_delta) keep the same
+    # physical table — capturing and replaying GRANTs would be wasted
+    # work + spurious SHOW GRANTS log lines. Verify the capture/replay
+    # path is bypassed when strategy != ctas_*.
+    mock_strategies_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="ICEBERG",
+        # iceberg_physical=False → uniform strategy
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "uniform"
+    # The convert-side execute_sql (the SHOW GRANTS / GRANT path) must
+    # not have been hit at all.
+    assert mock_convert_sql.call_count == 0
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.convert_to_delta.execute_sql")
+@patch("src.format_strategies.execute_sql")
+def test_convert_d2_ctas_succeeds_when_show_grants_fails(
+    mock_strategies_sql, mock_convert_sql, _mock_compat
+):
+    # If SHOW GRANTS errors out (perms, transient warehouse), the
+    # conversion still succeeds — the table mutation is the primary
+    # outcome, permission replay is best-effort. Same posture as the
+    # clone-path's `_copy_grants_via_sql` fallback.
+    mock_strategies_sql.return_value = []
+    mock_convert_sql.side_effect = Exception("permission denied on SHOW GRANTS")
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="PARQUET",
+    )
+    assert result.status == "converted"
+
+
 @patch("src.convert_to_delta.check_pair_compat")
 @patch("src.format_strategies.execute_sql")
 def test_convert_d2_compat_preflight_refuses_generated_column(mock_sql, mock_compat):

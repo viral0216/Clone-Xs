@@ -5,6 +5,43 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# ── Streaming-emit field bounds ─────────────────────────────────────
+# Bounds for `events_per_batch`, `interval_seconds`, and
+# `total_duration_seconds` come from `streaming_limits` in
+# clone_config.yaml (see src.config.get_streaming_limits) so workspace
+# admins can widen / narrow the form without editing code. The lookup
+# is cached (60s TTL) inside src.config, so per-request validation is
+# a dict access — no file I/O on the hot path.
+def _streaming_default(field_name: str, fallback):
+    """Resolve a default value from configured limits, with a fallback.
+
+    Used as ``default_factory=lambda: _streaming_default("events_per_batch", 100)``
+    so the API's default tracks YAML edits without a server restart.
+    """
+    try:
+        from src.config import get_streaming_limits
+
+        return get_streaming_limits()[field_name]["default"]
+    except Exception:
+        return fallback
+
+
+def _check_streaming_bound(field_name: str, value):
+    """Enforce min/max from configured limits. Used by @field_validator."""
+    try:
+        from src.config import get_streaming_limits
+
+        bounds = get_streaming_limits().get(field_name)
+    except Exception:
+        bounds = None
+    if not bounds:
+        return value
+    lo, hi = bounds["min"], bounds["max"]
+    if value < lo or value > hi:
+        raise ValueError(f"{field_name} must be in [{lo}, {hi}], got {value}")
+    return value
+
+
 class DemoDataRequest(BaseModel):
     catalog_name: str = Field(..., description="Name of the catalog to create")
     industries: list[str] = Field(
@@ -150,11 +187,21 @@ class StreamingEmissionRequest(BaseModel):
         "server_metrics",
         "clickstream",
     ] = Field(..., description="Built-in device profile")
-    events_per_batch: int = Field(default=100, ge=1, le=10000)
-    interval_seconds: float = Field(default=5.0, ge=0.1, le=300.0)
+    # Bounds + default come from clone_config.yaml `streaming_limits`
+    # (see _check_streaming_bound / _streaming_default at the top of
+    # this module). Edits to the YAML are picked up on the next
+    # request without restarting the API.
+    events_per_batch: int = Field(
+        default_factory=lambda: _streaming_default("events_per_batch", 100)
+    )
+    interval_seconds: float = Field(
+        default_factory=lambda: _streaming_default("interval_seconds", 5.0)
+    )
     # 1-hour cap on v1 — bounds the maximum demo session length and
     # limits storage growth in shared workspaces.
-    total_duration_seconds: int = Field(default=60, ge=1, le=3600)
+    total_duration_seconds: int = Field(
+        default_factory=lambda: _streaming_default("total_duration_seconds", 60)
+    )
     num_devices: int | None = Field(
         default=None,
         ge=1,
@@ -230,6 +277,21 @@ class StreamingEmissionRequest(BaseModel):
         default=None,
         description="Service-principal client_secret for Zerobus OAuth. Required when destination='zerobus' and auth_mode='oauth'.",
     )
+
+    @field_validator("events_per_batch")
+    @classmethod
+    def _check_events_per_batch(cls, v: int) -> int:
+        return _check_streaming_bound("events_per_batch", v)
+
+    @field_validator("interval_seconds")
+    @classmethod
+    def _check_interval_seconds(cls, v: float) -> float:
+        return _check_streaming_bound("interval_seconds", v)
+
+    @field_validator("total_duration_seconds")
+    @classmethod
+    def _check_total_duration_seconds(cls, v: int) -> int:
+        return _check_streaming_bound("total_duration_seconds", v)
 
     @model_validator(mode="after")
     def _zerobus_requires_credentials(self) -> "StreamingEmissionRequest":
@@ -337,9 +399,26 @@ class ZerobusSnippetRequest(BaseModel):
         default=None,
         description="Target table name. Defaults to bronze_<profile>.",
     )
-    events_per_batch: int = Field(default=100, ge=1, le=10000)
-    interval_seconds: float = Field(default=5.0, ge=0.1, le=300.0)
+    # Same config-driven bounds as StreamingEmissionRequest so the
+    # snippet-render path doesn't 422 with values that the form
+    # accepted. See _check_streaming_bound at the top of the module.
+    events_per_batch: int = Field(
+        default_factory=lambda: _streaming_default("events_per_batch", 100)
+    )
+    interval_seconds: float = Field(
+        default_factory=lambda: _streaming_default("interval_seconds", 5.0)
+    )
     num_devices: int = Field(default=10, ge=1, le=100000)
+
+    @field_validator("events_per_batch")
+    @classmethod
+    def _check_events_per_batch(cls, v: int) -> int:
+        return _check_streaming_bound("events_per_batch", v)
+
+    @field_validator("interval_seconds")
+    @classmethod
+    def _check_interval_seconds(cls, v: float) -> float:
+        return _check_streaming_bound("interval_seconds", v)
 
 
 class ZerobusSnippetResponse(BaseModel):

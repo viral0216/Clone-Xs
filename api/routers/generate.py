@@ -342,6 +342,24 @@ async def get_streaming_auto_loader_sql(
     }
 
 
+@router.get(
+    "/demo-data/streaming/limits",
+    summary="Get configured min/max/default for streaming-emit form fields",
+)
+async def get_streaming_limits_endpoint():
+    """Return form bounds for the /demo-data Streaming Events tab.
+
+    Sourced from `config/streaming_limits.json` (independent of
+    clone_config.yaml — these are UX form bounds, not clone
+    orchestration). The UI uses them to clamp the Events-per-batch /
+    Interval / Total-duration inputs and to seed defaults; workspace
+    admins edit them via the Settings → Performance page.
+    """
+    from src.config import get_streaming_limits
+
+    return get_streaming_limits()
+
+
 @router.post("/demo-data/streaming/schedule", summary="Schedule streaming as a Databricks Job")
 async def schedule_streaming(
     req: StreamingScheduleRequest,

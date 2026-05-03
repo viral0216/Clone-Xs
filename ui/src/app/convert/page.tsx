@@ -236,6 +236,14 @@ export default function ConvertToDeltaPage() {
   //   for reversibility, False drops the source after rename.
   const [icebergPhysical, setIcebergPhysical] = useState(false);
   const [keepBackup, setKeepBackup] = useState(true);
+  // copyPermissions applies to CTAS-strategy rows only (any →
+  // ICEBERG/PARQUET when not UniForm). True (default) makes the
+  // orchestrator capture SHOW GRANTS + owner before the plan and
+  // replay them on the new table at the original FQN. False skips
+  // the round-trip — the new table starts with no GRANTs and is
+  // owned by whoever ran the convert. Same conditional surfacing
+  // as keepBackup so it doesn't show up for uniform/convert_to_delta.
+  const [copyPermissions, setCopyPermissions] = useState(true);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState("");
@@ -384,6 +392,7 @@ export default function ConvertToDeltaPage() {
         dry_run: dryRun,
         iceberg_physical: icebergPhysical,
         keep_backup: keepBackup,
+        copy_permissions: copyPermissions,
         confirm_destructive: !dryRun,
       };
       const res = await api.post<SummaryResponse>(
@@ -731,10 +740,11 @@ export default function ConvertToDeltaPage() {
               </label>
             )}
 
-            {/* D2 — backup-on-rename. Only meaningful when at least one
-                cart row goes through the temp+rename CTAS path (any →
-                ICEBERG/PARQUET when not UniForm). Default ON because
-                CTAS+rename without a backup is non-recoverable. */}
+            {/* D2 — backup-on-rename + copy-permissions. Both only
+                meaningful when at least one cart row goes through the
+                temp+rename CTAS path (any → ICEBERG/PARQUET when not
+                UniForm). Same gating predicate; rendered as a paired
+                pair of checkboxes so the operator sees them together. */}
             {targets.some(
               (t) =>
                 t.target_format.toUpperCase() === "PARQUET" ||
@@ -742,19 +752,34 @@ export default function ConvertToDeltaPage() {
                 (t.target_format.toUpperCase() === "ICEBERG" &&
                   t.source_format.toUpperCase() !== "DELTA"),
             ) && (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={keepBackup}
-                  onChange={(e) => setKeepBackup(e.target.checked)}
-                />
-                <span>
-                  <span className="font-medium">Keep backup of source</span> — rename
-                  source aside as <code className="px-1 bg-gray-800/40 rounded">{"{fqn}_pre_convert_<utc>"}</code>{" "}
-                  instead of dropping it. Default on. Disable only if you accept
-                  non-recoverable conversion.
-                </span>
-              </label>
+              <>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={keepBackup}
+                    onChange={(e) => setKeepBackup(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium">Keep backup of source</span> — rename
+                    source aside as <code className="px-1 bg-gray-800/40 rounded">{"{fqn}_pre_convert_<utc>"}</code>{" "}
+                    instead of dropping it. Default on. Disable only if you accept
+                    non-recoverable conversion.
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={copyPermissions}
+                    onChange={(e) => setCopyPermissions(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium">Copy permissions to converted table</span>
+                    {" — capture "}
+                    <code className="px-1 bg-gray-800/40 rounded">SHOW GRANTS</code>
+                    {" + owner before the CTAS plan and replay both on the new table at the original FQN. Default on. Disable when you intend the new table to start with fresh permissions (e.g. rotating ownership as part of the migration)."}
+                  </span>
+                </label>
+              </>
             )}
 
             <div className="flex gap-3 items-center">

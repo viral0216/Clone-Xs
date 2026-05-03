@@ -1,0 +1,17 @@
+{
+  "events_per_batch": {
+    "default": 100,
+    "min": 1,
+    "max": 10000000
+  },
+  "interval_seconds": {
+    "default": 5,
+    "min": 0.1,
+    "max": 300
+  },
+  "total_duration_seconds": {
+    "default": 60,
+    "min": 1,
+    "max": 3600
+  }
+}

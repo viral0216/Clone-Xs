@@ -445,6 +445,38 @@ export default function DemoDataPage() {
   const [streamEventsPerBatch, setStreamEventsPerBatch] = useState(100);
   const [streamIntervalSeconds, setStreamIntervalSeconds] = useState(5);
   const [streamDurationSeconds, setStreamDurationSeconds] = useState(60);
+  // Form bounds fetched from /generate/demo-data/streaming/limits.
+  // Sourced from `streaming_limits` in clone_config.yaml — workspace
+  // admins can widen / narrow the inputs without a code change. Falls
+  // back to the values previously hardcoded in the JSX so the page
+  // stays usable if the API is unreachable.
+  type StreamLimit = { default: number; min: number; max: number };
+  type StreamLimits = {
+    events_per_batch: StreamLimit;
+    interval_seconds: StreamLimit;
+    total_duration_seconds: StreamLimit;
+  };
+  const [streamLimits, setStreamLimits] = useState<StreamLimits>({
+    events_per_batch: { default: 100, min: 1, max: 10000 },
+    interval_seconds: { default: 5, min: 1, max: 300 },
+    total_duration_seconds: { default: 60, min: 1, max: 3600 },
+  });
+  useEffect(() => {
+    api.get<StreamLimits>("/generate/demo-data/streaming/limits")
+      .then((limits) => {
+        setStreamLimits(limits);
+        // Re-seed the inputs if the user hasn't touched them yet —
+        // detect "untouched" by comparing against the prior fallback
+        // defaults (100/5/60). If the user already typed a custom
+        // value we leave it alone.
+        setStreamEventsPerBatch((v) => (v === 100 ? limits.events_per_batch.default : v));
+        setStreamIntervalSeconds((v) => (v === 5 ? limits.interval_seconds.default : v));
+        setStreamDurationSeconds((v) => (v === 60 ? limits.total_duration_seconds.default : v));
+      })
+      .catch(() => {
+        /* keep fallback bounds — endpoint may be on an older API */
+      });
+  }, []);
   // Destination mode for streaming events:
   //   "volume"        — JSON files only, no Bronze
   //   "volume_bronze" — files + auto-create Bronze STREAMING TABLE (default)
@@ -2407,18 +2439,40 @@ export default function DemoDataPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <FieldLabel>Events per batch</FieldLabel>
-                <Input type="number" min={1} max={10000} value={streamEventsPerBatch}
-                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))} />
+                <Input type="number"
+                  min={streamLimits.events_per_batch.min}
+                  max={streamLimits.events_per_batch.max}
+                  value={streamEventsPerBatch}
+                  onChange={(e) => {
+                    const { min, max, default: dflt } = streamLimits.events_per_batch;
+                    setStreamEventsPerBatch(Math.max(min, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
               <div className="space-y-1.5">
                 <FieldLabel>Interval (seconds)</FieldLabel>
-                <Input type="number" min={1} max={300} value={streamIntervalSeconds}
-                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))} />
+                <Input type="number"
+                  min={streamLimits.interval_seconds.min}
+                  max={streamLimits.interval_seconds.max}
+                  value={streamIntervalSeconds}
+                  onChange={(e) => {
+                    // UI rounds to whole seconds via parseInt; the API
+                    // accepts fractional via direct calls (see the YAML
+                    // comment on streaming_limits.interval_seconds).
+                    const { min, max, default: dflt } = streamLimits.interval_seconds;
+                    const lo = Math.max(1, Math.ceil(min));
+                    setStreamIntervalSeconds(Math.max(lo, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
               <div className="space-y-1.5">
-                <FieldLabel>Total duration (seconds, max 3600)</FieldLabel>
-                <Input type="number" min={1} max={3600} value={streamDurationSeconds}
-                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))} />
+                <FieldLabel>Total duration (seconds, max {streamLimits.total_duration_seconds.max})</FieldLabel>
+                <Input type="number"
+                  min={streamLimits.total_duration_seconds.min}
+                  max={streamLimits.total_duration_seconds.max}
+                  value={streamDurationSeconds}
+                  onChange={(e) => {
+                    const { min, max, default: dflt } = streamLimits.total_duration_seconds;
+                    setStreamDurationSeconds(Math.max(min, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
             </div>
 

@@ -530,6 +530,108 @@ ORDER  BY 1, 2
 
 ---
 
+## Streaming destination: Zerobus (low-latency direct append)
+
+The streaming-emit page exposes four destinations: `volume_only`, `volume_bronze`, `direct_table`, and **`zerobus`**. Zerobus is a Databricks Premium/Enterprise-tier ingestion path that writes directly to a managed Delta table over a long-lived gRPC stream — sub-second latency, no Volume hop, no Auto Loader refresh window.
+
+The Zerobus path went through a substantial reliability and ergonomics pass; this section captures the contract that's now correct end-to-end.
+
+### Auth modes
+
+Two paths, picked via the **Auth mode** radio in the Zerobus credentials block:
+
+| Mode | When to pick | What happens |
+|---|---|---|
+| **OAuth (service principal)** *(default)* | You have a service principal already set up — original Zerobus contract. | Form collects `client_id` + `client_secret`. The SDK runs the OAuth client_credentials exchange itself. |
+| **PAT (logged-in user)** | You don't have an SP and want to reuse the token you logged into Clone-Xs with. | The runner lifts `client.config.token` off the active `WorkspaceClient` and passes it via a custom `HeadersProvider`. No SP fields shown. |
+
+PAT mode is the convenience path. The Zerobus server may still reject PATs that lack the right scopes — the form surfaces an amber caveat, and an `invalid_client` from a PAT run means flip back to OAuth.
+
+The `Verify credentials` button (OAuth only) hits `/oidc/v1/token` with the same client_credentials exchange the SDK does internally — short-circuits the "start a streaming run, read the job log, find the auth error" loop.
+
+### Step-by-step credentials block
+
+The credentials panel is now a vertical stepper with numbered circles that swap to green checkmarks as each step's predicate is satisfied:
+
+1. **Choose auth mode** — radio toggle (OAuth / PAT)
+2. **Set the Zerobus server endpoint** — derive helper accepts a workspace URL and resolves the gRPC endpoint via DNS. Done when the field is non-empty.
+3. **Service principal credentials** *(OAuth)* / **PAT (auto-lifted)** *(PAT)* — done when both creds are filled, or always-done in PAT mode.
+4. **Verify credentials** *(Optional, OAuth only)* — green check when the OAuth exchange succeeds.
+5. **Catalog storage location** *(Optional)* — `MANAGED LOCATION` for new catalogs, only required on workspaces without a metastore default storage root.
+
+The one-time admin prerequisite (`ALTER SCHEMA … SET MANAGED LOCATION`) is collapsed into a `<details>` block at the top — expand to read on first use.
+
+### Region detection (incl. Azure)
+
+`POST /api/generate/demo-data/zerobus/derive-endpoint` accepts a workspace URL and returns the regional Zerobus gRPC endpoint:
+
+| Cloud | URL shape | Region detection |
+|---|---|---|
+| AWS | `https://dbc-….cloud.databricks.com/?o=<wsid>` | DNS CNAME chain. The workspace alias terminates in either an explicit AWS region (`…us-east-2.amazonaws.com`) or a friendly-name CNAME (`ohio.cloud.databricks.com`). |
+| Azure | `https://adb-<wsid>.<n>.azuredatabricks.net` | DNS CNAME chain. Workspace hostnames alias through `<region>.azuredatabricks.net` (e.g. `uksouth`) before terminating at `ingress.<region>.azuredatabricks.net`. Either name is matched. |
+| GCP | `https://<wsid>.<n>.gcp.databricks.com` | DNS region detection is patchy — caller is prompted to provide it. |
+
+Returns `{server_endpoint, workspace_id, region, cloud, notes, error}`. The `notes` array carries the DNS chain it walked — useful for debugging "why didn't my workspace match a region?" cases.
+
+### Catalog storage location
+
+Workspaces whose metastore has no default storage root reject `CREATE CATALOG IF NOT EXISTS` with `INVALID_STATE` — even when the catalog already exists, because Databricks evaluates the storage prerequisite *before* the IF-NOT-EXISTS short-circuit. The form's **Catalog storage location** field accepts any cloud URI (`abfss://`, `s3://`, `gs://`) that's covered by an existing UC external location / storage credential. The runner appends a `MANAGED LOCATION` clause when populated.
+
+The runner also does a `SHOW CATALOGS` / `SHOW SCHEMAS` existence check before issuing CREATE, so re-runs against an already-provisioned catalog don't re-trip the `INVALID_STATE` error.
+
+### Auto-grants for the SP
+
+When `service_principal_id` is set (auto-filled from `zerobus_client_id` in OAuth mode), the runner auto-grants the SP four privileges before the first ingest:
+
+```sql
+GRANT USE CATALOG ON CATALOG `<cat>` TO `<sp>`;
+GRANT USE SCHEMA ON SCHEMA `<cat>`.`<schema>` TO `<sp>`;
+GRANT CREATE TABLE ON SCHEMA `<cat>`.`<schema>` TO `<sp>`;   -- so future Zerobus runs against new tables don't need re-granting
+GRANT MODIFY, SELECT ON TABLE `<cat>`.`<schema>`.`<table>` TO `<sp>`;
+```
+
+The `CREATE TABLE` grant is broader than the strict Zerobus minimum (`MODIFY, SELECT`) but stops short of `ALL PRIVILEGES`. It lets the SP create *additional* tables in the same schema for follow-up Zerobus runs without re-granting, while still preventing it from dropping or altering the schema itself.
+
+Each grant runs in its own try/except so a partial-permission caller (e.g. table owner but not catalog admin) gets as far as they can.
+
+### Type encoding for JSON records
+
+The Zerobus SDK's `RecordType.JSON` mode accepts a Python dict, but values for `TIMESTAMP` / `DATE` columns must be **integers**, not ISO strings — per the [upstream type-mapping table](https://github.com/databricks/zerobus-sdk/blob/main/README.md):
+
+| Delta type | Wire format |
+|---|---|
+| `TIMESTAMP`, `TIMESTAMP_NTZ` | int64 — microseconds since epoch |
+| `DATE` | int32 — days since 1970-01-01 |
+| (everything else) | native JSON type |
+
+The shared `DEVICE_PROFILES` generators emit `now.isoformat()` because that's what the `volume_bronze` and `direct_table` paths want. The Zerobus runner runs each record through `encode_record_for_zerobus(record, columns)` at the SDK boundary, which rewrites timestamps and dates to the right wire shape. Symptom of getting this wrong: server returns `Record decoder/encoder error: invalid digit found in string at line 1 column N` — the JSON parser hit the `T` in the ISO string while trying to decode an int64.
+
+### Stream durability
+
+Two patterns make the runner robust against transient gRPC closes:
+
+- **`wait_for_offset` per batch.** `ingest_record_offset` is fire-and-buffer — it returns an offset immediately without waiting for the server to commit. After each batch, the runner blocks on `stream.wait_for_offset(last_offset)` to ensure records actually committed before the next tick. Without this, the runner reports "N rows inserted" but the destination table is empty when the server closes the stream a few seconds later.
+- **Stream auto-reopen.** When `ingest_batch_zerobus` raises with `Stream is closed`, the runner catches it, calls the open closure to get a fresh stream, increments a `stream_reopens` counter, and continues with the next tick. The current batch is lost; subsequent ticks land against the fresh stream. Visible in the streaming summary as `stream_reopens: N`.
+
+Together these convert "100 rows reported, 0 rows in table" (the original symptom) into "N rows reported, N rows in table, M tick failures recovered."
+
+### Per-tick error visibility
+
+The streaming summary panel now surfaces per-tick failures inline:
+
+> **6 ticks failed.** Last error:
+> `ZerobusException: Invalid argument: Record decoder/encoder error: invalid digit found in string at line 1 column 79.`
+
+Without this surfacing, every per-tick exception was logged-and-swallowed, and the only signal of a failed run was a `Completed — 0 events` summary. The error string is now a first-class field in the job result and is rendered in an amber callout below the metrics grid when `tick_errors > 0`.
+
+### Limitations
+
+- **Premium/Enterprise tier required.** Free Edition lacks External Locations and rejects `ALTER SCHEMA … SET MANAGED LOCATION` — fall back to `Direct to table` or copy the `Try with Zerobus` snippet and run it from a Premium workspace.
+- **Managed Delta tables only.** Per the Zerobus contract — external tables / Volumes are rejected with `Error Code 4024 — Unsupported table kind`.
+- **Hudi destinations not supported.** Zerobus writes Delta only. The `Hudi` target on the convert page is also gated until a Job-cluster runtime is sponsored.
+
+---
+
 ## Workspace quota gotchas
 
 Two Databricks Unity Catalog metastore-level limits surface as confusing
@@ -662,6 +764,67 @@ panel below the completion card always works regardless — it produces
 a copy-pastable Python script that runs Zerobus from any environment
 where the SDK is installable.
 
+### Auto Loader (Bronze table)
+
+> **Applies to the `volume_bronze` destination only.** `direct_table`
+> creates the Bronze table itself via `INSERT INTO`, and `zerobus`
+> writes records straight into a managed Delta table over gRPC — both
+> bypass the Volume entirely, so there are no JSON files for
+> `read_files()` to consume. The Auto-create checkbox is a no-op for
+> those destinations.
+
+The Streaming card includes an opt-in **"Auto-create streaming Bronze
+table"** checkbox. When `volume_bronze` is selected and the box is
+ticked, the runner additionally executes:
+
+```sql
+CREATE OR REFRESH STREAMING TABLE `<catalog>`.`<schema>`.`bronze_<profile>`
+SCHEDULE EVERY 5 MINUTES
+AS SELECT * FROM STREAM read_files(
+  '/Volumes/<catalog>/<schema>/<volume>/<profile>/',
+  format => 'json'
+);
+```
+
+This requires **DBSQL Serverless** on the warehouse (streaming tables
+run on serverless DBSQL — no DLT pipeline, no cluster). When
+Serverless isn't available the runner captures the error, surfaces
+"Bronze auto-create failed" in the UI, and emission continues — the
+files still land, you just need to run the SQL manually after
+upgrading.
+
+The Streaming card always shows the canonical `CREATE OR REFRESH
+STREAMING TABLE` snippet with a copy-to-clipboard button so you can
+paste it into a DBSQL editor regardless.
+
+:::tip Bronze creation is deferred until the first batch lands
+`read_files()` infers schema from existing files, so creating the
+Bronze table against an empty Volume hits
+`CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE`. As of v0.7.1, the runner waits
+for the first JSON batch to land before issuing `CREATE OR REFRESH
+STREAMING TABLE` — the wait is bounded by the first emission tick
+(typically 1–5 seconds). All ten device profiles are covered uniformly.
+:::
+
+### Query latest rows from Data Lab
+
+Whenever a Bronze table exists for the run — auto-created by
+`volume_bronze`, or written directly by `direct_table` / `zerobus` —
+the streaming progress card shows a **"Query latest rows →"** link.
+Clicking it opens [Data Lab](data-lab.md) with this SQL pre-filled and
+auto-executed:
+
+```sql
+SELECT * FROM `<catalog>`.`<schema>`.`bronze_<profile>`
+ORDER BY captured_at DESC
+LIMIT 100
+```
+
+`captured_at` is the per-event timestamp populated by every device
+profile. The deep-link uses Data Lab's `#q=<base64>&run=1` URL hash
+format — see [Data Lab](data-lab.md#deep-link-auto-run) for how to
+embed the same pattern in your own pages.
+
 ### Setting up Zerobus credentials
 
 Picking the **Zerobus** destination reveals three credential inputs
@@ -769,57 +932,6 @@ stream against the table, ingests records via
 `stream.ingest_record_offset(record)` per tick, and closes the stream
 in a `finally` when the run ends or you click **Stop** — so a stream
 never leaks even on interrupt or exception.
-
-### Auto Loader (Bronze table)
-
-The Streaming card includes an opt-in **"Auto-create streaming Bronze
-table"** checkbox. When enabled, the runner additionally executes:
-
-```sql
-CREATE OR REFRESH STREAMING TABLE `<catalog>`.`<schema>`.`bronze_<profile>`
-SCHEDULE EVERY 5 MINUTES
-AS SELECT * FROM STREAM read_files(
-  '/Volumes/<catalog>/<schema>/<volume>/<profile>/',
-  format => 'json'
-);
-```
-
-This requires **DBSQL Serverless** on the warehouse (streaming tables
-run on serverless DBSQL — no DLT pipeline, no cluster). When
-Serverless isn't available the runner captures the error, surfaces
-"Bronze auto-create failed" in the UI, and emission continues — the
-files still land, you just need to run the SQL manually after
-upgrading.
-
-The Streaming card always shows the canonical `CREATE OR REFRESH
-STREAMING TABLE` snippet with a copy-to-clipboard button so you can
-paste it into a DBSQL editor regardless.
-
-:::tip Bronze creation is deferred until the first batch lands
-`read_files()` infers schema from existing files, so creating the
-Bronze table against an empty Volume hits
-`CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE`. As of v0.7.1, the runner waits
-for the first JSON batch to land before issuing `CREATE OR REFRESH
-STREAMING TABLE` — the wait is bounded by the first emission tick
-(typically 1–5 seconds). All ten device profiles are covered uniformly.
-:::
-
-### Query latest rows from Data Lab
-
-Once the Bronze table is created, the streaming progress card shows a
-**"Query latest rows →"** link. Clicking it opens
-[Data Lab](data-lab.md) with this SQL pre-filled and auto-executed:
-
-```sql
-SELECT * FROM `<catalog>`.`<schema>`.`bronze_<profile>`
-ORDER BY captured_at DESC
-LIMIT 100
-```
-
-`captured_at` is the per-event timestamp populated by every device
-profile. The deep-link uses Data Lab's `#q=<base64>&run=1` URL hash
-format — see [Data Lab](data-lab.md#deep-link-auto-run) for how to
-embed the same pattern in your own pages.
 
 ### Schedule streaming as a Databricks Job
 

@@ -33,6 +33,7 @@ from typing import Literal
 
 from databricks.sdk import WorkspaceClient
 
+from src.client import execute_sql
 from src.format_compat import check_pair_compat
 from src.format_strategies import (
     Plan,
@@ -241,6 +242,117 @@ def _dispatch_strategy(
     return None
 
 
+@dataclass
+class _CapturedPermissions:
+    """Snapshot of a table's GRANTs + owner taken before a CTAS run.
+
+    The CTAS strategies replace the underlying table entirely, so the
+    new table at the same FQN starts with fresh permissions (the
+    creator owns it, no GRANTs). We capture the source's permissions
+    up-front and replay them after the plan succeeds. Best-effort:
+    if SHOW GRANTS or `client.tables.get` fails, we record what we can
+    and let the replay phase do whatever applies.
+    """
+
+    grants: list[tuple[str, str]] = field(default_factory=list)  # (principal, privilege)
+    owner: str | None = None
+
+
+def _capture_table_permissions(
+    client: WorkspaceClient, warehouse_id: str, fqn: str
+) -> _CapturedPermissions:
+    """Capture GRANTs and ownership for ``fqn`` before a CTAS rewrite.
+
+    Reads:
+      - SHOW GRANTS ON TABLE <fqn> — every (principal, privilege) row
+      - client.tables.get(fqn).owner — the table owner
+
+    Both reads are best-effort; failures log a warning and the
+    captured snapshot just has empty fields for what couldn't be read.
+    The replay step tolerates None / empty values.
+    """
+    captured = _CapturedPermissions()
+
+    qualified = _qualify(fqn)
+    try:
+        rows = execute_sql(client, warehouse_id, f"SHOW GRANTS ON TABLE {qualified}")
+    except Exception as e:
+        logger.warning(
+            f"Could not SHOW GRANTS on {fqn} for permission preservation "
+            f"(continuing without GRANT replay): {e}"
+        )
+        rows = []
+
+    skip_privileges = {"OWN", "OWNERSHIP"}
+    for row in rows or []:
+        principal = row.get("Principal") or row.get("principal") or ""
+        privilege = row.get("ActionType") or row.get("privilege") or row.get("action_type") or ""
+        if not principal or not privilege:
+            continue
+        if privilege.upper() in skip_privileges:
+            # Ownership is a separate concept (ALTER TABLE … OWNER TO),
+            # not a GRANT. Skip here; we capture owner via the SDK below.
+            continue
+        captured.grants.append((principal, privilege))
+
+    try:
+        info = client.tables.get(fqn)
+        if info and getattr(info, "owner", None):
+            captured.owner = info.owner
+    except Exception as e:
+        logger.warning(
+            f"Could not read owner of {fqn} for permission preservation "
+            f"(continuing without OWNER replay): {e}"
+        )
+
+    if captured.grants or captured.owner:
+        logger.info(
+            f"Captured {len(captured.grants)} grants + owner={captured.owner!r} "
+            f"on {fqn} for post-CTAS replay"
+        )
+    return captured
+
+
+def _replay_table_permissions(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    fqn: str,
+    captured: _CapturedPermissions,
+) -> None:
+    """Replay captured GRANTs + ownership on the new table at ``fqn``.
+
+    Per-grant try/except so a partial-permission caller still gets
+    whatever grants they're allowed to apply. Failures log a warning;
+    the conversion result is already success at this point.
+    """
+    qualified = _qualify(fqn)
+    applied = 0
+    for principal, privilege in captured.grants:
+        try:
+            execute_sql(
+                client,
+                warehouse_id,
+                f"GRANT {privilege} ON TABLE {qualified} TO `{principal}`",
+            )
+            applied += 1
+        except Exception as e:
+            logger.warning(f"Could not replay GRANT {privilege} TO {principal} on {fqn}: {e}")
+
+    if captured.owner:
+        try:
+            execute_sql(
+                client,
+                warehouse_id,
+                f"ALTER TABLE {qualified} OWNER TO `{captured.owner}`",
+            )
+            logger.info(f"Restored owner={captured.owner!r} on {fqn}")
+        except Exception as e:
+            logger.warning(f"Could not restore owner on {fqn}: {e}")
+
+    if applied:
+        logger.info(f"Replayed {applied}/{len(captured.grants)} grants on {fqn}")
+
+
 def convert_table_format(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -250,6 +362,7 @@ def convert_table_format(
     target_format: str = "DELTA",
     iceberg_physical: bool = False,
     keep_backup: bool = True,
+    copy_permissions: bool = True,
     dry_run: bool = False,
     audit_callback: ConvertAuditCallback | None = None,
 ) -> ConvertResult:
@@ -350,13 +463,38 @@ def convert_table_format(
             logger.info(f"[DRY RUN] [{step.label}] {step.sql}")
         return _finish("skipped", "dry-run", strategy=choice.strategy)
 
+    # CTAS-based strategies create a brand-new table at the original
+    # FQN, so the source's GRANTs and OWNER are reset on the
+    # destination. Capture them up-front; replay after the plan
+    # finishes so the new table looks identical to the source from a
+    # permissions standpoint. Two early-out cases:
+    #   - non-CTAS strategies (convert_to_delta, uniform) keep the
+    #     same physical table — no preservation needed.
+    #   - copy_permissions=False — caller explicitly opted out (e.g.
+    #     they're rotating ownership intentionally as part of the
+    #     conversion).
+    captured_perms = (
+        _capture_table_permissions(client, warehouse_id, fqn)
+        if copy_permissions and choice.strategy in {"ctas_iceberg", "ctas_parquet"}
+        else None
+    )
+
     try:
         choice.plan.execute(client, warehouse_id, dry_run=False)
         logger.info(f"  ✓ Converted {fqn} ({src_fmt} → {tgt_fmt}) via {choice.strategy}")
-        return _finish("converted", strategy=choice.strategy)
     except Exception as e:
         logger.error(f"  ✗ Convert failed for {fqn}: {e}")
         return _finish("failed", str(e), strategy=choice.strategy)
+
+    # Replay GRANTs + OWNER after a successful CTAS conversion. Each
+    # individual GRANT is best-effort — a partial-permission caller
+    # (e.g. they can ALTER but not GRANT) still gets the grants that
+    # would succeed. The conversion itself is already done at this
+    # point; we don't fail the whole thing on a permission replay.
+    if captured_perms is not None:
+        _replay_table_permissions(client, warehouse_id, fqn, captured_perms)
+
+    return _finish("converted", strategy=choice.strategy)
 
 
 # --- Back-compat shim --------------------------------------------------
@@ -396,6 +534,7 @@ def convert_tables_format(
     audit_callback: ConvertAuditCallback | None = None,
     iceberg_physical: bool = False,
     keep_backup: bool = True,
+    copy_permissions: bool = True,
 ) -> ConvertSummary:
     """Run convert-format across a list of targets.
 
@@ -444,6 +583,7 @@ def convert_tables_format(
             target_format=tgt_fmt,
             iceberg_physical=iceberg_physical,
             keep_backup=keep_backup,
+            copy_permissions=copy_permissions,
             dry_run=dry_run,
             audit_callback=audit_callback,
         )

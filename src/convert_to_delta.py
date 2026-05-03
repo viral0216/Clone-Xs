@@ -38,8 +38,9 @@ from src.format_compat import check_pair_compat
 from src.format_strategies import (
     Plan,
     ctas_iceberg_inplace_plan,
-    ctas_parquet_inplace_plan,
+    enable_uniform_hudi_plan,
     enable_uniform_plan,
+    export_to_volume_plan,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,14 +77,36 @@ SUPPORTED_PAIRS: frozenset[tuple[str, str]] = frozenset(
         ("PARQUET", "ICEBERG"),
         ("DELTA", "PARQUET"),
         ("ICEBERG", "PARQUET"),
+        # D2.5 — AVRO + ORC sinks. Same temp+rename CTAS shape as the
+        # PARQUET pairs; only the ``USING <fmt>`` clause differs.
+        # Avro is the row-oriented escape hatch for streaming sinks;
+        # ORC is the Hive-era columnar interop format.
+        ("DELTA", "AVRO"),
+        ("ICEBERG", "AVRO"),
+        ("PARQUET", "AVRO"),
+        ("DELTA", "ORC"),
+        ("ICEBERG", "ORC"),
+        ("PARQUET", "ORC"),
+        # D2.6 — JSON sinks (export-shaped, for HTTP webhooks /
+        # NoSQL pipelines / event consumers). Same CTAS shape.
+        ("DELTA", "JSON"),
+        ("ICEBERG", "JSON"),
+        ("PARQUET", "JSON"),
+        # D2.6 — Delta → Hudi UniForm (Beta). Sidecar metadata only,
+        # no data movement. Only Delta sources are valid because
+        # UniForm needs a Delta base; physical Hudi from non-Delta
+        # sources still needs a Job-cluster runtime and stays gated.
+        ("DELTA", "HUDI"),
     }
 )
 
 
-# All format names the API surface accepts. Hudi is included so the UI
-# can render it disabled-with-tooltip, but it never appears in
-# SUPPORTED_PAIRS until the D3 runtime sponsorship lands.
-KNOWN_FORMATS: frozenset[str] = frozenset({"DELTA", "ICEBERG", "PARQUET", "HUDI"})
+# All format names the API surface accepts. JSON, AVRO, ORC ship with
+# CTAS strategies; Hudi is partially supported (Delta→Hudi UniForm
+# Beta only — every other Hudi pair still needs a Job-cluster runtime).
+KNOWN_FORMATS: frozenset[str] = frozenset(
+    {"DELTA", "ICEBERG", "PARQUET", "AVRO", "ORC", "JSON", "HUDI"}
+)
 
 
 def is_pair_supported(source_format: str, target_format: str) -> bool:
@@ -177,6 +200,7 @@ def _dispatch_strategy(
     *,
     iceberg_physical: bool = False,
     keep_backup: bool = True,
+    destination_path: str | None = None,
 ) -> StrategyChoice | None:
     """Return the Plan for a (source, target) pair, or None if unsupported.
 
@@ -230,13 +254,52 @@ def _dispatch_strategy(
             strategy="ctas_iceberg",
         )
 
-    # D2: → Parquet. Loses every Delta-only feature (history, DV, change
-    # feed, time travel). Caller must have set `acknowledge_history_loss`
-    # (gated at the API request level — by here we trust it's set).
-    if (src, tgt) in {("DELTA", "PARQUET"), ("ICEBERG", "PARQUET")}:
+    # D2.7: Export-shaped targets — PARQUET / AVRO / ORC / JSON. UC
+    # managed tables MUST be Delta, so the previous CTAS-into-the-same-
+    # FQN approach was a dead end (Databricks rejects it). The
+    # converter now writes raw files to a Volume the caller picked.
+    # The original table at ``qualified`` is preserved — these are
+    # genuine exports, not destructive in-place rewrites.
+    #
+    # ``destination_path`` is required for these targets; the API
+    # request validator catches missing paths with a 422 before we
+    # reach this point. Defence-in-depth: if it's somehow None here
+    # (e.g. a CLI caller bypassing the validator), return None and let
+    # the orchestrator skip the row with a clear reason.
+    export_pairs = {
+        ("DELTA", "PARQUET"),
+        ("ICEBERG", "PARQUET"),
+        ("DELTA", "AVRO"),
+        ("ICEBERG", "AVRO"),
+        ("PARQUET", "AVRO"),
+        ("DELTA", "ORC"),
+        ("ICEBERG", "ORC"),
+        ("PARQUET", "ORC"),
+        ("DELTA", "JSON"),
+        ("ICEBERG", "JSON"),
+        ("PARQUET", "JSON"),
+    }
+    if (src, tgt) in export_pairs:
+        if not destination_path:
+            return None
         return StrategyChoice(
-            plan=ctas_parquet_inplace_plan(qualified, keep_backup=keep_backup),
-            strategy="ctas_parquet",
+            plan=export_to_volume_plan(
+                qualified,
+                fmt=tgt.lower(),
+                volume_path=destination_path,
+            ),
+            strategy=f"export_{tgt.lower()}",
+        )
+
+    # D2.6: Delta → Hudi UniForm (Beta). Sidecar metadata only — same
+    # ALTER chain as the Iceberg UniForm path, just a different
+    # CompatV* property + universalFormat enum value. Always picks the
+    # UniForm path; physical-Hudi from Delta requires a Job-cluster
+    # runtime and stays gated by the SUPPORTED_PAIRS set.
+    if (src, tgt) == ("DELTA", "HUDI"):
+        return StrategyChoice(
+            plan=enable_uniform_hudi_plan(qualified),
+            strategy="uniform_hudi",
         )
 
     return None
@@ -365,6 +428,7 @@ def convert_table_format(
     copy_permissions: bool = True,
     dry_run: bool = False,
     audit_callback: ConvertAuditCallback | None = None,
+    destination_path: str | None = None,
 ) -> ConvertResult:
     """Convert a single UC-registered table from one format to another.
 
@@ -445,6 +509,7 @@ def convert_table_format(
         qualified,
         iceberg_physical=iceberg_physical,
         keep_backup=keep_backup,
+        destination_path=destination_path,
     )
 
     if choice is None:
@@ -475,7 +540,7 @@ def convert_table_format(
     #     conversion).
     captured_perms = (
         _capture_table_permissions(client, warehouse_id, fqn)
-        if copy_permissions and choice.strategy in {"ctas_iceberg", "ctas_parquet"}
+        if copy_permissions and choice.strategy == "ctas_iceberg"
         else None
     )
 
@@ -527,7 +592,7 @@ def convert_table_to_delta(
 def convert_tables_format(
     client: WorkspaceClient,
     warehouse_id: str,
-    targets: list[tuple[str, str] | tuple[str, str, str]],
+    targets: list[tuple[str, str] | tuple[str, str, str] | tuple[str, str, str, str | None]],
     *,
     confirm_destructive: bool,
     dry_run: bool = False,
@@ -567,13 +632,19 @@ def convert_tables_format(
 
     summary = ConvertSummary(total=len(targets))
     for entry in targets:
-        # Normalise 2-tuple → 3-tuple. Default target = DELTA so the
-        # legacy contract behaves unchanged.
+        # Normalise 2-/3-/4-tuple. Default target = DELTA + no
+        # destination_path so the legacy contracts behave unchanged.
+        # 4-tuple is the export-shaped target shape (PARQUET / AVRO /
+        # ORC / JSON) — `dest_path` is the Volume URI; for in-place
+        # targets it's None.
+        dest_path: str | None = None
         if len(entry) == 2:
-            fqn, src_fmt = entry
+            fqn, src_fmt = entry  # type: ignore[misc]
             tgt_fmt = "DELTA"
-        else:
+        elif len(entry) == 3:
             fqn, src_fmt, tgt_fmt = entry  # type: ignore[misc]
+        else:
+            fqn, src_fmt, tgt_fmt, dest_path = entry  # type: ignore[misc]
 
         result = convert_table_format(
             client,
@@ -586,6 +657,7 @@ def convert_tables_format(
             copy_permissions=copy_permissions,
             dry_run=dry_run,
             audit_callback=audit_callback,
+            destination_path=dest_path,
         )
         summary.results.append(result)
         if result.status == "converted":

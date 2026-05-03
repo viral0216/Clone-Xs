@@ -105,10 +105,12 @@ def test_endpoint_accepts_delta_to_iceberg_pair_in_d2(client):
     assert body["results"][0]["destination_format"] == "ICEBERG"
 
 
-def test_endpoint_rejects_hudi_target(client):
-    """Hudi (any pair) is gated behind D3 runtime sponsorship. The
-    validator returns 422 with a 'Hudi' mention so the UI can render
-    a sponsor-needed message rather than the generic copy."""
+def test_endpoint_rejects_export_target_without_destination_path(client):
+    """PARQUET / AVRO / ORC / JSON targets must carry a Volume path —
+    UC managed tables can't be these formats, so the converter writes
+    files to a Volume. The Pydantic validator returns 422 with a
+    clear message naming the offending target so the UI can render an
+    inline error rather than a generic toast."""
     resp = client.post(
         "/api/convert-to-delta",
         json={
@@ -116,6 +118,57 @@ def test_endpoint_rejects_hudi_target(client):
                 {
                     "fqn": "edp_dev.bronze.events",
                     "source_format": "DELTA",
+                    "target_format": "PARQUET",
+                    # destination_path intentionally omitted
+                }
+            ],
+            "warehouse_id": "wh-1",
+            "confirm_destructive": True,
+        },
+    )
+    assert resp.status_code == 422
+    detail = str(resp.json()["detail"]).lower()
+    assert "destination_path" in detail
+    assert "volume" in detail
+
+
+def test_endpoint_rejects_export_target_with_non_volume_path(client):
+    """Path must start with /Volumes/ — the validator rejects an S3
+    URI or any other prefix so the operator catches the mistake
+    before the warehouse runs the SQL."""
+    resp = client.post(
+        "/api/convert-to-delta",
+        json={
+            "targets": [
+                {
+                    "fqn": "edp_dev.bronze.events",
+                    "source_format": "DELTA",
+                    "target_format": "JSON",
+                    "destination_path": "s3://my-bucket/exports/",
+                }
+            ],
+            "warehouse_id": "wh-1",
+            "confirm_destructive": True,
+        },
+    )
+    assert resp.status_code == 422
+    detail = str(resp.json()["detail"]).lower()
+    assert "/volumes/" in detail
+
+
+def test_endpoint_rejects_non_delta_hudi_target(client):
+    """D2.6 — Delta→Hudi is now supported via the UniForm sidecar
+    (Beta). Every other source→Hudi pair still needs a Job-cluster
+    runtime and stays gated, so the validator continues to return 422
+    for ICEBERG→HUDI / PARQUET→HUDI with a 'Hudi' mention so the UI
+    can render the sponsor-needed message."""
+    resp = client.post(
+        "/api/convert-to-delta",
+        json={
+            "targets": [
+                {
+                    "fqn": "edp_dev.bronze.events",
+                    "source_format": "ICEBERG",
                     "target_format": "HUDI",
                 }
             ],
@@ -289,9 +342,11 @@ def test_endpoint_forwards_confirmed_request(client):
     assert body["results"][0]["duration_ms"] == 1234
     assert body["results"][0]["destination_format"] == "DELTA"
 
-    # Forwarded args: targets list (now 3-tuples), confirm flag honoured.
+    # Forwarded args: targets list (now 4-tuples — destination_path
+    # is None for in-place targets like DELTA/ICEBERG/HUDI), confirm
+    # flag honoured.
     call_kwargs = mock_convert.call_args.kwargs
     assert call_kwargs["confirm_destructive"] is True
     assert call_kwargs["dry_run"] is False
     forwarded_targets = mock_convert.call_args.args[2]
-    assert forwarded_targets == [("edp_dev.bronze.events", "ICEBERG", "DELTA")]
+    assert forwarded_targets == [("edp_dev.bronze.events", "ICEBERG", "DELTA", None)]

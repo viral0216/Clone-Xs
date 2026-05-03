@@ -127,6 +127,62 @@ def _refuse_delta_generated_or_identity_columns(
     return CompatCheckResult()
 
 
+def _refuse_hudi_uniform_when_iceberg_active(
+    client: WorkspaceClient, warehouse_id: str, fqn: str
+) -> CompatCheckResult:
+    """Refuse Delta→Hudi UniForm when the table is already an Iceberg
+    UniForm sidecar (or a UC Managed Iceberg table).
+
+    UniForm sidecars are **mutually exclusive** on a single Delta
+    table — Databricks rejects ``ALTER TABLE ... SET TBLPROPERTIES
+    ('delta.universalFormat.enabledFormats' = 'hudi')`` with
+    ``MANAGED_ICEBERG_OPERATION_NOT_SUPPORTED`` when Iceberg is
+    already enabled. The error isn't documented; we surface it
+    up-front instead of letting the operator hit the cryptic
+    Databricks error after a 4-second SQL round-trip.
+
+    Detects via ``SHOW TBLPROPERTIES`` — checks two flags:
+      - ``delta.enableIcebergCompatV2`` (Iceberg UniForm enabled)
+      - ``delta.universalFormat.enabledFormats`` containing ``iceberg``
+
+    Fails open (returns ok) if SHOW TBLPROPERTIES errors so a flaky
+    warehouse doesn't block the conversion.
+    """
+    try:
+        rows = execute_sql(client, warehouse_id, f"SHOW TBLPROPERTIES {fqn}")
+    except Exception as e:
+        logger.debug(
+            "Hudi UniForm preflight SHOW TBLPROPERTIES failed on %s, assuming OK: %s", fqn, e
+        )
+        return CompatCheckResult()
+
+    iceberg_compat_on = False
+    enabled_formats = ""
+    for row in rows or []:
+        # SHOW TBLPROPERTIES returns columns named differently across
+        # DBR versions: "key"/"value" on newer, "Key"/"Value" elsewhere.
+        # Normalise both shapes.
+        key = (row.get("key") or row.get("Key") or "").strip().lower()
+        val = (row.get("value") or row.get("Value") or "").strip().lower()
+        if key == "delta.enableicebergcompatv2" and val == "true":
+            iceberg_compat_on = True
+        if key == "delta.universalformat.enabledformats":
+            enabled_formats = val
+
+    iceberg_already_active = iceberg_compat_on or "iceberg" in enabled_formats
+    if iceberg_already_active:
+        return CompatCheckResult(
+            reason=(
+                "Hudi UniForm cannot be enabled — Iceberg UniForm is already "
+                "active on this table (UniForm sidecars are mutually exclusive). "
+                "To switch to Hudi, first run: "
+                "ALTER TABLE <fqn> UNSET TBLPROPERTIES "
+                "('delta.enableIcebergCompatV2', 'delta.universalFormat.enabledFormats')"
+            )
+        )
+    return CompatCheckResult()
+
+
 # Per-pair check registry. Order doesn't matter; the orchestrator runs
 # every check and joins failures. New pairs in future phases register
 # here; downstream consumers don't change.
@@ -142,6 +198,10 @@ _COMPAT_CHECKS: dict[tuple[str, str], list[CompatCheck]] = {
     # logical pair (the UniForm strategy handles columns transparently).
     ("DELTA", "ICEBERG"): [_refuse_delta_generated_or_identity_columns],
     ("DELTA", "PARQUET"): [_refuse_delta_generated_or_identity_columns],
+    # Delta→Hudi UniForm refuses if Iceberg UniForm is already enabled
+    # (Databricks rejects setting both sidecars on one table). See
+    # `_refuse_hudi_uniform_when_iceberg_active` for the exact rule.
+    ("DELTA", "HUDI"): [_refuse_hudi_uniform_when_iceberg_active],
 }
 
 

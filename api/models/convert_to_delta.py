@@ -27,8 +27,23 @@ class ConvertTargetRef(BaseModel):
     """
 
     fqn: str = Field(..., description="3-part fully qualified name, e.g. catalog.schema.table")
-    source_format: Literal["PARQUET", "ICEBERG", "DELTA", "HUDI"] = "ICEBERG"
-    target_format: Literal["DELTA", "ICEBERG", "PARQUET", "HUDI"] = "DELTA"
+    source_format: Literal["PARQUET", "ICEBERG", "DELTA", "AVRO", "ORC", "JSON", "HUDI"] = "ICEBERG"
+    target_format: Literal["DELTA", "ICEBERG", "PARQUET", "AVRO", "ORC", "JSON", "HUDI"] = "DELTA"
+    # Required when target_format is one of PARQUET / AVRO / ORC / JSON
+    # (the "export-shaped" formats — UC managed tables can't be these,
+    # so the converter writes files to a Volume instead of rewriting
+    # the table in place). Format:
+    # ``/Volumes/<catalog>/<schema>/<volume>[/<sub-path>]``.
+    # Ignored for DELTA / ICEBERG targets, which stay in-place at
+    # ``fqn``.
+    destination_path: str | None = Field(
+        default=None,
+        description=(
+            "Volume path for export-shaped targets. Required when "
+            "target_format ∈ {PARQUET, AVRO, ORC, JSON}. Format: "
+            "/Volumes/<catalog>/<schema>/<volume>[/<sub-path>]"
+        ),
+    )
 
 
 class ConvertToDeltaRequest(BaseModel):
@@ -77,6 +92,41 @@ class ConvertToDeltaRequest(BaseModel):
                 "convert-to-delta is destructive on source — set "
                 "`confirm_destructive: true` explicitly, or set `dry_run: true` "
                 "to preview the SQL without executing"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _export_targets_require_destination_path(self) -> "ConvertToDeltaRequest":
+        """Reject export-shaped targets that have no Volume path set.
+
+        UC managed tables can't be PARQUET / AVRO / ORC / JSON, so the
+        converter for those formats writes files to a Volume rather
+        than rewriting the table in place. The path must be set
+        explicitly — auto-deriving from the source FQN would silently
+        require a Volume to exist with a magic name, which fails
+        opaquely. The UI is expected to pre-populate the field with a
+        sensible default the operator can edit.
+        """
+        export_formats = {"PARQUET", "AVRO", "ORC", "JSON"}
+        missing: list[str] = []
+        for t in self.targets:
+            if t.target_format.upper() not in export_formats:
+                continue
+            path = (t.destination_path or "").strip()
+            if not path:
+                missing.append(f"{t.fqn} (target {t.target_format})")
+                continue
+            if not path.startswith("/Volumes/"):
+                missing.append(
+                    f"{t.fqn} (destination_path {path!r} must start with "
+                    f"/Volumes/<catalog>/<schema>/<volume>)"
+                )
+        if missing:
+            raise ValueError(
+                "Export-shaped targets (PARQUET / AVRO / ORC / JSON) "
+                "require a Volume `destination_path` — UC managed tables "
+                "can't be these formats, so the converter writes files "
+                "to a Volume instead. Offending targets: " + ", ".join(missing)
             )
         return self
 

@@ -125,13 +125,14 @@ def post_convert_to_delta(
         dry_run=req.dry_run,
     )
 
-    # 3-tuples (fqn, source_format, target_format) — `convert_tables_format`
-    # accepts both 2- and 3-tuples; we always send 3 in the API path so
-    # the audit row carries the right destination_format. The model
-    # validator already rejected unsupported pairs with 422, so by here
-    # every entry is either supported or identity (which the orchestrator
-    # short-circuits as "skipped").
-    targets = [(t.fqn, t.source_format, t.target_format) for t in req.targets]
+    # 4-tuples (fqn, source_format, target_format, destination_path) —
+    # `convert_tables_format` accepts 2/3/4-tuples; we always send 4 in
+    # the API path so the audit row carries both the destination_format
+    # and the Volume export path (when applicable). The model validator
+    # already rejected unsupported pairs and missing-path export-shaped
+    # targets with 422, so by here every entry is either supported or
+    # identity (orchestrator short-circuits as "skipped").
+    targets = [(t.fqn, t.source_format, t.target_format, t.destination_path) for t in req.targets]
     try:
         summary = convert_tables_format(
             client,

@@ -18,9 +18,14 @@ import pytest
 from src.format_strategies import (
     Plan,
     PlanStep,
+    ctas_avro_inplace_plan,
     ctas_iceberg_inplace_plan,
+    ctas_json_inplace_plan,
+    ctas_orc_inplace_plan,
     ctas_parquet_inplace_plan,
+    enable_uniform_hudi_plan,
     enable_uniform_plan,
+    export_to_volume_plan,
 )
 
 
@@ -72,6 +77,130 @@ def test_ctas_parquet_inplace_emits_using_parquet():
     create_sqls = [s.sql for s in plan.steps if "USING" in s.sql]
     assert len(create_sqls) == 1
     assert "USING parquet" in create_sqls[0]
+
+
+def test_ctas_avro_inplace_emits_using_avro():
+    """Avro target — row-oriented sink for streaming consumers. Same
+    temp+rename plan shape as Parquet; only ``USING <fmt>`` differs."""
+    plan = ctas_avro_inplace_plan("`cat`.`schema`.`tbl`", keep_backup=True)
+    assert len(plan.steps) == 3
+    assert "USING avro AS SELECT" in plan.steps[0].sql
+    assert "_convert_tmp" in plan.steps[0].sql
+
+
+def test_ctas_orc_inplace_emits_using_orc():
+    """ORC target — Hive-era columnar interop. Same temp+rename plan
+    shape as Parquet."""
+    plan = ctas_orc_inplace_plan("`cat`.`schema`.`tbl`", keep_backup=True)
+    assert len(plan.steps) == 3
+    assert "USING orc AS SELECT" in plan.steps[0].sql
+    assert "_convert_tmp" in plan.steps[0].sql
+
+
+def test_ctas_avro_inplace_without_keep_backup_drops_source():
+    """Same recoverability semantic as the other CTAS factories — when
+    ``keep_backup=False``, the rename-aside step is replaced with a
+    DROP TABLE on the source."""
+    plan = ctas_avro_inplace_plan("`cat`.`schema`.`tbl`", keep_backup=False)
+    drops = [s for s in plan.steps if s.sql.startswith("DROP TABLE")]
+    assert len(drops) == 1
+
+
+def test_ctas_orc_inplace_with_where_clause_renders_filter():
+    """Partition-pruning via ``where`` works for ORC just like the
+    other CTAS factories — the filter is appended to the SELECT in
+    the create step."""
+    plan = ctas_orc_inplace_plan(
+        "`cat`.`schema`.`tbl`",
+        where="region = 'eu'",
+        keep_backup=True,
+    )
+    assert "WHERE region = 'eu'" in plan.steps[0].sql
+
+
+def test_ctas_json_inplace_emits_using_json():
+    """JSON target — export-shaped sink for HTTP webhooks / NoSQL
+    pipelines. Same temp+rename plan shape as Parquet/AVRO/ORC."""
+    plan = ctas_json_inplace_plan("`cat`.`schema`.`tbl`", keep_backup=True)
+    assert len(plan.steps) == 3
+    assert "USING json AS SELECT" in plan.steps[0].sql
+    assert "_convert_tmp" in plan.steps[0].sql
+
+
+def test_enable_uniform_hudi_plan_emits_three_steps_in_order():
+    """Hudi UniForm follows the same shape as Iceberg UniForm — disable
+    DV → REORG PURGE → SET props. The third step's TBLPROPERTIES MUST
+    set both ``delta.enableHudiCompatV1`` and
+    ``delta.universalFormat.enabledFormats = 'hudi'`` — Databricks
+    rejects the alter if either one is missing or set to the wrong
+    value."""
+    plan = enable_uniform_hudi_plan("`cat`.`schema`.`tbl`")
+    assert len(plan.steps) == 3
+    assert plan.steps[0].label == "disable deletion vectors"
+    assert "delta.enableDeletionVectors" in plan.steps[0].sql
+    assert plan.steps[1].label == "purge deletion vector files"
+    assert "REORG TABLE" in plan.steps[1].sql
+    # The label includes "Beta" so the dry-run preview surfaces the
+    # caveat.
+    assert "Beta" in plan.steps[2].label
+    assert "delta.enableHudiCompatV1" in plan.steps[2].sql
+    assert "'hudi'" in plan.steps[2].sql
+
+
+def test_export_to_volume_plan_emits_single_insert_overwrite_directory():
+    """Export-shaped targets (PARQUET / AVRO / ORC / JSON) write raw
+    files to a Volume — UC managed tables can't be these formats.
+    Single-step plan: one ``INSERT OVERWRITE DIRECTORY '<volume>'
+    USING <fmt> SELECT * FROM <source>``. Source preserved."""
+    plan = export_to_volume_plan(
+        "`cat`.`schema`.`tbl`",
+        fmt="parquet",
+        volume_path="/Volumes/cat/schema/exports/tbl_parquet/",
+    )
+    assert len(plan.steps) == 1
+    sql = plan.steps[0].sql
+    assert sql.startswith("INSERT OVERWRITE DIRECTORY ")
+    assert "'/Volumes/cat/schema/exports/tbl_parquet/'" in sql
+    assert "USING parquet" in sql
+    assert "SELECT * FROM `cat`.`schema`.`tbl`" in sql
+
+
+def test_export_to_volume_plan_supports_every_export_format():
+    """The dispatch routes PARQUET / AVRO / ORC / JSON through this
+    factory — assert each format renders cleanly so a future change
+    that breaks one fmt doesn't slip past unit tests."""
+    for fmt in ("parquet", "avro", "orc", "json"):
+        plan = export_to_volume_plan(
+            "`cat`.`schema`.`tbl`",
+            fmt=fmt,
+            volume_path=f"/Volumes/cat/schema/exports/tbl_{fmt}/",
+        )
+        assert f"USING {fmt}" in plan.steps[0].sql
+
+
+def test_export_to_volume_plan_with_where_clause_filters_select():
+    """``where`` lets operators partition-prune before writing — common
+    when only the latest partition needs to land in the export sink."""
+    plan = export_to_volume_plan(
+        "`cat`.`schema`.`tbl`",
+        fmt="json",
+        volume_path="/Volumes/cat/schema/exports/tbl/",
+        where="dt >= '2026-01-01'",
+    )
+    assert "WHERE dt >= '2026-01-01'" in plan.steps[0].sql
+
+
+def test_enable_uniform_plan_still_emits_iceberg_props():
+    """Regression guard for the refactor that introduced the generic
+    `_enable_uniform_plan` helper — the Iceberg variant must still
+    emit `delta.enableIcebergCompatV2` and `enabledFormats = 'iceberg'`
+    (not the Hudi values)."""
+    plan = enable_uniform_plan("`cat`.`schema`.`tbl`")
+    set_step_sql = plan.steps[2].sql
+    assert "delta.enableIcebergCompatV2" in set_step_sql
+    assert "'iceberg'" in set_step_sql
+    assert "Hudi" not in set_step_sql
+    assert "hudi" not in set_step_sql
 
 
 def test_ctas_with_where_clause_renders_filter():

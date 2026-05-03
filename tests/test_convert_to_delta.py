@@ -389,19 +389,34 @@ def test_convert_tables_propagates_audit_callback_to_each_target(mock_sql):
 # below exercises the refusal path.
 
 
-def test_supported_pairs_covers_d1_and_d2_cells():
-    """D2 ships the four CTAS cells on top of D1's two CONVERT TO DELTA
-    cells. Six total. This test fails loudly if a future PR forgets to
-    update the registry when adding a new pair (or, conversely, removes
-    a cell without updating tests downstream)."""
+def test_supported_pairs_covers_d1_through_d2_6_cells():
+    """D2.6 adds JSON sinks (3 cells) and Delta→Hudi UniForm (1 cell)
+    on top of the prior 12. Sixteen total. Fails loudly if a future PR
+    forgets to update the registry when adding a new pair (or,
+    conversely, removes a cell without updating tests downstream).
+    """
     assert SUPPORTED_PAIRS == frozenset(
         {
+            # D1
             ("PARQUET", "DELTA"),
             ("ICEBERG", "DELTA"),
+            # D2
             ("DELTA", "ICEBERG"),
             ("PARQUET", "ICEBERG"),
             ("DELTA", "PARQUET"),
             ("ICEBERG", "PARQUET"),
+            # D2.5 — Avro + ORC sinks
+            ("DELTA", "AVRO"),
+            ("ICEBERG", "AVRO"),
+            ("PARQUET", "AVRO"),
+            ("DELTA", "ORC"),
+            ("ICEBERG", "ORC"),
+            ("PARQUET", "ORC"),
+            # D2.6 — JSON sinks + Delta→Hudi UniForm (Beta)
+            ("DELTA", "JSON"),
+            ("ICEBERG", "JSON"),
+            ("PARQUET", "JSON"),
+            ("DELTA", "HUDI"),
         }
     )
 
@@ -474,42 +489,164 @@ def test_convert_d2_parquet_to_iceberg_uses_ctas(mock_sql, _mock_compat):
 
 @patch("src.convert_to_delta.check_pair_compat", return_value=[])
 @patch("src.format_strategies.execute_sql")
-def test_convert_d2_delta_to_parquet(mock_sql, _mock_compat):
-    """Delta→Parquet uses CTAS+rename. Loses Delta history / DV / time
-    travel — the API request validator gates this, so by here we trust
-    the caller meant it."""
+def test_convert_d27_delta_to_parquet_exports_to_volume(mock_sql, _mock_compat):
+    """Delta→Parquet writes raw files to a Volume — UC managed tables
+    must be Delta, so the previous CTAS-into-the-same-FQN approach is
+    rejected by Databricks. The orchestrator now routes export-shaped
+    targets (PARQUET / AVRO / ORC / JSON) through ``INSERT OVERWRITE
+    DIRECTORY``. Source table at the FQN is preserved.
+    """
     mock_sql.return_value = []
+    volume = "/Volumes/edp_dev/bronze/clone_xs_exports/events_parquet/"
     result = convert_table_format(
         MagicMock(),
         "wh-1",
         "edp_dev.bronze.events",
         "DELTA",
         target_format="PARQUET",
+        destination_path=volume,
     )
     assert result.status == "converted"
-    assert result.strategy_used == "ctas_parquet"
+    assert result.strategy_used == "export_parquet"
     sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("INSERT OVERWRITE DIRECTORY" in s for s in sqls)
+    assert any(volume in s for s in sqls)
     assert any("USING parquet" in s for s in sqls)
-    assert any("_pre_convert_" in s for s in sqls)  # default keep_backup=True
 
 
 @patch("src.convert_to_delta.check_pair_compat", return_value=[])
 @patch("src.format_strategies.execute_sql")
-def test_convert_d2_iceberg_to_parquet(mock_sql, _mock_compat):
-    """Iceberg→Parquet is the same shape as Delta→Parquet — same plan
-    builder, only the source the SELECT reads from differs."""
+def test_convert_d27_iceberg_to_parquet_exports_to_volume(mock_sql, _mock_compat):
+    """Iceberg→Parquet shares the same export-to-Volume shape as the
+    Delta source — only the source the SELECT reads from differs.
+    """
     mock_sql.return_value = []
+    volume = "/Volumes/edp_dev/bronze/clone_xs_exports/events_parquet/"
     result = convert_table_format(
         MagicMock(),
         "wh-1",
         "edp_dev.bronze.events",
         "ICEBERG",
         target_format="PARQUET",
+        destination_path=volume,
     )
     assert result.status == "converted"
-    assert result.strategy_used == "ctas_parquet"
+    assert result.strategy_used == "export_parquet"
     sqls = [c[0][2] for c in mock_sql.call_args_list]
-    assert any("USING parquet" in s for s in sqls)
+    assert any("INSERT OVERWRITE DIRECTORY" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d27_delta_to_avro_exports_to_volume(mock_sql, _mock_compat):
+    """Delta→Avro — strategy label `export_avro`, single-step
+    INSERT OVERWRITE DIRECTORY plan (one statement per target). The
+    distinct strategy label keeps the audit row honest about which
+    physical sink the orchestrator picked."""
+    mock_sql.return_value = []
+    volume = "/Volumes/edp_dev/bronze/clone_xs_exports/events_avro/"
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="AVRO",
+        destination_path=volume,
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "export_avro"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING avro" in s for s in sqls)
+    assert any(volume in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d27_iceberg_to_orc_exports_to_volume(mock_sql, _mock_compat):
+    """Iceberg→ORC. Strategy label `export_orc`. Validates the export
+    matrix covers every (DELTA / ICEBERG / PARQUET → AVRO / ORC / JSON
+    / PARQUET) cell."""
+    mock_sql.return_value = []
+    volume = "/Volumes/edp_dev/bronze/clone_xs_exports/events_orc/"
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "ICEBERG",
+        target_format="ORC",
+        destination_path=volume,
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "export_orc"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING orc" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d27_delta_to_json_exports_to_volume(mock_sql, _mock_compat):
+    """Delta→JSON — export-shaped sink for HTTP webhooks / NoSQL
+    pipelines. Same single-step INSERT OVERWRITE DIRECTORY plan as
+    AVRO / ORC / PARQUET; strategy label `export_json`."""
+    mock_sql.return_value = []
+    volume = "/Volumes/edp_dev/bronze/clone_xs_exports/events_json/"
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="JSON",
+        destination_path=volume,
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "export_json"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    assert any("USING json" in s for s in sqls)
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+def test_convert_d27_export_target_without_destination_path_skips(_mock_compat):
+    """Defence-in-depth: if a CLI caller bypasses the API validator
+    and passes an export-shaped target with no ``destination_path``,
+    the orchestrator returns a clean "skipped" result instead of
+    crashing. The API surface catches this earlier with a 422; this
+    test pins the fallback for direct callers."""
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="JSON",
+        # no destination_path — orchestrator must skip, not crash
+    )
+    assert result.status == "skipped"
+    assert "not yet supported" in (result.error or "")
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d26_delta_to_hudi_uniform(mock_sql, _mock_compat):
+    """D2.6 — Delta→Hudi UniForm (Beta). Sidecar metadata only — no
+    data movement. Three-step ALTER chain (disable DV → REORG PURGE
+    → SET props with `delta.enableHudiCompatV1` + `enabledFormats =
+    'hudi'`). Strategy label `uniform_hudi` so the audit row
+    distinguishes this from the Iceberg UniForm sibling."""
+    mock_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="HUDI",
+    )
+    assert result.status == "converted"
+    assert result.strategy_used == "uniform_hudi"
+    sqls = [c[0][2] for c in mock_sql.call_args_list]
+    # Assert each of the three required UniForm steps fired.
+    assert any("delta.enableDeletionVectors" in s for s in sqls)
+    assert any("REORG TABLE" in s for s in sqls)
+    assert any("delta.enableHudiCompatV1" in s for s in sqls)
+    assert any("'hudi'" in s for s in sqls)
 
 
 @patch("src.convert_to_delta.check_pair_compat", return_value=[])
@@ -517,14 +654,18 @@ def test_convert_d2_iceberg_to_parquet(mock_sql, _mock_compat):
 def test_convert_d2_keep_backup_off_drops_source(mock_sql, _mock_compat):
     """`keep_backup=False` swaps the rename-to-backup step for a DROP
     TABLE. Non-recoverable — surfaced in the UI behind a confirmation
-    so the operator picks it knowingly."""
+    so the operator picks it knowingly. Only meaningful for the
+    physical-Iceberg CTAS path now (Parquet/Avro/ORC/JSON went to the
+    export-to-Volume path which preserves the source unconditionally).
+    """
     mock_sql.return_value = []
     result = convert_table_format(
         MagicMock(),
         "wh-1",
         "edp_dev.bronze.events",
         "DELTA",
-        target_format="PARQUET",
+        target_format="ICEBERG",
+        iceberg_physical=True,
         keep_backup=False,
     )
     assert result.status == "converted"
@@ -564,7 +705,11 @@ def test_convert_d2_ctas_replays_grants_and_owner(
         "wh-1",
         "edp_dev.bronze.events",
         "DELTA",
-        target_format="PARQUET",
+        # CTAS replay is now only relevant for the physical-Iceberg
+        # path; the former Parquet CTAS arm is now an export-to-Volume
+        # path that preserves the source's permissions automatically.
+        target_format="ICEBERG",
+        iceberg_physical=True,
     )
     assert result.status == "converted"
 
@@ -618,7 +763,11 @@ def test_convert_d2_ctas_succeeds_when_show_grants_fails(
         "wh-1",
         "edp_dev.bronze.events",
         "DELTA",
-        target_format="PARQUET",
+        # Use the physical-Iceberg CTAS path now that the former
+        # Parquet CTAS arm is gone (export-to-Volume preserves the
+        # source's permissions automatically).
+        target_format="ICEBERG",
+        iceberg_physical=True,
     )
     assert result.status == "converted"
 

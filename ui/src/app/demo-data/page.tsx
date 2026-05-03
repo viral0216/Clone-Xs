@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +45,18 @@ const SCALE_OPTIONS = [
   { value: "0.5", label: "0.5 — Medium (~500M rows)" },
   { value: "1.0", label: "1.0 — Full (~1B rows)" },
 ];
+
+// Compact number formatter for chart axes / tooltips. Turns 3,000,000
+// into "3M" — the throughput chart Y-axis is unreadable without it
+// once batch sizes pass ~10K.
+const fmtN = (n: number): string => {
+  if (n == null || Number.isNaN(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(abs >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B";
+  if (abs >= 1e6) return (n / 1e6).toFixed(abs >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (abs >= 1e3) return (n / 1e3).toFixed(abs >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+  return String(Math.round(n));
+};
 
 // Streaming-emit performance presets. Each preset bundles a destination
 // + cadence combo that targets a different throughput tier — clicking
@@ -768,7 +780,11 @@ export default function DemoDataPage() {
         tick: prog.ticks,
         elapsed: typeof prog.elapsed_seconds === "number" ? prog.elapsed_seconds : 0,
         events: prog.events_emitted,
-        // delta is filled in on read using the previous snapshot (see streamingSeries memo)
+        // tickErrors is captured per-snapshot so the chart can mark the
+        // exact tick where a failure happened (red dot on the cumulative
+        // line). delta + hasError are filled in on read — see
+        // streamingSeries memo below.
+        tickErrors: typeof prog.tick_errors === "number" ? prog.tick_errors : 0,
       };
     },
     isProgressEqual: (a, b) => a?.tick === b?.tick,
@@ -783,13 +799,19 @@ export default function DemoDataPage() {
   const streamingJob = streamJob.entry?.data ?? null;
   // Recompute deltas from the persisted history. The hook stores absolute
   // counts; the chart wants per-tick deltas, so we derive them here.
+  // Also computes hasError: true whenever the cumulative tick_errors
+  // count went up between two snapshots — used to drop a red dot on
+  // that exact tick in the chart.
   const streamingSeries = (() => {
     const hist = streamJob.progressHistory ?? [];
     let lastEvents = 0;
+    let lastErrors = 0;
     return hist.map((p: any) => {
       const delta = (p?.events ?? 0) - lastEvents;
+      const errorDelta = (p?.tickErrors ?? 0) - lastErrors;
       lastEvents = p?.events ?? lastEvents;
-      return { ...p, delta };
+      lastErrors = p?.tickErrors ?? lastErrors;
+      return { ...p, delta, hasError: errorDelta > 0 };
     });
   })();
   const streamingEmit = useStreamingEmit();
@@ -2876,68 +2898,237 @@ export default function DemoDataPage() {
                     );
                   })()}
 
-                  {/* Throughput chart — dual-axis line chart of cumulative
-                      events (left) and per-tick delta (right) over elapsed
-                      seconds. Hidden until we have ≥2 samples (one point
-                      isn't a line). */}
-                  {streamingSeries.length >= 2 && (
+                  {/* Throughput chart — dual-axis composed chart of
+                      cumulative events (left, area-filled) and per-tick
+                      delta (right, dashed line) over elapsed seconds.
+                      A horizontal dashed reference line on the right axis
+                      marks the configured `events_per_batch` (what each
+                      tick should land if the runner is keeping up).
+                      Red dots on the cumulative line mark ticks where
+                      `tick_errors` increased. Hidden until we have ≥2
+                      samples (one point isn't a line). */}
+                  {streamingSeries.length >= 2 && (() => {
+                    // Peak per-tick events seen in the run — used to
+                    // decide whether the "expected /tick" reference line
+                    // is meaningful. If the form value is < 1% of the
+                    // peak delta (e.g. user changed the form to 100 after
+                    // running with 1M batches) the line is essentially at
+                    // the X-axis and the label collides with the last
+                    // X-tick. Hide it in that case.
+                    const maxDelta = streamingSeries.reduce(
+                      (m: number, p: any) => Math.max(m, Number(p?.delta) || 0),
+                      0,
+                    );
+                    const showExpectedLine =
+                      streamEventsPerBatch > 0 &&
+                      maxDelta > 0 &&
+                      streamEventsPerBatch >= maxDelta * 0.01;
+                    return (
                     <div className="border border-border rounded-md bg-background p-2 mt-2">
                       <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Throughput</div>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <LineChart data={streamingSeries} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                      <ResponsiveContainer width="100%" height={220}>
+                        {/* bottom margin: 30 — leaves room for the X-axis
+                            tick row + "elapsed (s)" label + the Legend
+                            without any overlap. The previous 18 was tight
+                            and "elapsed (s)" sat almost on top of the
+                            legend at narrow widths. */}
+                        <ComposedChart data={streamingSeries} margin={{ top: 8, right: 24, bottom: 30, left: 8 }}>
+                          {/* Subtle area fill under the cumulative line.
+                              Defined as a linearGradient so the alpha
+                              fades to ~0 at the bottom — gives the line
+                              visual weight without dominating the chart. */}
+                          <defs>
+                            <linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#E8453C" stopOpacity={0.25} />
+                              <stop offset="100%" stopColor="#E8453C" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-muted-foreground/20" />
                           <XAxis
                             dataKey="elapsed"
                             type="number"
                             domain={[0, "dataMax"]}
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
-                            label={{ value: "elapsed (s)", position: "insideBottom", offset: -2, style: { fontSize: 10, fill: "var(--text-muted, #666)" } }}
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
+                            label={{
+                              value: "elapsed (s)",
+                              // Render the X-axis title BELOW the tick row
+                              // (negative offset = further from chart),
+                              // and let the Legend sit below it via the
+                              // increased bottom margin. Previously
+                              // "insideBottom" + small offset put the
+                              // title flush against the tick labels.
+                              position: "insideBottom",
+                              offset: -16,
+                              style: { fontSize: 10, fill: "currentColor" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <YAxis
                             yAxisId="cumulative"
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             allowDecimals={false}
+                            tickFormatter={fmtN}
+                            width={48}
+                            label={{
+                              value: "cumulative",
+                              angle: -90,
+                              position: "insideLeft",
+                              offset: 10,
+                              style: { fontSize: 10, fill: "currentColor", textAnchor: "middle" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <YAxis
                             yAxisId="delta"
                             orientation="right"
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             allowDecimals={false}
+                            tickFormatter={fmtN}
+                            width={48}
+                            label={{
+                              value: "per tick",
+                              angle: 90,
+                              position: "insideRight",
+                              offset: 10,
+                              style: { fontSize: 10, fill: "currentColor", textAnchor: "middle" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <Tooltip
-                            contentStyle={{ background: "var(--card, #2C2C2C)", border: "1px solid var(--border, #404040)", borderRadius: 8, fontSize: 11 }}
-                            formatter={(v: number, name: string) => [v, name === "events" ? "Cumulative events" : "Events / tick"]}
+                            contentStyle={{
+                              background: "var(--popover, var(--card, #2C2C2C))",
+                              border: "1px solid var(--border, #404040)",
+                              borderRadius: 8,
+                              fontSize: 11,
+                              color: "var(--popover-foreground, var(--card-foreground, #fff))",
+                            }}
+                            // dataKey-based naming so the legend label
+                            // and tooltip label always match — fixes the
+                            // earlier bug where both rows said "Events /
+                            // tick" because the formatter checked `name`
+                            // (the legend label) instead of the dataKey.
+                            formatter={(v: number, _name: string, item: any) => {
+                              const key = item?.dataKey;
+                              const label = key === "events"
+                                ? "Cumulative events"
+                                : key === "delta"
+                                  ? "Events / tick"
+                                  : String(_name);
+                              return [fmtN(v), label];
+                            }}
                             labelFormatter={(v: number) => `t=${v}s`}
                           />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line
+                          {/* Legend pinned to the very bottom of the
+                              wrapper so the X-axis title ("elapsed (s)")
+                              sits ABOVE it inside the bottom margin —
+                              previously the two crowded each other. */}
+                          <Legend
+                            verticalAlign="bottom"
+                            align="center"
+                            wrapperStyle={{ fontSize: 10, paddingTop: 8, position: "relative", marginTop: 2 }}
+                          />
+                          {/* Reference line at the configured events_per_batch
+                              on the per-tick axis — visualises "this is what
+                              each tick should land if we're keeping up".
+                              Hidden when the configured value is < 1% of
+                              peak delta (e.g. user changed the form value
+                              after running) — at that scale the line
+                              renders flush against the X-axis and the
+                              label collides with the last X-tick. */}
+                          {showExpectedLine && (
+                            <ReferenceLine
+                              yAxisId="delta"
+                              y={streamEventsPerBatch}
+                              stroke="currentColor"
+                              className="text-muted-foreground"
+                              strokeDasharray="2 4"
+                              strokeOpacity={0.5}
+                              label={{
+                                value: `expected ${fmtN(streamEventsPerBatch)}/tick`,
+                                // "insideTopLeft" places the label inside
+                                // the chart area at the top-left of the
+                                // line — far from the bottom-right corner
+                                // where the last X-axis tick lives, so the
+                                // two never collide regardless of where
+                                // the line ends up vertically.
+                                position: "insideTopLeft",
+                                fill: "currentColor",
+                                fontSize: 9,
+                                className: "text-muted-foreground",
+                              }}
+                            />
+                          )}
+                          <Area
                             yAxisId="cumulative"
                             type="monotone"
                             dataKey="events"
                             name="Cumulative events"
                             stroke="#E8453C"
                             strokeWidth={2}
+                            fill="url(#cumulativeFill)"
                             dot={false}
+                            // Render a red ⨯-style dot at any tick where
+                            // tick_errors incremented. Using activeDot is
+                            // wrong here (it only fires on hover); we want
+                            // the marker to be persistent.
                             isAnimationActive={false}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            activeDot={{ r: 4, stroke: "#E8453C", strokeWidth: 2, fill: "var(--background, #fff)" }}
                           />
                           <Line
                             yAxisId="delta"
                             type="monotone"
                             dataKey="delta"
                             name="Events / tick"
-                            stroke="#374151"
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             strokeWidth={1.5}
                             strokeDasharray="3 3"
                             dot={false}
                             isAnimationActive={false}
                           />
-                        </LineChart>
+                          {/* Error markers — render as a separate Line
+                              with hidden stroke and a custom dot that
+                              only appears when payload.hasError is true.
+                              A separate series keeps the visual layer
+                              decoupled from the cumulative Area. */}
+                          <Line
+                            yAxisId="cumulative"
+                            type="monotone"
+                            dataKey="events"
+                            name="Tick errors"
+                            stroke="transparent"
+                            strokeWidth={0}
+                            isAnimationActive={false}
+                            legendType="none"
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            dot={(props: any) => {
+                              if (!props?.payload?.hasError) {
+                                // Recharts requires a valid SVG element
+                                // here, not null — a zero-radius circle
+                                // is the cheapest no-op.
+                                return <circle key={`no-err-${props?.index ?? 0}`} cx={props?.cx} cy={props?.cy} r={0} />;
+                              }
+                              return (
+                                <g key={`err-${props.index}`} transform={`translate(${props.cx},${props.cy})`}>
+                                  <circle r={4} fill="#dc2626" stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                  <line x1={-2} y1={-2} x2={2} y2={2} stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                  <line x1={-2} y1={2} x2={2} y2={-2} stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                </g>
+                              );
+                            }}
+                          />
+                        </ComposedChart>
                       </ResponsiveContainer>
                     </div>
-                  )}
+                    );
+                  })()}
                   {streamingJob.progress?.current_batch_path && (
                     <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
                       <span className="truncate flex-1" title={streamingJob.progress.current_batch_path}>

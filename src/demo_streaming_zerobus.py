@@ -120,20 +120,31 @@ stream = sdk.create_stream(
 )
 
 # --- Emission loop ---
+# Delivery is at-least-once: ingest_record_offset returns immediately
+# with the offset Zerobus assigned, but the record is only durable
+# once wait_for_offset() returns. We call wait_for_offset on the
+# LAST offset in each batch — durability is monotonic, so confirming
+# the last offset implicitly confirms every prior offset in the batch.
 state = init_state(NUM_DEVICES)
 seq = 0
 print(f"Streaming {profile} events to {{TABLE}} via Zerobus...")
 try:
     while True:
         now = datetime.now(timezone.utc)
+        last_offset = None
         for i in range(EVENTS_PER_BATCH):
             record = generate_event(state, seq + i, now)
             # ingest_record_offset returns the durable offset assigned
-            # by Zerobus once the record is acknowledged. Use it for
-            # at-least-once tracking if you need to dedupe downstream.
-            stream.ingest_record_offset(record)
+            # by Zerobus. Capture the LAST one in the batch so we can
+            # block on its durability acknowledgement below.
+            last_offset = stream.ingest_record_offset(record)
+        # Block until Zerobus acknowledges the last record is durable.
+        # Production code that prefers throughput over per-batch
+        # confirmation can drop this and use AckCallback instead.
+        if last_offset is not None:
+            stream.wait_for_offset(last_offset)
         seq += EVENTS_PER_BATCH
-        print(f"Ingested {{EVENTS_PER_BATCH}} records (total: {{seq}})")
+        print(f"Ingested {{EVENTS_PER_BATCH}} records (total: {{seq}}, durable up to offset {{last_offset}})")
         time.sleep(INTERVAL_SECONDS)
 except KeyboardInterrupt:
     print(f"Stopped. {{seq}} records ingested in total.")

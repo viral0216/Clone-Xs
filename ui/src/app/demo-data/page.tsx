@@ -46,6 +46,67 @@ const SCALE_OPTIONS = [
   { value: "1.0", label: "1.0 — Full (~1B rows)" },
 ];
 
+// Streaming-emit performance presets. Each preset bundles a destination
+// + cadence combo that targets a different throughput tier — clicking
+// one sets all four state vars (with clamping to streamLimits if the
+// admin has narrowed bounds in Settings). "Custom" is auto-selected
+// whenever the live values don't match any preset; clicking it is a
+// no-op (it's only there to indicate the current state).
+//
+// Throughput numbers in the descriptions are typical for a small/medium
+// DBSQL Serverless warehouse — actual numbers vary by warehouse size,
+// network, and event-shape complexity.
+type StreamPresetId = "demo" | "direct_small" | "bulk_files" | "zerobus" | "custom";
+type StreamDestinationVal = "volume" | "volume_bronze" | "direct_table" | "zerobus";
+const STREAMING_PRESETS: {
+  id: StreamPresetId;
+  label: string;
+  desc: string;
+  destination: StreamDestinationVal;
+  events_per_batch: number;
+  interval_seconds: number;
+  total_duration_seconds: number;
+  requiresZerobus?: boolean;
+}[] = [
+  {
+    id: "demo",
+    label: "Demo (default)",
+    desc: "~5K rows/s — fastest to start, good for screen-shares",
+    destination: "volume_bronze",
+    events_per_batch: 100,
+    interval_seconds: 5,
+    total_duration_seconds: 60,
+  },
+  {
+    id: "direct_small",
+    label: "Direct (small batches)",
+    desc: "~30–50K rows/s — INSERT VALUES tuned for steady cadence",
+    destination: "direct_table",
+    events_per_batch: 50000,
+    interval_seconds: 1,
+    total_duration_seconds: 300,
+  },
+  {
+    id: "bulk_files",
+    label: "Bulk files",
+    desc: "~100–500K rows/s — large JSON files + Auto Loader",
+    destination: "volume_bronze",
+    events_per_batch: 100000,
+    interval_seconds: 2,
+    total_duration_seconds: 300,
+  },
+  {
+    id: "zerobus",
+    label: "Streaming (Zerobus)",
+    desc: "~100K–1M+ rows/s — gRPC direct append (Premium tier)",
+    destination: "zerobus",
+    events_per_batch: 1000000,
+    interval_seconds: 5,
+    total_duration_seconds: 600,
+    requiresZerobus: true,
+  },
+];
+
 const INDUSTRY_TABLES: Record<string, { name: string; rows: number }[]> = {
   healthcare: [
     { name: "claims", rows: 100_000_000 }, { name: "encounters", rows: 50_000_000 }, { name: "prescriptions", rows: 30_000_000 },
@@ -492,6 +553,67 @@ export default function DemoDataPage() {
       .then(setZerobusAvailable)
       .catch(() => setZerobusAvailable({ available: false, reason: "availability check failed" }));
   }, []);
+
+  // ── Performance presets (Streaming Events tab) ──────────────────
+  // applyStreamingPreset() bundles destination + cadence into a
+  // one-click setup. Named distinctly from the batch-tab applyPreset()
+  // above so the two never collide. Values are clamped to streamLimits
+  // so an admin-narrowed cap (set via Settings → Performance → Streaming
+  // Form Limits) still wins — a toast warns when clamping changes a
+  // preset value.
+  const applyStreamingPreset = (presetId: StreamPresetId) => {
+    if (presetId === "custom") return;
+    const preset = STREAMING_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    if (preset.requiresZerobus && !zerobusAvailable?.available) {
+      toast.error(
+        `Zerobus is not available: ${zerobusAvailable?.reason ?? "checking…"}`,
+      );
+      return;
+    }
+    const epbClamped = Math.max(
+      streamLimits.events_per_batch.min,
+      Math.min(streamLimits.events_per_batch.max, preset.events_per_batch),
+    );
+    const intClamped = Math.max(
+      Math.max(1, Math.ceil(streamLimits.interval_seconds.min)),
+      Math.min(streamLimits.interval_seconds.max, preset.interval_seconds),
+    );
+    const durClamped = Math.max(
+      streamLimits.total_duration_seconds.min,
+      Math.min(streamLimits.total_duration_seconds.max, preset.total_duration_seconds),
+    );
+    setStreamDestination(preset.destination);
+    setStreamEventsPerBatch(epbClamped);
+    setStreamIntervalSeconds(intClamped);
+    setStreamDurationSeconds(durClamped);
+    const clamped = (
+      epbClamped !== preset.events_per_batch ||
+      intClamped !== preset.interval_seconds ||
+      durClamped !== preset.total_duration_seconds
+    );
+    if (clamped) {
+      toast.warning(
+        `Preset applied with clamping — your admin has narrower limits than ${preset.label} requires. Edit them in Settings → Performance.`,
+      );
+    } else {
+      toast.success(`Preset applied: ${preset.label}`);
+    }
+  };
+
+  // Derive which preset (if any) matches the current state. When the
+  // user manually edits a field after applying a preset, this drops to
+  // "custom" and the preset row's highlight clears — purely visual.
+  const activePreset: StreamPresetId = (() => {
+    const match = STREAMING_PRESETS.find(
+      (p) =>
+        p.destination === streamDestination &&
+        p.events_per_batch === streamEventsPerBatch &&
+        p.interval_seconds === streamIntervalSeconds &&
+        p.total_duration_seconds === streamDurationSeconds,
+    );
+    return match ? match.id : "custom";
+  })();
   // Per-request Zerobus credentials. Required only when the user picks
   // destination="zerobus"; the form gates Start/Schedule on these being
   // present (matches the Pydantic validator on the request model).
@@ -592,11 +714,32 @@ export default function DemoDataPage() {
         region: string | null;
         cloud: string;
         error: string | null;
+        region_supported: boolean | null;
+        region_single_az: boolean;
       }>("/generate/demo-data/zerobus/derive-endpoint", { workspace_url: url });
       if (r.server_endpoint) {
         setZerobusServerEndpoint(r.server_endpoint);
-        toast.success(`Resolved (${r.cloud} ${r.region}): ${r.server_endpoint}`);
-        setZerobusDeriveError(null);
+        // Surface region availability + single-AZ hints inline. We
+        // don't block — Databricks publishes region availability
+        // separately from connectivity, so a "not on the list" region
+        // might still work if the user has early access. Just warn.
+        if (r.region_supported === false) {
+          setZerobusDeriveError(
+            `⚠ Region "${r.region}" is not on the published Zerobus availability list for ${r.cloud.toUpperCase()}. ` +
+            `The endpoint was constructed using the standard pattern, but the connection may fail. ` +
+            `Verify availability with Databricks support before relying on this in production.`,
+          );
+          toast.warning(`Resolved ${r.server_endpoint} — region may not be supported`);
+        } else if (r.region_single_az) {
+          setZerobusDeriveError(
+            `Note: region ${r.region} is documented as single-AZ on Azure. The connector works there, ` +
+            `but availability characteristics differ from multi-AZ regions.`,
+          );
+          toast.success(`Resolved ${r.server_endpoint} (single-AZ region)`);
+        } else {
+          setZerobusDeriveError(null);
+          toast.success(`Resolved (${r.cloud} ${r.region}): ${r.server_endpoint}`);
+        }
       } else {
         setZerobusDeriveError(r.error ?? "Could not derive endpoint");
       }
@@ -1922,6 +2065,50 @@ export default function DemoDataPage() {
           </p>
         </CardHeader>
           <CardContent className="space-y-5">
+            {/* Performance presets — one-click bundles of destination + cadence
+                tuned for different throughput tiers. Active preset gets a
+                primary border; "Custom" auto-lights when fields drift from
+                any preset. Zerobus preset disables when the SDK isn't
+                available, mirroring the destination radio. */}
+            <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
+              <FieldLabel hint="One-click presets that set destination + events-per-batch + interval + duration to combinations tuned for different throughput tiers. Click any preset to apply; manually editing a field below switches the indicator to Custom. Throughput numbers are typical for a small/medium DBSQL Serverless warehouse — your mileage will vary by warehouse size and event-shape complexity.">
+                Performance preset
+              </FieldLabel>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                {STREAMING_PRESETS.map((preset) => {
+                  const isActive = activePreset === preset.id;
+                  const disabled = !!preset.requiresZerobus && !zerobusAvailable?.available;
+                  const disabledReason = preset.requiresZerobus
+                    ? (zerobusAvailable?.reason ?? "Checking availability...")
+                    : null;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyStreamingPreset(preset.id)}
+                      disabled={disabled}
+                      title={disabled ? (disabledReason ?? undefined) : undefined}
+                      className={`flex flex-col items-start gap-0.5 p-2 border rounded-md text-xs transition-colors text-left ${
+                        disabled
+                          ? "border-input bg-muted/20 opacity-60 cursor-not-allowed"
+                          : isActive
+                            ? "border-[#E8453C] bg-[#E8453C]/5 cursor-pointer"
+                            : "border-input hover:bg-muted/30 cursor-pointer"
+                      }`}
+                    >
+                      <div className="font-medium">{preset.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{preset.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              {activePreset === "custom" && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Custom — current settings don&apos;t match any preset. Pick a preset above to reset, or keep editing.
+                </p>
+              )}
+            </div>
+
             {/* Destination mode — controls which downstream fields are visible
                 and what the runner does each tick. */}
             <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
@@ -1930,9 +2117,34 @@ export default function DemoDataPage() {
               </FieldLabel>
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
                 {([
-                  { val: "volume", title: "Volume only", sub: "JSON files → Volume", disabled: false, disabledReason: null },
-                  { val: "volume_bronze", title: "Volume + Bronze", sub: "Files + Auto Loader STREAMING TABLE", disabled: false, disabledReason: null },
-                  { val: "direct_table", title: "Direct to table", sub: "INSERT each batch into Delta (no Volume)", disabled: false, disabledReason: null },
+                  {
+                    val: "volume",
+                    title: "Volume only",
+                    sub: "JSON files → Volume",
+                    disabled: false,
+                    disabledReason: null,
+                    // Per-destination warehouse impact. tone:
+                    //   "none"  — warehouse not used at all (green)
+                    //   "low"   — used once at startup for DDL only (green)
+                    //   "high"  — used every tick; warehouse size matters (amber)
+                    whImpact: { tone: "none", text: "Warehouse: not used. Files write directly to UC Volume." },
+                  },
+                  {
+                    val: "volume_bronze",
+                    title: "Volume + Bronze",
+                    sub: "Files + Auto Loader STREAMING TABLE",
+                    disabled: false,
+                    disabledReason: null,
+                    whImpact: { tone: "low", text: "Warehouse: one-time CREATE OR REFRESH STREAMING TABLE. Refresh runs on its own DBSQL Serverless pool." },
+                  },
+                  {
+                    val: "direct_table",
+                    title: "Direct to table",
+                    sub: "INSERT each batch into Delta (no Volume)",
+                    disabled: false,
+                    disabledReason: null,
+                    whImpact: { tone: "high", text: "Warehouse: every tick. INSERT VALUES is single-driver-bound — pick the largest serverless you can." },
+                  },
                   {
                     val: "zerobus",
                     title: "Zerobus",
@@ -1943,6 +2155,7 @@ export default function DemoDataPage() {
                     // disabled-then-enabled than enabled-then-disabled.
                     disabled: !zerobusAvailable?.available,
                     disabledReason: zerobusAvailable?.reason ?? "Checking availability...",
+                    whImpact: { tone: "low", text: "Warehouse: one-time DDL only (CREATE TABLE + GRANTs). Idle during streaming. Smallest warehouse is fine." },
                   },
                 ] as const).map((opt) => (
                   <label
@@ -1965,7 +2178,7 @@ export default function DemoDataPage() {
                       onChange={() => setStreamDestination(opt.val as typeof streamDestination)}
                       className="mt-0.5 h-3.5 w-3.5 text-[#E8453C] focus:ring-[#E8453C]"
                     />
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="font-medium flex items-center gap-1">
                         {opt.title}
                         {opt.val === "zerobus" && (
@@ -1973,6 +2186,18 @@ export default function DemoDataPage() {
                         )}
                       </div>
                       <div className="text-[10px] text-muted-foreground">{opt.sub}</div>
+                      {/* Warehouse-impact line — green for none/low, amber for high.
+                          Uses Tailwind's emerald/amber palette which renders sensibly
+                          in both light and dark themes. */}
+                      <div
+                        className={`mt-1 text-[10px] italic leading-snug ${
+                          opt.whImpact.tone === "high"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        {opt.whImpact.text}
+                      </div>
                     </div>
                   </label>
                 ))}
@@ -2050,6 +2275,36 @@ export default function DemoDataPage() {
                       tier), or copy the snippet from the{" "}
                       <strong>Try with Zerobus</strong> panel below and run it from
                       a Premium workspace.
+                    </div>
+                    <div className="border-t border-amber-300/50 pt-1 mt-1">
+                      <strong className="text-amber-700">Other unsupported configurations</strong>{" "}
+                      (per the{" "}
+                      <a
+                        href="https://learn.microsoft.com/en-us/azure/databricks/ingestion/zerobus-limits"
+                        target="_blank" rel="noreferrer"
+                        className="underline"
+                      >
+                        Azure Zerobus limits
+                      </a>{" "}docs):
+                      <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                        <li>
+                          Workspaces with the <strong>Compliance Security Profile</strong>{" "}
+                          (FedRAMP / HIPAA / PCI-DSS) — Zerobus is explicitly not
+                          supported and the docs say not to use it for
+                          compliance workloads.
+                        </li>
+                        <li>
+                          Tables backed by storage <strong>secured through a private
+                          endpoint</strong> — the connector can&apos;t reach them.
+                        </li>
+                        <li>
+                          Tables with <strong>catalog commits enabled</strong> — Zerobus
+                          doesn&apos;t support catalog-commit semantics.
+                        </li>
+                      </ul>
+                      Clone-Xs can&apos;t detect these from the workspace API, so
+                      this is a checklist — confirm before relying on the
+                      runtime mode.
                     </div>
                   </div>
                 </details>

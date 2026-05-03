@@ -69,6 +69,16 @@ class TestRenderSnippet:
         assert "stream.close()" in out
         assert "pip install databricks-zerobus-ingest-sdk" in out
 
+    def test_snippet_blocks_on_durability_per_batch(self):
+        # Per-batch durability confirmation is the canonical pattern
+        # from the Databricks docs: capture the LAST offset returned by
+        # ingest_record_offset and block on wait_for_offset(...) once
+        # per batch (durability is monotonic, so confirming the last
+        # offset implicitly confirms every prior offset).
+        out = render_zerobus_snippet("car_obd2", "c", "s")
+        assert "wait_for_offset" in out
+        assert "last_offset" in out
+
 
 # ----------------- API: POST /api/generate/demo-data/zerobus-snippet -----------------
 

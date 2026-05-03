@@ -48,6 +48,18 @@ class ResolvedEndpoint:
     cloud: Cloud
     notes: list[str]
     error: str | None = None
+    # Whether the resolved region is on the published Zerobus availability
+    # list for its cloud. ``None`` when region detection failed or cloud=
+    # ``"unknown"``. ``False`` is a strong signal the user should verify
+    # with Databricks support before trying — a derived endpoint pointing
+    # at an unsupported region just resolves to a generic 404 / refused
+    # connection at run time.
+    region_supported: bool | None = None
+    # Sub-flag — set to True when the resolved region exists but is
+    # documented as single-AZ rather than multi-AZ. Today only
+    # ``westus`` and ``northcentralus`` on Azure. Surfaced so the UI
+    # can warn that throughput / availability characteristics differ.
+    region_single_az: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -57,6 +69,8 @@ class ResolvedEndpoint:
             "cloud": self.cloud,
             "notes": self.notes,
             "error": self.error,
+            "region_supported": self.region_supported,
+            "region_single_az": self.region_single_az,
         }
 
 
@@ -79,6 +93,77 @@ _KNOWN_AWS_REGIONS = (
     "ca-central-1",
     "sa-east-1",
 )
+
+
+# Regions where the Zerobus Ingest connector is published as available.
+# Sourced from the Azure docs (zerobus-limits → Availability) and the
+# AWS / GCP equivalents. Update when the docs change — this is a static
+# allow-list rather than a probe because the SDK doesn't expose region
+# enumeration. False positives (region IS supported but missing here)
+# only produce a warning, not a hard block, so a stale list degrades
+# gracefully.
+_ZEROBUS_SUPPORTED_AZURE_REGIONS = frozenset(
+    {
+        "eastus",
+        "eastus2",
+        "westus",
+        "westus2",
+        "northcentralus",
+        "southcentralus",
+        "centralus",
+        "westeurope",
+        "northeurope",
+        "uksouth",
+        "australiaeast",
+    }
+)
+
+# Azure regions documented as single-AZ rather than multi-AZ. Surfaced
+# as a softer warning — the connector still works there but recovery
+# characteristics differ from multi-AZ regions.
+_ZEROBUS_AZURE_SINGLE_AZ_REGIONS = frozenset({"westus", "northcentralus"})
+
+# AWS regions where Zerobus is documented as available. Same caveat as
+# the Azure list — keep in sync with the published feature-region
+# matrix.
+_ZEROBUS_SUPPORTED_AWS_REGIONS = frozenset(
+    {
+        "us-east-1",
+        "us-east-2",
+        "us-west-2",
+        "eu-west-1",
+        "eu-central-1",
+        "ap-southeast-1",
+        "ap-southeast-2",
+        "ap-northeast-1",
+    }
+)
+
+# GCP — published list is small and changes; keep an empty set for now
+# so we always emit "couldn't verify" rather than false-negative.
+_ZEROBUS_SUPPORTED_GCP_REGIONS: frozenset[str] = frozenset()
+
+
+def _check_region_supported(cloud: Cloud, region: str | None) -> tuple[bool | None, bool]:
+    """Return ``(region_supported, single_az)`` for the given cloud+region.
+
+    ``region_supported`` is ``None`` when we don't have an authoritative
+    list for this cloud (currently GCP) or when ``region`` is missing —
+    "couldn't verify" rather than "definitely unsupported".
+    """
+    if not region:
+        return None, False
+    if cloud == "azure":
+        return (
+            region in _ZEROBUS_SUPPORTED_AZURE_REGIONS,
+            region in _ZEROBUS_AZURE_SINGLE_AZ_REGIONS,
+        )
+    if cloud == "aws":
+        return region in _ZEROBUS_SUPPORTED_AWS_REGIONS, False
+    if cloud == "gcp":
+        # No published list checked into the resolver yet.
+        return None, False
+    return None, False
 
 
 def _detect_cloud(host: str) -> Cloud:
@@ -322,10 +407,23 @@ def derive_zerobus_endpoint(workspace_url: str) -> ResolvedEndpoint:
 
     server_endpoint = f"https://{workspace_id}.zerobus.{region}.{endpoint_tld}"
     notes.append(f"resolved endpoint: {server_endpoint}")
+    region_supported, region_single_az = _check_region_supported(cloud, region)
+    if region_supported is False:
+        notes.append(
+            f"warning: region {region!r} is not on the published Zerobus "
+            f"availability list for {cloud.upper()} — connection may fail"
+        )
+    elif region_single_az:
+        notes.append(
+            f"warning: region {region!r} is documented as single-AZ on Azure; "
+            f"availability characteristics differ from multi-AZ regions"
+        )
     return ResolvedEndpoint(
         server_endpoint=server_endpoint,
         workspace_id=workspace_id,
         region=region,
         cloud=cloud,
         notes=notes,
+        region_supported=region_supported,
+        region_single_az=region_single_az,
     )

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from src.zerobus_endpoint_resolver import (
+    _check_region_supported,
     _detect_cloud,
     _extract_workspace_id,
     derive_zerobus_endpoint,
@@ -202,6 +203,96 @@ class TestDeriveEndpoint:
             )
         assert r.error is None
         assert r.server_endpoint and "us-east-2" in r.server_endpoint
+
+
+# ----------------- Region whitelist -----------------
+
+
+class TestCheckRegionSupported:
+    @pytest.mark.parametrize(
+        "region",
+        ["eastus", "eastus2", "westus2", "westeurope", "uksouth", "australiaeast"],
+    )
+    def test_known_azure_region_is_supported_and_multi_az(self, region):
+        supported, single_az = _check_region_supported("azure", region)
+        assert supported is True
+        assert single_az is False
+
+    @pytest.mark.parametrize("region", ["westus", "northcentralus"])
+    def test_known_azure_single_az_region_flagged(self, region):
+        # westus / northcentralus are documented as single-AZ — supported
+        # is True (the connector works), but single_az flag is True so
+        # the UI can warn about the differing availability profile.
+        supported, single_az = _check_region_supported("azure", region)
+        assert supported is True
+        assert single_az is True
+
+    def test_unknown_azure_region_not_supported(self):
+        # A real Azure region (japaneast) that isn't on the Zerobus list
+        # should resolve to False — the warning surface in the UI keys
+        # off this so this case must stay distinct from the None
+        # ("can't verify") case.
+        supported, single_az = _check_region_supported("azure", "japaneast")
+        assert supported is False
+        assert single_az is False
+
+    @pytest.mark.parametrize("region", ["us-east-1", "us-east-2", "us-west-2", "eu-west-1"])
+    def test_known_aws_region_is_supported(self, region):
+        supported, single_az = _check_region_supported("aws", region)
+        assert supported is True
+        assert single_az is False
+
+    def test_unknown_aws_region_not_supported(self):
+        supported, _single_az = _check_region_supported("aws", "us-west-1")
+        assert supported is False
+
+    def test_gcp_region_returns_none_not_false(self):
+        # GCP has no published list checked into the resolver, so we
+        # report "couldn't verify" rather than falsely flagging the
+        # region as unsupported.
+        supported, single_az = _check_region_supported("gcp", "us-central1")
+        assert supported is None
+        assert single_az is False
+
+    def test_missing_region_returns_none(self):
+        supported, single_az = _check_region_supported("azure", None)
+        assert supported is None
+        assert single_az is False
+
+
+class TestDeriveEndpointRegionFlags:
+    def test_known_supported_aws_region_sets_flag_true(self):
+        with patch(
+            "src.zerobus_endpoint_resolver.socket.gethostbyname_ex",
+            return_value=(
+                "public-ingress-x.elb.us-east-2.amazonaws.com",
+                ["ohio.cloud.databricks.com"],
+                ["3.128.237.222"],
+            ),
+        ):
+            r = derive_zerobus_endpoint(
+                "https://dbc-15d1cbfa-8d5c.cloud.databricks.com/?o=2218772291954179"
+            )
+        assert r.region == "us-east-2"
+        assert r.region_supported is True
+        assert r.region_single_az is False
+
+    def test_single_az_azure_region_emits_warning_note(self):
+        # westus is supported but single-AZ — note string must mention
+        # "single-AZ" so the UI can match on it for the softer warning.
+        with patch(
+            "src.zerobus_endpoint_resolver.socket.gethostbyname_ex",
+            return_value=(
+                "ingress.westus.azuredatabricks.net",
+                ["adb-1134642475632994.14.azuredatabricks.net", "westus.azuredatabricks.net"],
+                ["1.2.3.4"],
+            ),
+        ):
+            r = derive_zerobus_endpoint("https://adb-1134642475632994.14.azuredatabricks.net")
+        assert r.region == "westus"
+        assert r.region_supported is True
+        assert r.region_single_az is True
+        assert any("single-AZ" in n for n in r.notes)
 
 
 # ----------------- API endpoint round-trip -----------------

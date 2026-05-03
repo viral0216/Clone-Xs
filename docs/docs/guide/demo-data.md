@@ -933,6 +933,69 @@ stream against the table, ingests records via
 in a `finally` when the run ends or you click **Stop** — so a stream
 never leaks even on interrupt or exception.
 
+#### 5. When records get rejected
+
+Zerobus validates every record against the destination table's schema
+**before** appending. A record is rejected if:
+
+- The column **count** doesn't match (extra or missing fields).
+- A column **name** doesn't match an existing table column (case-sensitive).
+- A required column is `NULL` (the table column isn't nullable).
+- A value's type can't be coerced to the table column's Delta type.
+
+Rejected records are written as Parquet files under a hidden table
+sub-path so you can recover the data:
+
+```
+<table-storage-root>/_zerobus/table_rejected_parquets/
+```
+
+After any schema change to the destination table — or after editing
+the per-profile generator in
+[src/demo_streaming.py](https://github.com/Anthropic-LLC/Clone-Xs/blob/main/src/demo_streaming.py) —
+list that folder. If new files appear, the producer is out of sync
+with the table:
+
+```sql
+LIST '<table-storage-root>/_zerobus/table_rejected_parquets/';
+```
+
+> **Tip:** the table storage root is `dbfs:/.../__unitystorage/...`
+> for managed tables. Get it with
+> `DESCRIBE EXTENDED <catalog>.<schema>.<table>` and look at the
+> `Location` row.
+
+#### 6. Limits & latency you should know
+
+The Zerobus service publishes the following SLAs and quotas — our
+demo defaults stay well inside them, but production workloads should
+plan against them.
+
+| Aspect | Value |
+|---|---|
+| Durability latency (P50 / P95) | ≤ 200 ms / ≤ 500 ms |
+| Time-to-table latency (P50 / P95) | ≤ 5 s / ≤ 30 s |
+| Throughput per stream | 100 MB/s, 15K records/s |
+| Throughput per table | 10 GB/s |
+| REST API throughput | 10K requests/s |
+| Max record size | 10 MB |
+| Delivery semantic | **at-least-once** (dedupe on offset if needed) |
+
+Notes for production runs (the demo doesn't need any of this):
+
+- **Protocol Buffers** is the recommended record format for production
+  — JSON (what the snippet uses) is convenient for demos but ~2× the
+  bytes on the wire.
+- **`AckCallback`** lets you skip the per-batch
+  `wait_for_offset(...)` block and stream at full throughput — pass an
+  `on_ack` / `on_error` handler when calling
+  `sdk.create_stream(...)`.
+- **System tables** for monitoring live under
+  `system.lakeflow_connect.zerobus_ingest_*` — point a Lakeview
+  dashboard at them to track throughput / errors / billing.
+- **Liquid clustered tables** are supported in **Beta** — fine for
+  evaluation, not yet GA-stable.
+
 ### Schedule streaming as a Databricks Job
 
 In-process emission (the **Start streaming** button above) runs as a

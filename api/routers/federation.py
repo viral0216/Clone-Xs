@@ -1,9 +1,15 @@
 """Lakehouse Federation endpoints: foreign catalogs, connections, migration."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_db_client, get_app_config
-from api.models.federation import ConnectionCloneRequest, ForeignTablesRequest, MigrateRequest
+from api.models.federation import (
+    ConnectionCloneRequest,
+    ForeignTablesRequest,
+    MigrateRequest,
+    RegisterIcebergRestCatalogRequest,
+    RegisterIcebergRestCatalogResponse,
+)
 
 router = APIRouter()
 
@@ -71,3 +77,61 @@ async def migrate_table(req: MigrateRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
     return migrate_foreign_to_managed(client, wid, req.foreign_fqn, req.dest_fqn, req.dry_run)
+
+
+@router.post(
+    "/iceberg-rest/register",
+    response_model=RegisterIcebergRestCatalogResponse,
+    summary="Register an external Iceberg REST catalog as a UC Foreign Catalog",
+)
+async def register_iceberg_rest(
+    req: RegisterIcebergRestCatalogRequest,
+    client=Depends(get_db_client),
+):
+    """Register an external Apache Iceberg REST catalog (Polaris,
+    Snowflake Open Catalog, Apache Iceberg REST) as a UC Foreign
+    Catalog so the existing convert-format dispatch can read its
+    tables via ``CONVERT TO DELTA`` without any new strategies.
+
+    Idempotency: if a catalog with the requested name already exists,
+    returns ``created=False`` with an ``error`` message rather than
+    overwriting the existing binding.
+
+    Surfaces a 400 with the underlying error if the warehouse rejects
+    the ``CREATE FOREIGN CATALOG`` (most commonly: missing
+    ``CREATE FOREIGN CATALOG`` privilege, missing secret scope, or
+    the REST endpoint isn't reachable).
+    """
+    from src.federation import register_iceberg_rest_catalog
+
+    config = await get_app_config()
+    wid = req.warehouse_id or config.get("sql_warehouse_id", "")
+    if not wid:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "warehouse_id is required (request body or default config). "
+                "CREATE FOREIGN CATALOG needs a SQL warehouse to execute the DDL."
+            ),
+        )
+    result = register_iceberg_rest_catalog(
+        client,
+        wid,
+        req.name,
+        uri=req.uri,
+        warehouse=req.warehouse,
+        credential=req.credential,
+        comment=req.comment,
+    )
+    next_step = None
+    if result.get("created"):
+        next_step = (
+            f"Open /convert and pick `{req.name}` from the catalog dropdown — "
+            f"its Iceberg tables can now be converted to Delta via the existing flow."
+        )
+    return RegisterIcebergRestCatalogResponse(
+        name=result["name"],
+        created=bool(result.get("created")),
+        error=result.get("error"),
+        next_step=next_step,
+    )

@@ -208,3 +208,96 @@ def migrate_foreign_to_managed(
         logger.error(f"Failed to migrate {foreign_fqn}: {e}")
 
     return result
+
+
+def register_iceberg_rest_catalog(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    name: str,
+    *,
+    uri: str,
+    warehouse: str,
+    credential: str,
+    comment: str | None = None,
+) -> dict:
+    """Register an external Apache Iceberg REST catalog as a Foreign Catalog in UC.
+
+    Once registered, the catalog appears in the existing UC catalog
+    browser and the convert path can read its tables via the standard
+    ``CONVERT TO DELTA`` strategy without any new dispatch arms — this
+    is why we leverage Foreign Catalogs rather than building a parallel
+    Iceberg client.
+
+    Idempotent: if a catalog with ``name`` already exists, returns
+    ``{"created": False, "name": ...}`` without raising. Distinct from
+    ``CREATE OR REPLACE`` because that would rewrite the connection
+    binding for an existing catalog and silently break callers.
+
+    Args:
+        name: Single-segment catalog name. Will be quoted with backticks
+            in the emitted SQL so reserved-word names work.
+        uri: HTTPS endpoint of the Iceberg REST catalog
+            (Polaris / Snowflake Open Catalog / Apache Iceberg REST).
+            Validated at the API surface to require https://.
+        warehouse: The Iceberg "warehouse" identifier — what the
+            REST catalog uses to namespace its tables. Distinct from a
+            Databricks SQL warehouse.
+        credential: Databricks secret reference in ``<scope>.<key>``
+            format. The actual OAuth token / credential lives in
+            Databricks Secrets; we only pass the reference here so the
+            secret never appears in this module's args or logs.
+        comment: Optional human-readable comment surfaced in
+            ``DESCRIBE CATALOG``.
+    """
+    result: dict = {"name": name, "created": False}
+
+    # Idempotent check — list catalogs and skip if already present.
+    # Using the SDK rather than ``IF NOT EXISTS`` because the latter
+    # silently succeeds even when the existing catalog has different
+    # binding (different connection / different REST endpoint), which
+    # would fool the operator into thinking they reconfigured something
+    # that's still pointing at the old place.
+    try:
+        existing = {c.name for c in client.catalogs.list()}
+        if name in existing:
+            result["error"] = (
+                f"Catalog `{name}` already exists. Drop it first if you "
+                f"want to re-register against a different endpoint."
+            )
+            return result
+    except Exception as e:
+        # Listing failure shouldn't block the create — surface it later
+        # if the create itself fails for a redundant reason.
+        logger.debug(f"catalogs.list() failed during register preflight: {e}")
+
+    # Build the CREATE FOREIGN CATALOG statement. The OPTIONS values
+    # are single-quoted; we escape any single quotes in the user-
+    # supplied values defensively (URIs and credential refs shouldn't
+    # contain them, but the cost of escaping is zero and the cost of
+    # SQL injection is high).
+    def _esc(v: str) -> str:
+        return v.replace("'", "''")
+
+    options_parts = [
+        f"'uri' = '{_esc(uri)}'",
+        f"'warehouse' = '{_esc(warehouse)}'",
+        f"'credential' = '{_esc(credential)}'",
+    ]
+    sql_parts = [
+        f"CREATE FOREIGN CATALOG `{_esc(name)}`",
+        "USING ICEBERG",
+        f"OPTIONS ({', '.join(options_parts)})",
+    ]
+    if comment:
+        sql_parts.append(f"COMMENT '{_esc(comment)}'")
+    sql = " ".join(sql_parts)
+
+    try:
+        execute_sql(client, warehouse_id, sql)
+        result["created"] = True
+        logger.info(f"Registered Iceberg REST catalog: {name} -> {uri}")
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error(f"Failed to register Iceberg REST catalog {name}: {e}")
+
+    return result

@@ -1,8 +1,8 @@
-# Generating Billions of Rows of Realistic Synthetic Data — Without Materialising a Single Row in Python
+# Synthetic Data on Databricks, the Whole Story — Billions of Rows for Batch, Millisecond Streams for Live Demos
 
-How we built Clone-Xs's Demo Data Generator: a SQL-first synthetic data engine that produces 10 industries, 200 tables, locale-aware Faker pools, ML-ready labeled targets, and validated foreign keys — all without leaving the warehouse.
+How we built Clone-Xs's Demo Data Generator: a SQL-first batch engine for ~180 tables across 10 industries, a streaming sibling that emits IoT events to Volumes / Bronze / Zerobus, locale-aware Faker pools, ML-ready labeled targets, validated foreign keys — all without leaving the warehouse.
 
-> Disclaimer: I'm writing about the Demo Data Generator that ships inside Clone-Xs (the Databricks Unity Catalog cloning toolkit). The feature has just landed v2; everything in this post is implemented and tested. Code samples are simplified for readability — see [`src/demo_generator.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_generator.py) and [`src/demo_faker.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_faker.py) for the real thing.
+> Disclaimer: I'm writing about the Demo Data Generator that ships inside Clone-Xs (the Databricks Unity Catalog cloning toolkit). Both the batch and streaming sides are implemented and tested; the code samples are simplified for readability. See [`src/demo_generator.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_generator.py), [`src/demo_faker.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_faker.py), and [`src/demo_streaming.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_streaming.py) for the real thing.
 
 ---
 
@@ -14,22 +14,43 @@ Picture three teams that need synthetic data, all on the same Tuesday:
 2. **A solutions architect** is building a fraud-detection notebook. They need 100M `transactions` with a configurable 2% positive class on `is_fraud`, plus enough `customers` and `merchants` rows that the joins return data.
 3. **CI** kicks off at 14:00 too. The build needs to validate that 200 table DDL templates parse correctly across the warehouse's runtime — but it can't afford a 90-minute generation step.
 
-These three workloads don't share a single "right" tool. Faker on its own can't get to a billion rows in any reasonable time. Mockaroo doesn't know about your Delta Sharing topology. Snowflake's data generators don't run on Databricks. And the existing solution — a hand-rolled notebook with hard-coded `'James','Mary'` arrays — doesn't satisfy any of the three.
+Then a fourth team comes in the door:
 
-What we wanted was one tool that could:
+4. **An IoT customer evaluation** wants to see live data flowing into a Bronze table — gauges ticking, an Auto Loader pipeline catching new files, the Lakeflow status panel updating in real time. Static rows in a Delta table won't sell it. They need an *emitter*, not a snapshot.
 
-- Generate a 10-industry, 200-table catalog at any scale from 10M to 10B rows.
-- Produce names / emails / phones that look real (not `patient1@example.com`).
-- Add ML-ready labeled targets at a configurable positive class rate.
-- Guarantee that fact tables actually JOIN to dim tables (not the silent-zero-rows problem).
-- Run schema-only in seconds for CI.
-- Be extensible to "this customer's weird schema" without forking the codebase.
+These four workloads don't share a single tool. Faker on its own can't get to a billion rows in any reasonable time. Mockaroo doesn't know about your Delta Sharing topology. Snowflake's data generators don't run on Databricks. The hand-rolled "loop with `time.sleep(5)`" notebook works for one demo and falls apart for the next. And the legacy in-house solution — a hand-rolled notebook with hard-coded `'James','Mary'` arrays — doesn't satisfy any of the four.
 
-This post walks through how the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) does it, why each design decision was made, and what we learned along the way.
+What we wanted was one toolkit with two siblings:
+
+- A **batch** generator that produces a 10-industry, ~180-table catalog at any scale from 10M to 10B rows, with realistic names / SSNs / phones, ML-ready labeled targets, validated foreign keys, schema-only mode for CI, and YAML extension hooks.
+- A **streaming** sibling that emits continuous event batches across 10 device profiles, picks one of four destinations (Volume / Volume+Bronze / direct INSERT / Zerobus low-latency gRPC), and runs as either an in-process loop or a scheduled Databricks Job.
+
+This post walks through how the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) does both, why each design decision was made, and what we learned along the way.
 
 ---
 
-## Architecture: SQL all the way down
+## When to pick which
+
+Before the deep dive — a quick decision table, because the most common question we hear is "do I want batch or streaming?":
+
+| You need… | Pick | Why |
+|---|---|---|
+| A static catalog with millions of rows for joins / dashboards / training | **Batch** | One SQL `INSERT` per table, vectorised across the warehouse |
+| A schema-only catalog for CI to lint DDL against | **Batch** (`schema_only: true`) | ~30 seconds for 200 tables; no row materialisation |
+| A Kimball star schema (fact + dim + `dim_date`) for BI tools | **Batch** (`data_model: star_schema`) | CTAS overlay on top of the flat layer; +5% time |
+| Continuous events landing in a Bronze table you can `STREAM read_files()` over | **Streaming** (Volume + Bronze) | File-based; uses Auto Loader / DBSQL streaming tables |
+| Lowest-latency event → Delta path (sub-second durability, seconds-to-table) | **Streaming** (Zerobus) | Direct gRPC append into Delta — no Volume hop |
+| An IoT demo that must run unattended for 24h after you log off | **Streaming** (scheduled Job) | Generates a notebook + Databricks Job with a Quartz cron |
+
+If you're not sure which you want: pick **Batch** to seed the dimensions (customers, devices, merchants), then layer **Streaming** for the fact-table firehose on top. That's the production shape and it works just as well as a demo shape.
+
+The two siblings share a lot of design vocabulary — same Pydantic request models, same dispatch-via-registry pattern, same opinionated "fail open, surface in the result" posture — so the rest of this post can cover both without doubling its length.
+
+---
+
+# Part 1 — Batch: SQL all the way down
+
+## Architecture: never materialise rows in Python
 
 The first design decision dictated everything else: **never materialise rows in Python**.
 
@@ -55,7 +76,7 @@ SELECT
 FROM (SELECT explode(sequence(1, 5000000)) AS id);
 ```
 
-The generator emits SQL like this; Spark expands `sequence(1, 5_000_000)` into 5M rows in parallel across the warehouse's cores; `rand()` and `element_at()` are vectorised. A 5M-row batch lands in seconds, not minutes. A billion rows is a sequence of 200 such batches.
+The generator emits SQL like this; Spark expands `sequence(1, 5_000_000)` into 5M rows in parallel across the warehouse's cores; `rand()` and `element_at()` are vectorised. A 5M-row batch lands in seconds, not minutes. Sustained throughput on a Medium warehouse hits roughly 1.5M rows/sec — so a billion rows is a sequence of 200 such batches that finishes in roughly 11 minutes of warehouse time, plus per-table fixed overhead. The point isn't "billions in seconds" — it's that the per-row cost is a SQL expression on the warehouse, not a Python tuple over the JDBC wire.
 
 The generator's job in Python becomes trivial: assemble the SQL string from per-table templates stored in an `INDUSTRIES` dict, and ship it to the warehouse via the SDK's Statement Execution API. No row materialisation. No JDBC. No driver tuning.
 
@@ -74,11 +95,11 @@ The generator's job in Python becomes trivial: assemble the SQL string from per-
 
 The `insert_expr` is a SELECT clause; the orchestrator wraps it with the `INSERT INTO ... FROM (SELECT explode(sequence(1, N)) AS id)` envelope and shells out the result to the warehouse.
 
-This decision — **express data shape as SQL string templates, not Python row generators** — is what makes the rest of the post possible.
+This decision — **express data shape as SQL string templates, not Python row generators** — is what makes the rest of Part 1 possible.
 
 ---
 
-## Theme 1: Realism — Faker without leaving the warehouse
+## Realism — Faker without leaving the warehouse
 
 The static `'James','Mary','Smith','Johnson'` arrays in the original templates are obviously fake. For a paying customer demo where the audience is staring at the table preview, they break the illusion in the first ten seconds.
 
@@ -119,7 +140,7 @@ The same approach handles SSNs (using the IRS-reserved `9XX-XX-XXXX` test pool f
 
 ---
 
-## Theme 2: DQ profiles + ML labels
+## DQ profiles + ML labels
 
 Synthetic data has two consumers with directly opposed preferences. **Tutorial / docs writers** want clean data — every assertion in their notebook needs to pass. **DQ tooling demos** want noise — broken rows are the whole point.
 
@@ -164,7 +185,7 @@ The `is_fraud` rate of 2% is intentionally aggressive for an unbalanced classifi
 
 ---
 
-## Theme 3: Referential integrity (or, "why doesn't my JOIN return rows?")
+## Referential integrity (or, "why doesn't my JOIN return rows?")
 
 The most common bug in synthetic data is silent: you generate 100M `encounters` and 1M `patients`, you write a JOIN on `patient_id`, and you get zero rows back because the FK column is randomly drawn from `1..1_000_000_000` while the `patients.id` only goes up to `1_000_000`.
 
@@ -225,13 +246,13 @@ The audit is automatically skipped on `schema_only=true` (no rows to check) and 
 
 ---
 
-## Theme 4a: Schema-only mode (the CI win)
+## Schema-only mode (the CI win)
 
 CI doesn't care about row counts. CI cares whether the 200-table DDL templates parse correctly on the warehouse's current runtime version.
 
 The schema-only flag walks the orchestrator's normal path — CREATE CATALOG, CREATE SCHEMA, CREATE TABLE, CREATE VIEW, CREATE FUNCTION, CREATE VOLUME — but skips every INSERT. Volumes still create as DDL but skip the sample CSV writes. DQ injection, version history, seasonal patterns, and labeled anomaly columns all early-return.
 
-Generation drops from 60 minutes (at scale 1.0) to **under 30 seconds**. The CI step is now: spin up a serverless warehouse, run `generate_demo_catalog(schema_only=true)`, assert it returns clean, drop the catalog. A regression in any DDL template fails the build before code review.
+Generation drops from "tens of minutes at scale 1.0" to **tens of seconds**. The CI step is now: spin up a serverless warehouse, run `generate_demo_catalog(schema_only=true)`, assert it returns clean, drop the catalog. A regression in any DDL template fails the build before code review.
 
 The implementation is one parameter threaded through five call sites:
 
@@ -253,24 +274,13 @@ def generate_demo_catalog(..., schema_only=False, ...):
     # ... and so on for version history, anomalies, audit logs
 ```
 
-And in the per-table populator:
-
-```python
-def _create_and_populate_table(..., schema_only=False):
-    execute_sql(client, ..., f"CREATE TABLE IF NOT EXISTS {fqn} ({ddl_cols})")
-    if schema_only:
-        logger.info(f"[schema_only] Skipping {target_rows:,} INSERT rows for {fqn}")
-        return 0
-    # ... batched INSERT logic
-```
-
 50 lines of code; immeasurable amount of CI-cycles saved.
 
 ---
 
-## Theme 4b: Live preview — pure arithmetic, zero Databricks calls
+## Live preview — pure arithmetic, zero Databricks calls
 
-Users picking 10 industries at scale 1.0 deserve to know that's about to take 4 hours and produce 1.4 TB before they click Generate. The preview endpoint computes this without going near the warehouse:
+Users picking 10 industries at scale 1.0 deserve to know that's about to take tens of minutes and produce a few hundred GB before they click Generate. The preview endpoint computes this without going near the warehouse:
 
 ```python
 def preview_demo_catalog(config):
@@ -304,7 +314,7 @@ Per-industry byte widths and the `_ROWS_PER_SEC` constant are calibrated empiric
 
 ---
 
-## Theme 4c: Custom YAML industries — extension without forking
+## Custom YAML industries — extension without forking
 
 Customers want their own schemas. Forking the repo to add `aerospace.yaml` is a non-starter. So we built a YAML loader.
 
@@ -357,7 +367,7 @@ The merge is in-place into the runtime `INDUSTRIES` dict at run start, popped on
 
 ---
 
-## Theme 5: Data modeling overlay — Kimball star schemas without re-generating data
+## Star-schema overlay — Kimball without re-generating data
 
 The flat industry tables are useful for ad-hoc demos, but BI teams want fact tables and dim tables. Tableau / Power BI / dbt-style modelling is the actual job-to-be-done for a lot of customer evaluations. So we layered a Kimball-style star schema on top of the flat layer.
 
@@ -446,45 +456,298 @@ What's not in v1:
 
 ---
 
+# Part 2 — Streaming: continuous events for live demos
+
+The batch generator answers "give me a static catalog of N rows." It can't answer "give me a Bronze table that's *being written to right now*, so the audience can watch the row count tick up while I narrate." That's a different shape — and it deserved its own module rather than a `streaming: true` flag bolted onto the batch path.
+
+So we built the streaming sibling: [`src/demo_streaming.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_streaming.py). Same opinionated defaults, same Pydantic boundary, but a fundamentally different runtime — a background loop that emits batches on a tunable cadence, with four destination strategies the user picks per run.
+
+## What "streaming" means here
+
+The streaming sibling is **simulated** event emission, not a real Kafka cluster. It's designed for demos where the audience needs to *see* a stream — gauges ticking, file counts climbing, a Lakeflow job consuming new data. It is not designed to load-test production Kafka topics.
+
+What it does:
+
+- Every N seconds, generate a batch of M events for one of 10 device profiles.
+- Land that batch wherever the operator picked (Volume / Volume + Bronze / direct INSERT / Zerobus).
+- Update a progress dict on every tick so the existing `/jobs` polling endpoint surfaces live counts to the UI.
+- Run either as an in-process background thread inside the API server (good for ad-hoc demos that end with the browser tab) or as a scheduled Databricks Job with a Quartz cron (good for "leave it running for 24 hours").
+
+What it doesn't do:
+
+- It doesn't claim per-event latency below the cadence interval. A 5-second cadence means 5-second batches.
+- It doesn't replay historical data. Each tick generates fresh events with the current `datetime.now(timezone.utc)`.
+- It doesn't manage backpressure between the emitter and the downstream consumer. If your Bronze table can't keep up, files queue up in the Volume — same as any Auto Loader flow.
+
+---
+
+## Device profiles — 10 generators, one signature
+
+Every profile is two functions: an `init_state(num_devices)` that builds the per-device stateful baseline (mean RPM, baseline SpO2, tool wear so far, etc.), and a `generate_event(state, seq, now)` that emits one row dict.
+
+The 10 built-ins cover the common asks across the supported industries:
+
+| Profile | Industry | What ticks |
+|---|---|---|
+| `generic_sensor` | (any) | temperature, humidity, pressure, vibration |
+| `industrial_machine` | manufacturing | RPM, oil pressure, tool wear (monotonic), occasional DTCs |
+| `car_obd2` | automotive | speed, RPM, fuel level, lat/lng |
+| `smart_meter` | energy | cumulative kWh, voltage, current, power factor |
+| `wearable_health` | healthcare | heart rate, SpO2, steps, alerts |
+| `pos_terminal` | retail | sale amount, payment method, status |
+| `wind_turbine` | energy | wind speed, RPM, power output, blade pitch, faults |
+| `atm_transaction` | financial | withdrawal/deposit, lat/lng, fraud flag |
+| `server_metrics` | infra | CPU / memory / disk / network per host |
+| `clickstream` | digital | session, event, page, user-agent |
+
+The `industrial_machine` profile is the one I usually point people at to understand the design — it's small enough to read in one screen and shows every interesting decision:
+
+```python
+def _gen_industrial_machine(state: dict, seq: int, now: datetime) -> dict:
+    """Industrial machine telemetry: RPM, oil pressure, tool wear, DTCs.
+
+    Tool-wear monotonically increases per machine across batches —
+    realistic for cumulative wear demos. ~3% of events carry an error
+    code (DTC like `E12`) for anomaly demos.
+    """
+    devices: list[dict] = state["devices"]
+    d = devices[seq % len(devices)]
+    d["tool_wear_pct"] = min(100.0, d["tool_wear_pct"] + random.uniform(0.001, 0.01))
+    error_code = None
+    if random.random() < 0.03:
+        error_code = f"E{random.randint(10, 99)}"
+    return {
+        "machine_id": d["id"],
+        "captured_at": now.isoformat(),
+        "rpm": int(d["rpm_mean"] + random.uniform(-50.0, 50.0)),
+        "oil_pressure_psi": round(d["oil_pressure_mean"] + random.uniform(-2.0, 2.0), 2),
+        "tool_wear_pct": round(d["tool_wear_pct"], 4),
+        "error_code": error_code,
+    }
+```
+
+Two things worth pointing out:
+
+1. **The state is mutable per device, mutated in place.** Tool wear advances a few thousandths of a percent per event and never resets. Over a 24-hour stream that's a clean monotonically-increasing signal a maintenance demo can train a model against.
+2. **Most fields jitter around a per-device baseline rather than spanning the full possible range.** RPM moves ±50 around a mean, not 0..10000 uniform. This is what real telemetry looks like and is the difference between "demo data" and "demo data that fools the audience."
+
+Adding a new profile is one entry in `DEVICE_PROFILES` (registry pattern, mirrors the batch side's `INDUSTRIES`):
+
+```python
+DEVICE_PROFILES = {
+    "industrial_machine": (_init_state_industrial_machine, _gen_industrial_machine),
+    # ... others
+}
+```
+
+---
+
+## Architecture: four destinations, one dispatcher
+
+The Pydantic request model has a single `destination` field that switches between four strategies. The orchestrator branches on it once at start, then the per-tick code path is identical:
+
+```python
+destination = config["destination"]  # "volume" | "volume_bronze" | "direct_table" | "zerobus"
+
+if destination not in ("volume", "volume_bronze", "direct_table", "zerobus"):
+    raise ValueError(f"Unknown destination: {destination!r}")
+
+# Open the destination once — the per-tick loop below picks the same
+# branch every iteration. For Zerobus this is the gRPC stream open;
+# for Volume / Bronze it's just a path string; for direct_table it's
+# the pre-flight CREATE TABLE.
+sink = open_sink(destination, config)
+
+try:
+    while not stopped() and not deadline_passed():
+        now = datetime.now(timezone.utc)
+        records = emit_batch(profile, state, events_per_batch, base_seq=seq)
+        write_to_sink(sink, records, now, seq)
+        progress["events_emitted"] += len(records)
+        seq += len(records)
+        time.sleep(interval_seconds)
+finally:
+    close_sink(sink)
+```
+
+The four destinations differ in what `open_sink` / `write_to_sink` / `close_sink` do, not in the loop shape. That uniformity is what kept the streaming runtime modest — `demo_streaming.py` is ~1.4k LOC and the Zerobus runtime adds ~500 LOC on top — even with the four destinations piled in.
+
+### Destination 1: `volume` — JSON files in a UC Volume
+
+The simplest strategy: each tick writes one JSON file (one record per line, NDJSON-style) to a Volume sub-path keyed on the profile and a UTC ISO timestamp. The user wires Auto Loader / DLT downstream however they want.
+
+```python
+def write_batch_to_volume(client, catalog, schema, volume, profile, records, now, seq):
+    file_name = f"batch-{now.strftime('%Y%m%dT%H%M%SZ')}-{seq:08d}.json"
+    file_path = f"/Volumes/{catalog}/{schema}/{volume}/{profile}/{file_name}"
+    body = "\n".join(json.dumps(r, separators=(',', ':')) for r in records)
+    client.files.upload(file_path=file_path, contents=io.BytesIO(body.encode("utf-8")))
+```
+
+Output paths:
+```
+/Volumes/<catalog>/<schema>/<volume>/<profile>/batch-<isoZ>-<seq>.json
+```
+
+Use this when the demo is "show how Auto Loader picks up new files" or when the customer's pipeline already exists and just needs a source.
+
+### Destination 2: `volume_bronze` — Volume + auto-Bronze STREAMING TABLE
+
+Same Volume emission as above, plus a one-time `CREATE OR REFRESH STREAMING TABLE` over the Volume path so a Bronze Delta table fills in as files land:
+
+```python
+def create_bronze_streaming_table(client, warehouse_id, catalog, schema, profile, refresh_minutes=5):
+    table_fqn  = f"`{catalog}`.`{schema}`.`bronze_{profile}`"
+    volume_path = f"/Volumes/{catalog}/{schema}/events_volume/{profile}/"
+    cron_expr  = f"0 0/{refresh_minutes} * * * ?"  # Quartz CRON, portable across DBSQL editions
+    sql = (
+        f"CREATE OR REFRESH STREAMING TABLE {table_fqn} "
+        f"SCHEDULE REFRESH CRON '{cron_expr}' AT TIME ZONE 'UTC' "
+        f"AS SELECT * FROM STREAM read_files('{volume_path}', format => 'json')"
+    )
+    execute_sql(client, warehouse_id, sql)
+```
+
+Two design decisions here that took a couple iterations to land on:
+
+- **Quartz CRON, not the `EVERY N MINUTES` shorthand.** The shorthand only works on a subset of DBSQL runtime versions / tiers; the 6-field Quartz syntax is portable across Free Edition, Premium, and Enterprise. Easy to forget until a Free Edition demo blows up.
+- **Soft failure, not hard failure.** If `CREATE OR REFRESH STREAMING TABLE` raises (most commonly: warehouse isn't DBSQL Serverless), the orchestrator captures the error and keeps emitting files. The user gets a Bronze "soft fail" line in the result panel and can run the SQL manually after upgrading; the demo doesn't die at 14:01.
+
+This is the destination most demos pick — the operator sees JSON files appearing in the Volume *and* row counts growing in the Bronze table.
+
+### Destination 3: `direct_table` — INSERT INTO Bronze, no Volume
+
+Some demos don't want a Volume in the picture at all. For those, the runtime CREATEs the catalog + schema + Bronze Delta table up-front, then each tick emits a small `INSERT INTO bronze_<profile> VALUES (...), (...), ...` statement directly:
+
+```python
+def insert_batch_direct(client, warehouse_id, fqn, records):
+    if not records:
+        return
+    cols = list(records[0].keys())
+    rows_sql = ",".join(
+        "(" + ",".join(_format_sql_value(r.get(c)) for c in cols) + ")"
+        for r in records
+    )
+    sql = f"INSERT INTO {fqn} ({','.join(cols)}) VALUES {rows_sql}"
+    execute_sql(client, warehouse_id, sql)
+```
+
+Trade-offs versus `volume_bronze`:
+
+- ✓ No Volume to set up. One-step pipeline.
+- ✓ Faster end-to-end visibility — the row appears in `SELECT count(*)` as soon as the INSERT commits, not after the next refresh tick.
+- ✗ Each tick is a synchronous SQL round-trip to the warehouse. Higher per-batch latency than file writes.
+- ✗ Bigger batches stress the SQL parser (`INSERT INTO … VALUES (…), (…), …, (…)` with 100 row-tuples is a lot of tokens). The default of 100 events / 5 seconds is fine; 10,000 / 1 second is asking for trouble.
+
+### Destination 4: `zerobus` — direct gRPC into Delta, sub-second durability
+
+The newest destination, and the one that justified the Pydantic-managed-strategy refactor. **Zerobus** is Databricks' low-latency ingest API: a gRPC stream that appends directly into a Delta table without a Volume, Auto Loader, or DLT in the loop. Published SLAs are P95 durability ≤ 500ms (the bytes are committed) and P95 time-to-table ≤ 30s (the row shows up in `SELECT`) — so for "did the event land safely" the answer comes back sub-second; for "is it queryable" it's seconds, not the minutes a 5-minute Bronze refresh would impose.
+
+The runtime path is opt-in because it adds three constraints:
+
+1. **The Zerobus Python SDK** (`databricks-zerobus-ingest-sdk`) must be installed in the API server's Python environment.
+2. **A service principal** with USE_CATALOG, USE_SCHEMA, MODIFY+SELECT grants on the destination table.
+3. **A region-specific gRPC endpoint** of the form `https://<workspace_id>.zerobus.<region>.cloud.databricks.com`, which Clone-Xs derives from the workspace URL via a DNS CNAME walk (so the operator never has to look it up).
+
+The dispatch is the same shape as the others — `open_zerobus_stream`, `ingest_batch_zerobus`, `close_zerobus_stream` — but the lifecycle matters more here. Opening a fresh gRPC stream per batch defeats the entire point. The orchestrator opens the stream once before the emission loop, hands the handle to the per-tick ingest function, and closes it in a `finally` so a stream never leaks even when the loop is interrupted:
+
+```python
+sdk = ZerobusSdk(server_endpoint, workspace_url)
+stream = sdk.create_stream(
+    client_id, client_secret,
+    TableProperties(table_fqn),
+    StreamConfigurationOptions(record_type=RecordType.JSON),
+)
+try:
+    while not stopped() and not deadline_passed():
+        records = emit_batch(profile, state, events_per_batch, base_seq=seq)
+        last_offset = None
+        for r in records:
+            last_offset = stream.ingest_record_offset(r)
+        # Block on the LAST offset's durability ack — durability is
+        # monotonic, so confirming the last offset implicitly confirms
+        # every prior offset in the batch.
+        if last_offset is not None:
+            stream.wait_for_offset(last_offset)
+        seq += len(records)
+        time.sleep(interval_seconds)
+finally:
+    stream.close()
+```
+
+We also generate a **copy-paste-runnable Python snippet** for users who want to try Zerobus from their own laptop without installing the SDK in the API server. The snippet is rendered by [`src/demo_streaming_zerobus.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_streaming_zerobus.py), which pulls the per-profile generator source out of the same registry the in-process runtime uses — so the snippet's behaviour is identical to what the in-process loop would emit.
+
+A `wait_for_offset` per batch (rather than per record) is the canonical Databricks-docs pattern. Production code that prefers throughput over per-batch confirmation drops it in favour of `AckCallback`, which is documented but out of scope for the demo path.
+
+### One last subtlety: stream lifecycle is the bug everyone writes once
+
+The temptation when wiring a new destination is to open + close per batch — it makes the per-tick code "self-contained." Don't. The Zerobus gRPC handshake is the canonical example — Databricks documents the lifecycle as "open once, ingest many, close at end" because per-batch opens defeat the latency advantage that makes Zerobus worth picking in the first place. The dispatch puts the open before the loop and the close in a `finally`, and every destination follows that contract whether they technically need to or not. That uniformity is what lets future destinations slot in without their own bespoke teardown ceremony.
+
+---
+
+## Background loop or scheduled Job — same generator, two runtimes
+
+Whichever destination you pick, the emission loop has to *run somewhere*. Two options:
+
+**In-process background thread.** The API server starts a Python thread, the loop ticks until the duration elapses or the user clicks Stop. Lives or dies with the API process — fine for a 30-minute demo, useless for a "leave it running overnight." Implementation is one `threading.Thread(target=run_streaming_emission, ...)` plus a stop-flag dict.
+
+**Scheduled Databricks Job.** [`src/demo_streaming_schedule.py`](https://github.com/viral0216/clone-xs/blob/main/src/demo_streaming_schedule.py) uploads a self-contained Python notebook (one cell per profile generator, plus a top-level loop) and creates a Job with a Quartz cron (`every 5 minutes`, `top of hour`, `weekdays at 9am`, etc.). The Job is tagged `created_by=clone-xs, kind=streaming-emit, profile=<name>` so it shows up in the existing `/clone-jobs` listing and the operator can pause / edit / delete via the standard Jobs UI. Survives API server restarts; survives the operator going home.
+
+Both runtimes share the per-profile `init_state` / `generate_event` source. The notebook is generated by string-substituting the generator source into a template (one source file per profile, kept in `_PROFILE_GENERATORS_SOURCE` so the in-process and scheduled paths can never drift). The test suite asserts the in-process state initialiser and the scheduled-Job notebook produce byte-identical first-batch records given the same seed — a regression there would silently break demos.
+
+---
+
 ## Numbers and what they mean
 
-A `Quick Demo` preset (1 industry, scale 0.01, no medallion) on a serverless Small SQL Warehouse:
+A `Quick Demo` preset on a serverless **Small SQL Warehouse** (1 industry, scale 0.01, no medallion). For `healthcare` at scale 0.01 that's ~2M rows across 20 tables:
 
-- **Schema-only** (`schema_only: true`): ~12 seconds
-- **Default**: ~90 seconds, 18M rows across 20 tables
-- **With realism** (`realistic_data: true, locale: en_US, seed: 42`): ~92 seconds (realism is essentially free — pool building is ~2 seconds upfront, embedded in SQL afterward)
-- **With anomaly labels** (`anomaly_rate: 0.02`): ~95 seconds (one ALTER + UPDATE per labeled column)
-- **With FK audit**: ~100 seconds (sampled queries are fast even on dim tables)
+- **Schema-only batch** (`schema_only: true`): seconds — only DDL hits the warehouse
+- **Default batch**: roughly a minute or two — most of the time is per-table fixed overhead (CREATE TABLE + INSERT + audit), not row throughput
+- **With realism + anomaly labels + FK audit**: same order of magnitude — Faker pool building is one-time at the start (~2 s), then embedded in SQL for the rest of the run
 
-A `Full Demo` preset (10 industries, scale 1.0) on a Medium SQL Warehouse:
+A `Full Demo` preset on a **Medium SQL Warehouse** (10 industries, scale 1.0 — ~1.94B rows across ~179 tables):
 
-- **Schema-only**: ~28 seconds
-- **Default**: ~38 minutes, 1.4B rows across 200 tables
-- **With realism + anomaly labels + FK audit**: ~43 minutes
+- **Schema-only batch**: tens of seconds (DDL only — no row materialisation)
+- **Default batch**: tens of minutes — exact wall-time depends heavily on warehouse size and concurrency
+- **With realism + anomaly labels + FK audit**: same order of magnitude — realism is essentially free (Faker pools embedded as SQL `array()` literals), labels add one ALTER + UPDATE per labeled column, audit is sampled
+- **Plus star schema overlay** (`data_model: star_schema`): adds ~5% to total time — the overlay is CTAS, not regeneration
 
-The realism upgrade adds zero per-row overhead — the Faker pools are built once at run start and embedded in SQL for the rest of the run.
+**Streaming**, on the same Medium warehouse with the default 100 events / 5 seconds cadence:
+
+- `volume`: ~20 events/sec sustained, ~10–20 KB NDJSON file per batch (size depends on profile field count), no warehouse cost between ticks
+- `volume_bronze`: same emission cost; Bronze table refreshes every `refresh_minutes` (default 5) on a small DBSQL Serverless slice
+- `direct_table`: ~20 events/sec at the default cadence; each tick is a synchronous `INSERT INTO ... VALUES (...), (...)` round-trip, so a hotter warehouse helps and very large `events_per_batch` values stress the SQL parser
+- `zerobus`: ~20 events/sec sustained at default cadence; P95 ≤ 500ms durability (event committed) + P95 ≤ 30s time-to-table (row visible in `SELECT`); gRPC connection stays open for the whole run
+
+Throughput is governed by `events_per_batch` and `interval_seconds`, both configurable. A `1000 / 1.0` (1k events per second) load is well within Zerobus and `volume`; `direct_table` will start to chase the warehouse at that rate.
 
 ---
 
 ## Lessons learned
 
 **1. Push computation to the data, not the data to the computation.**
-Materialising rows in Python was the obvious-but-wrong starting point. Embedding pools as SQL `array()` literals lets the warehouse do what it's good at.
+Materialising rows in Python was the obvious-but-wrong starting point for batch. Embedding pools as SQL `array()` literals lets the warehouse do what it's good at. The streaming sibling does the opposite — it materialises rows in Python because the cadence is the throttle — and that's fine; the right shape is per-feature, not universal.
 
 **2. Backwards compatibility is cheap if you start with optional fields.**
-Every new feature on `DemoDataRequest` is a Pydantic field with a default that matches the old behaviour. Existing CI scripts and notebook calls to the generator continue to work without a single change.
+Every new feature on `DemoDataRequest` and `StreamingRequest` is a Pydantic field with a default that matches the old behaviour. Existing CI scripts and notebook calls continue to work without a single change. The streaming `destination` enum's default falls back to the legacy `auto_create_bronze` flag for the same reason.
 
 **3. Validation in the request model, not the orchestrator.**
-`anomaly_rate` is validated by a Pydantic `field_validator` to be in `[0.0, 1.0]`. Bad values 422 at the FastAPI boundary, never reach the orchestrator. The same for `dq_profile` — invalid names fail before any SDK call.
+`anomaly_rate` is validated by a Pydantic `field_validator` to be in `[0.0, 1.0]`. Bad values 422 at the FastAPI boundary, never reach the orchestrator. The streaming side validates `events_per_batch` and `interval_seconds` against per-environment limits the same way.
 
 **4. Sampled queries beat full-table queries for audits.**
 The FK audit's `LIMIT 100000` sample is statistically indistinguishable from a full-table check at any reasonable orphan rate, but runs in seconds vs. minutes on a 100M-row fact table.
 
-**5. Document the limitations, don't hide them.**
-The custom-YAML cleanup-on-exception limitation is in the docs. The `dq_profile=clean` early-return saves time but means assertions about generated SQL won't fire — also documented. Honest docs beat clever code.
+**5. Open once, ingest many, close in `finally`.**
+Zerobus made this lesson loud, but it applies everywhere — anywhere a dispatched destination has setup cost, the loop should pay it once. A consistent open/close pattern across destinations is what kept the streaming runtime modest in size and predictable in behaviour, even with four destinations to support.
 
-**6. Default off is safer than default on for new features.**
-`realistic_data: false` by default means our 33 existing tests that match `'James'`/`'Mary'` literally keep passing. `validate_referential_integrity: true` defaults on because the cost is negligible and the value is high — a different trade-off in the same codebase.
+**6. Soft-fail the secondary destination, not the primary.**
+If the auto-Bronze CREATE STREAMING TABLE fails (DBSQL Serverless not available, missing privilege), keep emitting files. The operator sees a calm "Bronze: soft-fail, run this SQL manually" line in the result panel, not a crashed demo at 14:01. The Zerobus-runtime / Iceberg-UniForm preflights follow the same posture.
+
+**7. Document the limitations, don't hide them.**
+The custom-YAML cleanup-on-exception limitation is in the docs. The `dq_profile=clean` early-return saves time but means assertions about generated SQL won't fire — also documented. The `direct_table` streaming destination has higher per-tick latency than `volume` — also documented. Honest docs beat clever code.
+
+**8. Default off is safer than default on for new features.**
+`realistic_data: false` by default means our existing tests that match `'James'`/`'Mary'` literally keep passing. `validate_referential_integrity: true` defaults on because the cost is negligible and the value is high — a different trade-off in the same codebase. Streaming's `destination: "volume"` defaults to the safest path (no warehouse load between ticks); operators opt in to `volume_bronze` / `direct_table` / `zerobus`.
 
 ---
 
@@ -496,9 +759,13 @@ The custom-YAML cleanup-on-exception limitation is in the docs. The `dq_profile=
 
 **Cross-industry references**. `financial.customers` and `retail.customers` are independent today. Customers wanting to demo "the same person buying things and applying for a mortgage" need correlated IDs across industries — also on the roadmap, but ambitious enough to be a future post.
 
+**Streaming back-pressure**. When the warehouse can't keep up with `direct_table` ingest, files queue silently in the in-process `_IdRegistry`. Surfacing that via the progress dict ("warehouse lag: ~14 ticks behind") would let demo operators see a yellow flag before the audience does.
+
+**More streaming sources for cross-system demos**. Today every profile generates locally. A next step is a `mode: "tap"` that reads from a Databricks-managed Kafka or an existing Bronze and *transforms* rather than synthesises — useful for "show me my real anonymised data flowing into a new pipeline" demos.
+
 ---
 
-If you're working on Databricks demos, ML pipelines, or just want a way to spin up realistic-looking synthetic data in 90 seconds (or billions of rows on a real warehouse), the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) is open-source and ready to use. The full guide with all knobs is in [the docs](https://github.com/viral0216/clone-xs/blob/main/docs/docs/guide/demo-data.md).
+If you're working on Databricks demos, ML pipelines, or just want a way to spin up realistic-looking synthetic data — a batch catalog in a couple of minutes or a streaming emitter that runs for as long as you need — the [Clone-Xs Demo Data Generator](https://github.com/viral0216/clone-xs) is open-source and ready to use. The full guide with all knobs is in [the docs](https://github.com/viral0216/clone-xs/blob/main/docs/docs/guide/demo-data.md).
 
 ---
 

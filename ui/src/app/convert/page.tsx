@@ -175,6 +175,26 @@ interface Warehouse {
   type: string;
 }
 
+// One UC Volume entry, as returned by GET /api/auth/volumes. Used by
+// the destination-path picker so operators see the Volumes already
+// in their workspace instead of typing the path (and getting it
+// wrong — operators have hit UC_VOLUME_NOT_FOUND twice in this
+// feature's history by typing a path that doesn't resolve).
+interface UcVolume {
+  catalog: string;
+  schema: string;
+  name: string;
+  type?: string;
+  path: string;
+}
+
+// Aggregate from GET /api/files/list. Drives the post-export "N
+// files · X MB" chip on each successful export-shaped cart row.
+interface FileListSummary {
+  count: number;
+  total_size_bytes: number;
+}
+
 interface HistoryRow {
   operation_id: string;
   fqn: string;
@@ -349,6 +369,43 @@ export default function ConvertToDeltaPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(true);
 
+  // Workspace Volumes — fetched once on mount and used to populate
+  // the per-row destination-path picker for export-shaped targets.
+  // Cheaper than a per-row fetch and the list rarely changes during
+  // a convert session.
+  const [volumes, setVolumes] = useState<UcVolume[]>([]);
+  const [volumesLoading, setVolumesLoading] = useState(false);
+
+  // Per-cart-row file counts, keyed by destination_path. Populated
+  // after a successful export-shaped convert by hitting
+  // /api/files/list and parsing the count + total bytes. Persists
+  // across re-renders so the chip stays visible until the row is
+  // removed or the path changes.
+  const [exportFileSummary, setExportFileSummary] = useState<
+    Record<string, FileListSummary>
+  >({});
+
+  // Same shape but for the smoke-test dialog — keyed by destination
+  // path returned in the smoke-test response.
+  const [smokeFileSummary, setSmokeFileSummary] = useState<
+    Record<string, FileListSummary>
+  >({});
+
+  // External Iceberg REST catalog registration. Collapsible panel
+  // above the browser; once submitted, the registered catalog
+  // appears in the existing CatalogPicker dropdown via the standard
+  // /catalogs API. Operators don't need to leave the convert page
+  // to wire up Polaris / Snowflake Open Catalog / Apache Iceberg
+  // REST as a source.
+  const [icebergPanelOpen, setIcebergPanelOpen] = useState(false);
+  const [icebergName, setIcebergName] = useState("");
+  const [icebergUri, setIcebergUri] = useState("");
+  const [icebergWarehouse, setIcebergWarehouse] = useState("");
+  const [icebergCredential, setIcebergCredential] = useState("");
+  const [icebergRegistering, setIcebergRegistering] = useState(false);
+  const [icebergError, setIcebergError] = useState("");
+  const [icebergSuccess, setIcebergSuccess] = useState("");
+
   // "Test all formats" smoke test — opens a dialog to capture
   // catalog/schema/volume/warehouse, then POSTs to
   // /convert-to-delta/smoke-test. The endpoint runs every
@@ -394,6 +451,102 @@ export default function ConvertToDeltaPage() {
       .catch(() => setWarehouses([]))
       .finally(() => setWarehousesLoading(false));
   }, []);
+
+  // Volume fetch — once on mount. The list rarely changes during a
+  // session and the picker is rendered per-row, so caching once and
+  // filtering client-side beats a per-row network hit.
+  useEffect(() => {
+    setVolumesLoading(true);
+    api
+      .get<UcVolume[]>("/auth/volumes")
+      .then((data) => setVolumes(data || []))
+      .catch(() => setVolumes([]))
+      .finally(() => setVolumesLoading(false));
+  }, []);
+
+  // Helper: after a successful export-shaped convert, fetch the
+  // resulting file count + total bytes from the destination Volume
+  // path. Failures are silent — the chip just doesn't appear,
+  // rather than tripping a toast over a non-critical adornment.
+  // Updates either `exportFileSummary` (cart row) or
+  // `smokeFileSummary` (smoke dialog) depending on which scope the
+  // result came from.
+  const fetchFileSummary = async (
+    path: string,
+    scope: "cart" | "smoke",
+  ): Promise<void> => {
+    try {
+      const res = await api.get<FileListSummary & { path: string }>(
+        `/files/list?path=${encodeURIComponent(path)}`,
+      );
+      const summary: FileListSummary = {
+        count: res.count,
+        total_size_bytes: res.total_size_bytes,
+      };
+      if (scope === "cart") {
+        setExportFileSummary((prev) => ({ ...prev, [path]: summary }));
+      } else {
+        setSmokeFileSummary((prev) => ({ ...prev, [path]: summary }));
+      }
+    } catch {
+      // Silent — the chip absence signals "couldn't list" without
+      // turning a non-critical UX hint into an error toast.
+    }
+  };
+
+  // Volumes filtered to a particular catalog/schema — fed to the
+  // per-row picker so the operator only sees the Volumes that
+  // actually live alongside the source they're converting.
+  const volumesForSchema = (catalog: string, schema: string): UcVolume[] =>
+    volumes.filter((v) => v.catalog === catalog && v.schema === schema);
+
+  // POSTs the Iceberg-REST register form. On success refreshes
+  // CatalogPicker's React Query cache so the new foreign catalog
+  // shows up in the dropdown without a page reload.
+  const registerIcebergCatalog = async () => {
+    setIcebergRegistering(true);
+    setIcebergError("");
+    setIcebergSuccess("");
+    try {
+      const res = await api.post<{
+        name: string;
+        created: boolean;
+        error: string | null;
+        next_step: string | null;
+      }>("/federation/iceberg-rest/register", {
+        name: icebergName.trim(),
+        uri: icebergUri.trim(),
+        warehouse: icebergWarehouse.trim(),
+        credential: icebergCredential.trim(),
+        warehouse_id: effectiveWarehouseId || undefined,
+      });
+      if (res.created) {
+        setIcebergSuccess(
+          res.next_step ?? `Registered \`${res.name}\` — pick it from the catalog dropdown above.`,
+        );
+        // Reset the form so a second registration starts blank.
+        setIcebergName("");
+        setIcebergUri("");
+        setIcebergWarehouse("");
+        setIcebergCredential("");
+      } else {
+        setIcebergError(res.error ?? "Registration failed (no error message returned)");
+      }
+    } catch (e) {
+      setIcebergError((e as Error).message || "Registration failed");
+    } finally {
+      setIcebergRegistering(false);
+    }
+  };
+
+  // Tiny human-readable byte formatter for the file-count chip.
+  // Avoids a dependency for one-off use.
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
 
   const loadHistory = async () => {
     setHistoryLoading(true);
@@ -600,6 +753,23 @@ export default function ConvertToDeltaPage() {
       setSummary(res);
       // Refresh history so the new operation_id shows up at the top.
       loadHistory();
+      // Fire post-export file-count fetches for every successful
+      // export-shaped target. Fire-and-forget — the chips fill in as
+      // each LIST returns; failures are silent so a transient SDK
+      // hiccup doesn't blank the success state.
+      if (!dryRun) {
+        for (const t of targets) {
+          if (
+            isExportTarget(t.target_format) &&
+            t.destination_path &&
+            res.results.some(
+              (r) => r.fqn === t.fqn && r.status === "converted",
+            )
+          ) {
+            fetchFileSummary(t.destination_path, "cart");
+          }
+        }
+      }
     } catch (e) {
       setError((e as Error).message || "Convert failed");
     } finally {
@@ -624,6 +794,14 @@ export default function ConvertToDeltaPage() {
         },
       );
       setSmokeResults(res.cells);
+      // Fire post-export file-count fetches for every successful
+      // export-shaped cell. Same fire-and-forget posture as the
+      // cart-side fetch — chips fill in as each LIST returns.
+      for (const c of res.cells) {
+        if (c.status === "converted" && c.destination_path) {
+          fetchFileSummary(c.destination_path, "smoke");
+        }
+      }
     } catch (e) {
       setSmokeError((e as Error).message || "Smoke test failed");
     } finally {
@@ -704,6 +882,129 @@ export default function ConvertToDeltaPage() {
           </button>
         </div>
       )}
+
+      {/* External Iceberg REST catalog registration. Collapsed by
+          default — most operators don't need it. Once submitted the
+          catalog appears in the standard CatalogPicker dropdown via
+          the existing /catalogs API, and the convert flow runs
+          unchanged against its tables. */}
+      <details
+        className="border rounded-md"
+        open={icebergPanelOpen}
+        onToggle={(e) => setIcebergPanelOpen((e.target as HTMLDetailsElement).open)}
+      >
+        <summary className="cursor-pointer px-4 py-2 text-sm font-medium hover:bg-gray-500/5">
+          Connect external Iceberg REST catalog (Polaris / Snowflake Open Catalog / Apache Iceberg REST)
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-3">
+          <p className="text-xs text-gray-500">
+            Registers an external Iceberg REST catalog as a Unity Catalog Foreign Catalog
+            (<code className="px-1 bg-gray-500/10 rounded">CREATE FOREIGN CATALOG ... USING ICEBERG OPTIONS (...)</code>).
+            Once registered, its tables appear in the catalog dropdown above and convert via the standard{" "}
+            <code className="px-1 bg-gray-500/10 rounded">CONVERT TO DELTA</code> path. Store your OAuth
+            token in Databricks Secrets first; pass only the{" "}
+            <code className="px-1 bg-gray-500/10 rounded">&lt;scope&gt;.&lt;key&gt;</code> reference here.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-medium mb-1 block" htmlFor="iceberg-name">
+                Catalog name
+              </label>
+              <Input
+                id="iceberg-name"
+                value={icebergName}
+                onChange={(e) => setIcebergName(e.target.value)}
+                placeholder="polaris_main"
+                className="font-mono text-sm h-8"
+                disabled={icebergRegistering}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" htmlFor="iceberg-warehouse">
+                Iceberg warehouse
+              </label>
+              <Input
+                id="iceberg-warehouse"
+                value={icebergWarehouse}
+                onChange={(e) => setIcebergWarehouse(e.target.value)}
+                placeholder="my_warehouse"
+                title="The Iceberg `warehouse` identifier the REST catalog uses to namespace its tables. Distinct from a Databricks SQL warehouse."
+                className="font-mono text-sm h-8"
+                disabled={icebergRegistering}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs font-medium mb-1 block" htmlFor="iceberg-uri">
+                REST endpoint
+              </label>
+              <Input
+                id="iceberg-uri"
+                value={icebergUri}
+                onChange={(e) => setIcebergUri(e.target.value)}
+                placeholder="https://polaris.example.com/api/catalog/v1"
+                className={`font-mono text-sm h-8 ${
+                  icebergUri.trim() && !icebergUri.trim().startsWith("https://")
+                    ? "border-amber-500/60"
+                    : ""
+                }`}
+                disabled={icebergRegistering}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs font-medium mb-1 block" htmlFor="iceberg-credential">
+                Databricks secret reference
+                <InfoDot hint="Format: `<scope>.<key>`. Run `databricks secrets put-secret <scope> <key>` to store your OAuth token first; reference it here so the actual credential never reaches Clone-Xs." />
+              </label>
+              <Input
+                id="iceberg-credential"
+                value={icebergCredential}
+                onChange={(e) => setIcebergCredential(e.target.value)}
+                placeholder="my_secret_scope.iceberg_oauth_token"
+                className="font-mono text-sm h-8"
+                disabled={icebergRegistering}
+              />
+            </div>
+          </div>
+          {icebergError && (
+            <div className="text-sm text-red-600 dark:text-red-400 border border-red-500/40 bg-red-500/10 rounded-md p-2">
+              {icebergError}
+            </div>
+          )}
+          {icebergSuccess && (
+            <div className="text-sm text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 bg-emerald-500/10 rounded-md p-2">
+              {icebergSuccess}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={registerIcebergCatalog}
+              disabled={
+                icebergRegistering ||
+                !icebergName.trim() ||
+                !icebergUri.trim() ||
+                !icebergWarehouse.trim() ||
+                !icebergCredential.trim()
+              }
+            >
+              {icebergRegistering ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  Registering…
+                </>
+              ) : (
+                <>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Register catalog
+                </>
+              )}
+            </Button>
+            <span className="text-xs text-gray-500">
+              Requires <code className="px-1 bg-gray-500/10 rounded">CREATE FOREIGN CATALOG</code> privilege on the metastore.
+            </span>
+          </div>
+        </div>
+      </details>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Browse panel */}
@@ -996,33 +1297,94 @@ export default function ConvertToDeltaPage() {
                               </div>
                             )}
                             {/* Export-shaped targets need a Volume URI.
-                                Pre-filled with a sensible default; the
-                                operator can edit before submit. The
-                                small green/amber tag below indicates
-                                "this is an export, source is preserved"
-                                vs the "in-place — destructive" implied
-                                by other targets. */}
-                            {isExportTarget(t.target_format) && (
-                              <div className="mt-1.5 space-y-0.5">
-                                <Input
-                                  value={t.destination_path ?? ""}
-                                  onChange={(e) =>
-                                    updateDestinationPath(t.fqn, e.target.value)
-                                  }
-                                  placeholder="/Volumes/<cat>/<sch>/<volume>/<sub-path>/"
-                                  aria-label={`Volume export path for ${t.fqn}`}
-                                  title="Files will be written here as the chosen format. Volume must already exist with WRITE FILES privilege for the runner. Source table is preserved — not destructive."
-                                  className={`h-7 text-xs font-mono ${
-                                    (t.destination_path ?? "").trim().startsWith("/Volumes/")
-                                      ? ""
-                                      : "border-amber-500/60"
-                                  }`}
-                                />
-                                <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                                  exports to Volume — source preserved
+                                Render as Volume picker + sub-path input
+                                so operators see existing Volumes
+                                instead of typing the path (and getting
+                                it wrong — the failure mode that hit
+                                twice in this feature's history). */}
+                            {isExportTarget(t.target_format) && (() => {
+                              const fqnParts = t.fqn.split(".");
+                              const srcCat = fqnParts[0] ?? "";
+                              const srcSch = fqnParts[1] ?? "";
+                              const tbl = fqnParts[2] ?? "table";
+                              const schemaVolumes = volumesForSchema(srcCat, srcSch);
+                              // Parse the current destination_path
+                              // back into Volume + sub-path so the two
+                              // controls reflect the canonical state.
+                              const path = t.destination_path ?? "";
+                              const volumePathRe = /^\/Volumes\/([^/]+)\/([^/]+)\/([^/]+)\/?(.*)$/;
+                              const m = volumePathRe.exec(path);
+                              const currentVol = m ? m[3] : "";
+                              const currentSub =
+                                m?.[4] || `${tbl}_${t.target_format.toLowerCase()}/`;
+                              const summary = exportFileSummary[path];
+                              return (
+                                <div className="mt-1.5 space-y-1">
+                                  <div className="flex gap-1">
+                                    <select
+                                      aria-label={`Volume for ${t.fqn}`}
+                                      title="Pick a Volume in the source's catalog/schema. Auto-created if it doesn't exist; the schema must have a managed location."
+                                      className="h-7 text-xs border rounded-md bg-transparent px-1.5 py-0.5 flex-shrink-0 max-w-[160px]"
+                                      value={currentVol}
+                                      onChange={(e) => {
+                                        const newVol = e.target.value;
+                                        const newPath = newVol
+                                          ? `/Volumes/${srcCat}/${srcSch}/${newVol}/${currentSub}`
+                                          : "";
+                                        updateDestinationPath(t.fqn, newPath);
+                                      }}
+                                    >
+                                      <option value="">
+                                        {volumesLoading ? "Loading…" : "Select Volume…"}
+                                      </option>
+                                      {schemaVolumes.map((v) => (
+                                        <option key={v.name} value={v.name}>
+                                          {v.name}
+                                        </option>
+                                      ))}
+                                      {/* Allow typing a Volume name not
+                                          in the picker (gets auto-
+                                          created on submit). */}
+                                      {currentVol &&
+                                        !schemaVolumes.some((v) => v.name === currentVol) && (
+                                          <option value={currentVol}>
+                                            {currentVol} (new)
+                                          </option>
+                                        )}
+                                    </select>
+                                    <Input
+                                      value={currentSub}
+                                      onChange={(e) => {
+                                        const newSub = e.target.value;
+                                        const newPath = currentVol
+                                          ? `/Volumes/${srcCat}/${srcSch}/${currentVol}/${newSub}`
+                                          : "";
+                                        updateDestinationPath(t.fqn, newPath);
+                                      }}
+                                      placeholder="<sub-path>/"
+                                      aria-label={`Sub-path under Volume for ${t.fqn}`}
+                                      title="Sub-directory inside the Volume the export writes to. Defaults to <table>_<format>/."
+                                      className="h-7 text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                    <span className="text-emerald-600 dark:text-emerald-400">
+                                      exports to Volume — source preserved
+                                    </span>
+                                    {summary && (
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 text-[10px] py-0 px-1.5"
+                                      >
+                                        {summary.count} file{summary.count === 1 ? "" : "s"}
+                                        {" · "}
+                                        {formatBytes(summary.total_size_bytes)}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                           </td>
                           <td className="p-2">
                             <Button
@@ -1417,14 +1779,50 @@ export default function ConvertToDeltaPage() {
                 <label className="text-xs font-medium mb-1 block" htmlFor="smoke-volume">
                   Volume
                 </label>
-                <Input
-                  id="smoke-volume"
-                  value={smokeVolume}
-                  onChange={(e) => setSmokeVolume(e.target.value)}
-                  placeholder="clone_xs_smoke"
-                  className={`font-mono text-sm ${smokeVolume.includes(".") ? "border-amber-500/60" : ""}`}
-                  disabled={smokeRunning}
-                />
+                {/* Combobox: dropdown of existing Volumes in the
+                    chosen catalog/schema + free-text fallback for
+                    typing a new name (auto-created on submit). The
+                    dropdown only renders when both catalog + schema
+                    are filled in — otherwise the list would be
+                    workspace-wide and not useful. */}
+                {(() => {
+                  const schemaVolumes =
+                    smokeCatalog.trim() && smokeSchema.trim()
+                      ? volumesForSchema(smokeCatalog.trim(), smokeSchema.trim())
+                      : [];
+                  return (
+                    <div className="flex gap-1">
+                      {schemaVolumes.length > 0 && (
+                        <select
+                          id="smoke-volume-picker"
+                          aria-label="Pick existing Volume"
+                          title="Volumes already in the chosen catalog.schema. Selecting one populates the input below."
+                          className="border rounded-md bg-transparent px-2 py-1.5 text-sm flex-shrink-0 max-w-[140px]"
+                          value={
+                            schemaVolumes.some((v) => v.name === smokeVolume) ? smokeVolume : ""
+                          }
+                          onChange={(e) => setSmokeVolume(e.target.value)}
+                          disabled={smokeRunning}
+                        >
+                          <option value="">Pick existing…</option>
+                          {schemaVolumes.map((v) => (
+                            <option key={v.name} value={v.name}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <Input
+                        id="smoke-volume"
+                        value={smokeVolume}
+                        onChange={(e) => setSmokeVolume(e.target.value)}
+                        placeholder="clone_xs_smoke"
+                        className={`font-mono text-sm ${smokeVolume.includes(".") ? "border-amber-500/60" : ""}`}
+                        disabled={smokeRunning}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             {/* Catch the most common operator mistake — pasting a
@@ -1562,24 +1960,39 @@ export default function ConvertToDeltaPage() {
                                   {c.error}
                                 </div>
                               )}
-                              {c.destination_path && c.status === "converted" && (
-                                <div className="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 mt-0.5">
-                                  <span className="font-mono break-all">{c.destination_path}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      navigator.clipboard
-                                        ?.writeText(c.destination_path ?? "")
-                                        .catch(() => {})
-                                    }
-                                    title="Copy path to clipboard"
-                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0"
-                                    aria-label={`Copy ${c.destination_path}`}
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )}
+                              {c.destination_path && c.status === "converted" && (() => {
+                                const summary = smokeFileSummary[c.destination_path];
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 mt-0.5">
+                                      <span className="font-mono break-all">{c.destination_path}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          navigator.clipboard
+                                            ?.writeText(c.destination_path ?? "")
+                                            .catch(() => {})
+                                        }
+                                        title="Copy path to clipboard"
+                                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0"
+                                        aria-label={`Copy ${c.destination_path}`}
+                                      >
+                                        <Copy className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    {summary && (
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 text-[10px] py-0 px-1.5 mt-1"
+                                      >
+                                        {summary.count} file{summary.count === 1 ? "" : "s"}
+                                        {" · "}
+                                        {formatBytes(summary.total_size_bytes)}
+                                      </Badge>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );

@@ -19,6 +19,7 @@ from api.routers import (
     config,
     convert_to_delta,
     deps,
+    files,
     generate,
     health,
     incremental,
@@ -454,6 +455,7 @@ app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(incremental.router, prefix="/api", tags=["incremental"])
 app.include_router(sampling.router, prefix="/api", tags=["sampling"])
 app.include_router(deps.router, prefix="/api", tags=["dependencies"])
+app.include_router(files.router, prefix="/api", tags=["files"])
 
 from api.routers import governance
 

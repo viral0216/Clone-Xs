@@ -605,6 +605,62 @@ def test_convert_d27_delta_to_json_exports_to_volume(mock_sql, _mock_compat):
 
 
 @patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_d27_export_target_auto_creates_volume(
+    mock_convert_sql, _mock_strategies_sql, _mock_compat
+):
+    """Real bug from prod: the convert path used to assume the
+    Volume in `destination_path` already existed. If it didn't, the
+    `INSERT OVERWRITE DIRECTORY` failed with `UC_VOLUME_NOT_FOUND`
+    after the operator had already typed the path into the cart row.
+    The orchestrator now auto-CREATEs the Volume before the dispatch
+    so the convert "just works" — same posture as the smoke
+    endpoint's up-front auto-create."""
+    mock_convert_sql.return_value = []
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="JSON",
+        destination_path="/Volumes/edp_dev/bronze/clone_xs_exports/events_json/",
+    )
+    assert result.status == "converted"
+    sqls = [c[0][2] for c in mock_convert_sql.call_args_list]
+    assert sqls[0] == "CREATE VOLUME IF NOT EXISTS edp_dev.bronze.clone_xs_exports"
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+@patch("src.convert_to_delta.execute_sql")
+def test_convert_d27_export_target_volume_create_failure_returns_friendly_error(
+    mock_convert_sql, _mock_strategies_sql, _mock_compat
+):
+    """When CREATE VOLUME fails (most commonly: schema has no managed
+    location), the orchestrator must surface a clean "failed" result
+    with the actionable next step (run `ALTER SCHEMA ... SET MANAGED
+    LOCATION`) — not propagate the raw Databricks error and not
+    crash."""
+    mock_convert_sql.side_effect = RuntimeError(
+        "REQUIRES_MANAGED_STORAGE schema has no managed location"
+    )
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="JSON",
+        destination_path="/Volumes/edp_dev/bronze/clone_xs_exports/events_json/",
+    )
+    assert result.status == "failed"
+    err = result.error or ""
+    assert "Could not auto-create Volume edp_dev.bronze.clone_xs_exports" in err
+    assert "ALTER SCHEMA edp_dev.bronze SET MANAGED LOCATION" in err
+    assert "REQUIRES_MANAGED_STORAGE" in err
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
 def test_convert_d27_export_target_without_destination_path_skips(_mock_compat):
     """Defence-in-depth: if a CLI caller bypasses the API validator
     and passes an export-shaped target with no ``destination_path``,
@@ -621,6 +677,37 @@ def test_convert_d27_export_target_without_destination_path_skips(_mock_compat):
     )
     assert result.status == "skipped"
     assert "not yet supported" in (result.error or "")
+
+
+@patch("src.convert_to_delta.check_pair_compat", return_value=[])
+@patch("src.format_strategies.execute_sql")
+def test_convert_d26_hudi_runtime_not_supported_translated(mock_sql, _mock_compat):
+    """Real failure mode from prod: older DBR runtimes don't recognise
+    `delta.enableHudiCompatV1` and Databricks surfaces it as a generic
+    ``DELTA_UNKNOWN_CONFIGURATION`` — opaque unless you know Hudi
+    UniForm needs a recent DBR. The orchestrator must catch this
+    specific error on the `uniform_hudi` strategy path and rewrite
+    the message to name the actual root cause + recovery step.
+    """
+    mock_sql.side_effect = RuntimeError(
+        "[DELTA_UNKNOWN_CONFIGURATION] Unknown configuration was specified: "
+        "delta.enableHudiCompatV1. To disable this check, set "
+        "spark.databricks.delta.allowArbitraryProperties.enabled=true"
+    )
+    result = convert_table_format(
+        MagicMock(),
+        "wh-1",
+        "edp_dev.bronze.events",
+        "DELTA",
+        target_format="HUDI",
+    )
+    assert result.status == "failed"
+    assert result.strategy_used == "uniform_hudi"
+    assert "Hudi UniForm is not supported on this SQL warehouse runtime" in (result.error or "")
+    assert "upgrade the warehouse" in (result.error or "")
+    # The original Databricks error must still be in the message so
+    # operators can search docs / raise tickets with the exact code.
+    assert "DELTA_UNKNOWN_CONFIGURATION" in (result.error or "")
 
 
 @patch("src.convert_to_delta.check_pair_compat", return_value=[])

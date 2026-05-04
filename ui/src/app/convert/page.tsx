@@ -47,6 +47,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
+  FlaskConical,
   ListPlus,
   Loader2,
   Play,
@@ -55,6 +57,7 @@ import {
   Search,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 
 type SourceFormat = "PARQUET" | "ICEBERG" | "DELTA" | "AVRO" | "ORC" | "JSON" | "HUDI";
@@ -194,6 +197,28 @@ interface HistoryResponse {
   count: number;
 }
 
+// Per-cell result from POST /convert-to-delta/smoke-test. Mirrors
+// `api/models/convert_to_delta.ConvertSmokeCellResult`.
+interface SmokeCellResult {
+  target: string;
+  status: "converted" | "failed" | "skipped";
+  strategy_used: string;
+  duration_ms: number;
+  error: string | null;
+  // Volume URI the export wrote to. Set only for export-shaped
+  // targets (PARQUET / AVRO / ORC / JSON); null for in-place
+  // targets whose destination is the source FQN itself.
+  destination_path: string | null;
+}
+
+interface SmokeTestResponse {
+  run_id: string;
+  catalog: string;
+  schema: string;
+  volume: string;
+  cells: SmokeCellResult[];
+}
+
 const CONFIRM_PHRASE = "CONVERT";
 
 // Returns null when the row is convertible; returns a short reason
@@ -323,6 +348,20 @@ export default function ConvertToDeltaPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(true);
+
+  // "Test all formats" smoke test — opens a dialog to capture
+  // catalog/schema/volume/warehouse, then POSTs to
+  // /convert-to-delta/smoke-test. The endpoint runs every
+  // (DELTA → target) cell against fresh fixtures and returns one row
+  // per cell. Lets operators validate every supported format without
+  // shelling out to the CLI smoke-test script.
+  const [smokeOpen, setSmokeOpen] = useState(false);
+  const [smokeCatalog, setSmokeCatalog] = useState("");
+  const [smokeSchema, setSmokeSchema] = useState("");
+  const [smokeVolume, setSmokeVolume] = useState("clone_xs_smoke");
+  const [smokeRunning, setSmokeRunning] = useState(false);
+  const [smokeResults, setSmokeResults] = useState<SmokeCellResult[] | null>(null);
+  const [smokeError, setSmokeError] = useState("");
 
   const selectedFqns = useMemo(
     () => new Set(targets.map((t) => t.fqn)),
@@ -570,6 +609,28 @@ export default function ConvertToDeltaPage() {
     }
   };
 
+  const runSmokeTest = async () => {
+    setSmokeRunning(true);
+    setSmokeError("");
+    setSmokeResults(null);
+    try {
+      const res = await api.post<SmokeTestResponse>(
+        "/convert-to-delta/smoke-test",
+        {
+          catalog: smokeCatalog.trim(),
+          schema: smokeSchema.trim(),
+          volume: smokeVolume.trim(),
+          warehouse_id: effectiveWarehouseId || undefined,
+        },
+      );
+      setSmokeResults(res.cells);
+    } catch (e) {
+      setSmokeError((e as Error).message || "Smoke test failed");
+    } finally {
+      setSmokeRunning(false);
+    }
+  };
+
   const onRunClick = () => {
     if (dryRun) {
       submit();
@@ -586,6 +647,25 @@ export default function ConvertToDeltaPage() {
         description="In-place conversion between Delta, Iceberg, Parquet (Hudi gated). Destructive on source."
         icon={ArrowRightLeft}
       />
+
+      {/* Top action row — Test all formats opens the smoke-test
+          dialog. Sits above the banner so it's findable without
+          being mistaken for a destructive primary action. */}
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setSmokeError("");
+            setSmokeResults(null);
+            setSmokeOpen(true);
+          }}
+          title="Run every (DELTA → target) cell against a real workspace using fresh fixture tables. Surfaces Databricks-side rejections (Volume missing, Hudi/Iceberg conflicts, etc.) the unit tests can't catch."
+        >
+          <FlaskConical className="h-4 w-4 mr-1" />
+          Test all formats
+        </Button>
+      </div>
 
       {/* Destructive-action banner. Dismissible per session — high-
           contrast amber that reads cleanly in light and dark themes.
@@ -1275,6 +1355,287 @@ export default function ConvertToDeltaPage() {
           </CardContent>
         )}
       </Card>
+
+      {/* "Test all formats" smoke-test dialog. Captures the catalog /
+          schema / volume the fixtures get created in, then POSTs to
+          /convert-to-delta/smoke-test and renders one row per cell.
+          The same dialog is reused for the input form and the
+          results — a "Run again" button on the results screen
+          re-runs against the same inputs. */}
+      <Dialog open={smokeOpen} onOpenChange={setSmokeOpen}>
+        {/* Wider than the default. NOTE: the DialogContent base
+            class includes `sm:max-w-sm` (384px) which overrides any
+            unprefixed `max-w-*` we pass on screens >= sm. Use the
+            `sm:` prefix here so twMerge picks our override at the
+            same responsive breakpoint. Without the `sm:` prefix
+            this whole dialog stays stuck at 384px and the per-cell
+            rows visibly overflow past the dialog's right edge. */}
+        <DialogContent className="sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="h-5 w-5" />
+              Test all formats
+            </DialogTitle>
+            <DialogDescription>
+              Runs every (DELTA → target) cell against a real workspace using
+              fresh fixture tables. Each cell creates a tiny Delta table,
+              converts it, then drops it. Export-shaped targets (PARQUET /
+              AVRO / ORC / JSON) write files into the named Volume — it must
+              already exist with WRITE FILES privilege.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs font-medium mb-1 block" htmlFor="smoke-catalog">
+                  Catalog
+                </label>
+                <Input
+                  id="smoke-catalog"
+                  value={smokeCatalog}
+                  onChange={(e) => setSmokeCatalog(e.target.value)}
+                  placeholder="edp_dev"
+                  className={`font-mono text-sm ${smokeCatalog.includes(".") ? "border-amber-500/60" : ""}`}
+                  disabled={smokeRunning}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block" htmlFor="smoke-schema">
+                  Schema
+                </label>
+                <Input
+                  id="smoke-schema"
+                  value={smokeSchema}
+                  onChange={(e) => setSmokeSchema(e.target.value)}
+                  placeholder="bronze"
+                  className={`font-mono text-sm ${smokeSchema.includes(".") ? "border-amber-500/60" : ""}`}
+                  disabled={smokeRunning}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block" htmlFor="smoke-volume">
+                  Volume
+                </label>
+                <Input
+                  id="smoke-volume"
+                  value={smokeVolume}
+                  onChange={(e) => setSmokeVolume(e.target.value)}
+                  placeholder="clone_xs_smoke"
+                  className={`font-mono text-sm ${smokeVolume.includes(".") ? "border-amber-500/60" : ""}`}
+                  disabled={smokeRunning}
+                />
+              </div>
+            </div>
+            {/* Catch the most common operator mistake — pasting a
+                multi-part FQN prefix into the Catalog field. UC
+                identifiers are single-part; offer the likely split
+                inline so the user can fix it without reading the
+                Databricks `REQUIRES_SINGLE_PART_NAMESPACE` error. */}
+            {(() => {
+              const dotted = [
+                smokeCatalog.includes(".") && "Catalog",
+                smokeSchema.includes(".") && "Schema",
+                smokeVolume.includes(".") && "Volume",
+              ].filter(Boolean) as string[];
+              if (dotted.length === 0) return null;
+              const catParts = smokeCatalog.split(".");
+              const splitHint =
+                dotted.includes("Catalog") && catParts.length === 2 && !smokeSchema
+                  ? ` — did you mean Catalog=${catParts[0]}, Schema=${catParts[1]}?`
+                  : "";
+              return (
+                <div className="text-xs text-amber-600 dark:text-amber-400 border border-amber-500/40 bg-amber-500/10 rounded-md p-2">
+                  <strong>{dotted.join(", ")}</strong> contains a dot. Unity
+                  Catalog identifiers are single-part — no dots allowed{splitHint}.
+                </div>
+              );
+            })()}
+            <p className="text-xs text-gray-500">
+              The Volume is auto-created (<code className="px-1 bg-gray-500/10 rounded">CREATE VOLUME IF NOT EXISTS {smokeCatalog || "&lt;catalog&gt;"}.{smokeSchema || "&lt;schema&gt;"}.{smokeVolume || "&lt;volume&gt;"}</code>) if it doesn&apos;t exist. The schema must already have a managed location.
+            </p>
+
+            {smokeError && (
+              <div className="text-sm text-red-500 border border-red-500/40 bg-red-500/10 rounded-md p-2">
+                {smokeError}
+              </div>
+            )}
+
+            {smokeResults && (
+              <>
+                {/* Summary chips — quick eyeball of run health before
+                    the operator scans the per-cell rows. Counts match
+                    the existing colour palette used by the Recent Runs
+                    panel so the overall page stays visually coherent. */}
+                {(() => {
+                  const converted = smokeResults.filter((c) => c.status === "converted").length;
+                  const failed = smokeResults.filter((c) => c.status === "failed").length;
+                  const skipped = smokeResults.filter((c) => c.status === "skipped").length;
+                  const allGreen = failed === 0;
+                  const failedNoun = failed === 1 ? "cell" : "cells";
+                  const summaryMsg = allGreen
+                    ? "✓ Every supported cell ran cleanly."
+                    : `${failed} ${failedNoun} need attention — see Detail.`;
+                  return (
+                    <div className="flex flex-wrap gap-2 items-center text-xs">
+                      <Badge variant="outline" className={statusBadgeClass("converted")}>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        {converted} converted
+                      </Badge>
+                      {failed > 0 && (
+                        <Badge variant="outline" className={statusBadgeClass("failed")}>
+                          <XCircle className="h-3 w-3 mr-1" />
+                          {failed} failed
+                        </Badge>
+                      )}
+                      {skipped > 0 && (
+                        <Badge variant="outline" className={statusBadgeClass("skipped")}>
+                          {skipped} skipped
+                        </Badge>
+                      )}
+                      <span className="text-gray-500">{summaryMsg}</span>
+                    </div>
+                  );
+                })()}
+
+                <div className="border rounded-md overflow-x-auto">
+                  {/* `table-fixed` + `w-full` forces the columns to
+                      respect the parent width. Without it, long
+                      Volume URIs in the Detail column expand the
+                      cell to fit and overflow the dialog. */}
+                  <table className="w-full table-fixed text-sm">
+                    <thead className="bg-gray-800/40">
+                      <tr>
+                        <th className="text-left p-2 w-[12%]">Target</th>
+                        <th className="text-left p-2 w-[12%]">Status</th>
+                        <th className="text-left p-2 w-[18%]">Strategy</th>
+                        <th className="text-left p-2 w-[12%]">Duration</th>
+                        <th className="text-left p-2">Detail / Output location</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {smokeResults.map((c) => {
+                        // Tint the row by status. Use Tailwind's `100`
+                        // status tokens (slightly stronger than `50`)
+                        // so each state has clear visual weight on a
+                        // light dialog. Slate gets bumped higher
+                        // because grey has less chromatic contrast on
+                        // white than emerald or red — needs the
+                        // boost to read as a deliberate fill rather
+                        // than a render glitch.
+                        let rowClass = "border-t";
+                        if (c.status === "converted") {
+                          rowClass += " bg-emerald-100 dark:bg-emerald-900/30";
+                        } else if (c.status === "failed") {
+                          rowClass += " bg-red-100 dark:bg-red-900/30";
+                        } else {
+                          rowClass += " bg-slate-200 dark:bg-slate-700/40";
+                        }
+
+                        // The orchestrator stores the skip reason in
+                        // `error` (e.g. "already DELTA", "compat
+                        // preflight refused: …"). Render that in muted
+                        // gray so it doesn't look like a failure;
+                        // reserve red text for actual `failed` rows.
+                        const detailColor =
+                          c.status === "failed"
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-gray-500 dark:text-gray-400";
+                        return (
+                          <tr key={c.target} className={rowClass}>
+                            <td className="p-2 font-mono">{c.target}</td>
+                            <td className="p-2">
+                              <Badge variant="outline" className={statusBadgeClass(c.status)}>
+                                {c.status}
+                              </Badge>
+                            </td>
+                            <td className="p-2 text-xs text-gray-500 dark:text-gray-400">
+                              {c.strategy_used || "—"}
+                            </td>
+                            <td className="p-2">{formatDuration(c.duration_ms)}</td>
+                            <td className="p-2 text-xs">
+                              {c.error && (
+                                <div
+                                  className={`${detailColor} max-w-md truncate`}
+                                  title={c.error}
+                                >
+                                  {c.error}
+                                </div>
+                              )}
+                              {c.destination_path && c.status === "converted" && (
+                                <div className="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 mt-0.5">
+                                  <span className="font-mono break-all">{c.destination_path}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigator.clipboard
+                                        ?.writeText(c.destination_path ?? "")
+                                        .catch(() => {})
+                                    }
+                                    title="Copy path to clipboard"
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0"
+                                    aria-label={`Copy ${c.destination_path}`}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Helper hint for the Volume paths — operators
+                    inspecting the exported files will need a `LIST`
+                    command. Surface the canonical SQL once so they
+                    don't have to look it up. */}
+                {smokeResults.some((c) => c.destination_path && c.status === "converted") && (
+                  <p className="text-xs text-gray-500">
+                    To inspect the exported files in any Volume above, run{" "}
+                    <code className="px-1 bg-gray-500/10 rounded">LIST '&lt;path&gt;'</code> in
+                    the SQL editor (or browse to the Volume in Catalog Explorer).
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSmokeOpen(false)} disabled={smokeRunning}>
+              Close
+            </Button>
+            <Button
+              onClick={runSmokeTest}
+              disabled={
+                smokeRunning ||
+                !smokeCatalog.trim() ||
+                !smokeSchema.trim() ||
+                !smokeVolume.trim()
+              }
+            >
+              {smokeRunning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Running…
+                </>
+              ) : smokeResults ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Run again
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-1" />
+                  Run smoke test
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

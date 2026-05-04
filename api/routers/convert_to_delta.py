@@ -16,7 +16,7 @@ per-table ``status`` so partial success is observable).
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -25,6 +25,9 @@ from api.models.convert_to_delta import (
     ConvertHistoryResponse,
     ConvertHistoryRow,
     ConvertResultResponse,
+    ConvertSmokeCellResult,
+    ConvertSmokeTestRequest,
+    ConvertSmokeTestResponse,
     ConvertSummaryResponse,
     ConvertToDeltaRequest,
 )
@@ -33,9 +36,11 @@ from src.audit_trail import (
     log_convert_result,
     query_convert_history,
 )
+from src.client import execute_sql
 from src.convert_to_delta import (
     ConvertResult,
     ConvertToDeltaError,
+    convert_table_format,
     convert_tables_format,
 )
 
@@ -242,3 +247,134 @@ def get_convert_history(
         for r in rows
     ]
     return ConvertHistoryResponse(rows=typed_rows, count=len(typed_rows))
+
+
+# Cells the smoke-test endpoint runs. Source is always DELTA — every
+# other source format would need a pre-existing fixture (UC managed
+# tables can't be Parquet, Managed Iceberg requires workspace-level
+# support). Mirrors `scripts/smoke_test_convert_formats.TARGET_CELLS`.
+_SMOKE_TARGETS: list[str] = ["DELTA", "ICEBERG", "PARQUET", "AVRO", "ORC", "JSON", "HUDI"]
+_SMOKE_EXPORT_TARGETS: frozenset[str] = frozenset({"PARQUET", "AVRO", "ORC", "JSON"})
+
+
+@router.post("/smoke-test", response_model=ConvertSmokeTestResponse)
+def post_convert_smoke_test(
+    req: ConvertSmokeTestRequest,
+    client=Depends(get_db_client),
+    app_config=Depends(get_app_config),
+) -> ConvertSmokeTestResponse:
+    """Run every (DELTA → target) cell against a real workspace.
+
+    Used by the "Test all formats" button on the convert UI. Each
+    cell:
+      1. Drops + recreates a tiny Delta fixture (per-target so a
+         failure doesn't poison the next cell's starting state).
+      2. Calls ``convert_table_format`` with the right args (export-
+         shaped targets get a per-cell sub-path under the operator's
+         Volume).
+      3. Drops the fixture (best-effort; logged but not fatal).
+
+    Returns one row per cell — converted / failed / skipped — plus
+    the strategy label and duration so the UI can render the same
+    table the script produces.
+    """
+    warehouse_id = req.warehouse_id or app_config.get("sql_warehouse_id", "")
+    if not warehouse_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "warehouse_id is required (request body or default config). "
+                "The smoke test creates fixture tables that need a warehouse to execute the DDL."
+            ),
+        )
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    # Auto-create the Volume if it doesn't exist. The previous version
+    # required the operator to run `CREATE VOLUME` themselves before
+    # clicking the button — easy to miss, and the resulting
+    # UC_VOLUME_NOT_FOUND error fires individually for every export
+    # cell (4× the same root cause). One CREATE up-front means a
+    # clean batch run with one possible failure mode here. We do NOT
+    # drop the Volume on cleanup — operators may want to inspect the
+    # exported files later, and the Volume itself is free; only the
+    # files take space and they get overwritten on the next run.
+    volume_fqn = f"{req.catalog}.{req.schema_name}.{req.volume}"
+    try:
+        execute_sql(client, warehouse_id, f"CREATE VOLUME IF NOT EXISTS {volume_fqn}")
+    except Exception as e:
+        # Surface the underlying Databricks error as a 400 — most
+        # common reasons are missing schema, missing managed-location
+        # on the schema, or insufficient privilege. The operator can
+        # fix and click "Run again".
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Could not auto-create Volume {volume_fqn}: {e}. "
+                f"Create it manually or fix the underlying issue and re-run."
+            ),
+        ) from e
+
+    cells: list[ConvertSmokeCellResult] = []
+
+    for target in _SMOKE_TARGETS:
+        fixture_fqn = f"{req.catalog}.{req.schema_name}.smoke_convert_{target.lower()}_{run_id}"
+
+        # Phase 1 — fixture setup. A failure here surfaces as a "failed"
+        # cell with a clear reason (perms, missing schema) rather than
+        # an unhandled exception that would tear down the whole batch.
+        try:
+            execute_sql(client, warehouse_id, f"DROP TABLE IF EXISTS {fixture_fqn}")
+            execute_sql(
+                client,
+                warehouse_id,
+                f"CREATE TABLE {fixture_fqn} (id BIGINT, name STRING) USING delta",
+            )
+            execute_sql(
+                client,
+                warehouse_id,
+                f"INSERT INTO {fixture_fqn} VALUES (1, 'alice'), (2, 'bob'), (3, 'carol')",
+            )
+        except Exception as e:
+            cells.append(
+                ConvertSmokeCellResult(
+                    target=target,
+                    status="failed",
+                    error=f"fixture create failed: {e}",
+                )
+            )
+            continue
+
+        # Phase 2 — the actual convert. Wrap in try/finally so the
+        # fixture is dropped even if the convert raises.
+        try:
+            kwargs: dict = {"target_format": target}
+            if target in _SMOKE_EXPORT_TARGETS:
+                kwargs["destination_path"] = (
+                    f"/Volumes/{req.catalog}/{req.schema_name}/{req.volume}/"
+                    f"smoke_{target.lower()}_{run_id}/"
+                )
+            result = convert_table_format(client, warehouse_id, fixture_fqn, "DELTA", **kwargs)
+            cells.append(
+                ConvertSmokeCellResult(
+                    target=target,
+                    status=result.status,
+                    strategy_used=result.strategy_used,
+                    duration_ms=result.duration_ms,
+                    error=result.error,
+                    destination_path=kwargs.get("destination_path"),
+                )
+            )
+        finally:
+            try:
+                execute_sql(client, warehouse_id, f"DROP TABLE IF EXISTS {fixture_fqn}")
+            except Exception as e:
+                logger.warning(f"smoke-test cleanup: could not drop {fixture_fqn}: {e}")
+
+    return ConvertSmokeTestResponse(
+        run_id=run_id,
+        catalog=req.catalog,
+        schema=req.schema_name,
+        volume=req.volume,
+        cells=cells,
+    )

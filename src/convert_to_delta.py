@@ -490,6 +490,39 @@ def convert_table_format(
 
     qualified = _qualify(fqn)
 
+    # Auto-create the destination Volume for export-shaped targets
+    # (PARQUET / AVRO / ORC / JSON). Without this the operator hits
+    # `UC_VOLUME_NOT_FOUND` if the Volume doesn't exist yet — same
+    # root cause as the smoke endpoint had before its own auto-
+    # create. Idempotent; cheap. Skip in dry-run so previewing the
+    # SQL doesn't side-effect.
+    _export_formats_needing_volume = {"PARQUET", "AVRO", "ORC", "JSON"}
+    if not dry_run and tgt_fmt in _export_formats_needing_volume and destination_path:
+        # Parse the Volume FQN out of `/Volumes/<cat>/<sch>/<vol>/...`.
+        # The path format is enforced by the API request validator
+        # (must start with /Volumes/) so we can rely on the prefix.
+        vol_parts = destination_path.strip("/").split("/")
+        if len(vol_parts) >= 4 and vol_parts[0].lower() == "volumes":
+            vol_fqn = f"{vol_parts[1]}.{vol_parts[2]}.{vol_parts[3]}"
+            try:
+                execute_sql(
+                    client,
+                    warehouse_id,
+                    f"CREATE VOLUME IF NOT EXISTS {vol_fqn}",
+                )
+            except Exception as e:
+                logger.error(f"  ✗ Could not auto-create Volume {vol_fqn} for {fqn}: {e}")
+                return _finish(
+                    "failed",
+                    (
+                        f"Could not auto-create Volume {vol_fqn}: {e}. "
+                        f"Most likely: the schema has no managed location "
+                        f"(run ALTER SCHEMA {vol_parts[1]}.{vol_parts[2]} "
+                        f"SET MANAGED LOCATION ...) or the caller lacks "
+                        f"CREATE VOLUME privilege on the schema."
+                    ),
+                )
+
     # Cross-format compat preflight — refuse hidden Iceberg
     # partitioning, refuse GENERATED/IDENTITY Delta columns when
     # target can't represent them. Skip in dry-run so the operator
@@ -548,8 +581,26 @@ def convert_table_format(
         choice.plan.execute(client, warehouse_id, dry_run=False)
         logger.info(f"  ✓ Converted {fqn} ({src_fmt} → {tgt_fmt}) via {choice.strategy}")
     except Exception as e:
-        logger.error(f"  ✗ Convert failed for {fqn}: {e}")
-        return _finish("failed", str(e), strategy=choice.strategy)
+        # Translate the Hudi UniForm runtime-not-supported error into
+        # a friendly message. Databricks reports it as a generic
+        # ``DELTA_UNKNOWN_CONFIGURATION`` for ``delta.enableHudiCompatV1``
+        # — not obvious unless you know that property only exists on
+        # newer DBR. Surface the actionable next step (upgrade
+        # warehouse runtime) rather than the raw config-not-found.
+        msg = str(e)
+        if (
+            choice.strategy == "uniform_hudi"
+            and "DELTA_UNKNOWN_CONFIGURATION" in msg
+            and "delta.enableHudiCompatV1" in msg
+        ):
+            msg = (
+                "Hudi UniForm is not supported on this SQL warehouse runtime "
+                "(`delta.enableHudiCompatV1` is unknown). Hudi UniForm requires "
+                "a recent Databricks Runtime — upgrade the warehouse, or pick a "
+                "different target format. Original error: " + str(e)
+            )
+        logger.error(f"  ✗ Convert failed for {fqn}: {msg}")
+        return _finish("failed", msg, strategy=choice.strategy)
 
     # Replay GRANTs + OWNER after a successful CTAS conversion. Each
     # individual GRANT is best-effort — a partial-permission caller

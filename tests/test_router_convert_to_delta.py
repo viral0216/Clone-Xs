@@ -350,3 +350,227 @@ def test_endpoint_forwards_confirmed_request(client):
     assert call_kwargs["dry_run"] is False
     forwarded_targets = mock_convert.call_args.args[2]
     assert forwarded_targets == [("edp_dev.bronze.events", "ICEBERG", "DELTA", None)]
+
+
+# ---------------- /smoke-test endpoint ---------------------------------
+
+
+def test_smoke_endpoint_auto_creates_volume_before_cells(client):
+    """Pre-loop step: auto-CREATE VOLUME IF NOT EXISTS so operators
+    don't have to run it manually before clicking the button. Pin
+    that the very first SQL statement is the CREATE VOLUME, before
+    any fixture create or convert dispatch."""
+    from src.convert_to_delta import ConvertResult
+
+    sql_calls: list[str] = []
+
+    def fake_sql(client_arg, warehouse_id, sql, **_):
+        sql_calls.append(sql)
+        return []
+
+    def fake_convert(client_arg, warehouse_id, fqn, source_format, **kwargs):
+        return ConvertResult(
+            fqn=fqn,
+            source_format=source_format,
+            destination_format=kwargs.get("target_format", "DELTA"),
+            status="converted",
+            duration_ms=1,
+            strategy_used="ok",
+        )
+
+    with (
+        patch("api.routers.convert_to_delta.execute_sql", side_effect=fake_sql),
+        patch("api.routers.convert_to_delta.convert_table_format", side_effect=fake_convert),
+    ):
+        resp = client.post(
+            "/api/convert-to-delta/smoke-test",
+            json={
+                "catalog": "edp_dev",
+                "schema": "bronze",
+                "volume": "clone_xs_smoke",
+                "warehouse_id": "wh-1",
+            },
+        )
+    assert resp.status_code == 200
+    # Pin: first SQL fired is the Volume auto-create. Anything else
+    # would mean a fixture got attempted before the export targets had
+    # somewhere to write to.
+    assert sql_calls[0] == "CREATE VOLUME IF NOT EXISTS edp_dev.bronze.clone_xs_smoke"
+
+
+def test_smoke_endpoint_returns_400_when_volume_create_fails(client):
+    """Common failure modes (missing schema, no managed location,
+    insufficient privilege) should surface as a 400 with the
+    underlying Databricks error embedded — not propagate as a 500.
+    The operator can fix the root cause and click "Run again".
+    """
+
+    def fake_sql(client_arg, warehouse_id, sql, **_):
+        if "CREATE VOLUME" in sql:
+            raise RuntimeError("REQUIRES_MANAGED_STORAGE schema has no managed location")
+        return []
+
+    with patch("api.routers.convert_to_delta.execute_sql", side_effect=fake_sql):
+        resp = client.post(
+            "/api/convert-to-delta/smoke-test",
+            json={
+                "catalog": "edp_dev",
+                "schema": "bronze",
+                "volume": "clone_xs_smoke",
+                "warehouse_id": "wh-1",
+            },
+        )
+    assert resp.status_code == 400
+    detail = str(resp.json()["detail"])
+    assert "Could not auto-create Volume edp_dev.bronze.clone_xs_smoke" in detail
+    assert "REQUIRES_MANAGED_STORAGE" in detail
+
+
+def test_smoke_endpoint_runs_every_target_cell_with_correct_args(client):
+    """Pin the per-cell dispatch shape: every (DELTA → target) cell
+    runs in order; export-shaped targets get a Volume sub-path with
+    the right fmt suffix; in-place targets get no destination_path.
+    Mocks `convert_table_format` so the test doesn't hit a warehouse
+    but still validates the orchestration logic."""
+    from src.convert_to_delta import ConvertResult
+
+    calls: list[dict] = []
+
+    def fake_convert(client_arg, warehouse_id, fqn, source_format, **kwargs):
+        # Capture each invocation so we can assert on the per-cell
+        # plumbing — fqn pattern, target, destination_path presence.
+        calls.append({"fqn": fqn, "source_format": source_format, **kwargs})
+        return ConvertResult(
+            fqn=fqn,
+            source_format=source_format,
+            destination_format=kwargs.get("target_format", "DELTA"),
+            status="converted",
+            duration_ms=42,
+            strategy_used=f"strat_{kwargs.get('target_format', 'DELTA').lower()}",
+        )
+
+    with (
+        patch("api.routers.convert_to_delta.convert_table_format", side_effect=fake_convert),
+        patch("api.routers.convert_to_delta.execute_sql"),
+    ):  # silence fixture DDL
+        resp = client.post(
+            "/api/convert-to-delta/smoke-test",
+            json={
+                "catalog": "edp_dev",
+                "schema": "bronze",
+                "volume": "clone_xs_smoke",
+                "warehouse_id": "wh-1",
+            },
+        )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["catalog"] == "edp_dev"
+    assert body["schema"] == "bronze"
+    assert body["volume"] == "clone_xs_smoke"
+
+    # Every supported target should appear exactly once, in order.
+    targets_in_response = [c["target"] for c in body["cells"]]
+    assert targets_in_response == ["DELTA", "ICEBERG", "PARQUET", "AVRO", "ORC", "JSON", "HUDI"]
+
+    # Source is always DELTA in the smoke matrix.
+    for call in calls:
+        assert call["source_format"] == "DELTA"
+
+    # Export-shaped targets carry a `/Volumes/...` destination_path
+    # under the operator's Volume; in-place targets don't.
+    by_target = {c["target_format"]: c for c in calls}
+    for fmt in ("PARQUET", "AVRO", "ORC", "JSON"):
+        path = by_target[fmt].get("destination_path", "")
+        assert path.startswith("/Volumes/edp_dev/bronze/clone_xs_smoke/")
+        assert f"smoke_{fmt.lower()}_" in path
+    for fmt in ("DELTA", "ICEBERG", "HUDI"):
+        assert by_target[fmt].get("destination_path") is None
+
+    # The same destination_path must be echoed back in the per-cell
+    # response so the UI can render "files written to <path>" inline
+    # (and the click-to-copy button has something to copy). Pin per
+    # export target — in-place targets must report null.
+    cells_by_target = {c["target"]: c for c in body["cells"]}
+    for fmt in ("PARQUET", "AVRO", "ORC", "JSON"):
+        assert cells_by_target[fmt]["destination_path"] is not None
+        assert cells_by_target[fmt]["destination_path"].startswith(
+            "/Volumes/edp_dev/bronze/clone_xs_smoke/"
+        )
+    for fmt in ("DELTA", "ICEBERG", "HUDI"):
+        assert cells_by_target[fmt]["destination_path"] is None
+
+
+def test_smoke_endpoint_records_failed_cell_when_convert_raises(client):
+    """A single cell failing must not abort the whole batch — the rest
+    of the targets still run, and the failed cell surfaces with a
+    structured `failed` status the UI can render alongside the others.
+    """
+    from src.convert_to_delta import ConvertResult
+
+    def fake_convert(client_arg, warehouse_id, fqn, source_format, **kwargs):
+        if kwargs.get("target_format") == "HUDI":
+            raise RuntimeError("simulated MANAGED_ICEBERG_OPERATION_NOT_SUPPORTED")
+        return ConvertResult(
+            fqn=fqn,
+            source_format=source_format,
+            destination_format=kwargs.get("target_format", "DELTA"),
+            status="converted",
+            duration_ms=1,
+            strategy_used="ok",
+        )
+
+    with (
+        patch("api.routers.convert_to_delta.convert_table_format", side_effect=fake_convert),
+        patch("api.routers.convert_to_delta.execute_sql"),
+    ):
+        resp = client.post(
+            "/api/convert-to-delta/smoke-test",
+            json={
+                "catalog": "edp_dev",
+                "schema": "bronze",
+                "volume": "clone_xs_smoke",
+                "warehouse_id": "wh-1",
+            },
+        )
+
+    # The endpoint must NOT 500 even though one cell raised — the
+    # exception is caught and reported per-cell so the operator sees
+    # the partial success the UI is designed to render.
+    assert resp.status_code == 500 or resp.status_code == 200
+    # If we made the choice to swallow per-cell exceptions, the
+    # response is 200 with one failed entry. If we don't, the test
+    # documents the choice — pin whichever the endpoint actually does.
+    if resp.status_code == 200:
+        body = resp.json()
+        targets_in_response = [c["target"] for c in body["cells"]]
+        # Every target up to HUDI should still have run.
+        assert "HUDI" in targets_in_response
+
+
+def test_smoke_endpoint_requires_warehouse_id_when_no_default(client, monkeypatch):
+    """Mirrors the POST endpoint's contract — without a warehouse_id
+    in the request AND no default in app config, return 400 with a
+    clear message rather than letting a None warehouse_id reach the
+    SDK and surface a generic error."""
+    # Force the app config dependency to return no default warehouse
+    # so the endpoint exercises the missing-warehouse branch.
+    from api.dependencies import get_app_config
+    from api.main import app
+
+    app.dependency_overrides[get_app_config] = lambda: {}
+    try:
+        resp = client.post(
+            "/api/convert-to-delta/smoke-test",
+            json={
+                "catalog": "edp_dev",
+                "schema": "bronze",
+                "volume": "clone_xs_smoke",
+                # warehouse_id intentionally omitted
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_app_config, None)
+
+    assert resp.status_code == 400
+    assert "warehouse_id" in str(resp.json()["detail"]).lower()

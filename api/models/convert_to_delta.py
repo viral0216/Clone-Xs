@@ -230,3 +230,92 @@ class ConvertHistoryResponse(BaseModel):
 
     rows: list[ConvertHistoryRow]
     count: int
+
+
+class ConvertSmokeTestRequest(BaseModel):
+    """Run every (DELTA → target) cell against a real workspace.
+
+    Used by the "Test all formats" button in the convert UI. The
+    endpoint creates a tiny Delta fixture, runs each target against a
+    fresh copy, and drops the fixture between cells. Same logic as
+    ``scripts/smoke_test_convert_formats.py`` exposed over HTTP so the
+    UI can run it without shelling out.
+    """
+
+    catalog: str = Field(..., description="Catalog the fixture tables are created in")
+    schema_name: str = Field(
+        ...,
+        alias="schema",
+        description="Schema the fixture tables are created in",
+    )
+    volume: str = Field(
+        ...,
+        description=(
+            "Existing Volume name (in <catalog>.<schema>) the export-shaped "
+            "cells write into. Must already exist with WRITE FILES privilege."
+        ),
+    )
+    warehouse_id: str | None = Field(
+        default=None,
+        description="SQL warehouse ID. Falls back to clone_config.yaml default.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _identifiers_are_single_part(self) -> "ConvertSmokeTestRequest":
+        """Reject dotted identifiers in catalog / schema / volume.
+
+        The most common operator mistake is pasting a multi-part FQN
+        prefix (e.g. ``demo_quick.iot``) into the Catalog field. The
+        backend would then construct a 4-part FQN which Databricks
+        rejects with ``REQUIRES_SINGLE_PART_NAMESPACE`` after a couple
+        of seconds. Catch it up-front with a message that names the
+        offending field AND suggests the likely split, so the operator
+        can correct without having to read the Databricks error.
+        """
+        problems: list[str] = []
+        for field_name, value in (
+            ("catalog", self.catalog),
+            ("schema", self.schema_name),
+            ("volume", self.volume),
+        ):
+            if "." in (value or ""):
+                parts = value.split(".")
+                hint = ""
+                if field_name == "catalog" and len(parts) == 2:
+                    hint = f" Did you mean catalog=`{parts[0]}`, schema=`{parts[1]}`?"
+                problems.append(
+                    f"{field_name} `{value}` is not a single Unity Catalog "
+                    f"identifier (no dots allowed).{hint}"
+                )
+        if problems:
+            raise ValueError(" ".join(problems))
+        return self
+
+
+class ConvertSmokeCellResult(BaseModel):
+    """One cell's outcome from the smoke run."""
+
+    target: str
+    status: Literal["converted", "failed", "skipped"]
+    strategy_used: str = ""
+    duration_ms: int = 0
+    error: str | None = None
+    # Volume URI the export wrote to. Set only for the export-shaped
+    # targets (PARQUET / AVRO / ORC / JSON); None for in-place targets
+    # whose destination is the source FQN itself. Surfaced in the UI
+    # so operators know where to find the resulting files.
+    destination_path: str | None = None
+
+
+class ConvertSmokeTestResponse(BaseModel):
+    """Aggregate response — one row per (DELTA → target) cell."""
+
+    run_id: str
+    catalog: str
+    schema_name: str = Field(..., alias="schema")
+    volume: str
+    cells: list[ConvertSmokeCellResult]
+
+    model_config = {"populate_by_name": True}

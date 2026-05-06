@@ -54,13 +54,17 @@ jobs:
             if [[ "$v" != v* ]]; then
               v="v$v"
             fi
-            # Drift check vs pyproject.toml — without this, a dispatch
-            # for v0.9.0 against a pyproject.toml that still says 0.8.0
-            # would publish a 0.8.0 wheel under a v0.9.0 GitHub Release.
+            # Drift check vs pyproject.toml. Earlier this was a hard
+            # error to keep the wheel artifact in sync with the
+            # GitHub Release tag; now we patch pyproject.toml in-flight
+            # in each build job (see "Sync pyproject.toml to release
+            # version" steps below) so the dispatch input is the
+            # authoritative version. This step just surfaces the drift
+            # as a warning so operators notice their main branch is
+            # behind the latest release.
             pv=$(grep -E '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/' | head -n1)
             if [ "v$pv" != "$v" ]; then
-              echo "::error::Dispatch version $v does not match pyproject.toml version v$pv. Bump pyproject.toml in a PR first, then dispatch with the new version."
-              exit 1
+              echo "::warning::Dispatch version $v does not match pyproject.toml version v$pv. The build jobs will rewrite pyproject.toml on the runner so the wheel/Docker artifacts have the right version, but main's pyproject.toml will keep saying $pv until you bump it manually."
             fi
           else
             v="${{ github.ref_name }}"
@@ -72,8 +76,30 @@ jobs:
   build-wheel:
     needs: determine-version
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+
+      # Patch pyproject.toml's `version` field to match the dispatch
+      # input (or tag-name) so the wheel filename + metadata reflect
+      # the release tag. The runner-only edit is intentional — we
+      # don't push back to main, so the source of truth on main may
+      # lag behind the latest release. The drift check in
+      # `determine-version` surfaces this as a warning when it
+      # happens.
+      - name: Sync pyproject.toml to release version
+        run: |
+          set -euo pipefail
+          bare="${RELEASE_VERSION#v}"
+          # `sed -i.bak` (then rm) is portable across GNU sed (Linux)
+          # and BSD sed (macOS). Linux runners only need it on the
+          # ubuntu side, but using the same recipe everywhere means
+          # one diff to maintain.
+          sed -i.bak -E "s/^version = \".*\"/version = \"${bare}\"/" pyproject.toml
+          rm -f pyproject.toml.bak
+          echo "Patched pyproject.toml version → ${bare}:"
+          grep -E '^version = ' pyproject.toml
 
       - uses: actions/setup-python@v6
         with:
@@ -119,8 +145,18 @@ jobs:
   build-desktop-mac:
     needs: determine-version
     runs-on: macos-latest
+    env:
+      RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Sync pyproject.toml to release version
+        run: |
+          set -euo pipefail
+          bare="${RELEASE_VERSION#v}"
+          sed -i.bak -E "s/^version = \".*\"/version = \"${bare}\"/" pyproject.toml
+          rm -f pyproject.toml.bak
+          echo "Patched pyproject.toml version → ${bare}"
 
       - uses: actions/setup-node@v5
         with:
@@ -151,8 +187,19 @@ jobs:
   build-desktop-win:
     needs: determine-version
     runs-on: windows-latest
+    env:
+      RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Sync pyproject.toml to release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          bare="${RELEASE_VERSION#v}"
+          sed -i.bak -E "s/^version = \".*\"/version = \"${bare}\"/" pyproject.toml
+          rm -f pyproject.toml.bak
+          echo "Patched pyproject.toml version → ${bare}"
 
       - uses: actions/setup-node@v5
         with:
@@ -190,6 +237,14 @@ jobs:
       RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Sync pyproject.toml to release version
+        run: |
+          set -euo pipefail
+          bare="${RELEASE_VERSION#v}"
+          sed -i.bak -E "s/^version = \".*\"/version = \"${bare}\"/" pyproject.toml
+          rm -f pyproject.toml.bak
+          echo "Patched pyproject.toml version → ${bare}"
 
       - name: Build Docker image
         run: docker build -t "clone-xs:${RELEASE_VERSION}" .

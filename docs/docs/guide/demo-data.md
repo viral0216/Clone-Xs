@@ -749,14 +749,51 @@ curl -X POST http://localhost:8000/api/generate/demo-data/streaming \
   }'
 ```
 
+### Performance presets
+
+The Streaming Events form opens with a **Performance preset** row of
+four pill buttons that bundle destination + cadence into one click —
+each preset targets a different throughput tier. Picking a preset sets
+all four state values (`destination`, `events_per_batch`,
+`interval_seconds`, `total_duration_seconds`) at once; manually
+editing any of those fields after a preset is applied flips the
+indicator to **Custom** so you can tell at a glance whether the form
+matches a preset or has drifted.
+
+| Preset | Destination | Batch | Interval | Duration | Typical throughput |
+|---|---|---|---|---|---|
+| **Demo (default)** | `volume_bronze` | 100 | 5s | 60s | ~5K rows/s — fastest to start |
+| **Direct (small batches)** | `direct_table` | 50,000 | 1s | 300s | ~30–50K rows/s |
+| **Bulk files** | `volume_bronze` | 100,000 | 2s | 300s | ~100–500K rows/s |
+| **Streaming (Zerobus)** | `zerobus` | 1,000,000 | 5s | 600s | ~100K–1M+ rows/s (Premium tier) |
+
+Throughput numbers are typical for a small/medium DBSQL Serverless
+warehouse; actual numbers vary by warehouse size, network throughput,
+and event-shape complexity.
+
+The **Streaming (Zerobus)** preset is disabled (with a tooltip
+explaining why) when the Zerobus SDK isn't installed or the workspace
+isn't on Premium/Enterprise tier — same gating as the destination
+radio. Preset values are **clamped to the configured form bounds**
+(see [Form-bound limits](#form-bound-limits) below); if your admin
+has narrowed `events_per_batch.max` below a preset's batch size, the
+preset applies clamped values and a toast warns you.
+
 ### Destination modes
 
-| `destination` | What happens per tick | Requires |
-|---|---|---|
-| `volume` | One JSON file per batch in `/Volumes/<cat>/<sch>/<vol>/<profile>/` | UC volume create permission |
-| `volume_bronze` | Same files plus an auto-created `CREATE OR REFRESH STREAMING TABLE` over `read_files()` | DBSQL Serverless (for the streaming table) |
-| `direct_table` | `INSERT INTO <bronze_table> VALUES …` per batch — no Volume, no Auto Loader | Any tier (works on Free Edition) |
-| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table + the destination schema must have a **managed storage location** configured (Zerobus rejects tables in default storage — see "Setting up Zerobus credentials" below). **No macOS wheels** — see README for the snippet-panel workaround. |
+| `destination` | What happens per tick | Warehouse impact | Requires |
+|---|---|---|---|
+| `volume` | One JSON file per batch in `/Volumes/<cat>/<sch>/<vol>/<profile>/` | None — files write directly to UC Volume | UC volume create permission |
+| `volume_bronze` | Same files plus an auto-created `CREATE OR REFRESH STREAMING TABLE` over `read_files()` | One-time only — `CREATE OR REFRESH STREAMING TABLE` runs once at startup; refresh runs on its own DBSQL Serverless pool | DBSQL Serverless (for the streaming table) |
+| `direct_table` | `INSERT INTO <bronze_table> VALUES …` per batch — no Volume, no Auto Loader | **Every tick** — INSERT VALUES is single-driver-bound; pick the largest serverless you have | Any tier (works on Free Edition) |
+| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | One-time only — DDL setup at run start (CREATE TABLE + GRANTs); idle during streaming. Smallest warehouse is fine | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table + the destination schema must have a **managed storage location** configured (Zerobus rejects tables in default storage — see "Setting up Zerobus credentials" below). **No macOS wheels** — see README for the snippet-panel workaround. |
+
+Each destination radio in the UI surfaces the same warehouse-impact
+note inline as a small italic line, color-coded green (low/none) or
+amber (every tick). The intent is to make warehouse-size sensitivity
+obvious at the point of decision — picking `direct_table` is a hint
+to bump the warehouse; picking `zerobus` means warehouse size
+doesn't affect streaming throughput at all.
 
 When the Zerobus SDK is absent the destination radio renders disabled
 with a tooltip explaining why; the **Try with Zerobus** code snippet
@@ -824,6 +861,60 @@ LIMIT 100
 profile. The deep-link uses Data Lab's `#q=<base64>&run=1` URL hash
 format — see [Data Lab](data-lab.md#deep-link-auto-run) for how to
 embed the same pattern in your own pages.
+
+### Throughput chart
+
+While a streaming run is active (and after it completes), the
+progress card renders a **dual-axis throughput chart**:
+
+- **Left axis (cumulative events)** — area-filled red line showing
+  total events emitted over elapsed seconds.
+- **Right axis (per-tick events)** — dashed grey line showing per-tick
+  delta, so you can see whether each tick is hitting target or
+  falling behind.
+- **Expected reference line** — horizontal dashed line at the
+  configured `events_per_batch`, labeled "expected N/tick". Hidden
+  when the configured value is less than 1% of peak per-tick delta
+  (e.g. you ran with batch=1M then changed the form to 100 — the
+  reference would be flush against the X-axis and meaningless).
+- **Error markers** — red ⨯ dots appear on the cumulative line at any
+  tick where `tick_errors` incremented, so per-tick failures are
+  visible without reading the run log.
+
+Y-axis ticks use **K/M/B suffixes** (`3M` instead of `3000000`) and
+the chart adapts to all 10 themes via `currentColor` strokes.
+Tooltip hover distinguishes "Cumulative events" from "Events / tick"
+and shows formatted values.
+
+### Form-bound limits
+
+The bounds on **Events per batch**, **Interval (seconds)**, and
+**Total duration (seconds)** are admin-configurable from
+**Settings → Performance → Streaming Form Limits**. Each field
+exposes three knobs (default / min / max), persisted to
+`config/streaming_limits.json` (independent of `clone_config.yaml` —
+these are UX form bounds, not clone orchestration).
+
+The same bounds drive:
+
+- The form's HTML `min`/`max` attrs and clamp logic.
+- The Pydantic validators on `StreamingEmissionRequest`,
+  `StreamingScheduleRequest`, and `ZerobusSnippetRequest` — so a
+  POST with a value outside the configured range returns 422
+  before any SQL runs.
+- The runner defaults — when a config dict omits a field, the runner
+  reads the configured `default` rather than a hardcoded constant.
+
+The file is created on first save via the Settings page; until then
+the API serves built-in defaults (events_per_batch: 100/1/10000,
+interval_seconds: 5/0.1/300, total_duration_seconds: 60/1/3600).
+The mtime-based cache picks up edits within a second — no API
+restart needed.
+
+The endpoint pair powering the Settings card is documented in
+[API → Config](../reference/api.md#getapiconfigstreaming-limits) and
+the form-bounds endpoint that the `/demo-data` page reads is at
+[API → Demo Data](../reference/api.md#getapigeneratedemodatastreaminglimits).
 
 ### Setting up Zerobus credentials
 

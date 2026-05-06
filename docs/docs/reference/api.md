@@ -326,7 +326,7 @@ Submit a clone job to the background queue.
 | `max_tables`           | integer  | No       |                                        | Runtime guardrail — abort after this many tables have been touched. Checked between schemas. |
 | `source_snapshot_id`   | string   | No       |                                        | UUID of a row in `<audit>.clone_snapshots`. When set, resolved to `as_of_timestamp` so every table clones from the snapshot's captured state. See [Clone Snapshots](#clone-snapshots). |
 | `target_format`        | string   | No       | `"DELTA"`                              | `"DELTA"` (default) or `"ICEBERG"`. When `"ICEBERG"`, the destination stays Delta but UniForm metadata is enabled post-clone (`delta.universalFormat.enabledFormats=iceberg` + `IcebergCompatV2` + `columnMapping=name`) so external Iceberg engines can read it without a copy. Only effective on Delta sources — non-Delta sources skip with a `WARN`. See [clone guide — target format](../guide/clone#target-format--target_format-iceberg-uniform). |
-| `iceberg_physical`     | boolean  | No       | `false`                                | Only meaningful with `target_format="ICEBERG"`. When `true`, swaps the UniForm path for `CREATE TABLE … USING iceberg AS SELECT …` so UC reports the destination as `Data source: Iceberg`. **Loses Delta history**, ignores time-travel arguments with a `WARN`, requires DBR 15+ with Iceberg-managed-table support. See [clone guide — physical Iceberg target](../guide/clone#iceberg_physical-true--physical-iceberg-target-phase-c2-of-9). |
+| `iceberg_physical`     | boolean  | No       | `false`                                | Only meaningful with `target_format="ICEBERG"`. When `true`, swaps the UniForm path for `CREATE TABLE … USING iceberg AS SELECT …` so UC reports the destination as `Data source: Iceberg`. **Loses Delta history**, ignores time-travel arguments with a `WARN`, requires DBR 15+ with Iceberg-managed-table support. See [clone guide — physical Iceberg target](../guide/clone#physical-iceberg-target). |
 | `auto_mask_pii`        | boolean  | No       | `false`                                | Auto-detect PII columns via UC `column_tags` (EMAIL / SSN / CREDIT_CARD / PHONE / etc.) and mask them on the destination via the existing `src/masking.py` pipeline. Masking runs as a post-clone `UPDATE` — the masked-data exposure window is bounded by the clone job. See [clone guide — auto-mask PII](../guide/clone#auto-mask-pii-auto_mask_pii-true). |
 | `enable_retry`         | boolean  | No       | `true`                                 | Auto-retry transient clone failures (network, throttle, 5xx, HTTP 429) with exponential backoff. Logical errors (schema mismatch, permission, validation) never retry. Bounded by `max_retries` (config, default 3). |
 | `compare_dq_after_clone` | boolean | No       | `false`                                | Run a column-level DQ comparison after each schema clones — row count + per-column NULL counts on source vs target. Combined with `auto_rollback_on_failure`, max-drift exceeding `dq_drift_rollback_pct` triggers Delta `RESTORE`. Adds one warehouse round-trip per cloned table. |
@@ -1320,6 +1320,67 @@ Update storage pricing for cost calculations on the FinOps page.
 { "status": "saved", "price_per_gb": 0.023, "currency": "USD" }
 ```
 
+### `GET /api/config/streaming-limits` {#getapiconfigstreaming-limits}
+
+Read the configured form bounds for the `/demo-data` Streaming Events
+tab. Stored in `config/streaming_limits.json` (independent of
+`clone_config.yaml` — these are UX form bounds, not clone
+orchestration). Falls back to built-in defaults when the file has
+not yet been written.
+
+**Response:**
+
+```json
+{
+  "events_per_batch":       {"default": 100, "min": 1,   "max": 10000},
+  "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+  "total_duration_seconds": {"default": 60,  "min": 1,   "max": 3600}
+}
+```
+
+The same shape is also exposed at
+[`GET /api/generate/demo-data/streaming/limits`](#getapigeneratedemodatastreaminglimits)
+for the demo-data page; both endpoints read the same source. The
+config endpoint is what the **Settings → Performance → Streaming
+Form Limits** card uses.
+
+### `PATCH /api/config/streaming-limits` {#patchapiconfigstreaming-limits}
+
+Update the streaming-emit form bounds. Body keys are all optional —
+fields not in the body keep their current value, so a partial update
+(e.g. raising only `events_per_batch.max`) doesn't require resending
+the full shape.
+
+**Request body:**
+
+```json
+{
+  "events_per_batch": {"max": 50000},
+  "total_duration_seconds": {"default": 120}
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "saved",
+  "limits": {
+    "events_per_batch":       {"default": 100, "min": 1,   "max": 50000},
+    "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+    "total_duration_seconds": {"default": 120, "min": 1,   "max": 3600}
+  }
+}
+```
+
+**Validation:** per-field invariant `min ≤ default ≤ max`. The server
+rejects any update that violates this with a `400` and a descriptive
+error message — the file is never written into a state that would
+422 every subsequent streaming request.
+
+The mtime-based cache invalidates immediately so the next streaming
+form fetch picks up the new bounds without a 60-second wait.
+
 ---
 
 ## Generate
@@ -1566,6 +1627,29 @@ panel so users running the SQL manually get the same DDL.
 
 **Query parameters:** `catalog`, `schema`, `profile`,
 `refresh_minutes` (default 5), `volume` (default `events_volume`).
+
+### `GET /api/generate/demo-data/streaming/limits` {#getapigeneratedemodatastreaminglimits}
+
+Return the configured form bounds for the Streaming Events tab. The
+`/demo-data` page fetches this on mount to drive the HTML `min`/`max`
+attrs and clamp logic for **Events per batch**, **Interval (seconds)**,
+and **Total duration (seconds)**.
+
+Reads the same source as
+[`GET /api/config/streaming-limits`](#getapiconfigstreaming-limits) —
+duplicated here as a focused endpoint so the demo-data page doesn't
+have to fetch and dig through the full config blob. Edit the values
+via the Settings page or via `PATCH /api/config/streaming-limits`.
+
+**Response:**
+
+```json
+{
+  "events_per_batch":       {"default": 100, "min": 1,   "max": 10000},
+  "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+  "total_duration_seconds": {"default": 60,  "min": 1,   "max": 3600}
+}
+```
 
 ### `POST /api/generate/demo-data/streaming/schedule`
 

@@ -9,6 +9,168 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Streaming Events form: presets, configurable limits, warehouse-impact hints, chart polish
+
+A focused round of ergonomics on the `/demo-data` Streaming Events
+tab. No public API contract changes for the existing `POST
+/api/generate/demo-data/streaming` request; three new GET/PATCH
+endpoints surface the form-bounds config so workspace admins can
+widen or narrow the form without code changes.
+
+### Added — Configurable streaming-form bounds
+
+The form's three cadence inputs (`events_per_batch`,
+`interval_seconds`, `total_duration_seconds`) used to have hardcoded
+min/max/default values in three places (UI clamp logic, Pydantic
+validators, runner defaults). All three now read from a single
+source admins can edit.
+
+- **New file: `config/streaming_limits.json`.** Stores the per-field
+  `{default, min, max}` for the three streaming-form fields.
+  Independent of `clone_config.yaml` — these are UX form bounds, not
+  clone orchestration. Created on first save via the Settings page;
+  until then the API serves built-in defaults.
+- **New helper: `src/config.get_streaming_limits()` and
+  `set_streaming_limits()`.** mtime-cached read so streaming
+  validation is a dict access, not file I/O. `set_streaming_limits`
+  does merge-on-write so partial updates don't have to resend the
+  whole shape; atomic write via `.tmp` + `os.replace`. Validates
+  `min ≤ default ≤ max` per field before persisting — the file is
+  never written into a state that would 422 every subsequent
+  streaming request.
+- **Pydantic validators converted from `Field(ge,le)` to
+  `@field_validator`.** `StreamingEmissionRequest`,
+  `StreamingScheduleRequest`, and `ZerobusSnippetRequest` all read
+  bounds via `_check_streaming_bound` at request time. Defaults
+  switched to `Field(default_factory=lambda: _streaming_default(...))`
+  so the API's default value tracks YAML edits without a server
+  restart. Sub-second `interval_seconds` is preserved (min=0.1) so
+  existing direct-API callers using fractional cadence don't break.
+- **Runner defaults read from config too.** `src/demo_streaming.py`
+  now uses `_limits["events_per_batch"]["default"]` instead of a
+  hardcoded `100` when the caller's config dict omits the field.
+  Same for the other two fields.
+- **New endpoint: `GET /api/config/streaming-limits`.** Returns the
+  current form bounds. Used by the Settings page card.
+- **New endpoint: `PATCH /api/config/streaming-limits`.** Partial
+  updates supported. Returns 400 with a descriptive message on
+  invariant violation. Cache invalidates so the next form fetch
+  picks up the new bounds within a second.
+- **New endpoint: `GET /api/generate/demo-data/streaming/limits`.**
+  Focused endpoint the `/demo-data` page reads on mount — same
+  source as the config endpoint, no need to fetch the full blob.
+- **New Settings card: Settings → Performance → Streaming Form
+  Limits.** Three-row × three-column grid (event rows × default/min/
+  max). Save button calls the PATCH endpoint with full state; Reset
+  button reverts to built-in defaults locally (admin still has to
+  click Save to persist). Same client-side invariant check as the
+  server before round-tripping.
+
+### Added — Performance presets row on /demo-data
+
+One-click bundles of destination + cadence tuned for different
+throughput tiers. Picking a preset sets `destination`,
+`events_per_batch`, `interval_seconds`, and `total_duration_seconds`
+in one click. Active preset auto-detected by exact-match comparison;
+manually editing any field flips the indicator to **Custom**.
+
+- **Four presets shipped:** Demo (`volume_bronze` / 100 / 5s / 60s),
+  Direct small batches (`direct_table` / 50K / 1s / 300s), Bulk files
+  (`volume_bronze` / 100K / 2s / 300s), Streaming Zerobus (`zerobus`
+  / 1M / 5s / 600s).
+- **Clamping to admin-configured bounds.** Preset values pass through
+  the same clamp as manual edits — if `events_per_batch.max` has been
+  narrowed in Settings, a preset whose batch size exceeds the cap
+  applies clamped values and a `toast.warning` explains the gap.
+- **Zerobus preset gated.** Disabled (with tooltip explaining why)
+  when the Zerobus SDK isn't installed or Premium tier isn't
+  available — same gating as the destination radio.
+- **Active-preset highlight.** The matching preset gets the brand
+  `#E8453C` accent border; "Custom — current settings don't match
+  any preset" hint appears below the row when the user has drifted
+  off-preset.
+
+### Added — Per-destination warehouse-impact indicators
+
+Each radio card under **Destination** now surfaces a one-line
+italic note explaining how that destination uses the SQL warehouse:
+
+- `volume`: "Warehouse: not used. Files write directly to UC Volume."
+  (emerald)
+- `volume_bronze`: "Warehouse: one-time CREATE OR REFRESH STREAMING
+  TABLE. Refresh runs on its own DBSQL Serverless pool." (emerald)
+- `direct_table`: "Warehouse: every tick. INSERT VALUES is
+  single-driver-bound — pick the largest serverless you can." (amber)
+- `zerobus`: "Warehouse: one-time DDL only (CREATE TABLE + GRANTs).
+  Idle during streaming. Smallest warehouse is fine." (emerald)
+
+Color is `currentColor` + `text-emerald-{600,400}` /
+`text-amber-{600,400}`, so it adapts to all 10 themes. The amber
+note on `direct_table` is the highest-leverage hint — INSERT VALUES
+throughput is bounded by the warehouse driver's parse speed, which
+no other destination cares about.
+
+### Added — Throughput chart enhancements
+
+The streaming progress card's throughput chart switched from
+`<LineChart>` to `<ComposedChart>` and gained:
+
+- **Tooltip label fix.** Both lines previously rendered as "Events /
+  tick" because the formatter checked `name` (the legend label,
+  which Recharts maps from `name` prop) instead of `dataKey`. Now
+  uses dataKey so "Cumulative events" and "Events / tick" are
+  always distinguished.
+- **K/M/B number formatting.** New `fmtN` helper on top-level. Y-axis
+  ticks render `3M` instead of `3000000`; tooltip values render the
+  same. Major readability win once batch size passes ~10K.
+- **Subtle area fill** under the cumulative line via a
+  `<linearGradient>` from 25% alpha at top to 2% at bottom. Gives
+  the line visual weight without dominating.
+- **Expected-throughput reference line.** Horizontal dashed line on
+  the per-tick axis at the configured `events_per_batch`, labeled
+  "expected N/tick". Hidden when the configured value is less than
+  1% of peak per-tick delta (e.g. user changed the form to 100 after
+  running with 1M batches) — at that scale the line is flush against
+  the X-axis and the label collides with the last X-tick.
+- **Per-tick error markers.** Snapshot history captures `tick_errors`
+  alongside `events_emitted`; the chart computes `hasError` per
+  snapshot from `errorDelta > 0` and renders a red ⨯ circle on any
+  tick where errors went up. A separate hidden `<Line>` carries the
+  custom dot so the visual doesn't interfere with the cumulative
+  `<Area>`.
+- **Theme-aware colors.** All hardcoded `#374151` strokes replaced
+  with `currentColor` + `className="text-muted-foreground"` so the
+  chart renders correctly across light / dark / midnight / sunset /
+  high-contrast / ocean / forest / solarized / rose / slate themes.
+- **Taller chart (160 → 220px).** With axis labels on both Y axes
+  ("cumulative" / "per tick"), the previous height was cramped.
+- **Y-axis labels and X-axis spacing fixes.** Reference line label
+  position changed from `insideTopRight` (which collided with the
+  last X-axis tick) to `insideTopLeft`. Bottom margin bumped 18 → 30
+  so the X-axis title and Legend no longer crowd each other.
+  Right margin 16 → 24 so the last X-tick has breathing room.
+
+### Doc updates
+
+- [Demo Data Generator guide](../guide/demo-data.md) gained four new
+  subsections: Performance presets, warehouse-impact column on the
+  destination modes table, Throughput chart, and Form-bound limits
+  (with cross-links to the new endpoints).
+- [API reference](api.md) gained three new endpoint entries:
+  `GET /api/config/streaming-limits`, `PATCH /api/config/streaming-limits`,
+  `GET /api/generate/demo-data/streaming/limits`.
+
+### Tests
+
+All 72 existing streaming tests still pass after the Pydantic
+refactor. Smoke-tested end-to-end via TestClient: GET with no file
+returns built-in fallback, PATCH with partial update writes the
+file, GET reflects the new bounds, Pydantic accepts a value that was
+422'd before the PATCH, invalid PATCH (min > max, default outside
+range) returns 400 with descriptive detail.
+
+---
+
 ## v0.9.0 — N×N table-format converter, Zerobus PAT auth + reliability hardening
 
 Turns the four cheap CTAS cells from "skipped" to working in the convert page (so the matrix now ships six format pairs end-to-end), plus a substantial reliability + ergonomics pass on the Zerobus streaming destination. All new paths are additive; defaults are unchanged from v0.8.x.

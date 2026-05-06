@@ -169,7 +169,7 @@ Constraints worth knowing:
 - **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
 - **Cross-workspace clones** (Delta Sharing path) honour `target_format: ICEBERG` too — UniForm is enabled on the target after each successful DEEP CLONE through the share.
 
-##### `iceberg_physical: true` — physical Iceberg target
+##### `iceberg_physical: true` — physical Iceberg target {#physical-iceberg-target}
 
 UniForm makes a Delta table *readable* by Iceberg engines but UC still reports `Data source: Delta`. If you need UC itself to recognise the table as Iceberg (so it shows `Data source: Iceberg` and behaves like a managed Iceberg table for downstream Iceberg-native tooling), set `iceberg_physical: true` (or check the **Physical Iceberg target** box in the wizard, visible only when ICEBERG is selected).
 
@@ -1444,7 +1444,7 @@ Every control on the `/clone` wizard maps to a documented section. Use this as t
 | Clone Type (DEEP / SHALLOW) | `clone_type` | [Deep vs shallow clone](#deep-vs-shallow-clone) |
 | Load Type (FULL / INCREMENTAL) | `load_type` | [Full vs incremental vs selective load](#full-vs-incremental-vs-selective-load) |
 | Target Format (DELTA / ICEBERG) | `target_format` | [Target format — UniForm](#target-format--target_format-iceberg-uniform) |
-| Physical Iceberg target | `iceberg_physical` | [Physical Iceberg target](#iceberg_physical-true--physical-iceberg-target-phase-c2-of-9) |
+| Physical Iceberg target | `iceberg_physical` | [Physical Iceberg target](#physical-iceberg-target) |
 | Dry-run | `dry_run` | [Dry run](#dry-run) |
 | Use Serverless Compute | `serverless` + `volume` | [Serverless execution](#serverless-execution) |
 | Schema-only mode | `schema_only` | See "Schema-only" pattern in [demo-data.md](demo-data.md) and [environments.md](environments.md) |

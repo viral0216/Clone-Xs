@@ -1,0 +1,126 @@
+name: Auto-release on merge
+
+# Watches `main` for PR merges. When (a) the repository variable
+# `AUTO_RELEASE` is set to `true` AND (b) the merged PR bumped the
+# `version` field in `pyproject.toml`, this workflow dispatches the
+# main release workflow with the new version.
+#
+# The toggle mechanism is intentionally a repo Variable, not a Secret
+# or a file in the repo:
+#   - Variables can be flipped from the GitHub UI (Settings → Secrets
+#     and variables → Actions → Variables) without a commit, so the
+#     auto-release feature can be turned on/off without touching the
+#     codebase. Useful for "freeze the release train for a week"
+#     situations.
+#   - Variables show up in the Actions UI alongside the run, so the
+#     audit trail of "was auto-release enabled when this run fired?"
+#     is implicit.
+#   - Variables aren't redacted in logs (unlike Secrets), so the
+#     "skipping because AUTO_RELEASE != 'true'" message is debuggable.
+#
+# To enable: Settings → Secrets and variables → Actions → Variables
+#            → New variable → Name: AUTO_RELEASE  Value: true
+# To disable: edit the variable to any other value (or delete it).
+#
+# The release itself is performed by `release.yml`, which this
+# workflow invokes via `gh workflow run`. All the heavy lifting
+# (build wheel, build frontend, build desktop, build docker, create
+# GitHub Release) lives there. This workflow's only job is to decide
+# whether to trigger.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  # `actions: write` lets the workflow dispatch another workflow via
+  # `gh workflow run`. `contents: read` is the minimum needed for the
+  # checkout step.
+  actions: write
+  contents: read
+
+jobs:
+  maybe-release:
+    # Skip closed-without-merge PRs immediately. Closed-but-not-merged
+    # is the common case (e.g. someone closed an outdated PR in
+    # favour of a new one) and we don't want to release for those.
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check AUTO_RELEASE toggle
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ vars.AUTO_RELEASE }}" != "true" ]; then
+            echo "AUTO_RELEASE variable is not set to 'true' (current: '${{ vars.AUTO_RELEASE }}'). Skipping auto-release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "AUTO_RELEASE=true → continuing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout main with one extra commit of history
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          # `fetch-depth: 2` so we have HEAD (post-merge) AND HEAD~1
+          # (pre-merge) — enough for the version-diff check below
+          # without paying for the full history.
+          fetch-depth: 2
+
+      - name: Detect pyproject.toml version bump
+        if: steps.gate.outputs.skip != 'true'
+        id: ver
+        run: |
+          set -euo pipefail
+          read_version() {
+            grep -E '^version = ' "$1" | sed -E 's/version = "(.*)"/\1/' | head -n1
+          }
+          new_version=$(read_version pyproject.toml)
+          # Read the version from the previous commit on main (the
+          # state of pyproject.toml BEFORE this PR landed). If the
+          # previous commit didn't have a pyproject.toml or the regex
+          # finds nothing, default to empty string and treat it as
+          # "version was added" → release.
+          prev_version=$(git show HEAD~1:pyproject.toml 2>/dev/null | grep -E '^version = ' | sed -E 's/version = "(.*)"/\1/' | head -n1 || echo "")
+          echo "Previous version: ${prev_version:-<unset>}"
+          echo "New version:      ${new_version:-<unset>}"
+          if [ -z "$new_version" ]; then
+            echo "::error::Could not read 'version' field from pyproject.toml. Aborting auto-release."
+            exit 1
+          fi
+          if [ "$prev_version" = "$new_version" ]; then
+            echo "Version unchanged. Not cutting a release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version bumped: ${prev_version:-<unset>} → ${new_version}. Will cut release v${new_version}."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=v${new_version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch release workflow
+        if: steps.gate.outputs.skip != 'true' && steps.ver.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching release.yml with version=${VERSION}"
+          gh workflow run release.yml \
+            --ref main \
+            -f version="${VERSION}"
+          echo "Release workflow dispatched. Track progress at:"
+          echo "  https://github.com/${{ github.repository }}/actions/workflows/release.yml"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Auto-release summary"           >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                    >> "$GITHUB_STEP_SUMMARY"
+          echo "- AUTO_RELEASE: \`${{ vars.AUTO_RELEASE }}\`"      >> "$GITHUB_STEP_SUMMARY"
+          echo "- PR merged: \`${{ github.event.pull_request.merged }}\`"  >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skip gate: \`${{ steps.gate.outputs.skip }}\`"   >> "$GITHUB_STEP_SUMMARY"
+          echo "- Should release: \`${{ steps.ver.outputs.should_release }}\`"   >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: \`${{ steps.ver.outputs.version }}\`"   >> "$GITHUB_STEP_SUMMARY"

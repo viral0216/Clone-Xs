@@ -50,7 +50,10 @@ class TestValidator:
         with patch("src.demo_generator.execute_sql") as mock_sql:
             mock_sql.return_value = [{"sampled": 1000, "orphans": 0}]
             report = _validate_referential_integrity(
-                client, "wid", "test_cat", ["healthcare"],
+                client,
+                "wid",
+                "test_cat",
+                ["healthcare"],
                 sample_limit=1000,
             )
         # SQL must contain LEFT JOIN and the sample-cap CTE
@@ -67,7 +70,10 @@ class TestValidator:
         with patch("src.demo_generator.execute_sql") as mock_sql:
             mock_sql.return_value = [{"sampled": 5000, "orphans": 0}]
             report = _validate_referential_integrity(
-                client, "wid", "test_cat", ["telecom"],
+                client,
+                "wid",
+                "test_cat",
+                ["telecom"],
             )
         assert report["with_orphans"] == 0
         assert report["orphan_free"] == report["checks_run"]
@@ -84,7 +90,10 @@ class TestValidator:
         with patch("src.demo_generator.execute_sql") as mock_sql:
             mock_sql.return_value = [{"sampled": 1000, "orphans": 5}]
             report = _validate_referential_integrity(
-                client, "wid", "test_cat", ["retail"],
+                client,
+                "wid",
+                "test_cat",
+                ["retail"],
             )
         assert report["with_orphans"] == report["checks_run"]
         assert report["orphan_free"] == 0
@@ -102,19 +111,22 @@ class TestValidator:
         with patch("src.demo_generator.execute_sql") as mock_sql:
             mock_sql.return_value = [{"sampled": 1000, "orphans": 295}]
             report = _validate_referential_integrity(
-                client, "wid", "test_cat", ["healthcare"],
+                client,
+                "wid",
+                "test_cat",
+                ["healthcare"],
                 row_filtered_tables={"healthcare.facilities"},
             )
         # Find the encounters → facilities FK detail
         rec = next(
-            d for d in report["details"]
+            d
+            for d in report["details"]
             if d["child"] == "encounters" and d["parent"] == "facilities"
         )
         assert rec["parent_has_row_filter"] is True
         # Other FKs (parent NOT in the row-filtered set) carry the flag as False
         rec_other = next(
-            d for d in report["details"]
-            if d["child"] == "encounters" and d["parent"] == "patients"
+            d for d in report["details"] if d["child"] == "encounters" and d["parent"] == "patients"
         )
         assert rec_other["parent_has_row_filter"] is False
 
@@ -128,7 +140,10 @@ class TestValidator:
             calls = [Exception("TABLE_NOT_FOUND")] + [[{"sampled": 100, "orphans": 0}]] * 50
             mock_sql.side_effect = calls
             report = _validate_referential_integrity(
-                client, "wid", "test_cat", ["healthcare"],
+                client,
+                "wid",
+                "test_cat",
+                ["healthcare"],
             )
         # First check has an error, others succeeded
         assert "error" in report["details"][0]
@@ -155,7 +170,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.001,
             batch_size=5000,
@@ -177,7 +194,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.001,
             batch_size=5000,
@@ -200,7 +219,9 @@ class TestOrchestratorIntegration:
         client = MagicMock()
 
         result = generate_demo_catalog(
-            client, "wid", "test_cat",
+            client,
+            "wid",
+            "test_cat",
             industries=["healthcare"],
             scale_factor=0.001,
             batch_size=5000,

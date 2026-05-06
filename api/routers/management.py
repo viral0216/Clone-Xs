@@ -22,10 +22,14 @@ router = APIRouter()
 async def run_preflight(req: PreflightRequest, client=Depends(get_db_client)):
     """Run pre-flight checks before cloning."""
     from src.preflight import run_preflight
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = run_preflight(
-        client, wid, req.source_catalog, req.destination_catalog,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
         check_write=req.check_write,
     )
     return result
@@ -35,6 +39,7 @@ async def run_preflight(req: PreflightRequest, client=Depends(get_db_client)):
 async def list_rollback_logs(client=Depends(get_db_client)):
     """List available rollback logs from Delta table, falling back to local files."""
     from src.rollback import query_rollback_logs_delta, list_rollback_logs as list_local
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     # Try Delta first
@@ -53,6 +58,7 @@ async def list_rollback_logs(client=Depends(get_db_client)):
 async def rollback(req: RollbackRequest, client=Depends(get_db_client)):
     """Rollback a previous clone operation."""
     from src.rollback import rollback
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = rollback(client, wid, req.log_file, drop_catalog=req.drop_catalog, config=config)
@@ -86,9 +92,14 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
 
     if req.source_catalogs:
         from src.pii_multi import scan_catalogs_for_pii_multi
+
         return scan_catalogs_for_pii_multi(
-            client, wid, req.source_catalogs, req.exclude_schemas,
-            sample_data=req.sample_data, max_workers=req.max_workers,
+            client,
+            wid,
+            req.source_catalogs,
+            req.exclude_schemas,
+            sample_data=req.sample_data,
+            max_workers=req.max_workers,
             pii_config=pii_config or None,
             read_uc_tags=req.read_uc_tags,
             save_history=True,
@@ -98,9 +109,14 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
         )
 
     from src.pii_detection import scan_catalog_for_pii
+
     return scan_catalog_for_pii(
-        client, wid, req.source_catalog, req.exclude_schemas,
-        sample_data=req.sample_data, max_workers=req.max_workers,
+        client,
+        wid,
+        req.source_catalog,
+        req.exclude_schemas,
+        sample_data=req.sample_data,
+        max_workers=req.max_workers,
         pii_config=pii_config or None,
         read_uc_tags=req.read_uc_tags,
         save_history=True,
@@ -114,11 +130,15 @@ async def pii_scan(req: PIIScanRequest, client=Depends(get_db_client)):
 async def get_pii_patterns():
     """Return the effective PII detection patterns (built-in + config)."""
     from src.pii_detection import (
-        COLUMN_NAME_PATTERNS, build_effective_patterns,
+        COLUMN_NAME_PATTERNS,
+        build_effective_patterns,
     )
+
     config = await get_app_config()
     pii_config = config.get("pii_detection")
-    col_patterns, val_patterns, masking, threshold, sample_size = build_effective_patterns(pii_config)
+    col_patterns, val_patterns, masking, threshold, sample_size = build_effective_patterns(
+        pii_config
+    )
     return {
         "column_patterns": {v: k for k, v in col_patterns.items()},
         "value_patterns": val_patterns,
@@ -133,6 +153,7 @@ async def get_pii_patterns():
 async def get_pii_scan_history(catalog: str, limit: int = 20, client=Depends(get_db_client)):
     """Get PII scan history for a catalog."""
     from src.pii_scan_store import PIIScanStore
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     store = PIIScanStore(client, wid, config=config)
@@ -143,6 +164,7 @@ async def get_pii_scan_history(catalog: str, limit: int = 20, client=Depends(get
 async def get_pii_scan_detail(scan_id: str, client=Depends(get_db_client)):
     """Get full details for a specific PII scan."""
     from src.pii_scan_store import PIIScanStore
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     store = PIIScanStore(client, wid, config=config)
@@ -154,6 +176,7 @@ async def get_pii_scan_detail(scan_id: str, client=Depends(get_db_client)):
 async def diff_pii_scans(scan_a: str, scan_b: str, client=Depends(get_db_client)):
     """Compare two PII scans and return differences."""
     from src.pii_scan_store import PIIScanStore
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     store = PIIScanStore(client, wid, config=config)
@@ -166,6 +189,7 @@ async def apply_pii_tags(req: PIITagRequest, client=Depends(get_db_client)):
     from src.pii_tagging import apply_pii_tags as do_tag
     from src.pii_scan_store import PIIScanStore
     from src.pii_detection import scan_catalog_for_pii
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     # Get detections from a specific scan or run a fresh scan
@@ -173,19 +197,25 @@ async def apply_pii_tags(req: PIITagRequest, client=Depends(get_db_client)):
         store = PIIScanStore(client, wid, config=config)
         raw_dets = store.get_scan_detections(req.scan_id)
         # Remap keys from store format to detection format
-        detections = [{
-            "schema": d.get("schema_name", ""),
-            "table": d.get("table_name", ""),
-            "column": d.get("column_name", ""),
-            "pii_type": d.get("pii_type", ""),
-            "confidence_score": d.get("confidence_score", 0),
-        } for d in raw_dets]
+        detections = [
+            {
+                "schema": d.get("schema_name", ""),
+                "table": d.get("table_name", ""),
+                "column": d.get("column_name", ""),
+                "pii_type": d.get("pii_type", ""),
+                "confidence_score": d.get("confidence_score", 0),
+            }
+            for d in raw_dets
+        ]
     else:
         result = scan_catalog_for_pii(client, wid, req.source_catalog)
         detections = result.get("columns", [])
 
     return do_tag(
-        client, wid, req.source_catalog, detections,
+        client,
+        wid,
+        req.source_catalog,
+        detections,
         tag_prefix=req.tag_prefix,
         dry_run=req.dry_run,
         min_confidence=req.min_confidence,
@@ -196,6 +226,7 @@ async def apply_pii_tags(req: PIITagRequest, client=Depends(get_db_client)):
 async def update_pii_remediation(req: PIIRemediationRequest, client=Depends(get_db_client)):
     """Update remediation status for a PII column."""
     from src.pii_scan_store import PIIScanStore
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     store = PIIScanStore(client, wid, config=config)
@@ -216,6 +247,7 @@ async def update_pii_remediation(req: PIIRemediationRequest, client=Depends(get_
 async def get_pii_remediation(catalog: str, client=Depends(get_db_client)):
     """Get remediation statuses for a catalog."""
     from src.pii_scan_store import PIIScanStore
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     store = PIIScanStore(client, wid, config=config)
@@ -255,6 +287,7 @@ async def list_catalogs(client=Depends(get_db_client)):
 async def get_catalog_info(catalog: str, client=Depends(get_db_client)):
     """Get catalog details including storage location via DESCRIBE CATALOG EXTENDED."""
     from src.client import execute_sql
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     result = {"name": catalog, "storage_root": "", "owner": "", "comment": ""}
@@ -279,7 +312,9 @@ async def get_catalog_info(catalog: str, client=Depends(get_db_client)):
     # Fallback to SDK
     try:
         info = client.catalogs.get(catalog)
-        result["storage_root"] = getattr(info, "storage_root", None) or getattr(info, "storage_location", None) or ""
+        result["storage_root"] = (
+            getattr(info, "storage_root", None) or getattr(info, "storage_location", None) or ""
+        )
         result["owner"] = getattr(info, "owner", "") or ""
         result["comment"] = getattr(info, "comment", "") or ""
     except Exception:
@@ -292,6 +327,7 @@ async def get_catalog_info(catalog: str, client=Depends(get_db_client)):
 async def list_schemas(catalog: str, client=Depends(get_db_client)):
     """List schemas in a catalog using the SDK (no SQL warehouse needed)."""
     from src.client import list_schemas_sdk
+
     try:
         schemas = list_schemas_sdk(client, catalog, exclude=["information_schema", "default"])
         if schemas:
@@ -301,9 +337,14 @@ async def list_schemas(catalog: str, client=Depends(get_db_client)):
     # Fallback to SQL if SDK fails
     try:
         from src.client import execute_sql
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
-        rows = execute_sql(client, wid, f"SELECT schema_name FROM {catalog}.information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'default') ORDER BY schema_name")
+        rows = execute_sql(
+            client,
+            wid,
+            f"SELECT schema_name FROM {catalog}.information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'default') ORDER BY schema_name",
+        )
         return [r["schema_name"] for r in rows]
     except Exception:
         return []
@@ -313,6 +354,7 @@ async def list_schemas(catalog: str, client=Depends(get_db_client)):
 async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
     """List tables in a schema using the SDK (no SQL warehouse needed)."""
     from src.client import list_tables_sdk
+
     try:
         tables = list_tables_sdk(client, catalog, schema)
         if tables:
@@ -322,10 +364,51 @@ async def list_tables(catalog: str, schema: str, client=Depends(get_db_client)):
     # Fallback to SQL if SDK fails
     try:
         from src.client import execute_sql
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
-        rows = execute_sql(client, wid, f"SELECT table_name FROM {catalog}.information_schema.tables WHERE table_schema = '{schema}' ORDER BY table_name")
+        rows = execute_sql(
+            client,
+            wid,
+            f"SELECT table_name FROM {catalog}.information_schema.tables WHERE table_schema = '{schema}' ORDER BY table_name",
+        )
         return [r["table_name"] for r in rows]
+    except Exception:
+        return []
+
+
+@router.get("/catalogs/{catalog}/{schema}/tables/with-format")
+async def list_tables_with_format(catalog: str, schema: str, client=Depends(get_db_client)):
+    """List tables in a schema with their `table_type` and `data_source_format`.
+
+    Returns ``[{name, table_type, data_source_format}]``. Distinct from the
+    bare ``/tables`` endpoint above because:
+
+      * convert-to-delta needs the format to skip already-Delta tables and
+        to pre-fill the ``source_format`` field without a second round-trip,
+      * the bare endpoint is consumed by other surfaces that just want
+        names and have no use for the extra columns — keeping shapes
+        separate avoids breaking them.
+
+    The ``data_source_format`` field is normalised at the client layer
+    (``src/client.py:_normalize_format``) so the SDK enum is already a
+    string by the time it reaches the response.
+    """
+    from src.client import list_tables_sdk
+
+    try:
+        tables = list_tables_sdk(client, catalog, schema)
+        return sorted(
+            [
+                {
+                    "name": t["table_name"],
+                    "table_type": t.get("table_type") or "UNKNOWN",
+                    "data_source_format": t.get("data_source_format") or "",
+                }
+                for t in tables
+            ],
+            key=lambda r: r["name"],
+        )
     except Exception:
         return []
 
@@ -384,10 +467,16 @@ async def list_uc_objects(client=Depends(get_db_client)):
     # External Locations
     try:
         result["external_locations"] = [
-            {"name": e.name, "url": getattr(e, "url", ""), "credential_name": getattr(e, "credential_name", ""),
-             "owner": getattr(e, "owner", ""), "comment": getattr(e, "comment", ""),
-             "read_only": getattr(e, "read_only", False)}
-            for e in client.external_locations.list() if e.name
+            {
+                "name": e.name,
+                "url": getattr(e, "url", ""),
+                "credential_name": getattr(e, "credential_name", ""),
+                "owner": getattr(e, "owner", ""),
+                "comment": getattr(e, "comment", ""),
+                "read_only": getattr(e, "read_only", False),
+            }
+            for e in client.external_locations.list()
+            if e.name
         ]
     except Exception:
         result["external_locations"] = []
@@ -395,10 +484,15 @@ async def list_uc_objects(client=Depends(get_db_client)):
     # Storage Credentials
     try:
         result["storage_credentials"] = [
-            {"name": c.name, "owner": getattr(c, "owner", ""), "comment": getattr(c, "comment", ""),
-             "read_only": getattr(c, "read_only", False),
-             "used_for_managed_storage": getattr(c, "used_for_managed_storage", False)}
-            for c in client.storage_credentials.list() if c.name
+            {
+                "name": c.name,
+                "owner": getattr(c, "owner", ""),
+                "comment": getattr(c, "comment", ""),
+                "read_only": getattr(c, "read_only", False),
+                "used_for_managed_storage": getattr(c, "used_for_managed_storage", False),
+            }
+            for c in client.storage_credentials.list()
+            if c.name
         ]
     except Exception:
         result["storage_credentials"] = []
@@ -406,9 +500,14 @@ async def list_uc_objects(client=Depends(get_db_client)):
     # Connections (for Lakehouse Federation)
     try:
         result["connections"] = [
-            {"name": c.name, "connection_type": str(getattr(c, "connection_type", "")),
-             "owner": getattr(c, "owner", ""), "comment": getattr(c, "comment", "")}
-            for c in client.connections.list() if c.name
+            {
+                "name": c.name,
+                "connection_type": str(getattr(c, "connection_type", "")),
+                "owner": getattr(c, "owner", ""),
+                "comment": getattr(c, "comment", ""),
+            }
+            for c in client.connections.list()
+            if c.name
         ]
     except Exception:
         result["connections"] = []
@@ -418,11 +517,16 @@ async def list_uc_objects(client=Depends(get_db_client)):
         models = []
         for m in client.registered_models.list():
             if m.name:
-                models.append({
-                    "name": m.name, "full_name": getattr(m, "full_name", ""),
-                    "owner": getattr(m, "owner", ""), "comment": getattr(m, "comment", ""),
-                    "catalog_name": getattr(m, "catalog_name", ""), "schema_name": getattr(m, "schema_name", ""),
-                })
+                models.append(
+                    {
+                        "name": m.name,
+                        "full_name": getattr(m, "full_name", ""),
+                        "owner": getattr(m, "owner", ""),
+                        "comment": getattr(m, "comment", ""),
+                        "catalog_name": getattr(m, "catalog_name", ""),
+                        "schema_name": getattr(m, "schema_name", ""),
+                    }
+                )
             if len(models) >= 500:
                 break
         result["registered_models"] = models
@@ -433,7 +537,15 @@ async def list_uc_objects(client=Depends(get_db_client)):
     try:
         current = client.metastores.current()
         ms_id = getattr(current, "metastore_id", "")
-        ms_info = {"name": "", "metastore_id": ms_id, "owner": "", "cloud": "", "region": "", "storage_root": "", "default_data_access_config_id": ""}
+        ms_info = {
+            "name": "",
+            "metastore_id": ms_id,
+            "owner": "",
+            "cloud": "",
+            "region": "",
+            "storage_root": "",
+            "default_data_access_config_id": "",
+        }
         # current() often returns sparse data — try get() with the ID for full details
         if ms_id:
             try:
@@ -444,8 +556,13 @@ async def list_uc_objects(client=Depends(get_db_client)):
                     "owner": getattr(full, "owner", "") or "",
                     "cloud": getattr(full, "cloud", "") or "",
                     "region": getattr(full, "region", "") or "",
-                    "storage_root": getattr(full, "storage_root", "") or getattr(full, "storage_root_credential_id", "") or "",
-                    "default_data_access_config_id": getattr(full, "default_data_access_config_id", "") or "",
+                    "storage_root": getattr(full, "storage_root", "")
+                    or getattr(full, "storage_root_credential_id", "")
+                    or "",
+                    "default_data_access_config_id": getattr(
+                        full, "default_data_access_config_id", ""
+                    )
+                    or "",
                 }
             except Exception:
                 # Fall back to current() data
@@ -456,7 +573,10 @@ async def list_uc_objects(client=Depends(get_db_client)):
                     "cloud": getattr(current, "cloud", "") or "",
                     "region": getattr(current, "region", "") or "",
                     "storage_root": getattr(current, "storage_root", "") or "",
-                    "default_data_access_config_id": getattr(current, "default_data_access_config_id", "") or "",
+                    "default_data_access_config_id": getattr(
+                        current, "default_data_access_config_id", ""
+                    )
+                    or "",
                 }
         # Try to infer cloud/region from workspace host if still empty
         if not ms_info["cloud"]:
@@ -475,7 +595,8 @@ async def list_uc_objects(client=Depends(get_db_client)):
     try:
         result["shares"] = [
             {"name": s.name, "owner": getattr(s, "owner", ""), "comment": getattr(s, "comment", "")}
-            for s in client.shares.list() if s.name
+            for s in client.shares.list()
+            if s.name
         ]
     except Exception:
         result["shares"] = []
@@ -483,9 +604,14 @@ async def list_uc_objects(client=Depends(get_db_client)):
     # Recipients (Delta Sharing)
     try:
         result["recipients"] = [
-            {"name": r.name, "owner": getattr(r, "owner", ""), "comment": getattr(r, "comment", ""),
-             "authentication_type": str(getattr(r, "authentication_type", ""))}
-            for r in client.recipients.list() if r.name
+            {
+                "name": r.name,
+                "owner": getattr(r, "owner", ""),
+                "comment": getattr(r, "comment", ""),
+                "authentication_type": str(getattr(r, "authentication_type", "")),
+            }
+            for r in client.recipients.list()
+            if r.name
         ]
     except Exception:
         result["recipients"] = []
@@ -497,6 +623,7 @@ async def list_uc_objects(client=Depends(get_db_client)):
 async def get_table_info(catalog: str, schema: str, table: str, client=Depends(get_db_client)):
     """Get detailed table metadata using the SDK (no SQL warehouse needed)."""
     from src.client import get_table_info_sdk
+
     full_name = f"{catalog}.{schema}.{table}"
     info = get_table_info_sdk(client, full_name)
     if info:
@@ -512,6 +639,7 @@ async def get_audit_log(client=Depends(get_db_client)):
     # Try Delta-based run logs first, fall back to audit trail
     try:
         from src.run_logs import query_run_logs
+
         logs = query_run_logs(client, wid, config, limit=50)
         if logs:
             return logs
@@ -520,18 +648,22 @@ async def get_audit_log(client=Depends(get_db_client)):
     # Fallback: try audit_trail
     try:
         from src.audit_trail import query_audit_history
+
         return query_audit_history(client, wid, config, limit=50)
     except Exception:
         return []
 
 
 @router.get("/audit/sync-history")
-async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, client=Depends(get_db_client)):
+async def get_sync_history(
+    source: str = "", dest: str = "", limit: int = 10, client=Depends(get_db_client)
+):
     """Get incremental sync history for a source→dest pair from Delta tables."""
     try:
         from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
 
@@ -540,7 +672,9 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
         audit_fqn = get_audit_table_fqn(config)
 
         candidates = [
-            (run_fqn, f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+            (
+                run_fqn,
+                f"""SELECT job_id, job_type, source_catalog, destination_catalog,
                        clone_type, status, started_at, completed_at,
                        duration_seconds, tables_cloned, tables_failed,
                        error_message, user_name
@@ -548,8 +682,11 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
                 WHERE job_type IN ('sync', 'incremental_sync', 'incremental')
                   {f"AND source_catalog = '{source}'" if source else ""}
                   {f"AND destination_catalog = '{dest}'" if dest else ""}
-                ORDER BY started_at DESC LIMIT {limit}"""),
-            (audit_fqn, f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                ORDER BY started_at DESC LIMIT {limit}""",
+            ),
+            (
+                audit_fqn,
+                f"""SELECT operation_id AS job_id, operation_type AS job_type,
                        source_catalog, destination_catalog,
                        clone_type, status, started_at, completed_at,
                        duration_seconds, tables_cloned, tables_failed,
@@ -559,7 +696,8 @@ async def get_sync_history(source: str = "", dest: str = "", limit: int = 10, cl
                        OR clone_mode = 'incremental')
                   {f"AND source_catalog = '{source}'" if source else ""}
                   {f"AND destination_catalog = '{dest}'" if dest else ""}
-                ORDER BY started_at DESC LIMIT {limit}"""),
+                ORDER BY started_at DESC LIMIT {limit}""",
+            ),
         ]
 
         for fqn, sql in candidates:
@@ -584,6 +722,7 @@ async def get_table_registry():
     """Return the full registry of all project tables grouped by section."""
     config = await get_app_config()
     from src.table_registry import get_all_table_fqns
+
     return {"sections": get_all_table_fqns(config)}
 
 
@@ -596,6 +735,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         # Try to find a running warehouse
         try:
             from src.auth import list_warehouses
+
             warehouses = list_warehouses(client)
             running = [w for w in warehouses if w.get("state") == "RUNNING"]
             if running:
@@ -605,7 +745,10 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         except Exception:
             pass
     if not wid:
-        raise HTTPException(status_code=400, detail="No SQL warehouse available. Select a warehouse in Settings first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No SQL warehouse available. Select a warehouse in Settings first.",
+        )
 
     cfg_audit = config.get("audit_trail", {})
     audit_config = {
@@ -617,12 +760,14 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     tables_created = []
     try:
         from src.run_logs import ensure_run_logs_table
+
         fqn = ensure_run_logs_table(client, wid, audit_config)
         tables_created.append(fqn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create run_logs table: {e}")
     try:
         from src.audit_trail import ensure_audit_table
+
         fqn = ensure_audit_table(client, wid, audit_config)
         tables_created.append(fqn)
     except Exception as e:
@@ -631,13 +776,17 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     try:
         from src.client import execute_sql
         from src.table_registry import get_schema_fqn, get_table_fqn
+
         metrics_schema = get_schema_fqn(audit_config, "metrics")
         metrics_fqn = get_table_fqn(audit_config, "metrics", "clone_metrics")
         try:
             execute_sql(client, wid, f"CREATE SCHEMA IF NOT EXISTS {metrics_schema}")
         except Exception:
             pass
-        execute_sql(client, wid, f"""
+        execute_sql(
+            client,
+            wid,
+            f"""
         CREATE TABLE IF NOT EXISTS {metrics_fqn} (
             operation_id STRING,
             source_catalog STRING,
@@ -665,15 +814,28 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         TBLPROPERTIES (
             'delta.autoOptimize.optimizeWrite' = 'true'
         )
-        """)
+        """,
+        )
         tables_created.append(metrics_fqn)
         # Add new columns only if they don't already exist
         try:
-            existing = {r["col_name"].lower() for r in execute_sql(client, wid, f"DESCRIBE TABLE {metrics_fqn}") if r.get("col_name")}
-            for col_name, col_type in [("user_name", "STRING"), ("status", "STRING"), ("job_type", "STRING")]:
+            existing = {
+                r["col_name"].lower()
+                for r in execute_sql(client, wid, f"DESCRIBE TABLE {metrics_fqn}")
+                if r.get("col_name")
+            }
+            for col_name, col_type in [
+                ("user_name", "STRING"),
+                ("status", "STRING"),
+                ("job_type", "STRING"),
+            ]:
                 if col_name.lower() not in existing:
                     try:
-                        execute_sql(client, wid, f"ALTER TABLE {metrics_fqn} ADD COLUMN {col_name} {col_type}")
+                        execute_sql(
+                            client,
+                            wid,
+                            f"ALTER TABLE {metrics_fqn} ADD COLUMN {col_name} {col_type}",
+                        )
                     except Exception:
                         pass
         except Exception:
@@ -683,6 +845,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create rollback logs table
     try:
         from src.rollback import ensure_rollback_table
+
         rollback_fqn = ensure_rollback_table(client, wid, audit_config)
         tables_created.append(rollback_fqn)
     except Exception as e:
@@ -690,6 +853,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create PII scan tables
     try:
         from src.pii_scan_store import PIIScanStore
+
         pii_store = PIIScanStore(client, wid, config=audit_config)
         pii_store.init_tables()
         tables_created.append(f"{pii_store.state_catalog}.{pii_store.state_schema}.pii_scans")
@@ -700,16 +864,20 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create RTBF (Right to Be Forgotten) tables
     try:
         from src.rtbf_store import RTBFStore
+
         rtbf_store = RTBFStore(client, wid, config=audit_config)
         rtbf_store.init_tables()
         tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_requests")
         tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_actions")
-        tables_created.append(f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_certificates")
+        tables_created.append(
+            f"{rtbf_store.state_catalog}.{rtbf_store.state_schema}.rtbf_certificates"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create RTBF tables: {e}")
     # Create DSAR tables
     try:
         from src.dsar_store import DSARStore
+
         dsar_store = DSARStore(client, wid, config=audit_config)
         dsar_store.init_tables()
         tables_created.append(f"{dsar_store.state_catalog}.{dsar_store.state_schema}.dsar_requests")
@@ -720,6 +888,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
     # Create Pipeline tables
     try:
         from src.pipeline_store import PipelineStore
+
         pipe_store = PipelineStore(client, wid, config=audit_config)
         pipe_store.init_tables()
         tables_created.append(f"{pipe_store.state_catalog}.pipelines.pipelines")
@@ -734,11 +903,13 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         gov_config["catalog_location"] = storage_location
     errors = []
     from src.table_registry import get_catalog, _DEFAULT_SCHEMAS
+
     cat = get_catalog(audit_config)
     required_schemas = list(set(_DEFAULT_SCHEMAS.values()))
 
     # Ensure catalog exists
     from src.catalog_utils import ensure_catalog, ensure_schema
+
     try:
         ensure_catalog(client, wid, cat, storage_location)
     except Exception as e:
@@ -786,8 +957,18 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
         ("sla", "src.sla_monitor", "ensure_sla_tables", [client, wid, gov_config]),
         ("odcs", "src.data_contracts", "ensure_odcs_tables", [client, wid, gov_config]),
         ("dqx", "src.dqx_engine", "ensure_dqx_tables", [client, wid, gov_config]),
-        ("reconciliation_store", "src.reconciliation_store", "ensure_reconciliation_tables", [client, wid, gov_config]),
-        ("reconciliation_alerts", "src.reconciliation_alerts", "ensure_alert_tables", [client, wid, gov_config]),
+        (
+            "reconciliation_store",
+            "src.reconciliation_store",
+            "ensure_reconciliation_tables",
+            [client, wid, gov_config],
+        ),
+        (
+            "reconciliation_alerts",
+            "src.reconciliation_alerts",
+            "ensure_alert_tables",
+            [client, wid, gov_config],
+        ),
         ("anomaly_detection", "src.anomaly_detection", "ensure_tables", [client, wid, gov_config]),
         ("freshness", "src.data_freshness", "_ensure_freshness_table", [client, wid, gov_config]),
     ]
@@ -809,25 +990,37 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
 
     at_cat = audit_config["audit_trail"]["catalog"]
     ensure_tasks += [
-        ("lineage", ensure_lineage_table, [client, wid], {"lineage_catalog": at_cat, "config": gov_config}),
+        (
+            "lineage",
+            ensure_lineage_table,
+            [client, wid],
+            {"lineage_catalog": at_cat, "config": gov_config},
+        ),
         ("reconciliation_rules", ensure_quality_tables_sql, [client, wid, gov_config]),
         ("monitoring_configs", ensure_monitoring_config_table, [client, wid, gov_config]),
         ("expectation_suites", ensure_expectation_suites_table, [client, wid, gov_config]),
-        ("reconciliation_schedules", ensure_reconciliation_schedules_table, [client, wid, gov_config]),
+        (
+            "reconciliation_schedules",
+            ensure_reconciliation_schedules_table,
+            [client, wid, gov_config],
+        ),
         ("scheduler_state", ensure_scheduler_state_table, [client, wid, gov_config]),
     ]
 
     # Store-class tasks (need instantiation)
     def _init_mdm():
         from src.mdm_store import MDMStore
+
         MDMStore(client, wid, config=audit_config).init_tables()
 
     def _init_state():
         from src.state_store import StateStore
+
         StateStore(client, wid, config=audit_config).init_tables()
 
     def _init_ttl():
         from src.ttl_manager import TTLManager
+
         TTLManager(client, wid, config=audit_config).init_ttl_table()
 
     ensure_tasks += [
@@ -854,6 +1047,7 @@ async def init_audit_tables(req: dict, client=Depends(get_db_client)):
 
     # ── Build tables_created from registry ────────────────────────────────
     from src.table_registry import get_all_table_fqns
+
     all_sections = get_all_table_fqns(gov_config)
     for section in all_sections:
         for t in section["tables"]:
@@ -889,6 +1083,7 @@ async def describe_audit_tables(req: dict, client=Depends(get_db_client)):
     if not wid:
         try:
             from src.auth import list_warehouses
+
             warehouses = list_warehouses(client)
             running = [w for w in warehouses if w.get("state") == "RUNNING"]
             wid = running[0]["id"] if running else (warehouses[0]["id"] if warehouses else "")
@@ -903,11 +1098,13 @@ async def describe_audit_tables(req: dict, client=Depends(get_db_client)):
 
     # Use registry for complete table list
     from src.table_registry import get_flat_table_list
+
     reg_config = {"audit_trail": {"catalog": catalog, "schema": schema}}
     tables = get_flat_table_list(reg_config)
 
     schemas = {}
     from src.client import execute_sql
+
     for fqn in tables:
         try:
             cols = execute_sql(client, wid, f"DESCRIBE TABLE {fqn}")
@@ -926,6 +1123,7 @@ async def get_job_run_log(job_id: str, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
     try:
         from src.run_logs import get_run_log_detail
+
         detail = get_run_log_detail(client, wid, job_id, config)
         if not detail:
             raise HTTPException(status_code=404, detail="Log not found")
@@ -938,11 +1136,14 @@ async def get_job_run_log(job_id: str, client=Depends(get_db_client)):
 async def compliance_report(req: dict, client=Depends(get_db_client)):
     """Generate a compliance report."""
     from src.compliance_api import generate_compliance_report_api
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     try:
         return generate_compliance_report_api(
-            client, wid, config,
+            client,
+            wid,
+            config,
             catalog=req.get("catalog", ""),
             report_type=req.get("report_type", "data_governance"),
             from_date=req.get("from_date"),
@@ -956,6 +1157,7 @@ async def compliance_report(req: dict, client=Depends(get_db_client)):
 async def list_templates():
     """List available clone templates."""
     from src.clone_templates import TEMPLATES
+
     return [{"key": k, **v} for k, v in TEMPLATES.items()]
 
 
@@ -964,6 +1166,7 @@ async def list_schedules():
     """List scheduled clone jobs."""
     try:
         from src.scheduler import list_schedules
+
         return list_schedules()
     except Exception:
         return []
@@ -974,6 +1177,7 @@ async def create_schedule_endpoint(req: dict, client=Depends(get_db_client)):
     """Create a scheduled clone job."""
     try:
         from src.scheduler import create_schedule
+
         config = await get_app_config()
         return create_schedule(
             name=req.get("name", ""),
@@ -993,6 +1197,7 @@ async def create_schedule_endpoint(req: dict, client=Depends(get_db_client)):
 async def pause_schedule_endpoint(schedule_id: str):
     """Pause a scheduled clone job."""
     from src.scheduler import pause_schedule
+
     result = pause_schedule(schedule_id)
     if not result:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -1003,6 +1208,7 @@ async def pause_schedule_endpoint(schedule_id: str):
 async def resume_schedule_endpoint(schedule_id: str):
     """Resume a paused scheduled clone job."""
     from src.scheduler import resume_schedule
+
     result = resume_schedule(schedule_id)
     if not result:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -1013,12 +1219,15 @@ async def resume_schedule_endpoint(schedule_id: str):
 async def delete_schedule_endpoint(schedule_id: str):
     """Delete a scheduled clone job."""
     from src.scheduler import delete_schedule
+
     deleted = delete_schedule(schedule_id)
     return {"status": "ok" if deleted else "not_found"}
 
 
 @router.post("/multi-clone")
-async def multi_clone(req: dict, client=Depends(get_db_client), jm: JobManager = Depends(get_job_manager)):
+async def multi_clone(
+    req: dict, client=Depends(get_db_client), jm: JobManager = Depends(get_job_manager)
+):
     """Clone to multiple destinations."""
     results = []
     for dest in req.get("destinations", []):
@@ -1097,17 +1306,19 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
                         edge = (src, dst)
                         if edge not in visited_up:
                             visited_up.add(edge)
-                            table_entries.append({
-                                "source": src,
-                                "destination": dst,
-                                "clone_type": r.get("source_type", "READ"),
-                                "timestamp": str(r.get("event_time", "")),
-                                "direction": "upstream",
-                                "data_source": "system_table",
-                                "hop": hop + 1,
-                                "entity_type": r.get("entity_type", ""),
-                                "entity_id": r.get("entity_id", ""),
-                            })
+                            table_entries.append(
+                                {
+                                    "source": src,
+                                    "destination": dst,
+                                    "clone_type": r.get("source_type", "READ"),
+                                    "timestamp": str(r.get("event_time", "")),
+                                    "direction": "upstream",
+                                    "data_source": "system_table",
+                                    "hop": hop + 1,
+                                    "entity_type": r.get("entity_type", ""),
+                                    "entity_id": r.get("entity_id", ""),
+                                }
+                            )
                             next_up.add(src)
                     frontier_up = next_up - {t for s, t in visited_up}
 
@@ -1132,17 +1343,19 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
                         edge = (src, dst)
                         if edge not in visited_down:
                             visited_down.add(edge)
-                            table_entries.append({
-                                "source": src,
-                                "destination": dst,
-                                "clone_type": r.get("target_type", "WRITE"),
-                                "timestamp": str(r.get("event_time", "")),
-                                "direction": "downstream",
-                                "data_source": "system_table",
-                                "hop": hop + 1,
-                                "entity_type": r.get("entity_type", ""),
-                                "entity_id": r.get("entity_id", ""),
-                            })
+                            table_entries.append(
+                                {
+                                    "source": src,
+                                    "destination": dst,
+                                    "clone_type": r.get("target_type", "WRITE"),
+                                    "timestamp": str(r.get("event_time", "")),
+                                    "direction": "downstream",
+                                    "data_source": "system_table",
+                                    "hop": hop + 1,
+                                    "entity_type": r.get("entity_type", ""),
+                                    "entity_id": r.get("entity_id", ""),
+                                }
+                            )
                             next_down.add(dst)
                     frontier_down = next_down - {s for s, t in visited_down}
         else:
@@ -1161,16 +1374,19 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
                 src = r.get("source_table_full_name", "")
                 dst = r.get("target_table_full_name", "")
                 direction = "downstream" if src.startswith(f"{catalog}.") else "upstream"
-                table_entries.append({
-                    "source": src, "destination": dst,
-                    "clone_type": r.get("source_type", ""),
-                    "timestamp": str(r.get("event_time", "")),
-                    "direction": direction,
-                    "data_source": "system_table",
-                    "hop": 1,
-                    "entity_type": r.get("entity_type", ""),
-                    "entity_id": r.get("entity_id", ""),
-                })
+                table_entries.append(
+                    {
+                        "source": src,
+                        "destination": dst,
+                        "clone_type": r.get("source_type", ""),
+                        "timestamp": str(r.get("event_time", "")),
+                        "direction": direction,
+                        "data_source": "system_table",
+                        "hop": 1,
+                        "entity_type": r.get("entity_type", ""),
+                        "entity_id": r.get("entity_id", ""),
+                    }
+                )
         if table_entries:
             sources_used.append("system.access.table_lineage")
     except Exception:
@@ -1192,13 +1408,15 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
             """
             col_rows = _exec(client, wid, col_sql)
             for r in col_rows:
-                column_entries.append({
-                    "source_table": r.get("source_table_full_name", ""),
-                    "source_column": r.get("source_column_name", ""),
-                    "target_table": r.get("target_table_full_name", ""),
-                    "target_column": r.get("target_column_name", ""),
-                    "timestamp": str(r.get("event_time", "")),
-                })
+                column_entries.append(
+                    {
+                        "source_table": r.get("source_table_full_name", ""),
+                        "source_column": r.get("source_column_name", ""),
+                        "target_table": r.get("target_table_full_name", ""),
+                        "target_column": r.get("target_column_name", ""),
+                        "timestamp": str(r.get("event_time", "")),
+                    }
+                )
             if column_entries:
                 sources_used.append("system.access.column_lineage")
         except Exception:
@@ -1207,27 +1425,34 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
     # ── Source 3: Clone-Xs lineage tracker ──
     try:
         from src.lineage_tracker import query_lineage
+
         fqn = f"{catalog}.{table}" if table else None
         rows = query_lineage(client, wid, table_fqn=fqn, limit=100)
         if not table and catalog:
-            rows = [r for r in rows if catalog in r.get("source_fqn", "") or catalog in r.get("dest_fqn", "")]
+            rows = [
+                r
+                for r in rows
+                if catalog in r.get("source_fqn", "") or catalog in r.get("dest_fqn", "")
+            ]
         for r in rows:
             ts = str(r.get("cloned_at", ""))
             if date_from and ts < date_from:
                 continue
             if date_to and ts > date_to + "T23:59:59":
                 continue
-            table_entries.append({
-                "source": r.get("source_fqn", ""),
-                "destination": r.get("dest_fqn", ""),
-                "clone_type": r.get("clone_type", "CLONE"),
-                "timestamp": ts,
-                "direction": "downstream",
-                "data_source": "clone_xs",
-                "hop": 1,
-                "entity_type": "CLONE_XS",
-                "entity_id": r.get("operation_id", ""),
-            })
+            table_entries.append(
+                {
+                    "source": r.get("source_fqn", ""),
+                    "destination": r.get("dest_fqn", ""),
+                    "clone_type": r.get("clone_type", "CLONE"),
+                    "timestamp": ts,
+                    "direction": "downstream",
+                    "data_source": "clone_xs",
+                    "hop": 1,
+                    "entity_type": "CLONE_XS",
+                    "entity_id": r.get("operation_id", ""),
+                }
+            )
         if rows:
             sources_used.append("clone_xs_lineage")
     except Exception:
@@ -1237,9 +1462,15 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
     if not table_entries:
         try:
             from src.run_logs import query_run_logs
+
             logs = query_run_logs(client, wid, config=config, limit=100)
             if catalog:
-                logs = [r for r in logs if catalog in (r.get("source_catalog") or "") or catalog in (r.get("destination_catalog") or "")]
+                logs = [
+                    r
+                    for r in logs
+                    if catalog in (r.get("source_catalog") or "")
+                    or catalog in (r.get("destination_catalog") or "")
+                ]
             for r in logs:
                 if r.get("source_catalog") and r.get("destination_catalog"):
                     ts = str(r.get("started_at", ""))
@@ -1247,17 +1478,19 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
                         continue
                     if date_to and ts > date_to + "T23:59:59":
                         continue
-                    table_entries.append({
-                        "source": r.get("source_catalog", ""),
-                        "destination": r.get("destination_catalog", ""),
-                        "clone_type": r.get("clone_type", "CLONE"),
-                        "timestamp": ts,
-                        "direction": "downstream",
-                        "data_source": "run_logs",
-                        "hop": 1,
-                        "entity_type": r.get("job_type", ""),
-                        "entity_id": r.get("job_id", ""),
-                    })
+                    table_entries.append(
+                        {
+                            "source": r.get("source_catalog", ""),
+                            "destination": r.get("destination_catalog", ""),
+                            "clone_type": r.get("clone_type", "CLONE"),
+                            "timestamp": ts,
+                            "direction": "downstream",
+                            "data_source": "run_logs",
+                            "hop": 1,
+                            "entity_type": r.get("job_type", ""),
+                            "entity_id": r.get("job_id", ""),
+                        }
+                    )
             if table_entries:
                 sources_used.append("run_logs")
         except Exception:
@@ -1266,7 +1499,10 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
     if not table_entries:
         try:
             from src.audit_trail import query_audit_history
-            rows = query_audit_history(client, wid, config, limit=100, source_catalog=catalog or None)
+
+            rows = query_audit_history(
+                client, wid, config, limit=100, source_catalog=catalog or None
+            )
             for r in rows:
                 if r.get("source_catalog") and r.get("destination_catalog"):
                     ts = str(r.get("started_at", ""))
@@ -1274,17 +1510,19 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
                         continue
                     if date_to and ts > date_to + "T23:59:59":
                         continue
-                    table_entries.append({
-                        "source": r.get("source_catalog", ""),
-                        "destination": r.get("destination_catalog", ""),
-                        "clone_type": r.get("clone_type", "CLONE"),
-                        "timestamp": ts,
-                        "direction": "downstream",
-                        "data_source": "audit_trail",
-                        "hop": 1,
-                        "entity_type": r.get("operation_type", ""),
-                        "entity_id": r.get("operation_id", ""),
-                    })
+                    table_entries.append(
+                        {
+                            "source": r.get("source_catalog", ""),
+                            "destination": r.get("destination_catalog", ""),
+                            "clone_type": r.get("clone_type", "CLONE"),
+                            "timestamp": ts,
+                            "direction": "downstream",
+                            "data_source": "audit_trail",
+                            "hop": 1,
+                            "entity_type": r.get("operation_type", ""),
+                            "entity_id": r.get("operation_id", ""),
+                        }
+                    )
             if table_entries:
                 sources_used.append("audit_trail")
         except Exception:
@@ -1326,17 +1564,24 @@ async def query_lineage_endpoint(req: dict, client=Depends(get_db_client)):
         for n in (e["source"], e["destination"]):
             if n and n not in node_set:
                 node_set.add(n)
-                graph_nodes.append({
-                    "id": n,
-                    "label": n.split(".")[-1] if "." in n else n,
-                    "full_name": n,
-                    "in_degree": in_degree.get(n, 0),
-                    "out_degree": out_degree.get(n, 0),
-                    "is_target": n == target_fqn,
-                })
+                graph_nodes.append(
+                    {
+                        "id": n,
+                        "label": n.split(".")[-1] if "." in n else n,
+                        "full_name": n,
+                        "in_degree": in_degree.get(n, 0),
+                        "out_degree": out_degree.get(n, 0),
+                        "is_target": n == target_fqn,
+                    }
+                )
     graph_edges = [
-        {"source": e["source"], "target": e["destination"], "type": e.get("clone_type", ""),
-         "hop": e.get("hop", 1), "direction": e.get("direction", "")}
+        {
+            "source": e["source"],
+            "target": e["destination"],
+            "type": e.get("clone_type", ""),
+            "hop": e.get("hop", 1),
+            "direction": e.get("direction", ""),
+        }
         for e in unique_entries
     ]
 
@@ -1361,6 +1606,7 @@ async def analyze_impact_endpoint(req: dict, client=Depends(get_db_client)):
     """Analyze downstream impact of changes."""
     try:
         from src.impact_analysis import analyze_impact
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
 
@@ -1383,7 +1629,13 @@ async def analyze_impact_endpoint(req: dict, client=Depends(get_db_client)):
             "total_dependent_objects": result.get("total_dependent_objects", 0),
         }
     except Exception as e:
-        return {"affected_views": [], "affected_functions": [], "downstream_tables": [], "risk_level": "unknown", "error": str(e)}
+        return {
+            "affected_views": [],
+            "affected_functions": [],
+            "downstream_tables": [],
+            "risk_level": "unknown",
+            "error": str(e),
+        }
 
 
 @router.post("/preview")
@@ -1391,12 +1643,16 @@ async def preview_data(req: dict, client=Depends(get_db_client)):
     """Preview source vs destination data."""
     try:
         from src.preview import preview_table
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
         return preview_table(
-            client, wid,
-            req.get("source_catalog", ""), req.get("dest_catalog", ""),
-            req.get("schema", ""), req.get("table", ""),
+            client,
+            wid,
+            req.get("source_catalog", ""),
+            req.get("dest_catalog", ""),
+            req.get("schema", ""),
+            req.get("table", ""),
             limit=req.get("limit", 50),
         )
     except Exception as e:
@@ -1415,6 +1671,7 @@ async def execute_sql_endpoint(req: dict, client=Depends(get_db_client)):
         raise HTTPException(status_code=400, detail="No warehouse configured")
     try:
         from src.client import execute_sql
+
         rows = execute_sql(client, wid, sql)
         return rows if rows else []
     except Exception as e:
@@ -1446,6 +1703,7 @@ async def list_rbac_policies():
     """List RBAC policies."""
     try:
         from src.rbac import list_policies
+
         return list_policies()
     except Exception:
         return []
@@ -1456,6 +1714,7 @@ async def create_rbac_policy(req: RbacPolicyRequest):
     """Create an RBAC policy."""
     try:
         from src.rbac import create_policy
+
         return create_policy(req.model_dump())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1466,6 +1725,7 @@ async def delete_rbac_policy(index: int):
     """Delete an RBAC policy by index."""
     try:
         from src.rbac import delete_policy
+
         return delete_policy(index)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1476,6 +1736,7 @@ async def list_plugins():
     """List available plugins."""
     try:
         from src.plugin_registry import list_plugins
+
         return list_plugins()
     except Exception:
         return []
@@ -1486,6 +1747,7 @@ async def toggle_plugin_body(req: dict):
     """Enable or disable a plugin (body-based)."""
     try:
         from src.plugin_registry import toggle_plugin
+
         return toggle_plugin(req.get("name", ""), req.get("enabled", True))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1496,6 +1758,7 @@ async def enable_plugin(plugin_id: str):
     """Enable a plugin by ID."""
     try:
         from src.plugin_registry import toggle_plugin
+
         return toggle_plugin(plugin_id, True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1506,6 +1769,7 @@ async def disable_plugin(plugin_id: str):
     """Disable a plugin by ID."""
     try:
         from src.plugin_registry import toggle_plugin
+
         return toggle_plugin(plugin_id, False)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1516,11 +1780,13 @@ async def get_metrics(client=Depends(get_db_client)):
     """Get clone operation metrics from Delta tables."""
     try:
         from src.metrics import get_metrics_summary
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
         return get_metrics_summary(client, wid, config)
     except Exception:
         from src.metrics import _empty_summary
+
         return _empty_summary()
 
 
@@ -1531,12 +1797,16 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
         from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
 
         run_logs_fqn = get_run_logs_fqn(config)
         audit_fqn = get_audit_table_fqn(config)
-        metrics_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+        metrics_fqn = config.get(
+            "metrics_table",
+            f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics",
+        )
 
         # Normalize column names via SQL aliases for each table. We
         # pair each query with the FQN it reads so we can probe for
@@ -1544,18 +1814,26 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
         # with TABLE_OR_VIEW_NOT_FOUND when the audit catalog hasn't
         # been provisioned yet (common on fresh workspaces).
         candidates = [
-            (run_logs_fqn, f"""SELECT job_id, job_type, source_catalog, destination_catalog,
+            (
+                run_logs_fqn,
+                f"""SELECT job_id, job_type, source_catalog, destination_catalog,
                        status, completed_at, duration_seconds, error_message
                 FROM {run_logs_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20"""),
-            (audit_fqn, f"""SELECT operation_id AS job_id, operation_type AS job_type,
+                ORDER BY completed_at DESC LIMIT 20""",
+            ),
+            (
+                audit_fqn,
+                f"""SELECT operation_id AS job_id, operation_type AS job_type,
                        source_catalog, destination_catalog,
                        status, completed_at, duration_seconds, error_message
                 FROM {audit_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20"""),
-            (metrics_fqn, f"""SELECT operation_id AS job_id, 'clone' AS job_type,
+                ORDER BY completed_at DESC LIMIT 20""",
+            ),
+            (
+                metrics_fqn,
+                f"""SELECT operation_id AS job_id, 'clone' AS job_type,
                        source_catalog, destination_catalog,
                        CASE WHEN failed > 0 THEN 'completed_with_errors'
                             ELSE 'success' END AS status,
@@ -1563,7 +1841,8 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
                        CAST(NULL AS STRING) AS error_message
                 FROM {metrics_fqn}
                 WHERE completed_at IS NOT NULL
-                ORDER BY completed_at DESC LIMIT 20"""),
+                ORDER BY completed_at DESC LIMIT 20""",
+            ),
         ]
 
         rows: list = []
@@ -1604,20 +1883,29 @@ async def get_notifications(since: str | None = None, client=Depends(get_db_clie
                 msg = f"{job_type.capitalize()} {status}: {src} → {dest}"
                 ntype = "info"
 
-            items.append({
-                "type": ntype,
-                "message": msg,
-                "timestamp": str(r.get("completed_at", "")),
-                "status": status,
-                "job_id": r.get("job_id") or "",
-            })
+            items.append(
+                {
+                    "type": ntype,
+                    "message": msg,
+                    "timestamp": str(r.get("completed_at", "")),
+                    "status": status,
+                    "job_id": r.get("job_id") or "",
+                }
+            )
 
         unread_count = len(items)
         if since:
-            from datetime import datetime, timezone
+            from datetime import datetime
+
             try:
                 since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
-                unread_count = sum(1 for it in items if it.get("timestamp") and datetime.fromisoformat(str(it["timestamp"]).replace("Z", "+00:00")) > since_dt)
+                unread_count = sum(
+                    1
+                    for it in items
+                    if it.get("timestamp")
+                    and datetime.fromisoformat(str(it["timestamp"]).replace("Z", "+00:00"))
+                    > since_dt
+                )
             except (ValueError, TypeError):
                 pass
         return {"unread_count": unread_count, "items": items}
@@ -1632,13 +1920,17 @@ async def get_catalog_health(client=Depends(get_db_client)):
         from src.client import execute_sql, table_exists
         from src.run_logs import get_run_logs_fqn
         from src.audit_trail import get_audit_table_fqn
+
         config = await get_app_config()
         wid = config.get("sql_warehouse_id", "")
 
         # Get recent operation stats per source catalog
         run_logs_fqn = get_run_logs_fqn(config)
         audit_fqn = get_audit_table_fqn(config)
-        metrics_fqn = config.get("metrics_table", f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics")
+        metrics_fqn = config.get(
+            "metrics_table",
+            f"{config.get('audit_trail', {}).get('catalog', 'clone_audit')}.metrics.clone_metrics",
+        )
 
         catalogs = {}
 
@@ -1647,17 +1939,25 @@ async def get_catalog_health(client=Depends(get_db_client)):
         # tables that haven't been provisioned avoids polluting the
         # warehouse logs with TABLE_OR_VIEW_NOT_FOUND errors.
         health_candidates = [
-            (run_logs_fqn, f"""SELECT source_catalog, status, COUNT(*) as cnt,
+            (
+                run_logs_fqn,
+                f"""SELECT source_catalog, status, COUNT(*) as cnt,
                        MAX(completed_at) as last_operation
                 FROM {run_logs_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
-                GROUP BY source_catalog, status ORDER BY source_catalog"""),
-            (audit_fqn, f"""SELECT source_catalog, status, COUNT(*) as cnt,
+                GROUP BY source_catalog, status ORDER BY source_catalog""",
+            ),
+            (
+                audit_fqn,
+                f"""SELECT source_catalog, status, COUNT(*) as cnt,
                        MAX(completed_at) as last_operation
                 FROM {audit_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
-                GROUP BY source_catalog, status ORDER BY source_catalog"""),
-            (metrics_fqn, f"""SELECT source_catalog,
+                GROUP BY source_catalog, status ORDER BY source_catalog""",
+            ),
+            (
+                metrics_fqn,
+                f"""SELECT source_catalog,
                        CASE WHEN failed > 0 THEN 'completed_with_errors'
                             ELSE 'success' END AS status,
                        COUNT(*) as cnt,
@@ -1665,7 +1965,8 @@ async def get_catalog_health(client=Depends(get_db_client)):
                 FROM {metrics_fqn}
                 WHERE source_catalog IS NOT NULL AND source_catalog != ''
                 GROUP BY source_catalog, CASE WHEN failed > 0 THEN 'completed_with_errors' ELSE 'success' END
-                ORDER BY source_catalog"""),
+                ORDER BY source_catalog""",
+            ),
         ]
 
         rows = []
@@ -1686,7 +1987,14 @@ async def get_catalog_health(client=Depends(get_db_client)):
             if not cat:
                 continue
             if cat not in catalogs:
-                catalogs[cat] = {"catalog": cat, "total": 0, "succeeded": 0, "failed": 0, "last_operation": None, "score": 100}
+                catalogs[cat] = {
+                    "catalog": cat,
+                    "total": 0,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "last_operation": None,
+                    "score": 100,
+                }
             cnt = int(r.get("cnt", 0))
             catalogs[cat]["total"] += cnt
             if r.get("status") in ("completed", "success"):
@@ -1760,10 +2068,12 @@ async def get_catalog_health(client=Depends(get_db_client)):
 
 # ── Cache Management ──────────────────────────────────────────────────
 
+
 @router.get("/cache/stats")
 async def cache_stats():
     """Return metadata cache hit/miss/size statistics."""
     from src.client import get_metadata_cache_stats
+
     return get_metadata_cache_stats()
 
 
@@ -1771,6 +2081,7 @@ async def cache_stats():
 async def cache_clear():
     """Clear all cached metadata."""
     from src.client import clear_metadata_cache
+
     clear_metadata_cache()
     return {"status": "cleared"}
 
@@ -1783,5 +2094,6 @@ async def cache_invalidate(request: Request):
     if not catalog:
         raise HTTPException(status_code=400, detail="catalog is required")
     from src.client import invalidate_catalog_cache
+
     removed = invalidate_catalog_cache(catalog)
     return {"status": "invalidated", "catalog": catalog, "entries_removed": removed}

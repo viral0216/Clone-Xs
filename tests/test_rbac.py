@@ -48,7 +48,11 @@ class TestCheckPermission:
         assert result["allowed"] is True
 
     def test_allow_rule(self):
-        policy = [RbacRule(principals=["user@test.com"], allowed_sources=[".*"], allowed_destinations=[".*"])]
+        policy = [
+            RbacRule(
+                principals=["user@test.com"], allowed_sources=[".*"], allowed_destinations=[".*"]
+            )
+        ]
         result = check_permission(policy, "user@test.com", "src", "dst")
         assert result["allowed"] is True
 
@@ -66,7 +70,11 @@ class TestCheckPermission:
         assert result["allowed"] is False
 
     def test_no_matching_rule_denies(self):
-        policy = [RbacRule(principals=["admin@test.com"], allowed_sources=[".*"], allowed_destinations=[".*"])]
+        policy = [
+            RbacRule(
+                principals=["admin@test.com"], allowed_sources=[".*"], allowed_destinations=[".*"]
+            )
+        ]
         result = check_permission(policy, "other@test.com", "src", "dst")
         assert result["allowed"] is False
 
@@ -75,7 +83,11 @@ class TestLoadRbacPolicy:
     def test_load_from_file(self):
         policy_data = {
             "rules": [
-                {"principals": ["admin@test.com"], "allowed_sources": [".*"], "allowed_destinations": [".*"]},
+                {
+                    "principals": ["admin@test.com"],
+                    "allowed_sources": [".*"],
+                    "allowed_destinations": [".*"],
+                },
                 {"principals": ["*"], "allowed_destinations": ["prod_.*"], "deny": True},
             ]
         }

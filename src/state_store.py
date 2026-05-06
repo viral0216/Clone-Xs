@@ -22,6 +22,7 @@ class StateStore:
     ):
         if state_catalog is None or state_schema is None:
             from src.table_registry import get_catalog, get_schema_fqn
+
             cfg = config or {}
             state_catalog = state_catalog or get_catalog(cfg)
             schema_fqn = get_schema_fqn(cfg, "state")
@@ -36,11 +37,17 @@ class StateStore:
     def init_tables(self) -> None:
         """Create the state tracking Delta tables if they don't exist."""
         from src.catalog_utils import ensure_catalog_and_schema
-        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        ensure_catalog_and_schema(
+            self.client, self.warehouse_id, self.state_catalog, self.state_schema
+        )
 
         # Clone state table — tracks individual table clone status
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._clone_state_table} (
                     source_fqn STRING NOT NULL,
                     dest_fqn STRING NOT NULL,
@@ -61,13 +68,17 @@ class StateStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._clone_state_table}: {e}")
 
         # Operations table — tracks overall clone operations
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._operations_table} (
                     operation_id STRING,
                     source_catalog STRING,
@@ -87,7 +98,8 @@ class StateStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._operations_table}: {e}")
 

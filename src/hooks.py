@@ -93,8 +93,11 @@ def run_post_clone_hooks(
 
 
 def run_post_schema_hooks(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
-    schema: str, dry_run: bool = False,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
+    schema: str,
+    dry_run: bool = False,
 ) -> list[dict]:
     """Run post-schema hooks (e.g., OPTIMIZE, ANALYZE)."""
     hooks = config.get("post_schema_hooks", [])

@@ -35,8 +35,8 @@
 
 # COMMAND ----------
 
-CATALOG = "main"           # ← edit
-SCHEMA = "default"         # ← edit
+CATALOG = "main"  # ← edit
+SCHEMA = "default"  # ← edit
 TEST_PREFIX = "clone_xs_incr_test"  # tables are named <PREFIX>_src and <PREFIX>_dst
 
 SRC_FQN = f"{CATALOG}.{SCHEMA}.{TEST_PREFIX}_src"
@@ -47,11 +47,13 @@ _PASS = "✅"
 _FAIL = "❌"
 _results: list[tuple[str, bool, str]] = []
 
+
 def check(label: str, condition: bool, detail: str = "") -> bool:
     mark = _PASS if condition else _FAIL
     print(f"  {mark} {label}" + (f" — {detail}" if detail else ""))
     _results.append((label, condition, detail))
     return condition
+
 
 print(f"Source: {SRC_FQN}")
 print(f"Dest:   {DST_FQN}")
@@ -79,11 +81,15 @@ spark.sql(f"""
 
 # Force the initial 1000 rows into ONE file by repartition(1) — keeps the
 # file-count math obvious in later phases.
-df = spark.range(1000).selectExpr(
-    "id",
-    "concat('row-', cast(id as string)) AS payload",
-    "current_timestamp() AS created_at",
-).repartition(1)
+df = (
+    spark.range(1000)
+    .selectExpr(
+        "id",
+        "concat('row-', cast(id as string)) AS payload",
+        "current_timestamp() AS created_at",
+    )
+    .repartition(1)
+)
 df.write.mode("append").saveAsTable(SRC_FQN)
 
 src_v0 = spark.sql(f"DESCRIBE HISTORY {SRC_FQN} LIMIT 1").collect()[0]["version"]
@@ -136,8 +142,7 @@ for row in dst_history_p2:
 # Find the CLONE commit and its recorded sourceVersion.
 clone_commit_p2 = next((r for r in dst_history_p2 if r["operation"] == "CLONE"), None)
 recorded_src_version_p2 = (
-    int(clone_commit_p2["operationParameters"].get("sourceVersion"))
-    if clone_commit_p2 else None
+    int(clone_commit_p2["operationParameters"].get("sourceVersion")) if clone_commit_p2 else None
 )
 
 check("dst has CLONE commit", clone_commit_p2 is not None)
@@ -168,11 +173,15 @@ print("Phase 3 — source increment (+50 rows)")
 src_detail_pre_increment = spark.sql(f"DESCRIBE DETAIL {SRC_FQN}").collect()[0]
 src_files_before = src_detail_pre_increment["numFiles"]
 
-increment_df = spark.range(1000, 1050).selectExpr(
-    "id",
-    "concat('row-', cast(id as string)) AS payload",
-    "current_timestamp() AS created_at",
-).repartition(1)
+increment_df = (
+    spark.range(1000, 1050)
+    .selectExpr(
+        "id",
+        "concat('row-', cast(id as string)) AS payload",
+        "current_timestamp() AS created_at",
+    )
+    .repartition(1)
+)
 increment_df.write.mode("append").saveAsTable(SRC_FQN)
 
 src_v1 = spark.sql(f"DESCRIBE HISTORY {SRC_FQN} LIMIT 1").collect()[0]["version"]
@@ -230,8 +239,20 @@ print(f"  dst inputFiles: {len(dst_files_p2)} → {len(dst_files_p4)}")
 print(f"  dst history rows: {len(dst_history_p4)}")
 for row in dst_history_p4:
     metrics = dict(row["operationMetrics"]) if row["operationMetrics"] else {}
-    metrics_compact = {k: metrics[k] for k in ("numFilesCopied", "numCopiedFiles", "removedFilesCount", "numOutputRows", "executionTimeMs") if k in metrics}
-    print(f"    v{row['version']:>3}  {row['operation']}  params={row['operationParameters']} metrics={metrics_compact}")
+    metrics_compact = {
+        k: metrics[k]
+        for k in (
+            "numFilesCopied",
+            "numCopiedFiles",
+            "removedFilesCount",
+            "numOutputRows",
+            "executionTimeMs",
+        )
+        if k in metrics
+    }
+    print(
+        f"    v{row['version']:>3}  {row['operation']}  params={row['operationParameters']} metrics={metrics_compact}"
+    )
 
 # Set comparison — every file from Phase 2 must still be present in Phase 4.
 preserved_files = set(dst_files_p2) & set(dst_files_p4)
@@ -247,17 +268,16 @@ clone_commits = [r for r in dst_history_p4 if r["operation"] == "CLONE"]
 latest_clone = clone_commits[0] if clone_commits else None  # history is desc by version
 
 recorded_src_version_p4 = (
-    int(latest_clone["operationParameters"].get("sourceVersion"))
-    if latest_clone else None
+    int(latest_clone["operationParameters"].get("sourceVersion")) if latest_clone else None
 )
 
 clone_metrics_p4 = (
-    dict(latest_clone["operationMetrics"]) if (latest_clone and latest_clone["operationMetrics"]) else {}
+    dict(latest_clone["operationMetrics"])
+    if (latest_clone and latest_clone["operationMetrics"])
+    else {}
 )
 num_files_copied_p4 = int(
-    clone_metrics_p4.get("numFilesCopied")
-    or clone_metrics_p4.get("numCopiedFiles")
-    or 0
+    clone_metrics_p4.get("numFilesCopied") or clone_metrics_p4.get("numCopiedFiles") or 0
 )
 
 # THE CORE ASSERTIONS
@@ -323,7 +343,9 @@ target_side_present_pre = spark.sql(
     f"SELECT count(*) AS c FROM {DST_FQN} WHERE id = {TARGET_SIDE_ID}"
 ).collect()[0]["c"]
 
-print(f"  before re-clone: src rows={src_count_pre}, dst rows={dst_count_pre}, target-side row present={target_side_present_pre}")
+print(
+    f"  before re-clone: src rows={src_count_pre}, dst rows={dst_count_pre}, target-side row present={target_side_present_pre}"
+)
 
 check(
     "target-side row exists in dst before re-clone",
@@ -343,7 +365,9 @@ target_side_present_post = spark.sql(
     f"SELECT count(*) AS c FROM {DST_FQN} WHERE id = {TARGET_SIDE_ID}"
 ).collect()[0]["c"]
 
-print(f"  after re-clone:  src rows={src_count_post}, dst rows={dst_count_post}, target-side row present={target_side_present_post}")
+print(
+    f"  after re-clone:  src rows={src_count_post}, dst rows={dst_count_post}, target-side row present={target_side_present_post}"
+)
 
 check(
     "target-side row was wiped by re-clone",

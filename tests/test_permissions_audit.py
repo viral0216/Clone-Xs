@@ -37,8 +37,10 @@ class TestClassifyFinding:
         """The marquee finding: `account users` can SELECT a PII
         table. Maps directly to a typical compliance ask."""
         risk, action = _classify_finding(
-            principal="account users", privileges={"SELECT"},
-            has_pii=True, grantor=None,
+            principal="account users",
+            privileges={"SELECT"},
+            has_pii=True,
+            grantor=None,
         )
         assert risk == "CRITICAL"
         assert "Revoke" in action
@@ -49,8 +51,10 @@ class TestClassifyFinding:
         the privilege itself is too broad regardless of what's in the
         table."""
         risk, _ = _classify_finding(
-            principal="users", privileges={"ALL PRIVILEGES"},
-            has_pii=False, grantor=None,
+            principal="users",
+            privileges={"ALL PRIVILEGES"},
+            has_pii=False,
+            grantor=None,
         )
         assert risk == "HIGH"
 
@@ -59,8 +63,10 @@ class TestClassifyFinding:
         surfacing but not the top of the list. Auditor can downgrade
         if it's intentional."""
         risk, _ = _classify_finding(
-            principal="account users", privileges={"SELECT"},
-            has_pii=False, grantor=None,
+            principal="account users",
+            privileges={"SELECT"},
+            has_pii=False,
+            grantor=None,
         )
         assert risk == "MEDIUM"
 
@@ -69,8 +75,10 @@ class TestClassifyFinding:
         not CRITICAL since the principal is identifiable. Auditor
         decides whether their role warrants it."""
         risk, _ = _classify_finding(
-            principal="alice@example.com", privileges={"MODIFY"},
-            has_pii=True, grantor=None,
+            principal="alice@example.com",
+            privileges={"MODIFY"},
+            has_pii=True,
+            grantor=None,
         )
         assert risk == "MEDIUM"
 
@@ -78,8 +86,10 @@ class TestClassifyFinding:
         """Routine read access — surfaced as LOW so auditor can
         spot-check, but doesn't need action by default."""
         risk, _ = _classify_finding(
-            principal="alice@example.com", privileges={"SELECT"},
-            has_pii=False, grantor=None,
+            principal="alice@example.com",
+            privileges={"SELECT"},
+            has_pii=False,
+            grantor=None,
         )
         assert risk == "LOW"
 
@@ -88,14 +98,15 @@ class TestClassifyFinding:
         give data access on their own. Drop to INFO so they don't
         clutter the findings list."""
         risk, _ = _classify_finding(
-            principal="alice@example.com", privileges={"USAGE"},
-            has_pii=True, grantor=None,
+            principal="alice@example.com",
+            privileges={"USAGE"},
+            has_pii=True,
+            grantor=None,
         )
         assert risk == "INFO"
 
 
 class TestPrincipalHelpers:
-
     def test_is_public_case_insensitive(self):
         """UC normalises principal names but `SHOW GRANTS` output
         retains casing in some surfaces — match defensively."""
@@ -122,7 +133,6 @@ class TestPrincipalHelpers:
 
 
 class TestAuditCatalogPermissions:
-
     @patch("src.permissions_audit.execute_sql")
     def test_groups_multiple_privileges_per_principal(self, mock_sql):
         """A principal with both SELECT and MODIFY on one table
@@ -130,10 +140,22 @@ class TestAuditCatalogPermissions:
         The classifier sees the full set and short-circuits on
         ALL_PRIVILEGES / write semantics."""
         mock_sql.return_value = [
-            {"grantor": "owner@x.com", "grantee": "alice@x.com", "table_schema": "s",
-             "table_name": "t", "privilege_type": "SELECT", "is_grantable": "FALSE"},
-            {"grantor": "owner@x.com", "grantee": "alice@x.com", "table_schema": "s",
-             "table_name": "t", "privilege_type": "MODIFY", "is_grantable": "FALSE"},
+            {
+                "grantor": "owner@x.com",
+                "grantee": "alice@x.com",
+                "table_schema": "s",
+                "table_name": "t",
+                "privilege_type": "SELECT",
+                "is_grantable": "FALSE",
+            },
+            {
+                "grantor": "owner@x.com",
+                "grantee": "alice@x.com",
+                "table_schema": "s",
+                "table_name": "t",
+                "privilege_type": "MODIFY",
+                "is_grantable": "FALSE",
+            },
         ]
         result = audit_catalog_permissions(MagicMock(), "wh", "main")
         assert len(result["findings"]) == 1
@@ -145,8 +167,14 @@ class TestAuditCatalogPermissions:
         With overlay marking the table as PII-bearing → CRITICAL.
         Same input data; different `pii_columns` argument."""
         mock_sql.return_value = [
-            {"grantor": "owner@x.com", "grantee": "account users", "table_schema": "s",
-             "table_name": "users", "privilege_type": "SELECT", "is_grantable": "FALSE"},
+            {
+                "grantor": "owner@x.com",
+                "grantee": "account users",
+                "table_schema": "s",
+                "table_name": "users",
+                "privilege_type": "SELECT",
+                "is_grantable": "FALSE",
+            },
         ]
         # No overlay
         no_overlay = audit_catalog_permissions(MagicMock(), "wh", "main")
@@ -155,7 +183,9 @@ class TestAuditCatalogPermissions:
 
         # With PII overlay — `(s, users)` has detected PII columns
         with_overlay = audit_catalog_permissions(
-            MagicMock(), "wh", "main",
+            MagicMock(),
+            "wh",
+            "main",
             pii_columns=[{"schema": "s", "table": "users", "column": "ssn", "pii_type": "SSN"}],
         )
         assert with_overlay["findings"][0]["risk_level"] == "CRITICAL"
@@ -182,17 +212,37 @@ class TestAuditCatalogPermissions:
         within a tier, PII tables come before non-PII; then alphabetical."""
         mock_sql.return_value = [
             # LOW: alice's SELECT on a non-PII table
-            {"grantee": "alice@x.com", "table_schema": "z", "table_name": "z1",
-             "privilege_type": "SELECT", "is_grantable": "FALSE", "grantor": None},
+            {
+                "grantee": "alice@x.com",
+                "table_schema": "z",
+                "table_name": "z1",
+                "privilege_type": "SELECT",
+                "is_grantable": "FALSE",
+                "grantor": None,
+            },
             # CRITICAL: public group SELECT on a PII table (s.users)
-            {"grantee": "account users", "table_schema": "s", "table_name": "users",
-             "privilege_type": "SELECT", "is_grantable": "FALSE", "grantor": None},
+            {
+                "grantee": "account users",
+                "table_schema": "s",
+                "table_name": "users",
+                "privilege_type": "SELECT",
+                "is_grantable": "FALSE",
+                "grantor": None,
+            },
             # MEDIUM: public group SELECT on a non-PII table
-            {"grantee": "users", "table_schema": "a", "table_name": "a1",
-             "privilege_type": "SELECT", "is_grantable": "FALSE", "grantor": None},
+            {
+                "grantee": "users",
+                "table_schema": "a",
+                "table_name": "a1",
+                "privilege_type": "SELECT",
+                "is_grantable": "FALSE",
+                "grantor": None,
+            },
         ]
         result = audit_catalog_permissions(
-            MagicMock(), "wh", "main",
+            MagicMock(),
+            "wh",
+            "main",
             pii_columns=[{"schema": "s", "table": "users", "column": "ssn"}],
         )
         risks = [f["risk_level"] for f in result["findings"]]
@@ -205,8 +255,14 @@ class TestAuditCatalogPermissions:
         them. But the summary's by_risk_level should still count them
         so the UI can show "47 INFO grants reviewed"."""
         mock_sql.return_value = [
-            {"grantee": "alice@x.com", "table_schema": "s", "table_name": "t",
-             "privilege_type": "USAGE", "is_grantable": "FALSE", "grantor": None},
+            {
+                "grantee": "alice@x.com",
+                "table_schema": "s",
+                "table_name": "t",
+                "privilege_type": "USAGE",
+                "is_grantable": "FALSE",
+                "grantor": None,
+            },
         ]
         result = audit_catalog_permissions(MagicMock(), "wh", "main")
         assert result["findings"] == []
@@ -214,16 +270,22 @@ class TestAuditCatalogPermissions:
 
 
 class TestEndpointDispatch:
-
     def test_audit_without_pii_intersection(self, client):
-        with patch("src.permissions_audit.audit_catalog_permissions") as mock_audit, \
-             patch("src.pii_detection.scan_catalog_for_pii") as mock_pii:
+        with (
+            patch("src.permissions_audit.audit_catalog_permissions") as mock_audit,
+            patch("src.pii_detection.scan_catalog_for_pii") as mock_pii,
+        ):
             mock_audit.return_value = {
-                "catalog": "main", "total_grants_scanned": 0,
-                "findings": [], "summary": {
-                    "by_risk_level": {}, "by_principal_type": {},
-                    "tables_audited": 0, "pii_overlay_applied": False,
-                }, "error": None,
+                "catalog": "main",
+                "total_grants_scanned": 0,
+                "findings": [],
+                "summary": {
+                    "by_risk_level": {},
+                    "by_principal_type": {},
+                    "tables_audited": 0,
+                    "pii_overlay_applied": False,
+                },
+                "error": None,
             }
             resp = client.post("/api/permissions-audit", json={"source_catalog": "main"})
             assert resp.status_code == 200
@@ -232,19 +294,30 @@ class TestEndpointDispatch:
             assert not mock_pii.called
 
     def test_audit_with_pii_intersection_runs_scan_first(self, client):
-        with patch("src.permissions_audit.audit_catalog_permissions") as mock_audit, \
-             patch("src.pii_detection.scan_catalog_for_pii") as mock_pii:
+        with (
+            patch("src.permissions_audit.audit_catalog_permissions") as mock_audit,
+            patch("src.pii_detection.scan_catalog_for_pii") as mock_pii,
+        ):
             mock_pii.return_value = {"columns": [{"schema": "s", "table": "u", "column": "ssn"}]}
             mock_audit.return_value = {
-                "catalog": "main", "total_grants_scanned": 0,
-                "findings": [], "summary": {
-                    "by_risk_level": {}, "by_principal_type": {},
-                    "tables_audited": 0, "pii_overlay_applied": True,
-                }, "error": None,
+                "catalog": "main",
+                "total_grants_scanned": 0,
+                "findings": [],
+                "summary": {
+                    "by_risk_level": {},
+                    "by_principal_type": {},
+                    "tables_audited": 0,
+                    "pii_overlay_applied": True,
+                },
+                "error": None,
             }
-            resp = client.post("/api/permissions-audit", json={
-                "source_catalog": "main", "pii_intersection": True,
-            })
+            resp = client.post(
+                "/api/permissions-audit",
+                json={
+                    "source_catalog": "main",
+                    "pii_intersection": True,
+                },
+            )
             assert resp.status_code == 200
             # Both endpoints called; PII columns passed through to the auditor.
             assert mock_pii.called

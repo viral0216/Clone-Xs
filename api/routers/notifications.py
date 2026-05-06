@@ -24,6 +24,7 @@ WEBHOOKS_PATH = Path("config/webhooks.json")
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _read_prefs() -> NotificationPreferences:
     if PREFS_PATH.exists():
         try:
@@ -49,14 +50,13 @@ def _read_webhooks() -> list[WebhookConfig]:
 
 def _write_webhooks(webhooks: list[WebhookConfig]) -> None:
     WEBHOOKS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WEBHOOKS_PATH.write_text(
-        json.dumps([w.model_dump() for w in webhooks], indent=2)
-    )
+    WEBHOOKS_PATH.write_text(json.dumps([w.model_dump() for w in webhooks], indent=2))
 
 
 # ------------------------------------------------------------------
 # Preferences
 # ------------------------------------------------------------------
+
 
 @router.get("/preferences")
 async def get_preferences() -> NotificationPreferencesResponse:
@@ -77,6 +77,7 @@ async def save_preferences(prefs: NotificationPreferences):
 # ------------------------------------------------------------------
 # Webhooks
 # ------------------------------------------------------------------
+
 
 @router.get("/webhooks")
 async def list_webhooks() -> list[WebhookConfig]:

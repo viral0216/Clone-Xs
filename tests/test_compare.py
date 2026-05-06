@@ -46,7 +46,12 @@ class TestCompareTableDeep:
         ]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         assert result["schema"] == "sch"
@@ -68,7 +73,12 @@ class TestCompareTableDeep:
         mock_props.side_effect = [{}, {}]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         assert "schema_drift" in result["issues"]
@@ -85,7 +95,12 @@ class TestCompareTableDeep:
         mock_props.side_effect = [{}, {}]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         assert result["row_count_match"] is False
@@ -106,7 +121,12 @@ class TestCompareTableDeep:
         ]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         assert "properties_mismatch" in result["issues"]
@@ -123,7 +143,12 @@ class TestCompareTableDeep:
         mock_props.side_effect = [{}, {}]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         assert any("schema_compare_error" in i for i in result["issues"])
@@ -140,7 +165,12 @@ class TestCompareTableDeep:
         ]
 
         result = compare_table_deep(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "sch", "tbl",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "sch",
+            "tbl",
         )
 
         # delta.* properties should be ignored
@@ -165,7 +195,10 @@ class TestCompareCatalogsDeep:
         mock_progress.return_value = MagicMock()
 
         result = compare_catalogs_deep(
-            MagicMock(), "wh-123", "src", "dst",
+            MagicMock(),
+            "wh-123",
+            "src",
+            "dst",
             exclude_schemas=["information_schema"],
         )
 
@@ -184,12 +217,18 @@ class TestCompareCatalogsDeep:
             {"table_name": "v1", "table_type": "VIEW"},
         ]
         mock_compare.return_value = {
-            "schema": "sch", "table": "t1", "issues": [],
+            "schema": "sch",
+            "table": "t1",
+            "issues": [],
         }
         mock_progress.return_value = MagicMock()
 
         result = compare_catalogs_deep(
-            MagicMock(), "wh-123", "src", "dst", exclude_schemas=[],
+            MagicMock(),
+            "wh-123",
+            "src",
+            "dst",
+            exclude_schemas=[],
         )
 
         # VIEW should be filtered out
@@ -203,7 +242,11 @@ class TestCompareCatalogsDeep:
         mock_progress.return_value = MagicMock()
 
         result = compare_catalogs_deep(
-            MagicMock(), "wh-123", "src", "dst", exclude_schemas=[],
+            MagicMock(),
+            "wh-123",
+            "src",
+            "dst",
+            exclude_schemas=[],
         )
 
         assert result["total_tables"] == 0

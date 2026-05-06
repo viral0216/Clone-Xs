@@ -26,8 +26,12 @@ def get_table_constraints(
 
 
 def copy_table_constraints(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy CHECK constraints from source to destination table."""
@@ -53,8 +57,7 @@ def copy_table_constraints(
             )
         except Exception as e:
             logger.error(
-                f"Failed to copy constraint {constraint_name} "
-                f"on {schema}.{table_name}: {e}"
+                f"Failed to copy constraint {constraint_name} on {schema}.{table_name}: {e}"
             )
 
     if constraints:
@@ -105,8 +108,12 @@ def get_table_comment(
 
 
 def copy_table_comments(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy table and column comments from source to destination."""
@@ -136,6 +143,5 @@ def copy_table_comments(
 
     if col_comments:
         logger.info(
-            f"{'[DRY RUN] ' if dry_run else ''}"
-            f"Copied {len(col_comments)} column comments to {dest}"
+            f"{'[DRY RUN] ' if dry_run else ''}Copied {len(col_comments)} column comments to {dest}"
         )

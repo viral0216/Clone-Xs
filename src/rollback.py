@@ -91,7 +91,10 @@ def get_table_version(client, warehouse_id: str, fqn: str) -> int | None:
 
 
 def record_table_version(
-    log_path: str, fqn: str, pre_clone_version: int | None, existed: bool,
+    log_path: str,
+    fqn: str,
+    pre_clone_version: int | None,
+    existed: bool,
 ) -> None:
     """Record a table's pre-clone Delta version in the rollback log (thread-safe)."""
     with _rollback_lock:
@@ -101,11 +104,13 @@ def record_table_version(
         if "table_versions" not in data:
             data["table_versions"] = []
 
-        data["table_versions"].append({
-            "fqn": fqn,
-            "pre_clone_version": pre_clone_version,
-            "existed": existed,
-        })
+        data["table_versions"].append(
+            {
+                "fqn": fqn,
+                "pre_clone_version": pre_clone_version,
+                "existed": existed,
+            }
+        )
 
         with open(log_path, "w") as f:
             json.dump(data, f, indent=2)
@@ -127,8 +132,11 @@ def record_object(log_path: str, obj_type: str, full_name: str) -> None:
 
 
 def rollback(
-    client: WorkspaceClient, warehouse_id: str, log_path: str,
-    drop_catalog: bool = False, config: dict | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    log_path: str,
+    drop_catalog: bool = False,
+    config: dict | None = None,
 ) -> dict:
     """Rollback cloned objects using Delta RESTORE TABLE.
 
@@ -188,7 +196,9 @@ def rollback(
         tables_list = created.get("tables", [])
 
         if clone_started_at and tables_list:
-            logger.info(f"No version info — using timestamp-based RESTORE (before {clone_started_at})")
+            logger.info(
+                f"No version info — using timestamp-based RESTORE (before {clone_started_at})"
+            )
             for table_fqn in reversed(tables_list):
                 # Try RESTORE first, fall back to DROP if table didn't exist
                 sql = f"RESTORE TABLE {table_fqn} TO TIMESTAMP AS OF '{clone_started_at}'"
@@ -224,13 +234,18 @@ def rollback(
     if drop_catalog and created.get("catalog"):
         _drop_object(client, warehouse_id, "CATALOG", created["catalog"], results)
 
-    logger.info(f"Rollback complete: {results['restored']} restored, {results['dropped']} dropped, {results['failed']} failed")
+    logger.info(
+        f"Rollback complete: {results['restored']} restored, {results['dropped']} dropped, {results['failed']} failed"
+    )
 
     # Persist to Delta table
     if config:
         try:
             save_rollback_to_delta(
-                client, warehouse_id, config, data,
+                client,
+                warehouse_id,
+                config,
+                data,
                 status="completed" if results["failed"] == 0 else "completed_with_errors",
                 drop_results={**results, "restored": results["restored"]},
                 drop_catalog=drop_catalog,
@@ -242,8 +257,11 @@ def rollback(
 
 
 def _drop_object(
-    client: WorkspaceClient, warehouse_id: str,
-    obj_type: str, full_name: str, results: dict,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    obj_type: str,
+    full_name: str,
+    results: dict,
 ) -> None:
     """Drop a single object."""
     sql = f"DROP {obj_type} IF EXISTS {full_name}"
@@ -271,23 +289,27 @@ def list_rollback_logs() -> list[dict]:
                 len(data["created_objects"].get(t, []))
                 for t in ("schemas", "tables", "views", "functions", "volumes")
             )
-            logs.append({
-                "file": path,
-                "timestamp": data["timestamp"],
-                "source_catalog": data.get("source_catalog", ""),
-                "destination_catalog": data["destination_catalog"],
-                "total_objects": total,
-                "created_objects": data.get("created_objects", {}),
-            })
+            logs.append(
+                {
+                    "file": path,
+                    "timestamp": data["timestamp"],
+                    "source_catalog": data.get("source_catalog", ""),
+                    "destination_catalog": data["destination_catalog"],
+                    "total_objects": total,
+                    "created_objects": data.get("created_objects", {}),
+                }
+            )
 
     return logs
 
 
 # ─── Delta Table Persistence ───────────────────────────────────────────
 
+
 def get_rollback_table_fqn(config: dict | None = None) -> str:
     """Get fully qualified name for the rollback Delta table."""
     from src.table_registry import get_table_fqn
+
     return get_table_fqn(config or {}, "logs", "rollback_logs")
 
 
@@ -302,6 +324,7 @@ def ensure_rollback_table(client, warehouse_id: str, config: dict | None = None)
 
     try:
         from src.catalog_utils import ensure_catalog_and_schema
+
         ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
     except Exception:
         pass
@@ -338,20 +361,30 @@ def ensure_rollback_table(client, warehouse_id: str, config: dict | None = None)
 
     # Add new columns only if they don't already exist
     new_columns = [
-        ("schemas_count", "INT"), ("tables_count", "INT"),
-        ("views_count", "INT"), ("functions_count", "INT"),
-        ("volumes_count", "INT"), ("total_objects", "INT"),
-        ("dropped_count", "INT"), ("failed_count", "INT"),
+        ("schemas_count", "INT"),
+        ("tables_count", "INT"),
+        ("views_count", "INT"),
+        ("functions_count", "INT"),
+        ("volumes_count", "INT"),
+        ("total_objects", "INT"),
+        ("dropped_count", "INT"),
+        ("failed_count", "INT"),
         ("restored_count", "INT"),
-        ("drop_catalog", "BOOLEAN"), ("created_objects_json", "STRING"),
+        ("drop_catalog", "BOOLEAN"),
+        ("created_objects_json", "STRING"),
         ("table_versions_json", "STRING"),
         ("clone_started_at", "TIMESTAMP"),
         ("restore_mode", "STRING"),
-        ("user_name", "STRING"), ("host", "STRING"),
+        ("user_name", "STRING"),
+        ("host", "STRING"),
         ("error_message", "STRING"),
     ]
     try:
-        existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
+        existing = {
+            r["col_name"].lower()
+            for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}")
+            if r.get("col_name")
+        }
         for col, typ in new_columns:
             if col.lower() not in existing:
                 try:
@@ -366,15 +399,20 @@ def ensure_rollback_table(client, warehouse_id: str, config: dict | None = None)
 
 
 def save_rollback_to_delta(
-    client, warehouse_id: str, config: dict,
-    rollback_data: dict, status: str = "pending",
-    drop_results: dict | None = None, drop_catalog: bool = False,
+    client,
+    warehouse_id: str,
+    config: dict,
+    rollback_data: dict,
+    status: str = "pending",
+    drop_results: dict | None = None,
+    drop_catalog: bool = False,
     error_message: str | None = None,
 ) -> None:
     """Save or update a rollback record in the Delta table."""
     fqn = get_rollback_table_fqn(config)
 
     import uuid
+
     rollback_id = rollback_data.get("rollback_id") or str(uuid.uuid4())[:8]
     source = rollback_data.get("source_catalog", "")
     dest = rollback_data.get("destination_catalog", "")
@@ -411,12 +449,12 @@ def save_rollback_to_delta(
     VALUES
     ('{rollback_id}', '{source}', '{dest}', '{status}',
      '{rollback_data.get("timestamp", now)}',
-     {f"'{now}'" if status != 'pending' else 'NULL'},
+     {f"'{now}'" if status != "pending" else "NULL"},
      {schemas_count}, {tables_count}, {views_count},
      {functions_count}, {volumes_count}, {total},
      {dropped}, {failed}, {str(drop_catalog).lower()},
      '{objects_json}', '{versions_json}',
-     {f"'{clone_started_at}'" if clone_started_at else 'NULL'},
+     {f"'{clone_started_at}'" if clone_started_at else "NULL"},
      '{restore_mode}', '{user}', '{host}', '{err}')
     """
     try:
@@ -427,7 +465,10 @@ def save_rollback_to_delta(
 
 
 def query_rollback_logs_delta(
-    client, warehouse_id: str, config: dict, limit: int = 50,
+    client,
+    warehouse_id: str,
+    config: dict,
+    limit: int = 50,
 ) -> list[dict]:
     """Query rollback logs from the Delta table."""
     fqn = get_rollback_table_fqn(config)

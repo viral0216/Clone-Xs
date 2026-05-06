@@ -9,6 +9,7 @@ router = APIRouter()
 
 def _get_service(client, config):
     from src.observability import ObservabilityService
+
     wid = config.get("sql_warehouse_id", "")
     return ObservabilityService(client, wid, config=config)
 
@@ -37,7 +38,9 @@ async def get_issues(limit: int = Query(10, ge=1, le=100), client=Depends(get_db
 
 @router.get("/trends/{metric}")
 async def get_trends(
-    metric: str, days: int = Query(30, ge=1, le=365), client=Depends(get_db_client),
+    metric: str,
+    days: int = Query(30, ge=1, le=365),
+    client=Depends(get_db_client),
 ):
     """Time-series trend data for sparklines. Metric: freshness, sla, dq."""
     config = await get_app_config()

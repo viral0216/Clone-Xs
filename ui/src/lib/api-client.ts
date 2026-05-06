@@ -88,10 +88,27 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     } else if (error.detail) {
       message = JSON.stringify(error.detail);
     }
+
+    const msgLower = message.toLowerCase();
+
+    // Databricks Free Edition daily compute limit — surface a clear,
+    // friendly message instead of the raw backend error.
+    const isFreeEditionLimit =
+      msgLower.includes("free edition") ||
+      msgLower.includes("free trial") ||
+      (msgLower.includes("daily") && (msgLower.includes("compute") || msgLower.includes("quota") || msgLower.includes("limit"))) ||
+      msgLower.includes("free_edition_quota") ||
+      msgLower.includes("daily_compute_limit");
+
+    if (isFreeEditionLimit) {
+      message =
+        "Databricks Free Edition daily limit reached. Your workspace has used up its free daily compute — please try again tomorrow, or upgrade to a paid Databricks workspace to continue.";
+    }
+
     // Show toast for actionable errors (debounced to avoid spam)
     const now = Date.now();
-    const msgLower = message.toLowerCase();
     const isActionable =
+      isFreeEditionLimit ||
       msgLower.includes("no sql warehouse") ||
       msgLower.includes("warehouse") && (msgLower.includes("not found") || msgLower.includes("not a valid")) ||
       msgLower.includes("session expired") ||
@@ -101,7 +118,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     if (isActionable && (message !== _lastToast || now - _lastToastTime > 5000)) {
       _lastToast = message;
       _lastToastTime = now;
-      toast.error(message);
+      toast.error(message, isFreeEditionLimit ? { duration: 10000 } : undefined);
     }
 
     throw new Error(message);

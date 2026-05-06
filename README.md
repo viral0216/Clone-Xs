@@ -130,6 +130,56 @@ pip install -e .
 clxs clone --source my_catalog --dest my_catalog_clone
 ```
 
+### Optional: Zerobus runtime destination
+
+The streaming-emission demo (`/demo-data` → Streaming tab) supports
+**Zerobus** — Databricks' low-latency direct-append API — as a
+fourth destination, alongside `volume`, `volume_bronze`, and
+`direct_table`. Enabling it requires the Zerobus Python SDK, which
+ships prebuilt wheels for **Linux x86_64 / aarch64** and **Windows
+x86_64** only:
+
+```bash
+pip install -e ".[zerobus]"   # Linux / Windows: pulls databricks-zerobus-ingest-sdk
+```
+
+**macOS users:** the SDK does not currently publish macOS wheels (see
+[databricks/zerobus-sdk](https://github.com/databricks/zerobus-sdk)).
+Two options:
+
+1. **Use the *Try with Zerobus* code snippet panel** on the demo-data
+   page — it renders a copy-pastable Python script (using your selected
+   profile + cadence) that runs Zerobus from any environment where the
+   SDK is installable. No backend dep needed.
+2. **Run the API server in Docker (Linux x86_64 base)** — the SDK
+   installs cleanly inside the container and the radio enables
+   automatically.
+3. **Build the SDK from source** — clone the repo, install the Rust
+   toolchain, run `maturin build`, install the resulting wheel. Brittle
+   across SDK upgrades; not recommended unless you need native
+   performance on your dev Mac.
+
+When the SDK is absent, the Zerobus radio renders disabled with an
+inline tooltip explaining why; the rest of the streaming demo is
+unaffected.
+
+**One-time workspace prerequisite for Zerobus runs.** Per the
+[Zerobus connector limitations](https://docs.databricks.com/aws/en/ingestion/zerobus-limits),
+the connector only writes to managed Delta tables in non-default
+storage. As a workspace admin, set a managed location on the
+destination schema **once** before the first Zerobus run:
+
+```sql
+ALTER SCHEMA `<catalog>`.`<schema>`
+  SET MANAGED LOCATION 's3://your-bucket/clxs-zerobus';
+```
+
+Without this, the run fails with
+`Error Code: 4024 — Unsupported table kind`. The full setup
+walkthrough (server endpoint, service principal, GRANTs the runner
+auto-applies) lives in
+[docs/docs/guide/demo-data.md](docs/docs/guide/demo-data.md#setting-up-zerobus-credentials).
+
 ---
 
 ## Required Setup (after installation)

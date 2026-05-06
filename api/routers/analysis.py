@@ -35,9 +35,12 @@ async def catalog_diff(req: CatalogPairRequest, client=Depends(get_db_client)):
     between source and destination catalogs.
     """
     from src.diff import compare_catalogs
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = compare_catalogs(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
+    result = compare_catalogs(
+        client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas
+    )
     return result
 
 
@@ -65,17 +68,26 @@ async def permissions_audit(req: PermissionsAuditRequest, client=Depends(get_db_
     pii_columns: list[dict] | None = None
     if req.pii_intersection:
         from src.pii_detection import scan_catalog_for_pii
+
         pii_config = config.get("pii_detection") or {}
         pii_result = scan_catalog_for_pii(
-            client, wid, req.source_catalog, req.exclude_schemas,
-            sample_data=False, pii_config=pii_config or None,
-            read_uc_tags=False, save_history=False,
+            client,
+            wid,
+            req.source_catalog,
+            req.exclude_schemas,
+            sample_data=False,
+            pii_config=pii_config or None,
+            read_uc_tags=False,
+            save_history=False,
         )
         pii_columns = pii_result.get("columns") or []
 
     from src.permissions_audit import audit_catalog_permissions
+
     return audit_catalog_permissions(
-        client, wid, req.source_catalog,
+        client,
+        wid,
+        req.source_catalog,
         pii_columns=pii_columns,
         exclude_schemas=req.exclude_schemas,
     )
@@ -96,10 +108,15 @@ async def catalog_diff_detail(req: CatalogPairRequest, client=Depends(get_db_cli
     surfaces with `drift: []` and the failure under `drift_errors`.
     """
     from src.catalog_diff_detail import compare_catalogs_detailed
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     return compare_catalogs_detailed(
-        client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
+        req.exclude_schemas,
     )
 
 
@@ -111,9 +128,12 @@ async def deep_compare(req: CatalogPairRequest, client=Depends(get_db_client)):
     across all tables in both catalogs.
     """
     from src.compare import compare_catalogs_deep
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    result = compare_catalogs_deep(client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas)
+    result = compare_catalogs_deep(
+        client, wid, req.source_catalog, req.destination_catalog, req.exclude_schemas
+    )
     return result
 
 
@@ -125,11 +145,17 @@ async def validate_clone(req: ValidateRequest, client=Depends(get_db_client)):
     When `use_checksum=true`, also compares hash-based checksums for data integrity.
     """
     from src.validation import validate_catalog
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = validate_catalog(
-        client, wid, req.source_catalog, req.destination_catalog,
-        req.exclude_schemas, req.max_workers, use_checksum=req.use_checksum,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
+        req.exclude_schemas,
+        req.max_workers,
+        use_checksum=req.use_checksum,
     )
     return result
 
@@ -142,14 +168,19 @@ async def schema_drift(req: SchemaDriftRequest, client=Depends(get_db_client)):
     Supports optional schema and table filtering for targeted comparisons.
     """
     from src.schema_drift import detect_schema_drift, compare_table_schema
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
 
     # Single-table mode: compare one specific table
     if req.schema_name and req.table:
         drift = compare_table_schema(
-            client, wid, req.source_catalog, req.destination_catalog,
-            req.schema_name, req.table,
+            client,
+            wid,
+            req.source_catalog,
+            req.destination_catalog,
+            req.schema_name,
+            req.table,
         )
         return {
             "total_tables_checked": 1,
@@ -160,8 +191,12 @@ async def schema_drift(req: SchemaDriftRequest, client=Depends(get_db_client)):
     # Schema or catalog level
     include_schemas = [req.schema_name] if req.schema_name else None
     result = detect_schema_drift(
-        client, wid, req.source_catalog, req.destination_catalog,
-        req.exclude_schemas, include_schemas=include_schemas,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
+        req.exclude_schemas,
+        include_schemas=include_schemas,
     )
     return result
 
@@ -193,14 +228,21 @@ async def catalog_stats(req: StatsRequest, client=Depends(get_db_client)):
     # Multi-catalog path takes priority when source_catalogs is provided.
     if req.source_catalogs:
         from src.stats_multi import catalog_stats_multi
+
         result = catalog_stats_multi(
-            client, wid, req.source_catalogs, req.exclude_schemas, fast=req.fast,
+            client,
+            wid,
+            req.source_catalogs,
+            req.exclude_schemas,
+            fast=req.fast,
         )
     elif req.fast:
         from src.stats_fast import catalog_stats_fast
+
         result = catalog_stats_fast(client, wid, req.source_catalog, req.exclude_schemas)
     else:
         from src.stats import catalog_stats
+
         result = catalog_stats(client, wid, req.source_catalog, req.exclude_schemas)
 
     # Opportunistic time-series snapshot — best-effort, never breaks /stats.
@@ -209,6 +251,7 @@ async def catalog_stats(req: StatsRequest, client=Depends(get_db_client)):
     # the same day overwrites today's row instead of duplicating.
     try:
         from src.catalog_size_history import record_snapshots_from_stats
+
         record_snapshots_from_stats(client, wid, config, result)
     except Exception:
         pass
@@ -217,7 +260,8 @@ async def catalog_stats(req: StatsRequest, client=Depends(get_db_client)):
 
 @router.get("/catalog-size-history", summary="Per-catalog daily size trend")
 async def catalog_size_history(
-    catalogs: str | None = None, days: int = 30,
+    catalogs: str | None = None,
+    days: int = 30,
     client=Depends(get_db_client),
 ):
     """Read back per-catalog daily size snapshots over the last N days.
@@ -233,6 +277,7 @@ async def catalog_size_history(
         days: Look-back window (1..365, default 30).
     """
     from src.catalog_size_history import get_history
+
     config = await get_app_config()
     wid = get_warehouse_id(config)
     cats = [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else None
@@ -259,14 +304,24 @@ async def search_catalog(req: SearchRequest, client=Depends(get_db_client)):
     wid = req.warehouse_id or get_warehouse_id(config)
     if req.source_catalogs:
         from src.search_multi import search_tables_multi
+
         return search_tables_multi(
-            client, wid, req.source_catalogs, req.pattern,
-            req.exclude_schemas, search_columns=req.search_columns,
+            client,
+            wid,
+            req.source_catalogs,
+            req.pattern,
+            req.exclude_schemas,
+            search_columns=req.search_columns,
         )
     from src.search import search_tables
+
     return search_tables(
-        client, wid, req.source_catalog, req.pattern,
-        req.exclude_schemas, search_columns=req.search_columns,
+        client,
+        wid,
+        req.source_catalog,
+        req.pattern,
+        req.exclude_schemas,
+        search_columns=req.search_columns,
     )
 
 
@@ -278,12 +333,17 @@ async def profile_catalog(req: ProfileRequest, client=Depends(get_db_client)):
     and string length distributions. Runs a single aggregation query per table.
     """
     from src.profiling import profile_catalog
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     include_schemas = [req.schema_name] if req.schema_name else None
     result = profile_catalog(
-        client, wid, req.source_catalog, req.exclude_schemas,
-        max_workers=req.max_workers, include_schemas=include_schemas,
+        client,
+        wid,
+        req.source_catalog,
+        req.exclude_schemas,
+        max_workers=req.max_workers,
+        include_schemas=include_schemas,
         output_path=req.output_path,
     )
     return result
@@ -298,11 +358,15 @@ async def profile_table_deep(req: TableProfileRequest, client=Depends(get_db_cli
     for string columns.
     """
     from src.profiling_deep import deep_profile_table
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     return deep_profile_table(
-        client, wid, req.table_fqn,
-        top_n=req.top_n, histogram_bins=req.histogram_bins,
+        client,
+        wid,
+        req.table_fqn,
+        top_n=req.top_n,
+        histogram_bins=req.histogram_bins,
         sample_limit=req.sample_limit,
     )
 
@@ -315,11 +379,15 @@ async def profile_results(req: ResultsProfileRequest, client=Depends(get_db_clie
     and top-N values server-side without materializing results twice.
     """
     from src.profiling_deep import deep_profile_sql
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     return deep_profile_sql(
-        client, wid, req.sql,
-        top_n=req.top_n, histogram_bins=req.histogram_bins,
+        client,
+        wid,
+        req.sql,
+        top_n=req.top_n,
+        histogram_bins=req.histogram_bins,
     )
 
 
@@ -331,11 +399,16 @@ async def cost_estimate(req: EstimateRequest, client=Depends(get_db_client)):
     for both deep and shallow clone. Returns per-schema cost breakdown.
     """
     from src.cost_estimation import estimate_clone_cost
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = estimate_clone_cost(
-        client, wid, req.source_catalog, req.exclude_schemas,
-        include_schemas=req.include_schemas, price_per_gb=req.price_per_gb,
+        client,
+        wid,
+        req.source_catalog,
+        req.exclude_schemas,
+        include_schemas=req.include_schemas,
+        price_per_gb=req.price_per_gb,
         destination_catalog=req.destination_catalog,
     )
     return result
@@ -350,11 +423,15 @@ async def storage_metrics(req: StorageMetricsRequest, client=Depends(get_db_clie
     for vacuumable/time-travel byte breakdown (Runtime 18.0+, expensive).
     """
     from src.storage_metrics import catalog_storage_metrics
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     max_workers = int(config.get("max_parallel_queries", 10))
     result = catalog_storage_metrics(
-        client, wid, req.source_catalog, req.exclude_schemas,
+        client,
+        wid,
+        req.source_catalog,
+        req.exclude_schemas,
         schema_filter=req.schema_filter,
         table_filter=req.table_filter,
         max_workers=max_workers,
@@ -390,8 +467,11 @@ async def stale_scan(req: StaleScanRequest, client=Depends(get_db_client)):
 
     if req.source_catalogs:
         from src.stale_detection_multi import detect_stale_tables_multi
+
         return detect_stale_tables_multi(
-            client, wid, req.source_catalogs,
+            client,
+            wid,
+            req.source_catalogs,
             days_threshold=req.days_threshold,
             min_age_days=req.min_age_days,
             min_size_bytes=req.min_size_bytes,
@@ -399,8 +479,11 @@ async def stale_scan(req: StaleScanRequest, client=Depends(get_db_client)):
             check_small_files=req.check_small_files,
         )
     from src.stale_detection import detect_stale_tables
+
     return detect_stale_tables(
-        client, wid, req.source_catalog,
+        client,
+        wid,
+        req.source_catalog,
         days_threshold=req.days_threshold,
         min_age_days=req.min_age_days,
         min_size_bytes=req.min_size_bytes,
@@ -418,13 +501,16 @@ async def optimize_tables(req: TableMaintenanceRequest, client=Depends(get_db_cl
     Supports `dry_run=true` to preview without executing.
     """
     from src.table_maintenance import run_optimize, _enumerate_tables
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     if req.tables:
         tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
     else:
         tables = _enumerate_tables(
-            client, wid, req.source_catalog,
+            client,
+            wid,
+            req.source_catalog,
             schema_filter=req.schema_filter,
         )
     return run_optimize(client, wid, tables, dry_run=req.dry_run)
@@ -439,13 +525,16 @@ async def vacuum_tables(req: TableMaintenanceRequest, client=Depends(get_db_clie
     Supports `dry_run=true` to preview without executing.
     """
     from src.table_maintenance import run_vacuum, _enumerate_tables
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     if req.tables:
         tables = [{"catalog": req.source_catalog, **t} for t in req.tables]
     else:
         tables = _enumerate_tables(
-            client, wid, req.source_catalog,
+            client,
+            wid,
+            req.source_catalog,
             schema_filter=req.schema_filter,
         )
     return run_vacuum(client, wid, tables, retention_hours=req.retention_hours, dry_run=req.dry_run)
@@ -459,6 +548,7 @@ async def check_predictive_opt(req: CatalogRequest, client=Depends(get_db_client
     flags. When enabled, manual OPTIMIZE/VACUUM may be unnecessary.
     """
     from src.table_maintenance import check_predictive_optimization
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     return check_predictive_optimization(client, wid, req.source_catalog, req.exclude_schemas)
@@ -472,11 +562,16 @@ async def export_metadata(req: ExportRequest, client=Depends(get_db_client)):
     for all objects in a catalog.
     """
     from src.export import export_catalog_metadata
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     output = export_catalog_metadata(
-        client, wid, req.source_catalog, req.exclude_schemas,
-        output_format=req.format, output_path=req.output_path,
+        client,
+        wid,
+        req.source_catalog,
+        req.exclude_schemas,
+        output_format=req.format,
+        output_path=req.output_path,
     )
     return {"output_path": output}
 
@@ -489,9 +584,12 @@ async def create_snapshot(req: SnapshotRequest, client=Depends(get_db_client)):
     Useful for tracking changes over time or comparing before/after clone.
     """
     from src.snapshot import create_snapshot
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
-    output = create_snapshot(client, wid, req.source_catalog, req.exclude_schemas, output_path=req.output_path)
+    output = create_snapshot(
+        client, wid, req.source_catalog, req.exclude_schemas, output_path=req.output_path
+    )
     return {"output_path": output}
 
 
@@ -505,10 +603,12 @@ async def column_usage(req: dict, client=Depends(get_db_client)):
     """
     try:
         from src.column_usage import get_column_usage_summary
+
         config = await get_app_config()
         wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
         return get_column_usage_summary(
-            client, wid,
+            client,
+            wid,
             catalog=req.get("catalog", ""),
             table_fqn=req.get("table"),
             days=req.get("days", 90),
@@ -516,17 +616,25 @@ async def column_usage(req: dict, client=Depends(get_db_client)):
             use_system_tables=req.get("use_system_tables", False),
         )
     except Exception as e:
-        return {"top_columns": [], "top_users": [], "total_columns_tracked": 0, "period_days": 90, "error": str(e)}
+        return {
+            "top_columns": [],
+            "top_users": [],
+            "total_columns_tracked": 0,
+            "period_days": 90,
+            "error": str(e),
+        }
 
 
 @router.post("/table-usage", summary="Top used tables by query frequency")
 async def table_usage(req: dict, client=Depends(get_db_client)):
     """Get most frequently queried tables from system.access.audit or system.query.history."""
     from src.usage_analysis import query_table_access_patterns
+
     config = await get_app_config()
     wid = req.get("warehouse_id") or config.get("sql_warehouse_id", "")
     rows = query_table_access_patterns(
-        client, wid,
+        client,
+        wid,
         catalog=req.get("catalog", ""),
         days=req.get("days", 90),
         limit=req.get("limit", 50),

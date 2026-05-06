@@ -8,7 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 def list_vector_indexes(
-    client: WorkspaceClient, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List vector search indexes in a catalog."""
     results = []
@@ -23,20 +25,23 @@ def list_vector_indexes(
                 parts = name.split(".")
                 if len(parts) >= 2 and parts[1] != schema:
                     continue
-            results.append({
-                "name": idx.name,
-                "index_type": str(idx.index_type) if idx.index_type else None,
-                "primary_key": idx.primary_key,
-                "endpoint_name": idx.endpoint_name,
-                "status": str(idx.status.ready) if idx.status else None,
-            })
+            results.append(
+                {
+                    "name": idx.name,
+                    "index_type": str(idx.index_type) if idx.index_type else None,
+                    "primary_key": idx.primary_key,
+                    "endpoint_name": idx.endpoint_name,
+                    "status": str(idx.status.ready) if idx.status else None,
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list vector search indexes: {e}")
     return results
 
 
 def export_index_definition(
-    client: WorkspaceClient, index_name: str,
+    client: WorkspaceClient,
+    index_name: str,
 ) -> dict | None:
     """Export a vector search index definition for cloning."""
     try:
@@ -54,7 +59,10 @@ def export_index_definition(
             definition["delta_sync_spec"] = {
                 "source_table": spec.source_table,
                 "embedding_source_columns": [
-                    {"name": c.name, "embedding_model_endpoint_name": c.embedding_model_endpoint_name}
+                    {
+                        "name": c.name,
+                        "embedding_model_endpoint_name": c.embedding_model_endpoint_name,
+                    }
                     for c in (spec.embedding_source_columns or [])
                 ],
                 "embedding_vector_columns": [
@@ -69,7 +77,10 @@ def export_index_definition(
             spec = idx.direct_access_index_spec
             definition["direct_access_spec"] = {
                 "embedding_source_columns": [
-                    {"name": c.name, "embedding_model_endpoint_name": c.embedding_model_endpoint_name}
+                    {
+                        "name": c.name,
+                        "embedding_model_endpoint_name": c.embedding_model_endpoint_name,
+                    }
                     for c in (spec.embedding_source_columns or [])
                 ],
                 "embedding_vector_columns": [
@@ -114,9 +125,7 @@ def clone_vector_index(
         # Rewrite source table reference for delta sync indexes
         if "delta_sync_spec" in source_definition:
             spec = source_definition["delta_sync_spec"]
-            source_table = spec["source_table"].replace(
-                f"{source_catalog}.", f"{dest_catalog}.", 1
-            )
+            source_table = spec["source_table"].replace(f"{source_catalog}.", f"{dest_catalog}.", 1)
 
             from databricks.sdk.service.vectorsearch import (
                 DeltaSyncVectorIndexSpecRequest,
@@ -171,14 +180,16 @@ def clone_vector_index(
                             embedding_model_endpoint_name=c.get("embedding_model_endpoint_name"),
                         )
                         for c in da_spec.get("embedding_source_columns", [])
-                    ] or None,
+                    ]
+                    or None,
                     embedding_vector_columns=[
                         EmbeddingVectorColumn(
                             name=c["name"],
                             embedding_dimension=c.get("embedding_dimension"),
                         )
                         for c in da_spec.get("embedding_vector_columns", [])
-                    ] or None,
+                    ]
+                    or None,
                     schema_json=da_spec.get("schema_json"),
                 ),
             )

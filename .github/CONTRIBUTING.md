@@ -19,8 +19,8 @@ Thank you for your interest in contributing to Clone-Xs! This guide will help yo
 git clone https://github.com/viral0216/clone-xs.git
 cd clone-xs
 
-# Install Python package in editable mode
-pip install -e ".[dev]"
+# One-shot setup: editable install + pre-commit & pre-push git hooks
+make setup
 
 # Install UI dependencies
 cd ui && npm install && cd ..
@@ -28,6 +28,13 @@ cd ui && npm install && cd ..
 # Start development servers (API + UI)
 make web-start
 ```
+
+`make setup` installs the same checks CI runs, gated by speed:
+
+- **on every commit** — ruff, ruff-format, eslint, JSON/YAML/AST checks
+- **on `git push`** — pytest, UI build (tsc + vite), vitest
+
+If a slow pre-push check is in your way temporarily, `SKIP=ui-build,ui-vitest git push` (or `--no-verify` as a last resort).
 
 This starts:
 - **Frontend** (Vite) on http://localhost:3000

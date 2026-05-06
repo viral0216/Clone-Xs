@@ -53,19 +53,24 @@ def _config(*hosts: str, max_parallel: int = 5) -> dict:
 def test_all_targets_succeed(mock_run):
     """3 targets, all succeed → aggregate status=success, every target's
     bytes/tables roll up into the totals."""
+
     def succeed(_client, sub_config):
         host = sub_config["target_workspace"]["host"]
         return {
             "status": "success",
             "bytes_copied": 1000,
             "files_copied": 10,
-            "tables_total": 5, "tables_cloned": 5, "tables_failed": 0,
+            "tables_total": 5,
+            "tables_cloned": 5,
+            "tables_failed": 0,
             "share_name": f"share-{host}",
         }
+
     mock_run.side_effect = succeed
 
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("eu-host", "us-host", "apac-host"),
+        MagicMock(),
+        _config("eu-host", "us-host", "apac-host"),
     )
 
     assert result["mode"] == "fanout"
@@ -80,7 +85,9 @@ def test_all_targets_succeed(mock_run):
     # Each per-target entry carries its host label so the UI can render
     # per-target rows in the result card.
     assert {r["target_host"] for r in result["per_target"]} == {
-        "eu-host", "us-host", "apac-host",
+        "eu-host",
+        "us-host",
+        "apac-host",
     }
 
 
@@ -91,8 +98,11 @@ def test_single_target_routed_through_fanout(mock_run):
     they consume the result). Aggregate has target_count=1."""
     mock_run.return_value = {
         "status": "success",
-        "bytes_copied": 500, "files_copied": 5,
-        "tables_total": 3, "tables_cloned": 3, "tables_failed": 0,
+        "bytes_copied": 500,
+        "files_copied": 5,
+        "tables_total": 3,
+        "tables_cloned": 3,
+        "tables_failed": 0,
     }
     result = run_cross_workspace_fanout(MagicMock(), _config("only-host"))
 
@@ -110,19 +120,25 @@ def test_single_target_routed_through_fanout(mock_run):
 def test_one_target_connection_failure_does_not_fail_others(mock_run):
     """Target B fails to connect (auth/network); targets A and C continue
     and complete. Aggregate marked `partial` rather than `failed`."""
+
     def per_target(_client, sub_config):
         host = sub_config["target_workspace"]["host"]
         if host == "broken-host":
             raise RuntimeError("AUTH: invalid PAT")
         return {
             "status": "success",
-            "bytes_copied": 100, "files_copied": 1,
-            "tables_total": 2, "tables_cloned": 2, "tables_failed": 0,
+            "bytes_copied": 100,
+            "files_copied": 1,
+            "tables_total": 2,
+            "tables_cloned": 2,
+            "tables_failed": 0,
         }
+
     mock_run.side_effect = per_target
 
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("good-host", "broken-host", "another-good-host"),
+        MagicMock(),
+        _config("good-host", "broken-host", "another-good-host"),
     )
 
     assert result["status"] == "partial"
@@ -142,21 +158,25 @@ def test_one_target_mid_clone_failure_does_not_fail_others(mock_run):
     table with column type drift). Targets A and C are unaffected — their
     independent shares/recipients/shared catalogs are unrelated. Aggregate
     is `partial`."""
+
     def per_target(_client, sub_config):
         host = sub_config["target_workspace"]["host"]
         if host == "midfail-host":
-            raise RuntimeError(
-                "DEEP CLONE failed on table users: column type changed"
-            )
+            raise RuntimeError("DEEP CLONE failed on table users: column type changed")
         return {
             "status": "success",
-            "bytes_copied": 50, "files_copied": 1,
-            "tables_total": 1, "tables_cloned": 1, "tables_failed": 0,
+            "bytes_copied": 50,
+            "files_copied": 1,
+            "tables_total": 1,
+            "tables_cloned": 1,
+            "tables_failed": 0,
         }
+
     mock_run.side_effect = per_target
 
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("a", "midfail-host", "c"),
+        MagicMock(),
+        _config("a", "midfail-host", "c"),
     )
 
     assert result["status"] == "partial"
@@ -185,6 +205,7 @@ def test_same_metastore_rejection_isolated_to_offending_target(mock_run):
     """Roadmap edge case: one target is in the SAME metastore as source
     (preflight catches it inside `run_cross_workspace_clone` and raises).
     The other targets — which ARE in different metastores — still run."""
+
     def per_target(_client, sub_config):
         host = sub_config["target_workspace"]["host"]
         if host == "same-meta-host":
@@ -193,20 +214,23 @@ def test_same_metastore_rejection_isolated_to_offending_target(mock_run):
             )
         return {
             "status": "success",
-            "bytes_copied": 10, "files_copied": 1,
-            "tables_total": 1, "tables_cloned": 1, "tables_failed": 0,
+            "bytes_copied": 10,
+            "files_copied": 1,
+            "tables_total": 1,
+            "tables_cloned": 1,
+            "tables_failed": 0,
         }
+
     mock_run.side_effect = per_target
 
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("eu", "same-meta-host", "us"),
+        MagicMock(),
+        _config("eu", "same-meta-host", "us"),
     )
 
     assert result["status"] == "partial"
     assert result["failed_targets"] == 1
-    rejected = next(
-        r for r in result["per_target"] if r["target_host"] == "same-meta-host"
-    )
+    rejected = next(r for r in result["per_target"] if r["target_host"] == "same-meta-host")
     assert "same Unity Catalog metastore" in rejected["error"]
 
 
@@ -230,13 +254,18 @@ def test_per_target_config_strips_plural_field(mock_run):
     we passed plural through, the inner orchestrator could loop back into
     fanout. Verify the per-target config the inner orchestrator sees."""
     captured_configs = []
+
     def capture(_client, sub_config):
         captured_configs.append(dict(sub_config))
         return {
             "status": "success",
-            "bytes_copied": 0, "files_copied": 0,
-            "tables_total": 0, "tables_cloned": 0, "tables_failed": 0,
+            "bytes_copied": 0,
+            "files_copied": 0,
+            "tables_total": 0,
+            "tables_cloned": 0,
+            "tables_failed": 0,
         }
+
     mock_run.side_effect = capture
 
     run_cross_workspace_fanout(MagicMock(), _config("a", "b"))
@@ -255,11 +284,15 @@ def test_max_parallel_is_capped_at_target_count(mock_run):
     Verified indirectly: 3 targets all complete with no error."""
     mock_run.return_value = {
         "status": "success",
-        "bytes_copied": 0, "files_copied": 0,
-        "tables_total": 0, "tables_cloned": 0, "tables_failed": 0,
+        "bytes_copied": 0,
+        "files_copied": 0,
+        "tables_total": 0,
+        "tables_cloned": 0,
+        "tables_failed": 0,
     }
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("a", "b", "c", max_parallel=10),
+        MagicMock(),
+        _config("a", "b", "c", max_parallel=10),
     )
     assert result["target_count"] == 3
     assert result["succeeded_targets"] == 3
@@ -277,14 +310,19 @@ def test_runs_in_parallel(mock_run):
         time.sleep(0.1)
         return {
             "status": "success",
-            "bytes_copied": 0, "files_copied": 0,
-            "tables_total": 0, "tables_cloned": 0, "tables_failed": 0,
+            "bytes_copied": 0,
+            "files_copied": 0,
+            "tables_total": 0,
+            "tables_cloned": 0,
+            "tables_failed": 0,
         }
+
     mock_run.side_effect = slow
 
     start = time.time()
     result = run_cross_workspace_fanout(
-        MagicMock(), _config("a", "b", "c", max_parallel=3),
+        MagicMock(),
+        _config("a", "b", "c", max_parallel=3),
     )
     elapsed = time.time() - start
 

@@ -30,13 +30,19 @@ class JobCloneManager:
                 # Schedule
                 if job.settings and job.settings.schedule:
                     info["schedule"] = job.settings.schedule.quartz_cron_expression or ""
-                    info["schedule_paused"] = str(job.settings.schedule.pause_status) if job.settings.schedule.pause_status else ""
+                    info["schedule_paused"] = (
+                        str(job.settings.schedule.pause_status)
+                        if job.settings.schedule.pause_status
+                        else ""
+                    )
                 else:
                     info["schedule"] = ""
                     info["schedule_paused"] = ""
 
                 # Task count
-                info["task_count"] = len(job.settings.tasks) if job.settings and job.settings.tasks else 0
+                info["task_count"] = (
+                    len(job.settings.tasks) if job.settings and job.settings.tasks else 0
+                )
 
                 if name_filter and name_filter.lower() not in info["name"].lower():
                     continue
@@ -64,14 +70,18 @@ class JobCloneManager:
             try:
                 runs = []
                 for run in self.client.jobs.list_runs(job_id=job_id, limit=5):
-                    runs.append({
-                        "run_id": run.run_id,
-                        "state": str(run.state.life_cycle_state) if run.state else "",
-                        "result_state": str(run.state.result_state) if run.state and run.state.result_state else "",
-                        "start_time": str(run.start_time) if run.start_time else "",
-                        "end_time": str(run.end_time) if run.end_time else "",
-                        "run_duration": run.run_duration or 0,
-                    })
+                    runs.append(
+                        {
+                            "run_id": run.run_id,
+                            "state": str(run.state.life_cycle_state) if run.state else "",
+                            "result_state": str(run.state.result_state)
+                            if run.state and run.state.result_state
+                            else "",
+                            "start_time": str(run.start_time) if run.start_time else "",
+                            "end_time": str(run.end_time) if run.end_time else "",
+                            "run_duration": run.run_duration or 0,
+                        }
+                    )
                 detail["recent_runs"] = runs
             except Exception:
                 detail["recent_runs"] = []
@@ -116,7 +126,9 @@ class JobCloneManager:
             logger.error(f"Failed to clone job {job_id}: {e}")
             return {"error": str(e)}
 
-    def clone_job_cross_workspace(self, job_id: int, dest_host: str, dest_token: str, new_name: str = "") -> dict:
+    def clone_job_cross_workspace(
+        self, job_id: int, dest_host: str, dest_token: str, new_name: str = ""
+    ) -> dict:
         """Clone a job to a different Databricks workspace."""
         try:
             from src.client import get_workspace_client
@@ -137,11 +149,15 @@ class JobCloneManager:
             # Remove workspace-specific references that won't exist in destination
             warnings = []
             if "existing_cluster_id" in settings:
-                warnings.append(f"existing_cluster_id '{settings['existing_cluster_id']}' may not exist in destination")
+                warnings.append(
+                    f"existing_cluster_id '{settings['existing_cluster_id']}' may not exist in destination"
+                )
             if settings.get("tasks"):
                 for task in settings["tasks"]:
                     if "existing_cluster_id" in task:
-                        warnings.append(f"Task '{task.get('task_key', '?')}' uses existing_cluster_id — may not exist in destination")
+                        warnings.append(
+                            f"Task '{task.get('task_key', '?')}' uses existing_cluster_id — may not exist in destination"
+                        )
 
             # Create destination client
             dest_client = get_workspace_client(host=dest_host, token=dest_token)
@@ -176,11 +192,21 @@ class JobCloneManager:
                 val_a = settings_a.get(key)
                 val_b = settings_b.get(key)
                 if val_a != val_b:
-                    diffs.append({
-                        "field": key,
-                        "job_a": json.dumps(val_a, indent=2) if isinstance(val_a, (dict, list)) else str(val_a) if val_a is not None else "(missing)",
-                        "job_b": json.dumps(val_b, indent=2) if isinstance(val_b, (dict, list)) else str(val_b) if val_b is not None else "(missing)",
-                    })
+                    diffs.append(
+                        {
+                            "field": key,
+                            "job_a": json.dumps(val_a, indent=2)
+                            if isinstance(val_a, (dict, list))
+                            else str(val_a)
+                            if val_a is not None
+                            else "(missing)",
+                            "job_b": json.dumps(val_b, indent=2)
+                            if isinstance(val_b, (dict, list))
+                            else str(val_b)
+                            if val_b is not None
+                            else "(missing)",
+                        }
+                    )
 
             return {
                 "job_a": {"job_id": job_id_a, "name": settings_a.get("name", "")},
@@ -201,7 +227,13 @@ class JobCloneManager:
                 settings = json.loads(json.dumps(job.settings.as_dict())) if job.settings else {}
                 for field in STRIP_FIELDS:
                     settings.pop(field, None)
-                backups.append({"original_job_id": job_id, "name": settings.get("name", ""), "settings": settings})
+                backups.append(
+                    {
+                        "original_job_id": job_id,
+                        "name": settings.get("name", ""),
+                        "settings": settings,
+                    }
+                )
             except Exception as e:
                 backups.append({"original_job_id": job_id, "error": str(e)})
         return backups
@@ -216,7 +248,13 @@ class JobCloneManager:
                     results.append({"name": defn.get("name", "?"), "error": "No settings provided"})
                     continue
                 result = self.client.jobs.create(**settings)
-                results.append({"name": settings.get("name", ""), "new_job_id": result.job_id, "status": "restored"})
+                results.append(
+                    {
+                        "name": settings.get("name", ""),
+                        "new_job_id": result.job_id,
+                        "status": "restored",
+                    }
+                )
             except Exception as e:
                 results.append({"name": defn.get("name", "?"), "error": str(e)})
         return results

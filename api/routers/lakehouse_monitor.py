@@ -3,7 +3,11 @@
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_db_client, get_app_config
-from api.models.lakehouse_monitor import MonitorCloneRequest, MonitorCompareRequest, MonitorListRequest
+from api.models.lakehouse_monitor import (
+    MonitorCloneRequest,
+    MonitorCompareRequest,
+    MonitorListRequest,
+)
 
 router = APIRouter()
 
@@ -12,6 +16,7 @@ router = APIRouter()
 async def list_monitors_endpoint(req: MonitorListRequest, client=Depends(get_db_client)):
     """List Lakehouse Monitoring quality monitors in a catalog."""
     from src.lakehouse_monitor import list_monitors
+
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
     return list_monitors(client, wid, req.source_catalog, req.schema_filter)
@@ -21,6 +26,7 @@ async def list_monitors_endpoint(req: MonitorListRequest, client=Depends(get_db_
 async def clone_monitors(req: MonitorCloneRequest, client=Depends(get_db_client)):
     """Clone quality monitor definitions from source tables to destination tables."""
     from src.lakehouse_monitor import list_monitors, export_monitor_definition, clone_monitor
+
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
 
@@ -51,6 +57,7 @@ async def clone_monitors(req: MonitorCloneRequest, client=Depends(get_db_client)
 async def compare_metrics(req: MonitorCompareRequest, client=Depends(get_db_client)):
     """Compare quality monitor metrics between a source and destination table."""
     from src.lakehouse_monitor import compare_monitor_metrics
+
     config = await get_app_config()
     wid = req.warehouse_id or config.get("sql_warehouse_id", "")
     return compare_monitor_metrics(client, wid, req.source_table, req.destination_table)

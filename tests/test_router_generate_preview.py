@@ -56,10 +56,12 @@ class TestPreviewHelper:
         """An industry name that isn't in INDUSTRIES is ignored rather
         than crashing — useful for forward-compat with custom YAML
         industries that may or may not be loaded."""
-        out = preview_demo_catalog({
-            "industries": ["healthcare", "this_doesnt_exist"],
-            "scale_factor": 1.0,
-        })
+        out = preview_demo_catalog(
+            {
+                "industries": ["healthcare", "this_doesnt_exist"],
+                "scale_factor": 1.0,
+            }
+        )
         assert len(out["per_industry"]) == 1
         assert out["per_industry"][0]["industry"] == "healthcare"
 
@@ -81,11 +83,14 @@ class TestPreviewEndpoint:
     def test_preview_endpoint_returns_per_industry(self, client):
         """POST returns the same shape as the helper, with scale_factor
         echoed back."""
-        resp = client.post("/api/generate/demo-data/preview", json={
-            "catalog_name": "demo_preview_test",
-            "industries": ["healthcare"],
-            "scale_factor": 0.1,
-        })
+        resp = client.post(
+            "/api/generate/demo-data/preview",
+            json={
+                "catalog_name": "demo_preview_test",
+                "industries": ["healthcare"],
+                "scale_factor": 0.1,
+            },
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["scale_factor"] == 0.1
@@ -96,19 +101,25 @@ class TestPreviewEndpoint:
         """Invalid dq_profile should 422 — the validator runs at request
         binding time even though the preview itself doesn't use the
         profile (consistency keeps form-state debugging predictable)."""
-        resp = client.post("/api/generate/demo-data/preview", json={
-            "catalog_name": "demo_preview_test",
-            "industries": ["healthcare"],
-            "scale_factor": 0.1,
-            "dq_profile": "super_clean",
-        })
+        resp = client.post(
+            "/api/generate/demo-data/preview",
+            json={
+                "catalog_name": "demo_preview_test",
+                "industries": ["healthcare"],
+                "scale_factor": 0.1,
+                "dq_profile": "super_clean",
+            },
+        )
         assert resp.status_code == 422
 
     def test_preview_endpoint_validates_anomaly_rate(self, client):
         """anomaly_rate above 1.0 → 422."""
-        resp = client.post("/api/generate/demo-data/preview", json={
-            "catalog_name": "demo_preview_test",
-            "industries": ["healthcare"],
-            "anomaly_rate": 1.5,
-        })
+        resp = client.post(
+            "/api/generate/demo-data/preview",
+            json={
+                "catalog_name": "demo_preview_test",
+                "industries": ["healthcare"],
+                "anomaly_rate": 1.5,
+            },
+        )
         assert resp.status_code == 422

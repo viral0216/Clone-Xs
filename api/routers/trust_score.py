@@ -22,23 +22,30 @@ async def get_trust_scores(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.trust_score import get_trust_scores
+
     return get_trust_scores(catalog, client, wid, config)
 
 
 @router.get("/scores/{catalog}/{schema}/{table}", summary="Get trust score for a specific table")
-async def get_table_trust_score(catalog: str, schema: str, table: str, client=Depends(get_db_client)):
+async def get_table_trust_score(
+    catalog: str, schema: str, table: str, client=Depends(get_db_client)
+):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     table_fqn = f"{catalog}.{schema}.{table}"
     from src.trust_score import compute_trust_score
+
     return compute_trust_score(table_fqn, client, wid, config)
 
 
 @router.get("/scores/{catalog}/{schema}/{table}/history", summary="Trust score trend for a table")
-async def get_trust_score_history(catalog: str, schema: str, table: str, client=Depends(get_db_client)):
+async def get_trust_score_history(
+    catalog: str, schema: str, table: str, client=Depends(get_db_client)
+):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.trust_score import get_trust_score_history
+
     return get_trust_score_history(f"{catalog}.{schema}.{table}", client, wid, config)
 
 
@@ -51,6 +58,7 @@ async def compute_catalog_scores(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.trust_score import compute_trust_scores_for_catalog
+
     return compute_trust_scores_for_catalog(catalog, schema_filter, client, wid, config)
 
 
@@ -59,6 +67,7 @@ async def get_weights(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.trust_score import get_weights
+
     return get_weights(client, wid, config)
 
 
@@ -67,4 +76,5 @@ async def update_weights(req: UpdateWeightsRequest, client=Depends(get_db_client
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.trust_score import update_weights
+
     return update_weights(req.model_dump(), client=client, warehouse_id=wid, config=config)

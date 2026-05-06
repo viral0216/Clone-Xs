@@ -71,7 +71,8 @@ def run_cross_workspace_fanout(client: WorkspaceClient, config: dict) -> dict:
     fanout_start = time.time()
     logger.info(
         "Fanout starting: %d target(s), max_parallel=%d",
-        len(targets), max_parallel,
+        len(targets),
+        max_parallel,
     )
 
     # Each per-target run gets its own config dict — same source side, but
@@ -108,8 +109,7 @@ def run_cross_workspace_fanout(client: WorkspaceClient, config: dict) -> dict:
 
     with ThreadPoolExecutor(max_workers=max_parallel) as executor:
         futures = {
-            executor.submit(_run_one, label, sub): label
-            for label, sub in per_target_configs
+            executor.submit(_run_one, label, sub): label for label, sub in per_target_configs
         }
         for fut in as_completed(futures):
             results.append(fut.result())

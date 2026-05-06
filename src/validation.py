@@ -5,8 +5,17 @@ from databricks.sdk import WorkspaceClient
 
 from src.client import execute_sql, list_schemas_sdk, list_tables_sdk, get_table_info_sdk
 from src.log_formatter import (
-    header, divider, kv, bold, bold_green, bold_red, bold_yellow,
-    OK, FAIL, WARN, ARROW,
+    header,
+    divider,
+    kv,
+    bold,
+    bold_green,
+    bold_red,
+    bold_yellow,
+    OK,
+    FAIL,
+    WARN,
+    ARROW,
 )
 from src.progress import ProgressTracker
 
@@ -28,7 +37,11 @@ def get_row_count(
 
 
 def get_checksum(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
     columns: list[str] | None = None,
 ) -> str | None:
     """Compute a hash-based checksum for a table's data.
@@ -103,17 +116,23 @@ def validate_table(
                     f"({source_count}) vs {dest_catalog}.{schema}.{table_name} ({dest_count})"
                 )
             else:
-                logger.debug(
-                    f"Row count match: {schema}.{table_name} = {source_count} rows"
-                )
+                logger.debug(f"Row count match: {schema}.{table_name} = {source_count} rows")
 
                 # Checksum validation (only if row counts match)
                 if use_checksum and result["match"]:
                     src_checksum = get_checksum(
-                        client, warehouse_id, source_catalog, schema, table_name,
+                        client,
+                        warehouse_id,
+                        source_catalog,
+                        schema,
+                        table_name,
                     )
                     dst_checksum = get_checksum(
-                        client, warehouse_id, dest_catalog, schema, table_name,
+                        client,
+                        warehouse_id,
+                        dest_catalog,
+                        schema,
+                        table_name,
                     )
                     if src_checksum and dst_checksum:
                         result["checksum_match"] = src_checksum == dst_checksum
@@ -152,8 +171,14 @@ def validate_schema(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                validate_table, client, warehouse_id, source_catalog, dest_catalog,
-                schema, t["table_name"], use_checksum,
+                validate_table,
+                client,
+                warehouse_id,
+                source_catalog,
+                dest_catalog,
+                schema,
+                t["table_name"],
+                use_checksum,
             ): t["table_name"]
             for t in tables
         }
@@ -188,8 +213,14 @@ def validate_catalog(
 
     for schema in schema_names:
         results = validate_schema(
-            client, warehouse_id, source_catalog, dest_catalog,
-            schema, exclude_schemas, max_workers, use_checksum,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            exclude_schemas,
+            max_workers,
+            use_checksum,
         )
         all_results.extend(results)
         progress.update(success=True)
@@ -210,9 +241,7 @@ def validate_catalog(
         "errors": errors,
         "checksum_mismatches": checksum_mismatches,
         "details": all_results,
-        "mismatched_tables": [
-            r for r in all_results if not r["match"] and r["error"] is None
-        ],
+        "mismatched_tables": [r for r in all_results if not r["match"] and r["error"] is None],
     }
 
     # Print summary
@@ -256,11 +285,13 @@ def validate_catalog(
     if not kwargs.get("_api_managed_logs"):
         import uuid
         from datetime import datetime
+
         job_id = str(uuid.uuid4())[:8]
         result_data = {k: v for k, v in summary.items() if k != "details"}
 
         try:
             from src.run_logs import save_run_log
+
             job_record = {
                 "job_id": job_id,
                 "job_type": "validate",
@@ -280,6 +311,7 @@ def validate_catalog(
 
         try:
             from src.audit_trail import log_operation_start, log_operation_complete
+
             cfg = {"source_catalog": source_catalog, "destination_catalog": dest_catalog}
             log_operation_start(client, warehouse_id, cfg, job_id, operation_type="validate")
             log_operation_complete(client, warehouse_id, cfg, job_id, result_data, datetime.now())

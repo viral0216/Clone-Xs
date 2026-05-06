@@ -26,7 +26,7 @@ def detect_schema_changes(
     def _get_columns(fqn):
         sql = f"""
         SELECT column_name, data_type, is_nullable, column_default, ordinal_position
-        FROM {fqn.rsplit('.', 1)[0].rsplit('.', 1)[0]}.information_schema.columns
+        FROM {fqn.rsplit(".", 1)[0].rsplit(".", 1)[0]}.information_schema.columns
         WHERE table_schema = '{schema_name}' AND table_name = '{table_name}'
         ORDER BY ordinal_position
         """
@@ -52,33 +52,41 @@ def detect_schema_changes(
 
     for col_name, col_info in source_cols.items():
         if col_name not in dest_cols:
-            added.append({
-                "column": col_name,
-                "data_type": col_info["data_type"],
-                "nullable": col_info["is_nullable"],
-            })
+            added.append(
+                {
+                    "column": col_name,
+                    "data_type": col_info["data_type"],
+                    "nullable": col_info["is_nullable"],
+                }
+            )
         else:
             dest_info = dest_cols[col_name]
             if col_info["data_type"] != dest_info["data_type"]:
-                changed.append({
-                    "column": col_name,
-                    "source_type": col_info["data_type"],
-                    "dest_type": dest_info["data_type"],
-                })
+                changed.append(
+                    {
+                        "column": col_name,
+                        "source_type": col_info["data_type"],
+                        "dest_type": dest_info["data_type"],
+                    }
+                )
             if col_info["is_nullable"] != dest_info["is_nullable"]:
-                changed.append({
-                    "column": col_name,
-                    "change": "nullability",
-                    "source": col_info["is_nullable"],
-                    "dest": dest_info["is_nullable"],
-                })
+                changed.append(
+                    {
+                        "column": col_name,
+                        "change": "nullability",
+                        "source": col_info["is_nullable"],
+                        "dest": dest_info["is_nullable"],
+                    }
+                )
 
     for col_name in dest_cols:
         if col_name not in source_cols:
-            removed.append({
-                "column": col_name,
-                "data_type": dest_cols[col_name]["data_type"],
-            })
+            removed.append(
+                {
+                    "column": col_name,
+                    "data_type": dest_cols[col_name]["data_type"],
+                }
+            )
 
     # Schema evolution is "compatible" if it only adds nullable columns
     is_compatible = (
@@ -236,8 +244,14 @@ def evolve_catalog_schema(
             return {"table": f"{schema}.{table}", "status": "no_changes"}
 
         applied = apply_schema_evolution(
-            client, warehouse_id, dest_catalog, schema, table,
-            changes, dry_run=dry_run, drop_removed=drop_removed,
+            client,
+            warehouse_id,
+            dest_catalog,
+            schema,
+            table,
+            changes,
+            dry_run=dry_run,
+            drop_removed=drop_removed,
         )
         return {
             "table": f"{schema}.{table}",
@@ -278,6 +292,8 @@ def evolve_catalog_schema(
             removed = len(changes.get("removed_columns", []))
             changed = len(changes.get("changed_columns", []))
             prefix = "[DRY RUN] " if dry_run else ""
-            logger.info(f"  {prefix}{detail['table']}: +{added} added, -{removed} removed, ~{changed} changed")
+            logger.info(
+                f"  {prefix}{detail['table']}: +{added} added, -{removed} removed, ~{changed} changed"
+            )
 
     return summary

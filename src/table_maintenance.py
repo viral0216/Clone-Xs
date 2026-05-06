@@ -38,7 +38,8 @@ def check_predictive_optimization(
         # Check catalog-level properties
         try:
             props = execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 f"SHOW TBLPROPERTIES `{catalog}`.information_schema.tables",
             )
             for p in props:
@@ -67,13 +68,17 @@ def check_predictive_optimization(
             table = t["table_name"]
             try:
                 props = execute_sql(
-                    client, warehouse_id,
+                    client,
+                    warehouse_id,
                     f"SHOW TBLPROPERTIES `{catalog}`.`{schema}`.`{table}`",
                 )
                 for p in props:
                     key = (p.get("key") or p.get("property_key") or "").lower()
                     val = (p.get("value") or p.get("property_value") or "").lower()
-                    if ("predictive" in key or "optimizedautolayout" in key) and val in ("true", "1"):
+                    if ("predictive" in key or "optimizedautolayout" in key) and val in (
+                        "true",
+                        "1",
+                    ):
                         result["tables_with_po"].append(f"{schema}.{table}")
                         result["enabled"] = True
                         break
@@ -107,7 +112,9 @@ def _enumerate_tables(
             WHERE table_schema = '{schema_filter}' AND table_type IN ('MANAGED', 'EXTERNAL')
         """
         rows = execute_sql(client, warehouse_id, sql)
-        return [{"catalog": catalog, "schema": schema_filter, "table": r["table_name"]} for r in rows]
+        return [
+            {"catalog": catalog, "schema": schema_filter, "table": r["table_name"]} for r in rows
+        ]
 
     exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
     sql = f"""
@@ -117,7 +124,9 @@ def _enumerate_tables(
           AND table_type IN ('MANAGED', 'EXTERNAL')
     """
     rows = execute_sql(client, warehouse_id, sql)
-    return [{"catalog": catalog, "schema": r["table_schema"], "table": r["table_name"]} for r in rows]
+    return [
+        {"catalog": catalog, "schema": r["table_schema"], "table": r["table_name"]} for r in rows
+    ]
 
 
 def run_optimize(
@@ -146,7 +155,12 @@ def run_optimize(
         try:
             if dry_run:
                 logger.info(f"[DRY RUN] OPTIMIZE {fqn}")
-                return {"schema": t["schema"], "table": t["table"], "status": "dry_run", "error": None}
+                return {
+                    "schema": t["schema"],
+                    "table": t["table"],
+                    "status": "dry_run",
+                    "error": None,
+                }
             execute_sql(client, warehouse_id, f"OPTIMIZE {fqn}")
             return {"schema": t["schema"], "table": t["table"], "status": "success", "error": None}
         except Exception as e:
@@ -210,7 +224,12 @@ def run_vacuum(
         try:
             if dry_run:
                 logger.info(f"[DRY RUN] {sql}")
-                return {"schema": t["schema"], "table": t["table"], "status": "dry_run", "error": None}
+                return {
+                    "schema": t["schema"],
+                    "table": t["table"],
+                    "status": "dry_run",
+                    "error": None,
+                }
             execute_sql(client, warehouse_id, sql)
             return {"schema": t["schema"], "table": t["table"], "status": "success", "error": None}
         except Exception as e:

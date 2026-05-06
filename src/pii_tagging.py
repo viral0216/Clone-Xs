@@ -50,29 +50,46 @@ def apply_pii_tags(
         )
 
         if dry_run:
-            details.append({
-                "schema": schema, "table": table, "column": column,
-                "pii_type": pii_type, "confidence_score": score,
-                "sql": sql, "action": "dry_run",
-            })
+            details.append(
+                {
+                    "schema": schema,
+                    "table": table,
+                    "column": column,
+                    "pii_type": pii_type,
+                    "confidence_score": score,
+                    "sql": sql,
+                    "action": "dry_run",
+                }
+            )
             tagged += 1
             continue
 
         try:
             execute_sql(client, warehouse_id, sql)
             tagged += 1
-            details.append({
-                "schema": schema, "table": table, "column": column,
-                "pii_type": pii_type, "confidence_score": score,
-                "action": "tagged",
-            })
+            details.append(
+                {
+                    "schema": schema,
+                    "table": table,
+                    "column": column,
+                    "pii_type": pii_type,
+                    "confidence_score": score,
+                    "action": "tagged",
+                }
+            )
         except Exception as e:
             errors += 1
-            details.append({
-                "schema": schema, "table": table, "column": column,
-                "pii_type": pii_type, "confidence_score": score,
-                "action": "error", "error": str(e),
-            })
+            details.append(
+                {
+                    "schema": schema,
+                    "table": table,
+                    "column": column,
+                    "pii_type": pii_type,
+                    "confidence_score": score,
+                    "action": "error",
+                    "error": str(e),
+                }
+            )
             logger.warning(f"Failed to tag {catalog}.{schema}.{table}.{column}: {e}")
 
     action = "[DRY RUN] " if dry_run else ""

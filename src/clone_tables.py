@@ -6,11 +6,20 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import SecurableType
 
 from src.client import execute_sql, list_tables_sdk
+from src.clone_iceberg import (
+    IcebergPreflightError,
+    is_recoverable_via_ctas,
+    preflight_iceberg_source,
+)
 from src.clone_tags import copy_table_properties, copy_table_tags
 from src.constraints import copy_table_comments, copy_table_constraints
 from src.log_formatter import (
     dim,
-    OK, FAIL, SKIP, WARN, ARROW,
+    OK,
+    FAIL,
+    SKIP,
+    WARN,
+    ARROW,
 )
 from src.permissions import copy_table_permissions, update_ownership
 from src.rollback import record_object, get_table_version, record_table_version
@@ -20,16 +29,26 @@ logger = logging.getLogger(__name__)
 
 
 def get_tables(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
     order_by_size: str | None = None,
 ) -> list[dict]:
     """List all tables in a schema, optionally ordered by size.
 
+    Returns *every* table_type — including non-clonable ones like
+    ``STREAMING_TABLE`` and ``MATERIALIZED_VIEW``. Filtering down to
+    ``MANAGED`` / ``EXTERNAL`` happens in ``clone_tables_in_schema``
+    so that non-clonable rows are logged + counted as skipped, rather
+    than silently dropped here. (Earlier silent-drop behaviour produced
+    confusing "1 table planned, 0 cloned, 0 skipped" runs that gave
+    operators no signal about what happened.)
+
     Args:
         order_by_size: "asc" (smallest first), "desc" (largest first), or None.
     """
-    all_tables = list_tables_sdk(client, catalog, schema)
-    tables = [t for t in all_tables if t["table_type"] in ("MANAGED", "EXTERNAL")]
+    tables = list_tables_sdk(client, catalog, schema)
 
     if order_by_size and tables:
         # Get sizes for ordering
@@ -44,7 +63,11 @@ def get_tables(
 
 
 def _get_table_size(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> int:
     """Get table size in bytes for ordering. Returns 0 on error."""
     sql = f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table_name}`"
@@ -117,10 +140,7 @@ def _format_tbl_properties(props: dict[str, str] | None) -> str:
     """
     if not props:
         return ""
-    pairs = [
-        f"{k} = '{str(v).replace(chr(39), chr(39) * 2)}'"
-        for k, v in props.items()
-    ]
+    pairs = [f"{k} = '{str(v).replace(chr(39), chr(39) * 2)}'" for k, v in props.items()]
     return f" TBLPROPERTIES ({', '.join(pairs)})"
 
 
@@ -139,6 +159,9 @@ def clone_table(
     force_reclone: bool = False,
     schema_only: bool = False,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
+    source_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> tuple[bool, dict | None]:
     """Clone a single table from source to destination catalog.
 
@@ -153,6 +176,13 @@ def clone_table(
             (e.g. `delta.logRetentionDuration`). Setting these inline applies
             them on the first commit; doing so via `ALTER TABLE` after clone
             is too late for retention windows.
+        target_format: "DELTA" (default) or "ICEBERG". When "ICEBERG", the
+            target is still a Delta table but UniForm is enabled post-clone
+            so external Iceberg readers can query it without copying data.
+            Only effective when the source is Delta — other formats fall back
+            to "DELTA" with a warning.
+        source_format: Source table's data_source_format (DELTA/PARQUET/
+            ICEBERG/etc.), used to decide whether UniForm is applicable.
 
     Returns:
         Tuple of (success, metrics). `metrics` is a dict of Databricks
@@ -168,7 +198,9 @@ def clone_table(
     if force_reclone:
         try:
             execute_sql(client, warehouse_id, f"DROP TABLE IF EXISTS {dest}", dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{WARN} Dropped table for re-clone: {dest}")
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{WARN} Dropped table for re-clone: {dest}"
+            )
         except Exception as e:
             logger.warning(f"{WARN} Failed to drop table {dest} for re-clone: {e}")
 
@@ -177,13 +209,76 @@ def clone_table(
         sql = f"CREATE TABLE IF NOT EXISTS {dest} LIKE {source}"
         try:
             execute_sql(client, warehouse_id, sql, dry_run=dry_run)
-            logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}")
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{OK} Created empty table: {source} {ARROW} {dest} {dim('(schema-only)')}"
+            )
             return True, None
         except Exception as e:
             logger.error(f"{FAIL} Failed to create empty table {dest}: {e}")
             return False, None
 
     tbl_props_clause = _format_tbl_properties(tbl_properties)
+
+    # Iceberg source preflight (Phase B of #9). Refuse hidden-partitioning
+    # tables before any DDL runs — silently dropping the transform would
+    # change partition pruning semantics on the target, which we won't do
+    # without explicit user opt-in. Skip in dry-run (we still want the SQL
+    # to render for inspection) and skip when source is not Iceberg.
+    if source_format.upper() == "ICEBERG" and not dry_run:
+        try:
+            preflight_iceberg_source(client, warehouse_id, source)
+        except IcebergPreflightError as pe:
+            logger.error(f"{FAIL} {pe}")
+            return False, None
+
+    # Physical Iceberg target (Phase C2 of #9). When the user wants the
+    # destination to actually be an Iceberg table — UC reports
+    # `Data source: Iceberg`, not `Delta` — we emit a CTAS with
+    # `USING iceberg` instead of CLONE + UniForm. Trade-offs documented on
+    # the CloneRequest.iceberg_physical field. Time-travel and WHERE-filter
+    # arguments are ignored on this path because Iceberg targets don't
+    # share Delta's snapshot semantics; we log when we drop them so it's
+    # not silent.
+    if target_format.upper() == "ICEBERG" and iceberg_physical:
+        if source_format.upper() == "ICEBERG":
+            logger.info(f"  {OK} Source {source} is already Iceberg — physical clone uses CTAS")
+        if as_of_timestamp or as_of_version:
+            logger.warning(
+                f"{WARN} Time-travel ignored for physical Iceberg target ({source}); "
+                f"`USING iceberg AS SELECT` doesn't accept TIMESTAMP/VERSION AS OF."
+            )
+        if where_clause:
+            logger.info(f"  Applying WHERE filter to physical Iceberg CTAS for {source}")
+        select_clause = f"SELECT * FROM {source}"
+        if where_clause:
+            select_clause += f" WHERE {where_clause}"
+        physical_sql = f"CREATE TABLE IF NOT EXISTS {dest} USING iceberg AS {select_clause}"
+        try:
+            execute_sql(client, warehouse_id, physical_sql, dry_run=dry_run)
+            # CTAS doesn't take TBLPROPERTIES inline; apply via ALTER if asked.
+            # Iceberg tables don't accept the same property set as Delta, so
+            # this is best-effort and we surface failures as warnings rather
+            # than fail the whole clone.
+            if tbl_properties and not dry_run:
+                try:
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
+                        dry_run=dry_run,
+                    )
+                except Exception as alter_e:
+                    logger.warning(
+                        f"{WARN} ALTER TABLE SET TBLPROPERTIES on Iceberg target {dest} failed: {alter_e}"
+                    )
+            logger.info(
+                f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table (physical Iceberg): "
+                f"{source} {ARROW} {dest} {dim('(USING iceberg, no Delta history)')}"
+            )
+            return True, None
+        except Exception as e:
+            logger.error(f"{FAIL} Physical Iceberg clone failed for {source}: {e}")
+            return False, None
 
     # If where_clause is provided and clone_type is DEEP, use CTAS
     if where_clause and clone_type == "DEEP":
@@ -223,12 +318,65 @@ def clone_table(
         if where_clause and clone_type == "DEEP" and tbl_properties and not dry_run:
             try:
                 execute_sql(
-                    client, warehouse_id,
+                    client,
+                    warehouse_id,
                     f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
                     dry_run=dry_run,
                 )
             except Exception as e:
                 logger.warning(f"{WARN} ALTER TABLE SET TBLPROPERTIES failed on {dest}: {e}")
+
+        # UniForm: enable Iceberg-readable metadata on the Delta target so
+        # external Iceberg readers can query it without a data copy. Only
+        # applicable when the source is Delta — non-Delta sources are skipped
+        # with a warning (caller already logged source format).
+        #
+        # Order of DDL matters and is dictated by Databricks' own
+        # IcebergCompatV2 validator:
+        #   1. Disable deletion vectors (DVs) — enabled by default on modern
+        #      DBR; IcebergCompatV2 refuses to coexist with them.
+        #   2. REORG TABLE … APPLY (PURGE) — bakes any existing deletion-
+        #      marker files into rewritten data files. No-op if the table
+        #      had no DVs (still scans, but cheap on a freshly-cloned table).
+        #   3. SET the UniForm properties (column mapping, IcebergCompatV2,
+        #      universal format = iceberg).
+        # If we tried steps in any other order, Databricks rejects with
+        # DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED.
+        if target_format.upper() == "ICEBERG" and not dry_run:
+            if source_format.upper() != "DELTA":
+                logger.warning(
+                    f"{WARN} target_format=ICEBERG ignored for {source} "
+                    f"(source format is {source_format}, UniForm requires Delta)"
+                )
+            else:
+                try:
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"ALTER TABLE {dest} SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false')",
+                        dry_run=dry_run,
+                    )
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        f"REORG TABLE {dest} APPLY (PURGE)",
+                        dry_run=dry_run,
+                    )
+                    execute_sql(
+                        client,
+                        warehouse_id,
+                        (
+                            f"ALTER TABLE {dest} SET TBLPROPERTIES ("
+                            f"'delta.columnMapping.mode' = 'name', "
+                            f"'delta.enableIcebergCompatV2' = 'true', "
+                            f"'delta.universalFormat.enabledFormats' = 'iceberg'"
+                            f")"
+                        ),
+                        dry_run=dry_run,
+                    )
+                    logger.info(f"  {OK} Enabled UniForm (Iceberg) on {dest}")
+                except Exception as e:
+                    logger.warning(f"{WARN} UniForm enable failed on {dest}: {e}")
         tt_info = ""
         if not (where_clause and clone_type == "DEEP"):
             time_travel = ""
@@ -238,12 +386,54 @@ def clone_table(
                 time_travel = f" VERSION AS OF {as_of_version}"
             tt_info = f", {time_travel.strip()}" if time_travel else ""
         filter_info = f", WHERE {where_clause}" if (where_clause and clone_type == "DEEP") else ""
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}")
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}{OK} Cloned table: {source} {ARROW} {dest} {dim(f'({clone_type}{tt_info}{filter_info})')}"
+        )
         return True, metrics
     except Exception as e:
         if "No pipeline was present" in str(e):
             logger.info(f"{SKIP} Skipping DLT pipeline table {source}: {e}")
             return False, None
+        # Phase B (#9): auto-CTAS fallback for the recoverable Iceberg
+        # failure modes (partition evolution, truncated decimal partition).
+        # CTAS sidesteps the Databricks CLONE limitation by reading rows and
+        # writing a fresh Delta target — the cost is loss of Delta source
+        # history (target starts at version 0). UniForm is skipped in this
+        # path even if requested: the user can ALTER post-hoc if they want
+        # Iceberg readability on the recovered Delta target.
+        if source_format.upper() == "ICEBERG" and is_recoverable_via_ctas(e):
+            logger.warning(
+                f"{WARN} CLONE failed on {source} with recoverable error "
+                f"({type(e).__name__}: {e}); retrying as CTAS. "
+                f"Note: Delta source history is lost on the CTAS target."
+            )
+            ctas_sql = f"CREATE TABLE IF NOT EXISTS {dest} AS SELECT * FROM {source}"
+            if as_of_timestamp:
+                ctas_sql += f" TIMESTAMP AS OF '{as_of_timestamp}'"
+            elif as_of_version is not None:
+                ctas_sql += f" VERSION AS OF {as_of_version}"
+            try:
+                execute_sql(client, warehouse_id, ctas_sql, dry_run=dry_run)
+                if tbl_properties and not dry_run:
+                    try:
+                        execute_sql(
+                            client,
+                            warehouse_id,
+                            f"ALTER TABLE {dest} SET {tbl_props_clause.lstrip()}",
+                            dry_run=dry_run,
+                        )
+                    except Exception as alter_e:
+                        logger.warning(
+                            f"{WARN} ALTER TABLE SET TBLPROPERTIES failed on {dest}: {alter_e}"
+                        )
+                logger.info(
+                    f"{OK} Cloned table via CTAS fallback: {source} {ARROW} {dest} "
+                    f"{dim('(no Delta history)')}"
+                )
+                return True, None
+            except Exception as ctas_e:
+                logger.error(f"{FAIL} CTAS fallback also failed for {source}: {ctas_e}")
+                return False, None
         logger.error(f"{FAIL} Failed to clone table {source}: {e}")
         return False, None
 
@@ -271,6 +461,9 @@ def _clone_single_table(
     force_reclone: bool = False,
     schema_only: bool = False,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
+    source_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> tuple[str, bool, dict | None]:
     """Clone a single table with all post-clone operations.
 
@@ -282,16 +475,30 @@ def _clone_single_table(
         dest_fqn = f"`{dest_catalog}`.`{schema}`.`{table_name}`"
         try:
             pre_version = get_table_version(client, warehouse_id, dest_fqn)
-            record_table_version(rollback_log, dest_fqn, pre_version, existed=pre_version is not None)
+            record_table_version(
+                rollback_log, dest_fqn, pre_version, existed=pre_version is not None
+            )
         except Exception:
             pass  # Don't block clone if version recording fails
 
     success, metrics = clone_table(
-        client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
-        clone_type, dry_run=dry_run,
-        as_of_timestamp=as_of_timestamp, as_of_version=as_of_version,
-        where_clause=where_clause, force_reclone=force_reclone,
-        schema_only=schema_only, tbl_properties=tbl_properties,
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        schema,
+        table_name,
+        clone_type,
+        dry_run=dry_run,
+        as_of_timestamp=as_of_timestamp,
+        as_of_version=as_of_version,
+        where_clause=where_clause,
+        force_reclone=force_reclone,
+        schema_only=schema_only,
+        tbl_properties=tbl_properties,
+        target_format=target_format,
+        source_format=source_format,
+        iceberg_physical=iceberg_physical,
     )
 
     if not success:
@@ -305,38 +512,64 @@ def _clone_single_table(
 
     if copy_ownership and not dry_run:
         update_ownership(
-            client, SecurableType.TABLE,
+            client,
+            SecurableType.TABLE,
             f"{source_catalog}.{schema}.{table_name}",
             f"{dest_catalog}.{schema}.{table_name}",
         )
 
     if copy_tags and not dry_run:
         copy_table_tags(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_properties and not dry_run:
         copy_table_properties(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_security and not dry_run:
         copy_table_security(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_constraints and not dry_run:
         copy_table_constraints(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
     if copy_comments and not dry_run:
         copy_table_comments(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
             dry_run=dry_run,
         )
 
@@ -373,6 +606,8 @@ def clone_tables_in_schema(
     schema_only: bool = False,
     tables_progress=None,
     tbl_properties: dict[str, str] | None = None,
+    target_format: str = "DELTA",
+    iceberg_physical: bool = False,
 ) -> dict:
     """Clone all tables in a schema. Returns summary of results.
 
@@ -396,8 +631,7 @@ def clone_tables_in_schema(
     # we can roll up per-format counters in the result without changing the
     # tables_to_clone list shape (still a list of names).
     format_by_name = {
-        row["table_name"]: (row.get("data_source_format") or "DELTA").upper()
-        for row in tables
+        row["table_name"]: (row.get("data_source_format") or "DELTA").upper() for row in tables
     }
     results = {
         "success": 0,
@@ -447,10 +681,33 @@ def clone_tables_in_schema(
     if load_type == "INCREMENTAL":
         existing = get_existing_tables(client, warehouse_id, dest_catalog, schema)
 
+    # Tables Clone-Xs is willing to run `CREATE TABLE … CLONE source` on.
+    # STREAMING_TABLE and MATERIALIZED_VIEW are owned by their pipelines —
+    # cloning the data files would produce a static snapshot with no way
+    # to refresh, which silently breaks the user's mental model. VIEW is
+    # handled by clone_views.py, not here.
+    _CLONABLE_TABLE_TYPES = ("MANAGED", "EXTERNAL")
+
     # Filter tables to process
     tables_to_clone = []
     for table_row in tables:
         table_name = table_row["table_name"]
+
+        # Non-clonable table type — log + count as skipped so the run
+        # summary reflects what actually happened. Previously this filter
+        # ran inside get_tables() and the row vanished silently, which
+        # produced "1 table planned, 0/0/0 results" runs.
+        table_type = table_row.get("table_type")
+        if table_type not in _CLONABLE_TABLE_TYPES:
+            logger.info(
+                f"  {SKIP} Skipping non-clonable table type "
+                f"{table_type or 'UNKNOWN'}: "
+                f"{dim(f'{schema}.{table_name}')} "
+                f"{dim('(streaming / materialized-view tables are pipeline-owned and must be recreated by re-running their pipeline against the new schema)')}"
+            )
+            results["skipped"] += 1
+            _bump("skipped")
+            continue
 
         if table_name in exclude_tables:
             logger.info(f"  {SKIP} Skipping excluded table: {dim(f'{schema}.{table_name}')}")
@@ -471,13 +728,17 @@ def clone_tables_in_schema(
             continue
 
         if load_type == "INCREMENTAL" and table_name in existing:
-            logger.info(f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}")
+            logger.info(
+                f"  {SKIP} Skipping existing table (incremental): {dim(f'{schema}.{table_name}')}"
+            )
             results["skipped"] += 1
             _bump("skipped")
             continue
 
         if resumed_tables and table_name in resumed_tables:
-            logger.info(f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}")
+            logger.info(
+                f"  {SKIP} Skipping already cloned table (resume): {dim(f'{schema}.{table_name}')}"
+            )
             results["skipped"] += 1
             _bump("skipped")
             continue
@@ -500,13 +761,31 @@ def clone_tables_in_schema(
             futures = {
                 executor.submit(
                     _clone_single_table,
-                    client, warehouse_id, source_catalog, dest_catalog, schema,
-                    tname, clone_type, dry_run,
-                    copy_permissions, copy_ownership, copy_tags, copy_properties,
-                    copy_security, copy_constraints, copy_comments, rollback_log,
-                    as_of_timestamp, as_of_version,
-                    _resolve_where_clause(tname), force_reclone, schema_only,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    tname,
+                    clone_type,
+                    dry_run,
+                    copy_permissions,
+                    copy_ownership,
+                    copy_tags,
+                    copy_properties,
+                    copy_security,
+                    copy_constraints,
+                    copy_comments,
+                    rollback_log,
+                    as_of_timestamp,
+                    as_of_version,
+                    _resolve_where_clause(tname),
+                    force_reclone,
+                    schema_only,
                     tbl_properties,
+                    target_format,
+                    format_by_name.get(tname, "DELTA"),
+                    iceberg_physical,
                 ): tname
                 for tname in tables_to_clone
             }
@@ -523,13 +802,31 @@ def clone_tables_in_schema(
     else:
         for tname in tables_to_clone:
             _, success, metrics = _clone_single_table(
-                client, warehouse_id, source_catalog, dest_catalog, schema,
-                tname, clone_type, dry_run,
-                copy_permissions, copy_ownership, copy_tags, copy_properties,
-                copy_security, copy_constraints, copy_comments, rollback_log,
-                as_of_timestamp, as_of_version,
-                _resolve_where_clause(tname), force_reclone, schema_only,
+                client,
+                warehouse_id,
+                source_catalog,
+                dest_catalog,
+                schema,
+                tname,
+                clone_type,
+                dry_run,
+                copy_permissions,
+                copy_ownership,
+                copy_tags,
+                copy_properties,
+                copy_security,
+                copy_constraints,
+                copy_comments,
+                rollback_log,
+                as_of_timestamp,
+                as_of_version,
+                _resolve_where_clause(tname),
+                force_reclone,
+                schema_only,
                 tbl_properties,
+                target_format,
+                format_by_name.get(tname, "DELTA"),
+                iceberg_physical,
             )
             _add_metrics(metrics)
             if success:

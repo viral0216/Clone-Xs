@@ -41,8 +41,15 @@ class TestGetTemplate:
         assert get_template("does-not-exist") is None
 
     def test_all_templates_exist(self):
-        expected = ["dev-copy", "dr-backup", "test-refresh", "staging-promote",
-                     "incremental-sync", "schema-only", "cross-workspace"]
+        expected = [
+            "dev-copy",
+            "dr-backup",
+            "test-refresh",
+            "staging-promote",
+            "incremental-sync",
+            "schema-only",
+            "cross-workspace",
+        ]
         for name in expected:
             assert get_template(name) is not None, f"Template '{name}' not found"
 

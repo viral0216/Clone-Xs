@@ -33,6 +33,7 @@ async def list_environments(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import list_environments
+
     return list_environments(status, client, wid, config)
 
 
@@ -41,6 +42,7 @@ async def create_environment(req: CreateEnvironmentRequest, client=Depends(get_d
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import create_environment
+
     return create_environment(**req.model_dump(), client=client, warehouse_id=wid, config=config)
 
 
@@ -49,6 +51,7 @@ async def get_environment(env_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import get_environment
+
     return get_environment(env_id, client, wid, config)
 
 
@@ -61,6 +64,7 @@ async def extend_environment(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import extend_environment
+
     return extend_environment(env_id, additional_hours, client, wid, config)
 
 
@@ -69,6 +73,7 @@ async def destroy_environment(env_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import destroy_environment
+
     return destroy_environment(env_id, client, wid, config)
 
 
@@ -77,16 +82,19 @@ async def cleanup(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import cleanup_expired
+
     return cleanup_expired(client, wid, config)
 
 
 # ─── Templates ──────────────────────────────────────────────────────────
+
 
 @router.get("/templates/list", summary="List environment templates")
 async def list_templates(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import list_templates
+
     return list_templates(client, wid, config)
 
 
@@ -95,7 +103,10 @@ async def create_template(req: CreateTemplateRequest, client=Depends(get_db_clie
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import create_template
-    return create_template(req.name, req.description, req.config, client=client, warehouse_id=wid, config=config)
+
+    return create_template(
+        req.name, req.description, req.config, client=client, warehouse_id=wid, config=config
+    )
 
 
 @router.delete("/templates/{template_id}", summary="Delete template")
@@ -103,5 +114,6 @@ async def delete_template(template_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.environment_manager import delete_template
+
     delete_template(template_id, client, wid, config)
     return {"status": "deleted"}

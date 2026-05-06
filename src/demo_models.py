@@ -57,25 +57,37 @@ logger = logging.getLogger(__name__)
 STAR_SCHEMA_REGISTRY: dict[str, dict] = {
     "healthcare": {
         "dims": [
-            ("dim_patient",  "patients",   "patient_id"),
-            ("dim_provider", "providers",  "provider_id"),
+            ("dim_patient", "patients", "patient_id"),
+            ("dim_provider", "providers", "provider_id"),
             ("dim_facility", "facilities", "facility_id"),
         ],
         "facts": [
-            ("fct_claims",        "claims",        [
-                ("patient_id",  "dim_patient"),
-                ("provider_id", "dim_provider"),
-                ("facility_id", "dim_facility"),
-            ]),
-            ("fct_encounters",    "encounters",    [
-                ("patient_id",  "dim_patient"),
-                ("provider_id", "dim_provider"),
-                ("facility_id", "dim_facility"),
-            ]),
-            ("fct_prescriptions", "prescriptions", [
-                ("patient_id",  "dim_patient"),
-                ("provider_id", "dim_provider"),
-            ]),
+            (
+                "fct_claims",
+                "claims",
+                [
+                    ("patient_id", "dim_patient"),
+                    ("provider_id", "dim_provider"),
+                    ("facility_id", "dim_facility"),
+                ],
+            ),
+            (
+                "fct_encounters",
+                "encounters",
+                [
+                    ("patient_id", "dim_patient"),
+                    ("provider_id", "dim_provider"),
+                    ("facility_id", "dim_facility"),
+                ],
+            ),
+            (
+                "fct_prescriptions",
+                "prescriptions",
+                [
+                    ("patient_id", "dim_patient"),
+                    ("provider_id", "dim_provider"),
+                ],
+            ),
         ],
         "derived_dims": [
             ("dim_diagnosis", "claims", "diagnosis_code"),
@@ -84,159 +96,239 @@ STAR_SCHEMA_REGISTRY: dict[str, dict] = {
     "financial": {
         "dims": [
             ("dim_customer", "customers", "customer_id"),
-            ("dim_account",  "accounts",  "account_id"),
-            ("dim_branch",   "branches",  "branch_id"),
+            ("dim_account", "accounts", "account_id"),
+            ("dim_branch", "branches", "branch_id"),
             ("dim_merchant", "merchants", "merchant_id"),
-            ("dim_card",     "cards",     "card_id"),
+            ("dim_card", "cards", "card_id"),
         ],
         "facts": [
-            ("fct_transactions",  "transactions",  [
-                ("account_id",  "dim_account"),
-                ("merchant_id", "dim_merchant"),
-            ]),
-            ("fct_card_events",   "card_events",   [
-                ("card_id", "dim_card"),
-            ]),
+            (
+                "fct_transactions",
+                "transactions",
+                [
+                    ("account_id", "dim_account"),
+                    ("merchant_id", "dim_merchant"),
+                ],
+            ),
+            (
+                "fct_card_events",
+                "card_events",
+                [
+                    ("card_id", "dim_card"),
+                ],
+            ),
             ("fct_loan_payments", "loan_payments", []),  # loan_id only — no dim_loan in v1
         ],
     },
     "retail": {
         "dims": [
-            ("dim_customer",  "customers",  "customer_id"),
-            ("dim_product",   "products",   "product_id"),
-            ("dim_store",     "stores",     "store_id"),
+            ("dim_customer", "customers", "customer_id"),
+            ("dim_product", "products", "product_id"),
+            ("dim_store", "stores", "store_id"),
             ("dim_warehouse", "warehouses", "warehouse_id"),
         ],
         "facts": [
-            ("fct_order_items", "order_items", [
-                ("product_id",   "dim_product"),
-                ("warehouse_id", "dim_warehouse"),
-            ]),
-            ("fct_reviews",     "reviews",     [
-                ("customer_id", "dim_customer"),
-                ("product_id",  "dim_product"),
-            ]),
-            ("fct_orders",      "orders",      [
-                ("customer_id", "dim_customer"),
-            ]),
+            (
+                "fct_order_items",
+                "order_items",
+                [
+                    ("product_id", "dim_product"),
+                    ("warehouse_id", "dim_warehouse"),
+                ],
+            ),
+            (
+                "fct_reviews",
+                "reviews",
+                [
+                    ("customer_id", "dim_customer"),
+                    ("product_id", "dim_product"),
+                ],
+            ),
+            (
+                "fct_orders",
+                "orders",
+                [
+                    ("customer_id", "dim_customer"),
+                ],
+            ),
         ],
     },
     "telecom": {
         "dims": [
             ("dim_subscriber", "subscribers", "subscriber_id"),
-            ("dim_plan",       "plans",       "plan_id"),
-            ("dim_tower",      "towers",      "tower_id"),
-            ("dim_device",     "devices",     "device_id"),
+            ("dim_plan", "plans", "plan_id"),
+            ("dim_tower", "towers", "tower_id"),
+            ("dim_device", "devices", "device_id"),
         ],
         "facts": [
-            ("fct_cdr_records", "cdr_records", [
-                ("subscriber_id", "dim_subscriber"),
-            ]),
-            ("fct_data_usage",  "data_usage",  [
-                ("subscriber_id", "dim_subscriber"),
-            ]),
-            ("fct_billing",     "billing",     [
-                ("subscriber_id", "dim_subscriber"),
-            ]),
+            (
+                "fct_cdr_records",
+                "cdr_records",
+                [
+                    ("subscriber_id", "dim_subscriber"),
+                ],
+            ),
+            (
+                "fct_data_usage",
+                "data_usage",
+                [
+                    ("subscriber_id", "dim_subscriber"),
+                ],
+            ),
+            (
+                "fct_billing",
+                "billing",
+                [
+                    ("subscriber_id", "dim_subscriber"),
+                ],
+            ),
         ],
     },
     "manufacturing": {
         "dims": [
-            ("dim_equipment",      "equipment",         "equipment_id"),
+            ("dim_equipment", "equipment", "equipment_id"),
             ("dim_production_line", "production_lines", "line_id"),
-            ("dim_material",       "materials",         "material_id"),
+            ("dim_material", "materials", "material_id"),
         ],
         "facts": [
-            ("fct_sensor_readings",   "sensor_readings",   [
-                ("equipment_id", "dim_equipment"),
-                ("line_id",      "dim_production_line"),
-            ]),
-            ("fct_production_events", "production_events", [
-                ("line_id", "dim_production_line"),
-            ]),
-            ("fct_quality_checks",    "quality_checks",    []),
+            (
+                "fct_sensor_readings",
+                "sensor_readings",
+                [
+                    ("equipment_id", "dim_equipment"),
+                    ("line_id", "dim_production_line"),
+                ],
+            ),
+            (
+                "fct_production_events",
+                "production_events",
+                [
+                    ("line_id", "dim_production_line"),
+                ],
+            ),
+            ("fct_quality_checks", "quality_checks", []),
         ],
     },
     "energy": {
         "dims": [
-            ("dim_customer",    "customers_energy", "customer_id"),
-            ("dim_power_plant", "power_plants",     "plant_id"),
+            ("dim_customer", "customers_energy", "customer_id"),
+            ("dim_power_plant", "power_plants", "plant_id"),
         ],
         "facts": [
-            ("fct_meter_readings",   "meter_readings",   []),
-            ("fct_generation_output", "generation_output", [
-                ("plant_id", "dim_power_plant"),
-            ]),
-            ("fct_billing_energy",   "billing_energy",   []),
+            ("fct_meter_readings", "meter_readings", []),
+            (
+                "fct_generation_output",
+                "generation_output",
+                [
+                    ("plant_id", "dim_power_plant"),
+                ],
+            ),
+            ("fct_billing_energy", "billing_energy", []),
         ],
     },
     "education": {
         "dims": [
-            ("dim_student",    "students",    "student_id"),
-            ("dim_course",     "courses",     "course_id"),
+            ("dim_student", "students", "student_id"),
+            ("dim_course", "courses", "course_id"),
             ("dim_instructor", "instructors", "instructor_id"),
         ],
         "facts": [
-            ("fct_enrollments",     "enrollments",     [
-                ("student_id", "dim_student"),
-                ("course_id",  "dim_course"),
-            ]),
-            ("fct_learning_events", "learning_events", [
-                ("student_id", "dim_student"),
-            ]),
-            ("fct_assessments",     "assessments",     [
-                ("student_id", "dim_student"),
-                ("course_id",  "dim_course"),
-            ]),
+            (
+                "fct_enrollments",
+                "enrollments",
+                [
+                    ("student_id", "dim_student"),
+                    ("course_id", "dim_course"),
+                ],
+            ),
+            (
+                "fct_learning_events",
+                "learning_events",
+                [
+                    ("student_id", "dim_student"),
+                ],
+            ),
+            (
+                "fct_assessments",
+                "assessments",
+                [
+                    ("student_id", "dim_student"),
+                    ("course_id", "dim_course"),
+                ],
+            ),
         ],
     },
     "real_estate": {
         "dims": [
             ("dim_property", "properties", "property_id"),
-            ("dim_agent",    "agents",     "agent_id"),
+            ("dim_agent", "agents", "agent_id"),
         ],
         "facts": [
-            ("fct_listings",        "listings",        [
-                ("property_id", "dim_property"),
-                ("agent_id",    "dim_agent"),
-            ]),
-            ("fct_transactions_re", "transactions_re", [
-                ("property_id", "dim_property"),
-            ]),
-            ("fct_property_views",  "property_views",  [
-                ("property_id", "dim_property"),
-            ]),
+            (
+                "fct_listings",
+                "listings",
+                [
+                    ("property_id", "dim_property"),
+                    ("agent_id", "dim_agent"),
+                ],
+            ),
+            (
+                "fct_transactions_re",
+                "transactions_re",
+                [
+                    ("property_id", "dim_property"),
+                ],
+            ),
+            (
+                "fct_property_views",
+                "property_views",
+                [
+                    ("property_id", "dim_property"),
+                ],
+            ),
         ],
     },
     "logistics": {
         "dims": [
-            ("dim_vehicle",   "vehicles",      "vehicle_id"),
-            ("dim_driver",    "drivers",       "driver_id"),
+            ("dim_vehicle", "vehicles", "vehicle_id"),
+            ("dim_driver", "drivers", "driver_id"),
             ("dim_warehouse", "warehouses_lg", "warehouse_id"),
         ],
         "facts": [
-            ("fct_shipments",       "shipments",       [
-                ("vehicle_id",   "dim_vehicle"),
-                ("driver_id",    "dim_driver"),
-                ("warehouse_id", "dim_warehouse"),
-            ]),
+            (
+                "fct_shipments",
+                "shipments",
+                [
+                    ("vehicle_id", "dim_vehicle"),
+                    ("driver_id", "dim_driver"),
+                    ("warehouse_id", "dim_warehouse"),
+                ],
+            ),
             ("fct_tracking_events", "tracking_events", []),
-            ("fct_fleet_telemetry", "fleet_telemetry", [
-                ("vehicle_id", "dim_vehicle"),
-            ]),
+            (
+                "fct_fleet_telemetry",
+                "fleet_telemetry",
+                [
+                    ("vehicle_id", "dim_vehicle"),
+                ],
+            ),
         ],
     },
     "insurance": {
         "dims": [
             ("dim_policyholder", "policyholders", "customer_id"),
-            ("dim_agent",        "agents_ins",    "agent_id"),
+            ("dim_agent", "agents_ins", "agent_id"),
         ],
         "facts": [
-            ("fct_policies",     "policies",     [
-                ("customer_id", "dim_policyholder"),
-                ("agent_id",    "dim_agent"),
-            ]),
-            ("fct_claims_ins",   "claims_ins",   []),
+            (
+                "fct_policies",
+                "policies",
+                [
+                    ("customer_id", "dim_policyholder"),
+                    ("agent_id", "dim_agent"),
+                ],
+            ),
+            ("fct_claims_ins", "claims_ins", []),
             ("fct_underwriting", "underwriting", []),
         ],
     },
@@ -267,8 +359,12 @@ def _dim_date_sql(catalog: str, schema: str, start_date: str, end_date: str) -> 
 
 
 def _conformed_dim_sql(
-    catalog: str, schema: str, dim_name: str, source_table: str,
-    industry: str, business_key: str,
+    catalog: str,
+    schema: str,
+    dim_name: str,
+    source_table: str,
+    industry: str,
+    business_key: str,
 ) -> str:
     """CTAS for a conformed dim — surrogate key + business key.
 
@@ -289,8 +385,12 @@ def _conformed_dim_sql(
 
 
 def _derived_dim_sql(
-    catalog: str, schema: str, dim_name: str, source_table: str,
-    industry: str, distinct_col: str,
+    catalog: str,
+    schema: str,
+    dim_name: str,
+    source_table: str,
+    industry: str,
+    distinct_col: str,
 ) -> str:
     """CTAS for a derived dim — DISTINCT column from a fact, plus a SK."""
     sk_col = dim_name.replace("dim_", "") + "_sk"
@@ -308,8 +408,12 @@ def _derived_dim_sql(
 
 
 def _fact_sql(
-    catalog: str, schema: str, fact_name: str, source_table: str,
-    industry: str, fk_links: list[tuple[str, str]],
+    catalog: str,
+    schema: str,
+    fact_name: str,
+    source_table: str,
+    industry: str,
+    fk_links: list[tuple[str, str]],
 ) -> str:
     """CTAS for a fact table — passes original columns through, joins each
     FK to its dim and selects the surrogate key.
@@ -343,9 +447,9 @@ def _fact_sql(
         CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`{fact_name}` AS
         SELECT
             f.*,
-            {', '.join(sk_columns)}
+            {", ".join(sk_columns)}
         FROM `{catalog}`.`{industry}`.`{source_table}` f
-        {' '.join(join_clauses)}
+        {" ".join(join_clauses)}
     """
 
 
@@ -396,13 +500,17 @@ def generate_star_schema(
         logger.info(f"  [star_schema] {schema}.dim_date populated ({start_date}..{end_date})")
     else:
         # Empty calendar table (DDL only) — same shape, zero rows
-        execute_sql(client, warehouse_id, f"""
+        execute_sql(
+            client,
+            warehouse_id,
+            f"""
             CREATE OR REPLACE TABLE {fqn_schema}.`dim_date` (
                 date_key DATE, year INT, quarter INT, month INT, week INT,
                 day_of_month INT, day_of_week INT, day_name STRING,
                 month_name STRING, is_weekend BOOLEAN
             ) USING DELTA
-        """)
+        """,
+        )
         dims_created += 1
         logger.info(f"  [star_schema] {schema}.dim_date created (schema_only — 0 rows)")
 
@@ -413,16 +521,21 @@ def generate_star_schema(
             # via SELECT * — same reasoning as the data-bearing path:
             # source already has them after _add_scd2_columns, re-adding
             # would conflict with COLUMN_ALREADY_EXISTS.
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE OR REPLACE TABLE {fqn_schema}.`{dim_name}` AS
                 SELECT
                     cast(NULL AS BIGINT) AS `{dim_name.replace("dim_", "")}_sk`,
                     *
                 FROM `{catalog}`.`{industry}`.`{source_table}` WHERE 1=0
-            """)
+            """,
+            )
         else:
             execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 _conformed_dim_sql(catalog, schema, dim_name, source_table, industry, business_key),
             )
         dims_created += 1
@@ -431,35 +544,49 @@ def generate_star_schema(
     # 4. Derived dims
     for dim_name, source_table, distinct_col in spec.get("derived_dims", []):
         if schema_only:
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE OR REPLACE TABLE {fqn_schema}.`{dim_name}` (
                     `{dim_name.replace("dim_", "")}_sk` BIGINT,
                     `{distinct_col}` STRING
                 ) USING DELTA
-            """)
+            """,
+            )
         else:
             execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 _derived_dim_sql(catalog, schema, dim_name, source_table, industry, distinct_col),
             )
         dims_created += 1
-        logger.info(f"  [star_schema] {schema}.{dim_name} (derived from {industry}.{source_table}.{distinct_col})")
+        logger.info(
+            f"  [star_schema] {schema}.{dim_name} (derived from {industry}.{source_table}.{distinct_col})"
+        )
 
     # 5. Facts
     for fact_name, source_table, fk_links in spec.get("facts", []):
         if schema_only:
             # Empty fact CTAS — zero rows, structure intact
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE OR REPLACE TABLE {fqn_schema}.`{fact_name}` AS
                 SELECT * FROM `{catalog}`.`{industry}`.`{source_table}` WHERE 1=0
-            """)
+            """,
+            )
         else:
             execute_sql(
-                client, warehouse_id,
+                client,
+                warehouse_id,
                 _fact_sql(catalog, schema, fact_name, source_table, industry, fk_links),
             )
         facts_created += 1
-        logger.info(f"  [star_schema] {schema}.{fact_name} ← {industry}.{source_table} (+{len(fk_links)} dim joins)")
+        logger.info(
+            f"  [star_schema] {schema}.{fact_name} ← {industry}.{source_table} (+{len(fk_links)} dim joins)"
+        )
 
     return {
         "industry": industry,
@@ -493,8 +620,12 @@ def generate_star_schemas_for_industries(
     for industry in industries:
         try:
             report = generate_star_schema(
-                client, warehouse_id, catalog, industry,
-                start_date=start_date, end_date=end_date,
+                client,
+                warehouse_id,
+                catalog,
+                industry,
+                start_date=start_date,
+                end_date=end_date,
                 schema_only=schema_only,
             )
             per_industry.append(report)
@@ -506,9 +637,7 @@ def generate_star_schemas_for_industries(
 
     return {
         "data_model": "star_schema",
-        "schemas_created": [
-            r["schema"] for r in per_industry if r.get("schema")
-        ],
+        "schemas_created": [r["schema"] for r in per_industry if r.get("schema")],
         "industries": industries,
         "facts_created": facts_total,
         "dims_created": dims_total,

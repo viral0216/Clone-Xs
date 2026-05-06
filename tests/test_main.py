@@ -6,15 +6,20 @@ from src.main import add_common_args, _resolve_warehouse_id
 
 # ── add_common_args ──────────────────────────────────────────────────
 
+
 def test_add_common_args():
     parser = argparse.ArgumentParser()
     add_common_args(parser)
-    args = parser.parse_args([
-        "--warehouse-id", "wh-123",
-        "--serverless",
-        "--volume", "/Volumes/cat/s/v",
-        "-v",
-    ])
+    args = parser.parse_args(
+        [
+            "--warehouse-id",
+            "wh-123",
+            "--serverless",
+            "--volume",
+            "/Volumes/cat/s/v",
+            "-v",
+        ]
+    )
     assert args.warehouse_id == "wh-123"
     assert args.serverless is True
     assert args.volume == "/Volumes/cat/s/v"
@@ -32,6 +37,7 @@ def test_add_common_args_defaults():
 
 
 # ── _resolve_warehouse_id ────────────────────────────────────────────
+
 
 def test_resolve_from_cli_arg():
     args = argparse.Namespace(warehouse_id="wh-cli", serverless=False)

@@ -1,16 +1,20 @@
 """Smoke tests for the DSAR router."""
+
 import pytest
 
 pytest.importorskip("fastapi")
 
 
 def test_submit_request(client):
-    resp = client.post("/api/dsar/requests", json={
-        "subject_type": "email",
-        "subject_value": "user@example.com",
-        "requester_email": "dpo@example.com",
-        "requester_name": "DPO",
-    })
+    resp = client.post(
+        "/api/dsar/requests",
+        json={
+            "subject_type": "email",
+            "subject_value": "user@example.com",
+            "requester_email": "dpo@example.com",
+            "requester_name": "DPO",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -40,23 +44,32 @@ def test_get_actions(client):
 
 
 def test_update_status(client):
-    resp = client.put("/api/dsar/requests/req-123/status", json={
-        "status": "approved",
-    })
+    resp = client.put(
+        "/api/dsar/requests/req-123/status",
+        json={
+            "status": "approved",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 422, 500)
 
 
 def test_discover(client):
-    resp = client.post("/api/dsar/requests/req-123/discover", json={
-        "subject_value": "user@example.com",
-    })
+    resp = client.post(
+        "/api/dsar/requests/req-123/discover",
+        json={
+            "subject_value": "user@example.com",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
 def test_export_data(client):
-    resp = client.post("/api/dsar/requests/req-123/export", json={
-        "subject_value": "user@example.com",
-    })
+    resp = client.post(
+        "/api/dsar/requests/req-123/export",
+        json={
+            "subject_value": "user@example.com",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 

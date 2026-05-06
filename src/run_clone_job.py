@@ -29,10 +29,13 @@ def main():
         sys.exit(1)
 
     config = json.loads(sys.argv[1])
-    logger.info("Clone job starting: %s -> %s", config.get("source_catalog"), config.get("dest_catalog"))
+    logger.info(
+        "Clone job starting: %s -> %s", config.get("source_catalog"), config.get("dest_catalog")
+    )
 
     # Get SparkSession (available in Databricks Runtime)
     from pyspark.sql import SparkSession
+
     spark = SparkSession.builder.getOrCreate()
 
     # Wire spark.sql() as the SQL executor — this is the key line.
@@ -43,6 +46,7 @@ def main():
         return [row.asDict() for row in df.collect()]
 
     from src.client import set_sql_executor
+
     set_sql_executor(spark_sql_executor)
 
     # Run the clone

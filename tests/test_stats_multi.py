@@ -47,13 +47,19 @@ class TestMerge:
 
     def test_aggregates_totals_across_catalogs(self):
         per_cat = {
-            "main": self._per_cat("main", [
-                {"schema": "default", "table": "a", "size_bytes": 1000, "row_count": 100},
-                {"schema": "default", "table": "b", "size_bytes": 2000, "row_count": 200},
-            ]),
-            "samples": self._per_cat("samples", [
-                {"schema": "tpch", "table": "orders", "size_bytes": 5000, "row_count": 500},
-            ]),
+            "main": self._per_cat(
+                "main",
+                [
+                    {"schema": "default", "table": "a", "size_bytes": 1000, "row_count": 100},
+                    {"schema": "default", "table": "b", "size_bytes": 2000, "row_count": 200},
+                ],
+            ),
+            "samples": self._per_cat(
+                "samples",
+                [
+                    {"schema": "tpch", "table": "orders", "size_bytes": 5000, "row_count": 500},
+                ],
+            ),
         }
         merged = _merge(per_cat, errors=[], requested_catalogs=["main", "samples"], fast=True)
         assert merged["num_tables"] == 3
@@ -66,7 +72,7 @@ class TestMerge:
         """The defining feature for the multi response: callers can sort/
         filter the merged table list by catalog without a second lookup."""
         per_cat = {
-            "main":    self._per_cat("main",    [{"schema": "s1", "table": "t1"}]),
+            "main": self._per_cat("main", [{"schema": "s1", "table": "t1"}]),
             "samples": self._per_cat("samples", [{"schema": "s2", "table": "t2"}]),
         }
         merged = _merge(per_cat, errors=[], requested_catalogs=["main", "samples"], fast=True)
@@ -78,7 +84,7 @@ class TestMerge:
         '<catalog>.<schema>' rows without ambiguity when two catalogs
         happen to share a schema name (e.g. both have 'default')."""
         per_cat = {
-            "main":    self._per_cat("main",    [{"schema": "default", "table": "a"}]),
+            "main": self._per_cat("main", [{"schema": "default", "table": "a"}]),
             "samples": self._per_cat("samples", [{"schema": "default", "table": "b"}]),
         }
         merged = _merge(per_cat, errors=[], requested_catalogs=["main", "samples"], fast=True)
@@ -91,12 +97,18 @@ class TestMerge:
         """The UI's per-catalog rollup card reads from `per_catalog`. Must
         carry size + rows + table count for each requested catalog."""
         per_cat = {
-            "main": self._per_cat("main", [
-                {"schema": "s", "table": "a", "size_bytes": 1000, "row_count": 100},
-            ]),
-            "samples": self._per_cat("samples", [
-                {"schema": "s", "table": "b", "size_bytes": 2000, "row_count": 200},
-            ]),
+            "main": self._per_cat(
+                "main",
+                [
+                    {"schema": "s", "table": "a", "size_bytes": 1000, "row_count": 100},
+                ],
+            ),
+            "samples": self._per_cat(
+                "samples",
+                [
+                    {"schema": "s", "table": "b", "size_bytes": 2000, "row_count": 200},
+                ],
+            ),
         }
         merged = _merge(per_cat, errors=[], requested_catalogs=["main", "samples"], fast=True)
         assert merged["per_catalog"]["main"]["num_tables"] == 1
@@ -112,13 +124,24 @@ class TestMerge:
         otherwise the UI shows two top-10s mashed into a top-20, which
         is the wrong story for cross-catalog audits."""
         per_cat = {
-            "main": self._per_cat("main", [
-                {"schema": "s", "table": "huge_main", "size_bytes": 999_000, "row_count": 99},
-            ]),
-            "samples": self._per_cat("samples", [
-                {"schema": "s", "table": "huge_samples", "size_bytes": 1_000_000, "row_count": 100},
-                {"schema": "s", "table": "small_samples", "size_bytes": 10, "row_count": 1},
-            ]),
+            "main": self._per_cat(
+                "main",
+                [
+                    {"schema": "s", "table": "huge_main", "size_bytes": 999_000, "row_count": 99},
+                ],
+            ),
+            "samples": self._per_cat(
+                "samples",
+                [
+                    {
+                        "schema": "s",
+                        "table": "huge_samples",
+                        "size_bytes": 1_000_000,
+                        "row_count": 100,
+                    },
+                    {"schema": "s", "table": "small_samples", "size_bytes": 10, "row_count": 1},
+                ],
+            ),
         }
         merged = _merge(per_cat, errors=[], requested_catalogs=["main", "samples"], fast=True)
         top_size_names = [t["table"] for t in merged["top_tables_by_size"]]
@@ -161,21 +184,31 @@ class TestCatalogStatsMulti:
     def test_calls_per_catalog_helper_for_each(self, mock_fast):
         """Three catalogs requested → three calls to the fast helper.
         Result merges them (verified by `num_tables` summing)."""
+
         def stub(_client, _wid, catalog, _excl):
             return {
                 "catalog": catalog,
-                "num_schemas": 1, "num_tables": 1,
-                "total_size_bytes": 100, "total_rows": 10,
-                "schema_summaries": [{"schema": "s", "num_tables": 1,
-                                      "total_size_bytes": 100, "total_rows": 10}],
+                "num_schemas": 1,
+                "num_tables": 1,
+                "total_size_bytes": 100,
+                "total_rows": 10,
+                "schema_summaries": [
+                    {"schema": "s", "num_tables": 1, "total_size_bytes": 100, "total_rows": 10}
+                ],
                 "tables": [{"schema": "s", "table": catalog, "size_bytes": 100, "row_count": 10}],
-                "top_tables_by_size": [], "top_tables_by_rows": [],
+                "top_tables_by_size": [],
+                "top_tables_by_rows": [],
                 "stats_mode": "fast",
             }
+
         mock_fast.side_effect = stub
 
         result = catalog_stats_multi(
-            MagicMock(), "wh", ["main", "samples", "demo"], ["information_schema"], fast=True,
+            MagicMock(),
+            "wh",
+            ["main", "samples", "demo"],
+            ["information_schema"],
+            fast=True,
         )
         assert mock_fast.call_count == 3
         assert result["num_tables"] == 3
@@ -185,20 +218,31 @@ class TestCatalogStatsMulti:
     def test_per_catalog_failure_does_not_abort(self, mock_fast):
         """If one catalog raises (auth, deleted, transient), the others'
         stats still come through. Failed catalog appears in errors[]."""
+
         def stub(_client, _wid, catalog, _excl):
             if catalog == "broken":
                 raise RuntimeError("PERMISSION_DENIED on broken")
             return {
-                "catalog": catalog, "num_schemas": 1, "num_tables": 1,
-                "total_size_bytes": 100, "total_rows": 10,
-                "schema_summaries": [], "tables": [{"schema": "s", "table": "t"}],
-                "top_tables_by_size": [], "top_tables_by_rows": [],
+                "catalog": catalog,
+                "num_schemas": 1,
+                "num_tables": 1,
+                "total_size_bytes": 100,
+                "total_rows": 10,
+                "schema_summaries": [],
+                "tables": [{"schema": "s", "table": "t"}],
+                "top_tables_by_size": [],
+                "top_tables_by_rows": [],
                 "stats_mode": "fast",
             }
+
         mock_fast.side_effect = stub
 
         result = catalog_stats_multi(
-            MagicMock(), "wh", ["main", "broken", "samples"], [], fast=True,
+            MagicMock(),
+            "wh",
+            ["main", "broken", "samples"],
+            [],
+            fast=True,
         )
         # Two healthy + one broken
         assert result["num_tables"] == 2
@@ -210,6 +254,7 @@ class TestCatalogStatsMulti:
         """Calling with [] is a programmer error (Pydantic should catch
         at the API layer; defense in depth here)."""
         import pytest
+
         with pytest.raises(ValueError, match="at least one catalog"):
             catalog_stats_multi(MagicMock(), "wh", [], [])
 
@@ -219,10 +264,15 @@ class TestCatalogStatsMulti:
         `src.stats.catalog_stats` helper rather than the fast one. UI
         users opting into Detailed mode get exact COUNT(*) per catalog."""
         mock_slow.return_value = {
-            "catalog": "x", "num_schemas": 0, "num_tables": 0,
-            "total_size_bytes": 0, "total_rows": 0,
-            "schema_summaries": [], "tables": [],
-            "top_tables_by_size": [], "top_tables_by_rows": [],
+            "catalog": "x",
+            "num_schemas": 0,
+            "num_tables": 0,
+            "total_size_bytes": 0,
+            "total_rows": 0,
+            "schema_summaries": [],
+            "tables": [],
+            "top_tables_by_size": [],
+            "top_tables_by_rows": [],
         }
         catalog_stats_multi(MagicMock(), "wh", ["x"], [], fast=False)
         assert mock_slow.called
@@ -238,14 +288,19 @@ class TestEndpointDispatch:
     populated, otherwise to the existing single-catalog dispatch."""
 
     def test_source_catalogs_routes_to_multi(self, client):
-        with patch("src.stats_multi.catalog_stats_multi") as mock_multi, \
-             patch("src.stats_fast.catalog_stats_fast") as mock_fast, \
-             patch("src.stats.catalog_stats") as mock_slow:
+        with (
+            patch("src.stats_multi.catalog_stats_multi") as mock_multi,
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+            patch("src.stats.catalog_stats") as mock_slow,
+        ):
             mock_multi.return_value = {"stats_mode": "fast_multi", "num_tables": 0}
-            resp = client.post("/api/stats", json={
-                "source_catalogs": ["main", "samples"],
-                "fast": True,
-            })
+            resp = client.post(
+                "/api/stats",
+                json={
+                    "source_catalogs": ["main", "samples"],
+                    "fast": True,
+                },
+            )
             assert resp.status_code == 200
             assert mock_multi.called
             assert not mock_fast.called
@@ -254,13 +309,18 @@ class TestEndpointDispatch:
     def test_source_catalog_only_routes_to_single(self, client):
         """Existing single-catalog callers continue to work — no
         regression on the contract that pre-multi clients depend on."""
-        with patch("src.stats_multi.catalog_stats_multi") as mock_multi, \
-             patch("src.stats_fast.catalog_stats_fast") as mock_fast:
+        with (
+            patch("src.stats_multi.catalog_stats_multi") as mock_multi,
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+        ):
             mock_fast.return_value = {"stats_mode": "fast", "num_tables": 0}
-            resp = client.post("/api/stats", json={
-                "source_catalog": "main",
-                "fast": True,
-            })
+            resp = client.post(
+                "/api/stats",
+                json={
+                    "source_catalog": "main",
+                    "fast": True,
+                },
+            )
             assert resp.status_code == 200
             assert not mock_multi.called
             assert mock_fast.called
@@ -275,14 +335,19 @@ class TestEndpointDispatch:
         """`source_catalogs=[]` is an explicit empty list. The dispatch
         treats it as "use the single-catalog path with source_catalog"
         — empty list isn't itself a valid multi request."""
-        with patch("src.stats_multi.catalog_stats_multi") as mock_multi, \
-             patch("src.stats_fast.catalog_stats_fast") as mock_fast:
+        with (
+            patch("src.stats_multi.catalog_stats_multi") as mock_multi,
+            patch("src.stats_fast.catalog_stats_fast") as mock_fast,
+        ):
             mock_fast.return_value = {"stats_mode": "fast", "num_tables": 0}
-            resp = client.post("/api/stats", json={
-                "source_catalog": "main",
-                "source_catalogs": [],
-                "fast": True,
-            })
+            resp = client.post(
+                "/api/stats",
+                json={
+                    "source_catalog": "main",
+                    "source_catalogs": [],
+                    "fast": True,
+                },
+            )
             assert resp.status_code == 200
             assert not mock_multi.called
             assert mock_fast.called

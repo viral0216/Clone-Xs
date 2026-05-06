@@ -40,11 +40,13 @@ def ensure_configured():
     os.environ.get("DATABRICKS_CLIENT_SECRET", "")
     current_host = _spark_config.get("host", "")
 
-    logger.debug(f"Spark ensure_configured: env_host={host_env[:30] if host_env else 'NOT SET'}, "
-                 f"env_token={'SET' if token_env else 'NOT SET'}, "
-                 f"client_id={'SET' if client_id else 'NOT SET'}, "
-                 f"current_config_host={current_host[:30] if current_host else 'EMPTY'}, "
-                 f"session_exists={_spark is not None}")
+    logger.debug(
+        f"Spark ensure_configured: env_host={host_env[:30] if host_env else 'NOT SET'}, "
+        f"env_token={'SET' if token_env else 'NOT SET'}, "
+        f"client_id={'SET' if client_id else 'NOT SET'}, "
+        f"current_config_host={current_host[:30] if current_host else 'EMPTY'}, "
+        f"session_exists={_spark is not None}"
+    )
 
     # If env host is set and different from current config → reconfigure
     if host_env and host_env != current_host:
@@ -61,7 +63,13 @@ def ensure_configured():
             _spark = None
 
 
-def configure_spark(cluster_id: str = "", serverless: bool = False, host: str = "", token: str = "", profile: str = ""):
+def configure_spark(
+    cluster_id: str = "",
+    serverless: bool = False,
+    host: str = "",
+    token: str = "",
+    profile: str = "",
+):
     """Configure Spark session parameters before first use.
 
     Args:
@@ -77,7 +85,9 @@ def configure_spark(cluster_id: str = "", serverless: bool = False, host: str = 
     _spark_config["host"] = host
     _spark_config["token"] = token
     _spark_config["profile"] = profile
-    logger.info(f"Spark configured: cluster_id={cluster_id or '(auto)'}, serverless={serverless}, host={host[:30] + '...' if host else '(env)'}")
+    logger.info(
+        f"Spark configured: cluster_id={cluster_id or '(auto)'}, serverless={serverless}, host={host[:30] + '...' if host else '(env)'}"
+    )
 
     # Reset existing session so next get_spark() picks up new config
     reset_spark()
@@ -109,8 +119,7 @@ def get_spark():
             from databricks.connect import DatabricksSession
         except ImportError:
             raise RuntimeError(
-                "databricks-connect is not installed. "
-                "Install with: pip install databricks-connect"
+                "databricks-connect is not installed. Install with: pip install databricks-connect"
             )
 
         try:
@@ -120,7 +129,9 @@ def get_spark():
             # (avoids falling back to DEFAULT profile in ~/.databrickscfg)
             host = _spark_config.get("host") or os.environ.get("DATABRICKS_HOST", "")
             token = _spark_config.get("token") or os.environ.get("DATABRICKS_TOKEN", "")
-            profile = _spark_config.get("profile") or os.environ.get("DATABRICKS_CONFIG_PROFILE", "")
+            profile = _spark_config.get("profile") or os.environ.get(
+                "DATABRICKS_CONFIG_PROFILE", ""
+            )
 
             if host:
                 builder = builder.host(host)
@@ -133,7 +144,9 @@ def get_spark():
                 logger.info(f"Spark: using profile {profile}")
 
             # Apply cluster/serverless configuration
-            cluster_id = _spark_config.get("cluster_id") or os.environ.get("DATABRICKS_CLUSTER_ID", "")
+            cluster_id = _spark_config.get("cluster_id") or os.environ.get(
+                "DATABRICKS_CLUSTER_ID", ""
+            )
             serverless = _spark_config.get("serverless", False)
 
             if serverless:
@@ -145,7 +158,9 @@ def get_spark():
             else:
                 # Default to serverless when no cluster_id is configured
                 builder = builder.serverless(True)
-                logger.info("Creating Spark session with serverless compute (auto — no cluster_id configured)")
+                logger.info(
+                    "Creating Spark session with serverless compute (auto — no cluster_id configured)"
+                )
 
             _spark = builder.getOrCreate()
             logger.info("Spark session created successfully")
@@ -190,6 +205,7 @@ def get_spark_status() -> dict:
     # Check if databricks-connect is installed
     try:
         from databricks.connect import DatabricksSession  # noqa: F401
+
         result["connect_installed"] = True
     except ImportError:
         result["error"] = "databricks-connect not installed"
@@ -204,7 +220,9 @@ def get_spark_status() -> dict:
         # Get cluster info from session
         try:
             conf = spark.conf
-            result["cluster_id"] = conf.get("spark.databricks.clusterUsageTags.clusterId", result["cluster_id"])
+            result["cluster_id"] = conf.get(
+                "spark.databricks.clusterUsageTags.clusterId", result["cluster_id"]
+            )
             result["spark_version"] = conf.get("spark.databricks.clusterUsageTags.sparkVersion", "")
         except Exception:
             pass

@@ -17,8 +17,14 @@ def test_clone_managed_volume(mock_sql):
 def test_clone_external_volume(mock_sql):
     mock_sql.return_value = []
     result = clone_volume(
-        MagicMock(), "wh", "dst", "s", "vol1", "EXTERNAL",
-        "abfss://storage/path", "test volume",
+        MagicMock(),
+        "wh",
+        "dst",
+        "s",
+        "vol1",
+        "EXTERNAL",
+        "abfss://storage/path",
+        "test volume",
     )
     assert result is True
     sql = mock_sql.call_args[0][2]
@@ -39,7 +45,12 @@ def test_clone_volume_failure(mock_sql):
 def test_clone_volumes_in_schema(mock_clone, mock_list):
     mock_list.return_value = [
         {"volume_name": "v1", "volume_type": "MANAGED", "storage_location": "", "comment": ""},
-        {"volume_name": "v2", "volume_type": "EXTERNAL", "storage_location": "s3://bucket", "comment": "data"},
+        {
+            "volume_name": "v2",
+            "volume_type": "EXTERNAL",
+            "storage_location": "s3://bucket",
+            "comment": "data",
+        },
     ]
     mock_clone.side_effect = [True, True]
 

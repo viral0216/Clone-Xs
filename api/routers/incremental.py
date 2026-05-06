@@ -1,18 +1,16 @@
 """Incremental sync endpoints — sync only changed tables using Delta history."""
 
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter, Depends
-
-from api.dependencies import get_db_client, get_app_config, get_job_manager
-from api.routers.deps import get_warehouse_id
-from api.queue.job_manager import JobManager
 from pydantic import BaseModel
 
+from api.dependencies import get_db_client, get_app_config, get_job_manager
+from api.queue.job_manager import JobManager
+from api.routers.deps import get_warehouse_id
+
 router = APIRouter()
-
-
-from typing import Literal
 
 
 class IncrementalSyncRequest(BaseModel):
@@ -31,9 +29,14 @@ def _check_via_spark_connect(client, source_catalog, destination_catalog, schema
     """Run incremental check via Spark Connect (blocking — call from thread)."""
     from src.client import spark_connect_executor
     from src.incremental_sync import get_tables_needing_sync
+
     with spark_connect_executor():
         return get_tables_needing_sync(
-            client, "SPARK_CONNECT", source_catalog, destination_catalog, schema_name,
+            client,
+            "SPARK_CONNECT",
+            source_catalog,
+            destination_catalog,
+            schema_name,
         )
 
 
@@ -45,14 +48,21 @@ async def check_changes(req: IncrementalSyncRequest, client=Depends(get_db_clien
     if req.serverless and not req.volume:
         # Spark Connect: run via databricks-connect serverless in a thread
         tables = await asyncio.to_thread(
-            _check_via_spark_connect, client,
-            req.source_catalog, req.destination_catalog, req.schema_name,
+            _check_via_spark_connect,
+            client,
+            req.source_catalog,
+            req.destination_catalog,
+            req.schema_name,
         )
     else:
         config = await get_app_config()
         wid = req.warehouse_id or get_warehouse_id(config)
         tables = get_tables_needing_sync(
-            client, wid, req.source_catalog, req.destination_catalog, req.schema_name,
+            client,
+            wid,
+            req.source_catalog,
+            req.destination_catalog,
+            req.schema_name,
         )
 
     return {"schema": req.schema_name, "tables_needing_sync": len(tables), "tables": tables}
@@ -92,11 +102,18 @@ class CdfCheckRequest(BaseModel):
 @router.post("/incremental/cdf-check")
 async def check_cdf_status(req: CdfCheckRequest, client=Depends(get_db_client)):
     """Check if CDF is enabled on a table and get a change summary."""
-    from src.incremental_sync import check_cdf_enabled, get_cdf_change_summary, get_last_sync_version
+    from src.incremental_sync import (
+        check_cdf_enabled,
+        get_cdf_change_summary,
+        get_last_sync_version,
+    )
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
 
-    cdf_enabled = check_cdf_enabled(client, wid, req.source_catalog, req.schema_name, req.table_name)
+    cdf_enabled = check_cdf_enabled(
+        client, wid, req.source_catalog, req.schema_name, req.table_name
+    )
 
     result = {
         "table": f"{req.source_catalog}.{req.schema_name}.{req.table_name}",
@@ -106,10 +123,17 @@ async def check_cdf_status(req: CdfCheckRequest, client=Depends(get_db_client)):
 
     if cdf_enabled:
         dest_catalog = req.destination_catalog or config.get("destination_catalog", "")
-        last_version = get_last_sync_version(req.source_catalog, dest_catalog, req.schema_name, req.table_name)
+        last_version = get_last_sync_version(
+            req.source_catalog, dest_catalog, req.schema_name, req.table_name
+        )
         if last_version is not None:
             result["change_summary"] = get_cdf_change_summary(
-                client, wid, req.source_catalog, req.schema_name, req.table_name, last_version,
+                client,
+                wid,
+                req.source_catalog,
+                req.schema_name,
+                req.table_name,
+                last_version,
             )
 
     return result

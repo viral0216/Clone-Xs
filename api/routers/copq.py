@@ -20,6 +20,7 @@ async def get_copq_summary(days: int = Query(default=30, ge=1), client=Depends(g
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import get_copq_summary
+
     return get_copq_summary(days, client, wid, config)
 
 
@@ -28,6 +29,7 @@ async def get_copq_by_table(days: int = Query(default=30, ge=1), client=Depends(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import get_copq_by_table
+
     return get_copq_by_table(days, client, wid, config)
 
 
@@ -36,6 +38,7 @@ async def get_copq_trends(days: int = Query(default=90, ge=7), client=Depends(ge
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import get_copq_trends
+
     return get_copq_trends(days, client, wid, config)
 
 
@@ -44,6 +47,7 @@ async def get_copq_config(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import get_copq_config
+
     return get_copq_config(client, wid, config)
 
 
@@ -52,6 +56,7 @@ async def update_copq_config(req: COPQConfigRequest, client=Depends(get_db_clien
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import update_copq_config
+
     return update_copq_config(req.model_dump(), client, wid, config)
 
 
@@ -60,4 +65,5 @@ async def compute_copq(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.copq import compute_copq_from_dq
+
     return compute_copq_from_dq(client, wid, config)

@@ -37,7 +37,12 @@ def compare_table_deep(
     # Schema comparison
     try:
         drift = compare_table_schema(
-            client, warehouse_id, source_catalog, dest_catalog, schema, table_name,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
         )
         result["schema_diff"] = drift
         if drift["has_drift"]:
@@ -128,7 +133,6 @@ def compare_catalogs_deep(
     progress.start()
 
     for schema in schema_names:
-
         # Get tables in destination
         tables = list_tables_sdk(client, dest_catalog, schema)
 
@@ -138,8 +142,13 @@ def compare_catalogs_deep(
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    compare_table_deep, client, warehouse_id,
-                    source_catalog, dest_catalog, schema, t["table_name"],
+                    compare_table_deep,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    t["table_name"],
                     use_checksum,
                 ): t["table_name"]
                 for t in filtered_tables
@@ -149,11 +158,13 @@ def compare_catalogs_deep(
                     all_results.append(future.result())
                 except Exception as e:
                     table_name = futures[future]
-                    all_results.append({
-                        "schema": schema,
-                        "table": table_name,
-                        "issues": [f"comparison_error: {e}"],
-                    })
+                    all_results.append(
+                        {
+                            "schema": schema,
+                            "table": table_name,
+                            "issues": [f"comparison_error: {e}"],
+                        }
+                    )
 
         progress.update(success=True)
 
@@ -189,7 +200,11 @@ def compare_catalogs_deep(
 
 
 def _get_tblproperties(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> dict:
     """Get table properties as a dict."""
     sql = f"SHOW TBLPROPERTIES `{catalog}`.`{schema}`.`{table_name}`"

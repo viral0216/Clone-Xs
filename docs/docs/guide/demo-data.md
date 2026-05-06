@@ -530,6 +530,108 @@ ORDER  BY 1, 2
 
 ---
 
+## Streaming destination: Zerobus (low-latency direct append)
+
+The streaming-emit page exposes four destinations: `volume_only`, `volume_bronze`, `direct_table`, and **`zerobus`**. Zerobus is a Databricks Premium/Enterprise-tier ingestion path that writes directly to a managed Delta table over a long-lived gRPC stream — sub-second latency, no Volume hop, no Auto Loader refresh window.
+
+The Zerobus path went through a substantial reliability and ergonomics pass; this section captures the contract that's now correct end-to-end.
+
+### Auth modes
+
+Two paths, picked via the **Auth mode** radio in the Zerobus credentials block:
+
+| Mode | When to pick | What happens |
+|---|---|---|
+| **OAuth (service principal)** *(default)* | You have a service principal already set up — original Zerobus contract. | Form collects `client_id` + `client_secret`. The SDK runs the OAuth client_credentials exchange itself. |
+| **PAT (logged-in user)** | You don't have an SP and want to reuse the token you logged into Clone-Xs with. | The runner lifts `client.config.token` off the active `WorkspaceClient` and passes it via a custom `HeadersProvider`. No SP fields shown. |
+
+PAT mode is the convenience path. The Zerobus server may still reject PATs that lack the right scopes — the form surfaces an amber caveat, and an `invalid_client` from a PAT run means flip back to OAuth.
+
+The `Verify credentials` button (OAuth only) hits `/oidc/v1/token` with the same client_credentials exchange the SDK does internally — short-circuits the "start a streaming run, read the job log, find the auth error" loop.
+
+### Step-by-step credentials block
+
+The credentials panel is now a vertical stepper with numbered circles that swap to green checkmarks as each step's predicate is satisfied:
+
+1. **Choose auth mode** — radio toggle (OAuth / PAT)
+2. **Set the Zerobus server endpoint** — derive helper accepts a workspace URL and resolves the gRPC endpoint via DNS. Done when the field is non-empty.
+3. **Service principal credentials** *(OAuth)* / **PAT (auto-lifted)** *(PAT)* — done when both creds are filled, or always-done in PAT mode.
+4. **Verify credentials** *(Optional, OAuth only)* — green check when the OAuth exchange succeeds.
+5. **Catalog storage location** *(Optional)* — `MANAGED LOCATION` for new catalogs, only required on workspaces without a metastore default storage root.
+
+The one-time admin prerequisite (`ALTER SCHEMA … SET MANAGED LOCATION`) is collapsed into a `<details>` block at the top — expand to read on first use.
+
+### Region detection (incl. Azure)
+
+`POST /api/generate/demo-data/zerobus/derive-endpoint` accepts a workspace URL and returns the regional Zerobus gRPC endpoint:
+
+| Cloud | URL shape | Region detection |
+|---|---|---|
+| AWS | `https://dbc-….cloud.databricks.com/?o=<wsid>` | DNS CNAME chain. The workspace alias terminates in either an explicit AWS region (`…us-east-2.amazonaws.com`) or a friendly-name CNAME (`ohio.cloud.databricks.com`). |
+| Azure | `https://adb-<wsid>.<n>.azuredatabricks.net` | DNS CNAME chain. Workspace hostnames alias through `<region>.azuredatabricks.net` (e.g. `uksouth`) before terminating at `ingress.<region>.azuredatabricks.net`. Either name is matched. |
+| GCP | `https://<wsid>.<n>.gcp.databricks.com` | DNS region detection is patchy — caller is prompted to provide it. |
+
+Returns `{server_endpoint, workspace_id, region, cloud, notes, error}`. The `notes` array carries the DNS chain it walked — useful for debugging "why didn't my workspace match a region?" cases.
+
+### Catalog storage location
+
+Workspaces whose metastore has no default storage root reject `CREATE CATALOG IF NOT EXISTS` with `INVALID_STATE` — even when the catalog already exists, because Databricks evaluates the storage prerequisite *before* the IF-NOT-EXISTS short-circuit. The form's **Catalog storage location** field accepts any cloud URI (`abfss://`, `s3://`, `gs://`) that's covered by an existing UC external location / storage credential. The runner appends a `MANAGED LOCATION` clause when populated.
+
+The runner also does a `SHOW CATALOGS` / `SHOW SCHEMAS` existence check before issuing CREATE, so re-runs against an already-provisioned catalog don't re-trip the `INVALID_STATE` error.
+
+### Auto-grants for the SP
+
+When `service_principal_id` is set (auto-filled from `zerobus_client_id` in OAuth mode), the runner auto-grants the SP four privileges before the first ingest:
+
+```sql
+GRANT USE CATALOG ON CATALOG `<cat>` TO `<sp>`;
+GRANT USE SCHEMA ON SCHEMA `<cat>`.`<schema>` TO `<sp>`;
+GRANT CREATE TABLE ON SCHEMA `<cat>`.`<schema>` TO `<sp>`;   -- so future Zerobus runs against new tables don't need re-granting
+GRANT MODIFY, SELECT ON TABLE `<cat>`.`<schema>`.`<table>` TO `<sp>`;
+```
+
+The `CREATE TABLE` grant is broader than the strict Zerobus minimum (`MODIFY, SELECT`) but stops short of `ALL PRIVILEGES`. It lets the SP create *additional* tables in the same schema for follow-up Zerobus runs without re-granting, while still preventing it from dropping or altering the schema itself.
+
+Each grant runs in its own try/except so a partial-permission caller (e.g. table owner but not catalog admin) gets as far as they can.
+
+### Type encoding for JSON records
+
+The Zerobus SDK's `RecordType.JSON` mode accepts a Python dict, but values for `TIMESTAMP` / `DATE` columns must be **integers**, not ISO strings — per the [upstream type-mapping table](https://github.com/databricks/zerobus-sdk/blob/main/README.md):
+
+| Delta type | Wire format |
+|---|---|
+| `TIMESTAMP`, `TIMESTAMP_NTZ` | int64 — microseconds since epoch |
+| `DATE` | int32 — days since 1970-01-01 |
+| (everything else) | native JSON type |
+
+The shared `DEVICE_PROFILES` generators emit `now.isoformat()` because that's what the `volume_bronze` and `direct_table` paths want. The Zerobus runner runs each record through `encode_record_for_zerobus(record, columns)` at the SDK boundary, which rewrites timestamps and dates to the right wire shape. Symptom of getting this wrong: server returns `Record decoder/encoder error: invalid digit found in string at line 1 column N` — the JSON parser hit the `T` in the ISO string while trying to decode an int64.
+
+### Stream durability
+
+Two patterns make the runner robust against transient gRPC closes:
+
+- **`wait_for_offset` per batch.** `ingest_record_offset` is fire-and-buffer — it returns an offset immediately without waiting for the server to commit. After each batch, the runner blocks on `stream.wait_for_offset(last_offset)` to ensure records actually committed before the next tick. Without this, the runner reports "N rows inserted" but the destination table is empty when the server closes the stream a few seconds later.
+- **Stream auto-reopen.** When `ingest_batch_zerobus` raises with `Stream is closed`, the runner catches it, calls the open closure to get a fresh stream, increments a `stream_reopens` counter, and continues with the next tick. The current batch is lost; subsequent ticks land against the fresh stream. Visible in the streaming summary as `stream_reopens: N`.
+
+Together these convert "100 rows reported, 0 rows in table" (the original symptom) into "N rows reported, N rows in table, M tick failures recovered."
+
+### Per-tick error visibility
+
+The streaming summary panel now surfaces per-tick failures inline:
+
+> **6 ticks failed.** Last error:
+> `ZerobusException: Invalid argument: Record decoder/encoder error: invalid digit found in string at line 1 column 79.`
+
+Without this surfacing, every per-tick exception was logged-and-swallowed, and the only signal of a failed run was a `Completed — 0 events` summary. The error string is now a first-class field in the job result and is rendered in an amber callout below the metrics grid when `tick_errors > 0`.
+
+### Limitations
+
+- **Premium/Enterprise tier required.** Free Edition lacks External Locations and rejects `ALTER SCHEMA … SET MANAGED LOCATION` — fall back to `Direct to table` or copy the `Try with Zerobus` snippet and run it from a Premium workspace.
+- **Managed Delta tables only.** Per the Zerobus contract — external tables / Volumes are rejected with `Error Code 4024 — Unsupported table kind`.
+- **Hudi destinations not supported.** Zerobus writes Delta only. The `Hudi` target on the convert page is also gated until a Job-cluster runtime is sponsored.
+
+---
+
 ## Workspace quota gotchas
 
 Two Databricks Unity Catalog metastore-level limits surface as confusing
@@ -647,10 +749,70 @@ curl -X POST http://localhost:8000/api/generate/demo-data/streaming \
   }'
 ```
 
+### Performance presets
+
+The Streaming Events form opens with a **Performance preset** row of
+four pill buttons that bundle destination + cadence into one click —
+each preset targets a different throughput tier. Picking a preset sets
+all four state values (`destination`, `events_per_batch`,
+`interval_seconds`, `total_duration_seconds`) at once; manually
+editing any of those fields after a preset is applied flips the
+indicator to **Custom** so you can tell at a glance whether the form
+matches a preset or has drifted.
+
+| Preset | Destination | Batch | Interval | Duration | Typical throughput |
+|---|---|---|---|---|---|
+| **Demo (default)** | `volume_bronze` | 100 | 5s | 60s | ~5K rows/s — fastest to start |
+| **Direct (small batches)** | `direct_table` | 50,000 | 1s | 300s | ~30–50K rows/s |
+| **Bulk files** | `volume_bronze` | 100,000 | 2s | 300s | ~100–500K rows/s |
+| **Streaming (Zerobus)** | `zerobus` | 1,000,000 | 5s | 600s | ~100K–1M+ rows/s (Premium tier) |
+
+Throughput numbers are typical for a small/medium DBSQL Serverless
+warehouse; actual numbers vary by warehouse size, network throughput,
+and event-shape complexity.
+
+The **Streaming (Zerobus)** preset is disabled (with a tooltip
+explaining why) when the Zerobus SDK isn't installed or the workspace
+isn't on Premium/Enterprise tier — same gating as the destination
+radio. Preset values are **clamped to the configured form bounds**
+(see [Form-bound limits](#form-bound-limits) below); if your admin
+has narrowed `events_per_batch.max` below a preset's batch size, the
+preset applies clamped values and a toast warns you.
+
+### Destination modes
+
+| `destination` | What happens per tick | Warehouse impact | Requires |
+|---|---|---|---|
+| `volume` | One JSON file per batch in `/Volumes/<cat>/<sch>/<vol>/<profile>/` | None — files write directly to UC Volume | UC volume create permission |
+| `volume_bronze` | Same files plus an auto-created `CREATE OR REFRESH STREAMING TABLE` over `read_files()` | One-time only — `CREATE OR REFRESH STREAMING TABLE` runs once at startup; refresh runs on its own DBSQL Serverless pool | DBSQL Serverless (for the streaming table) |
+| `direct_table` | `INSERT INTO <bronze_table> VALUES …` per batch — no Volume, no Auto Loader | **Every tick** — INSERT VALUES is single-driver-bound; pick the largest serverless you have | Any tier (works on Free Edition) |
+| `zerobus` | Direct gRPC append via [`databricks-zerobus-ingest-sdk`](https://github.com/databricks/zerobus-sdk) — one long-lived stream per run, low-latency | One-time only — DDL setup at run start (CREATE TABLE + GRANTs); idle during streaming. Smallest warehouse is fine | SDK installed (`pip install -e ".[zerobus]"`) + a service principal with `MODIFY+SELECT` on the table + the destination schema must have a **managed storage location** configured (Zerobus rejects tables in default storage — see "Setting up Zerobus credentials" below). **No macOS wheels** — see README for the snippet-panel workaround. |
+
+Each destination radio in the UI surfaces the same warehouse-impact
+note inline as a small italic line, color-coded green (low/none) or
+amber (every tick). The intent is to make warehouse-size sensitivity
+obvious at the point of decision — picking `direct_table` is a hint
+to bump the warehouse; picking `zerobus` means warehouse size
+doesn't affect streaming throughput at all.
+
+When the Zerobus SDK is absent the destination radio renders disabled
+with a tooltip explaining why; the **Try with Zerobus** code snippet
+panel below the completion card always works regardless — it produces
+a copy-pastable Python script that runs Zerobus from any environment
+where the SDK is installable.
+
 ### Auto Loader (Bronze table)
 
+> **Applies to the `volume_bronze` destination only.** `direct_table`
+> creates the Bronze table itself via `INSERT INTO`, and `zerobus`
+> writes records straight into a managed Delta table over gRPC — both
+> bypass the Volume entirely, so there are no JSON files for
+> `read_files()` to consume. The Auto-create checkbox is a no-op for
+> those destinations.
+
 The Streaming card includes an opt-in **"Auto-create streaming Bronze
-table"** checkbox. When enabled, the runner additionally executes:
+table"** checkbox. When `volume_bronze` is selected and the box is
+ticked, the runner additionally executes:
 
 ```sql
 CREATE OR REFRESH STREAMING TABLE `<catalog>`.`<schema>`.`bronze_<profile>`
@@ -683,9 +845,11 @@ STREAMING TABLE` — the wait is bounded by the first emission tick
 
 ### Query latest rows from Data Lab
 
-Once the Bronze table is created, the streaming progress card shows a
-**"Query latest rows →"** link. Clicking it opens
-[Data Lab](data-lab.md) with this SQL pre-filled and auto-executed:
+Whenever a Bronze table exists for the run — auto-created by
+`volume_bronze`, or written directly by `direct_table` / `zerobus` —
+the streaming progress card shows a **"Query latest rows →"** link.
+Clicking it opens [Data Lab](data-lab.md) with this SQL pre-filled and
+auto-executed:
 
 ```sql
 SELECT * FROM `<catalog>`.`<schema>`.`bronze_<profile>`
@@ -697,6 +861,231 @@ LIMIT 100
 profile. The deep-link uses Data Lab's `#q=<base64>&run=1` URL hash
 format — see [Data Lab](data-lab.md#deep-link-auto-run) for how to
 embed the same pattern in your own pages.
+
+### Throughput chart
+
+While a streaming run is active (and after it completes), the
+progress card renders a **dual-axis throughput chart**:
+
+- **Left axis (cumulative events)** — area-filled red line showing
+  total events emitted over elapsed seconds.
+- **Right axis (per-tick events)** — dashed grey line showing per-tick
+  delta, so you can see whether each tick is hitting target or
+  falling behind.
+- **Expected reference line** — horizontal dashed line at the
+  configured `events_per_batch`, labeled "expected N/tick". Hidden
+  when the configured value is less than 1% of peak per-tick delta
+  (e.g. you ran with batch=1M then changed the form to 100 — the
+  reference would be flush against the X-axis and meaningless).
+- **Error markers** — red ⨯ dots appear on the cumulative line at any
+  tick where `tick_errors` incremented, so per-tick failures are
+  visible without reading the run log.
+
+Y-axis ticks use **K/M/B suffixes** (`3M` instead of `3000000`) and
+the chart adapts to all 10 themes via `currentColor` strokes.
+Tooltip hover distinguishes "Cumulative events" from "Events / tick"
+and shows formatted values.
+
+### Form-bound limits
+
+The bounds on **Events per batch**, **Interval (seconds)**, and
+**Total duration (seconds)** are admin-configurable from
+**Settings → Performance → Streaming Form Limits**. Each field
+exposes three knobs (default / min / max), persisted to
+`config/streaming_limits.json` (independent of `clone_config.yaml` —
+these are UX form bounds, not clone orchestration).
+
+The same bounds drive:
+
+- The form's HTML `min`/`max` attrs and clamp logic.
+- The Pydantic validators on `StreamingEmissionRequest`,
+  `StreamingScheduleRequest`, and `ZerobusSnippetRequest` — so a
+  POST with a value outside the configured range returns 422
+  before any SQL runs.
+- The runner defaults — when a config dict omits a field, the runner
+  reads the configured `default` rather than a hardcoded constant.
+
+The file is created on first save via the Settings page; until then
+the API serves built-in defaults (events_per_batch: 100/1/10000,
+interval_seconds: 5/0.1/300, total_duration_seconds: 60/1/3600).
+The mtime-based cache picks up edits within a second — no API
+restart needed.
+
+The endpoint pair powering the Settings card is documented in
+[API → Config](../reference/api.md#getapiconfigstreaming-limits) and
+the form-bounds endpoint that the `/demo-data` page reads is at
+[API → Demo Data](../reference/api.md#getapigeneratedemodatastreaminglimits).
+
+### Setting up Zerobus credentials
+
+Picking the **Zerobus** destination reveals three credential inputs
+(server endpoint, Client ID, Client secret). Here's how to gather each
+plus the one-time workspace setup the destination needs.
+
+#### 0. One-time: configure managed storage on the destination schema
+
+Per the [Zerobus connector limitations](https://docs.databricks.com/aws/en/ingestion/zerobus-limits),
+the connector **only writes to managed Delta tables that are NOT in
+default storage**. So the destination schema must have its own managed
+storage location set before any Zerobus run, otherwise the table
+ends up in metastore default storage and the SDK rejects it with:
+
+```
+Error Code: 4024 — Unsupported table kind. Tables created in default storage are not supported.
+```
+
+Run this **once per destination schema** as a workspace admin (with an
+existing UC External Location URL the workspace can write to):
+
+```sql
+ALTER SCHEMA `machine`.`iot`
+  SET MANAGED LOCATION 's3://your-bucket/clxs-zerobus';
+```
+
+After this, every `CREATE TABLE` in `machine.iot` lands in the
+configured location and Zerobus accepts it. The Clone-Xs runner does
+the rest of the setup (catalog, schema, table, GRANTs) at run time.
+
+> **Databricks Free Edition is not supported.** Free Edition workspaces
+> can't create UC External Locations / Storage Credentials, so
+> `ALTER SCHEMA … SET MANAGED LOCATION` won't work — Zerobus's "no
+> default storage" requirement can't be met. Use the **Direct to
+> table** destination instead (works on any tier), or copy the rendered
+> Python from the **Try with Zerobus** snippet panel and run it from a
+> Premium / Enterprise workspace.
+
+#### 1. Server endpoint
+
+A region-specific gRPC URL — distinct from your workspace URL — built as:
+
+| Cloud | Endpoint format |
+|---|---|
+| **AWS** | `https://<workspace_id>.zerobus.<region>.cloud.databricks.com` |
+| **Azure** | `https://<workspace_id>.zerobus.<region>.azuredatabricks.net` |
+| **GCP** | `https://<workspace_id>.zerobus.<region>.gcp.databricks.com` |
+
+- **`<workspace_id>`**: the long numeric ID. From your workspace URL:
+  - AWS: `https://dbc-a1b2c3d4-e5f6.cloud.databricks.com/o=<workspace_id>` — the part after `/o=`.
+  - Azure: `https://adb-<workspace_id>.<n>.azuredatabricks.net` — the digits between `adb-` and the next dot.
+- **`<region>`**: your cloud's region slug (e.g. `us-west-2`, `eastus`, `westeurope`, `eastus2`). On Azure it's not in the workspace URL — find it in the **Azure Portal** under your Databricks resource's **Overview > Location** field, or via `az databricks workspace show --resource-group <rg> --name <ws> --query location -o tsv`. On AWS / GCP it's part of the workspace URL or visible in the Account Console.
+
+> **Note**: The Zerobus SDK README only documents the AWS endpoint format. The Azure and GCP forms above follow the standard Databricks subdomain pattern but are best confirmed with your workspace admin or your Databricks Solutions Architect before going to production.
+
+#### 2. Service Principal (Client ID + Client secret)
+
+Zerobus uses OAuth client-credentials, not the workspace PAT used by the
+rest of this app. Create a dedicated service principal once per workspace:
+
+1. Open the Databricks Web UI → **Settings** (top-right gear) →
+   **Identity and Access** → **Service principals**.
+2. Click **Add service principal**, give it a recognisable name like
+   `clxs-zerobus-demo`, click **Add**.
+3. Open the new SP → **Secrets** tab → **Generate secret**.
+   - **Copy the secret immediately** — Databricks shows it once and
+     never displays it again. If you lose it, you need to generate a
+     new one.
+4. The SP's **Application ID** (a UUID like `6a83b1a4-...`) is your
+   **Client ID**. The value from step 3 is your **Client secret**.
+
+#### 3. Grant the SP table-level permissions
+
+The Clone-Xs runner **auto-grants** the three privileges Zerobus needs
+right after creating the table:
+
+```sql
+GRANT USE CATALOG ON CATALOG `<cat>`        TO `<application-id>`;
+GRANT USE SCHEMA  ON SCHEMA  `<cat>.<sch>`  TO `<application-id>`;
+GRANT MODIFY, SELECT ON TABLE `<cat>.<sch>.<table>` TO `<application-id>`;
+```
+
+You only need to run them yourself if the user account starting the
+streaming run **isn't** an admin / table owner — in that case the
+auto-GRANT step logs a warning and you'll need to run the three
+statements above as someone who has manage privileges. Backticks
+around the principal are required because of the dashes in the UUID.
+
+> The Databricks docs note: *"You must grant `MODIFY` and `SELECT`
+> privileges on the table, even for tables with `ALL PRIVILEGES`
+> granted."* — [Zerobus overview](https://docs.databricks.com/aws/en/ingestion/zerobus-overview)
+
+#### 4. Putting it together
+
+Paste the three values into the form:
+
+| Field | Example |
+|---|---|
+| Server endpoint | `https://1134642475632994.zerobus.eastus2.azuredatabricks.net` |
+| Client ID | `6a83b1a4-1234-5678-9012-3a4b5c6d7e8f` |
+| Client secret | the value copied at SP-creation time |
+
+Click **Start streaming**. The runner opens **one** long-lived gRPC
+stream against the table, ingests records via
+`stream.ingest_record_offset(record)` per tick, and closes the stream
+in a `finally` when the run ends or you click **Stop** — so a stream
+never leaks even on interrupt or exception.
+
+#### 5. When records get rejected
+
+Zerobus validates every record against the destination table's schema
+**before** appending. A record is rejected if:
+
+- The column **count** doesn't match (extra or missing fields).
+- A column **name** doesn't match an existing table column (case-sensitive).
+- A required column is `NULL` (the table column isn't nullable).
+- A value's type can't be coerced to the table column's Delta type.
+
+Rejected records are written as Parquet files under a hidden table
+sub-path so you can recover the data:
+
+```
+<table-storage-root>/_zerobus/table_rejected_parquets/
+```
+
+After any schema change to the destination table — or after editing
+the per-profile generator in
+[src/demo_streaming.py](https://github.com/Anthropic-LLC/Clone-Xs/blob/main/src/demo_streaming.py) —
+list that folder. If new files appear, the producer is out of sync
+with the table:
+
+```sql
+LIST '<table-storage-root>/_zerobus/table_rejected_parquets/';
+```
+
+> **Tip:** the table storage root is `dbfs:/.../__unitystorage/...`
+> for managed tables. Get it with
+> `DESCRIBE EXTENDED <catalog>.<schema>.<table>` and look at the
+> `Location` row.
+
+#### 6. Limits & latency you should know
+
+The Zerobus service publishes the following SLAs and quotas — our
+demo defaults stay well inside them, but production workloads should
+plan against them.
+
+| Aspect | Value |
+|---|---|
+| Durability latency (P50 / P95) | ≤ 200 ms / ≤ 500 ms |
+| Time-to-table latency (P50 / P95) | ≤ 5 s / ≤ 30 s |
+| Throughput per stream | 100 MB/s, 15K records/s |
+| Throughput per table | 10 GB/s |
+| REST API throughput | 10K requests/s |
+| Max record size | 10 MB |
+| Delivery semantic | **at-least-once** (dedupe on offset if needed) |
+
+Notes for production runs (the demo doesn't need any of this):
+
+- **Protocol Buffers** is the recommended record format for production
+  — JSON (what the snippet uses) is convenient for demos but ~2× the
+  bytes on the wire.
+- **`AckCallback`** lets you skip the per-batch
+  `wait_for_offset(...)` block and stream at full throughput — pass an
+  `on_ack` / `on_error` handler when calling
+  `sdk.create_stream(...)`.
+- **System tables** for monitoring live under
+  `system.lakeflow_connect.zerobus_ingest_*` — point a Lakeview
+  dashboard at them to track throughput / errors / billing.
+- **Liquid clustered tables** are supported in **Beta** — fine for
+  evaluation, not yet GA-stable.
 
 ### Schedule streaming as a Databricks Job
 

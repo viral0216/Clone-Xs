@@ -19,8 +19,12 @@ def test_export_csv(mock_sql):
         # columns
         [
             {
-                "table_name": "orders", "column_name": "id", "data_type": "LONG",
-                "is_nullable": "YES", "column_default": None, "ordinal_position": "1",
+                "table_name": "orders",
+                "column_name": "id",
+                "data_type": "LONG",
+                "is_nullable": "YES",
+                "column_default": None,
+                "ordinal_position": "1",
                 "comment": "",
             },
         ],
@@ -29,9 +33,12 @@ def test_export_csv(mock_sql):
     with tempfile.TemporaryDirectory() as tmpdir:
         output = os.path.join(tmpdir, "test.csv")
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
-            output_format="csv", output_path=output,
+            output_format="csv",
+            output_path=output,
         )
 
         assert os.path.exists(result)
@@ -53,8 +60,12 @@ def test_export_json(mock_sql):
         [{"sizeInBytes": "2048", "numFiles": "2", "format": "delta"}],
         [
             {
-                "table_name": "employees", "column_name": "name", "data_type": "STRING",
-                "is_nullable": "YES", "column_default": None, "ordinal_position": "1",
+                "table_name": "employees",
+                "column_name": "name",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "column_default": None,
+                "ordinal_position": "1",
                 "comment": "",
             },
         ],
@@ -63,9 +74,12 @@ def test_export_json(mock_sql):
     with tempfile.TemporaryDirectory() as tmpdir:
         output = os.path.join(tmpdir, "test.json")
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
-            output_format="json", output_path=output,
+            output_format="json",
+            output_path=output,
         )
 
         assert os.path.exists(result)
@@ -87,8 +101,12 @@ def test_export_with_include_schemas(mock_sql):
         # columns
         [
             {
-                "table_name": "orders", "column_name": "id", "data_type": "INT",
-                "is_nullable": "NO", "column_default": None, "ordinal_position": "1",
+                "table_name": "orders",
+                "column_name": "id",
+                "data_type": "INT",
+                "is_nullable": "NO",
+                "column_default": None,
+                "ordinal_position": "1",
                 "comment": "",
             },
         ],
@@ -97,10 +115,13 @@ def test_export_with_include_schemas(mock_sql):
     with tempfile.TemporaryDirectory() as tmpdir:
         output = os.path.join(tmpdir, "include_test.json")
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
             include_schemas=["sales"],
-            output_format="json", output_path=output,
+            output_format="json",
+            output_path=output,
         )
 
         assert os.path.exists(result)
@@ -122,9 +143,12 @@ def test_export_describe_detail_fails_gracefully(mock_sql):
     with tempfile.TemporaryDirectory() as tmpdir:
         output = os.path.join(tmpdir, "err.csv")
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
-            output_format="csv", output_path=output,
+            output_format="csv",
+            output_path=output,
         )
 
         assert os.path.exists(result)
@@ -149,7 +173,9 @@ def test_export_auto_generates_output_path(mock_makedirs, mock_sql):
 
     with patch("builtins.open", MagicMock()):
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
             output_format="json",
             output_path=None,
@@ -168,9 +194,12 @@ def test_export_empty_catalog(mock_sql):
     with tempfile.TemporaryDirectory() as tmpdir:
         output = os.path.join(tmpdir, "empty.json")
         result = export_catalog_metadata(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             exclude_schemas=["information_schema"],
-            output_format="json", output_path=output,
+            output_format="json",
+            output_path=output,
         )
 
         assert os.path.exists(result)

@@ -38,15 +38,20 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
     schema = _get_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             CREATE TABLE IF NOT EXISTS {schema}.anomaly_correlations ({_CORRELATIONS_DDL})
             USING DELTA COMMENT 'Clone-Xs: cross-table anomaly correlations'
             TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not create anomaly_correlations: {e}")
 
@@ -56,8 +61,15 @@ def _get_lineage_graph(client, warehouse_id, config) -> dict:
     lineage_schema = get_schema_fqn(config, "lineage")
     graph = {}
     try:
-        rows = _query_sql(f"SELECT source_table, destination_table FROM {lineage_schema}.clone_lineage",
-                          limit=5000, client=client, warehouse_id=warehouse_id) or []
+        rows = (
+            _query_sql(
+                f"SELECT source_table, destination_table FROM {lineage_schema}.clone_lineage",
+                limit=5000,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
         for r in rows:
             src = r.get("source_table", "")
             dst = r.get("destination_table", "")
@@ -91,13 +103,21 @@ def correlate_anomalies(
 
     # Get recent anomalies (last 24h)
     try:
-        anomalies = _query_sql(f"""
+        anomalies = (
+            _query_sql(
+                f"""
             SELECT id, table_fqn, metric_name, value, measured_at, severity, z_score
             FROM {dq_schema}.metric_baselines
             WHERE is_anomaly = true
               AND measured_at >= DATEADD(HOUR, -24, CURRENT_TIMESTAMP())
             ORDER BY measured_at DESC
-        """, limit=500, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=500,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception:
         return []
 
@@ -127,6 +147,7 @@ def correlate_anomalies(
                 # Check time window
                 try:
                     from datetime import datetime as dt
+
                     t1 = dt.fromisoformat(str(ua["measured_at"]).replace("Z", "+00:00"))
                     t2 = dt.fromisoformat(str(anomaly["measured_at"]).replace("Z", "+00:00"))
                     lag = abs((t2 - t1).total_seconds() / 60)
@@ -145,17 +166,19 @@ def correlate_anomalies(
                     used_groups[anomaly["id"]] = group_id
 
                     cid = uuid.uuid4().hex[:12]
-                    correlations.append({
-                        "correlation_id": cid,
-                        "group_id": group_id,
-                        "root_table_fqn": upstream,
-                        "affected_table_fqn": tbl,
-                        "root_anomaly_id": ua["id"],
-                        "affected_anomaly_id": anomaly["id"],
-                        "correlation_score": score,
-                        "time_lag_minutes": round(lag, 1),
-                        "detected_at": now,
-                    })
+                    correlations.append(
+                        {
+                            "correlation_id": cid,
+                            "group_id": group_id,
+                            "root_table_fqn": upstream,
+                            "affected_table_fqn": tbl,
+                            "root_anomaly_id": ua["id"],
+                            "affected_anomaly_id": anomaly["id"],
+                            "correlation_score": score,
+                            "time_lag_minutes": round(lag, 1),
+                            "detected_at": now,
+                        }
+                    )
 
     # Store correlations
     if correlations:
@@ -166,9 +189,13 @@ def correlate_anomalies(
             for c in correlations
         ]
         for i in range(0, len(values), 50):
-            batch = values[i:i + 50]
+            batch = values[i : i + 50]
             try:
-                _run_sql(f"INSERT INTO {dq_schema}.anomaly_correlations VALUES {', '.join(batch)}", client, warehouse_id)
+                _run_sql(
+                    f"INSERT INTO {dq_schema}.anomaly_correlations VALUES {', '.join(batch)}",
+                    client,
+                    warehouse_id,
+                )
             except Exception as e:
                 logger.warning(f"Could not store correlations: {e}")
 
@@ -185,14 +212,22 @@ def get_correlation_groups(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT group_id, root_table_fqn, COUNT(*) as affected_count,
                    AVG(correlation_score) as avg_score, MIN(detected_at) as first_detected
             FROM {schema}.anomaly_correlations
             WHERE detected_at >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
             GROUP BY group_id, root_table_fqn
             ORDER BY affected_count DESC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query correlation groups: {e}")
         return []
@@ -208,11 +243,19 @@ def get_correlation_detail(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT * FROM {schema}.anomaly_correlations
             WHERE group_id = '{_esc(group_id)}'
             ORDER BY time_lag_minutes ASC
-        """, limit=100, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=100,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query correlation detail: {e}")
         return []
@@ -228,7 +271,9 @@ def get_root_causes(
     config = config or {}
     schema = _get_schema(config)
     try:
-        return _query_sql(f"""
+        return (
+            _query_sql(
+                f"""
             SELECT root_table_fqn, COUNT(DISTINCT group_id) as incident_count,
                    COUNT(DISTINCT affected_table_fqn) as affected_tables,
                    AVG(correlation_score) as avg_score
@@ -236,7 +281,13 @@ def get_root_causes(
             WHERE detected_at >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
             GROUP BY root_table_fqn
             ORDER BY incident_count DESC
-        """, limit=limit, client=client, warehouse_id=warehouse_id) or []
+        """,
+                limit=limit,
+                client=client,
+                warehouse_id=warehouse_id,
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Could not query root causes: {e}")
         return []

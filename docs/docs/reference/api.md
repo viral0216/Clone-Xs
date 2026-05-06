@@ -216,6 +216,65 @@ List available SQL warehouses.
 
 List available Unity Catalog volumes.
 
+
+
+### `POST /api/auth/test-warehouse`
+
+Test a SQL warehouse by running `SELECT 1`. Useful before submitting a clone to validate connectivity + permissions in one round-trip.
+
+**Request body:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `warehouse_id` | string | Yes |  | SQL warehouse ID to test |
+
+**Response:**
+
+```json
+{ "status": "ok", "message": "Warehouse is reachable", "result": [{"1": 1}] }
+```
+
+### `POST /api/auth/logout`
+
+Clear the authentication cache and current session. Subsequent requests need to re-authenticate via `/api/auth/login` (or auto-login).
+
+**Response:**
+
+```json
+{ "status": "ok", "message": "Logged out successfully" }
+```
+
+### `GET /api/auth/serving-endpoints`
+
+List Databricks Model Serving endpoints. Used by the AI-assistant + AI-narrative surfaces to populate the model picker. Filters out endpoints in non-`READY` state.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "endpoints": [
+    { "name": "databricks-meta-llama-3-1-405b", "state": "READY", "provider": "databricks", "is_claude": false },
+    { "name": "claude-sonnet-4", "state": "READY", "provider": "anthropic", "is_claude": true }
+  ]
+}
+```
+
+### `GET /api/auth/genie-spaces`
+
+List Databricks Genie spaces (natural-language SQL surfaces). Populates the Genie space picker on the AI-assistant page.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "spaces": [
+    { "space_id": "01ef…", "title": "Sales — Production", "description": "Genie space over `prod.sales`" }
+  ]
+}
+```
+
 ---
 
 ## Clone
@@ -266,6 +325,15 @@ Submit a clone job to the background queue.
 | `max_duration_min`     | integer  | No       |                                        | Runtime guardrail — abort the clone if wall-clock exceeds this many minutes. Checked between schemas. |
 | `max_tables`           | integer  | No       |                                        | Runtime guardrail — abort after this many tables have been touched. Checked between schemas. |
 | `source_snapshot_id`   | string   | No       |                                        | UUID of a row in `<audit>.clone_snapshots`. When set, resolved to `as_of_timestamp` so every table clones from the snapshot's captured state. See [Clone Snapshots](#clone-snapshots). |
+| `target_format`        | string   | No       | `"DELTA"`                              | `"DELTA"` (default) or `"ICEBERG"`. When `"ICEBERG"`, the destination stays Delta but UniForm metadata is enabled post-clone (`delta.universalFormat.enabledFormats=iceberg` + `IcebergCompatV2` + `columnMapping=name`) so external Iceberg engines can read it without a copy. Only effective on Delta sources — non-Delta sources skip with a `WARN`. See [clone guide — target format](../guide/clone#target-format--target_format-iceberg-uniform). |
+| `iceberg_physical`     | boolean  | No       | `false`                                | Only meaningful with `target_format="ICEBERG"`. When `true`, swaps the UniForm path for `CREATE TABLE … USING iceberg AS SELECT …` so UC reports the destination as `Data source: Iceberg`. **Loses Delta history**, ignores time-travel arguments with a `WARN`, requires DBR 15+ with Iceberg-managed-table support. See [clone guide — physical Iceberg target](../guide/clone#physical-iceberg-target). |
+| `auto_mask_pii`        | boolean  | No       | `false`                                | Auto-detect PII columns via UC `column_tags` (EMAIL / SSN / CREDIT_CARD / PHONE / etc.) and mask them on the destination via the existing `src/masking.py` pipeline. Masking runs as a post-clone `UPDATE` — the masked-data exposure window is bounded by the clone job. See [clone guide — auto-mask PII](../guide/clone#auto-mask-pii-auto_mask_pii-true). |
+| `enable_retry`         | boolean  | No       | `true`                                 | Auto-retry transient clone failures (network, throttle, 5xx, HTTP 429) with exponential backoff. Logical errors (schema mismatch, permission, validation) never retry. Bounded by `max_retries` (config, default 3). |
+| `compare_dq_after_clone` | boolean | No       | `false`                                | Run a column-level DQ comparison after each schema clones — row count + per-column NULL counts on source vs target. Combined with `auto_rollback_on_failure`, max-drift exceeding `dq_drift_rollback_pct` triggers Delta `RESTORE`. Adds one warehouse round-trip per cloned table. |
+| `dq_drift_rollback_pct` | float   | No       | `5.0`                                  | Drift threshold (0–100) for `compare_dq_after_clone`. Matches the existing row-count `rollback_threshold` so operators have one mental model for "acceptable drift." |
+| `where_clauses`        | object   | No       | `{}`                                   | Per-table predicate filter, e.g. `{"bronze.events": "date >= '2026-01-01'", "*": "is_deleted = false"}`. Forces the per-table CLONE to a CTAS path (`CREATE TABLE … AS SELECT * FROM src WHERE …`) — **loses Delta source history**. DEEP-only; ignored on SHALLOW with a `WARN`. See [clone guide — WHERE-clause filtered clone](../guide/clone#where-clause-filtered-clone-where_clauses-). |
+| `clone_tbl_properties` | object   | No       | `{}`                                   | Inline `TBLPROPERTIES (...)` rendered onto every per-table CLONE statement (e.g. `{"delta.logRetentionDuration": "3650 days"}`). Required for properties that must be on the *first commit* — setting via `ALTER TABLE` post-clone is too late. See [clone guide — inline TBLPROPERTIES](../guide/clone#inline-tblproperties-override-clone_tbl_properties-). |
+| `quiesce_source`       | boolean  | No       | `false`                                | Pre-clone source quiesce. Snapshot + revoke write privileges on the source schemas at clone start, re-grant in a `finally` block at clone end. Prevents concurrent writes from landing mid-clone. See [clone guide — pre-clone quiesce](../guide/clone#pre-clone-source-quiesce). |
 
 **Example request:**
 
@@ -351,6 +419,165 @@ Cancel a running or queued clone job.
 ### `WebSocket /api/clone/ws/{job_id}`
 
 WebSocket endpoint for live clone progress updates. Send `"ping"` to keep the connection alive; receive JSON progress events.
+
+---
+
+## Convert to Delta
+
+In-place format conversion from Parquet / Iceberg to Delta. Distinct from `/api/clone` because the operation is **destructive on source** (no destination FQN — the same FQN keeps pointing at the same data, but the underlying format changes), and synchronous (no job queue — typical workloads are a handful of tables and operators want immediate feedback).
+
+See [Convert table format guide](../guide/convert) for ergonomics, when to use this vs. clone, and limitations.
+
+### `POST /api/convert-to-delta`
+
+Convert one or more UC-registered tables in-place from Parquet or Iceberg to Delta. Two-layer safety gate: a Pydantic validator on the request and a module-level check in the orchestrator. Without `confirm_destructive: true` (and without `dry_run: true`) the endpoint returns `422`.
+
+**Request body:**
+
+| Field                  | Type     | Required | Default | Description |
+|------------------------|----------|----------|---------|-------------|
+| `targets`              | object[] | Yes      |         | At least one. Each target is `{fqn: "catalog.schema.table", source_format: "ICEBERG" \| "PARQUET" \| "DELTA"}`. Already-Delta and unsupported formats skip without hitting the warehouse. |
+| `warehouse_id`         | string   | No       | From config | SQL warehouse to execute the DDL on. |
+| `confirm_destructive`  | boolean  | Required unless `dry_run` | `false` | Explicit acknowledgement that the source table will be rewritten. Server returns `422` if missing on a non-dry-run request. |
+| `dry_run`              | boolean  | No       | `false` | Logs the SQL but doesn't execute. Bypasses the confirmation gate so wizard previews are safe. |
+
+**Per-target behaviour:**
+
+| Source `data_source_format` / `table_type` | Action |
+|---|---|
+| `ICEBERG` or `PARQUET` (MANAGED / EXTERNAL) | Runs `CONVERT TO DELTA` `\`catalog\`.\`schema\`.\`table\`` |
+| Already `DELTA` | Skipped, no SQL emitted |
+| `STREAMING_TABLE` / `MATERIALIZED_VIEW` / `VIEW` | Skipped, no SQL emitted (pipeline-owned tables; views have no underlying files) |
+| Unsupported format (CSV, JSON, etc.) | Skipped, no SQL emitted |
+
+**Response (200):**
+
+```json
+{
+  "total": 2,
+  "converted": 1,
+  "failed": 1,
+  "skipped": 0,
+  "results": [
+    {"fqn": "edp_dev.bronze.events_iceberg", "source_format": "ICEBERG",
+     "status": "converted", "duration_ms": 14820, "error": null},
+    {"fqn": "edp_dev.bronze.legacy_parquet", "source_format": "PARQUET",
+     "status": "failed", "duration_ms": 121, "error": "USE CATALOG required"}
+  ]
+}
+```
+
+The endpoint returns `200` with **partial results** when some targets fail — operators read per-target `status` to decide whether to re-submit just the failures.
+
+**Status codes:**
+
+| Code | Cause |
+|------|-------|
+| 200 | Batch processed (some targets may still have failed — check `results[].status`) |
+| 400 | `warehouse_id` missing (request and default config both empty) |
+| 422 | Validation: `confirm_destructive` false and `dry_run` false, or `targets` empty |
+
+**Audit trail:**
+
+Each batch generates one `operation_id` (UUID). Per-target rows are written to `<audit_catalog>.logs.convert_operations` (sibling of the existing `clone_operations` table) with status / source_format / dry_run / duration / error. Init failures are best-effort — if the audit table can't be created, the conversion proceeds without audit. See [Audit](../guide/audit) for the schema.
+
+**Example (dry-run preview):**
+
+```bash
+curl -X POST http://localhost:8080/api/convert-to-delta \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targets": [
+      {"fqn": "edp_dev.bronze.events", "source_format": "ICEBERG"}
+    ],
+    "warehouse_id": "abc123",
+    "dry_run": true
+  }'
+```
+
+**Example (real conversion):**
+
+```bash
+curl -X POST http://localhost:8080/api/convert-to-delta \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targets": [
+      {"fqn": "edp_dev.bronze.events", "source_format": "ICEBERG"}
+    ],
+    "warehouse_id": "abc123",
+    "confirm_destructive": true
+  }'
+```
+
+### `GET /api/convert-to-delta/history`
+
+List rows from the `convert_operations` audit table, newest first. One row per `(operation_id, fqn)` — a batch of N targets produces N rows linked by operation_id. Empty array (200) when the audit table doesn't exist yet (fresh workspace) — operators shouldn't see an error in the wizard's Recent Runs panel just because no convert has run yet.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `limit` | integer | No | `50` | Max rows. Hard-capped at 1000 server-side to protect the warehouse. |
+| `status` | string | No |  | Filter by `converted` / `failed` / `skipped`. |
+| `fqn_like` | string | No |  | SQL `LIKE` pattern on the `fqn` column — e.g. `"edp.bronze.%"` for everything in one schema. |
+| `dry_run` | boolean | No |  | Filter to dry-run rows (`true`) or live rows (`false`). |
+| `operation_id` | string | No |  | Pull every row in one batch, given its UUID. |
+
+**Response (200):**
+
+```json
+{
+  "rows": [
+    {
+      "operation_id": "7f3a-...",
+      "fqn": "edp_dev.bronze.events_iceberg",
+      "source_format": "ICEBERG",
+      "status": "converted",
+      "started_at": "2026-05-02 10:00:00",
+      "completed_at": "2026-05-02 10:00:12",
+      "duration_ms": 12480,
+      "user_name": "viral",
+      "host": "https://adb-….azuredatabricks.net",
+      "dry_run": false,
+      "trigger": "manual",
+      "error_message": null,
+      "recorded_at": "2026-05-02 10:00:12"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Status codes:**
+
+| Code | Cause |
+|---|---|
+| 200 | Returned (rows may be empty). |
+| 400 | `warehouse_id` missing from app config and not configurable from this endpoint — set the default in `clone_config.yaml` or via the Settings page. |
+
+### `GET /api/catalogs/{catalog}/{schema}/tables/with-format`
+
+List tables in a UC schema with their `table_type` and `data_source_format`. Distinct from the bare `/api/catalogs/{catalog}/{schema}/tables` endpoint (which returns names only) — this one is consumed by the Convert to Delta wizard's picker so it can show format badges and disable already-Delta / non-convertible rows without a second round-trip.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `catalog` | string | UC catalog name |
+| `schema`  | string | UC schema name |
+
+**Response (200):**
+
+```json
+[
+  {"name": "events_iceberg",   "table_type": "EXTERNAL", "data_source_format": "ICEBERG"},
+  {"name": "events_parquet",   "table_type": "EXTERNAL", "data_source_format": "PARQUET"},
+  {"name": "users",             "table_type": "MANAGED",  "data_source_format": "DELTA"},
+  {"name": "bronze_pos_terminal","table_type": "STREAMING_TABLE", "data_source_format": "DELTA"}
+]
+```
+
+The `data_source_format` field is normalised to a string at the client boundary (`src/client.py:_normalize_format`) — the SDK's `DataSourceFormat` enum is unwrapped to its `.value` so consumers can `.toUpperCase()` / compare against `"DELTA"` directly.
 
 ---
 
@@ -766,6 +993,116 @@ Create a point-in-time metadata snapshot of a catalog. Useful for before/after c
 | `exclude_schemas`  | string[] | No       | `["information_schema", "default"]` | Schemas to skip         |
 | `output_path`      | string   | No       |                                     | Custom output file path |
 
+### `GET /api/catalog-size-history`
+
+Per-catalog daily size snapshots over the last N days. Powers the storage-trend chart on the FinOps page. Reads from the `<audit>.metrics.catalog_size_daily` Delta table populated by the scheduled storage-metrics collector.
+
+**Query parameters:**
+
+| Parameter  | Type    | Required | Default | Description                                                  |
+|------------|---------|----------|---------|--------------------------------------------------------------|
+| `catalogs` | string  | No       | (all)   | Comma-separated list to restrict (e.g. `?catalogs=prod,prod_eu`) |
+| `days`     | integer | No       | `30`    | Look-back window (1–365)                                     |
+
+**Response:**
+
+```json
+{
+  "rows": [
+    { "catalog": "prod", "date": "2026-04-01", "total_bytes": 1234567890123, "total_tables": 412 }
+  ],
+  "days": 30
+}
+```
+
+### `POST /api/permissions-audit`
+
+Bulk-audit GRANTs across a catalog and surface risky patterns. Queries `<catalog>.information_schema.table_privileges` and clusters findings into CRITICAL / HIGH / MEDIUM / LOW based on public-group membership, privilege blast radius, and (optional) PII overlay.
+
+**Request body:**
+
+| Field               | Type     | Required | Default                             | Description                                                                  |
+|---------------------|----------|----------|-------------------------------------|------------------------------------------------------------------------------|
+| `source_catalog`    | string   | Yes      |                                     | Catalog to audit                                                             |
+| `warehouse_id`      | string   | No       | From config                         | SQL warehouse ID                                                             |
+| `exclude_schemas`   | string[] | No       | `["information_schema", "default"]` | Schemas to skip                                                              |
+| `pii_intersection`  | boolean  | No       | `false`                             | When true, runs PII detection inline and escalates findings on PII-bearing tables |
+
+**Response:**
+
+```json
+{
+  "audit_results": [
+    { "risk_level": "CRITICAL", "principal": "account users", "table_fqn": "prod.sales.customers",
+      "privilege": "ALL", "is_public_group": true, "suggested_action": "Revoke ALL from public group" }
+  ],
+  "summary": { "total_findings": 14, "critical_count": 2, "high_count": 4, "medium_count": 6, "low_count": 2 }
+}
+```
+
+### `POST /api/diff-detail`
+
+Detailed cross-catalog diff combining presence/absence + column drift + size delta. Returns the object-level diff, a drift list of common tables with column or size differences, and a summary rollup for the headline cards on the diff-and-compare UI.
+
+**Request body:**
+
+| Field                  | Type     | Required | Default                             | Description                            |
+|------------------------|----------|----------|-------------------------------------|----------------------------------------|
+| `source_catalog`       | string   | Yes      |                                     | Source catalog to compare              |
+| `destination_catalog`  | string   | Yes      |                                     | Destination catalog to compare against |
+| `warehouse_id`         | string   | No       | From config                         | SQL warehouse ID                       |
+| `exclude_schemas`      | string[] | No       | `["information_schema", "default"]` | Schemas to skip                        |
+
+**Response:**
+
+```json
+{
+  "schemas": { "missing": [], "extra": [], "matching": ["sales", "hr"] },
+  "tables":  { "missing": ["sales.orders_v2"], "extra": [], "matching": ["sales.orders", "hr.employees"] },
+  "drift": [
+    { "table_fqn": "sales.orders", "source_columns": 12, "dest_columns": 11,
+      "added_columns": [], "removed_columns": ["legacy_flag"], "size_delta_bytes": -1024000 }
+  ],
+  "summary": { "total_matching_tables": 2, "tables_with_drift": 1, "total_size_source_bytes": 0, "total_size_dest_bytes": 0 },
+  "drift_errors": []
+}
+```
+
+### `POST /api/stale-scan`
+
+Scan a catalog (or several) for stale and orphan tables. Joins per-table stats with read activity from `system.access.audit` (90-day window by default) and classifies each table into HIGH / MEDIUM / LOW risk with suggested actions (`OPTIMIZE`, `REVIEW_FOR_DROP`, `VACUUM_THEN_DROP`, etc.). Powers the unused-tables surface on the FinOps page.
+
+**Request body:**
+
+| Field                | Type        | Required | Default                             | Description                                                                                  |
+|----------------------|-------------|----------|-------------------------------------|----------------------------------------------------------------------------------------------|
+| `source_catalog`     | string      | No       |                                     | Single-mode catalog                                                                          |
+| `source_catalogs`    | string[]    | No       |                                     | Multi-mode (parallel fan-out, max 3 concurrent). Mutually exclusive with `source_catalog`.   |
+| `warehouse_id`       | string      | No       | From config                         | SQL warehouse ID                                                                             |
+| `exclude_schemas`    | string[]    | No       | `["information_schema", "default"]` | Schemas to skip                                                                              |
+| `days_threshold`     | integer     | No       | `90`                                | Read-activity look-back window (1–365)                                                       |
+| `min_age_days`       | integer     | No       | `7`                                 | Minimum table age — skips recently created tables                                            |
+| `min_size_bytes`     | integer     | No       | `0`                                 | De-noise filter — drop findings smaller than this size                                       |
+| `check_small_files`  | boolean     | No       | `false`                             | When true, runs `DESCRIBE DETAIL` enrichment to detect fragmentation (adds 1–3s per catalog) |
+
+**Response:**
+
+```json
+{
+  "findings": [
+    { "table_fqn": "prod.bronze.events_legacy", "catalog": "prod", "risk_level": "HIGH",
+      "last_read_days_ago": 180, "table_size_bytes": 2400000000,
+      "suggested_action": "VACUUM_THEN_DROP", "is_orphan": false, "has_small_files": false }
+  ],
+  "summary": {
+    "total_tables_scanned": 412, "stale_count": 23, "orphan_count": 4,
+    "high_risk": 6, "medium_risk": 11, "low_risk": 6
+  },
+  "per_catalog": { "prod": { "total_scanned": 412, "stale_count": 23 } },
+  "errors": []
+}
+```
+
 ---
 
 ## Notebooks
@@ -931,6 +1268,118 @@ List available config profiles.
 ```json
 {"profiles": ["dev", "staging", "prod"]}
 ```
+
+### `PATCH /api/config/warehouse`
+
+Update the active SQL warehouse ID in the config file. Persisted across server restarts. The Settings page in the wizard calls this when the user picks a different warehouse from the dropdown.
+
+**Request body:**
+
+| Field         | Type   | Required | Description                |
+|---------------|--------|----------|----------------------------|
+| `warehouse_id`| string | Yes      | Databricks SQL warehouse ID |
+
+**Response:**
+
+```json
+{ "status": "saved", "sql_warehouse_id": "abcd1234efgh5678" }
+```
+
+### `PATCH /api/config/performance`
+
+Update performance tuning fields (`max_workers`, `parallel_tables`, `max_parallel_queries`). All fields optional — only the fields supplied in the body are updated; the rest stay at their current values.
+
+**Request body:**
+
+| Field                   | Type    | Required | Description                              |
+|-------------------------|---------|----------|------------------------------------------|
+| `max_workers`           | integer | No       | Schemas processed in parallel            |
+| `parallel_tables`       | integer | No       | Tables cloned in parallel within a schema |
+| `max_parallel_queries`  | integer | No       | Concurrent SQL statements upper bound     |
+
+**Response:**
+
+```json
+{ "status": "saved" }
+```
+
+### `PATCH /api/config/pricing`
+
+Update storage pricing for cost calculations on the FinOps page.
+
+**Request body:**
+
+| Field          | Type   | Required | Description                                |
+|----------------|--------|----------|--------------------------------------------|
+| `price_per_gb` | number | No       | Cost per GB-month for managed storage      |
+| `currency`     | string | No       | ISO 4217 currency code (e.g. `"USD"`, `"GBP"`) |
+
+**Response:**
+
+```json
+{ "status": "saved", "price_per_gb": 0.023, "currency": "USD" }
+```
+
+### `GET /api/config/streaming-limits` {#getapiconfigstreaming-limits}
+
+Read the configured form bounds for the `/demo-data` Streaming Events
+tab. Stored in `config/streaming_limits.json` (independent of
+`clone_config.yaml` — these are UX form bounds, not clone
+orchestration). Falls back to built-in defaults when the file has
+not yet been written.
+
+**Response:**
+
+```json
+{
+  "events_per_batch":       {"default": 100, "min": 1,   "max": 10000},
+  "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+  "total_duration_seconds": {"default": 60,  "min": 1,   "max": 3600}
+}
+```
+
+The same shape is also exposed at
+[`GET /api/generate/demo-data/streaming/limits`](#getapigeneratedemodatastreaminglimits)
+for the demo-data page; both endpoints read the same source. The
+config endpoint is what the **Settings → Performance → Streaming
+Form Limits** card uses.
+
+### `PATCH /api/config/streaming-limits` {#patchapiconfigstreaming-limits}
+
+Update the streaming-emit form bounds. Body keys are all optional —
+fields not in the body keep their current value, so a partial update
+(e.g. raising only `events_per_batch.max`) doesn't require resending
+the full shape.
+
+**Request body:**
+
+```json
+{
+  "events_per_batch": {"max": 50000},
+  "total_duration_seconds": {"default": 120}
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "saved",
+  "limits": {
+    "events_per_batch":       {"default": 100, "min": 1,   "max": 50000},
+    "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+    "total_duration_seconds": {"default": 120, "min": 1,   "max": 3600}
+  }
+}
+```
+
+**Validation:** per-field invariant `min ≤ default ≤ max`. The server
+rejects any update that violates this with a `400` and a descriptive
+error message — the file is never written into a state that would
+422 every subsequent streaming request.
+
+The mtime-based cache invalidates immediately so the next streaming
+form fetch picks up the new bounds without a 60-second wait.
 
 ---
 
@@ -1179,6 +1628,29 @@ panel so users running the SQL manually get the same DDL.
 **Query parameters:** `catalog`, `schema`, `profile`,
 `refresh_minutes` (default 5), `volume` (default `events_volume`).
 
+### `GET /api/generate/demo-data/streaming/limits` {#getapigeneratedemodatastreaminglimits}
+
+Return the configured form bounds for the Streaming Events tab. The
+`/demo-data` page fetches this on mount to drive the HTML `min`/`max`
+attrs and clamp logic for **Events per batch**, **Interval (seconds)**,
+and **Total duration (seconds)**.
+
+Reads the same source as
+[`GET /api/config/streaming-limits`](#getapiconfigstreaming-limits) —
+duplicated here as a focused endpoint so the demo-data page doesn't
+have to fetch and dig through the full config blob. Edit the values
+via the Settings page or via `PATCH /api/config/streaming-limits`.
+
+**Response:**
+
+```json
+{
+  "events_per_batch":       {"default": 100, "min": 1,   "max": 10000},
+  "interval_seconds":       {"default": 5,   "min": 0.1, "max": 300},
+  "total_duration_seconds": {"default": 60,  "min": 1,   "max": 3600}
+}
+```
+
 ### `POST /api/generate/demo-data/streaming/schedule`
 
 Generate a self-contained Python notebook in the user's workspace
@@ -1316,6 +1788,25 @@ List schemas in a catalog (excludes `information_schema` and `default`).
 |-----------|--------|------|----------|--------------|
 | `catalog` | string | path | Yes      | Catalog name |
 
+### `GET /api/catalogs/{catalog}/info`
+
+Catalog metadata via `DESCRIBE CATALOG EXTENDED` — owner, comment, storage root. Used by the Catalog Explorer page header and the clone wizard's catalog-info popovers.
+
+| Parameter | Type   | In   | Required | Description  |
+|-----------|--------|------|----------|--------------|
+| `catalog` | string | path | Yes      | Catalog name |
+
+**Response:**
+
+```json
+{
+  "name": "prod",
+  "storage_root": "s3://my-bucket/managed/prod",
+  "owner": "data-team@example.com",
+  "comment": "Production catalog"
+}
+```
+
 ### `GET /api/catalogs/{catalog}/{schema}/tables`
 
 List tables in a schema.
@@ -1440,6 +1931,72 @@ Generate a compliance report for a catalog.
 |---------------|--------|----------|----------------------|-------------------------------|
 | `catalog`     | string | No       |                      | Catalog to audit              |
 | `report_type` | string | No       | `"data_governance"`  | Type of compliance report     |
+
+### `GET /api/compliance/frameworks`
+
+List supported compliance frameworks (SOC2, GDPR, HIPAA, CCPA, DORA, etc.) with the most recent assessment score per framework. Backs the framework-grid on the Compliance page.
+
+**Response:**
+
+```json
+[
+  { "id": "soc2", "name": "SOC 2 Type II", "version": "2017",
+    "control_count": 12, "score": 0.85, "last_assessed": "2026-05-02T09:15:00Z" },
+  { "id": "gdpr", "name": "GDPR", "version": "2018",
+    "control_count": 8, "score": 0.78, "last_assessed": "2026-05-02T08:45:00Z" }
+]
+```
+
+### `POST /api/compliance/frameworks/{framework_name}/assess`
+
+Run a fresh compliance assessment against all controls in the named framework. Collects evidence (RBAC audit, PII audit, audit-log retention, etc.) and computes a score. Persisted into `<audit>.compliance.evidence` so the trend endpoint can chart improvement over time.
+
+| Parameter        | Type   | In   | Required | Description                                  |
+|------------------|--------|------|----------|----------------------------------------------|
+| `framework_name` | string | path | Yes      | One of `soc2`, `gdpr`, `hipaa`, `ccpa`, `dora` |
+
+**Response:**
+
+```json
+{
+  "framework_id": "soc2", "framework_name": "SOC 2 Type II",
+  "total_controls": 12, "met_controls": 10, "partial_controls": 1, "gap_controls": 1,
+  "score": 0.85, "assessed_at": "2026-05-02T10:35:12Z",
+  "evidence": [
+    { "control_id": "CC6.1", "control_name": "Logical Access Controls",
+      "status": "met", "evidence_count": 5 }
+  ]
+}
+```
+
+### `GET /api/compliance/frameworks/{framework_name}/gaps`
+
+List controls in the framework where the most recent assessment found insufficient evidence. The triage list — Compliance page surfaces these as the day-to-day work queue.
+
+**Response:**
+
+```json
+[
+  { "evidence_id": "evd-789", "framework_id": "gdpr", "control_id": "A.32.1",
+    "control_name": "Security of Processing", "evidence_type": "rbac_audit",
+    "evidence_summary": "Missing role assignments for sensitive schemas",
+    "evidence_count": 0, "status": "gap", "collected_at": "2026-05-02T10:00:00Z" }
+]
+```
+
+### `GET /api/compliance/frameworks/{framework_name}/trend`
+
+Historical score trend for a framework. Powers the line chart on the Compliance page so improvement (or regression) is visible over weeks/months.
+
+**Response:**
+
+```json
+[
+  { "score": 0.72, "assessed_at": "2026-04-25T09:00:00Z" },
+  { "score": 0.78, "assessed_at": "2026-05-01T09:00:00Z" },
+  { "score": 0.85, "assessed_at": "2026-05-02T10:35:12Z" }
+]
+```
 
 ### `GET /api/templates`
 
@@ -2148,3 +2705,1639 @@ Get requests approaching their deadline.
 ### `GET /api/rtbf/dashboard`
 
 Dashboard summary: total, pending, in_progress, completed, overdue, avg_processing_days.
+
+---
+
+## DSAR (Data Subject Access Request)
+
+GDPR Article 15 right of access and data portability — discover, export, and report on every row across cloned catalogs that matches a data subject. All endpoints under `/api/dsar/`.
+
+### `POST /api/dsar/requests`
+
+Submit a new DSAR request to retrieve all personal data for a subject.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject_type` | string | Yes | One of `email`, `customer_id`, `ssn`, `phone`, `name`, `national_id`, `passport`, `credit_card`, `custom` |
+| `subject_value` | string | Yes | The identifier value to search for |
+| `subject_column` | string | If `subject_type=custom` | Column name to search on |
+| `requester_email` | string | Yes | Email of the requestor / DPO |
+| `requester_name` | string | Yes | Name of the requestor |
+| `legal_basis` | string | No | Default `"GDPR Article 15 - Right of access"` |
+| `export_format` | string | No | `csv` (default), `json`, or `parquet` |
+| `scope_catalogs` | string[] | No | Catalogs to search (default: all) |
+| `notes` | string | No | Audit-trail notes |
+
+**Response:** `{ "request_id": "…", "status": "submitted", "deadline": "2026-06-02" }`
+
+### `GET /api/dsar/requests`
+
+List DSAR requests with optional status filter.
+
+**Query parameters:** `status` (`submitted`/`approved`/`cancelled`/`delivered`/`completed`), `limit` (default 50).
+
+### `GET /api/dsar/requests/{request_id}`
+
+Get full details for a specific DSAR request.
+
+### `GET /api/dsar/requests/{request_id}/actions`
+
+Audit trail of all actions taken on a DSAR request.
+
+### `GET /api/dsar/requests/overdue`
+
+DSAR requests that have exceeded their GDPR deadline.
+
+### `GET /api/dsar/dashboard`
+
+Summary stats: total, pending, overdue, completion rate, avg days to complete.
+
+### `PUT /api/dsar/requests/{request_id}/status`
+
+Update DSAR request status — approve, cancel, deliver, complete. Body: `{ "status": "approved", "reason": "…" }` (reason required for cancel).
+
+### `POST /api/dsar/requests/{request_id}/discover`
+
+Run async discovery to identify every table/row matching the subject across cloned catalogs. Body: `{ "subject_value": "…", "export_format": "csv" }`. Returns a job_id; poll job status separately.
+
+### `POST /api/dsar/requests/{request_id}/export`
+
+Export all subject data in the requested format (async job).
+
+### `POST /api/dsar/requests/{request_id}/report`
+
+Generate the GDPR-compliant data access report (HTML + JSON) with metadata about which tables were scanned.
+
+---
+
+## Governance
+
+Glossary, DQ rules, SLA monitoring, certifications, ODCS data contracts, and DQX-based data-quality engine. All endpoints under `/api/governance/`.
+
+### `POST /api/governance/init`
+
+Initialize all governance Delta tables (Glossary, DQ Rules, SLA, ODCS, DQX, Reconciliation, Alerts).
+
+### `POST /api/governance/glossary`
+
+Create a glossary term. Body: `{ name, description, domain, aliases, owner }`.
+
+### `GET /api/governance/glossary`
+
+List all glossary terms.
+
+### `GET /api/governance/glossary/{term_id}`
+
+Retrieve a single term.
+
+### `DELETE /api/governance/glossary/{term_id}`
+
+Delete a glossary term.
+
+### `POST /api/governance/glossary/link`
+
+Link a glossary term to one or more table columns (FQNs). Body: `{ term_id, column_fqns: [...] }`.
+
+### `POST /api/governance/search`
+
+Global metadata search across catalogs/tables/columns. Body: `{ query, catalogs, search_type, limit }`.
+
+### `POST /api/governance/dq/rules`
+
+Create a DQ rule (rowcount, null, uniqueness, custom SQL). Body: `{ table_fqn, rule_type, expression, severity, name }`.
+
+### `GET /api/governance/dq/rules`
+
+List DQ rules. Query: `table_fqn`, `severity`.
+
+### `PUT /api/governance/dq/rules/{rule_id}`
+
+Update a DQ rule (name, expression, severity).
+
+### `DELETE /api/governance/dq/rules/{rule_id}`
+
+Delete a DQ rule.
+
+### `POST /api/governance/dq/cross-table-check`
+
+Run a cross-table consistency check. Body: `{ check_type, source_table, dest_table, predicate }`.
+
+### `POST /api/governance/dq/run`
+
+Execute one or more DQ rules. Body: `{ rule_ids, catalog, table_fqn }`.
+
+### `GET /api/governance/dq/results`
+
+Latest DQ rule execution results. Query: `table_fqn`.
+
+### `GET /api/governance/dq/history`
+
+Historical DQ results. Query: `rule_id`, `days` (default 30).
+
+### `POST /api/governance/certifications`
+
+Create a certification record. Body: `{ table_fqn, certifier, expiry_date, notes }`.
+
+### `GET /api/governance/certifications`
+
+List all certifications.
+
+### `POST /api/governance/certifications/approve`
+
+Approve or reject a pending certification. Body: `{ cert_id, action: "approve"|"reject", reviewer_notes }`.
+
+### `POST /api/governance/sla/rules`
+
+Create an SLA rule. Body: `{ table_fqn, metric_type, threshold, severity }`.
+
+### `GET /api/governance/sla/rules`
+
+List all SLA rules.
+
+### `POST /api/governance/sla/check`
+
+Run SLA compliance checks across all rules.
+
+### `GET /api/governance/sla/status`
+
+Current SLA compliance status.
+
+### `GET /api/governance/sla/compliance-trend`
+
+SLA compliance trend. Query: `days` (default 30).
+
+### `DELETE /api/governance/sla/rules/{sla_id}`
+
+Delete an SLA rule.
+
+### `POST /api/governance/odcs/contracts`
+
+Create an ODCS v3.1.0 data contract.
+
+### `GET /api/governance/odcs/contracts`
+
+List ODCS contracts. Query: `domain`, `status`, `table_fqn`.
+
+### `GET /api/governance/odcs/contracts/{contract_id}`
+
+Retrieve a single ODCS contract with full document.
+
+### `PUT /api/governance/odcs/contracts/{contract_id}`
+
+Update an ODCS contract (partial fields).
+
+### `DELETE /api/governance/odcs/contracts/{contract_id}`
+
+Delete an ODCS contract.
+
+### `POST /api/governance/odcs/contracts/{contract_id}/validate`
+
+Run full ODCS validation against all 11 sections.
+
+### `GET /api/governance/odcs/contracts/{contract_id}/versions`
+
+Version history for an ODCS contract.
+
+### `GET /api/governance/odcs/contracts/{contract_id}/versions/{version}`
+
+Retrieve a specific version of a contract.
+
+### `POST /api/governance/odcs/import`
+
+Import a contract from ODCS YAML. Body: `{ yaml_content }`.
+
+### `GET /api/governance/odcs/contracts/{contract_id}/export`
+
+Export an ODCS contract as YAML (`text/yaml`).
+
+### `GET /api/governance/odcs/prefill`
+
+Pre-filled server config from `clone_config.yaml` for new ODCS contract creation.
+
+### `POST /api/governance/odcs/contracts/{contract_id}/map-dq`
+
+Map existing DQ rules to the contract's `quality` section.
+
+### `POST /api/governance/odcs/contracts/{contract_id}/map-sla`
+
+Map existing SLA rules to the contract's `slaProperties` section.
+
+### `POST /api/governance/odcs/migrate`
+
+Migrate legacy data contracts to ODCS v3.1.0.
+
+### `POST /api/governance/odcs/contracts/{contract_id}/dqx-validate`
+
+Run DQX-based DataFrame validation for the contract's tables.
+
+### `POST /api/governance/odcs/generate`
+
+Auto-generate an ODCS contract by introspecting a UC table. Body: `{ table_fqn, auto_save }`.
+
+### `POST /api/governance/odcs/generate-schema`
+
+Auto-generate ODCS contracts for every table in a schema.
+
+### `POST /api/governance/odcs/generate-catalog`
+
+Auto-generate ODCS contracts for every table in a catalog.
+
+### `GET /api/governance/dqx/spark-status`
+
+Spark session status for the DQX engine.
+
+### `POST /api/governance/dqx/spark-configure`
+
+Configure Spark session — `cluster_id` or `serverless: true`.
+
+### `GET /api/governance/dqx/dashboard`
+
+DQX dashboard summary: total checks, pass rate, latest runs.
+
+### `GET /api/governance/dqx/functions`
+
+List available DQX check functions (built-in validations).
+
+### `POST /api/governance/dqx/profile`
+
+Profile a table with DQX Profiler and optionally auto-generate checks. Body: `{ table_fqn, auto_generate_checks }`.
+
+### `POST /api/governance/dqx/profile-schema`
+
+Profile every table in a schema and auto-generate checks.
+
+### `POST /api/governance/dqx/profile-catalog`
+
+Profile every table in a catalog and auto-generate checks.
+
+### `POST /api/governance/dqx/profile-stream`
+
+Server-Sent Events stream of live profiling progress (`text/event-stream`).
+
+### `POST /api/governance/dqx/checks`
+
+Create a DQX check manually. Body: `{ table_fqn, check_type, name, arguments, criticality }`.
+
+### `GET /api/governance/dqx/checks`
+
+List DQX checks. Query: `table_fqn`.
+
+### `DELETE /api/governance/dqx/checks/{check_id}`
+
+Delete a DQX check.
+
+### `POST /api/governance/dqx/checks/delete-bulk`
+
+Bulk-delete DQX checks. Body: `{ check_ids: [...] }` or `{ table_fqn, delete_all: true }`.
+
+### `POST /api/governance/dqx/clear-all`
+
+Clear ALL DQX data — checks, profiles, run results, definitions.
+
+### `POST /api/governance/dqx/checks/{check_id}/toggle`
+
+Enable / disable a DQX check. Body: `{ enabled: true }`.
+
+### `PUT /api/governance/dqx/checks/{check_id}`
+
+Update a DQX check (name, criticality, arguments, filter).
+
+### `POST /api/governance/dqx/run`
+
+Execute DQX checks on a table. Body: `{ table_fqn, check_ids }`.
+
+### `GET /api/governance/dqx/results`
+
+DQX run results. Query: `table_fqn`, `limit` (default 50).
+
+### `POST /api/governance/dqx/run-all`
+
+Run DQX checks across every monitored table.
+
+### `GET /api/governance/dqx/checks/export`
+
+Export DQX checks as YAML. Query: `table_fqn`.
+
+### `POST /api/governance/dqx/checks/import`
+
+Import DQX checks from YAML. Body: `{ table_fqn, yaml_content }`.
+
+### `POST /api/governance/dqx/checks/save-to-delta`
+
+Save DQX checks to a user-specified Delta table. Body: `{ target_table, table_fqn }`.
+
+### `GET /api/governance/dqx/checks/audit-log`
+
+DQX check audit log — every change to checks. Query: `check_id`, `table_fqn`, `limit`.
+
+### `GET /api/governance/dqx/profiles`
+
+List DQX profiles. Query: `table_fqn`.
+
+### `POST /api/governance/dqx/profile-drift`
+
+Detect profile drift and recommend new/updated DQ checks. Body: `{ table_fqn }`.
+
+### `GET /api/governance/changes`
+
+Change history for governance entities. Query: `entity_type`, `limit` (default 100).
+
+---
+
+## Data Quality
+
+DQ observability — freshness monitoring, anomaly detection on metric streams, volume tracking, expectation suites, unified incidents, health scores, root-cause hints, downstream-impact, monitoring scheduler. All endpoints under `/api/data-quality/`.
+
+### `GET /api/data-quality/freshness/{catalog}`
+
+Freshness check for all tables in a catalog. Flags tables not updated within `max_stale_hours`. Query: `schema`, `max_stale_hours` (default 24).
+
+### `GET /api/data-quality/freshness/{catalog}/{schema}/{table}/history`
+
+Historical freshness snapshots for one table. Query: `limit`.
+
+### `GET /api/data-quality/freshness/summary`
+
+Aggregate fresh/stale/unknown counts for the dashboard.
+
+### `GET /api/data-quality/anomalies`
+
+Recent anomalies in DQ metrics. Query: `limit`, `severity`.
+
+### `GET /api/data-quality/anomalies/metrics/{table_fqn}`
+
+Historical metric values with baseline bands. Query: `metric_name`, `limit`.
+
+### `GET /api/data-quality/metrics/recent`
+
+Recent metric measurements. Query: `limit`.
+
+### `POST /api/data-quality/anomalies/record`
+
+Record a metric measurement and auto-detect anomalies via z-score. Body: `{ table_fqn, column_name, metric_name, value }`.
+
+### `GET /api/data-quality/anomalies/system-tables`
+
+Scan Databricks system tables for anomalies — billing spikes, slow queries, cluster failures, storage growth. Query: `days` (default 7).
+
+### `GET /api/data-quality/volume/{catalog}`
+
+Row counts for all tables in a catalog. Query: `schema`.
+
+### `POST /api/data-quality/volume/snapshot`
+
+Take a volume snapshot and record as metrics. Body: `{ catalog, schema_name }`.
+
+### `GET /api/data-quality/volume/{catalog}/history`
+
+Historical row-count snapshots. Query: `days` (default 30).
+
+### `GET /api/data-quality/suites`
+
+List expectation suites.
+
+### `POST /api/data-quality/suites`
+
+Create an expectation suite. Body: `{ name, description, checks: [{ check_id, description }] }`.
+
+### `GET /api/data-quality/suites/{suite_id}`
+
+Get a single expectation suite.
+
+### `DELETE /api/data-quality/suites/{suite_id}`
+
+Delete an expectation suite.
+
+### `POST /api/data-quality/suites/{suite_id}/run`
+
+Execute every check in a suite.
+
+### `GET /api/data-quality/incidents`
+
+Unified incident feed — failed DQ rules + stale tables + anomalies + reconciliation mismatches. Query: `limit`.
+
+### `GET /api/data-quality/anomaly-settings`
+
+Current anomaly detection configuration.
+
+### `PUT /api/data-quality/anomaly-settings`
+
+Update anomaly detection thresholds.
+
+### `GET /api/data-quality/dqx-settings`
+
+Current DQX configuration.
+
+### `PUT /api/data-quality/dqx-settings`
+
+Update DQX configuration.
+
+### `GET /api/data-quality/root-cause/{table_fqn}`
+
+Look for correlated co-occurring anomalies, schema changes, freshness gaps, volume drops. Query: `hours` (default 24).
+
+### `GET /api/data-quality/impact/{table_fqn}`
+
+When a DQ check fails, show downstream tables/views/jobs affected.
+
+### `POST /api/data-quality/gate/evaluate`
+
+Evaluate a DQ quality gate before clone/sync. Body: `{ table_fqn, suite_id, min_pass_rate }`.
+
+### `POST /api/data-quality/segmented-run`
+
+Run DQ checks per segment (per region, per date). Body: `{ table_fqn, segment_column, check_ids }`.
+
+### `GET /api/data-quality/segment-results`
+
+Per-segment DQ results for drill-down. Query: `run_id`, `table_fqn`, `limit`.
+
+### `GET /api/data-quality/failure-samples`
+
+Sample failing rows for a DQX run. Query: `run_id`, `table_fqn`, `limit`.
+
+### `GET /api/data-quality/coverage/{catalog}`
+
+Which tables have DQ checks vs. which don't, with coverage %.
+
+### `GET /api/data-quality/health-score/{catalog}`
+
+Aggregate DQ health score (0–100) from freshness + anomalies + reconciliation. Query: `schema`, `max_stale_hours`.
+
+### `GET /api/data-quality/health/trend`
+
+Daily health scores for the trend chart. Query: `days` (default 7).
+
+### `GET /api/data-quality/sla/compliance-trend`
+
+Daily SLA compliance trend. Query: `days` (default 30).
+
+### `GET /api/data-quality/scorecard/{table_fqn}`
+
+Per-table quality scorecard aggregating completeness, freshness, schema stability, SLA compliance, anomalies.
+
+### `GET /api/data-quality/monitoring/configs`
+
+List table monitoring configurations.
+
+### `POST /api/data-quality/monitoring/configs`
+
+Create or update a monitoring config. Body: `{ table_fqn, metrics, frequency, auto_baseline, baseline_days, enabled }`.
+
+### `PUT /api/data-quality/monitoring/configs/{config_id}`
+
+Update an existing monitoring config.
+
+### `DELETE /api/data-quality/monitoring/configs/{config_id}`
+
+Delete a monitoring config.
+
+### `POST /api/data-quality/monitoring/configs/{config_id}/toggle`
+
+Toggle enabled/disabled for a monitoring config.
+
+### `POST /api/data-quality/monitoring/bulk-add`
+
+Add multiple tables for monitoring at once. Body: `{ table_fqns: [...], metrics, frequency }`.
+
+### `POST /api/data-quality/monitoring/bulk-delete`
+
+Bulk-delete monitoring configs. Body: `{ config_ids: [...] }`.
+
+### `GET /api/data-quality/monitoring/discover/{catalog}`
+
+Discover tables for monitoring setup. Query: `schema`.
+
+### `POST /api/data-quality/monitoring/run`
+
+Execute monitoring for every enabled config.
+
+### `GET /api/data-quality/monitoring/scheduler`
+
+Scheduler status — enabled, frequency, last/next run.
+
+### `POST /api/data-quality/monitoring/scheduler/enable`
+
+Enable the background scheduler. Query: `frequency_minutes` (1–1440, default 60).
+
+### `POST /api/data-quality/monitoring/scheduler/disable`
+
+Disable the scheduler.
+
+### `PUT /api/data-quality/monitoring/scheduler/frequency`
+
+Update scheduler frequency. Query: `frequency_minutes`.
+
+### `POST /api/data-quality/monitoring/scheduler/run-now`
+
+Trigger an immediate monitoring run.
+
+### `GET /api/data-quality/schedules`
+
+List scheduled DQ check runs.
+
+### `POST /api/data-quality/schedules`
+
+Create a scheduled DQ run with cron. Body: `{ name, cron, schedule_type, table_fqn, suite_id, check_ids }`.
+
+### `DELETE /api/data-quality/schedules/{schedule_id}`
+
+Delete a DQ schedule.
+
+### `POST /api/data-quality/schedules/{schedule_id}/pause`
+
+Pause a DQ schedule.
+
+### `POST /api/data-quality/schedules/{schedule_id}/resume`
+
+Resume a paused DQ schedule.
+
+### `POST /api/data-quality/schedules/{schedule_id}/run`
+
+Execute a DQ schedule immediately.
+
+---
+
+## Reconciliation
+
+Cross-metastore row-count, column-schema, and checksum reconciliation between source and destination catalogs. SQL or Spark execution, batch jobs with WebSocket progress streaming, alert rules, remediation SQL generation, cron-scheduled runs. All endpoints under `/api/reconciliation/`.
+
+### `GET /api/reconciliation/spark-status`
+
+Check Spark session availability for reconciliation.
+
+### `POST /api/reconciliation/spark-configure`
+
+Configure the Spark session — `cluster_id` or `serverless: true`.
+
+### `POST /api/reconciliation/validate`
+
+Row-level reconciliation. Body: `{ source_catalog, destination_catalog, schema_name, table_name, exclude_schemas, use_checksum, max_workers, use_spark }`.
+
+### `POST /api/reconciliation/compare`
+
+Column-level reconciliation comparing schemas and optional checksums.
+
+### `POST /api/reconciliation/profile`
+
+Column profiling and statistics for a catalog.
+
+### `POST /api/reconciliation/preview`
+
+Preview a table pair before deep reconciliation — metadata, column-match status, sample rows.
+
+### `POST /api/reconciliation/deep-validate`
+
+Full row-level reconciliation via Spark — classifies rows as matched / missing / extra / modified with column-level diffs. Body: `{ source_catalog, destination_catalog, schema_name, table_name, key_columns, include_columns, ignore_columns, sample_diffs, use_checksum, max_workers, ignore_nulls, ignore_case, ignore_whitespace, decimal_precision }`.
+
+### `GET /api/reconciliation/history`
+
+Past reconciliation runs. Query: `limit`, `run_type` (`row-level`/`column-level`/`deep`), `source_catalog`.
+
+### `POST /api/reconciliation/compare-runs`
+
+Compare two reconciliation runs side-by-side. Body: `{ run_id_a, run_id_b }`.
+
+### `POST /api/reconciliation/execute-sql`
+
+Execute arbitrary SQL via Spark Connect or SQL warehouse. Body: `{ sql, use_spark, warehouse_id }`.
+
+### `GET /api/reconciliation/alerts/rules`
+
+List alert rules for reconciliation metrics.
+
+### `POST /api/reconciliation/alerts/rules`
+
+Create an alert rule. Body: `{ name, metric, operator, threshold, severity, source_catalog, destination_catalog, notify_channels }`.
+
+### `DELETE /api/reconciliation/alerts/rules/{rule_id}`
+
+Delete an alert rule.
+
+### `GET /api/reconciliation/alerts/history`
+
+Alert trigger history. Query: `limit`.
+
+### `POST /api/reconciliation/remediate`
+
+Generate SQL statements to fix reconciliation mismatches. Body: `{ source_catalog, destination_catalog, schema_name, table_name, key_columns, fix_type }`.
+
+### `GET /api/reconciliation/schedules`
+
+List scheduled reconciliation jobs.
+
+### `POST /api/reconciliation/schedules`
+
+Create a scheduled reconciliation job. Body: `{ name, source_catalog, destination_catalog, cron, schema_name, table_name, key_columns, comparison_options }`.
+
+### `DELETE /api/reconciliation/schedules/{schedule_id}`
+
+Delete a schedule.
+
+### `POST /api/reconciliation/schedules/{schedule_id}/pause`
+
+Pause a reconciliation schedule.
+
+### `POST /api/reconciliation/schedules/{schedule_id}/resume`
+
+Resume a paused schedule.
+
+### `POST /api/reconciliation/batch-validate`
+
+Submit a batch row-level reconciliation job. Body: `{ source_catalog, destination_catalog, tables: [{schema_name, table_name}], use_checksum, max_workers, use_spark }`. Returns `{ job_id, status: "queued" }`.
+
+### `GET /api/reconciliation/batch-validate/{job_id}`
+
+Get progress of a batch row-level job.
+
+### `DELETE /api/reconciliation/batch-validate/{job_id}`
+
+Cancel a queued batch row-level job.
+
+### `POST /api/reconciliation/batch-compare`
+
+Submit a batch column-level comparison job.
+
+### `GET /api/reconciliation/batch-compare/{job_id}`
+
+Get progress of a batch column-level job.
+
+### `DELETE /api/reconciliation/batch-compare/{job_id}`
+
+Cancel a queued batch column-level job.
+
+### `POST /api/reconciliation/batch-deep-validate`
+
+Submit a batch deep reconciliation job.
+
+### `GET /api/reconciliation/batch-deep-validate/{job_id}`
+
+Get progress of a batch deep reconciliation job.
+
+### `DELETE /api/reconciliation/batch-deep-validate/{job_id}`
+
+Cancel a queued batch deep reconciliation job.
+
+### `GET /api/reconciliation/history/{run_id}/details`
+
+Per-table details for a specific reconciliation run.
+
+### `WebSocket /api/reconciliation/ws/{job_id}`
+
+Live batch reconciliation progress streaming. Client sends `{"type":"ping"}`; server broadcasts `{"type":"progress", …}` events and a final `{"type":"complete", …}` message.
+
+---
+
+## Master Data Management (MDM)
+
+Entity resolution, golden records, match-pair stewardship, hierarchies, and matching rules. All endpoints under `/api/mdm/`.
+
+### `POST /api/mdm/init`
+
+Initialise MDM tables and schema.
+
+### `GET /api/mdm/dashboard`
+
+Dashboard summary — entities, match pairs, stewardship queue metrics.
+
+### `GET /api/mdm/entities`
+
+List golden records. Query: `entity_type`, `status`, `limit`.
+
+### `GET /api/mdm/entities/{entity_id}`
+
+Retrieve a golden record and its source records.
+
+### `POST /api/mdm/entities`
+
+Create a golden record. Body: `{ entity_type, display_name, attributes }`.
+
+### `PUT /api/mdm/entities/{entity_id}`
+
+Update a golden record.
+
+### `DELETE /api/mdm/entities/{entity_id}`
+
+Delete a golden record.
+
+### `POST /api/mdm/ingest`
+
+Ingest source records and link to entities. Body: `{ catalog, schema_name, table, entity_type, key_column, trust_score }`.
+
+### `POST /api/mdm/detect`
+
+Detect duplicate records via matching rules. Body: `{ entity_type, auto_merge_threshold, review_threshold }`.
+
+### `GET /api/mdm/pairs`
+
+List match-pair candidates (potential duplicates). Query: `entity_type`, `status`, `limit`.
+
+### `POST /api/mdm/merge`
+
+Merge two records — one becomes the golden record. Body: `{ pair_id, strategy: "keep_a"|"keep_b"|"create_new" }`.
+
+### `POST /api/mdm/split`
+
+Split a golden record back into separate entities. Body: `{ entity_id }`.
+
+### `GET /api/mdm/rules`
+
+List matching rules. Query: `entity_type`.
+
+### `POST /api/mdm/rules`
+
+Create a matching rule. Body: `{ entity_type, name, field, match_type: "exact"|"fuzzy"|"phonetic", weight, threshold, enabled }`.
+
+### `DELETE /api/mdm/rules/{rule_id}`
+
+Delete a matching rule.
+
+### `GET /api/mdm/stewardship`
+
+List stewardship tasks. Query: `status`, `priority`, `limit`.
+
+### `POST /api/mdm/stewardship/{task_id}/approve`
+
+Approve a stewardship task.
+
+### `POST /api/mdm/stewardship/{task_id}/reject`
+
+Reject a stewardship task. Body: `{ reason }`.
+
+### `GET /api/mdm/hierarchies`
+
+List organisational hierarchies.
+
+### `POST /api/mdm/hierarchies`
+
+Create a hierarchy. Body: `{ name, entity_type }`.
+
+### `GET /api/mdm/hierarchies/{hierarchy_id}`
+
+Retrieve a hierarchy and its nodes.
+
+### `POST /api/mdm/hierarchies/{hierarchy_id}/nodes`
+
+Add a node. Body: `{ entity_id, label, parent_node_id, level }`.
+
+---
+
+## Alert routing
+
+Smart rule-based alert distribution, deduplication, and digest automation. All endpoints under `/api/alerts/`.
+
+### `GET /api/alerts/routing-rules`
+
+List all routing rules.
+
+### `POST /api/alerts/routing-rules`
+
+Create a routing rule. Body: `{ name, table_pattern, severity_filter, event_type_filter, route_to_team, channel, channel_config }`.
+
+### `PUT /api/alerts/routing-rules/{rule_id}`
+
+Update a routing rule.
+
+### `DELETE /api/alerts/routing-rules/{rule_id}`
+
+Delete a routing rule.
+
+### `GET /api/alerts/inbox`
+
+Get the alert inbox. Query: `status`, `severity`.
+
+### `POST /api/alerts/route`
+
+Route a new alert to matching rules. Body: `{ event_type, table_fqn, severity, title, message }`.
+
+### `POST /api/alerts/inbox/{alert_id}/acknowledge`
+
+Mark an alert as acknowledged.
+
+### `POST /api/alerts/inbox/{alert_id}/resolve`
+
+Mark an alert as resolved.
+
+### `POST /api/alerts/inbox/{alert_id}/snooze`
+
+Snooze an alert. Query: `hours` (default 4).
+
+### `GET /api/alerts/analytics`
+
+Alert analytics and trends. Query: `days` (default 30).
+
+### `GET /api/alerts/digests`
+
+List digest configurations.
+
+### `POST /api/alerts/digests`
+
+Create a digest config. Body: `{ recipient, frequency, filters }`.
+
+### `DELETE /api/alerts/digests/{digest_id}`
+
+Delete a digest config.
+
+---
+
+## FinOps
+
+Cost visibility and optimisation intelligence via Databricks system tables and optional Azure Cost Management. All endpoints under `/api/finops/`.
+
+### `GET /api/finops/billing`
+
+Query billing costs from `system.billing.usage`. Query: `days` (default 30, max 365).
+
+### `GET /api/finops/warehouses`
+
+List SQL warehouses with state and config — flags warehouses missing `auto_stop_enabled`.
+
+### `GET /api/finops/warehouse-events`
+
+Warehouse lifecycle events (start/stop/scale). Query: `days`.
+
+### `GET /api/finops/clusters`
+
+List compute clusters with state and config.
+
+### `GET /api/finops/node-utilization`
+
+Node CPU/memory utilisation trends. Query: `days` (default 7, max 90).
+
+### `GET /api/finops/query-stats`
+
+Query performance stats from `system.query.history`. Query: `days`.
+
+### `GET /api/finops/storage`
+
+Table sizes from `information_schema`. Query: `catalog` (required).
+
+### `GET /api/finops/recommendations`
+
+Combined FinOps recommendations from optimisation engine + warehouses + utilisation. Query: `catalog`.
+
+### `GET /api/finops/query-costs`
+
+Per-query cost attribution via hourly warehouse allocation. Query: `days`.
+
+### `GET /api/finops/job-costs`
+
+Per-job cost from `billing.usage`. Query: `days`.
+
+### `GET /api/finops/system-status`
+
+Which system tables are accessible — used by the FinOps page to gracefully disable surfaces when a system table isn't granted.
+
+### `GET /api/finops/azure/status`
+
+Azure Cost Management configuration and session auth method.
+
+### `GET /api/finops/azure/costs`
+
+Query Azure Cost Management for trends and service breakdown. Query: `days`.
+
+### `POST /api/finops/azure/config`
+
+Save Azure subscription, resource group, tenant config. Body: `{ subscription_id, resource_group, tenant_id }`.
+
+---
+
+## System insights
+
+Unified compute / storage / metadata health via system tables. All endpoints under `/api/system-insights/`.
+
+### `POST /api/system-insights/billing`
+
+Billing usage by date and SKU. Body: `{ warehouse_id?, catalog?, days: 30 }`.
+
+### `POST /api/system-insights/optimization`
+
+Predictive optimisation recommendations (`OPTIMIZE`, `VACUUM`, `ZORDER`).
+
+### `POST /api/system-insights/jobs`
+
+Job run timeline from `system.lakeflow`. Body: `{ days, job_name_filter? }`.
+
+### `POST /api/system-insights/summary`
+
+Unified summary from billing + optimisation + jobs + lineage + storage in one call.
+
+### `POST /api/system-insights/warehouses`
+
+List SQL warehouses with state and configuration.
+
+### `POST /api/system-insights/clusters`
+
+List clusters with state and recent events. Body: `{ max_events: 10 }`.
+
+### `POST /api/system-insights/pipelines`
+
+List DLT pipelines with state and recent events. Body: `{ max_events_per_pipeline: 10 }`.
+
+### `POST /api/system-insights/query-performance`
+
+Recent query execution performance. Body: `{ warehouse_id?, days: 30, max_results: 100 }`.
+
+### `POST /api/system-insights/metastore`
+
+Current metastore info and catalog/schema counts.
+
+### `POST /api/system-insights/alerts`
+
+List all SQL alerts with current state.
+
+### `POST /api/system-insights/table-usage`
+
+Table access patterns from audit logs. Body: `{ warehouse_id?, catalog?, days: 30 }`.
+
+---
+
+## Federation
+
+Lakehouse Federation — manage federated connections (MySQL, PostgreSQL, Snowflake), list foreign catalogs and tables, migrate foreign tables to managed Delta. All endpoints under `/api/federation/`.
+
+### `GET /api/federation/catalogs`
+
+List all foreign (federated) catalogs in the metastore.
+
+### `GET /api/federation/connections`
+
+List all connections (MySQL, PostgreSQL, Snowflake, etc.).
+
+### `GET /api/federation/connections/{name}`
+
+Export a connection's configuration (sensitive fields redacted).
+
+### `POST /api/federation/connections/clone`
+
+Create a new connection from an exported definition. Body: `{ connection_name, new_name, credentials, dry_run }`. Credentials must be supplied (redacted in exports).
+
+### `POST /api/federation/tables`
+
+List tables in a foreign catalog. Body: `{ catalog, warehouse_id?, schema_filter? }`.
+
+### `POST /api/federation/migrate`
+
+Materialize a foreign table into a managed Delta table (CTAS). Body: `{ foreign_fqn, dest_fqn, warehouse_id?, dry_run }`.
+
+---
+
+## ML assets
+
+Inventory and clone Databricks ML components — registered models, feature tables, vector search indexes, serving endpoints. All endpoints under `/api/ml-assets/`.
+
+### `POST /api/ml-assets/list`
+
+List registered models, feature tables, vector indexes in a catalog. Body: `{ source_catalog, warehouse_id?, schemas? }`.
+
+### `POST /api/ml-assets/clone`
+
+Clone ML assets from source to destination catalog. Body: `{ source_catalog, destination_catalog, include_models, include_feature_tables, include_vector_indexes, include_serving_endpoints, copy_versions, clone_type, schemas, max_workers, dry_run }`.
+
+### `POST /api/ml-assets/models/list`
+
+List registered models in a catalog.
+
+### `POST /api/ml-assets/vector-indexes/list`
+
+List vector search indexes in a catalog.
+
+### `GET /api/ml-assets/serving-endpoints`
+
+List all model serving endpoints.
+
+### `POST /api/ml-assets/serving-endpoints/export`
+
+Export a serving endpoint configuration.
+
+### `POST /api/ml-assets/serving-endpoints/import`
+
+Create a serving endpoint from an exported config. Body: `{ config, dest_catalog, source_catalog, name_suffix, dry_run }`.
+
+---
+
+## AI
+
+AI features powered by Anthropic API or Databricks Model Serving — narratives, NL clone parsing, DQ rule suggestions, PII remediation. Backend selected via `X-Databricks-Model` header. All endpoints under `/api/ai/`.
+
+### `GET /api/ai/status`
+
+Check whether AI features are available.
+
+### `POST /api/ai/summarize`
+
+Generate an AI narrative summary. Body: `{ context_type, data }`.
+
+### `POST /api/ai/clone-builder`
+
+Parse a natural-language clone request into structured config. Body: `{ query, available_catalogs }`.
+
+### `POST /api/ai/dq-suggestions`
+
+Suggest data quality rules from profiling results. Body: `{ profiling_results, table_name }`.
+
+### `POST /api/ai/pii-remediation`
+
+AI-powered PII remediation recommendations. Body: `{ scan_results }`.
+
+---
+
+## AI assistant
+
+Natural-language SQL generation, execution with explanations, Genie integration, multi-turn chat. All endpoints under `/api/ai-assistant/`.
+
+### `POST /api/ai-assistant/nl-to-sql`
+
+Convert natural language to SQL. Body: `{ question, catalog?, schema_name? }`.
+
+### `POST /api/ai-assistant/execute-nl`
+
+Convert NL to SQL, execute it, return results with AI explanation. Body: `{ question, catalog?, schema_name? }`.
+
+### `POST /api/ai-assistant/genie-query`
+
+Send a question to a Databricks Genie space. Body: `{ question, space_id }`.
+
+### `POST /api/ai-assistant/chat`
+
+Multi-turn chat about data. Body: `{ messages, catalog?, schema_name? }`.
+
+---
+
+## Data Product Marketplace
+
+Publish, discover, and subscribe to curated data products with SLA guarantees and quality requirements. All endpoints under `/api/data-products/`.
+
+### `GET /api/data-products/`
+
+List data products. Query: `status`, `domain`.
+
+### `POST /api/data-products/`
+
+Create a data product. Body: `{ name, description, domain, owner_team, owner_email, tables, sla_guarantees, quality_requirements, tags }`.
+
+### `GET /api/data-products/{product_id}`
+
+Retrieve a data product.
+
+### `PUT /api/data-products/{product_id}`
+
+Update product fields (any subset).
+
+### `DELETE /api/data-products/{product_id}`
+
+Delete a product.
+
+### `POST /api/data-products/{product_id}/publish`
+
+Publish to the marketplace, making it discoverable.
+
+### `POST /api/data-products/{product_id}/subscribe`
+
+Subscribe a team. Body: `{ subscriber_team, subscriber_email, use_case, notification_prefs }`.
+
+### `GET /api/data-products/{product_id}/subscribers`
+
+List subscribers for a product.
+
+---
+
+## Data Environment Manager
+
+Provision ephemeral sandboxes with masking, cost budgets, TTL cleanup, and access grants. All endpoints under `/api/environments/`.
+
+### `GET /api/environments/`
+
+List environments. Query: `status`.
+
+### `POST /api/environments/`
+
+Create an ephemeral environment. Body: `{ name, source_catalog, tables, masking_profile, ttl_hours, cost_budget, clone_type, access_grants }`.
+
+### `GET /api/environments/{env_id}`
+
+Get environment details.
+
+### `POST /api/environments/{env_id}/extend`
+
+Extend TTL by additional hours. Query/body: `additional_hours`.
+
+### `DELETE /api/environments/{env_id}`
+
+Destroy an environment and its resources.
+
+### `POST /api/environments/cleanup`
+
+Trigger manual cleanup of expired environments.
+
+### `GET /api/environments/templates/list`
+
+List saved environment templates.
+
+### `POST /api/environments/templates`
+
+Create a reusable template. Body: `{ name, description, config }`.
+
+### `DELETE /api/environments/templates/{template_id}`
+
+Delete a template.
+
+---
+
+## Promotion Plans
+
+Multi-hop catalog clones across environments (dev → staging → prod) with client-side hop sequencing. All endpoints under `/api/promotions/`.
+
+### `GET /api/promotions/plans`
+
+List built-in promotion plans with their hop definitions.
+
+### `GET /api/promotions/plans/{plan_key}`
+
+Retrieve a specific plan, including all hop steps.
+
+### `POST /api/promotions/plans/{plan_key}/run`
+
+Submit the first hop of a plan; return all hops with assigned job IDs and statuses. Body: `{ prefix, warehouse_id, max_workers }`. Response includes `hops[]` each with `name`, `source_catalog`, `dest_catalog`, `job_id`, `status`.
+
+---
+
+## Delta Sharing
+
+Manage shares, recipients, and table grants for secure cross-org data distribution. All endpoints under `/api/delta-sharing/`.
+
+### `GET /api/delta-sharing/shares`
+
+List all Delta Sharing shares.
+
+### `GET /api/delta-sharing/shares/{name}`
+
+Get details for a share including shared objects and recipient grants.
+
+### `POST /api/delta-sharing/shares`
+
+Create a new share. Body: `{ name, comment }`.
+
+### `POST /api/delta-sharing/shares/grant`
+
+Add a table to a share. Body: `{ share_name, table_fqn, shared_as }`.
+
+### `POST /api/delta-sharing/shares/revoke`
+
+Remove a table from a share. Body: `{ share_name, table_fqn }`.
+
+### `POST /api/delta-sharing/shares/validate/{name}`
+
+Validate that all objects in a share are accessible.
+
+### `GET /api/delta-sharing/recipients`
+
+List all recipients.
+
+### `POST /api/delta-sharing/recipients`
+
+Create a new recipient. Body: `{ name, comment, authentication_type, sharing_code }`.
+
+### `POST /api/delta-sharing/recipients/grant`
+
+Grant SELECT access on a share to a recipient. Body: `{ share_name, recipient_name }`.
+
+---
+
+## Continuous Sync
+
+Near-real-time streaming replication via Structured Streaming, with in-process stream lifecycle management. All endpoints under `/api/continuous-sync/`.
+
+### `POST /api/continuous-sync/plan`
+
+Generate a streaming-job plan without submitting (preview/download). Body: `{ source_catalog, destination_catalog, tables?, schema_name?, trigger_ms, checkpoint_root? }`.
+
+### `POST /api/continuous-sync/start`
+
+Submit and start a streaming job. Same body as `/plan`. Returns `StreamRecord` with `stream_id`, `run_id`, `status`. Returns 200 even on submission failure so UI can render consistently.
+
+### `GET /api/continuous-sync/streams`
+
+List all registered streams. Query: `refresh` (poll Databricks for fresh state).
+
+### `GET /api/continuous-sync/streams/{stream_id}`
+
+Get current state for one stream (always polls Databricks).
+
+### `POST /api/continuous-sync/streams/{stream_id}/stop`
+
+Stop a stream. Idempotent.
+
+### `POST /api/continuous-sync/streams/{stream_id}/restart`
+
+Cancel and resubmit a stream with the same parameters (post-crash / schema-drift recovery).
+
+---
+
+## Approval
+
+Approval workflow for governed clone operations. All endpoints under `/api/approvals/`.
+
+### `GET /api/approvals/pending`
+
+List all pending approval requests.
+
+### `GET /api/approvals/{request_id}`
+
+Fetch one approval request by id (works for any status).
+
+### `POST /api/approvals/{request_id}/approve`
+
+Approve a pending request. Idempotent on terminal states.
+
+### `POST /api/approvals/{request_id}/deny`
+
+Deny a pending request. Body: `{ reason }`.
+
+---
+
+## Anomaly Correlation
+
+Cross-metric anomaly correlation — group co-occurring anomalies and surface candidate root-cause tables. All endpoints under `/api/anomalies/`.
+
+### `GET /api/anomalies/groups`
+
+Recent anomaly correlation groups.
+
+### `GET /api/anomalies/groups/{group_id}`
+
+Detail for a correlation group.
+
+### `POST /api/anomalies/correlate`
+
+Run correlation analysis. Query: `time_window_minutes` (default 120, min 10).
+
+### `GET /api/anomalies/root-causes`
+
+Top root-cause tables across recent anomalies.
+
+---
+
+## Trust Score
+
+Composite trust scores per table — DQ + freshness + anomaly + schema stability + PII + lineage. All endpoints under `/api/trust/`.
+
+### `GET /api/trust/scores/{catalog}`
+
+Trust scores for every table in a catalog.
+
+### `GET /api/trust/scores/{catalog}/{schema}/{table}`
+
+Trust score for a specific table.
+
+### `GET /api/trust/scores/{catalog}/{schema}/{table}/history`
+
+Trust score trend over time for one table.
+
+### `POST /api/trust/compute/{catalog}`
+
+Compute trust scores for a catalog. Query: `schema_filter`.
+
+### `GET /api/trust/config`
+
+Trust score dimension weights.
+
+### `PUT /api/trust/config`
+
+Update dimension weights. Body: `{ dq, freshness, anomaly, schema_stability, pii, lineage }` (defaults: 0.30 / 0.25 / 0.15 / 0.10 / 0.10 / 0.10).
+
+---
+
+## Coverage
+
+DQ coverage — which tables have checks vs. don't, ranked gaps. All endpoints under `/api/coverage/`.
+
+### `GET /api/coverage/{catalog}`
+
+Coverage map for a catalog.
+
+### `GET /api/coverage/{catalog}/summary`
+
+Aggregate coverage summary.
+
+### `GET /api/coverage/{catalog}/gaps`
+
+Uncovered tables ranked by priority.
+
+### `POST /api/coverage/{catalog}/compute`
+
+Compute a coverage snapshot. Query: `schema_filter`.
+
+---
+
+## Cost Of Poor Quality (COPQ)
+
+Quantify business cost of DQ failures — engineer time, re-runs, SLA breaches, downstream disruption. All endpoints under `/api/copq/`.
+
+### `GET /api/copq/summary`
+
+COPQ summary with breakdown. Query: `days` (default 30).
+
+### `GET /api/copq/by-table`
+
+COPQ ranked by table. Query: `days`.
+
+### `GET /api/copq/trends`
+
+Weekly COPQ trends. Query: `days` (default 90, min 7).
+
+### `GET /api/copq/config`
+
+Cost assumptions used for COPQ calculation.
+
+### `PUT /api/copq/config`
+
+Update cost assumptions. Body: `{ hourly_engineer_cost (75.0), per_rerun_cost (25.0), sla_breach_penalty (500.0), downstream_disruption_cost (100.0), avg_responders_per_incident (2) }`.
+
+### `POST /api/copq/compute`
+
+Auto-compute COPQ events from DQ failures.
+
+---
+
+## Notifications (preferences + webhooks)
+
+User notification preferences and webhook configuration. All endpoints under `/api/notifications/`.
+
+### `GET /api/notifications/preferences`
+
+Notification preferences and configured webhooks.
+
+### `PUT /api/notifications/preferences`
+
+Save notification preferences.
+
+### `GET /api/notifications/webhooks`
+
+List configured webhooks.
+
+### `POST /api/notifications/webhooks`
+
+Add a webhook configuration.
+
+### `DELETE /api/notifications/webhooks/{webhook_id}`
+
+Remove a webhook.
+
+### `POST /api/notifications/webhooks/test`
+
+Send a test notification to a webhook.
+
+---
+
+## Scheduled clones
+
+Cron-scheduled clone / sync / incremental_sync jobs with optional Databricks-Job creation for workspace-side execution. All endpoints under `/api/schedules/` (plural — distinct from the singular `/api/schedule` clone-side schedules).
+
+### `GET /api/schedules`
+
+List all saved schedules (active + paused) with computed `next_run`.
+
+### `POST /api/schedules`
+
+Create a schedule. Body: `{ name, source_catalog, destination_catalog, cron, clone_type, job_type ("clone"|"sync"|"incremental_sync"), template? }`.
+
+### `POST /api/schedules/{schedule_id}/pause`
+
+Pause a schedule (clears `next_run`).
+
+### `POST /api/schedules/{schedule_id}/resume`
+
+Resume a paused schedule.
+
+### `DELETE /api/schedules/{schedule_id}`
+
+Delete a schedule (idempotent).
+
+---
+
+## Lakehouse Monitor
+
+Clone Databricks Lakehouse Monitoring quality monitors between catalogs. All endpoints under `/api/lakehouse-monitor/`.
+
+### `POST /api/lakehouse-monitor/list`
+
+List quality monitors in a catalog. Body: `{ source_catalog, warehouse_id?, schema_filter? }`.
+
+### `POST /api/lakehouse-monitor/clone`
+
+Clone monitor definitions from source to destination tables. Body: `{ source_catalog, destination_catalog, warehouse_id?, schema_filter?, dry_run }`.
+
+### `POST /api/lakehouse-monitor/compare`
+
+Compare monitor metrics between source and destination tables. Body: `{ source_table, destination_table, warehouse_id? }`.
+
+---
+
+## Observability
+
+Unified observability dashboard combining freshness + SLA + DQ + anomaly signals. All endpoints under `/api/observability/`.
+
+### `GET /api/observability/dashboard`
+
+Full dashboard — health score, summary, top issues, category breakdown.
+
+### `GET /api/observability/health-score`
+
+Composite health score (0–100).
+
+### `GET /api/observability/issues`
+
+Top issues across all observability categories.
+
+### `GET /api/observability/trends/{metric}`
+
+Time-series sparkline data for one metric (`freshness`, `sla`, `dq`).
+
+### `GET /api/observability/category-health`
+
+Per-category health breakdown with weights.
+
+---
+
+## Schema Evolution
+
+Detect schema drift between source and destination tables and apply ALTER TABLE statements to converge. All endpoints under `/api/schema-evolution/`.
+
+### `POST /api/schema-evolution/detect`
+
+Compare source and destination schemas. Body: `{ source_catalog, destination_catalog, schema_name, table_name }`.
+
+### `POST /api/schema-evolution/apply`
+
+Apply detected changes as ALTER TABLE. Body: `{ destination_catalog, schema_name, table_name, changes, dry_run (default true), drop_removed (default false) }`.
+
+### `POST /api/schema-evolution/evolve-catalog`
+
+Detect + apply across every table in a catalog. Body: `{ source_catalog, destination_catalog, exclude_schemas, dry_run, drop_removed, max_workers }`.
+
+---
+
+## Clone Provenance
+
+Cryptographic provenance — sign clone manifests with HMAC, verify signatures later. All endpoints under `/api/clone-provenance/`.
+
+### `POST /api/clone-provenance/sign/{job_id}`
+
+Sign the manifest for a completed clone job by ID using HMAC.
+
+### `POST /api/clone-provenance/sign`
+
+Sign an arbitrary manifest supplied by the caller (for external orchestrators). Body: `{ source_catalog, destination_catalog, config, result, job_id? }`.
+
+### `POST /api/clone-provenance/verify`
+
+Verify a previously-signed manifest envelope. Returns `{ valid, reason }`.
+
+---
+
+## Playbooks
+
+Trigger-driven automation — run actions on events (DQ failure, schema drift, anomaly, etc.) with rate-limiting and execution history. All endpoints under `/api/playbooks/`.
+
+### `GET /api/playbooks`
+
+List all playbooks.
+
+### `POST /api/playbooks`
+
+Create a playbook. Body: `{ name, description, trigger_type, trigger_config, conditions, actions, max_executions_per_hour }`.
+
+### `GET /api/playbooks/templates`
+
+List playbook templates.
+
+### `GET /api/playbooks/{playbook_id}`
+
+Get a playbook by ID.
+
+### `PUT /api/playbooks/{playbook_id}`
+
+Update a playbook.
+
+### `DELETE /api/playbooks/{playbook_id}`
+
+Delete a playbook.
+
+### `POST /api/playbooks/{playbook_id}/execute`
+
+Execute a playbook on demand (bypasses triggers).
+
+### `GET /api/playbooks/{playbook_id}/history`
+
+Playbook execution history.
+
+---
+
+## Streaming Clone Generator
+
+Generate DLT pipeline specs and notebook SQL to materialize MV / streaming-table data. All endpoints under `/api/streaming-clone-generator/`.
+
+### `POST /api/streaming-clone-generator/generate`
+
+Generate a DLT pipeline spec + notebook SQL. Body: `{ source_catalog, destination_catalog, schema_name, advanced_tables, target_schema?, pipeline_name? }`.
+
+---
+
+## Pipeline (multi-step orchestrator)
+
+Multi-step clone pipelines — chain clone, mask, validate, notify, vacuum into a single declarative job. All endpoints under `/api/pipeline/`.
+
+### `POST /api/pipeline/pipelines`
+
+Create a pipeline. Body: `{ name, description, steps: [{ type, name, config, on_failure }] }`.
+
+### `GET /api/pipeline/pipelines`
+
+List pipelines (optionally templates only).
+
+### `GET /api/pipeline/pipelines/{pipeline_id}`
+
+Get a pipeline by ID.
+
+### `DELETE /api/pipeline/pipelines/{pipeline_id}`
+
+Delete a pipeline.
+
+### `POST /api/pipeline/pipelines/{pipeline_id}/run`
+
+Run a pipeline (queued async). Returns `job_id`.
+
+### `GET /api/pipeline/runs`
+
+List pipeline runs. Query: `pipeline_id`.
+
+### `GET /api/pipeline/runs/{run_id}`
+
+Get run status.
+
+### `POST /api/pipeline/runs/{run_id}/cancel`
+
+Cancel a pipeline run.
+
+### `GET /api/pipeline/templates`
+
+List pipeline templates.
+
+### `POST /api/pipeline/templates/{template_name}/create`
+
+Create a pipeline from a template with optional overrides.
+
+---
+
+## Job Clone
+
+Clone Databricks Jobs (workflows) within or across workspaces, with diff and backup/restore. All endpoints under `/api/job-clone/`.
+
+### `GET /api/job-clone`
+
+List Databricks jobs. Query: name filter, limit.
+
+### `GET /api/job-clone/{job_id}`
+
+Get job details by ID.
+
+### `POST /api/job-clone/clone`
+
+Clone a job within the same workspace. Body: `{ job_id, new_name, overrides }`.
+
+### `POST /api/job-clone/clone-cross-workspace`
+
+Clone a job to a different workspace. Body: `{ job_id, dest_host, dest_token, new_name }`.
+
+### `POST /api/job-clone/diff`
+
+Compare two job definitions. Body: `{ job_id_a, job_id_b }`.
+
+### `POST /api/job-clone/backup`
+
+Backup job definitions. Body: `{ job_ids }`.
+
+### `POST /api/job-clone/restore`
+
+Restore from backup. Body: `{ definitions }`.
+
+---
+
+## Natural Language Rules
+
+Parse natural-language descriptions into DQ rule configurations and generate English explanations of existing rules. All endpoints under `/api/nl-rules/`.
+
+### `POST /api/nl-rules/from-natural-language`
+
+Parse a natural-language rule description into a structured DQ rule. Body: `{ text, table_fqn }`.
+
+### `POST /api/nl-rules/batch-parse`
+
+Parse multiple NL rules for one table. Body: `{ rules: [...], table_fqn }`.
+
+### `POST /api/nl-rules/explain`
+
+Generate an English explanation of a rule. Body: `{ rule }`.

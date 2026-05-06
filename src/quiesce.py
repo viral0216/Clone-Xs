@@ -64,6 +64,7 @@ class SchemaGrantSnapshot:
     process-local; if the orchestrator crashes hard the worst case is
     that a sysadmin must manually re-grant from the audit log.
     """
+
     schema_fqn: str
     revoked: list[tuple[str, list[str]]] = field(default_factory=list)
 
@@ -82,7 +83,9 @@ def quiesce_source_schemas(
     whole clone over one schema's permission lookup.
     """
     from databricks.sdk.service.catalog import (
-        PermissionsChange, Privilege, SecurableType,
+        PermissionsChange,
+        Privilege,
+        SecurableType,
     )
 
     snapshots: list[SchemaGrantSnapshot] = []
@@ -95,8 +98,7 @@ def quiesce_source_schemas(
             current = client.grants.get(SecurableType.SCHEMA, schema_fqn)
         except Exception as e:
             logger.warning(
-                f"Quiesce: could not read grants on {schema_fqn} ({e}); "
-                f"schema left writable."
+                f"Quiesce: could not read grants on {schema_fqn} ({e}); schema left writable."
             )
             snapshots.append(snap)
             continue
@@ -112,7 +114,7 @@ def quiesce_source_schemas(
             if not principal:
                 continue
             write_privs = []
-            for p in (assignment.privileges or []):
+            for p in assignment.privileges or []:
                 priv_name = p.value if hasattr(p, "value") else str(p)
                 if priv_name.upper() in _WRITE_PRIVILEGES:
                     write_privs.append(priv_name.upper())
@@ -121,31 +123,30 @@ def quiesce_source_schemas(
 
             if dry_run:
                 logger.info(
-                    f"[DRY RUN] Quiesce would revoke {write_privs} from "
-                    f"{principal} on {schema_fqn}"
+                    f"[DRY RUN] Quiesce would revoke {write_privs} from {principal} on {schema_fqn}"
                 )
                 snap.revoked.append((principal, write_privs))
                 continue
 
             try:
                 client.grants.update(
-                    SecurableType.SCHEMA, schema_fqn,
-                    changes=[PermissionsChange(
-                        remove=[Privilege(p) for p in write_privs],
-                        principal=principal,
-                    )],
+                    SecurableType.SCHEMA,
+                    schema_fqn,
+                    changes=[
+                        PermissionsChange(
+                            remove=[Privilege(p) for p in write_privs],
+                            principal=principal,
+                        )
+                    ],
                 )
-                logger.info(
-                    f"Quiesce: revoked {write_privs} from {principal} on {schema_fqn}"
-                )
+                logger.info(f"Quiesce: revoked {write_privs} from {principal} on {schema_fqn}")
                 snap.revoked.append((principal, write_privs))
             except Exception as e:
                 # Per-principal failure (e.g. principal deleted, transient
                 # SDK error). Don't add to `revoked` — there's nothing to
                 # restore — and continue with the next principal.
                 logger.warning(
-                    f"Quiesce: could not revoke {write_privs} from {principal} "
-                    f"on {schema_fqn}: {e}"
+                    f"Quiesce: could not revoke {write_privs} from {principal} on {schema_fqn}: {e}"
                 )
 
         snapshots.append(snap)
@@ -177,7 +178,9 @@ def restore_source_grants(
     grants were dropped.
     """
     from databricks.sdk.service.catalog import (
-        PermissionsChange, Privilege, SecurableType,
+        PermissionsChange,
+        Privilege,
+        SecurableType,
     )
 
     if not snapshots:
@@ -191,22 +194,20 @@ def restore_source_grants(
             continue
         for principal, privs in snap.revoked:
             if dry_run:
-                logger.info(
-                    f"[DRY RUN] Would restore {privs} to {principal} "
-                    f"on {snap.schema_fqn}"
-                )
+                logger.info(f"[DRY RUN] Would restore {privs} to {principal} on {snap.schema_fqn}")
                 continue
             try:
                 client.grants.update(
-                    SecurableType.SCHEMA, snap.schema_fqn,
-                    changes=[PermissionsChange(
-                        add=[Privilege(p) for p in privs],
-                        principal=principal,
-                    )],
+                    SecurableType.SCHEMA,
+                    snap.schema_fqn,
+                    changes=[
+                        PermissionsChange(
+                            add=[Privilege(p) for p in privs],
+                            principal=principal,
+                        )
+                    ],
                 )
-                logger.info(
-                    f"Restored {privs} to {principal} on {snap.schema_fqn}"
-                )
+                logger.info(f"Restored {privs} to {principal} on {snap.schema_fqn}")
                 restored += 1
             except Exception as e:
                 failed += 1

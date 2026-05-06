@@ -38,7 +38,9 @@ class ClonePlugin(ABC):
         """Called before cloning a schema."""
         pass
 
-    def on_schema_complete(self, schema_name: str, results: dict, client, warehouse_id: str) -> None:
+    def on_schema_complete(
+        self, schema_name: str, results: dict, client, warehouse_id: str
+    ) -> None:
         """Called after a schema is cloned."""
         pass
 
@@ -97,11 +99,7 @@ class PluginManager:
         # Find ClonePlugin subclasses in the module
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
-            if (
-                isinstance(attr, type)
-                and issubclass(attr, ClonePlugin)
-                and attr is not ClonePlugin
-            ):
+            if isinstance(attr, type) and issubclass(attr, ClonePlugin) and attr is not ClonePlugin:
                 plugin = attr()
                 self.plugins.append(plugin)
                 logger.info(f"Loaded plugin: {plugin.name} v{plugin.version}")
@@ -207,7 +205,9 @@ class PluginManager:
 
     # ── RTBF plugin runners ───────────────────────────────────────────────
 
-    def run_on_rtbf_request(self, request_id: str, subject_type: str, subject_value_hash: str) -> None:
+    def run_on_rtbf_request(
+        self, request_id: str, subject_type: str, subject_value_hash: str
+    ) -> None:
         """Run all on_rtbf_request hooks."""
         for plugin in self.plugins:
             try:
@@ -242,6 +242,7 @@ class PluginManager:
 
 # --- Built-in example plugins ---
 
+
 class LoggingPlugin(ClonePlugin):
     """Example plugin that logs all clone events."""
 
@@ -249,7 +250,9 @@ class LoggingPlugin(ClonePlugin):
     description = "Logs all clone lifecycle events"
 
     def on_clone_start(self, config, client, warehouse_id):
-        logger.info(f"[LoggingPlugin] Clone starting: {config.get('source_catalog')} -> {config.get('destination_catalog')}")
+        logger.info(
+            f"[LoggingPlugin] Clone starting: {config.get('source_catalog')} -> {config.get('destination_catalog')}"
+        )
         return config
 
     def on_clone_complete(self, config, summary, client, warehouse_id):
@@ -271,6 +274,7 @@ class OptimizeAfterClonePlugin(ClonePlugin):
     def on_table_complete(self, table_fqn, status, client, warehouse_id):
         if status == "success":
             from src.client import execute_sql
+
             try:
                 execute_sql(client, warehouse_id, f"OPTIMIZE {table_fqn}")
                 logger.info(f"[OptimizePlugin] Optimized {table_fqn}")
@@ -287,6 +291,7 @@ class AnalyzeAfterClonePlugin(ClonePlugin):
     def on_table_complete(self, table_fqn, status, client, warehouse_id):
         if status == "success":
             from src.client import execute_sql
+
             try:
                 execute_sql(client, warehouse_id, f"ANALYZE TABLE {table_fqn} COMPUTE STATISTICS")
                 logger.info(f"[AnalyzePlugin] Analyzed {table_fqn}")

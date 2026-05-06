@@ -1,12 +1,11 @@
 """ML Assets request/response models."""
 
-from typing import Literal
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class MLAssetListRequest(BaseModel):
     """Request to list ML assets in a catalog."""
+
     source_catalog: str
     warehouse_id: str | None = None
     schemas: list[str] = []
@@ -14,6 +13,7 @@ class MLAssetListRequest(BaseModel):
 
 class MLAssetCloneRequest(BaseModel):
     """Request to clone ML assets between catalogs."""
+
     source_catalog: str
     destination_catalog: str
     warehouse_id: str | None = None
@@ -30,6 +30,7 @@ class MLAssetCloneRequest(BaseModel):
 
 class ServingEndpointImportRequest(BaseModel):
     """Request to import a serving endpoint config."""
+
     config: dict
     dest_catalog: str | None = None
     source_catalog: str | None = None

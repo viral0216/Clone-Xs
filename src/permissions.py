@@ -36,11 +36,13 @@ def _resolve_warehouse_id(warehouse_id: str) -> str:
     # Try config file
     try:
         from src.config import load_config
+
         cfg = load_config("config/clone_config.yaml")
         return cfg.get("sql_warehouse_id", "")
     except Exception:
         pass
     return warehouse_id
+
 
 # Internal privileges that should not be copied
 _SKIP_PRIVILEGES = {"INHERITED_FROM", "SYSTEM"}
@@ -76,6 +78,7 @@ def _copy_grants_via_sdk(
     (known issue with managed catalogs).
     """
     from databricks.sdk.service.catalog import PermissionsChange, Privilege
+
     try:
         sec_type = _securable_type_enum(securable_type)
         effective = client.grants.get_effective(sec_type, source_name)
@@ -88,7 +91,7 @@ def _copy_grants_via_sdk(
             if not principal:
                 continue
             privs = []
-            for p in (assignment.privileges or []):
+            for p in assignment.privileges or []:
                 priv_name = p.privilege.value if hasattr(p.privilege, "value") else str(p.privilege)
                 if priv_name.upper() in _SKIP_PRIVILEGES:
                     continue
@@ -140,7 +143,9 @@ def _copy_grants_via_sql(
         grants_applied = 0
         for row in rows:
             principal = row.get("Principal") or row.get("principal") or ""
-            privilege = row.get("ActionType") or row.get("privilege") or row.get("action_type") or ""
+            privilege = (
+                row.get("ActionType") or row.get("privilege") or row.get("action_type") or ""
+            )
 
             if not principal or not privilege:
                 continue
@@ -170,8 +175,12 @@ def copy_catalog_permissions(
 ) -> None:
     """Copy catalog-level permissions from source to destination."""
     _copy_grants_via_sql(
-        client, warehouse_id, "CATALOG",
-        source_catalog, dest_catalog, "catalog",
+        client,
+        warehouse_id,
+        "CATALOG",
+        source_catalog,
+        dest_catalog,
+        "catalog",
     )
 
 
@@ -184,8 +193,11 @@ def copy_schema_permissions(
 ) -> None:
     """Copy schema-level permissions from source to destination."""
     _copy_grants_via_sql(
-        client, warehouse_id, "SCHEMA",
-        f"{source_catalog}.{schema}", f"{dest_catalog}.{schema}",
+        client,
+        warehouse_id,
+        "SCHEMA",
+        f"{source_catalog}.{schema}",
+        f"{dest_catalog}.{schema}",
         f"schema {schema}",
     )
 
@@ -200,7 +212,9 @@ def copy_table_permissions(
 ) -> None:
     """Copy table-level permissions from source to destination."""
     _copy_grants_via_sql(
-        client, warehouse_id, "TABLE",
+        client,
+        warehouse_id,
+        "TABLE",
         f"{source_catalog}.{schema}.{table_name}",
         f"{dest_catalog}.{schema}.{table_name}",
         f"table {schema}.{table_name}",
@@ -217,7 +231,9 @@ def copy_volume_permissions(
 ) -> None:
     """Copy volume-level permissions from source to destination."""
     _copy_grants_via_sql(
-        client, warehouse_id, "VOLUME",
+        client,
+        warehouse_id,
+        "VOLUME",
         f"{source_catalog}.{schema}.{volume_name}",
         f"{dest_catalog}.{schema}.{volume_name}",
         f"volume {schema}.{volume_name}",
@@ -234,7 +250,9 @@ def copy_function_permissions(
 ) -> None:
     """Copy function-level permissions from source to destination."""
     _copy_grants_via_sql(
-        client, warehouse_id, "FUNCTION",
+        client,
+        warehouse_id,
+        "FUNCTION",
         f"{source_catalog}.{schema}.{function_name}",
         f"{dest_catalog}.{schema}.{function_name}",
         f"function {schema}.{function_name}",
@@ -277,9 +295,7 @@ def update_ownership(
             elif securable_type == SecurableType.VOLUME:
                 client.volumes.update(dest_full_name, owner=source_info.owner)
 
-            logger.info(
-                f"Updated ownership for {dest_full_name} to {source_info.owner}"
-            )
+            logger.info(f"Updated ownership for {dest_full_name} to {source_info.owner}")
     except Exception as e:
         logger.warning(f"Could not update ownership for {dest_full_name}: {e}")
 
@@ -287,4 +303,5 @@ def update_ownership(
 def _has_sql_executor() -> bool:
     """Check if a custom SQL executor (spark.sql) is configured."""
     from src.client import _sql_executor
+
     return _sql_executor is not None

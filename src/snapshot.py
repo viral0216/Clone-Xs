@@ -75,30 +75,36 @@ def create_snapshot(
                     for idx, c in enumerate(table_info["columns"])
                 ]
 
-            schema_data["tables"].append({
-                "name": table_name,
-                "type": t.get("table_type"),
-                "comment": table_info.get("comment") if table_info else None,
-                "columns": columns,
-            })
+            schema_data["tables"].append(
+                {
+                    "name": table_name,
+                    "type": t.get("table_type"),
+                    "comment": table_info.get("comment") if table_info else None,
+                    "columns": columns,
+                }
+            )
 
         # Views
         views = list_views_sdk(client, catalog, schema_name)
         for v in views:
-            schema_data["views"].append({
-                "name": v["table_name"],
-                "definition": v.get("view_definition"),
-            })
+            schema_data["views"].append(
+                {
+                    "name": v["table_name"],
+                    "definition": v.get("view_definition"),
+                }
+            )
 
         # Functions
         try:
             functions = list_functions_sdk(client, catalog, schema_name)
             for fn in functions:
-                schema_data["functions"].append({
-                    "name": fn["function_name"],
-                    "return_type": fn.get("data_type"),
-                    "definition": None,
-                })
+                schema_data["functions"].append(
+                    {
+                        "name": fn["function_name"],
+                        "return_type": fn.get("data_type"),
+                        "definition": None,
+                    }
+                )
         except Exception:
             logger.debug(f"  Could not query routines for {schema_name}")
 
@@ -106,11 +112,13 @@ def create_snapshot(
         try:
             volumes = list_volumes_sdk(client, catalog, schema_name)
             for vol in volumes:
-                schema_data["volumes"].append({
-                    "name": vol["volume_name"],
-                    "type": vol.get("volume_type"),
-                    "comment": None,
-                })
+                schema_data["volumes"].append(
+                    {
+                        "name": vol["volume_name"],
+                        "type": vol.get("volume_type"),
+                        "comment": None,
+                    }
+                )
         except Exception:
             pass  # Volumes SDK may not be available
 
@@ -180,10 +188,12 @@ def compare_snapshots(snapshot_path_a: str, snapshot_path_b: str) -> dict:
         removed = tables_a - tables_b
 
         if added or removed:
-            diff["table_changes"].append({
-                "schema": schema_name,
-                "tables_added": list(added),
-                "tables_removed": list(removed),
-            })
+            diff["table_changes"].append(
+                {
+                    "schema": schema_name,
+                    "tables_added": list(added),
+                    "tables_removed": list(removed),
+                }
+            )
 
     return diff

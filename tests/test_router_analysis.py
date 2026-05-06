@@ -66,21 +66,27 @@ def test_storage_metrics(client):
 
 
 def test_optimize_tables(client):
-    with patch("src.table_maintenance.run_optimize", return_value={"optimized": []}), \
-         patch("src.table_maintenance._enumerate_tables", return_value=[]):
+    with (
+        patch("src.table_maintenance.run_optimize", return_value={"optimized": []}),
+        patch("src.table_maintenance._enumerate_tables", return_value=[]),
+    ):
         resp = client.post("/api/optimize", json=_SINGLE)
         assert resp.status_code == 200
 
 
 def test_vacuum_tables(client):
-    with patch("src.table_maintenance.run_vacuum", return_value={"vacuumed": []}), \
-         patch("src.table_maintenance._enumerate_tables", return_value=[]):
+    with (
+        patch("src.table_maintenance.run_vacuum", return_value={"vacuumed": []}),
+        patch("src.table_maintenance._enumerate_tables", return_value=[]),
+    ):
         resp = client.post("/api/vacuum", json=_SINGLE)
         assert resp.status_code == 200
 
 
 def test_check_predictive_optimization(client):
-    with patch("src.table_maintenance.check_predictive_optimization", return_value={"enabled": False}):
+    with patch(
+        "src.table_maintenance.check_predictive_optimization", return_value={"enabled": False}
+    ):
         resp = client.post("/api/check-predictive-optimization", json=_SINGLE)
         assert resp.status_code == 200
 

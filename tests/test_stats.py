@@ -7,5 +7,5 @@ def test_format_bytes():
     assert _format_bytes(1024) == "1.0 KB"
     assert _format_bytes(1024 * 1024) == "1.0 MB"
     assert _format_bytes(1024 * 1024 * 1024) == "1.00 GB"
-    assert _format_bytes(2 * 1024 ** 4) == "2.00 TB"
+    assert _format_bytes(2 * 1024**4) == "2.00 TB"
     assert _format_bytes(1536) == "1.5 KB"

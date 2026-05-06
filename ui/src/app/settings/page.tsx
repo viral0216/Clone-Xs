@@ -883,6 +883,9 @@ export default function SettingsPage() {
           {/* ─── Performance ─── */}
           {activeSection === "performance" && <section id="performance">
             <PerformanceSettings />
+            <div className="mt-6 pt-6 border-t border-border">
+              <StreamingLimitsSettings />
+            </div>
           </section>}
 
           {/* ─── Features ─── */}
@@ -1705,6 +1708,139 @@ function PerformanceSettings() {
         </Button>
         <p className="text-[11px] text-muted-foreground">
           Recommended: 4-10 for serverless, 2-4 for classic warehouses.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────── Streaming Limits ────────────────────────── */
+
+type StreamLimitField = "events_per_batch" | "interval_seconds" | "total_duration_seconds";
+type StreamLimitBlock = { default: number; min: number; max: number };
+type StreamLimitsShape = Record<StreamLimitField, StreamLimitBlock>;
+
+const STREAM_LIMIT_FALLBACK: StreamLimitsShape = {
+  events_per_batch: { default: 100, min: 1, max: 10000 },
+  interval_seconds: { default: 5, min: 0.1, max: 300 },
+  total_duration_seconds: { default: 60, min: 1, max: 3600 },
+};
+
+const STREAM_LIMIT_LABELS: Record<StreamLimitField, { label: string; help: string }> = {
+  events_per_batch: {
+    label: "Events per batch",
+    help: "How many records the streaming runner emits per tick.",
+  },
+  interval_seconds: {
+    label: "Interval (seconds)",
+    help: "Time between ticks. Sub-second is reachable via direct API only.",
+  },
+  total_duration_seconds: {
+    label: "Total duration (seconds)",
+    help: "Maximum length of a single in-process streaming run.",
+  },
+};
+
+function StreamingLimitsSettings() {
+  const [limits, setLimits] = useState<StreamLimitsShape>(STREAM_LIMIT_FALLBACK);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get<StreamLimitsShape>("/config/streaming-limits")
+      .then(setLimits)
+      .catch(() => { /* keep fallback */ });
+  }, []);
+
+  const updateCell = (field: StreamLimitField, key: keyof StreamLimitBlock, raw: string) => {
+    const parsed = field === "interval_seconds" ? parseFloat(raw) : parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return;
+    setLimits((cur) => ({ ...cur, [field]: { ...cur[field], [key]: parsed } }));
+  };
+
+  const handleSave = async () => {
+    // Client-side guard before round-tripping — same invariants the
+    // backend enforces, but caught early so the toast is useful.
+    for (const f of Object.keys(limits) as StreamLimitField[]) {
+      const b = limits[f];
+      if (b.min > b.max) {
+        toast.error(`${STREAM_LIMIT_LABELS[f].label}: min must be <= max`);
+        return;
+      }
+      if (b.default < b.min || b.default > b.max) {
+        toast.error(`${STREAM_LIMIT_LABELS[f].label}: default must be within [min, max]`);
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      const res = await api.patch<{ status: string; limits: StreamLimitsShape }>(
+        "/config/streaming-limits",
+        limits,
+      );
+      setLimits(res.limits);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success("Streaming form limits saved");
+    } catch (e: any) {
+      toast.error(`Failed to save: ${e?.message || "unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setLimits(STREAM_LIMIT_FALLBACK);
+    toast.message("Reverted to defaults — click Save to persist");
+  };
+
+  return (
+    <>
+      <SectionHeading
+        title="Streaming Form Limits"
+        subtitle="Bounds for the /demo-data Streaming Events form. Shared by the UI clamp and the API validators."
+      />
+      <div className="grid grid-cols-1 gap-4 mt-4">
+        {(Object.keys(limits) as StreamLimitField[]).map((field) => {
+          const b = limits[field];
+          const meta = STREAM_LIMIT_LABELS[field];
+          const step = field === "interval_seconds" ? "0.1" : "1";
+          return (
+            <div key={field} className="p-3 rounded-lg bg-muted/30 space-y-2">
+              <div className="flex items-center gap-2.5">
+                <Play className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">{meta.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{meta.help}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 ml-0 sm:ml-6">
+                <FieldGroup label="Default">
+                  <Input type="number" step={step} value={b.default}
+                    onChange={(e) => updateCell(field, "default", e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Min">
+                  <Input type="number" step={step} value={b.min}
+                    onChange={(e) => updateCell(field, "min", e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Max">
+                  <Input type="number" step={step} value={b.max}
+                    onChange={(e) => updateCell(field, "max", e.target.value)} />
+                </FieldGroup>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-3 mt-4">
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saved ? <><CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Saved</> : (saving ? "Saving…" : "Save")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={handleReset} disabled={saving}>
+          Reset to defaults
+        </Button>
+        <p className="text-[11px] text-muted-foreground">
+          Stored in <code className="text-[10px] bg-muted/50 px-1 rounded">config/streaming_limits.json</code>.
         </p>
       </div>
     </>

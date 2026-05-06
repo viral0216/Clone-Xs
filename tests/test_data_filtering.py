@@ -11,8 +11,14 @@ class TestDataFiltering:
     def test_where_clause_generates_ctas(self, mock_record, mock_sql):
         mock_sql.return_value = []
         clone_table(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1", "table1",
-            clone_type="DEEP", where_clause="year >= 2024",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "schema1",
+            "table1",
+            clone_type="DEEP",
+            where_clause="year >= 2024",
         )
         # Verify the SQL uses CREATE TABLE AS SELECT ... WHERE
         sql_calls = [c[0][2] for c in mock_sql.call_args_list]
@@ -23,7 +29,12 @@ class TestDataFiltering:
     def test_no_where_clause_uses_clone(self, mock_record, mock_sql):
         mock_sql.return_value = []
         clone_table(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1", "table1",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "schema1",
+            "table1",
             clone_type="DEEP",
         )
         sql_calls = [c[0][2] for c in mock_sql.call_args_list]
@@ -35,8 +46,14 @@ class TestDataFiltering:
         """WHERE clause should be ignored for SHALLOW clone."""
         mock_sql.return_value = []
         clone_table(
-            MagicMock(), "wh-123", "src_cat", "dst_cat", "schema1", "table1",
-            clone_type="SHALLOW", where_clause="year >= 2024",
+            MagicMock(),
+            "wh-123",
+            "src_cat",
+            "dst_cat",
+            "schema1",
+            "table1",
+            clone_type="SHALLOW",
+            where_clause="year >= 2024",
         )
         sql_calls = [c[0][2] for c in mock_sql.call_args_list]
         # Should use CLONE, not CTAS

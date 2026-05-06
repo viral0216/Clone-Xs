@@ -67,6 +67,7 @@ class TestPluginRegistry:
 
     def test_install_not_in_registry_raises(self):
         import pytest
+
         with tempfile.TemporaryDirectory() as tmpdir:
             registry = PluginRegistry(plugin_dir=tmpdir)
             with pytest.raises(ValueError, match="not found"):

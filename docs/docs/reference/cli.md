@@ -77,6 +77,25 @@ clxs clone [options]
 | `--ttl` | Set TTL on destination (e.g., `7d`, `30d`) |
 | `--skip-unused` | Skip tables with no recent queries |
 | `--schema-only` | Create empty tables (structure only, no data) with all other artifacts |
+| `--target-format` | Destination format — `DELTA` (default) or `ICEBERG` (UniForm-readable). See [clone guide — target format](../guide/clone#target-format--target_format-iceberg-uniform). |
+| `--iceberg-physical` | With `--target-format ICEBERG`, swap UniForm for `CREATE TABLE … USING iceberg AS SELECT` so UC reports the destination as `Data source: Iceberg`. **Loses Delta history.** |
+| `--auto-mask-pii` | Auto-detect PII columns via UC `column_tags` and mask post-clone via the existing `src/masking.py` pipeline. |
+| `--enable-retry` / `--no-retry` | Auto-retry transient failures (network, throttle, 5xx). Default on. |
+| `--compare-dq-after-clone` | Run column-level DQ comparison after each schema clones; combined with `--auto-rollback` triggers `RESTORE` if drift > `--dq-drift-rollback-pct`. |
+| `--dq-drift-rollback-pct` | Drift threshold percent for the above (default `5.0`). |
+| `--quiesce-source` | Pre-clone source quiesce — snapshot + revoke writes for the duration of the clone, restore in `finally`. Prevents partial-time-travel divergence under live writers. |
+| `--as-of-version` | Clone tables as of this Delta version (alternative to `--as-of-timestamp`). |
+| `--checksum` | Use checksum validation in addition to row counts (slower, catches silent drift). |
+| `--max-rps` | Max SQL requests per second across all workers (rate-limit). `0` = unlimited. |
+| `--parallel-tables` | Tables cloned in parallel within one schema (default `1`). |
+| `--order-by-size` | `asc` (smallest first — small tables finish early) or `desc` (biggest first — fail fast on storage issues). |
+| `--no-comments` | Skip copying table/column comments. |
+| `--no-constraints` | Skip copying CHECK / NOT NULL constraints. |
+| `--no-properties` | Skip copying Delta table properties. |
+| `--no-security` | Skip copying row filters and column masks. |
+| `--no-progress` | Disable progress bar (suppress for log-aggregator runs). |
+| `--dest-warehouse-id` | Destination SQL warehouse ID for cross-workspace clones. |
+| `--resume` | Resume from a previous rollback log file (e.g. `rollback_logs/rollback_20260501.json`). |
 
 ---
 
@@ -876,7 +895,12 @@ clxs rtbf certificate --request-id <ID>
 
 Data Subject Access Request (GDPR Article 15) — find and export subject data.
 
+:::caution API / UI only — no CLI subcommand
+DSAR has no `clxs dsar` parser today. Use `POST /api/dsar/*` (see [api.md — DSAR](api.md#dsar-data-subject-access-request)) or the `/dsar` page in the web UI.
+:::
+
 ```bash
+# Not implemented as a CLI command — example shape only:
 clxs dsar <action> [options]
 ```
 
@@ -899,7 +923,12 @@ clxs dsar <action> [options]
 
 Clone Pipelines — chain multiple operations into automated workflows.
 
+:::caution API / UI only — no CLI subcommand
+Pipelines have no `clxs pipeline` parser today. Use `POST /api/pipeline/*` (see [api.md — Pipeline](api.md#pipeline-multi-step-orchestrator)) or the Pipelines page in the web UI.
+:::
+
 ```bash
+# Not implemented as a CLI command — example shape only:
 clxs pipeline <action> [options]
 ```
 
@@ -919,7 +948,12 @@ clxs pipeline <action> [options]
 
 Data Observability — unified health scoring dashboard.
 
+:::caution API / UI only — no CLI subcommand
+Observability has no `clxs observability` parser today. Use `GET /api/observability/*` (see [api.md — Observability](api.md#observability)) or the Observability page in the web UI.
+:::
+
 ```bash
+# Not implemented as a CLI command — example shape only:
 clxs observability <action>
 ```
 
@@ -929,3 +963,282 @@ clxs observability <action>
 | `health` | Show health score (0-100) |
 | `issues` | List top issues |
 | `trends` | Show metric trends |
+
+---
+
+### `dashboard`
+
+Launch the Streamlit web dashboard locally — quick alternative to running the full FastAPI + React stack when all you need is a read-only view of audit / metrics / reports.
+
+```bash
+clxs dashboard --port 8501
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-c`, `--config` | `config/clone_config.yaml` | Config file path |
+| `--port` | `8501` | Dashboard port |
+
+---
+
+### `audit`
+
+Query the clone audit trail Delta table — every operation is logged here for compliance reporting.
+
+```bash
+clxs audit --init                         # Initialize audit table
+clxs audit --source prod --limit 10       # Filter by source catalog
+clxs audit --status failed                # Filter by status
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--init` | `false` | Create the audit table if it doesn't exist |
+| `--source` | (none) | Filter by source catalog name |
+| `--status` | (none) | Filter by status (`completed`, `failed`, `running`) |
+| `--limit` | `20` | Max results to return |
+
+---
+
+### `lineage`
+
+Query clone lineage — track which destination came from which source operation.
+
+```bash
+clxs lineage --init                       # Initialize lineage table
+clxs lineage --table prod_clone.bronze.events
+clxs lineage --operation-id abc123
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--init` | `false` | Create the lineage table |
+| `--table` | (none) | Filter by destination table FQN |
+| `--operation-id` | (none) | Filter by clone operation UUID |
+| `--limit` | `50` | Max results |
+
+---
+
+### `policy-check`
+
+Check clone policies (guardrails) defined in a YAML file before executing a clone — fail-fast for forbidden source/destination combinations, missing tags, etc.
+
+```bash
+clxs policy-check --policy-file config/clone_policies.yaml
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--policy-file` | (none) | Path to policies YAML |
+
+---
+
+### `schema-evolve`
+
+Detect schema drift between source and destination, optionally applying ALTER TABLE statements to converge.
+
+```bash
+clxs schema-evolve --source prod --dest prod_clone --dry-run
+clxs schema-evolve --source prod --dest prod_clone --drop-removed
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source` | (config) | Override source catalog name |
+| `--dest` | (config) | Override destination catalog name |
+| `--dry-run` | `false` | Preview changes without applying |
+| `--drop-removed` | `false` | Drop columns removed from source (destructive) |
+
+---
+
+### `tui`
+
+Launch the interactive terminal UI — a curses-style alternative to the web wizard for users who prefer to drive Clone-Xs from a single SSH session.
+
+```bash
+clxs tui -c config/clone_config.yaml
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-c`, `--config` | `config/clone_config.yaml` | Config file path |
+
+---
+
+### `templates`
+
+List built-in clone templates or export one as a YAML config you can edit.
+
+```bash
+clxs templates                                  # List
+clxs templates --export dev-copy --output dev.yaml
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--export` | (none) | Template name to export (e.g. `dev-copy`, `dr-backup`) |
+| `--output` | stdout | Output file path |
+| `-v`, `--verbose` | `false` | Verbose output |
+| `--log-file` | (none) | Log file path |
+
+---
+
+### `workspaces`
+
+List multi-cloud workspaces configured in `clone_config.yaml`'s `workspaces` block — quick discovery of which target hosts the CLI knows about.
+
+```bash
+clxs workspaces
+```
+
+Uses standard global flags (`--config`, `--profile`, `--verbose`).
+
+---
+
+### `generate-dab`
+
+Generate a Databricks Asset Bundle (DAB) for clone jobs — emits the `databricks.yml` and resource definitions you can `databricks bundle deploy` for workspace-side scheduled execution.
+
+```bash
+clxs generate-dab --source prod --dest prod_clone --output dab_bundle/ \
+  --job-name nightly-prod-clone --schedule "0 0 2 * * ?" \
+  --notification-email oncall@example.com
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source` | (config) | Override source catalog name |
+| `--dest` | (config) | Override destination catalog name |
+| `--output` | `dab_bundle` | Output directory |
+| `--job-name` | (auto) | Job name |
+| `--schedule` | (none) | Quartz cron expression for the bundle's schedule |
+| `--notification-email` | (none) | Email for job notifications |
+
+---
+
+### `multi-clone`
+
+Clone to multiple destination workspaces in parallel — reads a YAML file describing each destination (host / token / catalog name) and fans out clones across them.
+
+```bash
+clxs multi-clone --source prod --destinations destinations.yaml --max-parallel 3
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source` | (config) | Override source catalog name |
+| `--destinations` | required | YAML file with destination workspace configs |
+| `--max-parallel` | `2` | Max parallel workspace clones |
+
+---
+
+### `cost-estimate`
+
+Estimate clone cost before running — combines source storage size with the chosen warehouse type to predict DBU + storage spend.
+
+```bash
+clxs cost-estimate --source prod --clone-type DEEP --warehouse-type serverless
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source`, `--catalog` | (config) | Override source catalog name |
+| `--clone-type` | (none) | `DEEP` or `SHALLOW` for the estimate |
+| `--warehouse-type` | `serverless` | `serverless` or `classic` |
+
+---
+
+### `pii-scan`
+
+Scan a catalog for PII columns — heuristic + UC-tag-based detection, with optional sample-data inspection and tag-application.
+
+```bash
+clxs pii-scan --source prod --schema-filter bronze silver \
+  --table-filter "customer|user" --sample-data --apply-tags --tag-prefix pii
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source`, `--catalog` | (config) | Override source catalog name |
+| `--schema-filter` | (none) | Only scan these schemas (space-separated) |
+| `--table-filter` | (none) | Regex filter on table names |
+| `--sample-data` | `false` | Sample actual values (slower, more accurate) |
+| `--no-exit-code` | `false` | Don't exit non-zero if PII is found |
+| `--read-uc-tags` | `false` | Read UC column tags to enhance detection |
+| `--save-history` | `false` | Save scan results to Delta tables |
+| `--apply-tags` | `false` | Apply PII tags to UC after scan |
+| `--tag-prefix` | `pii` | Prefix for UC tags |
+
+---
+
+### `dep-graph`
+
+Build and display a table/view dependency graph for a catalog — input for clone-ordering decisions and impact analysis.
+
+```bash
+clxs dep-graph --source prod --output graph.json
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source`, `--catalog` | (config) | Override source catalog name |
+| `--output` | (stdout) | Export graph to JSON file |
+
+---
+
+### `distributed-clone`
+
+Generate a Spark-based distributed-clone notebook — for catalogs too large for a single warehouse to clone within reasonable wall-clock.
+
+```bash
+clxs distributed-clone --source prod --dest prod_clone --output notebooks/distributed_clone.py
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source` | (config) | Override source catalog name |
+| `--dest` | (config) | Override destination catalog name |
+| `--output` | `notebooks/distributed_clone.py` | Output notebook path |
+
+---
+
+### `warehouse`
+
+Manage the SQL warehouse used for clone operations — start a stopped warehouse, scale it up/down, or check its current state.
+
+```bash
+clxs warehouse status
+clxs warehouse start
+clxs warehouse scale --size LARGE
+```
+
+| Positional | Description |
+|---|---|
+| `action` | `status`, `start`, or `scale` |
+
+| Flag | Description |
+|---|---|
+| `--size` | New warehouse size (required for `scale`) |
+
+---
+
+### `state`
+
+Manage the clone state store Delta table — tracks every clone operation's per-table progress so failed runs can resume and stale destinations can be detected.
+
+```bash
+clxs state init
+clxs state summary
+clxs state stale --source prod
+clxs state operations --limit 50
+```
+
+| Positional | Description |
+|---|---|
+| `action` | `init`, `summary`, `stale`, `failed`, `mark-stale`, or `operations` |
+
+| Flag | Default | Description |
+|---|---|---|
+| `--source`, `--catalog` | (config) | Override source catalog |
+| `--dest` | (config) | Override destination catalog |
+| `--limit` | `20` | Max results for `operations` action |

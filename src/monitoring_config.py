@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Delta table helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_fqn(config: dict) -> str:
     return get_table_fqn(config, "data_quality", "monitoring_configs")
 
@@ -27,9 +28,13 @@ def ensure_monitoring_config_table(client, warehouse_id: str, config: dict) -> s
     """Create the monitoring_configs Delta table if it does not exist."""
     fqn = _get_fqn(config)
     from src.catalog_utils import safe_ensure_schema_from_fqn
+
     schema_fqn = fqn.rsplit(".", 1)[0]
     safe_ensure_schema_from_fqn(schema_fqn, client, warehouse_id, config)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             config_id STRING,
             table_fqn STRING,
@@ -42,7 +47,8 @@ def ensure_monitoring_config_table(client, warehouse_id: str, config: dict) -> s
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         ) USING DELTA
-    """)
+    """,
+    )
     return fqn
 
 
@@ -71,6 +77,7 @@ def _row_to_config(row: dict) -> dict:
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+
 
 def create_monitoring_config(
     client,
@@ -109,7 +116,10 @@ def create_monitoring_config(
     metrics_json = sql_escape(json.dumps(metrics))
     escaped_table_fqn = sql_escape(table_fqn)
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         MERGE INTO {fqn} AS target
         USING (SELECT '{escaped_table_fqn}' AS table_fqn) AS source
         ON target.table_fqn = source.table_fqn
@@ -136,15 +146,18 @@ def create_monitoring_config(
             '{now}',
             '{now}'
         )
-    """)
+    """,
+    )
 
     # Return the resulting row
-    rows = execute_sql(client, warehouse_id,
-        f"SELECT * FROM {fqn} WHERE table_fqn = '{escaped_table_fqn}'"
+    rows = execute_sql(
+        client, warehouse_id, f"SELECT * FROM {fqn} WHERE table_fqn = '{escaped_table_fqn}'"
     )
     if rows:
         result = _row_to_config(rows[0])
-        logger.info(f"Created/updated monitoring config for {table_fqn} ({result.get('config_id')})")
+        logger.info(
+            f"Created/updated monitoring config for {table_fqn} ({result.get('config_id')})"
+        )
         return result
 
     # Fallback: return what we tried to insert
@@ -178,8 +191,8 @@ def get_monitoring_config(client, warehouse_id: str, config: dict, config_id: st
     """Get a single monitoring config by ID."""
     fqn = _get_fqn(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {fqn} WHERE config_id = '{sql_escape(config_id)}'"
+        rows = execute_sql(
+            client, warehouse_id, f"SELECT * FROM {fqn} WHERE config_id = '{sql_escape(config_id)}'"
         )
         if rows:
             return _row_to_config(rows[0])
@@ -188,7 +201,9 @@ def get_monitoring_config(client, warehouse_id: str, config: dict, config_id: st
     return None
 
 
-def update_monitoring_config(client, warehouse_id: str, config: dict, config_id: str, **kwargs) -> dict | None:
+def update_monitoring_config(
+    client, warehouse_id: str, config: dict, config_id: str, **kwargs
+) -> dict | None:
     """Update a monitoring config.
 
     Accepts any of: metrics, frequency, auto_baseline, baseline_days, enabled.
@@ -215,8 +230,10 @@ def update_monitoring_config(client, warehouse_id: str, config: dict, config_id:
     set_clauses.append(f"updated_at = '{now}'")
     set_sql = ", ".join(set_clauses)
 
-    execute_sql(client, warehouse_id,
-        f"UPDATE {fqn} SET {set_sql} WHERE config_id = '{sql_escape(config_id)}'"
+    execute_sql(
+        client,
+        warehouse_id,
+        f"UPDATE {fqn} SET {set_sql} WHERE config_id = '{sql_escape(config_id)}'",
     )
     logger.info(f"Updated monitoring config {config_id}")
     return get_monitoring_config(client, warehouse_id, config, config_id)
@@ -226,8 +243,8 @@ def delete_monitoring_config(client, warehouse_id: str, config: dict, config_id:
     """Delete a monitoring config by ID."""
     fqn = _get_fqn(config)
     try:
-        execute_sql(client, warehouse_id,
-            f"DELETE FROM {fqn} WHERE config_id = '{sql_escape(config_id)}'"
+        execute_sql(
+            client, warehouse_id, f"DELETE FROM {fqn} WHERE config_id = '{sql_escape(config_id)}'"
         )
         logger.info(f"Deleted monitoring config {config_id}")
         return True
@@ -236,16 +253,16 @@ def delete_monitoring_config(client, warehouse_id: str, config: dict, config_id:
         return False
 
 
-def delete_monitoring_configs_bulk(client, warehouse_id: str, config: dict, config_ids: list[str]) -> int:
+def delete_monitoring_configs_bulk(
+    client, warehouse_id: str, config: dict, config_ids: list[str]
+) -> int:
     """Delete multiple monitoring configs in a single SQL statement."""
     if not config_ids:
         return 0
     fqn = _get_fqn(config)
     escaped = ", ".join(f"'{sql_escape(cid)}'" for cid in config_ids)
     try:
-        execute_sql(client, warehouse_id,
-            f"DELETE FROM {fqn} WHERE config_id IN ({escaped})"
-        )
+        execute_sql(client, warehouse_id, f"DELETE FROM {fqn} WHERE config_id IN ({escaped})")
         logger.info(f"Bulk-deleted {len(config_ids)} monitoring configs")
         return len(config_ids)
     except Exception as e:
@@ -253,7 +270,9 @@ def delete_monitoring_configs_bulk(client, warehouse_id: str, config: dict, conf
         return 0
 
 
-def toggle_monitoring_config(client, warehouse_id: str, config: dict, config_id: str) -> dict | None:
+def toggle_monitoring_config(
+    client, warehouse_id: str, config: dict, config_id: str
+) -> dict | None:
     """Toggle enabled/disabled for a monitoring config."""
     existing = get_monitoring_config(client, warehouse_id, config, config_id)
     if not existing:
@@ -265,6 +284,7 @@ def toggle_monitoring_config(client, warehouse_id: str, config: dict, config_id:
 # ---------------------------------------------------------------------------
 # Batch operations
 # ---------------------------------------------------------------------------
+
 
 def add_tables_bulk(
     client,
@@ -296,18 +316,20 @@ def add_tables_bulk(
             f"('{sql_escape(config_id)}', '{escaped_tbl}', '{metrics_json}', "
             f"'{escaped_freq}', true, 7, true, 'pending', '{now}', '{now}')"
         )
-        results.append({
-            "config_id": config_id,
-            "table_fqn": table_fqn_item,
-            "metrics": metrics,
-            "frequency": frequency,
-            "auto_baseline": True,
-            "baseline_days": 7,
-            "enabled": True,
-            "baseline_status": "pending",
-            "created_at": now,
-            "updated_at": now,
-        })
+        results.append(
+            {
+                "config_id": config_id,
+                "table_fqn": table_fqn_item,
+                "metrics": metrics,
+                "frequency": frequency,
+                "auto_baseline": True,
+                "baseline_days": 7,
+                "enabled": True,
+                "baseline_status": "pending",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
         # Flush batch
         if len(value_rows) >= batch_size:
@@ -324,13 +346,17 @@ def add_tables_bulk(
 def _flush_insert(client, warehouse_id: str, fqn: str, value_rows: list[str]):
     """Insert a batch of value rows into the monitoring_configs table."""
     values_sql = ",\n".join(value_rows)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {fqn}
             (config_id, table_fqn, metrics, frequency,
              auto_baseline, baseline_days, enabled,
              baseline_status, created_at, updated_at)
         VALUES {values_sql}
-    """)
+    """,
+    )
 
 
 def discover_tables(
@@ -348,14 +374,18 @@ def discover_tables(
         schema_filter = f"AND table_schema = '{sql_escape(schema)}'"
 
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT table_catalog, table_schema, table_name
             FROM {catalog}.information_schema.tables
             WHERE table_type = 'MANAGED'
               AND table_schema NOT IN ('information_schema', 'default')
               {schema_filter}
             ORDER BY table_schema, table_name
-        """)
+        """,
+        )
         return [f"{r['table_catalog']}.{r['table_schema']}.{r['table_name']}" for r in (rows or [])]
     except Exception as e:
         logger.warning(f"Could not discover tables in {catalog}: {e}")
@@ -366,7 +396,10 @@ def discover_tables(
 # Run monitoring (collect metrics for all enabled configs)
 # ---------------------------------------------------------------------------
 
-def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, force: bool = False) -> dict:
+
+def run_monitoring(
+    client=None, warehouse_id: str = "", config: dict = None, force: bool = False
+) -> dict:
     """Execute monitoring for all enabled configs — collect metrics and detect anomalies.
 
     Collects metrics in parallel across tables and metrics using a thread pool,
@@ -385,15 +418,22 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
     wid = warehouse_id or config.get("sql_warehouse_id", "")
     max_workers = int(config.get("max_parallel_queries", 100))
 
-    all_configs = [c for c in list_monitoring_configs(client, wid, config) if c.get("enabled", True)]
+    all_configs = [
+        c for c in list_monitoring_configs(client, wid, config) if c.get("enabled", True)
+    ]
 
     # Filter configs by their per-table frequency — only collect if enough time has passed
     # Skip filtering when force=True (manual "Run Now" or "Run Monitoring" button)
     from datetime import datetime, timezone, timedelta
+
     FREQ_MINUTES = {
-        "5min": 5, "15min": 15, "30min": 30,
-        "hourly": 60, "4hours": 240,
-        "daily": 1440, "weekly": 10080,
+        "5min": 5,
+        "15min": 15,
+        "30min": 30,
+        "hourly": 60,
+        "4hours": 240,
+        "daily": 1440,
+        "weekly": 10080,
     }
     now = datetime.now(timezone.utc)
     configs = []
@@ -406,14 +446,19 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
         # Check last metric timestamp for this table
         try:
             audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
-            rows = execute_sql(client, wid,
+            rows = execute_sql(
+                client,
+                wid,
                 f"SELECT MAX(measured_at) AS last_ts FROM {audit}.data_quality.metric_baselines "
-                f"WHERE table_fqn = '{sql_escape(mc['table_fqn'])}'")
+                f"WHERE table_fqn = '{sql_escape(mc['table_fqn'])}'",
+            )
             last_ts = rows[0].get("last_ts") if rows else None
             if last_ts:
                 if isinstance(last_ts, str):
                     last_ts = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-                if (now - last_ts) < timedelta(minutes=freq_mins * 0.9):  # 90% threshold to avoid drift
+                if (now - last_ts) < timedelta(
+                    minutes=freq_mins * 0.9
+                ):  # 90% threshold to avoid drift
                     continue  # Not due yet
         except Exception:
             pass  # If we can't check, run it
@@ -442,12 +487,14 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
             try:
                 value = future.result()
                 if value is not None:
-                    all_metrics.append({
-                        "table_fqn": table_fqn,
-                        "column_name": "*",
-                        "metric_name": metric_name,
-                        "value": float(value),
-                    })
+                    all_metrics.append(
+                        {
+                            "table_fqn": table_fqn,
+                            "column_name": "*",
+                            "metric_name": metric_name,
+                            "value": float(value),
+                        }
+                    )
             except Exception as e:
                 logger.warning(f"Monitoring error for {table_fqn}.{metric_name}: {e}")
                 errors += 1
@@ -470,11 +517,13 @@ def run_monitoring(client=None, warehouse_id: str = "", config: dict = None, for
         fqn = r.get("table_fqn", "")
         if fqn in table_details:
             if r.get("severity") != "normal":
-                table_details[fqn].setdefault("anomalies", []).append({
-                    "metric": r.get("metric_name", ""),
-                    "severity": r.get("severity", ""),
-                    "z_score": r.get("z_score", 0),
-                })
+                table_details[fqn].setdefault("anomalies", []).append(
+                    {
+                        "metric": r.get("metric_name", ""),
+                        "severity": r.get("severity", ""),
+                        "z_score": r.get("z_score", 0),
+                    }
+                )
 
     return {
         "status": "completed",
@@ -501,15 +550,21 @@ def _update_baseline_status(client, warehouse_id: str, config: dict, configs: li
     for mc in pending:
         table_fqn = mc["table_fqn"]
         try:
-            rows = execute_sql(client, warehouse_id,
+            rows = execute_sql(
+                client,
+                warehouse_id,
                 f"SELECT COUNT(*) AS cnt FROM {baselines_table} "
-                f"WHERE table_fqn = '{sql_escape(table_fqn)}'")
+                f"WHERE table_fqn = '{sql_escape(table_fqn)}'",
+            )
             count = int(rows[0]["cnt"]) if rows else 0
             if count >= 3:
-                execute_sql(client, warehouse_id,
+                execute_sql(
+                    client,
+                    warehouse_id,
                     f"UPDATE {fqn} SET baseline_status = 'ready', "
                     f"updated_at = '{utc_now()}' "
-                    f"WHERE config_id = '{sql_escape(mc['config_id'])}'")
+                    f"WHERE config_id = '{sql_escape(mc['config_id'])}'",
+                )
                 logger.info(f"Baseline ready for {table_fqn} ({count} measurements)")
         except Exception as e:
             logger.debug(f"Could not update baseline status for {table_fqn}: {e}")
@@ -524,23 +579,29 @@ def _collect_metric(client, warehouse_id: str, table_fqn: str, metric_name: str)
 
         elif metric_name == "null_rate":
             # Average null rate across all columns
-            cols = execute_sql(client, warehouse_id,
+            cols = execute_sql(
+                client,
+                warehouse_id,
                 f"SELECT column_name FROM {table_fqn.split('.')[0]}.information_schema.columns "
                 f"WHERE table_catalog = '{table_fqn.split('.')[0]}' "
                 f"AND table_schema = '{table_fqn.split('.')[1]}' "
-                f"AND table_name = '{table_fqn.split('.')[2]}'")
+                f"AND table_name = '{table_fqn.split('.')[2]}'",
+            )
             if not cols:
                 return None
             col_names = [c["column_name"] for c in cols[:30]]
             null_exprs = [f"AVG(CASE WHEN `{c}` IS NULL THEN 1.0 ELSE 0.0 END)" for c in col_names]
             avg_expr = f"({' + '.join(null_exprs)}) / {len(col_names)} * 100"
-            rows = execute_sql(client, warehouse_id, f"SELECT {avg_expr} AS null_rate FROM {table_fqn}")
+            rows = execute_sql(
+                client, warehouse_id, f"SELECT {avg_expr} AS null_rate FROM {table_fqn}"
+            )
             return float(rows[0]["null_rate"]) if rows else None
 
         elif metric_name == "distinct_count":
             # Sum of distinct values across all columns (approximation)
-            rows = execute_sql(client, warehouse_id,
-                f"SELECT COUNT(DISTINCT *) AS distinct_cnt FROM {table_fqn}")
+            rows = execute_sql(
+                client, warehouse_id, f"SELECT COUNT(DISTINCT *) AS distinct_cnt FROM {table_fqn}"
+            )
             return float(rows[0]["distinct_cnt"]) if rows else None
 
         else:

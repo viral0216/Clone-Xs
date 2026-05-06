@@ -41,19 +41,22 @@ set_sql_executor(lambda sql: [row.asDict() for row in spark.sql(sql).collect()])
 
 client = WorkspaceClient()
 
-result = clone_catalog(client, {
-    "source_catalog": "edp_dev",
-    "destination_catalog": "edp_dev_00",
-    "clone_type": "SHALLOW",
-    "sql_warehouse_id": "SERVERLESS",  # placeholder, won't be used
-    "copy_permissions": True,
-    "copy_ownership": True,
-    "copy_tags": True,
-    "max_workers": 4,
-    "exclude_schemas": ["information_schema", "default"],
-    "exclude_tables": [],
-    "dry_run": False,
-    "load_type": "SHALLOW",
-})
+result = clone_catalog(
+    client,
+    {
+        "source_catalog": "edp_dev",
+        "destination_catalog": "edp_dev_00",
+        "clone_type": "SHALLOW",
+        "sql_warehouse_id": "SERVERLESS",  # placeholder, won't be used
+        "copy_permissions": True,
+        "copy_ownership": True,
+        "copy_tags": True,
+        "max_workers": 4,
+        "exclude_schemas": ["information_schema", "default"],
+        "exclude_tables": [],
+        "dry_run": False,
+        "load_type": "SHALLOW",
+    },
+)
 
 print(result)

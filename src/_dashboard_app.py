@@ -29,10 +29,15 @@ except Exception as e:
 
 if config_loaded:
     source_catalog = st.sidebar.text_input("Source Catalog", value=config.get("source_catalog", ""))
-    dest_catalog = st.sidebar.text_input("Destination Catalog", value=config.get("destination_catalog", ""))
+    dest_catalog = st.sidebar.text_input(
+        "Destination Catalog", value=config.get("destination_catalog", "")
+    )
     warehouse_id = st.sidebar.text_input("Warehouse ID", value=config.get("sql_warehouse_id", ""))
-    clone_type = st.sidebar.selectbox("Clone Type", ["DEEP", "SHALLOW"],
-                                       index=0 if config.get("clone_type", "DEEP") == "DEEP" else 1)
+    clone_type = st.sidebar.selectbox(
+        "Clone Type",
+        ["DEEP", "SHALLOW"],
+        index=0 if config.get("clone_type", "DEEP") == "DEEP" else 1,
+    )
     dry_run = st.sidebar.checkbox("Dry Run", value=True)
 else:
     source_catalog = dest_catalog = warehouse_id = ""
@@ -42,10 +47,17 @@ else:
 # --- Main content ---
 st.title("📦 Unity Catalog Clone Utility")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "🏠 Overview", "🚀 Clone", "🔍 Diff & Validate",
-    "📊 Stats & Profile", "🔎 Search", "⚕️ Preflight", "🛠️ Clone Builder"
-])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    [
+        "🏠 Overview",
+        "🚀 Clone",
+        "🔍 Diff & Validate",
+        "📊 Stats & Profile",
+        "🔎 Search",
+        "⚕️ Preflight",
+        "🛠️ Clone Builder",
+    ]
+)
 
 # --- Tab 1: Overview ---
 with tab1:
@@ -70,7 +82,9 @@ with tab2:
             include_schemas = st.text_input("Include schemas (comma-separated)", "")
             max_workers = st.slider("Max workers", 1, 16, config.get("max_workers", 4))
         with col2:
-            copy_permissions = st.checkbox("Copy permissions", value=config.get("copy_permissions", True))
+            copy_permissions = st.checkbox(
+                "Copy permissions", value=config.get("copy_permissions", True)
+            )
             copy_tags = st.checkbox("Copy tags", value=config.get("copy_tags", True))
             enable_rollback = st.checkbox("Enable rollback", value=True)
 
@@ -93,6 +107,7 @@ with tab2:
             with st.spinner("Cloning catalog..." if not dry_run else "Running dry run..."):
                 try:
                     from src.clone_catalog import clone_catalog
+
                     client = get_workspace_client()
                     summary = clone_catalog(client, clone_config)
                     st.success("Clone completed!")
@@ -111,9 +126,13 @@ with tab3:
             with st.spinner("Comparing catalogs..."):
                 try:
                     from src.diff import compare_catalogs
+
                     client = get_workspace_client()
                     diff = compare_catalogs(
-                        client, warehouse_id, source_catalog, dest_catalog,
+                        client,
+                        warehouse_id,
+                        source_catalog,
+                        dest_catalog,
                         config.get("exclude_schemas", []),
                     )
                     if diff.get("in_sync"):
@@ -131,9 +150,13 @@ with tab3:
             with st.spinner("Validating..."):
                 try:
                     from src.validation import validate_catalog
+
                     client = get_workspace_client()
                     summary = validate_catalog(
-                        client, warehouse_id, source_catalog, dest_catalog,
+                        client,
+                        warehouse_id,
+                        source_catalog,
+                        dest_catalog,
                         config.get("exclude_schemas", []),
                         config.get("max_workers", 4),
                         use_checksum=use_checksum,
@@ -141,7 +164,9 @@ with tab3:
                     if summary["mismatched"] == 0 and summary["errors"] == 0:
                         st.success(f"✅ All {summary['matched']} tables match!")
                     else:
-                        st.error(f"❌ {summary['mismatched']} mismatches, {summary['errors']} errors")
+                        st.error(
+                            f"❌ {summary['mismatched']} mismatches, {summary['errors']} errors"
+                        )
                     st.json(summary)
                 except Exception as e:
                     st.error(f"Validation failed: {e}")
@@ -153,8 +178,11 @@ with tab4:
         with st.spinner("Gathering stats..."):
             try:
                 from src.stats import catalog_stats
+
                 client = get_workspace_client()
-                catalog_stats(client, warehouse_id, source_catalog, config.get("exclude_schemas", []))
+                catalog_stats(
+                    client, warehouse_id, source_catalog, config.get("exclude_schemas", [])
+                )
                 st.success("Stats printed to logs")
             except Exception as e:
                 st.error(f"Stats failed: {e}")
@@ -168,10 +196,14 @@ with tab5:
         with st.spinner("Searching..."):
             try:
                 from src.search import search_tables
+
                 client = get_workspace_client()
                 search_tables(
-                    client, warehouse_id, source_catalog,
-                    search_pattern, config.get("exclude_schemas", []),
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    search_pattern,
+                    config.get("exclude_schemas", []),
                     search_columns=search_columns,
                 )
                 st.success("Results printed to logs")
@@ -185,6 +217,7 @@ with tab6:
         with st.spinner("Running checks..."):
             try:
                 from src.preflight import run_preflight
+
                 client = get_workspace_client()
                 result = run_preflight(client, warehouse_id, source_catalog, dest_catalog)
                 if result["ready"]:
@@ -193,7 +226,13 @@ with tab6:
                     st.warning("⚠️ Some checks failed.")
 
                 for check in result.get("checks", []):
-                    icon = "✅" if check["status"] == "passed" else "⚠️" if check["status"] == "warning" else "❌"
+                    icon = (
+                        "✅"
+                        if check["status"] == "passed"
+                        else "⚠️"
+                        if check["status"] == "warning"
+                        else "❌"
+                    )
                     st.write(f"{icon} **{check['name']}**: {check.get('message', check['status'])}")
             except Exception as e:
                 st.error(f"Preflight failed: {e}")
@@ -215,15 +254,16 @@ with tab7:
                     try:
                         client = get_workspace_client()
                         from src.client import execute_sql
+
                         rows = execute_sql(
-                            client, warehouse_id,
+                            client,
+                            warehouse_id,
                             f"SHOW SCHEMAS IN `{source_catalog}`",
                         )
                         schema_names = [r["databaseName"] for r in rows]
                         # Filter out system schemas
                         schema_names = [
-                            s for s in schema_names
-                            if s not in ("information_schema", "default")
+                            s for s in schema_names if s not in ("information_schema", "default")
                         ]
                         st.session_state["builder_schemas"] = schema_names
                     except Exception as e:
@@ -263,15 +303,11 @@ with tab7:
                 value=dest_catalog,
                 key="builder_dest_catalog",
             )
-            builder_workers = st.slider(
-                "Max parallel workers", 1, 16, 4, key="builder_workers"
-            )
+            builder_workers = st.slider("Max parallel workers", 1, 16, 4, key="builder_workers")
             builder_copy_perms = st.checkbox(
                 "Copy permissions", value=True, key="builder_copy_perms"
             )
-            builder_copy_tags = st.checkbox(
-                "Copy tags", value=True, key="builder_copy_tags"
-            )
+            builder_copy_tags = st.checkbox("Copy tags", value=True, key="builder_copy_tags")
             builder_enable_rollback = st.checkbox(
                 "Enable rollback on failure", value=True, key="builder_rollback"
             )
@@ -313,9 +349,12 @@ with tab7:
                 with st.spinner("Estimating..."):
                     try:
                         from src.cost_estimation import estimate_clone_cost
+
                         client = get_workspace_client()
                         estimate = estimate_clone_cost(
-                            client, warehouse_id, source_catalog,
+                            client,
+                            warehouse_id,
+                            source_catalog,
                             selected_schemas or [],
                             builder_clone_type,
                         )
@@ -340,6 +379,7 @@ with tab7:
 
             try:
                 import yaml
+
                 yaml_str = yaml.dump(builder_config, default_flow_style=False, sort_keys=False)
             except ImportError:
                 # Fallback to a simple YAML-like format
@@ -377,6 +417,7 @@ with tab7:
             with st.spinner(f"Running {action}..."):
                 try:
                     from src.clone_catalog import clone_catalog
+
                     client = get_workspace_client()
                     summary = clone_catalog(client, builder_config)
                     st.success(f"{'Dry run' if builder_dry_run else 'Clone'} completed!")

@@ -42,6 +42,7 @@ print(f"Repo root: {REPO_ROOT}")
 
 # Verify imports
 from src.catalog_clone_api import clone_full_catalog, run_preflight_checks, validate_clone
+
 print("All imports successful — no wheel needed")
 
 # COMMAND ----------
@@ -62,7 +63,9 @@ dbutils.widgets.dropdown("dry_run", "True", ["True", "False"], "Dry Run")
 dbutils.widgets.dropdown("run_preflight", "Yes", ["Yes", "No"], "Run Preflight Checks")
 dbutils.widgets.dropdown("run_validation", "Yes", ["Yes", "No"], "Run Post-Clone Validation")
 dbutils.widgets.text("max_workers", "4", "Parallel Schemas")
-dbutils.widgets.text("exclude_schemas", "information_schema,default", "Exclude Schemas (comma-separated)")
+dbutils.widgets.text(
+    "exclude_schemas", "information_schema,default", "Exclude Schemas (comma-separated)"
+)
 
 # COMMAND ----------
 
@@ -75,7 +78,9 @@ dry_run = dbutils.widgets.get("dry_run") == "True"
 run_preflight = dbutils.widgets.get("run_preflight") == "Yes"
 run_validation = dbutils.widgets.get("run_validation") == "Yes"
 max_workers = int(dbutils.widgets.get("max_workers"))
-exclude_schemas = [s.strip() for s in dbutils.widgets.get("exclude_schemas").split(",") if s.strip()]
+exclude_schemas = [
+    s.strip() for s in dbutils.widgets.get("exclude_schemas").split(",") if s.strip()
+]
 
 print(f"Source:      {source_catalog}")
 print(f"Destination: {dest_catalog}")
@@ -103,7 +108,9 @@ if run_preflight:
     preflight = run_preflight_checks(source_catalog, dest_catalog, warehouse_id)
     results["preflight"] = preflight
 
-    print(f"Preflight: {preflight['passed']} passed, {preflight['warnings']} warnings, {preflight['failed']} failed")
+    print(
+        f"Preflight: {preflight['passed']} passed, {preflight['warnings']} warnings, {preflight['failed']} failed"
+    )
     for check in preflight["checks"]:
         icon = {"OK": "PASS", "WARN": "WARN", "FAIL": "FAIL"}[check["status"]]
         print(f"  [{icon}] {check['check']}: {check['detail']}")
@@ -134,11 +141,13 @@ summary = clone_full_catalog(
 
 results["clone"] = summary
 
-print(f"\nClone Summary:")
+print("\nClone Summary:")
 print(f"  Schemas processed: {summary.get('schemas_processed', 0)}")
 for obj_type in ("tables", "views", "functions", "volumes"):
     stats = summary.get(obj_type, {})
-    print(f"  {obj_type.capitalize():12s}: {stats.get('success', 0)} success, {stats.get('failed', 0)} failed")
+    print(
+        f"  {obj_type.capitalize():12s}: {stats.get('success', 0)} success, {stats.get('failed', 0)} failed"
+    )
 print(f"  Duration: {summary.get('duration_seconds', 'N/A')}s")
 
 # COMMAND ----------
@@ -158,7 +167,7 @@ if run_validation and not dry_run:
     )
     results["validation"] = validation
 
-    print(f"Validation Summary:")
+    print("Validation Summary:")
     print(f"  Total tables: {validation['total_tables']}")
     print(f"  Matched:      {validation['matched']}")
     print(f"  Mismatched:   {validation['mismatched']}")
@@ -188,7 +197,9 @@ exit_payload = {
     "tables_success": summary.get("tables", {}).get("success", 0),
     "tables_failed": summary.get("tables", {}).get("failed", 0),
     "duration_seconds": summary.get("duration_seconds"),
-    "validation_matched": results.get("validation", {}).get("matched") if results.get("validation") else None,
+    "validation_matched": results.get("validation", {}).get("matched")
+    if results.get("validation")
+    else None,
 }
 
 print(json.dumps(exit_payload, indent=2))

@@ -21,6 +21,7 @@ class TablesConfig(TypedDict, total=False):
 
 class CloneConfig(TypedDict, total=False):
     """Configuration dict for clone operations — mirrors clone_config.yaml."""
+
     source_catalog: str
     destination_catalog: str
     sql_warehouse_id: str
@@ -50,6 +51,7 @@ class CloneConfig(TypedDict, total=False):
 
 class ObjectCounts(TypedDict):
     """Counts for a single object type (tables, views, etc.)."""
+
     success: int
     failed: int
     skipped: int
@@ -57,6 +59,7 @@ class ObjectCounts(TypedDict):
 
 class CloneSummary(TypedDict, total=False):
     """Summary returned by clone_catalog()."""
+
     schemas_processed: int
     tables: ObjectCounts
     views: ObjectCounts
@@ -68,6 +71,7 @@ class CloneSummary(TypedDict, total=False):
 
 class MetricRecord(TypedDict, total=False):
     """A single metric measurement from anomaly detection."""
+
     id: str
     table_fqn: str
     column_name: str

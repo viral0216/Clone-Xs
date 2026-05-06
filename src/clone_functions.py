@@ -67,9 +67,7 @@ def clone_function(
 ) -> bool:
     """Clone a function from source to destination catalog."""
     try:
-        ddl = get_function_details(
-            client, warehouse_id, source_catalog, schema, function_name
-        )
+        ddl = get_function_details(client, warehouse_id, source_catalog, schema, function_name)
         if not ddl:
             logger.info(f"No DDL found for function {schema}.{function_name}, skipping")
             return False
@@ -83,15 +81,17 @@ def clone_function(
             return False
 
         # Replace source catalog with destination catalog
-        updated_ddl = ddl.replace(
-            f"`{source_catalog}`.", f"`{dest_catalog}`."
-        ).replace(f"{source_catalog}.", f"{dest_catalog}.")
+        updated_ddl = ddl.replace(f"`{source_catalog}`.", f"`{dest_catalog}`.").replace(
+            f"{source_catalog}.", f"{dest_catalog}."
+        )
 
         # Use CREATE OR REPLACE to handle existing functions
         updated_ddl = updated_ddl.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)
 
         execute_sql(client, warehouse_id, updated_ddl, dry_run=dry_run)
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Cloned function: {source_catalog}.{schema}.{function_name}")
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}Cloned function: {source_catalog}.{schema}.{function_name}"
+        )
         return True
     except Exception as e:
         logger.warning(f"Skipped function {schema}.{function_name}: {e}")
@@ -99,12 +99,24 @@ def clone_function(
 
 
 def _clone_single_function(
-    client, warehouse_id, source_catalog, dest_catalog, schema,
-    func_name, dry_run, copy_permissions, rollback_log,
+    client,
+    warehouse_id,
+    source_catalog,
+    dest_catalog,
+    schema,
+    func_name,
+    dry_run,
+    copy_permissions,
+    rollback_log,
 ) -> tuple[str, bool]:
     """Clone a single function with post-clone operations. Returns (name, success)."""
     success = clone_function(
-        client, warehouse_id, source_catalog, dest_catalog, schema, func_name,
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        schema,
+        func_name,
         dry_run=dry_run,
     )
     if success:
@@ -161,8 +173,15 @@ def clone_functions_in_schema(
             futures = {
                 executor.submit(
                     _clone_single_function,
-                    client, warehouse_id, source_catalog, dest_catalog, schema,
-                    fname, dry_run, copy_permissions, rollback_log,
+                    client,
+                    warehouse_id,
+                    source_catalog,
+                    dest_catalog,
+                    schema,
+                    fname,
+                    dry_run,
+                    copy_permissions,
+                    rollback_log,
                 ): fname
                 for fname in funcs_to_clone
             }
@@ -175,8 +194,15 @@ def clone_functions_in_schema(
     else:
         for fname in funcs_to_clone:
             _, success = _clone_single_function(
-                client, warehouse_id, source_catalog, dest_catalog, schema,
-                fname, dry_run, copy_permissions, rollback_log,
+                client,
+                warehouse_id,
+                source_catalog,
+                dest_catalog,
+                schema,
+                fname,
+                dry_run,
+                copy_permissions,
+                rollback_log,
             )
             if success:
                 results["success"] += 1

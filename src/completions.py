@@ -3,7 +3,7 @@ import sys
 
 def generate_bash_completion() -> str:
     """Generate bash completion script for clxs CLI."""
-    return '''# Bash completion for clxs
+    return """# Bash completion for clxs
 # Add to ~/.bashrc: eval "$(clxs --completion bash)"
 # Or save to: /etc/bash_completion.d/clxs
 
@@ -109,12 +109,12 @@ _clone_catalog_completion() {
 }
 
 complete -F _clone_catalog_completion clxs
-'''
+"""
 
 
 def generate_zsh_completion() -> str:
     """Generate zsh completion script for clxs CLI."""
-    return '''#compdef clxs
+    return """#compdef clxs
 # Zsh completion for clxs
 # Add to ~/.zshrc: eval "$(clxs --completion zsh)"
 # Or save to a file in your $fpath
@@ -154,7 +154,7 @@ _clxs() {
 }
 
 _clxs "$@"
-'''
+"""
 
 
 def generate_fish_completion() -> str:
@@ -182,10 +182,7 @@ def generate_fish_completion() -> str:
 
     lines = ["# Fish completion for clxs"]
     for cmd, desc in commands.items():
-        lines.append(
-            f"complete -c clxs -n '__fish_use_subcommand' "
-            f"-a '{cmd}' -d '{desc}'"
-        )
+        lines.append(f"complete -c clxs -n '__fish_use_subcommand' -a '{cmd}' -d '{desc}'")
 
     return "\n".join(lines) + "\n"
 

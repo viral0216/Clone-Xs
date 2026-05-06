@@ -66,9 +66,7 @@ class RTBFManager:
         self.verification_required = rtbf_config.get("verification_required", True)
         self.certificate_auto_generate = rtbf_config.get("certificate_auto_generate", True)
         self.certificate_output_dir = rtbf_config.get("certificate_output_dir", "reports/rtbf")
-        self.exclude_schemas = rtbf_config.get(
-            "exclude_schemas", ["information_schema", "default"]
-        )
+        self.exclude_schemas = rtbf_config.get("exclude_schemas", ["information_schema", "default"])
 
     def init_tables(self) -> None:
         """Initialize RTBF Delta tables."""
@@ -207,13 +205,15 @@ class RTBFManager:
                 count = int(rows[0]["cnt"]) if rows else 0
 
                 if count > 0:
-                    hits.append({
-                        "catalog": cat,
-                        "schema": sch,
-                        "table": tbl,
-                        "column": col,
-                        "row_count": count,
-                    })
+                    hits.append(
+                        {
+                            "catalog": cat,
+                            "schema": sch,
+                            "table": tbl,
+                            "column": col,
+                            "row_count": count,
+                        }
+                    )
                     total_rows += count
 
                     self.store.save_action(
@@ -253,9 +253,7 @@ class RTBFManager:
             affected_rows=total_rows,
         )
 
-        logger.info(
-            f"RTBF discovery for {request_id}: {len(hits)} tables, {total_rows} total rows"
-        )
+        logger.info(f"RTBF discovery for {request_id}: {len(hits)} tables, {total_rows} total rows")
         return {
             "request_id": request_id,
             "affected_tables": hits,
@@ -356,24 +354,24 @@ class RTBFManager:
                 if strategy == "delete":
                     del_sql = f"DELETE FROM {fqn} WHERE `{col}` = '{subject_value}'"
                 elif strategy == "anonymize":
-                    del_sql = self._build_anonymize_sql(
-                        cat, sch, tbl, col, subject_value
-                    )
+                    del_sql = self._build_anonymize_sql(cat, sch, tbl, col, subject_value)
                 elif strategy == "pseudonymize":
                     del_sql = self._build_pseudonymize_sql(fqn, col, subject_value)
                 else:
                     del_sql = f"DELETE FROM {fqn} WHERE `{col}` = '{subject_value}'"
 
                 if dry_run:
-                    actions.append({
-                        "action_id": action_id,
-                        "table": f"{cat}.{sch}.{tbl}",
-                        "column": col,
-                        "strategy": strategy,
-                        "sql": del_sql,
-                        "dry_run": True,
-                        "rows_before": rows_before,
-                    })
+                    actions.append(
+                        {
+                            "action_id": action_id,
+                            "table": f"{cat}.{sch}.{tbl}",
+                            "column": col,
+                            "strategy": strategy,
+                            "sql": del_sql,
+                            "dry_run": True,
+                            "rows_before": rows_before,
+                        }
+                    )
                     continue
 
                 execute_sql(self.client, self.warehouse_id, del_sql)
@@ -404,16 +402,18 @@ class RTBFManager:
                     duration_seconds=duration,
                 )
 
-                actions.append({
-                    "action_id": action_id,
-                    "table": f"{cat}.{sch}.{tbl}",
-                    "column": col,
-                    "strategy": strategy,
-                    "rows_before": rows_before,
-                    "rows_affected": rows_affected,
-                    "rows_after": rows_after,
-                    "duration_seconds": round(duration, 2),
-                })
+                actions.append(
+                    {
+                        "action_id": action_id,
+                        "table": f"{cat}.{sch}.{tbl}",
+                        "column": col,
+                        "strategy": strategy,
+                        "rows_before": rows_before,
+                        "rows_affected": rows_affected,
+                        "rows_after": rows_after,
+                        "duration_seconds": round(duration, 2),
+                    }
+                )
 
             except Exception as e:
                 duration = time.time() - start
@@ -431,11 +431,13 @@ class RTBFManager:
                     executed_by=executed_by,
                     duration_seconds=duration,
                 )
-                actions.append({
-                    "action_id": action_id,
-                    "table": f"{cat}.{sch}.{tbl}",
-                    "error": str(e),
-                })
+                actions.append(
+                    {
+                        "action_id": action_id,
+                        "table": f"{cat}.{sch}.{tbl}",
+                        "error": str(e),
+                    }
+                )
 
         if not dry_run:
             failed = sum(1 for a in actions if "error" in a)
@@ -450,7 +452,11 @@ class RTBFManager:
                 )
             else:
                 self.store.update_request_status(request_id, "deleted_pending_vacuum")
-                summary = {"total_rows_affected": total_deleted, "total_tables": len(actions), "failed": failed}
+                summary = {
+                    "total_rows_affected": total_deleted,
+                    "total_tables": len(actions),
+                    "failed": failed,
+                }
                 self._run_plugin_hook("run_on_rtbf_deletion_complete", request_id, summary)
                 self._notify(
                     f"RTBF Deletion Complete — {total_deleted} rows",
@@ -514,7 +520,8 @@ class RTBFManager:
                 # Temporarily disable retention check for aggressive vacuum
                 if retention == 0:
                     execute_sql(
-                        self.client, self.warehouse_id,
+                        self.client,
+                        self.warehouse_id,
                         f"ALTER TABLE {fqn} SET TBLPROPERTIES "
                         f"('delta.retentionDurationCheck.enabled' = 'false')",
                     )
@@ -525,7 +532,8 @@ class RTBFManager:
                 # Restore retention check
                 if retention == 0:
                     execute_sql(
-                        self.client, self.warehouse_id,
+                        self.client,
+                        self.warehouse_id,
                         f"ALTER TABLE {fqn} SET TBLPROPERTIES "
                         f"('delta.retentionDurationCheck.enabled' = 'true')",
                     )
@@ -543,7 +551,9 @@ class RTBFManager:
                     executed_by=executed_by,
                     duration_seconds=duration,
                 )
-                results.append({"table": key, "status": "completed", "duration_seconds": round(duration, 2)})
+                results.append(
+                    {"table": key, "status": "completed", "duration_seconds": round(duration, 2)}
+                )
 
             except Exception as e:
                 duration = time.time() - start
@@ -628,12 +638,14 @@ class RTBFManager:
                     executed_by=executed_by,
                     sql_executed=count_sql,
                 )
-                verification_results.append({
-                    "table": f"{cat}.{sch}.{tbl}",
-                    "column": col,
-                    "remaining_rows": remaining,
-                    "passed": passed,
-                })
+                verification_results.append(
+                    {
+                        "table": f"{cat}.{sch}.{tbl}",
+                        "column": col,
+                        "remaining_rows": remaining,
+                        "passed": passed,
+                    }
+                )
 
             except Exception as e:
                 all_clear = False
@@ -650,12 +662,14 @@ class RTBFManager:
                     error_message=str(e),
                     executed_by=executed_by,
                 )
-                verification_results.append({
-                    "table": f"{cat}.{sch}.{tbl}",
-                    "column": col,
-                    "error": str(e),
-                    "passed": False,
-                })
+                verification_results.append(
+                    {
+                        "table": f"{cat}.{sch}.{tbl}",
+                        "column": col,
+                        "error": str(e),
+                        "passed": False,
+                    }
+                )
 
         new_status = "verified" if all_clear else "failed"
         error_msg = None if all_clear else "Verification found remaining subject data"
@@ -701,22 +715,21 @@ class RTBFManager:
         # Build summary
         discovery_actions = [a for a in actions if a.get("action_type") == "discover"]
         deletion_actions = [
-            a for a in actions
-            if a.get("action_type") in ("delete", "anonymize", "pseudonymize")
+            a for a in actions if a.get("action_type") in ("delete", "anonymize", "pseudonymize")
         ]
         vacuum_actions = [a for a in actions if a.get("action_type") == "vacuum"]
         verify_actions = [a for a in actions if a.get("action_type") == "verify"]
 
-        total_rows_deleted = sum(
-            int(a.get("rows_affected", 0) or 0) for a in deletion_actions
+        total_rows_deleted = sum(int(a.get("rows_affected", 0) or 0) for a in deletion_actions)
+        tables_processed = len(
+            {
+                f"{a.get('catalog')}.{a.get('schema_name')}.{a.get('table_name')}"
+                for a in deletion_actions
+            }
         )
-        tables_processed = len({
-            f"{a.get('catalog')}.{a.get('schema_name')}.{a.get('table_name')}"
-            for a in deletion_actions
-        })
-        verification_passed = all(
-            a.get("status") == "completed" for a in verify_actions
-        ) if verify_actions else False
+        verification_passed = (
+            all(a.get("status") == "completed" for a in verify_actions) if verify_actions else False
+        )
 
         summary = {
             "certificate_id": certificate_id,
@@ -849,7 +862,10 @@ class RTBFManager:
     # ── Private helpers ───────────────────────────────────────────────────
 
     def _transition_status(
-        self, request_id: str, new_status: str, error_message: str | None = None,
+        self,
+        request_id: str,
+        new_status: str,
+        error_message: str | None = None,
     ) -> dict:
         """Validate and execute a status transition."""
         request = self.store.get_request(request_id)
@@ -860,8 +876,7 @@ class RTBFManager:
         allowed = STATUS_TRANSITIONS.get(current, [])
         if new_status not in allowed:
             raise ValueError(
-                f"Cannot transition from '{current}' to '{new_status}'. "
-                f"Allowed: {allowed}"
+                f"Cannot transition from '{current}' to '{new_status}'. Allowed: {allowed}"
             )
 
         self.store.update_request_status(request_id, new_status, error_message=error_message)
@@ -922,7 +937,7 @@ class RTBFManager:
                 col_sql = f"""
                     SELECT table_schema, table_name, column_name, data_type
                     FROM {catalog}.information_schema.columns
-                    WHERE table_schema NOT IN ({', '.join(f"'{s}'" for s in self.exclude_schemas)})
+                    WHERE table_schema NOT IN ({", ".join(f"'{s}'" for s in self.exclude_schemas)})
                 """
                 columns = execute_sql(self.client, self.warehouse_id, col_sql)
 
@@ -930,23 +945,27 @@ class RTBFManager:
                     col_name = col.get("column_name", "")
                     # Check if column matches subject type patterns
                     if explicit_column and col_name.lower() == explicit_column.lower():
-                        candidates.append({
-                            "catalog": catalog,
-                            "schema": col["table_schema"],
-                            "table": col["table_name"],
-                            "column": col_name,
-                            "data_type": col.get("data_type", ""),
-                        })
+                        candidates.append(
+                            {
+                                "catalog": catalog,
+                                "schema": col["table_schema"],
+                                "table": col["table_name"],
+                                "column": col_name,
+                                "data_type": col.get("data_type", ""),
+                            }
+                        )
                     elif not explicit_column:
                         for pattern in patterns:
                             if re.search(pattern, col_name):
-                                candidates.append({
-                                    "catalog": catalog,
-                                    "schema": col["table_schema"],
-                                    "table": col["table_name"],
-                                    "column": col_name,
-                                    "data_type": col.get("data_type", ""),
-                                })
+                                candidates.append(
+                                    {
+                                        "catalog": catalog,
+                                        "schema": col["table_schema"],
+                                        "table": col["table_name"],
+                                        "column": col_name,
+                                        "data_type": col.get("data_type", ""),
+                                    }
+                                )
                                 break
 
             except Exception as e:
@@ -979,8 +998,7 @@ class RTBFManager:
 
                 pii_cols = execute_sql(self.client, self.warehouse_id, sql)
                 existing = {
-                    (c["catalog"], c["schema"], c["table"], c["column"])
-                    for c in candidates
+                    (c["catalog"], c["schema"], c["table"], c["column"]) for c in candidates
                 }
                 for pc in pii_cols:
                     key = (
@@ -990,19 +1008,26 @@ class RTBFManager:
                         pc.get("column_name", ""),
                     )
                     if key not in existing:
-                        candidates.append({
-                            "catalog": pc["catalog"],
-                            "schema": pc["schema_name"],
-                            "table": pc["table_name"],
-                            "column": pc["column_name"],
-                        })
+                        candidates.append(
+                            {
+                                "catalog": pc["catalog"],
+                                "schema": pc["schema_name"],
+                                "table": pc["table_name"],
+                                "column": pc["column_name"],
+                            }
+                        )
         except Exception:
             pass  # PII table may not exist yet
 
         return candidates
 
     def _build_anonymize_sql(
-        self, catalog: str, schema: str, table: str, identifier_col: str, subject_value: str,
+        self,
+        catalog: str,
+        schema: str,
+        table: str,
+        identifier_col: str,
+        subject_value: str,
     ) -> str:
         """Build an UPDATE statement that anonymizes all PII columns for matching rows."""
         fqn = f"`{catalog}`.`{schema}`.`{table}`"
@@ -1026,8 +1051,11 @@ class RTBFManager:
             for pattern, pii_type in COLUMN_NAME_PATTERNS.items():
                 if re.search(pattern, col_name):
                     from src.pii_detection import SUGGESTED_MASKING
+
                     mask_strategy = SUGGESTED_MASKING.get(pii_type, "redact")
-                    mask_expr = _get_mask_expression(col_name, mask_strategy, col.get("data_type", "STRING"))
+                    mask_expr = _get_mask_expression(
+                        col_name, mask_strategy, col.get("data_type", "STRING")
+                    )
                     if mask_expr:
                         update_parts.append(f"`{col_name}` = {mask_expr}")
                     break
@@ -1044,12 +1072,15 @@ class RTBFManager:
         return f"UPDATE {fqn} SET {', '.join(update_parts)} WHERE `{identifier_col}` = '{subject_value}'"
 
     def _build_pseudonymize_sql(
-        self, fqn: str, identifier_col: str, subject_value: str,
+        self,
+        fqn: str,
+        identifier_col: str,
+        subject_value: str,
     ) -> str:
         """Build an UPDATE that replaces the identifier with a pseudonym."""
-        pseudonym = hashlib.sha256(
-            f"pseudo_{subject_value}_{uuid.uuid4()}".encode()
-        ).hexdigest()[:16]
+        pseudonym = hashlib.sha256(f"pseudo_{subject_value}_{uuid.uuid4()}".encode()).hexdigest()[
+            :16
+        ]
         return (
             f"UPDATE {fqn} SET `{identifier_col}` = 'PSEUDO_{pseudonym}' "
             f"WHERE `{identifier_col}` = '{subject_value}'"
@@ -1075,21 +1106,32 @@ class RTBFManager:
             return
 
         emoji = {
-            "submitted": ":clipboard:", "executing": ":rotating_light:",
-            "completed": ":white_check_mark:", "verified": ":shield:",
-            "failed": ":x:", "overdue": ":warning:",
+            "submitted": ":clipboard:",
+            "executing": ":rotating_light:",
+            "completed": ":white_check_mark:",
+            "verified": ":shield:",
+            "failed": ":x:",
+            "overdue": ":warning:",
         }.get(event_type, ":information_source:")
 
         if slack_url:
             try:
                 from urllib.request import Request, urlopen
-                payload = json.dumps({
-                    "blocks": [
-                        {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {title}"}},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": message}},
-                    ],
-                })
-                req = Request(slack_url, data=payload.encode(), headers={"Content-Type": "application/json"})
+
+                payload = json.dumps(
+                    {
+                        "blocks": [
+                            {
+                                "type": "header",
+                                "text": {"type": "plain_text", "text": f"{emoji} {title}"},
+                            },
+                            {"type": "section", "text": {"type": "mrkdwn", "text": message}},
+                        ],
+                    }
+                )
+                req = Request(
+                    slack_url, data=payload.encode(), headers={"Content-Type": "application/json"}
+                )
                 urlopen(req, timeout=10)
             except Exception as e:
                 logger.warning(f"Slack RTBF notification failed: {e}")
@@ -1097,12 +1139,19 @@ class RTBFManager:
         if teams_url:
             try:
                 from urllib.request import Request, urlopen
-                payload = json.dumps({
-                    "@type": "MessageCard", "summary": title,
-                    "themeColor": "E8453C" if event_type == "failed" else "2196F3",
-                    "title": title, "text": message,
-                })
-                req = Request(teams_url, data=payload.encode(), headers={"Content-Type": "application/json"})
+
+                payload = json.dumps(
+                    {
+                        "@type": "MessageCard",
+                        "summary": title,
+                        "themeColor": "E8453C" if event_type == "failed" else "2196F3",
+                        "title": title,
+                        "text": message,
+                    }
+                )
+                req = Request(
+                    teams_url, data=payload.encode(), headers={"Content-Type": "application/json"}
+                )
                 urlopen(req, timeout=10)
             except Exception as e:
                 logger.warning(f"Teams RTBF notification failed: {e}")
@@ -1158,18 +1207,18 @@ class RTBFManager:
             status_class = "badge-success" if a.get("status") == "completed" else "badge-danger"
             actions_html += f"""
             <tr>
-                <td>{a.get('type', '')}</td>
-                <td>{a.get('table', '')}</td>
-                <td>{a.get('column', '')}</td>
-                <td><span class="badge {status_class}">{a.get('status', '')}</span></td>
-                <td>{a.get('rows_affected', '')}</td>
-                <td>{a.get('executed_at', '')}</td>
+                <td>{a.get("type", "")}</td>
+                <td>{a.get("table", "")}</td>
+                <td>{a.get("column", "")}</td>
+                <td><span class="badge {status_class}">{a.get("status", "")}</span></td>
+                <td>{a.get("rows_affected", "")}</td>
+                <td>{a.get("executed_at", "")}</td>
             </tr>"""
 
         return f"""<!DOCTYPE html>
 <html>
 <head>
-<title>RTBF Deletion Certificate — {summary.get('certificate_id', '')[:8]}</title>
+<title>RTBF Deletion Certificate — {summary.get("certificate_id", "")[:8]}</title>
 <style>
 body {{ font-family: -apple-system, sans-serif; margin: 20px; background: #f5f5f5; color: #333; }}
 .container {{ max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
@@ -1194,32 +1243,32 @@ th {{ background: #f0f0f0; font-weight: 600; }}
 <div class="container">
 <h1>RTBF Deletion Certificate</h1>
 <p class="meta">
-    Certificate ID: {summary.get('certificate_id', '')} |
-    Request ID: {summary.get('request_id', '')} |
-    Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+    Certificate ID: {summary.get("certificate_id", "")} |
+    Request ID: {summary.get("request_id", "")} |
+    Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
 </p>
 
 <div class="legal">
-    <strong>Legal Basis:</strong> {summary.get('legal_basis', 'Not specified')}<br>
-    <strong>Subject Type:</strong> {summary.get('subject_type', '')}<br>
-    <strong>Subject Identifier Hash:</strong> <code>{summary.get('subject_value_hash', '')[:16]}...</code><br>
-    <strong>Strategy:</strong> {summary.get('strategy', '')}
+    <strong>Legal Basis:</strong> {summary.get("legal_basis", "Not specified")}<br>
+    <strong>Subject Type:</strong> {summary.get("subject_type", "")}<br>
+    <strong>Subject Identifier Hash:</strong> <code>{summary.get("subject_value_hash", "")[:16]}...</code><br>
+    <strong>Strategy:</strong> {summary.get("strategy", "")}
 </div>
 
 <h2>Summary</h2>
 <div class="stats-grid">
-    <div class="stat-card"><div class="stat">{summary.get('tables_processed', 0)}</div><div class="stat-label">Tables Processed</div></div>
-    <div class="stat-card"><div class="stat">{summary.get('total_rows_deleted', 0)}</div><div class="stat-label">Rows Deleted</div></div>
-    <div class="stat-card"><div class="stat">{summary.get('vacuum_summary', {}).get('tables_vacuumed', 0)}</div><div class="stat-label">Tables Vacuumed</div></div>
+    <div class="stat-card"><div class="stat">{summary.get("tables_processed", 0)}</div><div class="stat-label">Tables Processed</div></div>
+    <div class="stat-card"><div class="stat">{summary.get("total_rows_deleted", 0)}</div><div class="stat-label">Rows Deleted</div></div>
+    <div class="stat-card"><div class="stat">{summary.get("vacuum_summary", {}).get("tables_vacuumed", 0)}</div><div class="stat-label">Tables Vacuumed</div></div>
     <div class="stat-card">{verified_badge}</div>
 </div>
 
 <h2>Timeline</h2>
 <table>
     <tr><th>Event</th><th>Timestamp</th></tr>
-    <tr><td>Request Created</td><td>{summary.get('request_created', '')}</td></tr>
-    <tr><td>GDPR Deadline</td><td>{summary.get('deadline', '')}</td></tr>
-    <tr><td>Request Completed</td><td>{summary.get('request_completed', '')}</td></tr>
+    <tr><td>Request Created</td><td>{summary.get("request_created", "")}</td></tr>
+    <tr><td>GDPR Deadline</td><td>{summary.get("deadline", "")}</td></tr>
+    <tr><td>Request Completed</td><td>{summary.get("request_completed", "")}</td></tr>
 </table>
 
 <h2>Action Log</h2>

@@ -9,7 +9,6 @@ from src.pipeline_engine import PipelineEngine, BUILTIN_TEMPLATES, STEP_TYPES
 
 
 class TestPipelineStore:
-
     def setup_method(self):
         self.store = PipelineStore(MagicMock(), "wh-1", "audit")
 
@@ -52,13 +51,17 @@ class TestPipelineStore:
 
 
 class TestPipelineEngine:
-
     def setup_method(self):
         self.client = MagicMock()
         self.config = {
-            "source_catalog": "src", "destination_catalog": "dst",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
             "audit_trail": {"catalog": "audit"},
-            "pipelines": {"default_on_failure": "abort", "retry_max_attempts": 2, "retry_backoff_seconds": 0},
+            "pipelines": {
+                "default_on_failure": "abort",
+                "retry_max_attempts": 2,
+                "retry_backoff_seconds": 0,
+            },
         }
         self.engine = PipelineEngine(self.client, "wh-1", config=self.config)
 
@@ -71,7 +74,9 @@ class TestPipelineEngine:
     def test_builtin_templates_have_valid_step_types(self):
         for name, tmpl in BUILTIN_TEMPLATES.items():
             for step in tmpl["steps"]:
-                assert step["type"] in STEP_TYPES, f"Template {name} has invalid step type: {step['type']}"
+                assert step["type"] in STEP_TYPES, (
+                    f"Template {name} has invalid step type: {step['type']}"
+                )
 
     @patch("src.pipeline_store.execute_sql")
     def test_create_pipeline(self, mock_sql):
@@ -103,9 +108,22 @@ class TestPipelineEngine:
         """Test running a simple pipeline with just a notify step."""
         mock_store_sql.side_effect = [
             # get_pipeline
-            [{"pipeline_id": "p1", "name": "Test", "steps_json": json.dumps([
-                {"type": "notify", "name": "Send alert", "config": {"message": "done"}, "on_failure": "skip"}
-            ])}],
+            [
+                {
+                    "pipeline_id": "p1",
+                    "name": "Test",
+                    "steps_json": json.dumps(
+                        [
+                            {
+                                "type": "notify",
+                                "name": "Send alert",
+                                "config": {"message": "done"},
+                                "on_failure": "skip",
+                            }
+                        ]
+                    ),
+                }
+            ],
             None,  # save_run
             None,  # save_step_result
             None,  # update_run (running)

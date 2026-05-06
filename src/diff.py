@@ -95,6 +95,7 @@ def compare_catalogs(
     # RBAC enforcement
     if kwargs.get("rbac_enabled"):
         from src.rbac import enforce_rbac
+
         rbac_config = {
             "source_catalog": source_catalog,
             "destination_catalog": dest_catalog,
@@ -109,8 +110,12 @@ def compare_catalogs(
     progress.start()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_source = executor.submit(get_all_objects, client, warehouse_id, source_catalog, exclude_schemas)
-        f_dest = executor.submit(get_all_objects, client, warehouse_id, dest_catalog, exclude_schemas)
+        f_source = executor.submit(
+            get_all_objects, client, warehouse_id, source_catalog, exclude_schemas
+        )
+        f_dest = executor.submit(
+            get_all_objects, client, warehouse_id, dest_catalog, exclude_schemas
+        )
 
     source_objects = f_source.result()
     progress.update(success=True)
@@ -144,7 +149,9 @@ def print_diff(diff: dict, source_catalog: str, dest_catalog: str) -> None:
     for obj_type in ("schemas", "tables", "views", "functions", "volumes"):
         d = diff[obj_type]
         logger.info(f"\n  {obj_type.upper()}:")
-        logger.info(f"    Source: {d['source_count']}  |  Dest: {d['dest_count']}  |  Common: {len(d['in_both'])}")
+        logger.info(
+            f"    Source: {d['source_count']}  |  Dest: {d['dest_count']}  |  Common: {len(d['in_both'])}"
+        )
 
         if d["only_in_source"]:
             logger.info(f"    Missing in destination ({len(d['only_in_source'])}):")
@@ -171,4 +178,6 @@ def print_diff(diff: dict, source_catalog: str, dest_catalog: str) -> None:
     if total_missing == 0 and total_extra == 0:
         logger.info("Catalogs are fully in sync!")
     else:
-        logger.info(f"Differences found: {total_missing} missing in dest, {total_extra} extra in dest")
+        logger.info(
+            f"Differences found: {total_missing} missing in dest, {total_extra} extra in dest"
+        )

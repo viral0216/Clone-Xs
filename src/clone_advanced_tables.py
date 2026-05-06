@@ -16,7 +16,8 @@ def _list_schemas(client: WorkspaceClient, catalog: str) -> list[str]:
     """List schema names in a catalog using SDK."""
     try:
         return [
-            s.name for s in client.schemas.list(catalog_name=catalog)
+            s.name
+            for s in client.schemas.list(catalog_name=catalog)
             if s.name not in EXCLUDE_SCHEMAS
         ]
     except Exception as e:
@@ -28,8 +29,12 @@ def _list_schemas(client: WorkspaceClient, catalog: str) -> list[str]:
 # Listing — uses SDK client.tables.list() instead of information_schema SQL
 # ---------------------------------------------------------------------------
 
+
 def list_materialized_views(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List materialized views in a catalog using SDK."""
     schemas = [schema] if schema else _list_schemas(client, catalog)
@@ -38,19 +43,24 @@ def list_materialized_views(
         try:
             for t in client.tables.list(catalog_name=catalog, schema_name=s):
                 if str(t.table_type) == "MATERIALIZED_VIEW":
-                    results.append({
-                        "table_catalog": catalog,
-                        "table_schema": s,
-                        "table_name": t.name,
-                        "full_name": t.full_name,
-                    })
+                    results.append(
+                        {
+                            "table_catalog": catalog,
+                            "table_schema": s,
+                            "table_name": t.name,
+                            "full_name": t.full_name,
+                        }
+                    )
         except Exception as e:
             logger.debug(f"Could not list tables in {catalog}.{s}: {e}")
     return results
 
 
 def list_streaming_tables(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List streaming tables (DLT-managed) in a catalog using SDK."""
     schemas = [schema] if schema else _list_schemas(client, catalog)
@@ -59,19 +69,23 @@ def list_streaming_tables(
         try:
             for t in client.tables.list(catalog_name=catalog, schema_name=s):
                 if str(t.table_type) == "STREAMING_TABLE":
-                    results.append({
-                        "table_catalog": catalog,
-                        "table_schema": s,
-                        "table_name": t.name,
-                        "full_name": t.full_name,
-                    })
+                    results.append(
+                        {
+                            "table_catalog": catalog,
+                            "table_schema": s,
+                            "table_name": t.name,
+                            "full_name": t.full_name,
+                        }
+                    )
         except Exception as e:
             logger.debug(f"Could not list tables in {catalog}.{s}: {e}")
     return results
 
 
 def list_online_tables(
-    client: WorkspaceClient, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List online tables using SDK."""
     results = []
@@ -85,23 +99,34 @@ def list_online_tables(
                 parts = name.split(".")
                 if len(parts) >= 2 and parts[1] != schema:
                     continue
-            results.append({
-                "name": ot.name,
-                "status": str(ot.status.detailed_state) if ot.status else None,
-                "spec": {
-                    "source_table_full_name": ot.spec.source_table_full_name if ot.spec else None,
-                    "primary_key_columns": list(ot.spec.primary_key_columns) if ot.spec and ot.spec.primary_key_columns else [],
-                    "run_triggered": ot.spec.run_triggered if ot.spec else None,
-                    "run_continuously": ot.spec.run_continuously if ot.spec else None,
-                } if ot.spec else None,
-            })
+            results.append(
+                {
+                    "name": ot.name,
+                    "status": str(ot.status.detailed_state) if ot.status else None,
+                    "spec": {
+                        "source_table_full_name": ot.spec.source_table_full_name
+                        if ot.spec
+                        else None,
+                        "primary_key_columns": list(ot.spec.primary_key_columns)
+                        if ot.spec and ot.spec.primary_key_columns
+                        else [],
+                        "run_triggered": ot.spec.run_triggered if ot.spec else None,
+                        "run_continuously": ot.spec.run_continuously if ot.spec else None,
+                    }
+                    if ot.spec
+                    else None,
+                }
+            )
     except Exception as e:
         logger.debug(f"Could not list online tables: {e}")
     return results
 
 
 def list_all_advanced_tables(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str | None = None,
 ) -> dict:
     """List all advanced table types in a catalog."""
     mvs = list_materialized_views(client, warehouse_id, catalog, schema)
@@ -125,9 +150,13 @@ def list_all_advanced_tables(
 # Export definitions
 # ---------------------------------------------------------------------------
 
+
 def export_materialized_view_definition(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    name: str,
 ) -> dict | None:
     """Export a materialized view's CREATE statement.
 
@@ -152,8 +181,11 @@ def export_materialized_view_definition(
 
 
 def export_streaming_table_definition(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    name: str,
 ) -> dict | None:
     """Export a streaming table's definition.
 
@@ -178,7 +210,8 @@ def export_streaming_table_definition(
 
 
 def export_online_table_definition(
-    client: WorkspaceClient, table_name: str,
+    client: WorkspaceClient,
+    table_name: str,
 ) -> dict | None:
     """Export an online table's specification via SDK."""
     try:
@@ -188,11 +221,15 @@ def export_online_table_definition(
             "name": ot.name,
             "spec": {
                 "source_table_full_name": ot.spec.source_table_full_name if ot.spec else None,
-                "primary_key_columns": list(ot.spec.primary_key_columns) if ot.spec and ot.spec.primary_key_columns else [],
+                "primary_key_columns": list(ot.spec.primary_key_columns)
+                if ot.spec and ot.spec.primary_key_columns
+                else [],
                 "run_triggered": ot.spec.run_triggered if ot.spec else None,
                 "run_continuously": ot.spec.run_continuously if ot.spec else None,
                 "timeseries_key": ot.spec.timeseries_key if ot.spec else None,
-            } if ot.spec else None,
+            }
+            if ot.spec
+            else None,
         }
     except Exception as e:
         logger.error(f"Failed to export online table {table_name}: {e}")
@@ -203,17 +240,21 @@ def export_online_table_definition(
 # Clone / recreate on target
 # ---------------------------------------------------------------------------
 
+
 def _rewrite_catalog_refs(sql: str, source_catalog: str, dest_catalog: str) -> str:
     """Rewrite catalog references in a SQL statement."""
     sql = sql.replace(f"`{source_catalog}`", f"`{dest_catalog}`")
-    pattern = re.compile(rf'\b{re.escape(source_catalog)}\b', re.IGNORECASE)
+    pattern = re.compile(rf"\b{re.escape(source_catalog)}\b", re.IGNORECASE)
     sql = pattern.sub(dest_catalog, sql)
     return sql
 
 
 def clone_materialized_view(
-    client: WorkspaceClient, warehouse_id: str,
-    definition: dict, dest_catalog: str, source_catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    definition: dict,
+    dest_catalog: str,
+    source_catalog: str,
     dry_run: bool = False,
 ) -> dict:
     """Recreate a materialized view in the destination catalog.
@@ -230,7 +271,9 @@ def clone_materialized_view(
     if dry_run:
         result["dry_run"] = True
         result["success"] = True
-        result["sql"] = _rewrite_catalog_refs(definition["create_sql"], source_catalog, dest_catalog)
+        result["sql"] = _rewrite_catalog_refs(
+            definition["create_sql"], source_catalog, dest_catalog
+        )
         return result
 
     try:
@@ -243,8 +286,12 @@ def clone_materialized_view(
 
         # Rewrite and execute (SQL-only)
         new_sql = _rewrite_catalog_refs(definition["create_sql"], source_catalog, dest_catalog)
-        new_sql = re.sub(r'^CREATE\s+MATERIALIZED\s+VIEW',
-                         'CREATE OR REPLACE MATERIALIZED VIEW', new_sql, flags=re.IGNORECASE)
+        new_sql = re.sub(
+            r"^CREATE\s+MATERIALIZED\s+VIEW",
+            "CREATE OR REPLACE MATERIALIZED VIEW",
+            new_sql,
+            flags=re.IGNORECASE,
+        )
         execute_sql(client, warehouse_id, new_sql)
         result["success"] = True
         logger.info(f"Created MV: {result['destination']}")
@@ -257,7 +304,9 @@ def clone_materialized_view(
 
 def clone_online_table(
     client: WorkspaceClient,
-    definition: dict, dest_catalog: str, source_catalog: str,
+    definition: dict,
+    dest_catalog: str,
+    source_catalog: str,
     dry_run: bool = False,
 ) -> dict:
     """Create an online table in the destination catalog via SDK."""
@@ -307,8 +356,10 @@ def clone_online_table(
 
 
 def clone_all_advanced_tables(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
     schema: str | None = None,
     include_mvs: bool = True,
     include_streaming: bool = True,
@@ -322,10 +373,16 @@ def clone_all_advanced_tables(
         mvs = list_materialized_views(client, warehouse_id, source_catalog, schema)
         for mv in mvs:
             defn = export_materialized_view_definition(
-                client, warehouse_id, mv["table_catalog"], mv["table_schema"], mv["table_name"],
+                client,
+                warehouse_id,
+                mv["table_catalog"],
+                mv["table_schema"],
+                mv["table_name"],
             )
             if defn:
-                r = clone_materialized_view(client, warehouse_id, defn, dest_catalog, source_catalog, dry_run)
+                r = clone_materialized_view(
+                    client, warehouse_id, defn, dest_catalog, source_catalog, dry_run
+                )
                 results["materialized_views"].append(r)
                 if not r.get("success"):
                     results["errors"].append(r)
@@ -334,16 +391,22 @@ def clone_all_advanced_tables(
         sts = list_streaming_tables(client, warehouse_id, source_catalog, schema)
         for st in sts:
             defn = export_streaming_table_definition(
-                client, warehouse_id, st["table_catalog"], st["table_schema"], st["table_name"],
+                client,
+                warehouse_id,
+                st["table_catalog"],
+                st["table_schema"],
+                st["table_name"],
             )
             if defn:
-                results["streaming_tables"].append({
-                    "source": defn["fqn"],
-                    "type": "STREAMING_TABLE",
-                    "exported": True,
-                    "note": "Streaming tables require DLT pipeline — definition exported for reference",
-                    "create_sql": defn["create_sql"],
-                })
+                results["streaming_tables"].append(
+                    {
+                        "source": defn["fqn"],
+                        "type": "STREAMING_TABLE",
+                        "exported": True,
+                        "note": "Streaming tables require DLT pipeline — definition exported for reference",
+                        "create_sql": defn["create_sql"],
+                    }
+                )
 
     if include_online:
         ots = list_online_tables(client, source_catalog, schema)

@@ -45,10 +45,12 @@ logger = logging.getLogger(__name__)
 
 # Principals that grant access to "everyone" (or close to it). When
 # any of these holds a risky privilege on a table, escalate.
-PUBLIC_PRINCIPALS = frozenset({
-    "account users",  # all UC-enabled users in the workspace's account
-    "users",          # legacy / hive-style "all users" group
-})
+PUBLIC_PRINCIPALS = frozenset(
+    {
+        "account users",  # all UC-enabled users in the workspace's account
+        "users",  # legacy / hive-style "all users" group
+    }
+)
 
 # Privileges that allow data access (read or write). Owners and
 # `MANAGE` privilege are intentionally separate — owners are the legit
@@ -200,10 +202,14 @@ def audit_catalog_permissions(
             pii_cols_by_table[(schema, table)].append(col)
 
     try:
-        rows = execute_sql(
-            client, warehouse_id,
-            _bulk_privileges_query(catalog, exclude_schemas),
-        ) or []
+        rows = (
+            execute_sql(
+                client,
+                warehouse_id,
+                _bulk_privileges_query(catalog, exclude_schemas),
+            )
+            or []
+        )
     except Exception as e:
         logger.warning(f"Permissions audit query failed for {catalog!r}: {e}")
         return {
@@ -238,8 +244,11 @@ def audit_catalog_permissions(
         key = (schema, table, grantee)
         if key not in grouped:
             grouped[key] = {
-                "schema": schema, "table": table, "principal": grantee,
-                "privileges": set(), "grantors": set(),
+                "schema": schema,
+                "table": table,
+                "principal": grantee,
+                "privileges": set(),
+                "grantors": set(),
                 "is_grantable": False,
             }
         grouped[key]["privileges"].add(priv)
@@ -269,25 +278,31 @@ def audit_catalog_permissions(
         by_principal_type[ptype] += 1
         if risk_level == "INFO":
             continue
-        findings.append({
-            "schema": schema,
-            "table": table,
-            "principal": principal,
-            "principal_type": ptype,
-            "privileges": sorted(privs),
-            "is_grantable": cluster["is_grantable"],
-            "risk_level": risk_level,
-            "suggested_action": action,
-            "has_pii": has_pii,
-            "pii_columns": list(pii_cols_by_table.get((schema, table), [])),
-        })
+        findings.append(
+            {
+                "schema": schema,
+                "table": table,
+                "principal": principal,
+                "principal_type": ptype,
+                "privileges": sorted(privs),
+                "is_grantable": cluster["is_grantable"],
+                "risk_level": risk_level,
+                "suggested_action": action,
+                "has_pii": has_pii,
+                "pii_columns": list(pii_cols_by_table.get((schema, table), [])),
+            }
+        )
 
     # Sort findings: highest risk first, then PII tables, then alphabetical.
-    findings.sort(key=lambda f: (
-        -_RISK_ORDER.get(f["risk_level"], 0),
-        not f["has_pii"],
-        f["schema"], f["table"], f["principal"],
-    ))
+    findings.sort(
+        key=lambda f: (
+            -_RISK_ORDER.get(f["risk_level"], 0),
+            not f["has_pii"],
+            f["schema"],
+            f["table"],
+            f["principal"],
+        )
+    )
 
     return {
         "catalog": catalog,

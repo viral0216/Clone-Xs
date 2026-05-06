@@ -153,8 +153,10 @@ class TestStartStream:
         client = _client_with_submit(run_id=999)
         record = start_stream(
             client,
-            source_catalog="src", destination_catalog="dst",
-            tables=["bronze.events"], schema=None,
+            source_catalog="src",
+            destination_catalog="dst",
+            tables=["bronze.events"],
+            schema=None,
         )
         assert record.run_id == 999
         assert record.last_status == "starting"
@@ -173,7 +175,8 @@ class TestStartStream:
         client.jobs.submit.side_effect = RuntimeError("PERMISSION_DENIED")
         record = start_stream(
             client,
-            source_catalog="src", destination_catalog="dst",
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["bronze.events"],
         )
         assert record.last_status == "failed"
@@ -198,7 +201,9 @@ class TestStopStream:
     def test_cancels_run_and_marks_stopped(self):
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         client.jobs.cancel_run.return_value = None
@@ -218,7 +223,9 @@ class TestStopStream:
         client = MagicMock()
         client.jobs.submit.side_effect = RuntimeError("submit failed")
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
 
@@ -231,7 +238,9 @@ class TestStopStream:
         Captured in last_error, marked stopped, never raises."""
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         client.jobs.cancel_run.side_effect = RuntimeError("run already ended")
@@ -260,7 +269,9 @@ class TestRestartStream:
         client.jobs.submit.side_effect = [first, second]
 
         original = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         assert original.run_id == 100
@@ -288,7 +299,9 @@ class TestRefreshAndList:
     def test_refresh_translates_run_state_to_status(self):
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         # Mock get_run to return a RUNNING state.
@@ -305,7 +318,9 @@ class TestRefreshAndList:
     def test_refresh_terminated_failed_status_is_failed_with_message(self):
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         run = MagicMock()
@@ -325,7 +340,9 @@ class TestRefreshAndList:
         captures the message."""
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         client.jobs.get_run.side_effect = RuntimeError("503 Service Unavailable")
@@ -338,7 +355,9 @@ class TestRefreshAndList:
     def test_list_streams_no_refresh_returns_cached(self):
         client = _client_with_submit(run_id=42)
         start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         # No refresh — get_run NOT called
@@ -349,7 +368,9 @@ class TestRefreshAndList:
     def test_list_streams_with_refresh_polls_each(self):
         client = _client_with_submit(run_id=42)
         start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         run = MagicMock()
@@ -397,7 +418,9 @@ class TestDiscoverExistingStreams:
         start_stream this session), discover doesn't double-register."""
         client = _client_with_submit(run_id=42)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
             tables=["t"],
         )
         # Mock list_runs to return the same one
@@ -426,8 +449,11 @@ class TestRecordSerialisation:
     def test_dict_carries_status_and_metadata(self):
         client = _client_with_submit(run_id=999)
         record = start_stream(
-            client, source_catalog="src", destination_catalog="dst",
-            tables=["bronze.events", "bronze.users"], trigger_ms=60000,
+            client,
+            source_catalog="src",
+            destination_catalog="dst",
+            tables=["bronze.events", "bronze.users"],
+            trigger_ms=60000,
         )
         streams = list_streams(refresh=False)
         assert len(streams) == 1

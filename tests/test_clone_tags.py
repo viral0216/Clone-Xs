@@ -15,6 +15,7 @@ from src.clone_tags import (
 
 # ---------- get_table_tags ----------
 
+
 @patch("src.clone_tags.execute_sql")
 def test_get_table_tags_happy(mock_sql):
     mock_sql.return_value = [
@@ -34,6 +35,7 @@ def test_get_table_tags_failure(mock_sql):
 
 # ---------- get_column_tags ----------
 
+
 @patch("src.clone_tags.execute_sql")
 def test_get_column_tags_happy(mock_sql):
     mock_sql.return_value = [
@@ -51,6 +53,7 @@ def test_get_column_tags_failure(mock_sql):
 
 # ---------- get_schema_tags ----------
 
+
 @patch("src.clone_tags.execute_sql")
 def test_get_schema_tags_happy(mock_sql):
     mock_sql.return_value = [{"tag_name": "team", "tag_value": "data"}]
@@ -66,6 +69,7 @@ def test_get_schema_tags_failure(mock_sql):
 
 # ---------- get_catalog_tags ----------
 
+
 @patch("src.clone_tags.execute_sql")
 def test_get_catalog_tags_happy(mock_sql):
     mock_sql.return_value = [{"tag_name": "org", "tag_value": "engineering"}]
@@ -80,6 +84,7 @@ def test_get_catalog_tags_failure(mock_sql):
 
 
 # ---------- copy_catalog_tags ----------
+
 
 @patch("src.clone_tags.get_catalog_tags")
 @patch("src.clone_tags.execute_sql")
@@ -115,6 +120,7 @@ def test_copy_catalog_tags_sql_failure_no_raise(mock_sql, mock_get):
 
 # ---------- copy_schema_tags ----------
 
+
 @patch("src.clone_tags.get_schema_tags")
 @patch("src.clone_tags.execute_sql")
 def test_copy_schema_tags_happy(mock_sql, mock_get):
@@ -136,6 +142,7 @@ def test_copy_schema_tags_no_tags(mock_sql, mock_get):
 
 
 # ---------- copy_table_tags ----------
+
 
 @patch("src.clone_tags.get_column_tags")
 @patch("src.clone_tags.get_table_tags")
@@ -179,6 +186,7 @@ def test_copy_table_tags_sql_failure_no_raise(mock_sql, mock_tbl_tags, mock_col_
 
 # ---------- get_table_properties ----------
 
+
 @patch("src.clone_tags.execute_sql")
 def test_get_table_properties_happy(mock_sql):
     mock_sql.return_value = [
@@ -199,6 +207,7 @@ def test_get_table_properties_failure(mock_sql):
 
 
 # ---------- copy_table_properties ----------
+
 
 @patch("src.clone_tags.get_table_properties")
 @patch("src.clone_tags.execute_sql")

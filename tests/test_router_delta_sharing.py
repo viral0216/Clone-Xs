@@ -26,27 +26,36 @@ def test_get_share_not_found(client):
 
 def test_create_share(client):
     with patch("src.delta_sharing.create_share", return_value={"name": "new_share"}):
-        resp = client.post("/api/delta-sharing/shares", json={
-            "name": "new_share",
-        })
+        resp = client.post(
+            "/api/delta-sharing/shares",
+            json={
+                "name": "new_share",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_grant_table_to_share(client):
     with patch("src.delta_sharing.grant_table_to_share", return_value={"status": "ok"}):
-        resp = client.post("/api/delta-sharing/shares/grant", json={
-            "share_name": "s1",
-            "table_fqn": "cat.schema.table",
-        })
+        resp = client.post(
+            "/api/delta-sharing/shares/grant",
+            json={
+                "share_name": "s1",
+                "table_fqn": "cat.schema.table",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_revoke_table_from_share(client):
     with patch("src.delta_sharing.revoke_table_from_share", return_value={"status": "ok"}):
-        resp = client.post("/api/delta-sharing/shares/revoke", json={
-            "share_name": "s1",
-            "table_fqn": "cat.schema.table",
-        })
+        resp = client.post(
+            "/api/delta-sharing/shares/revoke",
+            json={
+                "share_name": "s1",
+                "table_fqn": "cat.schema.table",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
@@ -64,16 +73,22 @@ def test_list_recipients(client):
 
 def test_create_recipient(client):
     with patch("src.delta_sharing.create_recipient", return_value={"name": "r1"}):
-        resp = client.post("/api/delta-sharing/recipients", json={
-            "name": "r1",
-        })
+        resp = client.post(
+            "/api/delta-sharing/recipients",
+            json={
+                "name": "r1",
+            },
+        )
     assert resp.status_code in (200, 422)
 
 
 def test_grant_share_to_recipient(client):
     with patch("src.delta_sharing.grant_share_to_recipient", return_value={"status": "ok"}):
-        resp = client.post("/api/delta-sharing/recipients/grant", json={
-            "share_name": "s1",
-            "recipient_name": "r1",
-        })
+        resp = client.post(
+            "/api/delta-sharing/recipients/grant",
+            json={
+                "share_name": "s1",
+                "recipient_name": "r1",
+            },
+        )
     assert resp.status_code in (200, 422)

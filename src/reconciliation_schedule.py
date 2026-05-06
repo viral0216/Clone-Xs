@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Table helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_fqn(config: dict) -> str:
     return get_table_fqn(config, "reconciliation", "reconciliation_schedules")
 
@@ -28,8 +29,12 @@ def ensure_reconciliation_schedules_table(client, warehouse_id, config):
     """Create the reconciliation_schedules Delta table if it does not exist."""
     fqn = _get_fqn(config)
     from src.catalog_utils import safe_ensure_schema_from_fqn
+
     safe_ensure_schema_from_fqn(fqn.rsplit(".", 1)[0], client, warehouse_id, config)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             id STRING, name STRING, source_catalog STRING,
             destination_catalog STRING, schema_name STRING, table_name STRING,
@@ -37,7 +42,8 @@ def ensure_reconciliation_schedules_table(client, warehouse_id, config):
             cron STRING, status STRING,
             created_at STRING, last_run_at STRING, next_run STRING
         ) USING DELTA
-    """)
+    """,
+    )
     return fqn
 
 
@@ -45,10 +51,12 @@ def ensure_reconciliation_schedules_table(client, warehouse_id, config):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _compute_next_run(cron_expr: str) -> Optional[str]:
     """Compute approximate next run time from a cron expression."""
     try:
         from src.scheduler import parse_cron
+
         seconds = parse_cron(cron_expr)
         return (datetime.now() + timedelta(seconds=seconds)).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
@@ -88,6 +96,7 @@ def _row_to_schedule(row: dict) -> dict:
 # ---------------------------------------------------------------------------
 # CRUD operations
 # ---------------------------------------------------------------------------
+
 
 def list_recon_schedules(client, warehouse_id, config) -> list[dict]:
     """List all reconciliation schedules with computed next_run times."""
@@ -143,7 +152,10 @@ def create_recon_schedule(
     kc_json = json.dumps(key_columns or [])
     co_json = json.dumps(comparison_options or {})
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {fqn}
         (id, name, source_catalog, destination_catalog, schema_name, table_name,
          key_columns, comparison_options, cron, status, created_at, last_run_at, next_run)
@@ -155,7 +167,8 @@ def create_recon_schedule(
             '{sql_escape(cron)}', 'active',
             '{sql_escape(now)}', NULL, '{sql_escape(next_run or "")}'
         )
-    """)
+    """,
+    )
 
     schedule = {
         "id": schedule_id,
@@ -182,7 +195,8 @@ def get_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Option
     fqn = _get_fqn(config)
     try:
         rows = execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"SELECT * FROM {fqn} WHERE id = '{sql_escape(schedule_id)}'",
         )
     except Exception:
@@ -199,7 +213,8 @@ def pause_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Opti
     """Pause a reconciliation schedule."""
     fqn = _get_fqn(config)
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"UPDATE {fqn} SET status = 'paused', next_run = NULL "
         f"WHERE id = '{sql_escape(schedule_id)}'",
     )
@@ -215,7 +230,8 @@ def resume_recon_schedule(client, warehouse_id, config, schedule_id: str) -> Opt
         return None
     next_run = _compute_next_run(s.get("cron", "")) if s.get("cron") else None
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"UPDATE {fqn} SET status = 'active', "
         f"next_run = '{sql_escape(next_run or '')}' "
         f"WHERE id = '{sql_escape(schedule_id)}'",
@@ -237,7 +253,8 @@ def delete_recon_schedule(client, warehouse_id, config, schedule_id: str) -> boo
     if existing is None:
         return False
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"DELETE FROM {fqn} WHERE id = '{sql_escape(schedule_id)}'",
     )
     logger.info(f"Reconciliation schedule {schedule_id} deleted")
@@ -256,7 +273,8 @@ def update_last_run(client, warehouse_id, config, schedule_id: str) -> None:
         next_run = _compute_next_run(s["cron"]) or ""
 
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"UPDATE {fqn} SET last_run_at = '{sql_escape(now)}', "
         f"next_run = '{sql_escape(next_run)}' "
         f"WHERE id = '{sql_escape(schedule_id)}'",

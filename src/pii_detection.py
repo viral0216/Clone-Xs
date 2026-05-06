@@ -90,11 +90,21 @@ SUGGESTED_MASKING = {
 }
 
 # High-risk PII types that trigger HIGH risk level
-HIGH_RISK_TYPES = frozenset((
-    "SSN", "CREDIT_CARD", "BANK_ACCOUNT", "CREDENTIAL",
-    "PASSPORT", "PASSPORT_US", "TAX_ID", "NATIONAL_ID",
-    "NATIONAL_ID_AADHAR", "NATIONAL_ID_NINO", "IBAN",
-))
+HIGH_RISK_TYPES = frozenset(
+    (
+        "SSN",
+        "CREDIT_CARD",
+        "BANK_ACCOUNT",
+        "CREDENTIAL",
+        "PASSPORT",
+        "PASSPORT_US",
+        "TAX_ID",
+        "NATIONAL_ID",
+        "NATIONAL_ID_AADHAR",
+        "NATIONAL_ID_NINO",
+        "IBAN",
+    )
+)
 
 # Cross-column correlation rules
 # Each rule: set of PII types that must co-exist in a table -> flag name, confidence boost
@@ -126,14 +136,20 @@ PII_TAG_NAMES = frozenset(("pii_type", "pii", "sensitive", "classification", "da
 
 # Map known UC tag values to PII types
 TAG_TO_PII_TYPE = {
-    "ssn": "SSN", "social_security": "SSN",
-    "email": "EMAIL", "email_address": "EMAIL",
-    "phone": "PHONE", "phone_number": "PHONE",
-    "credit_card": "CREDIT_CARD", "creditcard": "CREDIT_CARD",
+    "ssn": "SSN",
+    "social_security": "SSN",
+    "email": "EMAIL",
+    "email_address": "EMAIL",
+    "phone": "PHONE",
+    "phone_number": "PHONE",
+    "credit_card": "CREDIT_CARD",
+    "creditcard": "CREDIT_CARD",
     "passport": "PASSPORT",
     "drivers_license": "DRIVERS_LICENSE",
-    "date_of_birth": "DATE_OF_BIRTH", "dob": "DATE_OF_BIRTH",
-    "person_name": "PERSON_NAME", "name": "PERSON_NAME",
+    "date_of_birth": "DATE_OF_BIRTH",
+    "dob": "DATE_OF_BIRTH",
+    "person_name": "PERSON_NAME",
+    "name": "PERSON_NAME",
     "address": "ADDRESS",
     "ip_address": "IP_ADDRESS",
     "bank_account": "BANK_ACCOUNT",
@@ -152,6 +168,7 @@ TAG_TO_PII_TYPE = {
 # ---------------------------------------------------------------------------
 # Confidence scoring
 # ---------------------------------------------------------------------------
+
 
 def compute_confidence(
     detection_method: str,
@@ -183,6 +200,7 @@ def confidence_label(score: float) -> str:
 # ---------------------------------------------------------------------------
 # Pattern merging for custom config
 # ---------------------------------------------------------------------------
+
 
 def build_effective_patterns(pii_config: dict | None = None):
     """Merge built-in patterns with user-supplied custom config.
@@ -232,6 +250,7 @@ def build_effective_patterns(pii_config: dict | None = None):
 # Detection functions
 # ---------------------------------------------------------------------------
 
+
 def detect_pii_by_column_names(
     client,
     warehouse_id: str,
@@ -265,17 +284,19 @@ def detect_pii_by_column_names(
         for pattern, pii_type in col_patterns.items():
             if re.search(pattern, col_name):
                 score = compute_confidence("column_name")
-                detections.append({
-                    "schema": schema,
-                    "table": row["table_name"],
-                    "column": col_name,
-                    "data_type": row["data_type"],
-                    "pii_type": pii_type,
-                    "detection_method": "column_name",
-                    "confidence": confidence_label(score),
-                    "confidence_score": score,
-                    "suggested_masking": masking.get(pii_type, "redact"),
-                })
+                detections.append(
+                    {
+                        "schema": schema,
+                        "table": row["table_name"],
+                        "column": col_name,
+                        "data_type": row["data_type"],
+                        "pii_type": pii_type,
+                        "detection_method": "column_name",
+                        "confidence": confidence_label(score),
+                        "confidence_score": score,
+                        "suggested_masking": masking.get(pii_type, "redact"),
+                    }
+                )
                 break  # Only match first pattern per column
 
     return detections
@@ -348,19 +369,21 @@ def detect_pii_by_sampling(
             if match_rate > match_threshold:
                 has_validator = validator is not None
                 score = compute_confidence("data_sampling", match_rate, has_validator)
-                detections.append({
-                    "schema": schema,
-                    "table": table,
-                    "column": col_name,
-                    "data_type": col["data_type"],
-                    "pii_type": pii_type,
-                    "detection_method": "data_sampling",
-                    "confidence": confidence_label(score),
-                    "confidence_score": score,
-                    "match_rate": round(match_rate, 2),
-                    "samples_checked": len(values),
-                    "suggested_masking": masking.get(pii_type, "redact"),
-                })
+                detections.append(
+                    {
+                        "schema": schema,
+                        "table": table,
+                        "column": col_name,
+                        "data_type": col["data_type"],
+                        "pii_type": pii_type,
+                        "detection_method": "data_sampling",
+                        "confidence": confidence_label(score),
+                        "confidence_score": score,
+                        "match_rate": round(match_rate, 2),
+                        "samples_checked": len(values),
+                        "suggested_masking": masking.get(pii_type, "redact"),
+                    }
+                )
 
     return detections
 
@@ -381,7 +404,7 @@ def detect_pii_from_uc_tags(
     sql = f"""
     SELECT schema_name, table_name, column_name, tag_name, tag_value
     FROM {catalog}.information_schema.column_tags
-    WHERE LOWER(tag_name) IN ({', '.join(f"'{t}'" for t in PII_TAG_NAMES)})
+    WHERE LOWER(tag_name) IN ({", ".join(f"'{t}'" for t in PII_TAG_NAMES)})
     """
     try:
         rows = execute_sql(client, warehouse_id, sql)
@@ -405,17 +428,19 @@ def detect_pii_from_uc_tags(
                 continue
 
         score = compute_confidence("uc_tag")
-        detections.append({
-            "schema": schema,
-            "table": row["table_name"],
-            "column": row["column_name"],
-            "data_type": "",  # Not available from column_tags
-            "pii_type": pii_type,
-            "detection_method": "uc_tag",
-            "confidence": confidence_label(score),
-            "confidence_score": score,
-            "suggested_masking": SUGGESTED_MASKING.get(pii_type, "redact"),
-        })
+        detections.append(
+            {
+                "schema": schema,
+                "table": row["table_name"],
+                "column": row["column_name"],
+                "data_type": "",  # Not available from column_tags
+                "pii_type": pii_type,
+                "detection_method": "uc_tag",
+                "confidence": confidence_label(score),
+                "confidence_score": score,
+                "suggested_masking": SUGGESTED_MASKING.get(pii_type, "redact"),
+            }
+        )
 
     return detections
 
@@ -423,6 +448,7 @@ def detect_pii_from_uc_tags(
 # ---------------------------------------------------------------------------
 # Cross-column correlation
 # ---------------------------------------------------------------------------
+
 
 def _apply_correlation(detections: list[dict]) -> list[dict]:
     """Boost confidence and add flags for correlated PII columns within the same table."""
@@ -450,6 +476,7 @@ def _apply_correlation(detections: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Main scan orchestrator
 # ---------------------------------------------------------------------------
+
 
 def scan_catalog_for_pii(
     client,
@@ -486,7 +513,11 @@ def scan_catalog_for_pii(
 
     # Phase 1: Column name detection (fast)
     name_detections = detect_pii_by_column_names(
-        client, warehouse_id, catalog, exclude_schemas, pii_config=pii_config,
+        client,
+        warehouse_id,
+        catalog,
+        exclude_schemas,
+        pii_config=pii_config,
     )
     logger.info(f"Column name scan: {len(name_detections)} potential PII columns found")
 
@@ -494,7 +525,10 @@ def scan_catalog_for_pii(
     tag_detections = []
     if read_uc_tags:
         tag_detections = detect_pii_from_uc_tags(
-            client, warehouse_id, catalog, exclude_schemas,
+            client,
+            warehouse_id,
+            catalog,
+            exclude_schemas,
         )
         logger.info(f"UC tag scan: {len(tag_detections)} PII columns from tags")
 
@@ -515,6 +549,7 @@ def scan_catalog_for_pii(
             tables = [t for t in tables if t["table_schema"].lower() in sf_lower]
         if table_filter:
             import re as _re
+
             tbl_re = _re.compile(table_filter, _re.IGNORECASE)
             tables = [t for t in tables if tbl_re.search(t["table_name"])]
 
@@ -522,8 +557,11 @@ def scan_catalog_for_pii(
 
         def _sample_table(t):
             return detect_pii_by_sampling(
-                client, warehouse_id, catalog,
-                t["table_schema"], t["table_name"],
+                client,
+                warehouse_id,
+                catalog,
+                t["table_schema"],
+                t["table_name"],
                 sample_size=sample_size,
                 pii_config=pii_config,
             )
@@ -536,7 +574,9 @@ def scan_catalog_for_pii(
                     sample_detections.extend(results)
                 except Exception as e:
                     t = futures[future]
-                    logger.warning(f"Sampling failed for {t['table_schema']}.{t['table_name']}: {e}")
+                    logger.warning(
+                        f"Sampling failed for {t['table_schema']}.{t['table_name']}: {e}"
+                    )
 
         logger.info(f"Data sampling: {len(sample_detections)} additional PII columns found")
 
@@ -554,12 +594,17 @@ def scan_catalog_for_pii(
     if schema_filter:
         sf_lower = [s.lower() for s in schema_filter]
         unique_detections = [d for d in unique_detections if d["schema"].lower() in sf_lower]
-        logger.info(f"Schema filter applied: {len(unique_detections)} detections in {schema_filter}")
+        logger.info(
+            f"Schema filter applied: {len(unique_detections)} detections in {schema_filter}"
+        )
     if table_filter:
         import re as _re
+
         tbl_re = _re.compile(table_filter, _re.IGNORECASE)
         unique_detections = [d for d in unique_detections if tbl_re.search(d["table"])]
-        logger.info(f"Table filter applied: {len(unique_detections)} detections matching '{table_filter}'")
+        logger.info(
+            f"Table filter applied: {len(unique_detections)} detections matching '{table_filter}'"
+        )
 
     # Apply cross-column correlation
     unique_detections = _apply_correlation(unique_detections)
@@ -624,6 +669,7 @@ def scan_catalog_for_pii(
     if save_history:
         try:
             from src.pii_scan_store import PIIScanStore
+
             store = PIIScanStore(client, warehouse_id, state_catalog=state_catalog)
             store.init_tables()
             store.save_scan(scan_id, catalog, result)
@@ -653,8 +699,8 @@ def scan_catalog_for_pii(
         for d in unique_detections[:20]:
             rule_key = (d["column"], d["suggested_masking"])
             if rule_key not in printed:
-                logger.info(f"    - column: \"{d['column']}\"")
-                logger.info(f"      method: \"{d['suggested_masking']}\"")
+                logger.info(f'    - column: "{d["column"]}"')
+                logger.info(f'      method: "{d["suggested_masking"]}"')
                 printed.add(rule_key)
 
     return result

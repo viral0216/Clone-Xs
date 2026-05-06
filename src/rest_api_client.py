@@ -212,11 +212,14 @@ class DatabricksRestClient:
 
     def execute_sql(self, warehouse_id: str, statement: str, wait_timeout: str = "50s") -> dict:
         """POST /api/2.0/sql/statements — execute SQL and wait for result."""
-        result = self._post("/api/2.0/sql/statements", body={
-            "warehouse_id": warehouse_id,
-            "statement": statement,
-            "wait_timeout": wait_timeout,
-        })
+        result = self._post(
+            "/api/2.0/sql/statements",
+            body={
+                "warehouse_id": warehouse_id,
+                "statement": statement,
+                "wait_timeout": wait_timeout,
+            },
+        )
         # Poll if still running
         status = result.get("status", {})
         while status.get("state") in ("RUNNING", "PENDING"):

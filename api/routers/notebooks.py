@@ -1,7 +1,6 @@
 """Notebooks endpoints — CRUD for SQL Notebooks in Data Lab."""
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,12 +40,14 @@ async def list_notebooks():
     for f in sorted(NOTEBOOKS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             data = json.loads(f.read_text())
-            notebooks.append(NotebookListItem(
-                id=data["id"],
-                title=data.get("title", "Untitled"),
-                cell_count=len(data.get("cells", [])),
-                updated_at=data.get("updated_at", ""),
-            ))
+            notebooks.append(
+                NotebookListItem(
+                    id=data["id"],
+                    title=data.get("title", "Untitled"),
+                    cell_count=len(data.get("cells", [])),
+                    updated_at=data.get("updated_at", ""),
+                )
+            )
         except Exception:
             continue
     return notebooks

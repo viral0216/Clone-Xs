@@ -28,6 +28,8 @@ Clone-Xs replicates an entire Unity Catalog catalog to a new catalog in the same
 | Capability | Description |
 |-----------|------------|
 | Deep & Shallow Clone | Full data copy or metadata-only reference clone |
+| Cross-Format Clone (Iceberg) | Land Delta destinations as Iceberg-readable via UniForm, or as physical Iceberg tables (`USING iceberg`). Iceberg sources clone to Delta with hidden-partitioning preflight refusal and auto-CTAS recovery for partition-evolution failures. See [clone guide — target format](guide/clone#target-format--target_format-iceberg-uniform) |
+| Convert table format (in-place) | Rewrite Iceberg / Parquet sources to Delta at the same FQN. D2 will add Delta→Iceberg / Parquet target cells; Hudi gated behind D3. Destructive on source — confirmation gate at API + UI. Per-target audit row in `convert_operations` Delta table. See [Convert table format guide](guide/convert) |
 | Incremental Load | Only clone new objects added since last run |
 | Time Travel | Clone tables at a specific version or timestamp |
 | Data Filtering | Clone subsets with `--where` and `--table-filter` |

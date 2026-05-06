@@ -55,7 +55,9 @@ def build_target_client(target: dict | Any) -> WorkspaceClient:
         client_id = t.get("client_id")
         client_secret = t.get("client_secret")
         if not client_id or not client_secret:
-            raise ValueError("target client_id and client_secret are required for service_principal auth")
+            raise ValueError(
+                "target client_id and client_secret are required for service_principal auth"
+            )
         return WorkspaceClient(
             host=host,
             client_id=client_id,

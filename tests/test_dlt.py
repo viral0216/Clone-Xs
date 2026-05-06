@@ -4,15 +4,23 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.dlt_management import (
-    list_pipelines, get_pipeline_details, list_pipeline_events,
-    list_pipeline_updates, get_dlt_dashboard, get_dlt_lineage,
-    clone_pipeline, clone_pipeline_cross_workspace,
-    trigger_pipeline, stop_pipeline,
+    list_pipelines,
+    get_pipeline_details,
+    list_pipeline_events,
+    list_pipeline_updates,
+    get_dlt_dashboard,
+    get_dlt_lineage,
+    clone_pipeline,
+    clone_pipeline_cross_workspace,
+    trigger_pipeline,
+    stop_pipeline,
     query_expectation_results,
 )
 
 
-def _mock_pipeline(pid="p1", name="Test Pipeline", state="IDLE", health="HEALTHY", creator="user@co.com"):
+def _mock_pipeline(
+    pid="p1", name="Test Pipeline", state="IDLE", health="HEALTHY", creator="user@co.com"
+):
     p = MagicMock()
     p.pipeline_id = pid
     p.name = name
@@ -24,7 +32,13 @@ def _mock_pipeline(pid="p1", name="Test Pipeline", state="IDLE", health="HEALTHY
     return p
 
 
-def _mock_event(eid="e1", event_type="flow_progress", level="INFO", message="Table updated", ts="2025-01-01T00:00:00Z"):
+def _mock_event(
+    eid="e1",
+    event_type="flow_progress",
+    level="INFO",
+    message="Table updated",
+    ts="2025-01-01T00:00:00Z",
+):
     ev = MagicMock()
     ev.id = eid
     ev.event_type = event_type
@@ -36,10 +50,12 @@ def _mock_event(eid="e1", event_type="flow_progress", level="INFO", message="Tab
 
 
 class TestListPipelines:
-
     def test_returns_pipeline_list(self):
         client = MagicMock()
-        client.pipelines.list_pipelines.return_value = [_mock_pipeline(), _mock_pipeline("p2", "Second")]
+        client.pipelines.list_pipelines.return_value = [
+            _mock_pipeline(),
+            _mock_pipeline("p2", "Second"),
+        ]
         result = list_pipelines(client)
         assert len(result) == 2
         assert result[0]["pipeline_id"] == "p1"
@@ -57,7 +73,6 @@ class TestListPipelines:
 
 
 class TestGetPipelineDetails:
-
     def test_returns_details(self):
         client = MagicMock()
         p = _mock_pipeline()
@@ -87,7 +102,6 @@ class TestGetPipelineDetails:
 
 
 class TestPipelineEvents:
-
     def test_returns_events(self):
         client = MagicMock()
         client.pipelines.list_pipeline_events.return_value = [_mock_event(), _mock_event("e2")]
@@ -102,7 +116,6 @@ class TestPipelineEvents:
 
 
 class TestPipelineUpdates:
-
     def test_returns_updates(self):
         client = MagicMock()
         u = MagicMock()
@@ -120,7 +133,6 @@ class TestPipelineUpdates:
 
 
 class TestClonePipeline:
-
     def test_clone_dry_run(self):
         client = MagicMock()
         p = _mock_pipeline()
@@ -161,7 +173,6 @@ class TestClonePipeline:
 
 
 class TestCrossWorkspaceClone:
-
     @patch("src.auth.get_client")
     def test_cross_workspace_clone_dry_run(self, mock_get_client):
         source = MagicMock()
@@ -178,7 +189,12 @@ class TestCrossWorkspaceClone:
         source.config.host = "https://source.databricks.com"
 
         result = clone_pipeline_cross_workspace(
-            source, "p1", "https://dest.databricks.com", "dapi_dest", "Clone", dry_run=True,
+            source,
+            "p1",
+            "https://dest.databricks.com",
+            "dapi_dest",
+            "Clone",
+            dry_run=True,
         )
         assert result["dry_run"] is True
         assert result["dest_workspace"] == "https://dest.databricks.com"
@@ -209,11 +225,17 @@ class TestCrossWorkspaceClone:
         mock_get_client.return_value = dest
 
         result = clone_pipeline_cross_workspace(
-            source, "p1", "https://dest.databricks.com", "dapi_dest", "Clone",
+            source,
+            "p1",
+            "https://dest.databricks.com",
+            "dapi_dest",
+            "Clone",
         )
         assert result["status"] == "created"
         assert result["dest_pipeline_id"] == "new-dest-p"
-        mock_get_client.assert_called_once_with(host="https://dest.databricks.com", token="dapi_dest")
+        mock_get_client.assert_called_once_with(
+            host="https://dest.databricks.com", token="dapi_dest"
+        )
         dest.pipelines.create.assert_called_once()
 
     @patch("src.auth.get_client")
@@ -226,7 +248,6 @@ class TestCrossWorkspaceClone:
 
 
 class TestTriggerStop:
-
     def test_trigger(self):
         client = MagicMock()
         client.pipelines.start_update.return_value = MagicMock(update_id="u1")
@@ -240,7 +261,6 @@ class TestTriggerStop:
 
 
 class TestDltDashboard:
-
     def test_dashboard_summary(self):
         client = MagicMock()
         client.pipelines.list_pipelines.return_value = [
@@ -258,7 +278,6 @@ class TestDltDashboard:
 
 
 class TestDltLineage:
-
     @patch("src.dlt_management.execute_sql")
     def test_lineage_maps_datasets(self, mock_sql):
         client = MagicMock()
@@ -271,8 +290,18 @@ class TestDltLineage:
         client.pipelines.get.return_value = p
 
         mock_sql.return_value = [
-            {"table_name": "raw_events", "table_type": "TABLE", "data_source_format": "DELTA", "comment": None},
-            {"table_name": "raw_users", "table_type": "TABLE", "data_source_format": "DELTA", "comment": "User data"},
+            {
+                "table_name": "raw_events",
+                "table_type": "TABLE",
+                "data_source_format": "DELTA",
+                "comment": None,
+            },
+            {
+                "table_name": "raw_users",
+                "table_type": "TABLE",
+                "data_source_format": "DELTA",
+                "comment": "User data",
+            },
         ]
 
         result = get_dlt_lineage(client, "wh-1", "p1")
@@ -281,7 +310,6 @@ class TestDltLineage:
 
 
 class TestExpectationResults:
-
     @patch("src.dlt_management.execute_sql")
     def test_queries_system_table(self, mock_sql):
         mock_sql.return_value = [{"pipeline_id": "p1", "event_type": "quality_violation"}]

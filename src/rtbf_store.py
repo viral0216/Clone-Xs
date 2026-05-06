@@ -54,6 +54,7 @@ class RTBFStore:
         config: dict | None = None,
     ):
         from src.table_registry import get_catalog, get_schema_fqn
+
         cfg = config or {}
         state_catalog = state_catalog or get_catalog(cfg)
         schema_fqn = get_schema_fqn(cfg, "rtbf")
@@ -69,11 +70,17 @@ class RTBFStore:
     def init_tables(self) -> None:
         """Create the RTBF Delta tables if they don't exist."""
         from src.catalog_utils import ensure_catalog_and_schema
-        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        ensure_catalog_and_schema(
+            self.client, self.warehouse_id, self.state_catalog, self.state_schema
+        )
 
         # RTBF requests — tracks the full lifecycle of each erasure request
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._requests_table} (
                     request_id STRING NOT NULL,
                     subject_type STRING NOT NULL,
@@ -104,13 +111,17 @@ class RTBFStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._requests_table}: {e}")
 
         # RTBF actions — per-table actions (discover, delete, vacuum, verify)
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._actions_table} (
                     action_id STRING NOT NULL,
                     request_id STRING NOT NULL,
@@ -136,13 +147,17 @@ class RTBFStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._actions_table}: {e}")
 
         # RTBF certificates — deletion evidence for compliance/legal
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._certificates_table} (
                     certificate_id STRING NOT NULL,
                     request_id STRING NOT NULL,
@@ -162,7 +177,8 @@ class RTBFStore:
                     'delta.enableChangeDataFeed' = 'true',
                     'delta.autoOptimize.optimizeWrite' = 'true'
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._certificates_table}: {e}")
 
@@ -241,7 +257,7 @@ class RTBFStore:
 
         sql = f"""
         UPDATE {self._requests_table}
-        SET {', '.join(sets)}
+        SET {", ".join(sets)}
         WHERE request_id = '{request_id}'
         """
         try:
@@ -400,7 +416,7 @@ class RTBFStore:
 
         sql = f"""
         UPDATE {self._actions_table}
-        SET {', '.join(sets)}
+        SET {", ".join(sets)}
         WHERE action_id = '{action_id}'
         """
         try:

@@ -15,7 +15,8 @@ def _list_schemas(client: WorkspaceClient, catalog: str) -> list[str]:
     """List schema names in a catalog using SDK."""
     try:
         return [
-            s.name for s in client.schemas.list(catalog_name=catalog)
+            s.name
+            for s in client.schemas.list(catalog_name=catalog)
             if s.name not in EXCLUDE_SCHEMAS
         ]
     except Exception as e:
@@ -24,7 +25,10 @@ def _list_schemas(client: WorkspaceClient, catalog: str) -> list[str]:
 
 
 def list_feature_tables(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List feature tables in a catalog.
 
@@ -47,28 +51,32 @@ def list_feature_tables(
 
             # Check properties for feature table markers
             props = dict(t.properties) if t.properties else {}
-            is_feature = (
-                props.get("is_feature_table", "").lower() in ("true", "1")
-                or props.get("databricks.feature_store.table", "").lower() in ("true", "1")
-            )
+            is_feature = props.get("is_feature_table", "").lower() in ("true", "1") or props.get(
+                "databricks.feature_store.table", ""
+            ).lower() in ("true", "1")
             if is_feature:
-                feature_tables.append({
-                    "table_catalog": catalog,
-                    "table_schema": s,
-                    "table_name": t.name,
-                    "full_name": t.full_name,
-                    "comment": t.comment,
-                    "is_feature_table": True,
-                })
+                feature_tables.append(
+                    {
+                        "table_catalog": catalog,
+                        "table_schema": s,
+                        "table_name": t.name,
+                        "full_name": t.full_name,
+                        "comment": t.comment,
+                        "is_feature_table": True,
+                    }
+                )
 
     logger.info(f"Found {len(feature_tables)} feature tables in {catalog}")
     return feature_tables
 
 
 def clone_feature_table(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
-    schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     clone_type: str = "DEEP",
     dry_run: bool = False,
 ) -> dict:
@@ -100,15 +108,17 @@ def clone_feature_table(
 
         # Clone the table (SQL-only — no SDK equivalent for Delta CLONE)
         clone_keyword = "DEEP CLONE" if clone_type == "DEEP" else "SHALLOW CLONE"
-        execute_sql(client, warehouse_id,
-                    f"CREATE OR REPLACE TABLE {dest_fqn} {clone_keyword} {source_fqn}")
+        execute_sql(
+            client, warehouse_id, f"CREATE OR REPLACE TABLE {dest_fqn} {clone_keyword} {source_fqn}"
+        )
 
         # Copy feature table properties via SDK
         try:
             source_table = client.tables.get(full_name=f"{source_catalog}.{schema}.{table_name}")
             source_props = dict(source_table.properties) if source_table.properties else {}
             feature_props = {
-                k: v for k, v in source_props.items()
+                k: v
+                for k, v in source_props.items()
                 if k.startswith("databricks.feature_store") or k == "is_feature_table"
             }
             if feature_props:

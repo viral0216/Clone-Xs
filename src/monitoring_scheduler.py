@@ -55,6 +55,7 @@ def set_client(client, warehouse_id: str, config: dict):
 # Local file persistence (survives restarts without DB)
 # ---------------------------------------------------------------------------
 
+
 def _load_local_state():
     """Load enabled/frequency from local JSON file."""
     global _state
@@ -64,7 +65,9 @@ def _load_local_state():
                 saved = json.load(f)
             _state["enabled"] = bool(saved.get("enabled", False))
             _state["frequency_minutes"] = int(saved.get("frequency_minutes", 1))
-            logger.info(f"Loaded scheduler state from file: enabled={_state['enabled']}, freq={_state['frequency_minutes']}")
+            logger.info(
+                f"Loaded scheduler state from file: enabled={_state['enabled']}, freq={_state['frequency_minutes']}"
+            )
         except Exception as e:
             logger.warning(f"Could not load local scheduler state: {e}")
 
@@ -74,10 +77,14 @@ def _save_local_state():
     try:
         os.makedirs(_LOCAL_STATE_PATH.parent, exist_ok=True)
         with open(_LOCAL_STATE_PATH, "w") as f:
-            json.dump({
-                "enabled": _state["enabled"],
-                "frequency_minutes": _state["frequency_minutes"],
-            }, f, indent=2)
+            json.dump(
+                {
+                    "enabled": _state["enabled"],
+                    "frequency_minutes": _state["frequency_minutes"],
+                },
+                f,
+                indent=2,
+            )
     except Exception as e:
         logger.warning(f"Could not save local scheduler state: {e}")
 
@@ -85,6 +92,7 @@ def _save_local_state():
 # ---------------------------------------------------------------------------
 # Delta table helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_fqn(config: dict) -> str:
     return get_table_fqn(config, "state", "scheduler_state")
@@ -94,12 +102,17 @@ def ensure_scheduler_state_table(client, warehouse_id, config):
     """Create the scheduler_state Delta table if it does not exist."""
     fqn = _get_fqn(config)
     from src.catalog_utils import safe_ensure_schema_from_fqn
+
     safe_ensure_schema_from_fqn(fqn.rsplit(".", 1)[0], client, warehouse_id, config)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             key STRING, enabled BOOLEAN, frequency_minutes INT
         ) USING DELTA
-    """)
+    """,
+    )
     return fqn
 
 
@@ -109,7 +122,8 @@ def _load_state(client, warehouse_id, config) -> dict:
     fqn = _get_fqn(config)
     try:
         rows = execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"SELECT * FROM {fqn} WHERE key = 'default'",
         )
         if rows:
@@ -138,7 +152,10 @@ def _save_state(client, warehouse_id, config):
     enabled_val = "true" if _state["enabled"] else "false"
     freq_val = _state["frequency_minutes"]
     try:
-        execute_sql(client, warehouse_id, f"""
+        execute_sql(
+            client,
+            warehouse_id,
+            f"""
             MERGE INTO {fqn} AS target
             USING (SELECT 'default' AS key, {enabled_val} AS enabled, {freq_val} AS frequency_minutes) AS source
             ON target.key = source.key
@@ -147,7 +164,8 @@ def _save_state(client, warehouse_id, config):
                 target.frequency_minutes = source.frequency_minutes
             WHEN NOT MATCHED THEN INSERT (key, enabled, frequency_minutes)
                 VALUES (source.key, source.enabled, source.frequency_minutes)
-        """)
+        """,
+        )
     except Exception as e:
         logger.warning(f"Could not save scheduler state to Delta: {e}")
 
@@ -160,7 +178,10 @@ def _ensure_history_table(client, warehouse_id, config):
     """Create the run history Delta table if it does not exist."""
     fqn = _get_history_fqn(config)
     try:
-        execute_sql(client, warehouse_id, f"""
+        execute_sql(
+            client,
+            warehouse_id,
+            f"""
             CREATE TABLE IF NOT EXISTS {fqn} (
                 run_id STRING,
                 timestamp STRING,
@@ -171,7 +192,8 @@ def _ensure_history_table(client, warehouse_id, config):
                 status STRING,
                 details STRING
             ) USING DELTA
-        """)
+        """,
+        )
     except Exception:
         pass
     return fqn
@@ -183,10 +205,15 @@ def _store_run_history(client, warehouse_id, config, run_entry: dict):
     try:
         _ensure_history_table(client, warehouse_id, config)
         import uuid
+
         run_id = str(uuid.uuid4())[:12]
         details_json = json.dumps(run_entry.get("details", []))
         from src.client import sql_escape
-        execute_sql(client, warehouse_id, f"""
+
+        execute_sql(
+            client,
+            warehouse_id,
+            f"""
             INSERT INTO {fqn} VALUES (
                 '{sql_escape(run_id)}',
                 '{sql_escape(run_entry.get("timestamp", ""))}',
@@ -197,7 +224,8 @@ def _store_run_history(client, warehouse_id, config, run_entry: dict):
                 '{sql_escape(run_entry.get("status", "success"))}',
                 '{sql_escape(details_json)}'
             )
-        """)
+        """,
+        )
     except Exception as e:
         logger.debug(f"Could not store run history to Delta: {e}")
 
@@ -206,11 +234,14 @@ def _load_run_history(client, warehouse_id, config, limit: int = 50) -> list[dic
     """Load recent run history from Delta table."""
     fqn = _get_history_fqn(config)
     try:
-        rows = execute_sql(client, warehouse_id,
+        rows = execute_sql(
+            client,
+            warehouse_id,
             f"SELECT * FROM {fqn} WHERE tables_processed > 0 OR status = 'error' "
-            f"ORDER BY timestamp DESC LIMIT {limit}")
+            f"ORDER BY timestamp DESC LIMIT {limit}",
+        )
         history = []
-        for r in (rows or []):
+        for r in rows or []:
             entry = {
                 "timestamp": r.get("timestamp", ""),
                 "tables_processed": int(r.get("tables_processed", 0)),
@@ -234,6 +265,7 @@ def _load_run_history(client, warehouse_id, config, limit: int = 50) -> list[dic
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def get_scheduler_status() -> dict:
     """Return current scheduler status including run history from Delta + in-memory."""
     # Merge: in-memory runs (current session) + Delta runs (persisted from past sessions)
@@ -242,6 +274,7 @@ def get_scheduler_status() -> dict:
     try:
         if _cached_client:
             from src.config import load_config_cached
+
             config = _cached_config if _cached_config else load_config_cached()
             wid = _cached_wid or config.get("sql_warehouse_id", "")
             delta_history = _load_run_history(_cached_client, wid, config)
@@ -285,10 +318,12 @@ def _get_client():
     try:
         from api.routers.auth import _sessions, _sessions_lock, SESSION_TTL_SECONDS
         import time as _time
+
         with _sessions_lock:
             now = _time.monotonic()
             valid = [
-                (sid, entry) for sid, entry in _sessions.items()
+                (sid, entry)
+                for sid, entry in _sessions.items()
                 if now - entry.created_at < SESSION_TTL_SECONDS
             ]
             if valid:
@@ -299,6 +334,7 @@ def _get_client():
 
     # 3. Fallback: env vars, CLI profile, Databricks App
     from src.client import get_workspace_client
+
     return get_workspace_client()
 
 
@@ -335,7 +371,9 @@ async def _run_due_recon_schedules(client, warehouse_id, config, app) -> int:
                     for j in mgr.jobs.values()
                 )
                 if already_running:
-                    logger.info(f"Skipping recon '{sched.get('name', sched['id'])}' — previous run still in progress")
+                    logger.info(
+                        f"Skipping recon '{sched.get('name', sched['id'])}' — previous run still in progress"
+                    )
                     continue
 
                 job_config = {
@@ -431,6 +469,7 @@ async def _scheduler_loop(app):
     while _state["enabled"]:
         freq = _state["frequency_minutes"]
         from datetime import timedelta
+
         next_time = datetime.now(timezone.utc) + timedelta(minutes=freq)
         _state["next_run_at"] = next_time.isoformat()
         logger.info(f"Next scheduled run at {_state['next_run_at']}")
@@ -464,6 +503,7 @@ def start_scheduler(app=None):
     # 2. Optionally also load from Delta (may have newer state)
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
@@ -506,6 +546,7 @@ def enable_scheduler(frequency_minutes: int | None = None, app=None):
     # Also save to Delta if possible
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
@@ -525,6 +566,7 @@ def disable_scheduler():
     # Also save to Delta if possible
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()
@@ -540,6 +582,7 @@ def update_frequency(frequency_minutes: int, app=None):
     _save_local_state()
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
         wid = config.get("sql_warehouse_id", "")
         client = _get_client()

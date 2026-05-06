@@ -10,11 +10,13 @@ from src.lineage_tracker import (
 
 # ---------- ensure_lineage_table ----------
 
+
 @patch("src.client.execute_sql")
 def test_ensure_lineage_table_happy(mock_sql):
     mock_sql.return_value = []
     # Clear cached state so catalog_utils actually checks
     from src.catalog_utils import _verified_catalogs, _verified_schemas
+
     _verified_catalogs.discard("my_cat")
     _verified_schemas.discard("my_cat.lineage")
     fqn = ensure_lineage_table(MagicMock(), "wh-1", lineage_catalog="my_cat")
@@ -42,14 +44,22 @@ def test_ensure_lineage_table_sql_error(mock_sql):
 
 # ---------- record_lineage ----------
 
+
 @patch("src.lineage_tracker.execute_sql")
 def test_record_lineage_happy(mock_sql):
     mock_sql.return_value = []
     record_lineage(
-        MagicMock(), "wh-1", "op-1",
-        "src_cat", "schema1", "table1",
-        "dst_cat", "schema1", "table1",
-        row_count=100, size_bytes=5000,
+        MagicMock(),
+        "wh-1",
+        "op-1",
+        "src_cat",
+        "schema1",
+        "table1",
+        "dst_cat",
+        "schema1",
+        "table1",
+        row_count=100,
+        size_bytes=5000,
     )
     mock_sql.assert_called_once()
     sql_arg = mock_sql.call_args[0][2]
@@ -64,8 +74,15 @@ def test_record_lineage_happy(mock_sql):
 def test_record_lineage_null_counts(mock_sql):
     mock_sql.return_value = []
     record_lineage(
-        MagicMock(), "wh-1", "op-1",
-        "src", "s", "t", "dst", "s", "t",
+        MagicMock(),
+        "wh-1",
+        "op-1",
+        "src",
+        "s",
+        "t",
+        "dst",
+        "s",
+        "t",
     )
     sql_arg = mock_sql.call_args[0][2]
     assert "NULL" in sql_arg
@@ -77,12 +94,20 @@ def test_record_lineage_sql_failure_no_raise(mock_sql):
     mock_sql.side_effect = Exception("insert failed")
     # Should not raise
     record_lineage(
-        MagicMock(), "wh-1", "op-1",
-        "src", "s", "t", "dst", "s", "t",
+        MagicMock(),
+        "wh-1",
+        "op-1",
+        "src",
+        "s",
+        "t",
+        "dst",
+        "s",
+        "t",
     )
 
 
 # ---------- record_batch_lineage ----------
+
 
 @patch("src.lineage_tracker.record_lineage")
 def test_record_batch_lineage_happy(mock_record):
@@ -91,13 +116,20 @@ def test_record_batch_lineage_happy(mock_record):
         {"schema": "s1", "table": "t2", "status": "success"},
     ]
     count = record_batch_lineage(
-        MagicMock(), "wh-1", "op-1", "src", "dst", "DEEP", objects,
+        MagicMock(),
+        "wh-1",
+        "op-1",
+        "src",
+        "dst",
+        "DEEP",
+        objects,
     )
     assert count == 2
     assert mock_record.call_count == 2
 
 
 # ---------- query_lineage ----------
+
 
 @patch("src.lineage_tracker.execute_sql")
 def test_query_lineage_happy(mock_sql):

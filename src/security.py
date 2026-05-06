@@ -42,8 +42,12 @@ def get_column_masks(
 
 
 def copy_row_filters(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy row filter policies from source table to destination table."""
@@ -72,14 +76,16 @@ def copy_row_filters(
                 f"Applied row filter {filter_ref} to {dest_catalog}.{schema}.{table_name}"
             )
         except Exception as e:
-            logger.error(
-                f"Failed to apply row filter {filter_ref} on {schema}.{table_name}: {e}"
-            )
+            logger.error(f"Failed to apply row filter {filter_ref} on {schema}.{table_name}: {e}")
 
 
 def copy_column_masks(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy column mask policies from source table to destination table."""
@@ -111,16 +117,23 @@ def copy_column_masks(
             )
         except Exception as e:
             logger.error(
-                f"Failed to apply column mask {mask_func} on "
-                f"{schema}.{table_name}.{col_name}: {e}"
+                f"Failed to apply column mask {mask_func} on {schema}.{table_name}.{col_name}: {e}"
             )
 
 
 def copy_table_security(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     dry_run: bool = False,
 ) -> None:
     """Copy both row filters and column masks for a table."""
-    copy_row_filters(client, warehouse_id, source_catalog, dest_catalog, schema, table_name, dry_run)
-    copy_column_masks(client, warehouse_id, source_catalog, dest_catalog, schema, table_name, dry_run)
+    copy_row_filters(
+        client, warehouse_id, source_catalog, dest_catalog, schema, table_name, dry_run
+    )
+    copy_column_masks(
+        client, warehouse_id, source_catalog, dest_catalog, schema, table_name, dry_run
+    )

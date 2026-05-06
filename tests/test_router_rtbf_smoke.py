@@ -3,18 +3,22 @@
 Note: 500 is accepted because the mocked backend may not have all services
 available. These tests verify endpoints are routable and return valid HTTP.
 """
+
 import pytest
 
 pytest.importorskip("fastapi")
 
 
 def test_submit_request(client):
-    resp = client.post("/api/rtbf/requests", json={
-        "subject_type": "email",
-        "subject_value": "user@example.com",
-        "requester_email": "dpo@example.com",
-        "requester_name": "DPO",
-    })
+    resp = client.post(
+        "/api/rtbf/requests",
+        json={
+            "subject_type": "email",
+            "subject_value": "user@example.com",
+            "requester_email": "dpo@example.com",
+            "requester_name": "DPO",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -49,9 +53,12 @@ def test_get_actions(client):
 
 
 def test_update_status(client):
-    resp = client.put("/api/rtbf/requests/req-123/status", json={
-        "status": "approved",
-    })
+    resp = client.put(
+        "/api/rtbf/requests/req-123/status",
+        json={
+            "status": "approved",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 422, 500)
 
 

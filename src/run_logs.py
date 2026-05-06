@@ -34,6 +34,7 @@ def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None)
     catalog, schema, _ = fqn.split(".")
 
     from src.catalog_utils import ensure_catalog_and_schema
+
     ensure_catalog_and_schema(client, warehouse_id, catalog, schema)
 
     create_sql = f"""
@@ -74,11 +75,17 @@ def ensure_run_logs_table(client, warehouse_id: str, config: dict | None = None)
         ("total_size_bytes", "BIGINT"),
     ]
     try:
-        existing = {r["col_name"].lower() for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}") if r.get("col_name")}
+        existing = {
+            r["col_name"].lower()
+            for r in execute_sql(client, warehouse_id, f"DESCRIBE TABLE {fqn}")
+            if r.get("col_name")
+        }
         for col_name, col_type in new_columns:
             if col_name.lower() not in existing:
                 try:
-                    execute_sql(client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}")
+                    execute_sql(
+                        client, warehouse_id, f"ALTER TABLE {fqn} ADD COLUMN {col_name} {col_type}"
+                    )
                 except Exception:
                     pass
     except Exception:
@@ -147,7 +154,11 @@ def save_run_log(
     # Sanitize config
     config_json = ""
     if config:
-        safe = {k: v for k, v in config.items() if "token" not in k.lower() and "secret" not in k.lower()}
+        safe = {
+            k: v
+            for k, v in config.items()
+            if "token" not in k.lower() and "secret" not in k.lower()
+        }
         try:
             config_json = _sql_escape(json.dumps(safe, default=str))
         except Exception:
@@ -174,8 +185,8 @@ def save_run_log(
     VALUES
     ('{job_id}', '{job_type}', '{source}', '{dest}', '{clone_type}',
      '{status}',
-     {f"'{started_at}'" if started_at else 'NULL'},
-     {f"'{completed_at}'" if completed_at else 'NULL'},
+     {f"'{started_at}'" if started_at else "NULL"},
+     {f"'{completed_at}'" if completed_at else "NULL"},
      {duration},
      {log_array},
      '{result_json}',

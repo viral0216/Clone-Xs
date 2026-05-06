@@ -73,21 +73,32 @@ def save_sync_version(
         json.dump(state, f, indent=2)
 
 
-def enforce_rbac_for_sync(client, source_catalog: str, dest_catalog: str, config: dict | None = None) -> None:
+def enforce_rbac_for_sync(
+    client, source_catalog: str, dest_catalog: str, config: dict | None = None
+) -> None:
     """Enforce RBAC for incremental sync operations."""
     rbac_config = config or {}
     if not rbac_config.get("rbac_enabled"):
         return
     from src.rbac import enforce_rbac
-    enforce_rbac(client, {
-        "source_catalog": source_catalog,
-        "destination_catalog": dest_catalog,
-        "rbac_policy_path": rbac_config.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
-    }, operation="sync")
+
+    enforce_rbac(
+        client,
+        {
+            "source_catalog": source_catalog,
+            "destination_catalog": dest_catalog,
+            "rbac_policy_path": rbac_config.get("rbac_policy_path", "~/.clone-xs/rbac_policy.yaml"),
+        },
+        operation="sync",
+    )
 
 
 def get_table_current_version(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> int | None:
     """Read the current Delta version of a table via DESCRIBE HISTORY.
 
@@ -137,12 +148,14 @@ def find_drifted_tables(
     drifted: list[dict] = []
     for tname in sorted(src_tables):
         if tname not in dst_tables:
-            drifted.append({
-                "table_name": tname,
-                "reason": "never_cloned",
-                "source_version": None,
-                "target_version": None,
-            })
+            drifted.append(
+                {
+                    "table_name": tname,
+                    "reason": "never_cloned",
+                    "source_version": None,
+                    "target_version": None,
+                }
+            )
             continue
 
         src_v = get_table_current_version(client, warehouse_id, source_catalog, schema, tname)
@@ -152,21 +165,25 @@ def find_drifted_tables(
             # Non-Delta source (Parquet/Iceberg) or transient DESCRIBE HISTORY
             # failure — be conservative, mark drifted so the user gets the
             # newest copy. Cheaper than missing real drift.
-            drifted.append({
-                "table_name": tname,
-                "reason": "unable_to_compare",
-                "source_version": src_v,
-                "target_version": dst_v,
-            })
+            drifted.append(
+                {
+                    "table_name": tname,
+                    "reason": "unable_to_compare",
+                    "source_version": src_v,
+                    "target_version": dst_v,
+                }
+            )
             continue
 
         if src_v > dst_v:
-            drifted.append({
-                "table_name": tname,
-                "reason": "version_drift",
-                "source_version": src_v,
-                "target_version": dst_v,
-            })
+            drifted.append(
+                {
+                    "table_name": tname,
+                    "reason": "version_drift",
+                    "source_version": src_v,
+                    "target_version": dst_v,
+                }
+            )
 
     return drifted
 
@@ -193,11 +210,13 @@ def get_tables_needing_sync(
         last_version = get_last_sync_version(source_catalog, dest_catalog, schema, table_name)
 
         if last_version is None:
-            needs_sync.append({
-                "table_name": table_name,
-                "reason": "never_synced",
-                "last_synced_version": None,
-            })
+            needs_sync.append(
+                {
+                    "table_name": table_name,
+                    "reason": "never_synced",
+                    "last_synced_version": None,
+                }
+            )
             continue
 
         history = get_table_history(client, warehouse_id, source_catalog, schema, table_name)
@@ -207,14 +226,16 @@ def get_tables_needing_sync(
                 # Count changes since last sync
                 changes = [h for h in history if int(h.get("version", 0)) > last_version]
                 operations = [h.get("operation", "UNKNOWN") for h in changes]
-                needs_sync.append({
-                    "table_name": table_name,
-                    "reason": "changed",
-                    "last_synced_version": last_version,
-                    "current_version": current_version,
-                    "changes_since_sync": len(changes),
-                    "operations": operations,
-                })
+                needs_sync.append(
+                    {
+                        "table_name": table_name,
+                        "reason": "changed",
+                        "last_synced_version": last_version,
+                        "current_version": current_version,
+                        "changes_since_sync": len(changes),
+                        "operations": operations,
+                    }
+                )
 
     return needs_sync
 
@@ -267,9 +288,13 @@ def _get_state_file(source_catalog: str, dest_catalog: str) -> str:
 # CDF-based Incremental Sync
 # ---------------------------------------------------------------------------
 
+
 def check_cdf_enabled(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> bool:
     """Check if Change Data Feed is enabled on a Delta table via SDK."""
     full_name = f"{catalog}.{schema}.{table_name}"
@@ -283,8 +308,11 @@ def check_cdf_enabled(
 
 
 def get_cdf_changes(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
     since_version: int,
 ) -> list[dict]:
     """Get row-level changes from Change Data Feed since a given version.
@@ -304,8 +332,11 @@ def get_cdf_changes(
 
 
 def get_cdf_change_summary(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
     since_version: int,
 ) -> dict:
     """Get a summary of CDF changes without fetching all rows.
@@ -337,9 +368,12 @@ def get_cdf_change_summary(
 
 
 def apply_cdf_changes(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
-    schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     since_version: int,
     dry_run: bool = False,
 ) -> dict:
@@ -358,8 +392,14 @@ def apply_cdf_changes(
         # Fallback: re-clone the table if no PK is available for MERGE
         logger.warning(f"No primary key for {source_fqn} — falling back to full re-clone")
         success = sync_changed_table(
-            client, warehouse_id, source_catalog, dest_catalog,
-            schema, table_name, "DEEP", dry_run,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
+            "DEEP",
+            dry_run,
         )
         return {"table": source_fqn, "method": "re-clone", "success": success}
 
@@ -370,7 +410,8 @@ def apply_cdf_changes(
     dest_full_name = f"{dest_catalog}.{schema}.{table_name}"
     table_info = client.tables.get(full_name=dest_full_name)
     columns = [
-        c.name for c in (table_info.columns or [])
+        c.name
+        for c in (table_info.columns or [])
         if not c.name.startswith("_change_") and not c.name.startswith("_commit_")
     ]
     update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in columns)
@@ -410,9 +451,12 @@ def apply_cdf_changes(
 
 
 def sync_table_cdf(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str,
-    schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    schema: str,
+    table_name: str,
     clone_type: str = "DEEP",
     dry_run: bool = False,
     sync_mode: str = "auto",
@@ -426,8 +470,14 @@ def sync_table_cdf(
     if last_version is None:
         # Never synced — do a full clone
         success = sync_changed_table(
-            client, warehouse_id, source_catalog, dest_catalog,
-            schema, table_name, clone_type, dry_run,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
+            clone_type,
+            dry_run,
         )
         return {"table": f"{schema}.{table_name}", "method": "initial_clone", "success": success}
 
@@ -442,20 +492,35 @@ def sync_table_cdf(
 
     if use_cdf:
         return apply_cdf_changes(
-            client, warehouse_id, source_catalog, dest_catalog,
-            schema, table_name, last_version, dry_run,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
+            last_version,
+            dry_run,
         )
     else:
         success = sync_changed_table(
-            client, warehouse_id, source_catalog, dest_catalog,
-            schema, table_name, clone_type, dry_run,
+            client,
+            warehouse_id,
+            source_catalog,
+            dest_catalog,
+            schema,
+            table_name,
+            clone_type,
+            dry_run,
         )
         return {"table": f"{schema}.{table_name}", "method": "version_clone", "success": success}
 
 
 def _get_primary_keys(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table_name: str,
 ) -> list[str]:
     """Get primary key columns for a table via SDK.
 
@@ -468,7 +533,10 @@ def _get_primary_keys(
         # Check SDK table_constraints if available
         if hasattr(table_info, "table_constraints") and table_info.table_constraints:
             for constraint in table_info.table_constraints:
-                if hasattr(constraint, "primary_key_constraint") and constraint.primary_key_constraint:
+                if (
+                    hasattr(constraint, "primary_key_constraint")
+                    and constraint.primary_key_constraint
+                ):
                     pk = constraint.primary_key_constraint
                     if hasattr(pk, "child_columns") and pk.child_columns:
                         return list(pk.child_columns)

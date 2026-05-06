@@ -17,21 +17,31 @@ from src.config_lint import (
 
 class TestCheckRequiredFields:
     def test_missing_source_catalog(self):
-        results = check_required_fields({"destination_catalog": "dst", "clone_type": "DEEP", "sql_warehouse_id": "wh"})
+        results = check_required_fields(
+            {"destination_catalog": "dst", "clone_type": "DEEP", "sql_warehouse_id": "wh"}
+        )
         assert any(r.field == "source_catalog" for r in results)
 
     def test_all_present(self):
-        results = check_required_fields({
-            "source_catalog": "src", "destination_catalog": "dst",
-            "clone_type": "DEEP", "sql_warehouse_id": "wh",
-        })
+        results = check_required_fields(
+            {
+                "source_catalog": "src",
+                "destination_catalog": "dst",
+                "clone_type": "DEEP",
+                "sql_warehouse_id": "wh",
+            }
+        )
         assert len(results) == 0
 
     def test_empty_value_treated_as_missing(self):
-        results = check_required_fields({
-            "source_catalog": "", "destination_catalog": "dst",
-            "clone_type": "DEEP", "sql_warehouse_id": "wh",
-        })
+        results = check_required_fields(
+            {
+                "source_catalog": "",
+                "destination_catalog": "dst",
+                "clone_type": "DEEP",
+                "sql_warehouse_id": "wh",
+            }
+        )
         assert any(r.field == "source_catalog" for r in results)
 
     def test_all_missing(self):
@@ -75,8 +85,17 @@ class TestCheckConflicts:
         assert any(r.severity == Severity.ERROR for r in results)
 
     def test_auto_rollback_without_validation(self):
-        results = check_conflicts({"auto_rollback_on_failure": True, "enable_rollback": True, "validate_after_clone": False})
-        assert any(r.field == "auto_rollback_on_failure" and "validate_after_clone" in r.message for r in results)
+        results = check_conflicts(
+            {
+                "auto_rollback_on_failure": True,
+                "enable_rollback": True,
+                "validate_after_clone": False,
+            }
+        )
+        assert any(
+            r.field == "auto_rollback_on_failure" and "validate_after_clone" in r.message
+            for r in results
+        )
 
     def test_same_source_dest(self):
         results = check_conflicts({"source_catalog": "cat", "destination_catalog": "cat"})
@@ -137,10 +156,14 @@ class TestCheckOptimizations:
         assert any(r.field == "max_workers" and r.severity == Severity.WARNING for r in results)
 
     def test_no_suggestions_when_optimal(self):
-        results = check_optimizations({
-            "parallel_tables": 4, "enable_rollback": True,
-            "validate_after_clone": True, "max_workers": 8,
-        })
+        results = check_optimizations(
+            {
+                "parallel_tables": 4,
+                "enable_rollback": True,
+                "validate_after_clone": True,
+                "max_workers": 8,
+            }
+        )
         assert len(results) == 0
 
 
@@ -180,10 +203,14 @@ class TestFormatLintResults:
 class TestLintConfig:
     def test_valid_config(self):
         config = {
-            "source_catalog": "src", "destination_catalog": "dst",
-            "clone_type": "DEEP", "sql_warehouse_id": "wh",
-            "max_workers": 4, "parallel_tables": 4,
-            "enable_rollback": True, "validate_after_clone": True,
+            "source_catalog": "src",
+            "destination_catalog": "dst",
+            "clone_type": "DEEP",
+            "sql_warehouse_id": "wh",
+            "max_workers": 4,
+            "parallel_tables": 4,
+            "enable_rollback": True,
+            "validate_after_clone": True,
         }
         results = lint_config(config)
         assert not lint_has_errors(results)

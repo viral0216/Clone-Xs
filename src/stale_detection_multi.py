@@ -73,7 +73,9 @@ def detect_stale_tables_multi(
 
     def _scan_one(cat: str) -> dict:
         return detect_stale_tables(
-            client, warehouse_id, cat,
+            client,
+            warehouse_id,
+            cat,
             days_threshold=days_threshold,
             min_age_days=min_age_days,
             min_size_bytes=min_size_bytes,
@@ -116,9 +118,12 @@ def detect_stale_tables_multi(
                 logger.warning(f"Stale scan failed for catalog {cat!r}: {e}")
                 errors.append({"catalog": cat, "error": str(e)})
                 per_catalog[cat] = {
-                    "total_tables_scanned": 0, "findings_count": 0,
-                    "by_risk_level": {}, "total_reclaimable_bytes": 0,
-                    "never_accessed_count": 0, "no_stats_count": 0,
+                    "total_tables_scanned": 0,
+                    "findings_count": 0,
+                    "by_risk_level": {},
+                    "total_reclaimable_bytes": 0,
+                    "never_accessed_count": 0,
+                    "no_stats_count": 0,
                 }
 
     return {

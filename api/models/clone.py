@@ -70,7 +70,9 @@ class TargetWorkspace(BaseModel):
         if self.auth_method == "pat" and not self.token:
             raise ValueError("target token is required for PAT auth")
         if self.auth_method == "service_principal" and not (self.client_id and self.client_secret):
-            raise ValueError("target client_id and client_secret are required for service_principal auth")
+            raise ValueError(
+                "target client_id and client_secret are required for service_principal auth"
+            )
         if self.auth_method == "profile" and not self.profile:
             raise ValueError("target profile name is required for profile auth")
         if not (self.warehouse_id or "").strip():
@@ -100,7 +102,9 @@ class TargetWorkspaceConnect(BaseModel):
         if self.auth_method == "pat" and not self.token:
             raise ValueError("target token is required for PAT auth")
         if self.auth_method == "service_principal" and not (self.client_id and self.client_secret):
-            raise ValueError("target client_id and client_secret are required for service_principal auth")
+            raise ValueError(
+                "target client_id and client_secret are required for service_principal auth"
+            )
         if self.auth_method == "profile" and not self.profile:
             raise ValueError("target profile name is required for profile auth")
         return self
@@ -154,6 +158,32 @@ class CloneRequest(BaseModel):
     # clone failure (no orphaned revocations). Safe to leave off for read-only
     # source catalogs or one-off CTAS-style migrations.
     quiesce_source: bool = False
+    # Auto-retry the clone on transient failures (network errors, throttling,
+    # 5xx responses). Logical errors (schema mismatch, validation, bad config)
+    # never retry — they signal something the next attempt won't fix. Bounded
+    # by `max_retries` (config, default 3). Set False to opt out.
+    enable_retry: bool = True
+    # Auto-detect PII columns via existing Unity Catalog tags
+    # (information_schema.column_tags) and mask them on the destination using
+    # the strategy from pii_detection.SUGGESTED_MASKING (e.g. email_mask for
+    # EMAIL, hash for SSN / CREDIT_CARD, partial for PHONE). Masking runs as
+    # a post-clone UPDATE through the existing src/masking.py pipeline, not
+    # as an inline CTAS — Delta history on the destination is preserved.
+    # The masked-data exposure window is bounded by the clone job itself
+    # (no external reader sees the table before the UPDATE commits).
+    auto_mask_pii: bool = False
+    # Run a column-level DQ comparison after each schema clones — row count
+    # plus per-column NULL counts on source vs target. When the max drift
+    # across any cloned table exceeds `dq_drift_rollback_pct` AND
+    # `auto_rollback_on_failure` is True, the existing rollback path
+    # (Delta RESTORE) reverts the destination. Adds one extra warehouse
+    # round-trip per cloned table; expect a few seconds per 100 tables.
+    compare_dq_after_clone: bool = False
+    # Drift threshold as a percent (0–100). Defaults to a relatively
+    # tight 5% — the same default used by row-count validation
+    # (`rollback_threshold`) so operators have one mental model for
+    # what "acceptable drift" means.
+    dq_drift_rollback_pct: float = 5.0
     # Cross-workspace object-type toggles. Effective only when target_workspace
     # is set; same-workspace clone_catalog.py does not read these.
     clone_views: bool = True
@@ -180,6 +210,24 @@ class CloneRequest(BaseModel):
     # source-side egress bandwidth pressure; lower values serialize. Default
     # 5 matches typical N-region DR fanout (us, eu, apac, etc.).
     fanout_max_parallel: int = 5
+    # Cross-format target. When "ICEBERG", the destination is still a Delta
+    # table but UniForm is enabled (delta.universalFormat.enabledFormats =
+    # 'iceberg' + columnMapping=name + IcebergCompatV2) so external Iceberg
+    # readers can query it without a data copy. Only meaningful when the
+    # source is Delta — non-Delta sources fall back to "DELTA" with a warning
+    # logged at clone time. Phase A: Delta source only. Phase B (TBD) adds
+    # Iceberg→Delta and full bidirectional rewrite.
+    target_format: Literal["DELTA", "ICEBERG"] = "DELTA"
+    # When `target_format=ICEBERG` AND `iceberg_physical=True`, the clone
+    # bypasses UniForm and emits `CREATE TABLE dst USING iceberg AS SELECT
+    # * FROM src` so the target lands as a *real* Iceberg table (UC reports
+    # `Data source: Iceberg`, not `Delta`). Trade-offs:
+    #   - Loses Delta history (target starts at version 0).
+    #   - Loses Delta-only features (DV, change feed, deletion vectors).
+    #   - Requires DBR 15+ and Iceberg-managed-table support enabled on the
+    #     workspace; some regions / billing tiers don't have it.
+    # Default False keeps the existing UniForm behaviour, which is safer.
+    iceberg_physical: bool = False
 
     @model_validator(mode="after")
     def _different_catalogs(self) -> "CloneRequest":
@@ -230,3 +278,11 @@ class CloneJobStatus(BaseModel):
     created_at: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    # Retry tracking. `attempt` is the current (1-based) attempt; `max_attempts`
+    # is the bound from `max_retries` (1 when retry is disabled). `retry_history`
+    # has one entry per failed attempt that triggered a retry — each records
+    # the error class, message, timestamp, and the backoff delay used before
+    # the next attempt.
+    attempt: int = 1
+    max_attempts: int = 1
+    retry_history: list[dict] = []

@@ -20,8 +20,16 @@ def _safe_query(client, warehouse_id, sql, default=None):
 class MDMStore:
     """Delta table-based store for MDM entities, matching, stewardship, and hierarchies."""
 
-    def __init__(self, client, warehouse_id: str, state_catalog: str | None = None, state_schema: str | None = None, config: dict | None = None):
+    def __init__(
+        self,
+        client,
+        warehouse_id: str,
+        state_catalog: str | None = None,
+        state_schema: str | None = None,
+        config: dict | None = None,
+    ):
         from src.table_registry import get_catalog, get_schema_fqn
+
         cfg = config or {}
         state_catalog = state_catalog or get_catalog(cfg)
         schema_fqn = get_schema_fqn(cfg, "mdm")
@@ -40,10 +48,14 @@ class MDMStore:
     def init_tables(self) -> None:
         """Create all MDM Delta tables if they don't exist."""
         from src.catalog_utils import ensure_catalog_and_schema
+
         ensure_catalog_and_schema(self.client, self.warehouse_id, self.catalog, self.schema)
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._entities} (
                     entity_id STRING NOT NULL,
                     entity_type STRING NOT NULL,
@@ -57,12 +69,16 @@ class MDMStore:
                     updated_at TIMESTAMP
                 ) USING DELTA
                 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._entities}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._source_records} (
                     source_record_id STRING NOT NULL,
                     entity_id STRING,
@@ -74,12 +90,16 @@ class MDMStore:
                     trust_score DOUBLE,
                     ingested_at TIMESTAMP
                 ) USING DELTA
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._source_records}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._match_pairs} (
                     pair_id STRING NOT NULL,
                     entity_type STRING NOT NULL,
@@ -94,12 +114,16 @@ class MDMStore:
                     reviewed_at TIMESTAMP,
                     created_at TIMESTAMP
                 ) USING DELTA
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._match_pairs}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._matching_rules} (
                     rule_id STRING NOT NULL,
                     entity_type STRING NOT NULL,
@@ -111,12 +135,16 @@ class MDMStore:
                     enabled BOOLEAN,
                     created_at TIMESTAMP
                 ) USING DELTA
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._matching_rules}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._stewardship} (
                     task_id STRING NOT NULL,
                     task_type STRING NOT NULL,
@@ -132,12 +160,16 @@ class MDMStore:
                     resolved_at TIMESTAMP,
                     resolved_by STRING
                 ) USING DELTA
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._stewardship}: {e}")
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self._hierarchies} (
                     hierarchy_id STRING NOT NULL,
                     name STRING,
@@ -150,7 +182,8 @@ class MDMStore:
                     path STRING,
                     created_at TIMESTAMP
                 ) USING DELTA
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self._hierarchies}: {e}")
 
@@ -158,16 +191,30 @@ class MDMStore:
 
     # ---- Entities (Golden Records) ----
 
-    def upsert_entity(self, entity_id: str, entity_type: str, display_name: str, attributes: dict, source_count: int, confidence_score: float, status: str = "active", created_by: str = "") -> None:
+    def upsert_entity(
+        self,
+        entity_id: str,
+        entity_type: str,
+        display_name: str,
+        attributes: dict,
+        source_count: int,
+        confidence_score: float,
+        status: str = "active",
+        created_by: str = "",
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         attrs_sql = ", ".join(f"'{k}', '{v}'" for k, v in attributes.items()) if attributes else ""
         attrs_map = f"MAP({attrs_sql})" if attrs_sql else "MAP()"
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             MERGE INTO {self._entities} t USING (SELECT '{entity_id}' AS entity_id) s ON t.entity_id = s.entity_id
             WHEN MATCHED THEN UPDATE SET display_name = '{display_name}', attributes = {attrs_map}, source_count = {source_count}, confidence_score = {confidence_score}, status = '{status}', updated_at = TIMESTAMP '{now}'
             WHEN NOT MATCHED THEN INSERT (entity_id, entity_type, display_name, attributes, source_count, confidence_score, status, created_by, created_at, updated_at)
             VALUES ('{entity_id}', '{entity_type}', '{display_name}', {attrs_map}, {source_count}, {confidence_score}, '{status}', '{created_by}', TIMESTAMP '{now}', TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
     def get_entities(self, entity_type: str = None, status: str = None, limit: int = 100) -> list:
         where = ["1=1"]
@@ -175,89 +222,196 @@ class MDMStore:
             where.append(f"entity_type = '{entity_type}'")
         if status:
             where.append(f"status = '{status}'")
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._entities} WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT {limit}")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._entities} WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT {limit}",
+        )
 
     def get_entity(self, entity_id: str) -> dict | None:
-        rows = _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._entities} WHERE entity_id = '{entity_id}'")
+        rows = _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._entities} WHERE entity_id = '{entity_id}'",
+        )
         return rows[0] if rows else None
 
     def delete_entity(self, entity_id: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"UPDATE {self._entities} SET status = 'deleted', updated_at = TIMESTAMP '{now}' WHERE entity_id = '{entity_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._entities} SET status = 'deleted', updated_at = TIMESTAMP '{now}' WHERE entity_id = '{entity_id}'",
+        )
 
     # ---- Source Records ----
 
-    def insert_source_record(self, source_record_id: str, entity_id: str | None, entity_type: str, source_system: str, source_table: str, source_key: str, attributes: dict, trust_score: float = 1.0) -> None:
+    def insert_source_record(
+        self,
+        source_record_id: str,
+        entity_id: str | None,
+        entity_type: str,
+        source_system: str,
+        source_table: str,
+        source_key: str,
+        attributes: dict,
+        trust_score: float = 1.0,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        attrs_sql = ", ".join(f"'{k}', '{str(v).replace(chr(39), chr(39)+chr(39))}'" for k, v in attributes.items()) if attributes else ""
+        attrs_sql = (
+            ", ".join(
+                f"'{k}', '{str(v).replace(chr(39), chr(39) + chr(39))}'"
+                for k, v in attributes.items()
+            )
+            if attributes
+            else ""
+        )
         attrs_map = f"MAP({attrs_sql})" if attrs_sql else "MAP()"
         eid = f"'{entity_id}'" if entity_id else "NULL"
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             INSERT INTO {self._source_records} (source_record_id, entity_id, entity_type, source_system, source_table, source_key, attributes, trust_score, ingested_at)
             VALUES ('{source_record_id}', {eid}, '{entity_type}', '{source_system}', '{source_table}', '{source_key}', {attrs_map}, {trust_score}, TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
-    def get_source_records(self, entity_id: str = None, entity_type: str = None, limit: int = 200) -> list:
+    def get_source_records(
+        self, entity_id: str = None, entity_type: str = None, limit: int = 200
+    ) -> list:
         where = ["1=1"]
         if entity_id:
             where.append(f"entity_id = '{entity_id}'")
         if entity_type:
             where.append(f"entity_type = '{entity_type}'")
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._source_records} WHERE {' AND '.join(where)} ORDER BY ingested_at DESC LIMIT {limit}")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._source_records} WHERE {' AND '.join(where)} ORDER BY ingested_at DESC LIMIT {limit}",
+        )
 
     def get_unmatched_source_records(self, entity_type: str, limit: int = 500) -> list:
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._source_records} WHERE entity_type = '{entity_type}' AND entity_id IS NULL LIMIT {limit}")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._source_records} WHERE entity_type = '{entity_type}' AND entity_id IS NULL LIMIT {limit}",
+        )
 
     def link_source_to_entity(self, source_record_id: str, entity_id: str) -> None:
-        execute_sql(self.client, self.warehouse_id, f"UPDATE {self._source_records} SET entity_id = '{entity_id}' WHERE source_record_id = '{source_record_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._source_records} SET entity_id = '{entity_id}' WHERE source_record_id = '{source_record_id}'",
+        )
 
     # ---- Match Pairs ----
 
-    def insert_match_pair(self, pair_id: str, entity_type: str, record_a_id: str, record_b_id: str, record_a_name: str, record_b_name: str, match_score: float, matched_rules: str) -> None:
+    def insert_match_pair(
+        self,
+        pair_id: str,
+        entity_type: str,
+        record_a_id: str,
+        record_b_id: str,
+        record_a_name: str,
+        record_b_name: str,
+        match_score: float,
+        matched_rules: str,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             INSERT INTO {self._match_pairs} (pair_id, entity_type, record_a_id, record_b_id, record_a_name, record_b_name, match_score, matched_rules, status, created_at)
             VALUES ('{pair_id}', '{entity_type}', '{record_a_id}', '{record_b_id}', '{record_a_name}', '{record_b_name}', {match_score}, '{matched_rules}', 'pending', TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
-    def get_match_pairs(self, entity_type: str = None, status: str = None, limit: int = 100) -> list:
+    def get_match_pairs(
+        self, entity_type: str = None, status: str = None, limit: int = 100
+    ) -> list:
         where = ["1=1"]
         if entity_type:
             where.append(f"entity_type = '{entity_type}'")
         if status:
             where.append(f"status = '{status}'")
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._match_pairs} WHERE {' AND '.join(where)} ORDER BY match_score DESC LIMIT {limit}")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._match_pairs} WHERE {' AND '.join(where)} ORDER BY match_score DESC LIMIT {limit}",
+        )
 
     def update_pair_status(self, pair_id: str, status: str, reviewed_by: str = "") -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"UPDATE {self._match_pairs} SET status = '{status}', reviewed_by = '{reviewed_by}', reviewed_at = TIMESTAMP '{now}' WHERE pair_id = '{pair_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._match_pairs} SET status = '{status}', reviewed_by = '{reviewed_by}', reviewed_at = TIMESTAMP '{now}' WHERE pair_id = '{pair_id}'",
+        )
 
     # ---- Matching Rules ----
 
-    def upsert_rule(self, rule_id: str, entity_type: str, name: str, field: str, match_type: str, weight: float, threshold: float, enabled: bool) -> None:
+    def upsert_rule(
+        self,
+        rule_id: str,
+        entity_type: str,
+        name: str,
+        field: str,
+        match_type: str,
+        weight: float,
+        threshold: float,
+        enabled: bool,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             MERGE INTO {self._matching_rules} t USING (SELECT '{rule_id}' AS rule_id) s ON t.rule_id = s.rule_id
             WHEN MATCHED THEN UPDATE SET name = '{name}', field = '{field}', match_type = '{match_type}', weight = {weight}, threshold = {threshold}, enabled = {str(enabled).lower()}
             WHEN NOT MATCHED THEN INSERT (rule_id, entity_type, name, field, match_type, weight, threshold, enabled, created_at)
             VALUES ('{rule_id}', '{entity_type}', '{name}', '{field}', '{match_type}', {weight}, {threshold}, {str(enabled).lower()}, TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
     def get_rules(self, entity_type: str = None) -> list:
         where = f"WHERE entity_type = '{entity_type}'" if entity_type else ""
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._matching_rules} {where} ORDER BY weight DESC")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._matching_rules} {where} ORDER BY weight DESC",
+        )
 
     def delete_rule(self, rule_id: str) -> None:
-        execute_sql(self.client, self.warehouse_id, f"DELETE FROM {self._matching_rules} WHERE rule_id = '{rule_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"DELETE FROM {self._matching_rules} WHERE rule_id = '{rule_id}'",
+        )
 
     # ---- Stewardship Queue ----
 
-    def insert_task(self, task_id: str, task_type: str, entity_type: str, description: str, priority: str, assignee: str = "", related_entity_id: str = "", related_pair_id: str = "") -> None:
+    def insert_task(
+        self,
+        task_id: str,
+        task_type: str,
+        entity_type: str,
+        description: str,
+        priority: str,
+        assignee: str = "",
+        related_entity_id: str = "",
+        related_pair_id: str = "",
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             INSERT INTO {self._stewardship} (task_id, task_type, entity_type, description, priority, assignee, related_entity_id, related_pair_id, status, created_at)
             VALUES ('{task_id}', '{task_type}', '{entity_type}', '{description}', '{priority}', '{assignee}', '{related_entity_id}', '{related_pair_id}', 'open', TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
     def get_tasks(self, status: str = None, priority: str = None, limit: int = 50) -> list:
         where = ["1=1"]
@@ -265,53 +419,109 @@ class MDMStore:
             where.append(f"status = '{status}'")
         if priority:
             where.append(f"priority = '{priority}'")
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._stewardship} WHERE {' AND '.join(where)} ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT {limit}")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._stewardship} WHERE {' AND '.join(where)} ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT {limit}",
+        )
 
     def resolve_task(self, task_id: str, resolution: str, resolved_by: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        execute_sql(self.client, self.warehouse_id, f"UPDATE {self._stewardship} SET status = 'resolved', resolution = '{resolution}', resolved_by = '{resolved_by}', resolved_at = TIMESTAMP '{now}' WHERE task_id = '{task_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._stewardship} SET status = 'resolved', resolution = '{resolution}', resolved_by = '{resolved_by}', resolved_at = TIMESTAMP '{now}' WHERE task_id = '{task_id}'",
+        )
 
     def get_stewardship_stats(self) -> dict:
-        rows = _safe_query(self.client, self.warehouse_id, f"""
+        rows = _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"""
             SELECT status, priority, COUNT(*) as cnt FROM {self._stewardship} GROUP BY status, priority
-        """)
+        """,
+        )
         total = sum(r.get("cnt", 0) for r in rows)
         open_count = sum(r.get("cnt", 0) for r in rows if r.get("status") == "open")
-        high = sum(r.get("cnt", 0) for r in rows if r.get("priority") == "high" and r.get("status") == "open")
-        return {"total": total, "open": open_count, "high_priority": high, "resolved": total - open_count}
+        high = sum(
+            r.get("cnt", 0)
+            for r in rows
+            if r.get("priority") == "high" and r.get("status") == "open"
+        )
+        return {
+            "total": total,
+            "open": open_count,
+            "high_priority": high,
+            "resolved": total - open_count,
+        }
 
     # ---- Hierarchies ----
 
-    def insert_hierarchy_node(self, hierarchy_id: str, name: str, entity_type: str, node_id: str, parent_node_id: str | None, entity_id: str | None, label: str, level: int, path: str) -> None:
+    def insert_hierarchy_node(
+        self,
+        hierarchy_id: str,
+        name: str,
+        entity_type: str,
+        node_id: str,
+        parent_node_id: str | None,
+        entity_id: str | None,
+        label: str,
+        level: int,
+        path: str,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         parent = f"'{parent_node_id}'" if parent_node_id else "NULL"
         eid = f"'{entity_id}'" if entity_id else "NULL"
-        execute_sql(self.client, self.warehouse_id, f"""
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"""
             INSERT INTO {self._hierarchies} (hierarchy_id, name, entity_type, node_id, parent_node_id, entity_id, label, level, path, created_at)
             VALUES ('{hierarchy_id}', '{name}', '{entity_type}', '{node_id}', {parent}, {eid}, '{label}', {level}, '{path}', TIMESTAMP '{now}')
-        """)
+        """,
+        )
 
     def get_hierarchy(self, hierarchy_id: str) -> list:
-        return _safe_query(self.client, self.warehouse_id, f"SELECT * FROM {self._hierarchies} WHERE hierarchy_id = '{hierarchy_id}' ORDER BY level, label")
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"SELECT * FROM {self._hierarchies} WHERE hierarchy_id = '{hierarchy_id}' ORDER BY level, label",
+        )
 
     def get_all_hierarchies(self) -> list:
-        return _safe_query(self.client, self.warehouse_id, f"""
+        return _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"""
             SELECT hierarchy_id, name, entity_type, COUNT(*) as node_count, MAX(level) as max_depth
             FROM {self._hierarchies} GROUP BY hierarchy_id, name, entity_type ORDER BY name
-        """)
+        """,
+        )
 
     def move_node(self, node_id: str, new_parent_id: str) -> None:
-        execute_sql(self.client, self.warehouse_id, f"UPDATE {self._hierarchies} SET parent_node_id = '{new_parent_id}' WHERE node_id = '{node_id}'")
+        execute_sql(
+            self.client,
+            self.warehouse_id,
+            f"UPDATE {self._hierarchies} SET parent_node_id = '{new_parent_id}' WHERE node_id = '{node_id}'",
+        )
 
     # ---- Dashboard ----
 
     def get_dashboard_stats(self) -> dict:
-        entities = _safe_query(self.client, self.warehouse_id, f"""
+        entities = _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"""
             SELECT entity_type, status, COUNT(*) as cnt, AVG(confidence_score) as avg_confidence
             FROM {self._entities} GROUP BY entity_type, status
-        """)
-        pairs = _safe_query(self.client, self.warehouse_id, f"""
+        """,
+        )
+        pairs = _safe_query(
+            self.client,
+            self.warehouse_id,
+            f"""
             SELECT status, COUNT(*) as cnt FROM {self._match_pairs} GROUP BY status
-        """)
+        """,
+        )
         stewardship = self.get_stewardship_stats()
         return {"entities": entities, "pairs": pairs, "stewardship": stewardship}

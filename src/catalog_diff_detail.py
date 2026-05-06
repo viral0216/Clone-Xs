@@ -119,11 +119,13 @@ def _classify_drift(src: dict, dst: dict) -> dict[str, Any]:
     type_changes = []
     for col in src_cols:
         if col in dst_cols and src_cols[col] != dst_cols[col]:
-            type_changes.append({
-                "column": col,
-                "source_type": src_cols[col],
-                "dest_type": dst_cols[col],
-            })
+            type_changes.append(
+                {
+                    "column": col,
+                    "source_type": src_cols[col],
+                    "dest_type": dst_cols[col],
+                }
+            )
 
     src_size = int(src.get("size_bytes") or 0)
     dst_size = int(dst.get("size_bytes") or 0)
@@ -196,7 +198,11 @@ def compare_catalogs_detailed(
 
     # Step 1: presence/absence diff (existing helper).
     presence = compare_catalogs(
-        client, warehouse_id, source_catalog, dest_catalog, exclude_schemas,
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        exclude_schemas,
     )
 
     # Step 2: bulk metadata query on each side, in parallel.
@@ -205,9 +211,13 @@ def compare_catalogs_detailed(
     dst_meta: dict[str, dict] = {}
 
     def _fetch(catalog: str) -> dict[str, dict]:
-        return _index_by_table(execute_sql(
-            client, warehouse_id, _bulk_metadata_query(catalog, exclude_schemas),
-        ))
+        return _index_by_table(
+            execute_sql(
+                client,
+                warehouse_id,
+                _bulk_metadata_query(catalog, exclude_schemas),
+            )
+        )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_src = executor.submit(_fetch, source_catalog)
@@ -233,8 +243,12 @@ def compare_catalogs_detailed(
         in_both = set(presence.get("tables", {}).get("in_both") or [])
         for key in sorted(in_both):
             # `in_both` is keyed `<schema>.<table>` already (see src.diff).
-            src = src_meta.get(key, {"schema": key.split(".")[0], "table": key.split(".", 1)[1], "columns": {}})
-            dst = dst_meta.get(key, {"schema": key.split(".")[0], "table": key.split(".", 1)[1], "columns": {}})
+            src = src_meta.get(
+                key, {"schema": key.split(".")[0], "table": key.split(".", 1)[1], "columns": {}}
+            )
+            dst = dst_meta.get(
+                key, {"schema": key.split(".")[0], "table": key.split(".", 1)[1], "columns": {}}
+            )
             record = _classify_drift(src, dst)
             if _has_drift(record):
                 drift.append(record)

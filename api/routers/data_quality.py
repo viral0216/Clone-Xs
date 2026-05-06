@@ -12,6 +12,7 @@ router = APIRouter()
 
 # ── Request / Response Models ────────────────────────────────────────────────
 
+
 class RecordMetricRequest(BaseModel):
     table_fqn: str
     column_name: str = ""
@@ -32,6 +33,7 @@ class VolumeSnapshotRequest(BaseModel):
 
 # ── Freshness ────────────────────────────────────────────────────────────────
 
+
 @router.get("/freshness/{catalog}", summary="Check table freshness for a catalog")
 async def freshness_check(
     catalog: str,
@@ -44,9 +46,14 @@ async def freshness_check(
     wid = config.get("sql_warehouse_id", "")
 
     from src.data_freshness import check_freshness
+
     return check_freshness(
-        client, catalog, schema=schema,
-        max_stale_hours=max_stale_hours, warehouse_id=wid, config=config,
+        client,
+        catalog,
+        schema=schema,
+        max_stale_hours=max_stale_hours,
+        warehouse_id=wid,
+        config=config,
     )
 
 
@@ -67,10 +74,14 @@ async def freshness_history(
     table_fqn = f"{catalog}.{schema}.{table}"
 
     from src.data_freshness import get_freshness_history
-    return get_freshness_history(table_fqn, client=client, warehouse_id=wid, config=config, limit=limit)
+
+    return get_freshness_history(
+        table_fqn, client=client, warehouse_id=wid, config=config, limit=limit
+    )
 
 
 # ── Anomalies ────────────────────────────────────────────────────────────────
+
 
 @router.get("/anomalies", summary="List recent anomalies")
 async def list_anomalies(
@@ -83,7 +94,10 @@ async def list_anomalies(
     wid = config.get("sql_warehouse_id", "")
 
     from src.anomaly_detection import get_anomalies
-    anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=limit, severity=severity)
+
+    anomalies = get_anomalies(
+        client=client, warehouse_id=wid, config=config, limit=limit, severity=severity
+    )
     return {"anomalies": anomalies, "total": len(anomalies)}
 
 
@@ -99,7 +113,10 @@ async def metric_history(
     wid = config.get("sql_warehouse_id", "")
 
     from src.anomaly_detection import get_metric_history
-    return get_metric_history(table_fqn, metric_name, client=client, warehouse_id=wid, config=config, limit=limit)
+
+    return get_metric_history(
+        table_fqn, metric_name, client=client, warehouse_id=wid, config=config, limit=limit
+    )
 
 
 @router.get("/metrics/recent", summary="List recent metric measurements")
@@ -113,6 +130,7 @@ async def recent_metrics(
 
     from src.anomaly_detection import _get_schema, _query_sql
     import logging
+
     schema = _get_schema(config)
     try:
         rows = _query_sql(
@@ -121,7 +139,9 @@ async def recent_metrics(
                        is_anomaly, severity
                 FROM {schema}.metric_baselines
                 ORDER BY measured_at DESC""",
-            limit=limit, client=client, warehouse_id=wid,
+            limit=limit,
+            client=client,
+            warehouse_id=wid,
         )
         return {"metrics": rows, "total": len(rows)}
     except Exception as e:
@@ -144,6 +164,7 @@ async def record_metric(req: RecordMetricRequest, client=Depends(get_db_client))
     wid = config.get("sql_warehouse_id", "")
 
     from src.anomaly_detection import record_metric as _record
+
     return _record(
         table_fqn=req.table_fqn,
         column_name=req.column_name,
@@ -156,6 +177,7 @@ async def record_metric(req: RecordMetricRequest, client=Depends(get_db_client))
 
 
 # ── Volume ───────────────────────────────────────────────────────────────────
+
 
 @router.get("/volume/{catalog}", summary="Get row counts for all tables in a catalog")
 async def volume_overview(
@@ -198,8 +220,10 @@ async def volume_overview(
         last_modified = None
         try:
             rows = _query_sql(
-                f"SELECT COUNT(*) AS cnt FROM {table_fqn}", limit=1,
-                client=client, warehouse_id=wid,
+                f"SELECT COUNT(*) AS cnt FROM {table_fqn}",
+                limit=1,
+                client=client,
+                warehouse_id=wid,
             )
             if rows:
                 row_count = int(rows[0]["cnt"])
@@ -207,11 +231,17 @@ async def volume_overview(
             pass
         try:
             detail = _query_sql(
-                f"DESCRIBE DETAIL {table_fqn}", limit=1,
-                client=client, warehouse_id=wid,
+                f"DESCRIBE DETAIL {table_fqn}",
+                limit=1,
+                client=client,
+                warehouse_id=wid,
             )
             if detail:
-                size_bytes = int(detail[0].get("sizeInBytes", 0)) if detail[0].get("sizeInBytes") is not None else None
+                size_bytes = (
+                    int(detail[0].get("sizeInBytes", 0))
+                    if detail[0].get("sizeInBytes") is not None
+                    else None
+                )
                 last_modified = detail[0].get("lastModified")
         except Exception:
             pass
@@ -228,6 +258,7 @@ async def volume_overview(
     prev_lookup: dict[str, float] = {}
     try:
         from src.anomaly_detection import _get_schema
+
         audit_schema = _get_schema(config)
         prev_sql = f"""
             SELECT table_fqn, value AS previous_rows
@@ -257,14 +288,16 @@ async def volume_overview(
         change_pct = None
         if current is not None and prev is not None and prev > 0:
             change_pct = round((current - prev) / prev * 100, 2)
-        results.append({
-            "table_name": fqn,
-            "current_rows": current,
-            "previous_rows": int(prev) if prev is not None else None,
-            "change_pct": change_pct,
-            "size_bytes": size_bytes,
-            "last_modified": last_modified,
-        })
+        results.append(
+            {
+                "table_name": fqn,
+                "current_rows": current,
+                "previous_rows": int(prev) if prev is not None else None,
+                "change_pct": change_pct,
+                "size_bytes": size_bytes,
+                "last_modified": last_modified,
+            }
+        )
 
     return {
         "catalog": catalog,
@@ -309,11 +342,17 @@ async def volume_snapshot(req: VolumeSnapshotRequest, client=Depends(get_db_clie
         try:
             count_rows = _query_sql(
                 f"SELECT COUNT(*) AS row_count FROM {table_fqn}",
-                limit=1, client=client, warehouse_id=wid,
+                limit=1,
+                client=client,
+                warehouse_id=wid,
             )
             row_count = int(count_rows[0]["row_count"]) if count_rows else 0
-            return {"table_fqn": table_fqn, "column_name": "*",
-                    "metric_name": "row_count", "value": float(row_count)}
+            return {
+                "table_fqn": table_fqn,
+                "column_name": "*",
+                "metric_name": "row_count",
+                "value": float(row_count),
+            }
         except Exception:
             return None
 
@@ -392,10 +431,12 @@ async def volume_history(
         fqn = r.get("table_fqn", "")
         if fqn not in per_table:
             per_table[fqn] = []
-        per_table[fqn].append({
-            "date": str(r.get("snapshot_date", "")),
-            "rows": float(r.get("row_count", 0)),
-        })
+        per_table[fqn].append(
+            {
+                "date": str(r.get("snapshot_date", "")),
+                "rows": float(r.get("row_count", 0)),
+            }
+        )
 
     return {
         "catalog": catalog,
@@ -414,12 +455,14 @@ async def volume_history(
 
 # ── Suites ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/suites", summary="List expectation suites")
 async def list_suites(client=Depends(get_db_client)):
     """List all expectation suites."""
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import list_suites as _list
+
     return {"suites": _list(client, wid, config)}
 
 
@@ -429,7 +472,10 @@ async def create_suite(req: CreateSuiteRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import create_suite as _create
-    return _create(client, wid, config, name=req.name, description=req.description, checks=req.checks)
+
+    return _create(
+        client, wid, config, name=req.name, description=req.description, checks=req.checks
+    )
 
 
 @router.get("/suites/{suite_id}", summary="Get expectation suite details")
@@ -438,6 +484,7 @@ async def get_suite(suite_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import get_suite as _get
+
     suite = _get(client, wid, config, suite_id)
     if not suite:
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
@@ -450,6 +497,7 @@ async def delete_suite(suite_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.expectation_suites import delete_suite as _delete
+
     if not _delete(client, wid, config, suite_id):
         raise HTTPException(status_code=404, detail=f"Suite {suite_id} not found")
     return {"status": "deleted", "suite_id": suite_id}
@@ -462,6 +510,7 @@ async def run_suite(suite_id: str, client=Depends(get_db_client)):
     wid = config.get("sql_warehouse_id", "")
 
     from src.expectation_suites import run_suite as _run
+
     result = _run(client, wid, config, suite_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -469,6 +518,7 @@ async def run_suite(suite_id: str, client=Depends(get_db_client)):
 
 
 # ── Incidents ────────────────────────────────────────────────────────────────
+
 
 @router.get("/incidents", summary="Unified incident feed")
 async def incidents(
@@ -486,66 +536,79 @@ async def incidents(
     # 1. Anomalies
     try:
         from src.anomaly_detection import get_anomalies
+
         anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=limit)
         for a in anomalies:
-            incidents_list.append({
-                "type": "anomaly",
-                "severity": a.get("severity", "warning"),
-                "title": f"Anomaly in {a.get('metric_name', 'unknown')} for {a.get('table_fqn', 'unknown')}",
-                "description": f"z-score={a.get('z_score', 0):.2f}, value={a.get('value', 0)}",
-                "table_fqn": a.get("table_fqn"),
-                "timestamp": a.get("measured_at"),
-                "details": a,
-            })
+            incidents_list.append(
+                {
+                    "type": "anomaly",
+                    "severity": a.get("severity", "warning"),
+                    "title": f"Anomaly in {a.get('metric_name', 'unknown')} for {a.get('table_fqn', 'unknown')}",
+                    "description": f"z-score={a.get('z_score', 0):.2f}, value={a.get('value', 0)}",
+                    "table_fqn": a.get("table_fqn"),
+                    "timestamp": a.get("measured_at"),
+                    "details": a,
+                }
+            )
     except Exception as e:
         logger_msg = f"Could not load anomaly incidents: {e}"
         import logging
+
         logging.getLogger(__name__).debug(logger_msg)
 
     # 2. Reconciliation mismatches (from recent runs)
     try:
         from src.reconciliation_store import get_reconciliation_history
+
         runs = get_reconciliation_history(client=client, warehouse_id=wid, config=config, limit=10)
         for run in runs:
             mismatched = int(run.get("mismatched", 0))
             errs = int(run.get("errors", 0))
             if mismatched > 0 or errs > 0:
-                incidents_list.append({
-                    "type": "reconciliation_mismatch",
-                    "severity": "critical" if mismatched > 5 else "warning",
-                    "title": f"Reconciliation mismatch: {run.get('source_catalog', '')} -> {run.get('destination_catalog', '')}",
-                    "description": f"{mismatched} mismatched, {errs} errors out of {run.get('total_tables', 0)} tables",
-                    "table_fqn": None,
-                    "timestamp": run.get("executed_at"),
-                    "details": run,
-                })
+                incidents_list.append(
+                    {
+                        "type": "reconciliation_mismatch",
+                        "severity": "critical" if mismatched > 5 else "warning",
+                        "title": f"Reconciliation mismatch: {run.get('source_catalog', '')} -> {run.get('destination_catalog', '')}",
+                        "description": f"{mismatched} mismatched, {errs} errors out of {run.get('total_tables', 0)} tables",
+                        "table_fqn": None,
+                        "timestamp": run.get("executed_at"),
+                        "details": run,
+                    }
+                )
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).debug(f"Could not load reconciliation incidents: {e}")
 
     # 3. DQ rule failures
     try:
         from src.dq_rules import get_latest_results
+
         results = get_latest_results(client, wid, config, limit=limit)
         for r in results:
             if not r.get("passed", True):
                 rate = r.get("failure_rate", 0) or 0
-                incidents_list.append({
-                    "type": "dq_rule",
-                    "severity": "critical" if rate > 0.1 else "warning",
-                    "title": f"DQ rule failed: {r.get('rule_name', 'unknown')} on {r.get('table_fqn', 'unknown')}",
-                    "description": f"{r.get('failed_rows', 0)} failed rows ({rate * 100:.1f}% failure rate)",
-                    "table_fqn": r.get("table_fqn"),
-                    "timestamp": r.get("executed_at"),
-                    "details": r,
-                })
+                incidents_list.append(
+                    {
+                        "type": "dq_rule",
+                        "severity": "critical" if rate > 0.1 else "warning",
+                        "title": f"DQ rule failed: {r.get('rule_name', 'unknown')} on {r.get('table_fqn', 'unknown')}",
+                        "description": f"{r.get('failed_rows', 0)} failed rows ({rate * 100:.1f}% failure rate)",
+                        "table_fqn": r.get("table_fqn"),
+                        "timestamp": r.get("executed_at"),
+                        "details": r,
+                    }
+                )
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).debug(f"Could not load DQ rule incidents: {e}")
 
     # 4. Freshness + SLA + DQ from observability service
     try:
         from src.observability import ObservabilityService
+
         obs = ObservabilityService(client, wid, config)
         issues = obs.get_top_issues(limit=limit)
         # Deduplicate by (type, table_fqn) — direct sources above take priority
@@ -554,17 +617,20 @@ async def incidents(
             key = (issue.get("category", "unknown"), issue.get("table"))
             if key not in seen:
                 seen.add(key)
-                incidents_list.append({
-                    "type": issue.get("category", "unknown"),
-                    "severity": issue.get("severity", "warning"),
-                    "title": issue.get("message", "Unknown issue"),
-                    "description": f"Table: {issue.get('table', 'unknown')}",
-                    "table_fqn": issue.get("table"),
-                    "timestamp": issue.get("time"),
-                    "details": issue,
-                })
+                incidents_list.append(
+                    {
+                        "type": issue.get("category", "unknown"),
+                        "severity": issue.get("severity", "warning"),
+                        "title": issue.get("message", "Unknown issue"),
+                        "description": f"Table: {issue.get('table', 'unknown')}",
+                        "table_fqn": issue.get("table"),
+                        "timestamp": issue.get("time"),
+                        "details": issue,
+                    }
+                )
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).debug(f"Could not load observability incidents: {e}")
 
     # Sort by timestamp descending (most recent first)
@@ -578,6 +644,7 @@ async def incidents(
 
 
 # ── Anomaly Detection Settings ────────────────────────────────────────────────
+
 
 @router.get("/anomaly-settings", summary="Get anomaly detection thresholds")
 async def get_anomaly_settings():
@@ -633,7 +700,10 @@ async def update_anomaly_settings(req: dict):
     with open(config_path, "w") as f:
         yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
 
-    return {**raw.get("anomaly_detection", {}), "max_parallel_queries": raw.get("max_parallel_queries", 10)}
+    return {
+        **raw.get("anomaly_detection", {}),
+        "max_parallel_queries": raw.get("max_parallel_queries", 10),
+    }
 
 
 @router.get("/dqx-settings", summary="Get DQX Engine settings")
@@ -651,6 +721,7 @@ async def get_dqx_settings():
 async def update_dqx_settings(req: dict):
     """Update DQX configuration — auto-save, default target table."""
     import yaml
+
     config_path = "config/clone_config.yaml"
     try:
         with open(config_path, "r") as f:
@@ -691,7 +762,8 @@ async def system_table_anomalies(
     # ── 1. Billing anomalies (cost spikes) ──
     if sources.get("billing", False):
         try:
-            rows = _query_sql(f"""
+            rows = _query_sql(
+                f"""
                 WITH daily AS (
                     SELECT DATE(usage_date) AS d,
                            SUM(usage_quantity) AS dbu
@@ -705,28 +777,37 @@ async def system_table_anomalies(
                 SELECT d, dbu, mean_dbu, std_dbu,
                        CASE WHEN std_dbu > 0 THEN ABS(dbu - mean_dbu) / std_dbu ELSE 0 END AS z_score
                 FROM daily CROSS JOIN stats
-                WHERE std_dbu > 0 AND ABS(dbu - mean_dbu) / std_dbu > {ad.get('warning_threshold', 2.0)}
+                WHERE std_dbu > 0 AND ABS(dbu - mean_dbu) / std_dbu > {ad.get("warning_threshold", 2.0)}
                 ORDER BY z_score DESC
-            """, limit=20, client=client, warehouse_id=wid)
+            """,
+                limit=20,
+                client=client,
+                warehouse_id=wid,
+            )
             for r in rows:
                 z = float(r.get("z_score", 0))
-                anomalies.append({
-                    "source": "billing",
-                    "severity": "critical" if z > ad.get("critical_threshold", 3.0) else "warning",
-                    "title": f"DBU spike on {r.get('d', '')}",
-                    "description": f"{float(r.get('dbu', 0)):,.0f} DBUs (avg {float(r.get('mean_dbu', 0)):,.0f}, z={z:.1f})",
-                    "timestamp": str(r.get("d", "")),
-                    "z_score": z,
-                    "metric": "dbu_usage",
-                    "value": float(r.get("dbu", 0)),
-                })
+                anomalies.append(
+                    {
+                        "source": "billing",
+                        "severity": "critical"
+                        if z > ad.get("critical_threshold", 3.0)
+                        else "warning",
+                        "title": f"DBU spike on {r.get('d', '')}",
+                        "description": f"{float(r.get('dbu', 0)):,.0f} DBUs (avg {float(r.get('mean_dbu', 0)):,.0f}, z={z:.1f})",
+                        "timestamp": str(r.get("d", "")),
+                        "z_score": z,
+                        "metric": "dbu_usage",
+                        "value": float(r.get("dbu", 0)),
+                    }
+                )
         except Exception:
             pass
 
     # ── 2. Compute anomalies (cluster failures, long runtimes) ──
     if sources.get("compute", False):
         try:
-            rows = _query_sql(f"""
+            rows = _query_sql(
+                f"""
                 SELECT cluster_id, cluster_name, state, state_message,
                        change_time, driver_node_type, worker_count
                 FROM system.compute.clusters
@@ -736,18 +817,24 @@ async def system_table_anomalies(
                   AND state_message != ''
                 ORDER BY change_time DESC
                 LIMIT 20
-            """, limit=20, client=client, warehouse_id=wid)
+            """,
+                limit=20,
+                client=client,
+                warehouse_id=wid,
+            )
             for r in rows:
-                anomalies.append({
-                    "source": "compute",
-                    "severity": "critical" if r.get("state") == "ERROR" else "warning",
-                    "title": f"Cluster {r.get('cluster_name', r.get('cluster_id', 'unknown'))} — {r.get('state', '')}",
-                    "description": str(r.get("state_message", ""))[:200],
-                    "timestamp": str(r.get("change_time", "")),
-                    "z_score": 0,
-                    "metric": "cluster_state",
-                    "value": 0,
-                })
+                anomalies.append(
+                    {
+                        "source": "compute",
+                        "severity": "critical" if r.get("state") == "ERROR" else "warning",
+                        "title": f"Cluster {r.get('cluster_name', r.get('cluster_id', 'unknown'))} — {r.get('state', '')}",
+                        "description": str(r.get("state_message", ""))[:200],
+                        "timestamp": str(r.get("change_time", "")),
+                        "z_score": 0,
+                        "metric": "cluster_state",
+                        "value": 0,
+                    }
+                )
         except Exception:
             pass
 
@@ -755,7 +842,8 @@ async def system_table_anomalies(
     if sources.get("query_history", False):
         try:
             # Failed queries
-            rows = _query_sql(f"""
+            rows = _query_sql(
+                f"""
                 SELECT statement_id, executed_by, status, error_message,
                        execution_start_time_ms, duration_ms
                 FROM system.query.history
@@ -763,23 +851,30 @@ async def system_table_anomalies(
                   AND status = 'FAILED'
                 ORDER BY start_time DESC
                 LIMIT 10
-            """, limit=10, client=client, warehouse_id=wid)
+            """,
+                limit=10,
+                client=client,
+                warehouse_id=wid,
+            )
             for r in rows:
-                anomalies.append({
-                    "source": "query_history",
-                    "severity": "warning",
-                    "title": f"Failed query by {r.get('executed_by', 'unknown')}",
-                    "description": str(r.get("error_message", ""))[:200],
-                    "timestamp": str(r.get("execution_start_time_ms", "")),
-                    "z_score": 0,
-                    "metric": "query_failure",
-                    "value": 0,
-                })
+                anomalies.append(
+                    {
+                        "source": "query_history",
+                        "severity": "warning",
+                        "title": f"Failed query by {r.get('executed_by', 'unknown')}",
+                        "description": str(r.get("error_message", ""))[:200],
+                        "timestamp": str(r.get("execution_start_time_ms", "")),
+                        "z_score": 0,
+                        "metric": "query_failure",
+                        "value": 0,
+                    }
+                )
         except Exception:
             pass
         try:
             # Slow queries (z-score on duration)
-            rows = _query_sql(f"""
+            rows = _query_sql(
+                f"""
                 WITH stats AS (
                     SELECT AVG(duration_ms) AS mean_dur, STDDEV(duration_ms) AS std_dur
                     FROM system.query.history
@@ -794,30 +889,39 @@ async def system_table_anomalies(
                 WHERE h.start_time >= DATEADD(DAY, -{days}, CURRENT_TIMESTAMP())
                   AND h.status = 'FINISHED'
                   AND s.std_dur > 0
-                  AND (h.duration_ms - s.mean_dur) / s.std_dur > {ad.get('warning_threshold', 2.0)}
+                  AND (h.duration_ms - s.mean_dur) / s.std_dur > {ad.get("warning_threshold", 2.0)}
                 ORDER BY z_score DESC
                 LIMIT 10
-            """, limit=10, client=client, warehouse_id=wid)
+            """,
+                limit=10,
+                client=client,
+                warehouse_id=wid,
+            )
             for r in rows:
                 z = float(r.get("z_score", 0))
                 dur_s = float(r.get("duration_ms", 0)) / 1000
-                anomalies.append({
-                    "source": "query_history",
-                    "severity": "critical" if z > ad.get("critical_threshold", 3.0) else "warning",
-                    "title": f"Slow query by {r.get('executed_by', 'unknown')} — {dur_s:.1f}s",
-                    "description": f"Duration {dur_s:.1f}s (avg {float(r.get('mean_dur', 0))/1000:.1f}s, z={z:.1f})",
-                    "timestamp": str(r.get("start_time", "")),
-                    "z_score": z,
-                    "metric": "query_duration",
-                    "value": dur_s,
-                })
+                anomalies.append(
+                    {
+                        "source": "query_history",
+                        "severity": "critical"
+                        if z > ad.get("critical_threshold", 3.0)
+                        else "warning",
+                        "title": f"Slow query by {r.get('executed_by', 'unknown')} — {dur_s:.1f}s",
+                        "description": f"Duration {dur_s:.1f}s (avg {float(r.get('mean_dur', 0)) / 1000:.1f}s, z={z:.1f})",
+                        "timestamp": str(r.get("start_time", "")),
+                        "z_score": z,
+                        "metric": "query_duration",
+                        "value": dur_s,
+                    }
+                )
         except Exception:
             pass
 
     # ── 4. Storage anomalies (table size changes) ──
     if sources.get("storage", False):
         try:
-            rows = _query_sql(f"""
+            rows = _query_sql(
+                f"""
                 WITH daily AS (
                     SELECT catalog_name, schema_name, table_name,
                            DATE(last_altered) AS d,
@@ -836,22 +940,30 @@ async def system_table_anomalies(
                 SELECT d, total_bytes, mean_bytes, std_bytes,
                        CASE WHEN std_bytes > 0 THEN ABS(total_bytes - mean_bytes) / std_bytes ELSE 0 END AS z_score
                 FROM totals CROSS JOIN stats
-                WHERE std_bytes > 0 AND ABS(total_bytes - mean_bytes) / std_bytes > {ad.get('warning_threshold', 2.0)}
+                WHERE std_bytes > 0 AND ABS(total_bytes - mean_bytes) / std_bytes > {ad.get("warning_threshold", 2.0)}
                 ORDER BY z_score DESC
-            """, limit=20, client=client, warehouse_id=wid)
+            """,
+                limit=20,
+                client=client,
+                warehouse_id=wid,
+            )
             for r in rows:
                 z = float(r.get("z_score", 0))
                 gb = float(r.get("total_bytes", 0)) / 1_073_741_824
-                anomalies.append({
-                    "source": "storage",
-                    "severity": "critical" if z > ad.get("critical_threshold", 3.0) else "warning",
-                    "title": f"Storage anomaly on {r.get('d', '')}",
-                    "description": f"Total storage {gb:.1f} GB (z={z:.1f})",
-                    "timestamp": str(r.get("d", "")),
-                    "z_score": z,
-                    "metric": "storage_bytes",
-                    "value": float(r.get("total_bytes", 0)),
-                })
+                anomalies.append(
+                    {
+                        "source": "storage",
+                        "severity": "critical"
+                        if z > ad.get("critical_threshold", 3.0)
+                        else "warning",
+                        "title": f"Storage anomaly on {r.get('d', '')}",
+                        "description": f"Total storage {gb:.1f} GB (z={z:.1f})",
+                        "timestamp": str(r.get("d", "")),
+                        "z_score": z,
+                        "metric": "storage_bytes",
+                        "value": float(r.get("total_bytes", 0)),
+                    }
+                )
         except Exception:
             pass
 
@@ -866,9 +978,11 @@ async def system_table_anomalies(
 
 # ── Health Score ─────────────────────────────────────────────────────────────
 
+
 @router.get("/root-cause/{table_fqn:path}", summary="Correlation-based root cause suggestion")
-async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=1),
-                              client=Depends(get_db_client)):
+async def root_cause_analysis(
+    table_fqn: str, hours: int = Query(default=24, ge=1), client=Depends(get_db_client)
+):
     """When an anomaly occurs, find correlated events that may explain it.
 
     Checks for co-occurring anomalies on the same/upstream tables, schema changes,
@@ -883,18 +997,21 @@ async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=
     # 1. Co-occurring anomalies on the same table
     try:
         from src.anomaly_detection import get_anomalies
+
         anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=100)
-        same_table = [a for a in anomalies
-                      if a.get("table_fqn") == table_fqn
-                      and a.get("metric_name") != ""]
+        same_table = [
+            a for a in anomalies if a.get("table_fqn") == table_fqn and a.get("metric_name") != ""
+        ]
         if len(same_table) > 1:
             metrics = [a.get("metric_name") for a in same_table]
-            probable_causes.append({
-                "type": "correlated_anomalies",
-                "confidence": "high",
-                "description": f"Multiple metrics anomalous on the same table: {', '.join(set(metrics))}",
-                "details": same_table[:5],
-            })
+            probable_causes.append(
+                {
+                    "type": "correlated_anomalies",
+                    "confidence": "high",
+                    "description": f"Multiple metrics anomalous on the same table: {', '.join(set(metrics))}",
+                    "details": same_table[:5],
+                }
+            )
     except Exception:
         pass
 
@@ -902,27 +1019,36 @@ async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=
     try:
         upstream_tables = []
         try:
-            rows = _exec(client, wid, f"""
+            rows = _exec(
+                client,
+                wid,
+                f"""
                 SELECT DISTINCT source_table_full_name
                 FROM system.access.table_lineage
                 WHERE target_table_full_name = '{table_fqn}'
                 LIMIT 20
-            """)
-            upstream_tables = [r.get("source_table_full_name", "") for r in rows if r.get("source_table_full_name")]
+            """,
+            )
+            upstream_tables = [
+                r.get("source_table_full_name", "") for r in rows if r.get("source_table_full_name")
+            ]
         except Exception:
             pass
 
         if upstream_tables:
             from src.anomaly_detection import get_anomalies
+
             all_anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=200)
             upstream_anomalies = [a for a in all_anomalies if a.get("table_fqn") in upstream_tables]
             if upstream_anomalies:
-                probable_causes.append({
-                    "type": "upstream_anomaly",
-                    "confidence": "high",
-                    "description": f"Anomalies detected on {len(set(a.get('table_fqn') for a in upstream_anomalies))} upstream table(s)",
-                    "details": upstream_anomalies[:5],
-                })
+                probable_causes.append(
+                    {
+                        "type": "upstream_anomaly",
+                        "confidence": "high",
+                        "description": f"Anomalies detected on {len(set(a.get('table_fqn') for a in upstream_anomalies))} upstream table(s)",
+                        "details": upstream_anomalies[:5],
+                    }
+                )
     except Exception:
         pass
 
@@ -931,34 +1057,48 @@ async def root_cause_analysis(table_fqn: str, hours: int = Query(default=24, ge=
         parts = table_fqn.split(".")
         if len(parts) >= 3:
             from src.data_freshness import check_freshness
+
             freshness = check_freshness(
-                client, parts[0], schema=parts[1],
-                max_stale_hours=hours, warehouse_id=wid, config=config,
+                client,
+                parts[0],
+                schema=parts[1],
+                max_stale_hours=hours,
+                warehouse_id=wid,
+                config=config,
             )
             tables = freshness.get("tables", []) if isinstance(freshness, dict) else []
-            stale = [t for t in tables if t.get("table_fqn", "").endswith(parts[2]) and t.get("status") == "stale"]
+            stale = [
+                t
+                for t in tables
+                if t.get("table_fqn", "").endswith(parts[2]) and t.get("status") == "stale"
+            ]
             if stale:
-                probable_causes.append({
-                    "type": "freshness_gap",
-                    "confidence": "medium",
-                    "description": f"Table is stale — last updated {stale[0].get('hours_since_update', '?')}h ago",
-                    "details": stale[0],
-                })
+                probable_causes.append(
+                    {
+                        "type": "freshness_gap",
+                        "confidence": "medium",
+                        "description": f"Table is stale — last updated {stale[0].get('hours_since_update', '?')}h ago",
+                        "details": stale[0],
+                    }
+                )
     except Exception:
         pass
 
     # 4. Recent schema changes
     try:
         from src.governance import get_change_history
+
         changes = get_change_history(client, wid, config, entity_type="", limit=50)
         related = [c for c in changes if table_fqn in c.get("entity_id", "")]
         if related:
-            probable_causes.append({
-                "type": "schema_change",
-                "confidence": "medium",
-                "description": f"{len(related)} recent schema/metadata change(s) on this table",
-                "details": related[:5],
-            })
+            probable_causes.append(
+                {
+                    "type": "schema_change",
+                    "confidence": "medium",
+                    "description": f"{len(related)} recent schema/metadata change(s) on this table",
+                    "details": related[:5],
+                }
+            )
     except Exception:
         pass
 
@@ -983,8 +1123,13 @@ async def dq_impact_analysis(table_fqn: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
 
-    result = {"table_fqn": table_fqn, "downstream_tables": [], "downstream_views": [],
-              "referencing_jobs": [], "total_affected": 0}
+    result = {
+        "table_fqn": table_fqn,
+        "downstream_tables": [],
+        "downstream_views": [],
+        "referencing_jobs": [],
+        "total_affected": 0,
+    }
 
     # Get lineage-based downstream tables
     try:
@@ -992,10 +1137,16 @@ async def dq_impact_analysis(table_fqn: str, client=Depends(get_db_client)):
         if len(parts) >= 2:
             catalog = parts[0]
             from src.impact_analysis import analyze_impact
-            impact = analyze_impact(client, wid, catalog, {
-                "schema": parts[1] if len(parts) >= 2 else None,
-                "table": parts[2] if len(parts) >= 3 else None,
-            })
+
+            impact = analyze_impact(
+                client,
+                wid,
+                catalog,
+                {
+                    "schema": parts[1] if len(parts) >= 2 else None,
+                    "table": parts[2] if len(parts) >= 3 else None,
+                },
+            )
             result["downstream_views"] = impact.get("dependent_views", [])
             result["referencing_jobs"] = impact.get("referencing_jobs", [])
             result["risk_level"] = impact.get("risk_level", "low")
@@ -1005,19 +1156,28 @@ async def dq_impact_analysis(table_fqn: str, client=Depends(get_db_client)):
     # Get lineage-based downstream tables from system.access.table_lineage
     try:
         from src.client import execute_sql as _exec
-        rows = _exec(client, wid, f"""
+
+        rows = _exec(
+            client,
+            wid,
+            f"""
             SELECT DISTINCT target_table_full_name
             FROM system.access.table_lineage
             WHERE source_table_full_name = '{table_fqn}'
             LIMIT 50
-        """)
-        result["downstream_tables"] = [r.get("target_table_full_name", "") for r in rows if r.get("target_table_full_name")]
+        """,
+        )
+        result["downstream_tables"] = [
+            r.get("target_table_full_name", "") for r in rows if r.get("target_table_full_name")
+        ]
     except Exception:
         pass
 
-    result["total_affected"] = (len(result["downstream_tables"]) +
-                                len(result["downstream_views"]) +
-                                len(result["referencing_jobs"]))
+    result["total_affected"] = (
+        len(result["downstream_tables"])
+        + len(result["downstream_views"])
+        + len(result["referencing_jobs"])
+    )
     return result
 
 
@@ -1027,8 +1187,11 @@ async def evaluate_gate(req: dict, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_gate import evaluate_dq_gate
+
     return evaluate_dq_gate(
-        client, wid, config,
+        client,
+        wid,
+        config,
         table_fqn=req.get("table_fqn", ""),
         suite_id=req.get("suite_id", ""),
         min_pass_rate=float(req.get("min_pass_rate", 95.0)),
@@ -1041,8 +1204,11 @@ async def segmented_run(req: dict, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import run_checks_segmented
+
     return run_checks_segmented(
-        client, wid, config,
+        client,
+        wid,
+        config,
         table_fqn=req.get("table_fqn", ""),
         segment_column=req.get("segment_column", ""),
         check_ids=req.get("check_ids"),
@@ -1050,22 +1216,26 @@ async def segmented_run(req: dict, client=Depends(get_db_client)):
 
 
 @router.get("/segment-results", summary="Get segmented DQ check results")
-async def segment_results(run_id: str = "", table_fqn: str = "",
-                          limit: int = 200, client=Depends(get_db_client)):
+async def segment_results(
+    run_id: str = "", table_fqn: str = "", limit: int = 200, client=Depends(get_db_client)
+):
     """Get per-segment DQ results for drill-down analysis."""
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import get_segment_results
+
     return get_segment_results(client, wid, config, run_id, table_fqn, limit)
 
 
 @router.get("/failure-samples", summary="Get failure sample rows from DQX runs")
-async def failure_samples(run_id: str = "", table_fqn: str = "",
-                          limit: int = 50, client=Depends(get_db_client)):
+async def failure_samples(
+    run_id: str = "", table_fqn: str = "", limit: int = 50, client=Depends(get_db_client)
+):
     """Get sample failing rows for a DQX run or table — shows concrete examples of failures."""
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import get_failure_samples
+
     return get_failure_samples(client, wid, config, run_id, table_fqn, limit)
 
 
@@ -1075,6 +1245,7 @@ async def coverage_report(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dqx_engine import get_coverage_report
+
     return get_coverage_report(client, wid, config, catalog)
 
 
@@ -1102,9 +1273,14 @@ async def health_score(
     # 1. Freshness score (0-100)
     try:
         from src.data_freshness import check_freshness
+
         freshness = check_freshness(
-            client, catalog, schema=schema,
-            max_stale_hours=max_stale_hours, warehouse_id=wid, config=config,
+            client,
+            catalog,
+            schema=schema,
+            max_stale_hours=max_stale_hours,
+            warehouse_id=wid,
+            config=config,
         )
         total = freshness.get("total_tables", 0) if isinstance(freshness, dict) else 0
         fresh = freshness.get("fresh", 0) if isinstance(freshness, dict) else 0
@@ -1115,6 +1291,7 @@ async def health_score(
     # 2. Anomaly score (0-100) — penalize for recent anomalies
     try:
         from src.anomaly_detection import get_anomalies
+
         anomalies = get_anomalies(client=client, warehouse_id=wid, config=config, limit=100)
         critical = sum(1 for a in anomalies if a.get("severity") == "critical")
         warning = sum(1 for a in anomalies if a.get("severity") == "warning")
@@ -1127,15 +1304,21 @@ async def health_score(
     # 3. Reconciliation score (0-100) — from latest run
     try:
         from src.reconciliation_store import get_reconciliation_history
+
         runs = get_reconciliation_history(
-            client=client, warehouse_id=wid, config=config, limit=1,
+            client=client,
+            warehouse_id=wid,
+            config=config,
+            limit=1,
             source_catalog=catalog,
         )
         if runs:
             latest = runs[0]
             total_tables = int(latest.get("total_tables", 0))
             matched = int(latest.get("matched", 0))
-            scores["reconciliation"] = round((matched / total_tables) * 100, 1) if total_tables > 0 else 100.0
+            scores["reconciliation"] = (
+                round((matched / total_tables) * 100, 1) if total_tables > 0 else 100.0
+            )
         else:
             scores["reconciliation"] = None
     except Exception:
@@ -1173,6 +1356,7 @@ async def health_score(
 
 # ── Dashboard summary endpoints ──────────────────────────────────────────────
 
+
 @router.get("/freshness/summary", summary="Freshness summary across all catalogs")
 async def freshness_summary(client=Depends(get_db_client)):
     """Return aggregate fresh/stale/unknown counts for the dashboard."""
@@ -1181,15 +1365,20 @@ async def freshness_summary(client=Depends(get_db_client)):
 
     try:
         from src.data_freshness import check_freshness
+
         # Use the configured source_catalog or discover catalogs
         source = config.get("source_catalog", "")
         if not source:
             from src.client import execute_sql
+
             cats = execute_sql(client, wid, "SHOW CATALOGS")
             skip_cats = {"system", "hive_metastore", "__databricks_internal", "samples"}
-            catalogs = [c.get("catalog", c.get("catalog_name", "")) for c in (cats or [])
-                        if c.get("catalog", c.get("catalog_name", "")) not in skip_cats
-                        and not c.get("catalog", c.get("catalog_name", "")).startswith("__")]
+            catalogs = [
+                c.get("catalog", c.get("catalog_name", ""))
+                for c in (cats or [])
+                if c.get("catalog", c.get("catalog_name", "")) not in skip_cats
+                and not c.get("catalog", c.get("catalog_name", "")).startswith("__")
+            ]
         else:
             catalogs = [source]
 
@@ -1223,12 +1412,16 @@ async def health_trend(
 
     try:
         from src.client import execute_sql
+
         audit = config.get("audit_trail", {})
         catalog = audit.get("catalog", "clone_audit")
         schema = f"{catalog}.governance"
 
         # Query DQX run results grouped by date
-        rows = execute_sql(client, wid, f"""
+        rows = execute_sql(
+            client,
+            wid,
+            f"""
             SELECT DATE(executed_at) AS run_date,
                    AVG(pass_rate) AS avg_pass_rate,
                    COUNT(*) AS run_count
@@ -1236,22 +1429,26 @@ async def health_trend(
             WHERE executed_at >= CURRENT_DATE() - INTERVAL {days} DAY
             GROUP BY DATE(executed_at)
             ORDER BY run_date
-        """)
+        """,
+        )
 
         trend = []
-        for r in (rows or []):
+        for r in rows or []:
             score = round(float(r.get("avg_pass_rate", 0)), 1)
-            trend.append({
-                "date": str(r.get("run_date", "")),
-                "score": score,
-                "runs": int(r.get("run_count", 0)),
-            })
+            trend.append(
+                {
+                    "date": str(r.get("run_date", "")),
+                    "score": score,
+                    "runs": int(r.get("run_count", 0)),
+                }
+            )
         return trend
     except Exception:
         return []
 
 
 # ── SLA Compliance Trend ─────────────────────────────────────────────────────
+
 
 @router.get("/sla/compliance-trend", summary="SLA compliance percentage over time")
 async def sla_compliance_trend(
@@ -1262,10 +1459,12 @@ async def sla_compliance_trend(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.sla_monitor import get_sla_compliance_trend
+
     return get_sla_compliance_trend(client, wid, config, days)
 
 
 # ── DQ Scorecard ──────────────────────────────────────────────────────────────
+
 
 @router.get("/scorecard/{table_fqn:path}", summary="Per-table DQ scorecard")
 async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
@@ -1277,6 +1476,7 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     import logging
+
     _logger = logging.getLogger(__name__)
 
     dimensions = {}
@@ -1285,16 +1485,23 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     # 1. Freshness
     try:
         from src.client import execute_sql as _sql
+
         rows = _sql(client, wid, f"DESCRIBE DETAIL {table_fqn}")
         if rows:
             from datetime import datetime, timezone
+
             last_mod = rows[0].get("lastModified") or rows[0].get("last_modified")
             if last_mod:
                 if isinstance(last_mod, str):
                     last_mod = datetime.fromisoformat(last_mod.replace("Z", "+00:00"))
                 hours_ago = (datetime.now(timezone.utc) - last_mod).total_seconds() / 3600
-                freshness_score = max(0, min(100, 100 - (hours_ago - 1) * 4))  # 100 at ≤1h, 0 at ≥26h
-                dimensions["freshness"] = {"score": round(freshness_score), "hours_since_update": round(hours_ago, 1)}
+                freshness_score = max(
+                    0, min(100, 100 - (hours_ago - 1) * 4)
+                )  # 100 at ≤1h, 0 at ≥26h
+                dimensions["freshness"] = {
+                    "score": round(freshness_score),
+                    "hours_since_update": round(hours_ago, 1),
+                }
                 scores.append(freshness_score)
     except Exception as e:
         _logger.debug(f"Scorecard freshness failed for {table_fqn}: {e}")
@@ -1303,14 +1510,21 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     try:
         audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
         from src.client import execute_sql as _sql
-        null_rows = _sql(client, wid,
+
+        null_rows = _sql(
+            client,
+            wid,
             f"SELECT value FROM {audit}.data_quality.metric_baselines "
             f"WHERE table_fqn = '{table_fqn}' AND metric_name = 'null_rate' "
-            f"ORDER BY measured_at DESC LIMIT 1")
+            f"ORDER BY measured_at DESC LIMIT 1",
+        )
         if null_rows:
             null_pct = float(null_rows[0].get("value", 0))
             comp_score = max(0, 100 - null_pct)
-            dimensions["completeness"] = {"score": round(comp_score), "null_rate_pct": round(null_pct, 1)}
+            dimensions["completeness"] = {
+                "score": round(comp_score),
+                "null_rate_pct": round(null_pct, 1),
+            }
             scores.append(comp_score)
     except Exception as e:
         _logger.debug(f"Scorecard completeness failed: {e}")
@@ -1318,21 +1532,32 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     # 3. SLA Compliance
     try:
         from src.sla_monitor import list_sla_rules
+
         all_rules = list_sla_rules(client, wid, config)
-        table_rules = [r for r in all_rules if r.get("table_fqn") == table_fqn and r.get("enabled", True)]
+        table_rules = [
+            r for r in all_rules if r.get("table_fqn") == table_fqn and r.get("enabled", True)
+        ]
         if table_rules:
             # Check the latest SLA check results for this table
             audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
             gov_schema = f"{audit}.governance"
             from src.client import execute_sql as _sql
-            sla_checks = _sql(client, wid,
+
+            sla_checks = _sql(
+                client,
+                wid,
                 f"SELECT passed FROM {gov_schema}.sla_checks "
                 f"WHERE table_fqn = '{table_fqn}' "
-                f"ORDER BY checked_at DESC LIMIT {len(table_rules)}")
+                f"ORDER BY checked_at DESC LIMIT {len(table_rules)}",
+            )
             passed = sum(1 for r in (sla_checks or []) if r.get("passed"))
             total = len(sla_checks or table_rules)
             sla_score = (passed / total) * 100 if total else 100
-            dimensions["sla_compliance"] = {"score": round(sla_score), "rules": len(table_rules), "passing": passed}
+            dimensions["sla_compliance"] = {
+                "score": round(sla_score),
+                "rules": len(table_rules),
+                "passing": passed,
+            }
             scores.append(sla_score)
     except Exception as e:
         _logger.debug(f"Scorecard SLA failed: {e}")
@@ -1341,13 +1566,20 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     try:
         audit = config.get("audit_trail", {}).get("catalog", "clone_audit")
         from src.client import execute_sql as _sql
-        anom_rows = _sql(client, wid,
+
+        anom_rows = _sql(
+            client,
+            wid,
             f"SELECT COUNT(*) AS cnt FROM {audit}.data_quality.metric_baselines "
             f"WHERE table_fqn = '{table_fqn}' AND is_anomaly = true "
-            f"AND measured_at >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())")
+            f"AND measured_at >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())",
+        )
         anomaly_count = int(anom_rows[0].get("cnt", 0)) if anom_rows else 0
         anomaly_score = max(0, 100 - anomaly_count * 15)
-        dimensions["anomaly_free"] = {"score": round(anomaly_score), "recent_anomalies": anomaly_count}
+        dimensions["anomaly_free"] = {
+            "score": round(anomaly_score),
+            "recent_anomalies": anomaly_count,
+        }
         scores.append(anomaly_score)
     except Exception as e:
         _logger.debug(f"Scorecard anomaly failed: {e}")
@@ -1355,10 +1587,19 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
     # 5. Schema stability
     try:
         from src.client import execute_sql as _sql
+
         hist = _sql(client, wid, f"DESCRIBE HISTORY {table_fqn} LIMIT 10")
-        schema_changes = sum(1 for h in (hist or []) if "CHANGE" in str(h.get("operation", "")).upper() or "ALTER" in str(h.get("operation", "")).upper())
+        schema_changes = sum(
+            1
+            for h in (hist or [])
+            if "CHANGE" in str(h.get("operation", "")).upper()
+            or "ALTER" in str(h.get("operation", "")).upper()
+        )
         schema_score = 100 if schema_changes == 0 else max(0, 100 - schema_changes * 20)
-        dimensions["schema_stability"] = {"score": round(schema_score), "recent_changes": schema_changes}
+        dimensions["schema_stability"] = {
+            "score": round(schema_score),
+            "recent_changes": schema_changes,
+        }
         scores.append(schema_score)
     except Exception as e:
         _logger.debug(f"Scorecard schema stability failed: {e}")
@@ -1374,6 +1615,7 @@ async def table_scorecard(table_fqn: str, client=Depends(get_db_client)):
 
 
 # ── Monitoring Configuration ─────────────────────────────────────────────────
+
 
 class MonitoringConfigRequest(BaseModel):
     table_fqn: str
@@ -1396,6 +1638,7 @@ async def list_monitoring_configs(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import list_monitoring_configs as _list
+
     configs = _list(client, wid, config)
     return {"configs": configs, "total": len(configs)}
 
@@ -1406,24 +1649,38 @@ async def create_monitoring_config(req: MonitoringConfigRequest, client=Depends(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import create_monitoring_config as _create
+
     return _create(
-        client, wid, config,
-        table_fqn=req.table_fqn, metrics=req.metrics,
-        frequency=req.frequency, auto_baseline=req.auto_baseline,
-        baseline_days=req.baseline_days, enabled=req.enabled,
+        client,
+        wid,
+        config,
+        table_fqn=req.table_fqn,
+        metrics=req.metrics,
+        frequency=req.frequency,
+        auto_baseline=req.auto_baseline,
+        baseline_days=req.baseline_days,
+        enabled=req.enabled,
     )
 
 
 @router.put("/monitoring/configs/{config_id}", summary="Update monitoring configuration")
-async def update_monitoring_config(config_id: str, req: MonitoringConfigRequest, client=Depends(get_db_client)):
+async def update_monitoring_config(
+    config_id: str, req: MonitoringConfigRequest, client=Depends(get_db_client)
+):
     """Update an existing monitoring configuration."""
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import update_monitoring_config as _update
+
     result = _update(
-        client, wid, config, config_id,
-        metrics=req.metrics, frequency=req.frequency,
-        auto_baseline=req.auto_baseline, baseline_days=req.baseline_days,
+        client,
+        wid,
+        config,
+        config_id,
+        metrics=req.metrics,
+        frequency=req.frequency,
+        auto_baseline=req.auto_baseline,
+        baseline_days=req.baseline_days,
         enabled=req.enabled,
     )
     if not result:
@@ -1437,6 +1694,7 @@ async def delete_monitoring_config(config_id: str, client=Depends(get_db_client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import delete_monitoring_config as _delete
+
     if not _delete(client, wid, config, config_id):
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
     return {"status": "deleted", "config_id": config_id}
@@ -1448,6 +1706,7 @@ async def toggle_monitoring_config(config_id: str, client=Depends(get_db_client)
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import toggle_monitoring_config as _toggle
+
     result = _toggle(client, wid, config, config_id)
     if not result:
         raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
@@ -1460,6 +1719,7 @@ async def bulk_add_monitoring(req: BulkMonitorRequest, client=Depends(get_db_cli
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import add_tables_bulk
+
     results = add_tables_bulk(client, wid, config, req.table_fqns, req.metrics, req.frequency)
     return {"added": len(results), "configs": results}
 
@@ -1473,6 +1733,7 @@ async def bulk_delete_monitoring(req: dict, client=Depends(get_db_client)):
     if not config_ids:
         raise HTTPException(status_code=400, detail="config_ids is required")
     from src.monitoring_config import delete_monitoring_configs_bulk
+
     deleted = delete_monitoring_configs_bulk(client, wid, config, config_ids)
     return {"deleted": deleted}
 
@@ -1487,6 +1748,7 @@ async def discover_tables(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import discover_tables as _discover
+
     tables = _discover(client, wid, catalog, schema)
     return {"catalog": catalog, "schema": schema, "tables": tables, "total": len(tables)}
 
@@ -1497,15 +1759,18 @@ async def run_monitoring(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.monitoring_config import run_monitoring as _run
+
     return _run(client=client, warehouse_id=wid, config=config, force=True)
 
 
 # ── Monitoring Scheduler ──────────────────────────────────────────────────────
 
+
 @router.get("/monitoring/scheduler", summary="Get scheduler status")
 async def scheduler_status(client=Depends(get_db_client)):
     """Get the current monitoring scheduler status — enabled, frequency, last/next run."""
     from src.monitoring_scheduler import get_scheduler_status, set_client
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     set_client(client, wid, config)
@@ -1519,11 +1784,13 @@ async def scheduler_enable(
 ):
     """Enable the background monitoring scheduler with the given frequency (in minutes)."""
     from src.monitoring_scheduler import enable_scheduler, set_client
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     set_client(client, wid, config)
     enable_scheduler(frequency_minutes)
     from src.monitoring_scheduler import get_scheduler_status
+
     return get_scheduler_status()
 
 
@@ -1531,11 +1798,13 @@ async def scheduler_enable(
 async def scheduler_disable(client=Depends(get_db_client)):
     """Disable the background monitoring scheduler."""
     from src.monitoring_scheduler import disable_scheduler, set_client
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     set_client(client, wid, config)
     disable_scheduler()
     from src.monitoring_scheduler import get_scheduler_status
+
     return get_scheduler_status()
 
 
@@ -1546,11 +1815,13 @@ async def scheduler_update_frequency(
 ):
     """Update the scheduler frequency (in minutes). Restarts the scheduler if running."""
     from src.monitoring_scheduler import update_frequency, set_client
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     set_client(client, wid, config)
     update_frequency(frequency_minutes)
     from src.monitoring_scheduler import get_scheduler_status
+
     return get_scheduler_status()
 
 
@@ -1558,15 +1829,18 @@ async def scheduler_update_frequency(
 async def scheduler_run_now(client=Depends(get_db_client)):
     """Trigger an immediate monitoring run without waiting for the next scheduled cycle."""
     from src.monitoring_scheduler import trigger_run_now, set_client
+
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     set_client(client, wid, config)
     await trigger_run_now()
     from src.monitoring_scheduler import get_scheduler_status
+
     return get_scheduler_status()
 
 
 # ── DQ Check Schedules (Cron-based DQ runs) ────────────────────────────────
+
 
 @router.get("/schedules", summary="List DQ check schedules")
 async def list_dq_schedules_endpoint(client=Depends(get_db_client)):
@@ -1574,6 +1848,7 @@ async def list_dq_schedules_endpoint(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import list_dq_schedules
+
     return list_dq_schedules(client, wid, config)
 
 
@@ -1583,9 +1858,12 @@ async def create_dq_schedule_endpoint(req: dict, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import create_dq_schedule, ensure_dq_schedules_table
+
     ensure_dq_schedules_table(client, wid, config)
     return create_dq_schedule(
-        client, wid, config,
+        client,
+        wid,
+        config,
         name=req.get("name", ""),
         cron=req.get("cron", "0 * * * *"),
         schedule_type=req.get("schedule_type", "table"),
@@ -1602,6 +1880,7 @@ async def delete_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_cl
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import delete_dq_schedule
+
     return delete_dq_schedule(client, wid, config, schedule_id)
 
 
@@ -1611,6 +1890,7 @@ async def pause_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_cli
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import pause_dq_schedule
+
     return pause_dq_schedule(client, wid, config, schedule_id)
 
 
@@ -1620,6 +1900,7 @@ async def resume_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_cl
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import resume_dq_schedule
+
     return resume_dq_schedule(client, wid, config, schedule_id)
 
 
@@ -1629,4 +1910,5 @@ async def run_dq_schedule_endpoint(schedule_id: str, client=Depends(get_db_clien
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.dq_scheduler import run_dq_schedule
+
     return run_dq_schedule(client, wid, config, schedule_id)

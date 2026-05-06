@@ -335,6 +335,23 @@ function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }
   const { getJob } = useActiveJobs();
   const job = jobFromParent ?? getJob(jobId);
 
+  // Fetch actual DBU cost once the job completes. system.billing.usage lags
+  // real-time consumption by a few hours, so the response carries a
+  // billing_data_incomplete flag; when set the panel labels itself "partial".
+  const [actualCost, setActualCost] = useState<{
+    actual_cost: number; actual_dbus: number; currency: string;
+    variance_pct: number | null; billing_data_incomplete: boolean;
+    lag_warning: string | null; error?: string;
+  } | null>(null);
+  useEffect(() => {
+    if (job?.status !== "completed" || !jobId) return;
+    let cancelled = false;
+    api.get<typeof actualCost>(`/clone/${jobId}/cost`)
+      .then((r) => { if (!cancelled) setActualCost(r as any); })
+      .catch(() => { /* endpoint not available / no billing access — silently skip */ });
+    return () => { cancelled = true; };
+  }, [jobId, job?.status]);
+
   if (!job) {
     return <LoadingState message="Loading job status..." />;
   }
@@ -447,6 +464,45 @@ function JobProgress({ jobId, job: jobFromParent }: { jobId: string; job?: any }
           </span>
         )}
       </div>
+
+      {/* Actual cost (post-clone reconciliation) */}
+      {actualCost && !actualCost.error && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 border rounded-md px-3 py-2 bg-gray-50">
+          <span className="font-medium">Actual Cost:</span>
+          <span>${actualCost.actual_cost.toFixed(2)} {actualCost.currency}</span>
+          <span className="text-gray-400">·</span>
+          <span>{actualCost.actual_dbus.toFixed(2)} DBUs</span>
+          {actualCost.variance_pct !== null && (
+            <>
+              <span className="text-gray-400">·</span>
+              <span className={actualCost.variance_pct > 0 ? "text-red-600" : "text-green-600"}>
+                {actualCost.variance_pct > 0 ? "+" : ""}{actualCost.variance_pct}% vs estimate
+              </span>
+            </>
+          )}
+          {actualCost.billing_data_incomplete && (
+            <span
+              className="text-amber-600"
+              title={actualCost.lag_warning ?? ""}
+            >
+              · partial (billing data lag)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Retry banner — surfaces transient-failure retries that happened mid-job */}
+      {Array.isArray(job.retry_history) && job.retry_history.length > 0 && (
+        <div className="text-xs text-amber-700 border border-amber-200 rounded-md px-3 py-2 bg-amber-50">
+          <span className="font-medium">Retried {job.retry_history.length}×:</span>{" "}
+          {job.retry_history.map((r: any, i: number) => (
+            <span key={`${r.attempt}-${r.retried_at ?? i}`}>
+              attempt {r.attempt} ({r.error_type}: {r.error?.slice(0, 80)})
+              {i < job.retry_history.length - 1 ? "; " : ""}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Result */}
       {job.status === "completed" && job.result && (() => {
@@ -1120,6 +1176,8 @@ function ClonePageInner() {
     source_snapshot_id: null as string | null,
     clone_type: "DEEP" as "DEEP" | "SHALLOW",
     load_type: "FULL" as "FULL" | "INCREMENTAL",
+    target_format: "DELTA" as "DELTA" | "ICEBERG",
+    iceberg_physical: false,
     dry_run: false,
     max_workers: 4,
     parallel_tables: 1,
@@ -1135,6 +1193,10 @@ function ClonePageInner() {
     copy_security: true,
     copy_constraints: true,
     copy_comments: true,
+    auto_mask_pii: false,
+    enable_retry: true,
+    compare_dq_after_clone: false,
+    dq_drift_rollback_pct: 5.0,
     // Features
     enable_rollback: true,
     validate_after_clone: false,
@@ -1184,6 +1246,7 @@ function ClonePageInner() {
       "copy_permissions", "copy_ownership", "copy_tags", "copy_properties",
       "copy_security", "copy_constraints", "copy_comments", "enable_rollback",
       "validate_after_clone", "validate_checksum", "dry_run", "force_reclone", "schema_only",
+      "auto_mask_pii", "enable_retry", "compare_dq_after_clone",
       "generate_report", "show_progress", "auto_rollback", "checkpoint",
       "require_approval", "impact_check", "skip_unused", "verbose", "serverless",
     ];
@@ -1595,6 +1658,56 @@ function ClonePageInner() {
               </div>
             </div>
 
+            {/* Target format — UniForm. ICEBERG keeps the table as Delta but
+                enables Iceberg-readable metadata so external Iceberg engines
+                can query without a copy. Only effective when source is Delta. */}
+            <div>
+              <FieldLabel field="target_format">Target Format</FieldLabel>
+              <div className="flex gap-2 mt-1">
+                {(["DELTA", "ICEBERG"] as const).map((t) => (
+                  <Button
+                    key={t}
+                    variant={config.target_format === t ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setConfig({ ...config, target_format: t })}
+                  >
+                    {t}
+                  </Button>
+                ))}
+              </div>
+              {config.target_format === "ICEBERG" && (
+                <>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Target stays Delta but is readable by external Iceberg engines via UniForm.
+                    Non-Delta source tables in this clone fall back to DELTA with a warning.
+                  </p>
+                  {/* Phase C2 of #9: opt-in for physical Iceberg target.
+                      Hidden under DELTA mode because it doesn't apply there. */}
+                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={config.iceberg_physical}
+                      onChange={(e) =>
+                        setConfig({ ...config, iceberg_physical: e.target.checked })
+                      }
+                    />
+                    <span>
+                      <span className="font-medium">Physical Iceberg target</span>
+                      {" — UC reports "}
+                      <code className="mx-1 px-1 bg-gray-800/40 rounded">Data source: Iceberg</code>
+                      {" instead of Delta+UniForm."}
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {"Uses "}
+                        <code>CREATE TABLE … USING iceberg AS SELECT</code>
+                        {". Loses Delta history and time-travel; requires DBR 15+ with Iceberg-managed-table support enabled on the workspace. Verify with one table before running a full catalog clone."}
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
+
             {/* Serverless */}
             <div>
               <label className="text-sm font-medium mb-2 block">Compute</label>
@@ -1729,6 +1842,9 @@ function ClonePageInner() {
                   ["validate_checksum", "Checksum Validation"],
                   ["force_reclone", "Force Re-clone"],
                   ["schema_only", "Schema Only (empty tables)"],
+                  ["auto_mask_pii", "Auto-mask PII (from UC tags)"],
+                  ["enable_retry", "Auto-retry transient failures"],
+                  ["compare_dq_after_clone", "DQ drift comparison + rollback"],
                   ["generate_report", "Generate Report"],
                   ["show_progress", "Show Progress"],
                   ["checkpoint", "Enable Checkpoint"],

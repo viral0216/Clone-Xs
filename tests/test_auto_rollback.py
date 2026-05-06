@@ -7,44 +7,86 @@ from src.validation import evaluate_threshold
 
 class TestEvaluateThreshold:
     def test_passes_when_no_mismatches(self):
-        summary = {"total_tables": 100, "matched": 100, "mismatched": 0, "errors": 0, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 100,
+            "matched": 100,
+            "mismatched": 0,
+            "errors": 0,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is True
         assert result["mismatch_pct"] == 0.0
         assert result["failed_checks"] == []
 
     def test_passes_within_threshold(self):
-        summary = {"total_tables": 100, "matched": 96, "mismatched": 4, "errors": 0, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 100,
+            "matched": 96,
+            "mismatched": 4,
+            "errors": 0,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is True
         assert result["mismatch_pct"] == 4.0
 
     def test_fails_above_threshold(self):
-        summary = {"total_tables": 100, "matched": 90, "mismatched": 8, "errors": 2, "checksum_mismatches": 1}
+        summary = {
+            "total_tables": 100,
+            "matched": 90,
+            "mismatched": 8,
+            "errors": 2,
+            "checksum_mismatches": 1,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is False
         assert result["mismatch_pct"] == 10.0
         assert len(result["failed_checks"]) == 3
 
     def test_fails_exactly_at_threshold(self):
-        summary = {"total_tables": 100, "matched": 95, "mismatched": 5, "errors": 0, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 100,
+            "matched": 95,
+            "mismatched": 5,
+            "errors": 0,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is True  # <= threshold passes
 
     def test_empty_tables(self):
-        summary = {"total_tables": 0, "matched": 0, "mismatched": 0, "errors": 0, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 0,
+            "matched": 0,
+            "mismatched": 0,
+            "errors": 0,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is True
         assert result["mismatch_pct"] == 0.0
 
     def test_all_errors(self):
-        summary = {"total_tables": 10, "matched": 0, "mismatched": 0, "errors": 10, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 10,
+            "matched": 0,
+            "mismatched": 0,
+            "errors": 10,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 5.0)
         assert result["passed"] is False
         assert result["mismatch_pct"] == 100.0
 
     def test_threshold_zero(self):
-        summary = {"total_tables": 100, "matched": 99, "mismatched": 1, "errors": 0, "checksum_mismatches": 0}
+        summary = {
+            "total_tables": 100,
+            "matched": 99,
+            "mismatched": 1,
+            "errors": 0,
+            "checksum_mismatches": 0,
+        }
         result = evaluate_threshold(summary, 0.0)
         assert result["passed"] is False
 

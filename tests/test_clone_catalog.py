@@ -11,6 +11,7 @@ from src.clone_catalog import (
 
 # ── get_schemas ──────────────────────────────────────────────────────
 
+
 @patch("src.clone_catalog.list_schemas_sdk")
 def test_get_schemas_returns_names(mock_sdk):
     mock_sdk.return_value = ["sales", "marketing"]
@@ -35,7 +36,10 @@ def test_get_schemas_with_include_list():
 
 def test_get_schemas_include_excludes_system():
     result = get_schemas(
-        MagicMock(), "wh", "prod", ["default"],
+        MagicMock(),
+        "wh",
+        "prod",
+        ["default"],
         include=["sales", "default", "information_schema"],
     )
     assert "default" not in result
@@ -44,6 +48,7 @@ def test_get_schemas_include_excludes_system():
 
 
 # ── create_catalog_if_not_exists ─────────────────────────────────────
+
 
 @patch("src.clone_catalog.execute_sql")
 def test_create_catalog_dry_run(mock_sql):
@@ -98,6 +103,7 @@ def test_create_catalog_grants_access(mock_sql):
 
 # ── create_schema_if_not_exists ──────────────────────────────────────
 
+
 @patch("src.clone_catalog.execute_sql")
 def test_create_schema(mock_sql):
     create_schema_if_not_exists(MagicMock(), "wh", "cat", "schema1")
@@ -115,6 +121,7 @@ def test_create_schema_dry_run(mock_sql):
 
 
 # ── _build_summary ───────────────────────────────────────────────────
+
 
 def test_build_summary_aggregates():
     results = [
@@ -163,6 +170,7 @@ def test_build_summary_with_errors():
 
 # ── process_schema ───────────────────────────────────────────────────
 
+
 @patch("src.clone_catalog.run_post_schema_hooks")
 @patch("src.clone_catalog.clone_volumes_in_schema")
 @patch("src.clone_catalog.clone_functions_in_schema")
@@ -173,8 +181,15 @@ def test_build_summary_with_errors():
 @patch("src.clone_catalog.copy_schema_permissions")
 @patch("src.clone_catalog.create_schema_if_not_exists")
 def test_process_schema_calls_all_engines(
-    mock_create, mock_perms, mock_owner, mock_tags,
-    mock_tables, mock_views, mock_funcs, mock_vols, mock_hooks,
+    mock_create,
+    mock_perms,
+    mock_owner,
+    mock_tags,
+    mock_tables,
+    mock_views,
+    mock_funcs,
+    mock_vols,
+    mock_hooks,
 ):
     mock_tables.return_value = {"success": 2, "failed": 0, "skipped": 0}
     mock_views.return_value = {"success": 1, "failed": 0, "skipped": 0}

@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Threshold above which a never-accessed MANAGED table escalates to HIGH
 # risk (high-value cleanup candidate). 10 GB is the rule of thumb that
 # catches "real" cleanup wins without flagging every empty-ish table.
-_HIGH_RISK_SIZE_BYTES = 10 * 1024 ** 3
+_HIGH_RISK_SIZE_BYTES = 10 * 1024**3
 
 # Many-small-files heuristic — Delta best practice is files in the
 # 128 MB – 1 GB range. Tables with many files averaging well below
@@ -142,11 +142,7 @@ def _risk_level(
     if table_type in ("EXTERNAL", "VIEW"):
         return "LOW"
 
-    if (
-        never_accessed
-        and table_type == "MANAGED"
-        and (size_bytes or 0) >= _HIGH_RISK_SIZE_BYTES
-    ):
+    if never_accessed and table_type == "MANAGED" and (size_bytes or 0) >= _HIGH_RISK_SIZE_BYTES:
         return "HIGH"
 
     if not has_stats and (row_count or 0) > 0:
@@ -199,12 +195,8 @@ def _classify_table(
     if last_altered is not None:
         new_enough_to_judge = (now - last_altered).days >= min_age_days
 
-    is_stale = (
-        new_enough_to_judge
-        and (
-            never_accessed
-            or (days_since_access is not None and days_since_access > days_threshold)
-        )
+    is_stale = new_enough_to_judge and (
+        never_accessed or (days_since_access is not None and days_since_access > days_threshold)
     )
 
     risk_level = _risk_level(
@@ -243,15 +235,19 @@ def _classify_table(
 
 
 def _describe_detail_one(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, table: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    table: str,
 ) -> dict[str, Any] | None:
     """Run `DESCRIBE DETAIL` for one table and return `{num_files,
     size_bytes}`. Best-effort — returns None on any error so the
     enrichment loop can skip the row instead of aborting the scan."""
     try:
         rows = execute_sql(
-            client, warehouse_id,
+            client,
+            warehouse_id,
             f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table}`",
         )
         if not rows:
@@ -267,7 +263,9 @@ def _describe_detail_one(
 
 
 def _enrich_with_small_files(
-    client: WorkspaceClient, warehouse_id: str, catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
     findings: list[dict[str, Any]],
 ) -> int:
     """Enrich findings with `num_files` + `avg_file_size_bytes` from
@@ -286,9 +284,9 @@ def _enrich_with_small_files(
     # Only run on managed/external tables that have stats — VIEWs and
     # tables with no_stats can't have file data either way.
     candidates = [
-        f for f in findings
-        if f["has_stats"]
-        and (f["table_type"] or "").upper() in ("MANAGED", "EXTERNAL")
+        f
+        for f in findings
+        if f["has_stats"] and (f["table_type"] or "").upper() in ("MANAGED", "EXTERNAL")
     ][:_SMALL_FILES_MAX_TABLES]
 
     if not candidates:
@@ -298,7 +296,11 @@ def _enrich_with_small_files(
 
     def _job(f: dict) -> tuple[dict, dict | None]:
         return f, _describe_detail_one(
-            client, warehouse_id, catalog, f["schema"], f["table"],
+            client,
+            warehouse_id,
+            catalog,
+            f["schema"],
+            f["table"],
         )
 
     with ThreadPoolExecutor(max_workers=_SMALL_FILES_MAX_PARALLEL) as ex:
@@ -380,7 +382,11 @@ def detect_stale_tables(
 
     # Step 2: read-activity over the audit window.
     usage_rows = query_table_access_patterns(
-        client, warehouse_id, catalog, days=min(days_threshold, 90), limit=10000,
+        client,
+        warehouse_id,
+        catalog,
+        days=min(days_threshold, 90),
+        limit=10000,
     )
     # Build an FQN → usage row map. The lineage helper returns
     # `<catalog>.<schema>.<table>`-shaped FQNs.
@@ -396,8 +402,11 @@ def detect_stale_tables(
         fqn = f"{catalog}.{t.get('schema')}.{t.get('table')}".lower()
         usage = usage_by_fqn.get(fqn)
         finding = _classify_table(
-            t, usage, days_threshold=days_threshold,
-            min_age_days=min_age_days, now=now,
+            t,
+            usage,
+            days_threshold=days_threshold,
+            min_age_days=min_age_days,
+            now=now,
         )
         # Filter: drop NONE-risk findings (everything's fine for them).
         if finding["risk_level"] == "NONE":
@@ -420,7 +429,10 @@ def detect_stale_tables(
     small_files_flagged = 0
     if check_small_files:
         small_files_flagged = _enrich_with_small_files(
-            client, warehouse_id, catalog, findings,
+            client,
+            warehouse_id,
+            catalog,
+            findings,
         )
 
     summary = _summarize_findings(findings)
@@ -458,11 +470,7 @@ def _summarize_findings(findings: list[dict[str, Any]]) -> dict[str, Any]:
         # Only count MANAGED + stale tables toward "reclaimable" — we
         # can't drop EXTERNAL / VIEW from the UI, and fresh tables
         # aren't candidates regardless.
-        if (
-            f["is_stale"]
-            and (f["table_type"] or "").upper() == "MANAGED"
-            and f["has_stats"]
-        ):
+        if f["is_stale"] and (f["table_type"] or "").upper() == "MANAGED" and f["has_stats"]:
             total_reclaimable_bytes += int(f["size_bytes"] or 0)
 
     return {

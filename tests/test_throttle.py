@@ -45,10 +45,12 @@ class TestThrottleSchedule:
     def test_schedule_returns_correct_profile(self, mock_dt):
         mock_dt.now.return_value = datetime(2024, 1, 1, 3, 0)  # 3 AM
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        schedule = ThrottleSchedule([
-            {"hours": "0-6", "profile": "high"},
-            {"hours": "9-17", "profile": "low"},
-        ])
+        schedule = ThrottleSchedule(
+            [
+                {"hours": "0-6", "profile": "high"},
+                {"hours": "9-17", "profile": "low"},
+            ]
+        )
         profile = schedule.get_current_profile()
         assert profile.name == "high"
 

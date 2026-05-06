@@ -10,7 +10,12 @@ class TestDetectSchemaChanges:
     def test_no_changes(self, mock_sql):
         columns = [
             {"column_name": "id", "data_type": "INT", "is_nullable": "NO", "ordinal_position": "1"},
-            {"column_name": "name", "data_type": "STRING", "is_nullable": "YES", "ordinal_position": "2"},
+            {
+                "column_name": "name",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "ordinal_position": "2",
+            },
         ]
         # Source and dest return same columns
         mock_sql.side_effect = [columns, columns]
@@ -29,12 +34,27 @@ class TestDetectSchemaChanges:
     def test_added_nullable_column(self, mock_sql):
         source_cols = [
             {"column_name": "id", "data_type": "INT", "is_nullable": "NO", "ordinal_position": "1"},
-            {"column_name": "name", "data_type": "STRING", "is_nullable": "YES", "ordinal_position": "2"},
-            {"column_name": "email", "data_type": "STRING", "is_nullable": "YES", "ordinal_position": "3"},
+            {
+                "column_name": "name",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "ordinal_position": "2",
+            },
+            {
+                "column_name": "email",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "ordinal_position": "3",
+            },
         ]
         dest_cols = [
             {"column_name": "id", "data_type": "INT", "is_nullable": "NO", "ordinal_position": "1"},
-            {"column_name": "name", "data_type": "STRING", "is_nullable": "YES", "ordinal_position": "2"},
+            {
+                "column_name": "name",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "ordinal_position": "2",
+            },
         ]
         mock_sql.side_effect = [source_cols, dest_cols]
 
@@ -54,7 +74,12 @@ class TestDetectSchemaChanges:
         ]
         dest_cols = [
             {"column_name": "id", "data_type": "INT", "is_nullable": "NO", "ordinal_position": "1"},
-            {"column_name": "old_col", "data_type": "STRING", "is_nullable": "YES", "ordinal_position": "2"},
+            {
+                "column_name": "old_col",
+                "data_type": "STRING",
+                "is_nullable": "YES",
+                "ordinal_position": "2",
+            },
         ]
         mock_sql.side_effect = [source_cols, dest_cols]
 
@@ -69,10 +94,20 @@ class TestDetectSchemaChanges:
     @patch("src.schema_evolution.execute_sql")
     def test_type_change(self, mock_sql):
         source_cols = [
-            {"column_name": "amount", "data_type": "DOUBLE", "is_nullable": "YES", "ordinal_position": "1"},
+            {
+                "column_name": "amount",
+                "data_type": "DOUBLE",
+                "is_nullable": "YES",
+                "ordinal_position": "1",
+            },
         ]
         dest_cols = [
-            {"column_name": "amount", "data_type": "INT", "is_nullable": "YES", "ordinal_position": "1"},
+            {
+                "column_name": "amount",
+                "data_type": "INT",
+                "is_nullable": "YES",
+                "ordinal_position": "1",
+            },
         ]
         mock_sql.side_effect = [source_cols, dest_cols]
 
@@ -96,8 +131,13 @@ class TestApplySchemaEvolution:
         }
 
         result = apply_schema_evolution(
-            MagicMock(), "wh-123", "dst_cat", "schema1", "table1",
-            changes, dry_run=True,
+            MagicMock(),
+            "wh-123",
+            "dst_cat",
+            "schema1",
+            "table1",
+            changes,
+            dry_run=True,
         )
 
         assert "email" in result["added"]
@@ -113,8 +153,13 @@ class TestApplySchemaEvolution:
         }
 
         result = apply_schema_evolution(
-            MagicMock(), "wh-123", "dst_cat", "schema1", "table1",
-            changes, dry_run=False,
+            MagicMock(),
+            "wh-123",
+            "dst_cat",
+            "schema1",
+            "table1",
+            changes,
+            dry_run=False,
         )
 
         assert "phone" in result["added"]

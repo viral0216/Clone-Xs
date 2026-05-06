@@ -13,13 +13,15 @@ def list_shares(client: WorkspaceClient) -> list[dict]:
     try:
         shares = client.shares.list()
         for s in shares:
-            results.append({
-                "name": s.name,
-                "comment": s.comment,
-                "owner": s.owner,
-                "created_at": str(s.created_at) if s.created_at else None,
-                "updated_at": str(s.updated_at) if s.updated_at else None,
-            })
+            results.append(
+                {
+                    "name": s.name,
+                    "comment": s.comment,
+                    "owner": s.owner,
+                    "created_at": str(s.created_at) if s.created_at else None,
+                    "updated_at": str(s.updated_at) if s.updated_at else None,
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list shares: {e}")
     return results
@@ -30,16 +32,18 @@ def get_share_details(client: WorkspaceClient, share_name: str) -> dict | None:
     try:
         share = client.shares.get(name=share_name, include_shared_data=True)
         objects = []
-        for obj in (share.objects or []):
-            objects.append({
-                "name": obj.name,
-                "data_object_type": str(obj.data_object_type) if obj.data_object_type else None,
-                "comment": obj.comment,
-                "status": str(obj.status) if obj.status else None,
-                "added_at": str(obj.added_at) if obj.added_at else None,
-                "added_by": obj.added_by,
-                "shared_as": obj.shared_as,
-            })
+        for obj in share.objects or []:
+            objects.append(
+                {
+                    "name": obj.name,
+                    "data_object_type": str(obj.data_object_type) if obj.data_object_type else None,
+                    "comment": obj.comment,
+                    "status": str(obj.status) if obj.status else None,
+                    "added_at": str(obj.added_at) if obj.added_at else None,
+                    "added_by": obj.added_by,
+                    "shared_as": obj.shared_as,
+                }
+            )
         return {
             "name": share.name,
             "comment": share.comment,
@@ -53,7 +57,9 @@ def get_share_details(client: WorkspaceClient, share_name: str) -> dict | None:
 
 
 def create_share(
-    client: WorkspaceClient, name: str, comment: str = "",
+    client: WorkspaceClient,
+    name: str,
+    comment: str = "",
 ) -> dict:
     """Create a new Delta Sharing share."""
     result = {"name": name, "success": False}
@@ -72,7 +78,9 @@ def create_share(
 
 
 def grant_table_to_share(
-    client: WorkspaceClient, share_name: str, table_fqn: str,
+    client: WorkspaceClient,
+    share_name: str,
+    table_fqn: str,
     shared_as: str | None = None,
 ) -> dict:
     """Grant a table to a share."""
@@ -100,7 +108,9 @@ def grant_table_to_share(
 
 
 def revoke_table_from_share(
-    client: WorkspaceClient, share_name: str, table_fqn: str,
+    client: WorkspaceClient,
+    share_name: str,
+    table_fqn: str,
 ) -> dict:
     """Revoke a table from a share."""
     result = {"share": share_name, "table": table_fqn, "success": False}
@@ -131,23 +141,28 @@ def list_recipients(client: WorkspaceClient) -> list[dict]:
     try:
         recipients = client.recipients.list()
         for r in recipients:
-            results.append({
-                "name": r.name,
-                "comment": r.comment,
-                "owner": r.owner,
-                "authentication_type": str(r.authentication_type) if r.authentication_type else None,
-                "sharing_code": getattr(r, "sharing_code", None),
-                "created_at": str(r.created_at) if r.created_at else None,
-                "updated_at": str(r.updated_at) if r.updated_at else None,
-                "activated": getattr(r, "activated", None),
-            })
+            results.append(
+                {
+                    "name": r.name,
+                    "comment": r.comment,
+                    "owner": r.owner,
+                    "authentication_type": str(r.authentication_type)
+                    if r.authentication_type
+                    else None,
+                    "sharing_code": getattr(r, "sharing_code", None),
+                    "created_at": str(r.created_at) if r.created_at else None,
+                    "updated_at": str(r.updated_at) if r.updated_at else None,
+                    "activated": getattr(r, "activated", None),
+                }
+            )
     except Exception as e:
         logger.error(f"Failed to list recipients: {e}")
     return results
 
 
 def create_recipient(
-    client: WorkspaceClient, name: str,
+    client: WorkspaceClient,
+    name: str,
     comment: str = "",
     authentication_type: str = "TOKEN",
     sharing_code: str | None = None,
@@ -157,7 +172,11 @@ def create_recipient(
     try:
         from databricks.sdk.service.sharing import AuthenticationType
 
-        auth_type = AuthenticationType(authentication_type) if authentication_type else AuthenticationType.TOKEN
+        auth_type = (
+            AuthenticationType(authentication_type)
+            if authentication_type
+            else AuthenticationType.TOKEN
+        )
         recipient = client.recipients.create(
             name=name,
             comment=comment,
@@ -179,7 +198,9 @@ def create_recipient(
 
 
 def grant_share_to_recipient(
-    client: WorkspaceClient, share_name: str, recipient_name: str,
+    client: WorkspaceClient,
+    share_name: str,
+    recipient_name: str,
 ) -> dict:
     """Grant a share to a recipient."""
     result = {"share": share_name, "recipient": recipient_name, "success": False}
@@ -205,7 +226,8 @@ def grant_share_to_recipient(
 
 
 def validate_share(
-    client: WorkspaceClient, share_name: str,
+    client: WorkspaceClient,
+    share_name: str,
 ) -> dict:
     """Validate that all shared objects in a share are accessible."""
     details = get_share_details(client, share_name)
@@ -218,11 +240,13 @@ def validate_share(
         status = str(obj.get("status", "")).upper()
         if status not in ("ACTIVE", ""):
             valid = False
-            issues.append({
-                "object": obj["name"],
-                "status": status,
-                "issue": "Object is not in ACTIVE state",
-            })
+            issues.append(
+                {
+                    "object": obj["name"],
+                    "status": status,
+                    "issue": "Object is not in ACTIVE state",
+                }
+            )
 
     return {
         "share": share_name,

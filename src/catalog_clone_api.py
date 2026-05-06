@@ -28,6 +28,7 @@ def _get_client(host: str | None = None, token: str | None = None) -> WorkspaceC
     For external use, pass host/token, set env vars, or configure a CLI profile.
     """
     from src.auth import get_client
+
     return get_client(host, token)
 
 
@@ -128,12 +129,18 @@ def clone_full_catalog(
 
     client = _get_client(host, token)
     config = _build_config(
-        source_catalog, dest_catalog, warehouse_id,
-        clone_type=clone_type, dry_run=dry_run,
-        max_workers=max_workers, parallel_tables=parallel_tables,
-        exclude_schemas=exclude_schemas, include_schemas=include_schemas,
+        source_catalog,
+        dest_catalog,
+        warehouse_id,
+        clone_type=clone_type,
+        dry_run=dry_run,
+        max_workers=max_workers,
+        parallel_tables=parallel_tables,
+        exclude_schemas=exclude_schemas,
+        include_schemas=include_schemas,
         validate_after_clone=validate_after_clone,
-        enable_rollback=enable_rollback, **kwargs,
+        enable_rollback=enable_rollback,
+        **kwargs,
     )
 
     logger.info(f"Cloning catalog: {source_catalog} -> {dest_catalog} ({clone_type})")
@@ -174,13 +181,22 @@ def clone_schema(
 
     client = _get_client(host, token)
     config = _build_config(
-        source_catalog, dest_catalog, warehouse_id,
-        clone_type=clone_type, dry_run=dry_run,
-        include_schemas=[schema_name], **kwargs,
+        source_catalog,
+        dest_catalog,
+        warehouse_id,
+        clone_type=clone_type,
+        dry_run=dry_run,
+        include_schemas=[schema_name],
+        **kwargs,
     )
 
-    create_catalog_if_not_exists(client, warehouse_id, dest_catalog, dry_run=dry_run,
-                                 location=kwargs.get("catalog_location", ""))
+    create_catalog_if_not_exists(
+        client,
+        warehouse_id,
+        dest_catalog,
+        dry_run=dry_run,
+        location=kwargs.get("catalog_location", ""),
+    )
     return process_schema(client, config, schema_name)
 
 
@@ -341,6 +357,11 @@ def validate_clone(
     client = _get_client(host, token)
     exclude = exclude_schemas or ["information_schema", "default"]
     return validate_catalog(
-        client, warehouse_id, source_catalog, dest_catalog,
-        exclude, max_workers, use_checksum=use_checksum,
+        client,
+        warehouse_id,
+        source_catalog,
+        dest_catalog,
+        exclude,
+        max_workers,
+        use_checksum=use_checksum,
     )

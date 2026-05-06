@@ -46,7 +46,9 @@ class TestGetCommonSchemas:
             [{"schema_name": "s1"}, {"schema_name": "s2"}],
             [{"schema_name": "s2"}, {"schema_name": "s3"}],
         ]
-        result = _get_common_schemas(MagicMock(), "wh", "src_cat", "dst_cat", ["information_schema"])
+        result = _get_common_schemas(
+            MagicMock(), "wh", "src_cat", "dst_cat", ["information_schema"]
+        )
         assert set(result) == {"s1", "s2", "s3"}
 
 
@@ -56,15 +58,21 @@ class TestSyncCatalogs:
     @patch("src.sync_catalog._get_common_schemas", return_value=["s1"])
     @patch("src.sync_catalog.compare_catalogs")
     @patch("src.sync_catalog.execute_sql")
-    def test_adds_missing_tables(self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views):
+    def test_adds_missing_tables(
+        self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views
+    ):
         mock_compare.return_value = {"schemas": {"details": []}}
         # source has t1, t2; dest has t1
         mock_tables.side_effect = [{"t1", "t2"}, {"t1"}]
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            dry_run=True, _api_managed_logs=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert result["tables_added"] == 1
@@ -75,15 +83,22 @@ class TestSyncCatalogs:
     @patch("src.sync_catalog._get_common_schemas", return_value=["s1"])
     @patch("src.sync_catalog.compare_catalogs")
     @patch("src.sync_catalog.execute_sql")
-    def test_drops_extra_tables(self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views):
+    def test_drops_extra_tables(
+        self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views
+    ):
         mock_compare.return_value = {"schemas": {"details": []}}
         # source has t1; dest has t1, t2
         mock_tables.side_effect = [{"t1"}, {"t1", "t2"}]
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            drop_extra=True, dry_run=True, _api_managed_logs=True,
+            drop_extra=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert result["tables_dropped"] == 1
@@ -93,7 +108,9 @@ class TestSyncCatalogs:
     @patch("src.sync_catalog._get_common_schemas", return_value=["s1"])
     @patch("src.sync_catalog.compare_catalogs")
     @patch("src.sync_catalog.execute_sql")
-    def test_adds_missing_views(self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views):
+    def test_adds_missing_views(
+        self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views
+    ):
         mock_compare.return_value = {"schemas": {"details": []}}
         # source has v1; dest has none
         mock_views.side_effect = [{"v1"}, set()]
@@ -101,9 +118,13 @@ class TestSyncCatalogs:
         mock_sql.return_value = [{"view_definition": "SELECT 1 FROM `src_cat`.s1.t1"}]
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            dry_run=True, _api_managed_logs=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert result["views_added"] == 1
@@ -113,7 +134,9 @@ class TestSyncCatalogs:
     @patch("src.sync_catalog._get_common_schemas", return_value=[])
     @patch("src.sync_catalog.compare_catalogs")
     @patch("src.sync_catalog.execute_sql")
-    def test_adds_missing_schema(self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views):
+    def test_adds_missing_schema(
+        self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views
+    ):
         mock_compare.return_value = {
             "schemas": {
                 "details": [
@@ -123,9 +146,13 @@ class TestSyncCatalogs:
         }
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            dry_run=True, _api_managed_logs=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert result["schemas_added"] == 1
@@ -135,15 +162,21 @@ class TestSyncCatalogs:
     @patch("src.sync_catalog._get_common_schemas", return_value=["s1"])
     @patch("src.sync_catalog.compare_catalogs")
     @patch("src.sync_catalog.execute_sql")
-    def test_error_during_table_clone(self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views):
+    def test_error_during_table_clone(
+        self, mock_sql, mock_compare, mock_schemas, mock_tables, mock_views
+    ):
         mock_compare.return_value = {"schemas": {"details": []}}
         mock_tables.side_effect = [{"t1"}, set()]
         mock_sql.side_effect = Exception("clone failed")
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            dry_run=True, _api_managed_logs=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert len(result["errors"]) > 0
@@ -157,9 +190,13 @@ class TestSyncCatalogs:
         mock_compare.return_value = {"schemas": {"details": []}}
 
         result = sync_catalogs(
-            MagicMock(), "wh", "src_cat", "dst_cat",
+            MagicMock(),
+            "wh",
+            "src_cat",
+            "dst_cat",
             exclude_schemas=["information_schema"],
-            dry_run=True, _api_managed_logs=True,
+            dry_run=True,
+            _api_managed_logs=True,
         )
 
         assert result["tables_added"] == 0

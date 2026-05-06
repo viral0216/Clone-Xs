@@ -11,6 +11,7 @@ from src.constraints import (
 
 # ---------- get_table_constraints ----------
 
+
 @patch("src.constraints.execute_sql")
 def test_get_table_constraints_happy(mock_sql):
     mock_sql.return_value = [
@@ -29,6 +30,7 @@ def test_get_table_constraints_failure(mock_sql):
 
 
 # ---------- copy_table_constraints ----------
+
 
 @patch("src.constraints.execute_sql")
 @patch("src.constraints.get_table_constraints")
@@ -75,6 +77,7 @@ def test_copy_table_constraints_sql_failure_no_raise(mock_get, mock_sql):
 
 # ---------- get_table_comment ----------
 
+
 @patch("src.constraints.execute_sql")
 def test_get_table_comment_happy(mock_sql):
     mock_sql.return_value = [{"comment": "A useful table"}]
@@ -98,6 +101,7 @@ def test_get_table_comment_failure(mock_sql):
 
 # ---------- get_column_comments ----------
 
+
 @patch("src.constraints.execute_sql")
 def test_get_column_comments_happy(mock_sql):
     mock_sql.return_value = [
@@ -115,6 +119,7 @@ def test_get_column_comments_failure(mock_sql):
 
 
 # ---------- copy_table_comments ----------
+
 
 @patch("src.constraints.get_column_comments")
 @patch("src.constraints.get_table_comment")

@@ -37,15 +37,11 @@ MOCK_ENTRIES = [
 class TestRecordLineageBatch:
     """Tests for record_lineage_batch."""
 
-    def test_batch_insert_multiple_entries(
-        self, mock_exec, mock_now, mock_batch
-    ):
+    def test_batch_insert_multiple_entries(self, mock_exec, mock_now, mock_batch):
         from src.lineage import record_lineage_batch
 
         client = MagicMock()
-        record_lineage_batch(
-            client, "wh-1", "audit_cat", "audit_sch", MOCK_ENTRIES, dry_run=False
-        )
+        record_lineage_batch(client, "wh-1", "audit_cat", "audit_sch", MOCK_ENTRIES, dry_run=False)
 
         # First call = CREATE TABLE, second call = INSERT with 3 value rows
         assert mock_exec.call_count == 2
@@ -58,45 +54,33 @@ class TestRecordLineageBatch:
         assert "prod_cat.sales.customers" in insert_sql
         assert "prod_cat.hr.employees" in insert_sql
 
-    def test_batch_insert_empty_entries_no_insert(
-        self, mock_exec, mock_now, mock_batch
-    ):
+    def test_batch_insert_empty_entries_no_insert(self, mock_exec, mock_now, mock_batch):
         from src.lineage import record_lineage_batch
 
         client = MagicMock()
-        record_lineage_batch(
-            client, "wh-1", "audit_cat", "audit_sch", [], dry_run=False
-        )
+        record_lineage_batch(client, "wh-1", "audit_cat", "audit_sch", [], dry_run=False)
 
         # Only CREATE TABLE, no INSERT
         assert mock_exec.call_count == 1
         assert "CREATE TABLE" in mock_exec.call_args_list[0].args[2]
 
-    def test_batch_insert_passes_dry_run(
-        self, mock_exec, mock_now, mock_batch
-    ):
+    def test_batch_insert_passes_dry_run(self, mock_exec, mock_now, mock_batch):
         from src.lineage import record_lineage_batch
 
         client = MagicMock()
-        record_lineage_batch(
-            client, "wh-1", "cat", "sch", MOCK_ENTRIES[:1], dry_run=True
-        )
+        record_lineage_batch(client, "wh-1", "cat", "sch", MOCK_ENTRIES[:1], dry_run=True)
 
         for c in mock_exec.call_args_list:
             assert c.kwargs.get("dry_run") is True
 
-    def test_batch_insert_respects_batch_size(
-        self, mock_exec, mock_now, mock_batch
-    ):
+    def test_batch_insert_respects_batch_size(self, mock_exec, mock_now, mock_batch):
         """When batch_size < entries, multiple INSERTs are issued."""
         mock_batch.return_value = 2  # override to batch of 2
 
         from src.lineage import record_lineage_batch
 
         client = MagicMock()
-        record_lineage_batch(
-            client, "wh-1", "cat", "sch", MOCK_ENTRIES, dry_run=False
-        )
+        record_lineage_batch(client, "wh-1", "cat", "sch", MOCK_ENTRIES, dry_run=False)
 
         # 1 CREATE + 2 INSERT batches (2 + 1)
         assert mock_exec.call_count == 3
@@ -137,9 +121,7 @@ class TestGetLineageForObject:
         mock_exec.side_effect = RuntimeError("table not found")
 
         client = MagicMock()
-        result = get_lineage_for_object(
-            client, "wh-1", "cat", "sch", "nonexistent.path"
-        )
+        result = get_lineage_for_object(client, "wh-1", "cat", "sch", "nonexistent.path")
 
         assert result == []
 
@@ -154,8 +136,17 @@ class TestRecordLineageToUC:
 
         client = MagicMock()
         record_lineage_to_uc(
-            client, "wh-1", "audit", "lin", "src_cat", "dst_cat",
-            "sales", "orders", "TABLE", "DEEP", dry_run=False,
+            client,
+            "wh-1",
+            "audit",
+            "lin",
+            "src_cat",
+            "dst_cat",
+            "sales",
+            "orders",
+            "TABLE",
+            "DEEP",
+            dry_run=False,
         )
 
         assert mock_exec.call_count == 2

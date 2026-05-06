@@ -17,9 +17,7 @@ def run_wizard(output_path: str = "config/clone_config.yaml") -> str:
     config["source_catalog"] = _prompt("Source catalog name", required=True)
     config["destination_catalog"] = _prompt("Destination catalog name", required=True)
     config["sql_warehouse_id"] = _prompt("SQL Warehouse ID", required=True)
-    config["clone_type"] = _prompt_choice(
-        "Clone type", choices=["DEEP", "SHALLOW"], default="DEEP"
-    )
+    config["clone_type"] = _prompt_choice("Clone type", choices=["DEEP", "SHALLOW"], default="DEEP")
     config["load_type"] = _prompt_choice(
         "Load type", choices=["FULL", "INCREMENTAL"], default="FULL"
     )
@@ -101,9 +99,7 @@ def run_wizard(output_path: str = "config/clone_config.yaml") -> str:
                 choices=["hash", "redact", "null", "email_mask", "partial"],
                 default="redact",
             )
-            match_type = _prompt_choice(
-                "  Match type", choices=["exact", "regex"], default="exact"
-            )
+            match_type = _prompt_choice("  Match type", choices=["exact", "regex"], default="exact")
             rules.append({"column": col, "strategy": strategy, "match_type": match_type})
         if rules:
             config["masking_rules"] = rules
@@ -209,6 +205,8 @@ def _prompt_hooks(phase: str) -> list[dict]:
         if not sql:
             break
         desc = _prompt("    Description", default=f"{phase} hook {len(hooks) + 1}")
-        on_error = _prompt_choice("    On error", choices=["warn", "fail", "ignore"], default="warn")
+        on_error = _prompt_choice(
+            "    On error", choices=["warn", "fail", "ignore"], default="warn"
+        )
         hooks.append({"sql": sql, "description": desc, "on_error": on_error})
     return hooks

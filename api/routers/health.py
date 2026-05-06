@@ -8,25 +8,23 @@ router = APIRouter()
 @router.get("/health")
 async def health_check():
     import os
+
     runtime = os.getenv("CLONE_XS_RUNTIME", "standalone")
 
     # SDK version info
     sdk_version = None
     try:
         import databricks.sdk
+
         sdk_version = getattr(databricks.sdk, "__version__", "unknown")
     except ImportError:
         pass
 
     # REST API fallback availability
-    rest_api_available = False
-    try:
-        from src.rest_api_client import DatabricksRestClient
-        rest_api_available = True
-    except ImportError:
-        pass
+    import importlib.util
 
-    from fastapi import Query, Depends
+    rest_api_available = importlib.util.find_spec("src.rest_api_client") is not None
+
     return {
         "status": "ok",
         "service": "Clone-Xs",
@@ -39,18 +37,21 @@ async def health_check():
 @router.get("/health/deep")
 async def deep_health_check():
     """Deep health check — tests warehouse connectivity, config, and table existence."""
-    import logging
-    logger = logging.getLogger(__name__)
     checks = {}
 
     # 1. Config
     try:
         from src.config import load_config_cached
+
         config = load_config_cached()
         audit = config.get("audit_trail", {})
         catalog = audit.get("catalog", "")
         wid = config.get("sql_warehouse_id", "")
-        checks["config"] = {"status": "ok", "catalog": catalog, "warehouse_id": wid[:8] + "..." if wid else ""}
+        checks["config"] = {
+            "status": "ok",
+            "catalog": catalog,
+            "warehouse_id": wid[:8] + "..." if wid else "",
+        }
     except Exception as e:
         checks["config"] = {"status": "error", "error": str(e)}
         return {"status": "error", "checks": checks}
@@ -58,6 +59,7 @@ async def deep_health_check():
     # 2. Auth
     try:
         from src.auth import get_client
+
         client = get_client()
         checks["auth"] = {"status": "ok"}
     except Exception as e:
@@ -68,6 +70,7 @@ async def deep_health_check():
     if wid:
         try:
             from src.client import execute_sql
+
             execute_sql(client, wid, "SELECT 1 AS health_check", max_retries=1)
             checks["warehouse"] = {"status": "ok"}
         except Exception as e:
@@ -79,9 +82,21 @@ async def deep_health_check():
     if catalog and wid:
         try:
             from src.client import execute_sql
+
             rows = execute_sql(client, wid, f"SHOW SCHEMAS IN `{catalog}`", max_retries=1)
-            existing = {r.get("databaseName", r.get("namespace", r.get("schema_name", ""))).lower() for r in (rows or [])}
-            expected = {"logs", "governance", "reconciliation", "data_quality", "pii", "metrics", "lineage"}
+            existing = {
+                r.get("databaseName", r.get("namespace", r.get("schema_name", ""))).lower()
+                for r in (rows or [])
+            }
+            expected = {
+                "logs",
+                "governance",
+                "reconciliation",
+                "data_quality",
+                "pii",
+                "metrics",
+                "lineage",
+            }
             missing = expected - existing
             checks["schemas"] = {
                 "status": "ok" if not missing else "degraded",
@@ -95,6 +110,7 @@ async def deep_health_check():
     if catalog and wid:
         try:
             from src.table_registry import get_all_table_fqns
+
             reg_config = {"audit_trail": {"catalog": catalog}}
             sections = get_all_table_fqns(reg_config)
             all_tables = [t for s in sections for t in s["tables"]]
@@ -107,6 +123,7 @@ async def deep_health_check():
                 checked += 1
                 try:
                     from src.client import execute_sql
+
                     execute_sql(client, wid, f"DESCRIBE TABLE {t['fqn']}", max_retries=1)
                     found += 1
                 except Exception:

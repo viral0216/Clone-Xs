@@ -103,79 +103,101 @@ class TestCLIParsing:
     def _parser(self):
         self.parser = build_parser()
 
-    @pytest.mark.parametrize("argv", [
-        # Section 1: Clone a catalog
-        ["clone", "--source", "prod", "--dest", "sandbox"],
-        # Section 2: Deep vs shallow
-        ["clone", "--source", "prod", "--dest", "qa", "--clone-type", "DEEP"],
-        ["clone", "--source", "prod", "--dest", "dev", "--clone-type", "SHALLOW"],
-        # Section 3: Full vs incremental
-        ["clone", "--source", "prod", "--dest", "stg", "--load-type", "FULL"],
-        ["clone", "--source", "prod", "--dest", "stg", "--load-type", "INCREMENTAL"],
-        # Section 4: Time travel
-        ["clone", "--source", "prod", "--dest", "recovery", "--as-of-timestamp", "2026-03-04T23:59:59"],
-        ["clone", "--source", "prod", "--dest", "recovery", "--as-of-version", "42"],
-        # Section 5: Dry run
-        ["clone", "--dry-run", "-v"],
-        # Section 7: Schema filtering
-        ["clone", "--include-schemas", "sales", "marketing", "analytics"],
-        # Section 8: Regex table filtering
-        ["clone", "--include-tables-regex", "^fact_|^dim_"],
-        ["clone", "--exclude-tables-regex", "_tmp$|_backup$"],
-        # Section 10: Parallel processing
-        ["clone", "--max-workers", "8", "--parallel-tables", "4"],
-        ["clone", "--max-parallel-queries", "20"],
-        # Section 11: Table size ordering
-        ["clone", "--order-by-size", "asc"],
-        ["clone", "--order-by-size", "desc"],
-        # Section 12: Rate limiting
-        ["clone", "--max-rps", "5"],
-        # Section 13: Permissions
-        ["clone", "--source", "prod", "--dest", "dev", "--no-permissions", "--no-ownership"],
-        # Section 14: Tags & properties
-        ["clone", "--no-tags", "--no-properties"],
-        # Section 15: Security
-        ["clone", "--no-security"],
-        # Section 16: Constraints & comments
-        ["clone", "--no-constraints", "--no-comments"],
-        # Section 28: Rollback + resume
-        ["clone", "--enable-rollback", "--validate", "--checksum", "--report", "--progress"],
-        ["clone", "--resume", "rollback_logs/log.json"],
-        # Section 37: Cross-workspace
-        ["clone", "--source", "prod", "--dest", "dr", "--dest-host", "https://h", "--dest-token", "t"],
-        # Section 0b: Serverless
-        ["clone", "--source", "prod", "--dest", "stg", "--serverless"],
-        # Non-clone commands
-        ["diff", "--source", "prod", "--dest", "stg"],
-        ["validate", "--source", "prod", "--dest", "stg", "--checksum"],
-        ["preflight"],
-        ["search", "--source", "prod", "--pattern", "email|phone", "--columns"],
-        ["stats", "--source", "prod"],
-        ["profile", "--source", "prod"],
-        ["monitor", "--source", "prod", "--dest", "dr", "--once"],
-        ["snapshot", "--source", "prod"],
-        ["schema-drift", "--source", "prod", "--dest", "stg"],
-        ["compare", "--source", "prod", "--dest", "stg"],
-        ["sync", "--source", "prod", "--dest", "stg", "--drop-extra"],
-        ["rollback", "--list"],
-        ["estimate", "--source", "prod", "--price-per-gb", "0.03"],
-        ["export", "--source", "prod", "--format", "csv"],
-        ["export", "--source", "prod", "--format", "json"],
-        ["export-iac", "--source", "prod", "--format", "pulumi"],
-        ["export-iac", "--source", "prod", "--format", "terraform"],
-        ["generate-workflow", "--format", "yaml"],
-        ["generate-workflow", "--format", "json"],
-        ["config-diff", "a.yaml", "b.yaml"],
-        ["completion", "bash"],
-        ["completion", "zsh"],
-        ["completion", "fish"],
-        ["init"],
-        ["auth", "--list-profiles"],
-        ["cost-estimate", "--source", "prod"],
-        ["pii-scan", "--source", "prod"],
-        ["audit", "--init"],
-        ["lineage", "--init"],
-    ], ids=lambda a: " ".join(a))
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            # Section 1: Clone a catalog
+            ["clone", "--source", "prod", "--dest", "sandbox"],
+            # Section 2: Deep vs shallow
+            ["clone", "--source", "prod", "--dest", "qa", "--clone-type", "DEEP"],
+            ["clone", "--source", "prod", "--dest", "dev", "--clone-type", "SHALLOW"],
+            # Section 3: Full vs incremental
+            ["clone", "--source", "prod", "--dest", "stg", "--load-type", "FULL"],
+            ["clone", "--source", "prod", "--dest", "stg", "--load-type", "INCREMENTAL"],
+            # Section 4: Time travel
+            [
+                "clone",
+                "--source",
+                "prod",
+                "--dest",
+                "recovery",
+                "--as-of-timestamp",
+                "2026-03-04T23:59:59",
+            ],
+            ["clone", "--source", "prod", "--dest", "recovery", "--as-of-version", "42"],
+            # Section 5: Dry run
+            ["clone", "--dry-run", "-v"],
+            # Section 7: Schema filtering
+            ["clone", "--include-schemas", "sales", "marketing", "analytics"],
+            # Section 8: Regex table filtering
+            ["clone", "--include-tables-regex", "^fact_|^dim_"],
+            ["clone", "--exclude-tables-regex", "_tmp$|_backup$"],
+            # Section 10: Parallel processing
+            ["clone", "--max-workers", "8", "--parallel-tables", "4"],
+            ["clone", "--max-parallel-queries", "20"],
+            # Section 11: Table size ordering
+            ["clone", "--order-by-size", "asc"],
+            ["clone", "--order-by-size", "desc"],
+            # Section 12: Rate limiting
+            ["clone", "--max-rps", "5"],
+            # Section 13: Permissions
+            ["clone", "--source", "prod", "--dest", "dev", "--no-permissions", "--no-ownership"],
+            # Section 14: Tags & properties
+            ["clone", "--no-tags", "--no-properties"],
+            # Section 15: Security
+            ["clone", "--no-security"],
+            # Section 16: Constraints & comments
+            ["clone", "--no-constraints", "--no-comments"],
+            # Section 28: Rollback + resume
+            ["clone", "--enable-rollback", "--validate", "--checksum", "--report", "--progress"],
+            ["clone", "--resume", "rollback_logs/log.json"],
+            # Section 37: Cross-workspace
+            [
+                "clone",
+                "--source",
+                "prod",
+                "--dest",
+                "dr",
+                "--dest-host",
+                "https://h",
+                "--dest-token",
+                "t",
+            ],
+            # Section 0b: Serverless
+            ["clone", "--source", "prod", "--dest", "stg", "--serverless"],
+            # Non-clone commands
+            ["diff", "--source", "prod", "--dest", "stg"],
+            ["validate", "--source", "prod", "--dest", "stg", "--checksum"],
+            ["preflight"],
+            ["search", "--source", "prod", "--pattern", "email|phone", "--columns"],
+            ["stats", "--source", "prod"],
+            ["profile", "--source", "prod"],
+            ["monitor", "--source", "prod", "--dest", "dr", "--once"],
+            ["snapshot", "--source", "prod"],
+            ["schema-drift", "--source", "prod", "--dest", "stg"],
+            ["compare", "--source", "prod", "--dest", "stg"],
+            ["sync", "--source", "prod", "--dest", "stg", "--drop-extra"],
+            ["rollback", "--list"],
+            ["estimate", "--source", "prod", "--price-per-gb", "0.03"],
+            ["export", "--source", "prod", "--format", "csv"],
+            ["export", "--source", "prod", "--format", "json"],
+            ["export-iac", "--source", "prod", "--format", "pulumi"],
+            ["export-iac", "--source", "prod", "--format", "terraform"],
+            ["generate-workflow", "--format", "yaml"],
+            ["generate-workflow", "--format", "json"],
+            ["config-diff", "a.yaml", "b.yaml"],
+            ["completion", "bash"],
+            ["completion", "zsh"],
+            ["completion", "fish"],
+            ["init"],
+            ["auth", "--list-profiles"],
+            ["cost-estimate", "--source", "prod"],
+            ["pii-scan", "--source", "prod"],
+            ["audit", "--init"],
+            ["lineage", "--init"],
+        ],
+        ids=lambda a: " ".join(a),
+    )
     def test_cli_parses(self, argv):
         args = self.parser.parse_args(argv)
         assert args.command == argv[0]
@@ -190,20 +212,34 @@ class TestCLIParsing:
 class TestHowto00_Auth:
     """Section 0: Authentication & Login."""
 
-    @patch("src.main.ensure_authenticated", return_value={"user": "u", "host": "h", "auth_method": "pat"})
+    @patch(
+        "src.main.ensure_authenticated",
+        return_value={"user": "u", "host": "h", "auth_method": "pat"},
+    )
     def test_auth_status(self, mock_auth):
         args = argparse.Namespace(
-            host=None, token=None, auth_profile=None,
-            list_profiles=False, login=False, verbose=False,
+            host=None,
+            token=None,
+            auth_profile=None,
+            list_profiles=False,
+            login=False,
+            verbose=False,
         )
         cmd_auth(args)
         mock_auth.assert_called_once()
 
-    @patch("src.main.list_profiles", return_value=[{"name": "default", "host": "h", "auth_type": "pat"}])
+    @patch(
+        "src.main.list_profiles",
+        return_value=[{"name": "default", "host": "h", "auth_type": "pat"}],
+    )
     def test_auth_list_profiles(self, mock_lp):
         args = argparse.Namespace(
-            host=None, token=None, auth_profile=None,
-            list_profiles=True, login=False, verbose=False,
+            host=None,
+            token=None,
+            auth_profile=None,
+            list_profiles=True,
+            login=False,
+            verbose=False,
         )
         cmd_auth(args)
         mock_lp.assert_called_once()
@@ -211,8 +247,12 @@ class TestHowto00_Auth:
     @patch("src.main.interactive_login")
     def test_auth_login_interactive(self, mock_login):
         args = argparse.Namespace(
-            host=None, token=None, auth_profile=None,
-            list_profiles=False, login=True, verbose=False,
+            host=None,
+            token=None,
+            auth_profile=None,
+            list_profiles=False,
+            login=True,
+            verbose=False,
         )
         cmd_auth(args)
         mock_login.assert_called_once()
@@ -222,27 +262,54 @@ class TestHowto00b_Serverless:
     """Section 0b: Serverless Compute."""
 
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.serverless.submit_clone_job", return_value={
-        "tables": {"success": 5, "failed": 0},
-        "views": {"success": 0, "failed": 0},
-        "functions": {"success": 0, "failed": 0},
-        "volumes": {"success": 0, "failed": 0},
-    })
+    @patch(
+        "src.serverless.submit_clone_job",
+        return_value={
+            "tables": {"success": 5, "failed": 0},
+            "views": {"success": 0, "failed": 0},
+            "functions": {"success": 0, "failed": 0},
+            "volumes": {"success": 0, "failed": 0},
+        },
+    )
     def test_clone_serverless(self, mock_submit, mock_auth, tmp_path):
         cfg = _write_test_config(tmp_path)
-        args = _make_args(cfg, source="prod", dest="stg", serverless=True,
-                          volume="/Volumes/cat/s/v",
-                          clone_type=None, load_type=None, max_workers=None,
-                          no_permissions=False, no_ownership=False, no_tags=False,
-                          no_properties=False, no_security=False, no_constraints=False,
-                          no_comments=False, dry_run=False, include_schemas=None,
-                          report=False, enable_rollback=False, validate=False,
-                          checksum=False, parallel_tables=None,
-                          include_tables_regex=None, exclude_tables_regex=None,
-                          resume=None, progress=False, no_progress=False,
-                          order_by_size=None, max_rps=None,
-                          dest_host=None, dest_token=None, dest_warehouse_id=None,
-                          as_of_timestamp=None, as_of_version=None, location=None)
+        args = _make_args(
+            cfg,
+            source="prod",
+            dest="stg",
+            serverless=True,
+            volume="/Volumes/cat/s/v",
+            clone_type=None,
+            load_type=None,
+            max_workers=None,
+            no_permissions=False,
+            no_ownership=False,
+            no_tags=False,
+            no_properties=False,
+            no_security=False,
+            no_constraints=False,
+            no_comments=False,
+            dry_run=False,
+            include_schemas=None,
+            report=False,
+            enable_rollback=False,
+            validate=False,
+            checksum=False,
+            parallel_tables=None,
+            include_tables_regex=None,
+            exclude_tables_regex=None,
+            resume=None,
+            progress=False,
+            no_progress=False,
+            order_by_size=None,
+            max_rps=None,
+            dest_host=None,
+            dest_token=None,
+            dest_warehouse_id=None,
+            as_of_timestamp=None,
+            as_of_version=None,
+            location=None,
+        )
         cmd_clone(args)
         mock_submit.assert_called_once()
 
@@ -250,18 +317,38 @@ class TestHowto00b_Serverless:
 # Helper: common clone args namespace
 def _clone_args(config, **overrides):
     defaults = dict(
-        source="src_cat", dest="dst_cat",
-        clone_type=None, load_type=None, max_workers=None,
-        no_permissions=False, no_ownership=False, no_tags=False,
-        no_properties=False, no_security=False, no_constraints=False,
-        no_comments=False, dry_run=False, include_schemas=None,
-        report=False, enable_rollback=False, validate=False,
-        checksum=False, parallel_tables=None,
-        include_tables_regex=None, exclude_tables_regex=None,
-        resume=None, progress=False, no_progress=False,
-        order_by_size=None, max_rps=None,
-        dest_host=None, dest_token=None, dest_warehouse_id=None,
-        as_of_timestamp=None, as_of_version=None, location=None,
+        source="src_cat",
+        dest="dst_cat",
+        clone_type=None,
+        load_type=None,
+        max_workers=None,
+        no_permissions=False,
+        no_ownership=False,
+        no_tags=False,
+        no_properties=False,
+        no_security=False,
+        no_constraints=False,
+        no_comments=False,
+        dry_run=False,
+        include_schemas=None,
+        report=False,
+        enable_rollback=False,
+        validate=False,
+        checksum=False,
+        parallel_tables=None,
+        include_tables_regex=None,
+        exclude_tables_regex=None,
+        resume=None,
+        progress=False,
+        no_progress=False,
+        order_by_size=None,
+        max_rps=None,
+        dest_host=None,
+        dest_token=None,
+        dest_warehouse_id=None,
+        as_of_timestamp=None,
+        as_of_version=None,
+        location=None,
     )
     defaults.update(overrides)
     return _make_args(config, **defaults)
@@ -437,7 +524,9 @@ class TestHowto09_TagFilter:
     """Section 9: Tag-Based Filtering."""
 
     def test_filter_by_tags_config(self, tmp_path):
-        cfg = _write_test_config(tmp_path, {"filter_by_tags": {"pii_level": "none", "environment": "shareable"}})
+        cfg = _write_test_config(
+            tmp_path, {"filter_by_tags": {"pii_level": "none", "environment": "shareable"}}
+        )
         config = load_config(cfg)
         assert config["filter_by_tags"] == {"pii_level": "none", "environment": "shareable"}
 
@@ -605,7 +694,10 @@ class TestHowto19_Validation:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.validation.validate_catalog", return_value={"total_tables": 10, "matched": 10, "mismatched": 0, "errors": 0})
+    @patch(
+        "src.validation.validate_catalog",
+        return_value={"total_tables": 10, "matched": 10, "mismatched": 0, "errors": 0},
+    )
     def test_validate_pass(self, mock_val, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", dest="dst_cat", checksum=False)
@@ -614,7 +706,10 @@ class TestHowto19_Validation:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.validation.validate_catalog", return_value={"total_tables": 10, "matched": 8, "mismatched": 2, "errors": 0})
+    @patch(
+        "src.validation.validate_catalog",
+        return_value={"total_tables": 10, "matched": 8, "mismatched": 2, "errors": 0},
+    )
     def test_validate_mismatch_exits(self, mock_val, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", dest="dst_cat", checksum=False)
@@ -623,7 +718,10 @@ class TestHowto19_Validation:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.validation.validate_catalog", return_value={"total_tables": 10, "matched": 10, "mismatched": 0, "errors": 0})
+    @patch(
+        "src.validation.validate_catalog",
+        return_value={"total_tables": 10, "matched": 10, "mismatched": 0, "errors": 0},
+    )
     def test_validate_checksum(self, mock_val, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", dest="dst_cat", checksum=True)
@@ -636,7 +734,10 @@ class TestHowto20_SchemaDrift:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.schema_drift.detect_schema_drift", return_value={"tables_checked": 10, "tables_with_drift": 0, "drifts": []})
+    @patch(
+        "src.schema_drift.detect_schema_drift",
+        return_value={"tables_checked": 10, "tables_with_drift": 0, "drifts": []},
+    )
     def test_schema_drift(self, mock_drift, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", dest="dst_cat")
@@ -704,7 +805,10 @@ class TestHowto25_Compare:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.compare.compare_catalogs_deep", return_value={"tables_compared": 10, "tables_with_issues": 0})
+    @patch(
+        "src.compare.compare_catalogs_deep",
+        return_value={"tables_compared": 10, "tables_with_issues": 0},
+    )
     def test_compare(self, mock_cmp, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", dest="dst_cat")
@@ -742,9 +846,16 @@ class TestHowto27_Monitor:
     @patch("src.monitor.monitor_once", return_value={"in_sync": True})
     def test_monitor_once(self, mock_mon, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
-        args = _make_args(cfg, source="src_cat", dest="dst_cat",
-                          once=True, interval=30, max_checks=0,
-                          check_drift=True, check_counts=False)
+        args = _make_args(
+            cfg,
+            source="src_cat",
+            dest="dst_cat",
+            once=True,
+            interval=30,
+            max_checks=0,
+            check_drift=True,
+            check_counts=False,
+        )
         cmd_monitor(args)
         mock_mon.assert_called_once()
 
@@ -752,13 +863,27 @@ class TestHowto27_Monitor:
 class TestHowto28_Rollback:
     """Section 28: Rollback."""
 
-    @patch("src.rollback.list_rollback_logs", return_value=[
-        {"file": "log.json", "timestamp": "2026-03-10", "destination_catalog": "stg", "total_objects": 5},
-    ])
+    @patch(
+        "src.rollback.list_rollback_logs",
+        return_value=[
+            {
+                "file": "log.json",
+                "timestamp": "2026-03-10",
+                "destination_catalog": "stg",
+                "total_objects": 5,
+            },
+        ],
+    )
     def test_rollback_list(self, mock_list):
-        args = argparse.Namespace(list=True, rollback_log_file=None,
-                                  config="x", profile=None, warehouse_id=None,
-                                  serverless=False, verbose=False)
+        args = argparse.Namespace(
+            list=True,
+            rollback_log_file=None,
+            config="x",
+            profile=None,
+            warehouse_id=None,
+            serverless=False,
+            verbose=False,
+        )
         cmd_rollback(args)
         mock_list.assert_called_once()
 
@@ -825,7 +950,10 @@ class TestHowto32_CostEstimation:
 
     @patch("src.main._resolve_warehouse_id", return_value="test-wh-id")
     @patch("src.main._get_auth_client", return_value=MagicMock())
-    @patch("src.cost_estimation.estimate_clone_cost", return_value={"total_size_gb": 100, "monthly_cost": 2.3})
+    @patch(
+        "src.cost_estimation.estimate_clone_cost",
+        return_value={"total_size_gb": 100, "monthly_cost": 2.3},
+    )
     def test_estimate(self, mock_est, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
         args = _make_args(cfg, source="src_cat", price_per_gb=0.023)
@@ -837,20 +965,21 @@ class TestHowto33_Profiles:
     """Section 33: Config Profiles."""
 
     def test_profile_staging(self, tmp_path):
-        cfg = _write_test_config(tmp_path, {
-            "profiles": {
-                "staging": {"destination_catalog": "staging_cat", "clone_type": "SHALLOW"},
-                "dr": {"destination_catalog": "dr_cat", "enable_rollback": True},
-            }
-        })
+        cfg = _write_test_config(
+            tmp_path,
+            {
+                "profiles": {
+                    "staging": {"destination_catalog": "staging_cat", "clone_type": "SHALLOW"},
+                    "dr": {"destination_catalog": "dr_cat", "enable_rollback": True},
+                }
+            },
+        )
         config = load_config(cfg, profile="staging")
         assert config["destination_catalog"] == "staging_cat"
         assert config["clone_type"] == "SHALLOW"
 
     def test_profile_unknown_raises(self, tmp_path):
-        cfg = _write_test_config(tmp_path, {
-            "profiles": {"staging": {"clone_type": "SHALLOW"}}
-        })
+        cfg = _write_test_config(tmp_path, {"profiles": {"staging": {"clone_type": "SHALLOW"}}})
         with pytest.raises(ValueError, match="Unknown config profile"):
             load_config(cfg, profile="nonexistent")
 
@@ -873,8 +1002,15 @@ class TestHowto35_Workflow:
     @patch("src.workflow.generate_workflow")
     def test_generate_workflow_json(self, mock_gen, mock_auth, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
-        args = _make_args(cfg, format="json", output=None, job_name=None,
-                          cluster_id=None, schedule=None, notification_email=None)
+        args = _make_args(
+            cfg,
+            format="json",
+            output=None,
+            job_name=None,
+            cluster_id=None,
+            schedule=None,
+            notification_email=None,
+        )
         cmd_generate_workflow(args)
         mock_gen.assert_called_once()
 
@@ -909,8 +1045,12 @@ class TestHowto37_CrossWorkspace:
     @patch("src.main.clone_catalog", return_value=_CLONE_OK)
     def test_cross_workspace(self, mock_clone, mock_get_client, mock_wh, tmp_path):
         cfg = _write_test_config(tmp_path)
-        args = _clone_args(cfg, dest_host="https://dr.cloud.databricks.com",
-                           dest_token="dapi_token", dest_warehouse_id="dr-wh-id")
+        args = _clone_args(
+            cfg,
+            dest_host="https://dr.cloud.databricks.com",
+            dest_token="dapi_token",
+            dest_warehouse_id="dr-wh-id",
+        )
         cmd_clone(args)
         config = mock_clone.call_args[0][1]
         assert config["dest_workspace"]["host"] == "https://dr.cloud.databricks.com"
@@ -962,14 +1102,21 @@ class TestHowto40_Notifications:
         assert config["teams_webhook_url"] == "https://outlook.office.com/xxx"
 
     def test_email_config(self, tmp_path):
-        email_cfg = {"smtp_host": "smtp.gmail.com", "smtp_port": 587, "sender": "bot@co.com",
-                     "recipients": ["team@co.com"]}
+        email_cfg = {
+            "smtp_host": "smtp.gmail.com",
+            "smtp_port": 587,
+            "sender": "bot@co.com",
+            "recipients": ["team@co.com"],
+        }
         cfg = _write_test_config(tmp_path, {"email": email_cfg})
         config = load_config(cfg)
         assert config["email"]["smtp_host"] == "smtp.gmail.com"
 
     def test_webhook_config(self, tmp_path):
-        webhook = {"url": "https://pagerduty.com/v2/enqueue", "headers": {"Authorization": "Bearer tok"}}
+        webhook = {
+            "url": "https://pagerduty.com/v2/enqueue",
+            "headers": {"Authorization": "Bearer tok"},
+        }
         cfg = _write_test_config(tmp_path, {"webhook": webhook})
         config = load_config(cfg)
         assert config["webhook"]["url"] == "https://pagerduty.com/v2/enqueue"
@@ -979,7 +1126,9 @@ class TestHowto41_Audit:
     """Section 41: Audit Logging."""
 
     def test_audit_config(self, tmp_path):
-        cfg = _write_test_config(tmp_path, {"audit": {"catalog": "gov", "schema": "audit", "table": "clone_audit_log"}})
+        cfg = _write_test_config(
+            tmp_path, {"audit": {"catalog": "gov", "schema": "audit", "table": "clone_audit_log"}}
+        )
         config = load_config(cfg)
         assert config["audit"]["catalog"] == "gov"
 
@@ -1031,6 +1180,7 @@ class TestHowto44_Wizard:
     def test_init(self, mock_wiz):
         args = argparse.Namespace(output="config/clone_config.yaml")
         from src.main import cmd_init
+
         cmd_init(args)
         mock_wiz.assert_called_once()
 
@@ -1079,6 +1229,7 @@ class TestHowto46_NotebookAPI:
             run_preflight_checks,
             validate_clone,
         )
+
         assert callable(clone_full_catalog)
         assert callable(clone_schema)
         assert callable(clone_single_table)

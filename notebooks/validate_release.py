@@ -40,15 +40,22 @@ dbutils.widgets.text("clxs_host", "https://your-clone-xs.example.com", "Clone-Xs
 dbutils.widgets.text("source_catalog", "demo_quick", "Source catalog (sandbox)")
 dbutils.widgets.text("source_schema", "bronze", "Schema for smoke tests")
 dbutils.widgets.text("source_table", "events", "Delta table for drift / streaming tests")
-dbutils.widgets.text("dest_catalog_prefix", "demo_quick_validate", "Dest catalog prefix (suffixed per feature)")
-dbutils.widgets.text("checkpoint_volume", "/Volumes/demo_quick/_sys/continuous_sync", "Volume path for streaming checkpoints")
+dbutils.widgets.text(
+    "dest_catalog_prefix", "demo_quick_validate", "Dest catalog prefix (suffixed per feature)"
+)
+dbutils.widgets.text(
+    "checkpoint_volume",
+    "/Volumes/demo_quick/_sys/continuous_sync",
+    "Volume path for streaming checkpoints",
+)
 # Cross-workspace + fanout targets — leave blank to skip those sections.
 # Format: comma-separated saved-connection names from /settings.
-dbutils.widgets.text("fanout_target_names", "", "Saved target connection names (comma-sep, for Feature 5)")
+dbutils.widgets.text(
+    "fanout_target_names", "", "Saved target connection names (comma-sep, for Feature 5)"
+)
 
 # COMMAND ----------
 
-import os
 import time
 import requests
 
@@ -157,11 +164,14 @@ except Exception as e:
 # COMMAND ----------
 
 # Fire a clone via the API, wait for completion, inspect formats counter
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F1,
-    "include_schemas": [SCHEMA],
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F1,
+        "include_schemas": [SCHEMA],
+    },
+)
 status = wait_for_job(job["job_id"])
 result = status.get("result") or {}
 formats = result.get("formats") or result.get("summary", {}).get("formats", {})
@@ -186,12 +196,15 @@ record(
 
 # Step 1: initial FULL clone
 print("Initial FULL clone (establishes the target)…")
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F2,
-    "include_schemas": [SCHEMA],
-    "load_type": "FULL",
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F2,
+        "include_schemas": [SCHEMA],
+        "load_type": "FULL",
+    },
+)
 full_status = wait_for_job(job["job_id"])
 full_result = full_status.get("result") or {}
 full_tables = (full_result.get("tables") or {}).get("success", 0)
@@ -203,20 +216,22 @@ print("Drifted 1 table on source")
 
 # Step 3: SELECTIVE clone
 print("SELECTIVE clone — should re-clone only the drifted table")
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F2,
-    "include_schemas": [SCHEMA],
-    "load_type": "SELECTIVE",
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F2,
+        "include_schemas": [SCHEMA],
+        "load_type": "SELECTIVE",
+    },
+)
 sel_status = wait_for_job(job["job_id"])
 sel_result = sel_status.get("result") or {}
-print(f"selective result: mode={sel_result.get('mode')} drifted={sel_result.get('total_drifted_tables')}")
-
-passed = (
-    sel_result.get("mode") == "selective"
-    and sel_result.get("total_drifted_tables") == 1
+print(
+    f"selective result: mode={sel_result.get('mode')} drifted={sel_result.get('total_drifted_tables')}"
 )
+
+passed = sel_result.get("mode") == "selective" and sel_result.get("total_drifted_tables") == 1
 record(
     "Feature 2 — Selective re-clone",
     passed,
@@ -239,12 +254,15 @@ record(
 # audit-trail-style log lines via the API status response, plus a post-clone
 # write that MUST succeed.
 print("Clone with quiesce_source=true…")
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F3,
-    "include_schemas": [SCHEMA],
-    "quiesce_source": True,
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F3,
+        "include_schemas": [SCHEMA],
+        "quiesce_source": True,
+    },
+)
 q_status = wait_for_job(job["job_id"])
 
 # Post-clone write — if restore didn't fire, this would be denied. The success
@@ -270,29 +288,31 @@ record(
 # COMMAND ----------
 
 # Case A: dest exists (we created DEST_F2 in Feature 2) → selective block present
-existing = post("/api/estimate", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F2,
-})
+existing = post(
+    "/api/estimate",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F2,
+    },
+)
 sel_block = existing.get("selective")
 print(f"Existing-target selective block: {sel_block}")
 
 # Case B: fresh-target — selective block must be ABSENT
-fresh = post("/api/estimate", {
-    "source_catalog": SRC,
-    "destination_catalog": "this_catalog_does_not_exist_anywhere",
-})
+fresh = post(
+    "/api/estimate",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": "this_catalog_does_not_exist_anywhere",
+    },
+)
 print(f"Fresh-target selective: {fresh.get('selective')}")
 
-passed = (
-    sel_block is not None
-    and "savings_pct" in sel_block
-    and fresh.get("selective") is None
-)
+passed = sel_block is not None and "savings_pct" in sel_block and fresh.get("selective") is None
 record(
     "Feature 4 — Cost comparison",
     passed,
-    f"existing-target selective block populated; fresh-target absent",
+    "existing-target selective block populated; fresh-target absent",
 )
 
 # COMMAND ----------
@@ -324,9 +344,8 @@ else:
     )
     fanout_result = None  # ← paste response from /api/clone after running
     if fanout_result:
-        passed = (
-            fanout_result.get("mode") == "fanout"
-            and fanout_result.get("target_count") == len(FANOUT_NAMES)
+        passed = fanout_result.get("mode") == "fanout" and fanout_result.get("target_count") == len(
+            FANOUT_NAMES
         )
         record(
             "Feature 5 — Multi-target fanout",
@@ -358,13 +377,16 @@ spark.sql(f"""
 """)
 
 # Start the stream
-stream = post("/api/continuous-sync/start", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_F6_STREAM,
-    "tables": [f"{SCHEMA}.{TABLE}"],
-    "trigger_ms": 30000,
-    "checkpoint_root": CHECKPOINT,
-})
+stream = post(
+    "/api/continuous-sync/start",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_F6_STREAM,
+        "tables": [f"{SCHEMA}.{TABLE}"],
+        "trigger_ms": 30000,
+        "checkpoint_root": CHECKPOINT,
+    },
+)
 stream_id = stream["stream_id"]
 print(f"Stream started: stream_id={stream_id} run_id={stream['run_id']} status={stream['status']}")
 
@@ -392,7 +414,9 @@ time.sleep(60)
 # written into. For a strict "row count grew" check, you'd customise the plan
 # template (see continuous_sync.py docstring).
 try:
-    cnt = spark.sql(f"SELECT count(*) AS n FROM {DEST_F6_STREAM}.{SCHEMA}.{TABLE}").collect()[0]["n"]
+    cnt = spark.sql(f"SELECT count(*) AS n FROM {DEST_F6_STREAM}.{SCHEMA}.{TABLE}").collect()[0][
+        "n"
+    ]
     print(f"Target row count: {cnt}")
     propagated = cnt > 0
 except Exception as e:
@@ -426,33 +450,37 @@ record(
 spark.sql(f"CREATE CATALOG IF NOT EXISTS {DEST_KITCHEN}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {DEST_KITCHEN}.{SCHEMA}")
 # Clone full first so target has tables
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_KITCHEN,
-    "include_schemas": [SCHEMA],
-    "load_type": "FULL",
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_KITCHEN,
+        "include_schemas": [SCHEMA],
+        "load_type": "FULL",
+    },
+)
 wait_for_job(job["job_id"])
 
 # Drift one table for the SELECTIVE leg
 spark.sql(f"INSERT INTO {SRC}.{SCHEMA}.{TABLE} VALUES (-4, 'kitchen-drift')")
 
 # Now the kitchen-sink call: selective + quiesce + tblproperties
-job = post("/api/clone", {
-    "source_catalog": SRC,
-    "destination_catalog": DEST_KITCHEN,
-    "include_schemas": [SCHEMA],
-    "load_type": "SELECTIVE",
-    "quiesce_source": True,
-    "clone_tbl_properties": {"delta.logRetentionDuration": "30 days"},
-})
+job = post(
+    "/api/clone",
+    {
+        "source_catalog": SRC,
+        "destination_catalog": DEST_KITCHEN,
+        "include_schemas": [SCHEMA],
+        "load_type": "SELECTIVE",
+        "quiesce_source": True,
+        "clone_tbl_properties": {"delta.logRetentionDuration": "30 days"},
+    },
+)
 status = wait_for_job(job["job_id"])
 result = status.get("result") or {}
 
 # Verify TBLPROPERTIES landed on the actual table
-props = spark.sql(
-    f"SHOW TBLPROPERTIES {DEST_KITCHEN}.{SCHEMA}.{TABLE}"
-).collect()
+props = spark.sql(f"SHOW TBLPROPERTIES {DEST_KITCHEN}.{SCHEMA}.{TABLE}").collect()
 prop_dict = {r["key"]: r["value"] for r in props}
 print(f"Target TBLPROPERTIES: {prop_dict}")
 
@@ -464,7 +492,7 @@ passed = (
 record(
     "Kitchen-sink E2E",
     passed,
-    f"selective+quiesce+tblproperties+formats all populated correctly",
+    "selective+quiesce+tblproperties+formats all populated correctly",
 )
 
 # COMMAND ----------

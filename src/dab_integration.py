@@ -154,7 +154,7 @@ def generate_dab_bundle(
         yaml.dump(job_config, f, default_flow_style=False, sort_keys=False)
 
     # --- src/run_clone.py (notebook entry point) ---
-    run_script = '''# Databricks notebook source
+    run_script = """# Databricks notebook source
 import sys
 import os
 
@@ -192,7 +192,7 @@ if total_failed > 0:
     raise Exception(f"Clone completed with {total_failed} failures")
 
 print(f"Clone completed successfully: {summary}")
-'''
+"""
     run_path = os.path.join(output_dir, "src", "run_clone.py")
     with open(run_path, "w") as f:
         f.write(run_script)

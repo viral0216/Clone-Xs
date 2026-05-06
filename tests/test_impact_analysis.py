@@ -70,7 +70,12 @@ class TestFindDependentViews:
     @patch("src.impact_analysis.execute_sql")
     def test_returns_mapped_rows(self, mock_sql):
         mock_sql.return_value = [
-            {"table_catalog": "other", "table_schema": "s1", "table_name": "v1", "view_definition": "..."},
+            {
+                "table_catalog": "other",
+                "table_schema": "s1",
+                "table_name": "v1",
+                "view_definition": "...",
+            },
         ]
         result = _find_dependent_views(MagicMock(), "wh-123", "my_cat")
         assert len(result) == 1
@@ -182,9 +187,12 @@ class TestAnalyzeImpact:
     @patch("src.impact_analysis._find_active_queries", return_value=[])
     @patch("src.impact_analysis._find_referencing_jobs", return_value=[])
     @patch("src.impact_analysis._find_dependent_functions", return_value=[])
-    @patch("src.impact_analysis._find_dependent_views", return_value=[
-        {"catalog": "c", "schema": "s", "view": "v"},
-    ])
+    @patch(
+        "src.impact_analysis._find_dependent_views",
+        return_value=[
+            {"catalog": "c", "schema": "s", "view": "v"},
+        ],
+    )
     def test_analyze_with_views(self, *mocks):
         client = MagicMock()
         result = analyze_impact(client, "wh-123", "test_catalog", {"impact_high_threshold": 10})
@@ -203,7 +211,10 @@ class TestAnalyzeImpact:
         assert result["risk_level"] == "low"
         assert result["total_dependent_objects"] == 0
 
-    @patch("src.impact_analysis._find_dashboard_references", return_value=[{"dashboard_id": "d1", "name": "D"}] * 12)
+    @patch(
+        "src.impact_analysis._find_dashboard_references",
+        return_value=[{"dashboard_id": "d1", "name": "D"}] * 12,
+    )
     @patch("src.impact_analysis._find_active_queries", return_value=[])
     @patch("src.impact_analysis._find_referencing_jobs", return_value=[])
     @patch("src.impact_analysis._find_dependent_functions", return_value=[])

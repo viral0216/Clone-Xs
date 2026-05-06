@@ -207,7 +207,7 @@ def _gen_wind_turbine(state: dict, seq: int, now: datetime) -> dict:
     d = devices[seq % len(devices)]
     wind = max(0.0, d["wind_baseline"] + random.uniform(-3.0, 3.0))
     rpm = max(0.0, wind * 2.5 + random.uniform(-2.0, 2.0))
-    power_kw = max(0.0, min(d["rated_kw"], wind ** 2 * d["rated_kw"] / 144.0))
+    power_kw = max(0.0, min(d["rated_kw"], wind**2 * d["rated_kw"] / 144.0))
     fault = None
     if random.random() < 0.005:
         fault = random.choice(["F101_BRAKE", "F202_YAW_DRIVE", "F305_GEARBOX_TEMP"])
@@ -299,10 +299,24 @@ def _gen_clickstream(state: dict, seq: int, now: datetime) -> dict:
     if d["session_seq"] >= 30:
         d["session_id"] = f"sess-{random.randint(10**8, 10**9 - 1)}"
         d["session_seq"] = 0
-    pages = ["/home", "/products", "/products/abc", "/products/xyz",
-             "/cart", "/checkout", "/account", "/search?q=demo", "/blog/post-1"]
-    referrers = ["", "https://google.com", "https://bing.com",
-                 "https://twitter.com/share", "https://example.com/blog"]
+    pages = [
+        "/home",
+        "/products",
+        "/products/abc",
+        "/products/xyz",
+        "/cart",
+        "/checkout",
+        "/account",
+        "/search?q=demo",
+        "/blog/post-1",
+    ]
+    referrers = [
+        "",
+        "https://google.com",
+        "https://bing.com",
+        "https://twitter.com/share",
+        "https://example.com/blog",
+    ]
     # Weighted event type — page_view dominates, conversion funnel rare.
     et = random.choices(
         ["page_view", "click", "scroll", "submit", "purchase"],
@@ -321,116 +335,134 @@ def _gen_clickstream(state: dict, seq: int, now: datetime) -> dict:
 
 
 def _init_state_generic_sensor(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"sensor-{i:05d}",
-            "temp_mean": random.uniform(15.0, 30.0),
-            "hum_mean": random.uniform(30.0, 70.0),
-            "press_mean": random.uniform(1000.0, 1020.0),
-            "vib_mean": random.uniform(0.05, 0.5),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"sensor-{i:05d}",
+                "temp_mean": random.uniform(15.0, 30.0),
+                "hum_mean": random.uniform(30.0, 70.0),
+                "press_mean": random.uniform(1000.0, 1020.0),
+                "vib_mean": random.uniform(0.05, 0.5),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_industrial_machine(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"machine-{i:04d}",
-            "rpm_mean": random.uniform(1500.0, 3500.0),
-            "oil_mean": random.uniform(40.0, 60.0),
-            "coolant_mean": random.uniform(70.0, 90.0),
-            "tool_wear_pct": random.uniform(0.0, 30.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"machine-{i:04d}",
+                "rpm_mean": random.uniform(1500.0, 3500.0),
+                "oil_mean": random.uniform(40.0, 60.0),
+                "coolant_mean": random.uniform(70.0, 90.0),
+                "tool_wear_pct": random.uniform(0.0, 30.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_car_obd2(num_devices: int) -> dict:
     """Random VIN-shaped IDs (17 chars, alphanumeric, no I/O/Q). Real
     VINs follow ISO 3779 — these are demo-shape only, not valid VINs."""
     vin_chars = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
-    return {"devices": [
-        {
-            "id": "".join(random.choice(vin_chars) for _ in range(17)),
-            "speed_kmh": random.uniform(0.0, 100.0),
-            "fuel_level_pct": random.uniform(20.0, 95.0),
-            "lat": random.uniform(37.7, 37.8),   # SF-ish bounding box
-            "lng": random.uniform(-122.5, -122.4),
-        }
-        for _ in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": "".join(random.choice(vin_chars) for _ in range(17)),
+                "speed_kmh": random.uniform(0.0, 100.0),
+                "fuel_level_pct": random.uniform(20.0, 95.0),
+                "lat": random.uniform(37.7, 37.8),  # SF-ish bounding box
+                "lng": random.uniform(-122.5, -122.4),
+            }
+            for _ in range(num_devices)
+        ]
+    }
 
 
 def _init_state_smart_meter(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"meter-{i:06d}",
-            "kwh_cumulative": random.uniform(1000.0, 50000.0),
-            "voltage_mean": random.uniform(220.0, 240.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"meter-{i:06d}",
+                "kwh_cumulative": random.uniform(1000.0, 50000.0),
+                "voltage_mean": random.uniform(220.0, 240.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_wearable_health(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"wearable-{i:05d}",
-            "hr_baseline": random.uniform(60.0, 85.0),
-            "steps_cumulative": random.randint(0, 5000),
-            "calories": random.uniform(0.0, 500.0),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"wearable-{i:05d}",
+                "hr_baseline": random.uniform(60.0, 85.0),
+                "steps_cumulative": random.randint(0, 5000),
+                "calories": random.uniform(0.0, 500.0),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_pos_terminal(num_devices: int) -> dict:
     """Each terminal is permanently assigned to one store — joins to a
     store-dimension stay stable across batches."""
-    return {"devices": [
-        {
-            "id": f"pos-{i:05d}",
-            "store_id": f"store-{random.randint(1, 50):04d}",
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"pos-{i:05d}",
+                "store_id": f"store-{random.randint(1, 50):04d}",
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_wind_turbine(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"turbine-{i:04d}",
-            "wind_baseline": random.uniform(4.0, 12.0),
-            "rated_kw": random.choice([1500.0, 2000.0, 2500.0, 3000.0]),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"turbine-{i:04d}",
+                "wind_baseline": random.uniform(4.0, 12.0),
+                "rated_kw": random.choice([1500.0, 2000.0, 2500.0, 3000.0]),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_atm_transaction(num_devices: int) -> dict:
     """NYC-ish bounding box for ATM lat/lng — keeps fraud-geo demos
     visually coherent on a city-scale map."""
-    return {"devices": [
-        {
-            "id": f"atm-{i:05d}",
-            "lat": round(random.uniform(40.5, 40.9), 6),
-            "lng": round(random.uniform(-74.05, -73.85), 6),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"atm-{i:05d}",
+                "lat": round(random.uniform(40.5, 40.9), 6),
+                "lng": round(random.uniform(-74.05, -73.85), 6),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_server_metrics(num_devices: int) -> dict:
-    return {"devices": [
-        {
-            "id": f"host-{i:04d}",
-            "cpu_baseline": random.uniform(20.0, 60.0),
-            "mem_baseline": random.uniform(8.0, 24.0),
-            "mem_total_gb": random.choice([16.0, 32.0, 64.0, 128.0]),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"host-{i:04d}",
+                "cpu_baseline": random.uniform(20.0, 60.0),
+                "mem_baseline": random.uniform(8.0, 24.0),
+                "mem_total_gb": random.choice([16.0, 32.0, 64.0, 128.0]),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 def _init_state_clickstream(num_devices: int) -> dict:
@@ -445,16 +477,18 @@ def _init_state_clickstream(num_devices: int) -> dict:
         "Mozilla/5.0 (Macintosh) Firefox/121.0",
     ]
     device_types = ["desktop", "mobile", "tablet"]
-    return {"devices": [
-        {
-            "id": f"user-{i:06d}",
-            "session_id": f"sess-{random.randint(10**8, 10**9 - 1)}",
-            "session_seq": 0,
-            "user_agent": random.choice(user_agents),
-            "device_type": random.choice(device_types),
-        }
-        for i in range(num_devices)
-    ]}
+    return {
+        "devices": [
+            {
+                "id": f"user-{i:06d}",
+                "session_id": f"sess-{random.randint(10**8, 10**9 - 1)}",
+                "session_seq": 0,
+                "user_agent": random.choice(user_agents),
+                "device_type": random.choice(device_types),
+            }
+            for i in range(num_devices)
+        ]
+    }
 
 
 # Registry. Each entry has the human display name, the per-event
@@ -650,7 +684,10 @@ def emit_batch(profile_name: str, state: dict, batch_size: int, base_seq: int = 
 
 
 def write_batch_to_volume(
-    client: WorkspaceClient, volume_path: str, batch: list[dict], seq: int,
+    client: WorkspaceClient,
+    volume_path: str,
+    batch: list[dict],
+    seq: int,
 ) -> str:
     """Write one batch of events as a JSON file to the Volume.
 
@@ -672,8 +709,11 @@ def write_batch_to_volume(
 
 
 def create_bronze_streaming_table(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
     refresh_minutes: int = 5,
     volume: str = "events_volume",
 ) -> dict:
@@ -735,8 +775,12 @@ def create_bronze_streaming_table(
 
 
 def _ensure_direct_bronze_table(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str, table_name: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
+    table_name: str,
 ) -> str:
     """Create catalog + schema + Delta table if missing for direct-to-table
     streaming. Returns the fully-qualified table name.
@@ -752,7 +796,8 @@ def _ensure_direct_bronze_table(
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     comment = DEVICE_PROFILES[profile]["comment"]
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"CREATE TABLE IF NOT EXISTS {fqn} ({col_ddl}) "
         f"USING DELTA COMMENT 'Streaming demo events — {comment}'",
     )
@@ -776,8 +821,11 @@ def _format_sql_value(v: Any) -> str:
 
 
 def insert_batch_direct(
-    client: WorkspaceClient, warehouse_id: str,
-    table_fqn: str, profile: str, batch: list[dict],
+    client: WorkspaceClient,
+    warehouse_id: str,
+    table_fqn: str,
+    profile: str,
+    batch: list[dict],
 ) -> int:
     """INSERT one batch of events into the bronze table via DBSQL.
 
@@ -789,8 +837,7 @@ def insert_batch_direct(
     col_names = [name for name, _ in DEVICE_PROFILES[profile]["columns"]]
     col_list = ", ".join(f"`{c}`" for c in col_names)
     rows_sql = ", ".join(
-        "(" + ", ".join(_format_sql_value(row.get(c)) for c in col_names) + ")"
-        for row in batch
+        "(" + ", ".join(_format_sql_value(row.get(c)) for c in col_names) + ")" for row in batch
     )
     sql = f"INSERT INTO {table_fqn} ({col_list}) VALUES {rows_sql}"
     execute_sql(client, warehouse_id, sql)
@@ -801,8 +848,11 @@ def insert_batch_direct(
 
 
 def _ensure_events_volume(
-    client: WorkspaceClient, warehouse_id: str,
-    catalog: str, schema: str, profile: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    profile: str,
     volume: str = "events_volume",
 ) -> str:
     """Create the catalog + schema + Volume if missing. Returns the
@@ -815,7 +865,8 @@ def _ensure_events_volume(
     execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
     comment = DEVICE_PROFILES[profile]["comment"]
     execute_sql(
-        client, warehouse_id,
+        client,
+        warehouse_id,
         f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}` "
         f"COMMENT 'Streaming demo events — {comment}'",
     )
@@ -824,7 +875,9 @@ def _ensure_events_volume(
 
 
 def run_streaming_emission(
-    client: WorkspaceClient, warehouse_id: str, config: dict,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    config: dict,
     progress_dict: dict | None = None,
     stop_check: Callable[[], bool] | None = None,
 ) -> dict:
@@ -853,20 +906,37 @@ def run_streaming_emission(
     #   "volume"        — JSON files only, no Bronze
     #   "volume_bronze" — JSON files + auto-create Bronze STREAMING TABLE
     #   "direct_table"  — INSERT INTO Bronze table directly (no Volume)
+    #   "zerobus"       — direct gRPC append via Databricks Zerobus
+    #                     (requires the official SDK; raises 503-style
+    #                     NotImplementedError today — see
+    #                     src/demo_streaming_zerobus_runtime.py)
     # Defaults preserve legacy behaviour: no `destination` set →
     # respect the legacy `auto_create_bronze` flag (volume_bronze when
     # true, volume otherwise).
     destination: str = config.get("destination") or (
         "volume_bronze" if config.get("auto_create_bronze") else "volume"
     )
-    if destination not in ("volume", "volume_bronze", "direct_table"):
+    if destination not in ("volume", "volume_bronze", "direct_table", "zerobus"):
         raise ValueError(f"Unknown destination: {destination!r}")
     bronze_table: str = (config.get("bronze_table") or "").strip() or f"bronze_{profile}"
     if profile not in DEVICE_PROFILES:
         raise ValueError(f"Unknown device profile: {profile!r}")
-    events_per_batch: int = int(config.get("events_per_batch", 100))
-    interval_seconds: float = float(config.get("interval_seconds", 5.0))
-    total_duration_seconds: int = int(config.get("total_duration_seconds", 60))
+    # Defaults pulled from clone_config.yaml `streaming_limits` so the
+    # runner stays consistent with the Pydantic / UI defaults when the
+    # caller's config dict omits a field. Falls back to the legacy
+    # hardcoded numbers if the YAML can't be read.
+    from src.config import get_streaming_limits
+
+    _limits = get_streaming_limits()
+    events_per_batch: int = int(
+        config.get("events_per_batch", _limits["events_per_batch"]["default"])
+    )
+    interval_seconds: float = float(
+        config.get("interval_seconds", _limits["interval_seconds"]["default"])
+    )
+    total_duration_seconds: int = int(
+        config.get("total_duration_seconds", _limits["total_duration_seconds"]["default"])
+    )
     num_devices: int = int(
         config.get("num_devices") or DEVICE_PROFILES[profile]["default_devices"],
     )
@@ -891,28 +961,222 @@ def run_streaming_emission(
     # ``read_files()`` pipeline.
     volume_path: str | None = None
     direct_table_fqn: str | None = None
-    bronze_info: dict | None = None
     bronze_pending = False
     bronze_refresh_minutes = int(config.get("bronze_refresh_minutes", 5))
     if destination == "direct_table":
         direct_table_fqn = _ensure_direct_bronze_table(
-            client, warehouse_id, catalog, schema, profile, bronze_table,
+            client,
+            warehouse_id,
+            catalog,
+            schema,
+            profile,
+            bronze_table,
         )
         logger.info(f"Direct-to-table mode: writing to {direct_table_fqn}")
+    elif destination == "zerobus":
+        # Provision the same Delta target as direct_table — Zerobus
+        # appends to a regular Delta table, just over gRPC instead of
+        # SQL INSERT. We open the long-lived stream below (not here),
+        # so the table exists by the time the SDK tries to bind to it.
+        from src.demo_streaming_zerobus_runtime import (
+            ensure_zerobus_table,
+            is_available as _zb_is_available,
+        )
+
+        direct_table_fqn = ensure_zerobus_table(
+            client,
+            warehouse_id,
+            catalog,
+            schema,
+            profile,
+            bronze_table,
+            # Pass the SP's client_id so the runner can auto-GRANT it
+            # the perms Zerobus needs to write to the table. Avoids the
+            # `invalid_authorization_details` 401 loop for users who'd
+            # otherwise have to GRANT manually after every table create.
+            service_principal_id=(config.get("zerobus_client_id") or "").strip() or None,
+            # Optional storage location for new catalogs. Threaded
+            # through the form for workspaces whose metastore has no
+            # default storage root — without it, CREATE CATALOG fails
+            # with INVALID_STATE.
+            catalog_storage_location=(config.get("zerobus_catalog_location") or "").strip(),
+        )
+        avail, reason = _zb_is_available()
+        if not avail:
+            # Fail fast at the start of the run (rather than tick 1) so
+            # the user sees a clean error in the job log before any
+            # warehouse work happens. The reason text is the same one
+            # the availability endpoint returns.
+            raise NotImplementedError(reason or "Zerobus runtime not available")
+        # Validate per-request creds — duplicates the Pydantic validator
+        # on StreamingEmissionRequest, but the runner is also reachable
+        # from places that bypass the model (e.g. programmatic config
+        # dicts), so re-check defensively. Required field set depends
+        # on the auth mode:
+        #   - oauth: server_endpoint + client_id + client_secret
+        #   - pat:   server_endpoint only (PAT comes off the
+        #            WorkspaceClient at stream-open time)
+        zb_auth_mode = (config.get("zerobus_auth_mode") or "oauth").lower()
+        required_keys = ["zerobus_server_endpoint"]
+        if zb_auth_mode == "oauth":
+            required_keys += ["zerobus_client_id", "zerobus_client_secret"]
+        missing = [k for k in required_keys if not (config.get(k) or "").strip()]
+        if missing:
+            raise ValueError(
+                f"destination='zerobus' (auth_mode={zb_auth_mode!r}) requires "
+                f"{', '.join(missing)} in the config"
+            )
+        logger.info(f"Zerobus mode: appending to {direct_table_fqn}")
     else:
-        volume_path = _ensure_events_volume(client, warehouse_id, catalog, schema, profile, volume=volume)
+        volume_path = _ensure_events_volume(
+            client, warehouse_id, catalog, schema, profile, volume=volume
+        )
         if destination == "volume_bronze":
             bronze_pending = True
 
     state = DEVICE_PROFILES[profile]["init_state"](num_devices)
 
     start = time.monotonic()
+
+    # Open the Zerobus stream once before the loop. The SDK bills this
+    # as a long-lived gRPC connection: opening per-batch would defeat
+    # its purpose. Closed in the finally below so an interrupt /
+    # exception never leaks the stream.
+    # Use a mutable one-element list so the inner loop can hot-swap
+    # the stream when the server tears it down with `Stream is closed:
+    # Internal`. Without this, the first successful batch lands and
+    # subsequent ticks all fail because nobody reopens the gRPC stream.
+    # The SDK's built-in `recovery=True` is supposed to handle this but
+    # doesn't fire reliably for the Internal status, so we layer an
+    # explicit reopen on top.
+    zb_holder: list = [None]
+    reopen_zerobus: object = None
+    if destination == "zerobus":
+        from src.demo_streaming_zerobus_runtime import open_zerobus_stream
+
+        workspace_url = (getattr(getattr(client, "config", None), "host", "") or "").rstrip("/")
+        # Two auth modes; default "oauth" preserves the legacy contract
+        # for callers that don't set the field. When "pat", we lift the
+        # token off the logged-in WorkspaceClient — same token the rest
+        # of the app uses for warehouse / UC calls — so no extra form
+        # field is needed. Falls back to OAuth if the client has no PAT
+        # to surface (e.g. SDK auth via env vars without a token).
+        auth_mode = (config.get("zerobus_auth_mode") or "oauth").lower()
+        pat: str | None = None
+        if auth_mode == "pat":
+            pat = (getattr(getattr(client, "config", None), "token", "") or "").strip() or None
+            if not pat:
+                raise ValueError(
+                    "zerobus_auth_mode='pat' but the logged-in client has no PAT to lift "
+                    "(client.config.token is empty). Log in with a PAT or switch back to "
+                    "auth_mode='oauth' and supply zerobus_client_id/zerobus_client_secret."
+                )
+
+        # Bind the open args once so the inner loop can call into
+        # this without us re-threading every parameter through.
+        _open_args = {
+            "workspace_url": workspace_url,
+            "server_endpoint": str(config["zerobus_server_endpoint"]).rstrip("/"),
+            "client_id": str(config.get("zerobus_client_id") or ""),
+            "client_secret": str(config.get("zerobus_client_secret") or ""),
+            "table_fqn": direct_table_fqn or "",
+            "pat": pat,
+        }
+
+        def _open_and_track() -> object:
+            new_stream = open_zerobus_stream(**_open_args)
+            zb_holder[0] = new_stream
+            return new_stream
+
+        reopen_zerobus = _open_and_track
+        _open_and_track()  # initial open
+
+    try:
+        return _run_emission_loop(
+            client=client,
+            warehouse_id=warehouse_id,
+            destination=destination,
+            profile=profile,
+            catalog=catalog,
+            schema=schema,
+            volume=volume,
+            volume_path=volume_path,
+            direct_table_fqn=direct_table_fqn,
+            zerobus_stream=zb_holder[0],
+            zerobus_reopen=reopen_zerobus,
+            state=state,
+            events_per_batch=events_per_batch,
+            interval_seconds=interval_seconds,
+            total_duration_seconds=total_duration_seconds,
+            bronze_pending=bronze_pending,
+            bronze_refresh_minutes=bronze_refresh_minutes,
+            stopped_cb=stopped_cb,
+            progress=progress,
+            start=start,
+        )
+    finally:
+        # Close the Zerobus stream even on exceptions / KeyboardInterrupt.
+        # `zb_holder[0]` is whichever stream the loop last swapped in —
+        # closing the *current* stream rather than the originally-opened
+        # one prevents leaking a hot-swapped recreation.
+        # close_zerobus_stream swallows its own errors so this finally
+        # never raises secondarily.
+        if zb_holder[0] is not None:
+            from src.demo_streaming_zerobus_runtime import close_zerobus_stream
+
+            close_zerobus_stream(zb_holder[0])
+
+
+def _run_emission_loop(  # noqa: PLR0912, PLR0915  (legacy structure mirrored from old in-line loop)
+    *,
+    client,
+    warehouse_id,
+    destination,
+    profile,
+    catalog,
+    schema,
+    volume,
+    volume_path,
+    direct_table_fqn,
+    zerobus_stream,
+    zerobus_reopen=None,
+    state,
+    events_per_batch,
+    interval_seconds,
+    total_duration_seconds,
+    bronze_pending,
+    bronze_refresh_minutes,
+    stopped_cb,
+    progress,
+    start,
+):
+    """Inner emission loop, lifted from run_streaming_emission to allow
+    a clean ``try/finally`` around stream lifecycle without further
+    growing the cognitive complexity of the outer function.
+    """
     events_emitted = 0
     files_written = 0
     rows_inserted = 0
     ticks = 0
     last_path: str | None = None
     stopped_early = False
+    bronze_info: dict | None = None
+    # Track the last per-tick exception so the job summary surfaces it
+    # in the UI. Without this the runner reports "Completed — 0 events"
+    # for a job where every tick failed silently, which is impossible
+    # to diagnose without combing the API server logs.
+    last_error: str | None = None
+    tick_errors: int = 0
+    # Counts how many times we hot-swapped the Zerobus stream after the
+    # server tore it down with `Stream is closed: Internal`. Surfaced in
+    # progress so an operator watching repeated reopens knows there's a
+    # server-side instability worth investigating, even when subsequent
+    # ticks succeed against the recreated stream.
+    stream_reopens: int = 0
+    # Local rebinding so the loop can swap in a fresh stream after a
+    # close; we update both the local var and the caller's holder via
+    # `zerobus_reopen()` so the outer finally closes the current one.
+    current_zerobus_stream = zerobus_stream
 
     while True:
         if stopped_cb():
@@ -929,15 +1193,74 @@ def run_streaming_emission(
             batch = emit_batch(profile, state, events_per_batch, base_seq=events_emitted)
             if destination == "direct_table":
                 rows_inserted += insert_batch_direct(
-                    client, warehouse_id, direct_table_fqn, profile, batch,
+                    client,
+                    warehouse_id,
+                    direct_table_fqn,
+                    profile,
+                    batch,
                 )
+                last_path = direct_table_fqn
+            elif destination == "zerobus":
+                # Same row-count semantics as direct_table — Zerobus
+                # ingests one record at a time over a single long-lived
+                # stream. The stream is hot-swapped via `zerobus_reopen`
+                # in the except block when the server tears it down,
+                # so a per-batch exception only loses the current batch
+                # and the next tick gets a fresh stream.
+                #
+                # Encode TIMESTAMP/DATE fields to int64/int32 per the
+                # Zerobus type-mapping rules — the shared generators
+                # emit ISO strings (which work for volume / direct_table
+                # paths) and the encoder rewrites them at the SDK
+                # boundary. Without this the server rejects the JSON
+                # with `invalid digit found in string` at the timestamp.
+                from src.demo_streaming_zerobus_runtime import (
+                    encode_record_for_zerobus,
+                    ingest_batch_zerobus,
+                )
+
+                profile_columns = DEVICE_PROFILES[profile]["columns"]
+                encoded_batch = [encode_record_for_zerobus(r, profile_columns) for r in batch]
+                rows_inserted += ingest_batch_zerobus(current_zerobus_stream, encoded_batch)
                 last_path = direct_table_fqn
             else:
                 last_path = write_batch_to_volume(client, volume_path, batch, ticks)
                 files_written += 1
             events_emitted += events_per_batch
         except Exception as e:
-            logger.warning(f"Streaming tick failed (continuing): {e}")
+            # Surface the error in the job summary as well as the log.
+            # The UI's job panel reads progress["last_error"], so the
+            # operator sees what's actually wrong instead of "Completed
+            # — 0 events" with the real cause buried in API server logs.
+            last_error = f"{type(e).__name__}: {e}"
+            tick_errors += 1
+            logger.warning(f"Streaming tick failed (continuing): {last_error}")
+            # Zerobus-specific: when the server tears down the gRPC
+            # stream with `Stream is closed: Internal` (or any close
+            # signature) the *next* tick would also fail unless we
+            # reopen. The SDK's `recovery=True` is supposed to handle
+            # this but doesn't fire reliably for the Internal status
+            # we observe in practice. Hot-swap a fresh stream so
+            # subsequent ticks get a working one.
+            if (
+                destination == "zerobus"
+                and zerobus_reopen is not None
+                and ("Stream is closed" in last_error or "Stream closed" in last_error)
+            ):
+                try:
+                    current_zerobus_stream = zerobus_reopen()
+                    stream_reopens += 1
+                    logger.info(
+                        f"Zerobus stream reopened after close ({stream_reopens} reopen(s) so far)"
+                    )
+                except Exception as reopen_err:
+                    # If reopening also fails (e.g. auth genuinely
+                    # rejected on the second handshake), the next tick
+                    # will fail again with the same close error and
+                    # we'll keep retrying. Surfacing both errors in
+                    # last_error helps the operator see the cascade.
+                    last_error = f"{last_error}; reopen also failed: {reopen_err}"
+                    logger.warning(f"Zerobus stream reopen failed: {reopen_err}")
 
         # Create the Bronze STREAMING TABLE after the first JSON batch has
         # landed. read_files() needs at least one file present to infer the
@@ -948,22 +1271,31 @@ def run_streaming_emission(
         # warehouse on every tick.
         if bronze_pending and files_written > 0:
             bronze_info = create_bronze_streaming_table(
-                client, warehouse_id, catalog, schema, profile,
+                client,
+                warehouse_id,
+                catalog,
+                schema,
+                profile,
                 refresh_minutes=bronze_refresh_minutes,
                 volume=volume,
             )
             bronze_pending = False
 
         ticks += 1
-        progress.update({
-            "events_emitted": events_emitted,
-            "files_written": files_written,
-            "rows_inserted": rows_inserted,
-            "current_batch_path": last_path,
-            "elapsed_seconds": round(elapsed, 2),
-            "ticks": ticks,
-            "stopped": False,
-        })
+        progress.update(
+            {
+                "events_emitted": events_emitted,
+                "files_written": files_written,
+                "rows_inserted": rows_inserted,
+                "current_batch_path": last_path,
+                "elapsed_seconds": round(elapsed, 2),
+                "ticks": ticks,
+                "tick_errors": tick_errors,
+                "last_error": last_error,
+                "stream_reopens": stream_reopens,
+                "stopped": False,
+            }
+        )
 
         # Sleep in small slices so a Stop request lands quickly even
         # when interval_seconds is large (e.g. 60s).
@@ -990,6 +1322,9 @@ def run_streaming_emission(
         "files_written": files_written,
         "rows_inserted": rows_inserted,
         "ticks": ticks,
+        "tick_errors": tick_errors,
+        "last_error": last_error,
+        "stream_reopens": stream_reopens,
         "duration_seconds": duration,
         "stopped": stopped_early,
         "bronze_status": bronze_info["status"] if bronze_info else None,
@@ -999,8 +1334,11 @@ def run_streaming_emission(
 
 
 def get_auto_loader_sql(
-    catalog: str, schema: str, profile: str,
-    refresh_minutes: int = 5, volume: str = "events_volume",
+    catalog: str,
+    schema: str,
+    profile: str,
+    refresh_minutes: int = 5,
+    volume: str = "events_volume",
 ) -> str:
     """Build the copy-paste SQL the UI shows for the Auto Loader Bronze
     table — kept in one place so the UI snippet and the auto-create

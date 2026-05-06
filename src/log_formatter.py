@@ -21,56 +21,92 @@ def _c(code: str, text: str) -> str:
 
 
 # Colors
-def gray(t: str) -> str:    return _c("90", t)
-def red(t: str) -> str:     return _c("31", t)
-def green(t: str) -> str:   return _c("32", t)
-def yellow(t: str) -> str:  return _c("33", t)
-def blue(t: str) -> str:    return _c("34", t)
-def cyan(t: str) -> str:    return _c("36", t)
-def bold(t: str) -> str:    return _c("1", t)
-def dim(t: str) -> str:     return _c("2", t)
+def gray(t: str) -> str:
+    return _c("90", t)
+
+
+def red(t: str) -> str:
+    return _c("31", t)
+
+
+def green(t: str) -> str:
+    return _c("32", t)
+
+
+def yellow(t: str) -> str:
+    return _c("33", t)
+
+
+def blue(t: str) -> str:
+    return _c("34", t)
+
+
+def cyan(t: str) -> str:
+    return _c("36", t)
+
+
+def bold(t: str) -> str:
+    return _c("1", t)
+
+
+def dim(t: str) -> str:
+    return _c("2", t)
+
 
 # Bold + color
-def bold_green(t: str) -> str:  return _c("1;32", t)
-def bold_red(t: str) -> str:    return _c("1;31", t)
-def bold_yellow(t: str) -> str: return _c("1;33", t)
-def bold_cyan(t: str) -> str:   return _c("1;36", t)
-def bold_blue(t: str) -> str:   return _c("1;34", t)
+def bold_green(t: str) -> str:
+    return _c("1;32", t)
+
+
+def bold_red(t: str) -> str:
+    return _c("1;31", t)
+
+
+def bold_yellow(t: str) -> str:
+    return _c("1;33", t)
+
+
+def bold_cyan(t: str) -> str:
+    return _c("1;36", t)
+
+
+def bold_blue(t: str) -> str:
+    return _c("1;34", t)
 
 
 # ── Icons ─────────────────────────────────────────────────────────
-OK      = green("✓")
-FAIL    = red("✗")
-SKIP    = yellow("⊘")
-INFO    = blue("ℹ")
-WARN    = yellow("⚠")
-ERR     = red("✗")
-ARROW   = cyan("→")
-TABLE   = "◫"
-VIEW    = "◧"
-FUNC    = "ƒ"
-VOL     = "▤"
-SCHEMA  = "◈"
+OK = green("✓")
+FAIL = red("✗")
+SKIP = yellow("⊘")
+INFO = blue("ℹ")
+WARN = yellow("⚠")
+ERR = red("✗")
+ARROW = cyan("→")
+TABLE = "◫"
+VIEW = "◧"
+FUNC = "ƒ"
+VOL = "▤"
+SCHEMA = "◈"
 CATALOG = "▣"
-LOCK    = "⛨"
-CLOCK   = dim("⏱")
+LOCK = "⛨"
+CLOCK = dim("⏱")
 
 
 # ── Logging formatter ────────────────────────────────────────────
 
 _LEVEL_COLORS = {
-    "DEBUG":    "90",      # gray
-    "INFO":     "36",      # cyan
-    "WARNING":  "33",      # yellow
-    "ERROR":    "1;31",    # bold red
-    "CRITICAL": "1;31;41", # bold red on red bg
+    "DEBUG": "90",  # gray
+    "INFO": "36",  # cyan
+    "WARNING": "33",  # yellow
+    "ERROR": "1;31",  # bold red
+    "CRITICAL": "1;31;41",  # bold red on red bg
 }
 
 _LEVEL_LABELS = {
-    "DEBUG":    " DBG ",
-    "INFO":     " INF ",
-    "WARNING":  " WRN ",
-    "ERROR":    " ERR ",
+    "DEBUG": " DBG ",
+    "INFO": " INF ",
+    "WARNING": " WRN ",
+    "ERROR": " ERR ",
     "CRITICAL": " CRT ",
 }
 
@@ -133,6 +169,7 @@ def setup_color_logging(verbose: bool = False, log_file: str | None = None) -> N
 
 
 # ── Display helpers ──────────────────────────────────────────────
+
 
 def header(title: str, width: int = 60) -> str:
     """Render a styled section header."""

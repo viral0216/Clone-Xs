@@ -82,8 +82,22 @@ class TestCloneHistory:
     @patch("src.clone_history.execute_sql")
     def test_diff_operations(self, mock_sql):
         mock_sql.side_effect = [
-            [{"operation_id": "op1", "tables_cloned": 10, "tables_failed": 0, "started_at": "2024-01-01"}],
-            [{"operation_id": "op2", "tables_cloned": 12, "tables_failed": 1, "started_at": "2024-01-02"}],
+            [
+                {
+                    "operation_id": "op1",
+                    "tables_cloned": 10,
+                    "tables_failed": 0,
+                    "started_at": "2024-01-01",
+                }
+            ],
+            [
+                {
+                    "operation_id": "op2",
+                    "tables_cloned": 12,
+                    "tables_failed": 1,
+                    "started_at": "2024-01-02",
+                }
+            ],
         ]
         h = self._make_history()
         diff = h.diff_operations("op1", "op2")
@@ -103,7 +117,12 @@ class TestCloneHistory:
 
     @patch("src.clone_history.execute_sql")
     def test_diff_identical_operations(self, mock_sql):
-        row = {"operation_id": "op1", "tables_cloned": 10, "tables_failed": 0, "started_at": "2024-01-01"}
+        row = {
+            "operation_id": "op1",
+            "tables_cloned": 10,
+            "tables_failed": 0,
+            "started_at": "2024-01-01",
+        }
         mock_sql.side_effect = [[row], [row]]
         h = self._make_history()
         diff = h.diff_operations("op1", "op1")

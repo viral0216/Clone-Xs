@@ -49,7 +49,7 @@ def _is_sql_array(literal: str, min_size: int = 1) -> bool:
     Doesn't validate the inner SQL, just the shape."""
     if not literal.startswith("array(") or not literal.endswith(")"):
         return False
-    inner = literal[len("array("):-1]
+    inner = literal[len("array(") : -1]
     return inner.count("'") >= min_size * 2
 
 

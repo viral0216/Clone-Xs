@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'guide/clone',
         'guide/advanced-clone',
+        'guide/convert',
         'guide/diff-and-compare',
         'guide/sync',
         'guide/continuous-sync',

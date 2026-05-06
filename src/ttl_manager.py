@@ -29,12 +29,15 @@ class TTLManager:
     """Manages TTL policies for cloned catalogs."""
 
     def __init__(
-        self, client, warehouse_id: str,
+        self,
+        client,
+        warehouse_id: str,
         state_catalog: str | None = None,
         state_schema: str | None = None,
         config: dict | None = None,
     ):
         from src.table_registry import get_catalog, get_schema_fqn
+
         cfg = config or {}
         state_catalog = state_catalog or get_catalog(cfg)
         schema_fqn = get_schema_fqn(cfg, "state")
@@ -48,10 +51,16 @@ class TTLManager:
     def init_ttl_table(self) -> None:
         """Create the TTL policies Delta table if it doesn't exist."""
         from src.catalog_utils import ensure_catalog_and_schema
-        ensure_catalog_and_schema(self.client, self.warehouse_id, self.state_catalog, self.state_schema)
+
+        ensure_catalog_and_schema(
+            self.client, self.warehouse_id, self.state_catalog, self.state_schema
+        )
 
         try:
-            execute_sql(self.client, self.warehouse_id, f"""
+            execute_sql(
+                self.client,
+                self.warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {self.table_fqn} (
                     dest_catalog STRING,
                     dest_schema STRING,
@@ -62,18 +71,24 @@ class TTLManager:
                     operation_id STRING,
                     status STRING
                 )
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Failed to create table {self.table_fqn}: {e}")
 
         logger.info(f"TTL store tables ready: {self.state_catalog}.{self.state_schema}")
 
     def set_ttl(
-        self, dest_catalog: str, ttl_days: int,
-        operation_id: str | None = None, created_by: str | None = None,
+        self,
+        dest_catalog: str,
+        ttl_days: int,
+        operation_id: str | None = None,
+        created_by: str | None = None,
     ) -> None:
         """Set TTL on a destination catalog."""
-        expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).strftime("%Y-%m-%d %H:%M:%S")
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         sql = f"""
             MERGE INTO {self.table_fqn} AS target
             USING (SELECT '{dest_catalog}' AS dest_catalog) AS source
@@ -163,12 +178,15 @@ class TTLManager:
                 continue
 
             try:
-                execute_sql(self.client, self.warehouse_id,
-                            f"DROP CATALOG IF EXISTS `{cat}` CASCADE")
+                execute_sql(
+                    self.client, self.warehouse_id, f"DROP CATALOG IF EXISTS `{cat}` CASCADE"
+                )
                 # Mark as cleaned up
-                execute_sql(self.client, self.warehouse_id,
-                            f"UPDATE {self.table_fqn} SET status = 'cleaned' "
-                            f"WHERE dest_catalog = '{cat}'")
+                execute_sql(
+                    self.client,
+                    self.warehouse_id,
+                    f"UPDATE {self.table_fqn} SET status = 'cleaned' WHERE dest_catalog = '{cat}'",
+                )
                 result["dropped"].append(cat)
                 logger.info(f"Dropped expired catalog: {cat}")
             except Exception as e:

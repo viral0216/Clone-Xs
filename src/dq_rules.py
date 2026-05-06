@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _get_dq_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "governance")
 
 
@@ -26,6 +27,7 @@ def ensure_dq_tables(client, warehouse_id, config):
     schema = _get_dq_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -48,12 +50,16 @@ def ensure_dq_tables(client, warehouse_id, config):
 
     for table_name, cols in tables.items():
         try:
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({cols})
                 USING DELTA
                 COMMENT 'Clone-Xs DQ: {table_name}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Could not create {schema}.{table_name}: {e}")
 
@@ -62,6 +68,7 @@ def ensure_dq_tables(client, warehouse_id, config):
 # Rule CRUD
 # ---------------------------------------------------------------------------
 
+
 def create_rule(client, warehouse_id, config, rule: dict, user: str = "") -> dict:
     """Create a new DQ rule."""
     schema = _get_dq_schema(config)
@@ -69,7 +76,10 @@ def create_rule(client, warehouse_id, config, rule: dict, user: str = "") -> dic
     now = datetime.now(timezone.utc).isoformat()
     params_json = json.dumps(rule.get("params", {}))
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {schema}.dq_rules
         VALUES ('{rule_id}', '{_esc(rule["name"])}', '{_esc(rule["table_fqn"])}',
                 '{_esc(rule.get("column", ""))}', '{rule["rule_type"]}',
@@ -77,7 +87,8 @@ def create_rule(client, warehouse_id, config, rule: dict, user: str = "") -> dic
                 {rule.get("threshold", 0.0)}, '{rule.get("severity", "warning")}',
                 '{rule.get("schedule", "manual")}', {str(rule.get("enabled", True)).lower()},
                 '{_esc(user)}', '{now}', '{now}')
-    """)
+    """,
+    )
     return {"rule_id": rule_id, "name": rule["name"], "status": "created"}
 
 
@@ -92,8 +103,11 @@ def list_rules(client, warehouse_id, config, table_fqn: str = "", severity: str 
     where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
 
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.dq_rules {where} ORDER BY table_fqn, name")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT * FROM {schema}.dq_rules {where} ORDER BY table_fqn, name",
+        )
         return [{k: _parse_val(v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
@@ -114,21 +128,29 @@ def update_rule(client, warehouse_id, config, rule_id: str, updates: dict):
             else:
                 set_parts.append(f"{key} = '{_esc(str(val))}'")
 
-    execute_sql(client, warehouse_id,
-        f"UPDATE {schema}.dq_rules SET {', '.join(set_parts)} WHERE rule_id = '{_esc(rule_id)}'")
+    execute_sql(
+        client,
+        warehouse_id,
+        f"UPDATE {schema}.dq_rules SET {', '.join(set_parts)} WHERE rule_id = '{_esc(rule_id)}'",
+    )
 
 
 def delete_rule(client, warehouse_id, config, rule_id: str):
     """Delete a DQ rule."""
     schema = _get_dq_schema(config)
-    execute_sql(client, warehouse_id, f"DELETE FROM {schema}.dq_rules WHERE rule_id = '{_esc(rule_id)}'")
+    execute_sql(
+        client, warehouse_id, f"DELETE FROM {schema}.dq_rules WHERE rule_id = '{_esc(rule_id)}'"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Rule Execution
 # ---------------------------------------------------------------------------
 
-def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog: str = "", table_fqn: str = "") -> list[dict]:
+
+def run_rules(
+    client, warehouse_id, config, rule_ids: list[str] = None, catalog: str = "", table_fqn: str = ""
+) -> list[dict]:
     """Execute DQ rules and store results."""
     schema = _get_dq_schema(config)
 
@@ -142,8 +164,11 @@ def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog:
     if catalog:
         where_parts.append(f"table_fqn LIKE '{_esc(catalog)}.%'")
 
-    rules = execute_sql(client, warehouse_id,
-        f"SELECT * FROM {schema}.dq_rules WHERE {' AND '.join(where_parts)} ORDER BY table_fqn")
+    rules = execute_sql(
+        client,
+        warehouse_id,
+        f"SELECT * FROM {schema}.dq_rules WHERE {' AND '.join(where_parts)} ORDER BY table_fqn",
+    )
 
     results = []
     value_rows = []
@@ -164,22 +189,27 @@ def run_rules(client, warehouse_id, config, rule_ids: list[str] = None, catalog:
 
     # Batch insert results
     from src.table_registry import get_batch_insert_size
+
     batch_size = get_batch_insert_size(config or {})
     for i in range(0, len(value_rows), batch_size):
-        batch = value_rows[i:i + batch_size]
+        batch = value_rows[i : i + batch_size]
         try:
-            execute_sql(client, warehouse_id,
-                        f"INSERT INTO {schema}.dq_results VALUES {', '.join(batch)}")
+            execute_sql(
+                client, warehouse_id, f"INSERT INTO {schema}.dq_results VALUES {', '.join(batch)}"
+            )
         except Exception as e:
             logger.warning(f"Could not store DQ results batch: {e}")
 
-    logger.info(f"Executed {len(results)} DQ rules: {sum(1 for r in results if r['passed'])} passed, {sum(1 for r in results if not r['passed'])} failed")
+    logger.info(
+        f"Executed {len(results)} DQ rules: {sum(1 for r in results if r['passed'])} passed, {sum(1 for r in results if not r['passed'])} failed"
+    )
     return results
 
 
 def _execute_single_rule(client, warehouse_id, rule: dict) -> dict:
     """Execute a single DQ rule and return the result."""
     import time
+
     start = time.time()
     table_fqn = rule["table_fqn"]
     column = rule.get("column_name", "")
@@ -220,8 +250,15 @@ def _execute_single_rule(client, warehouse_id, rule: dict) -> dict:
             # Custom SQL should return total and failures columns
             sql = rule.get("expression", "SELECT 0 AS total, 0 AS failures")
         else:
-            return {"rule_id": rule["rule_id"], "passed": False, "error": f"Unknown rule type: {rule_type}",
-                    "total_rows": 0, "failed_rows": 0, "failure_rate": 0, "execution_time_ms": 0}
+            return {
+                "rule_id": rule["rule_id"],
+                "passed": False,
+                "error": f"Unknown rule type: {rule_type}",
+                "total_rows": 0,
+                "failed_rows": 0,
+                "failure_rate": 0,
+                "execution_time_ms": 0,
+            }
 
         rows = execute_sql(client, warehouse_id, sql)
         row = rows[0] if rows else {"total": 0, "failures": 0}
@@ -265,13 +302,18 @@ def _execute_single_rule(client, warehouse_id, rule: dict) -> dict:
         }
 
 
-def get_latest_results(client, warehouse_id, config, table_fqn: str = "", limit: int = 100) -> list[dict]:
+def get_latest_results(
+    client, warehouse_id, config, table_fqn: str = "", limit: int = 100
+) -> list[dict]:
     """Get latest DQ validation results."""
     schema = _get_dq_schema(config)
     where = f"WHERE table_fqn = '{_esc(table_fqn)}'" if table_fqn else ""
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.dq_results {where} ORDER BY executed_at DESC LIMIT {limit}")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT * FROM {schema}.dq_results {where} ORDER BY executed_at DESC LIMIT {limit}",
+        )
         return [{k: _parse_val(v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
@@ -284,16 +326,20 @@ def get_dq_history(client, warehouse_id, config, rule_id: str = "", days: int = 
     if rule_id:
         where_parts.append(f"rule_id = '{_esc(rule_id)}'")
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT rule_id, rule_name, table_fqn, severity,
                    cast(executed_at as DATE) AS date,
                    sum(CASE WHEN passed THEN 1 ELSE 0 END) AS passes,
                    sum(CASE WHEN NOT passed THEN 1 ELSE 0 END) AS failures
             FROM {schema}.dq_results
-            WHERE {' AND '.join(where_parts)}
+            WHERE {" AND ".join(where_parts)}
             GROUP BY rule_id, rule_name, table_fqn, severity, cast(executed_at as DATE)
             ORDER BY date DESC
-        """)
+        """,
+        )
         return [{k: _parse_val(v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
@@ -345,6 +391,7 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
       Params: sql
     """
     import time
+
     start = time.time()
     check_type = check.get("check_type", "")
     params = check.get("params", {})
@@ -377,8 +424,11 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
                 total = len(rows)
                 mismatches = [r for r in rows if not r.get("matched")]
                 passed = len(mismatches) == 0
-                detail = {"total_groups": total, "mismatched_groups": len(mismatches),
-                          "mismatches": mismatches[:10]}
+                detail = {
+                    "total_groups": total,
+                    "mismatched_groups": len(mismatches),
+                    "mismatches": mismatches[:10],
+                }
             else:
                 r = rows[0] if rows else {}
                 passed = str(r.get("src_val")) == str(r.get("dst_val"))
@@ -388,7 +438,9 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
             child_table = _validate_identifier(params["child_table"], "child_table")
             child_column = _validate_identifier(params["child_column"], "child_column")
             parent_table = _validate_identifier(params["parent_table"], "parent_table")
-            parent_column = _validate_identifier(params.get("parent_column", params["child_column"]), "parent_column")
+            parent_column = _validate_identifier(
+                params.get("parent_column", params["child_column"]), "parent_column"
+            )
 
             sql = f"""
                 SELECT count(*) AS total,
@@ -401,8 +453,12 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
             total = int(r.get("total", 0))
             orphans = int(r.get("orphans", 0))
             passed = orphans == 0
-            detail = {"total_rows": total, "orphan_rows": orphans,
-                      "child_table": child_table, "parent_table": parent_table}
+            detail = {
+                "total_rows": total,
+                "orphan_rows": orphans,
+                "child_table": child_table,
+                "parent_table": parent_table,
+            }
 
         elif check_type == "row_count_match":
             src_table = _validate_identifier(params["source_table"], "source_table")
@@ -420,8 +476,12 @@ def run_cross_table_check(client, warehouse_id, config, check: dict) -> dict:
             dst_count = int(r.get("dst_count", 0))
             diff_pct = abs(src_count - dst_count) / max(src_count, 1) * 100
             passed = diff_pct <= tolerance_pct
-            detail = {"source_count": src_count, "dest_count": dst_count,
-                      "diff_pct": round(diff_pct, 2), "tolerance_pct": tolerance_pct}
+            detail = {
+                "source_count": src_count,
+                "dest_count": dst_count,
+                "diff_pct": round(diff_pct, 2),
+                "tolerance_pct": tolerance_pct,
+            }
 
         elif check_type == "custom_sql":
             sql = params.get("sql", "SELECT true AS passed, 'ok' AS message")

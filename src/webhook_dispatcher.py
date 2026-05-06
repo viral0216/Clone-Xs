@@ -45,9 +45,7 @@ class WebhookDispatcher:
     def _write_config(self, webhooks: list[WebhookConfig]) -> None:
         with self._lock:
             CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            CONFIG_PATH.write_text(
-                json.dumps([w.model_dump() for w in webhooks], indent=2)
-            )
+            CONFIG_PATH.write_text(json.dumps([w.model_dump() for w in webhooks], indent=2))
 
     # ------------------------------------------------------------------
     # Public API
@@ -66,7 +64,11 @@ class WebhookDispatcher:
                 results.append({"webhook_id": wh.id, "status": "skipped", "detail": "disabled"})
                 continue
 
-            enriched = {**payload, "event_type": event_type, "timestamp": datetime.now(timezone.utc).isoformat()}
+            enriched = {
+                **payload,
+                "event_type": event_type,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
             try:
                 if wh.type == "slack":

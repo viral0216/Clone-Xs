@@ -106,11 +106,26 @@ TABLE_SECTIONS = [
         "title": "Governance",
         "subtitle": "Business glossary, certifications, change history, and new features",
         "schema": "governance",
-        "tables": ["business_glossary", "glossary_links", "certifications", "change_history",
-                    "coverage_snapshots", "copq_events", "copq_config", "nl_rule_audit",
-                    "playbooks", "playbook_executions", "data_products", "data_product_subscriptions",
-                    "compliance_frameworks", "compliance_evidence", "compliance_scores",
-                    "alert_routing_rules", "alert_inbox", "alert_digests"],
+        "tables": [
+            "business_glossary",
+            "glossary_links",
+            "certifications",
+            "change_history",
+            "coverage_snapshots",
+            "copq_events",
+            "copq_config",
+            "nl_rule_audit",
+            "playbooks",
+            "playbook_executions",
+            "data_products",
+            "data_product_subscriptions",
+            "compliance_frameworks",
+            "compliance_evidence",
+            "compliance_scores",
+            "alert_routing_rules",
+            "alert_inbox",
+            "alert_digests",
+        ],
     },
     {
         "key": "dq_rules",
@@ -150,9 +165,12 @@ TABLE_SECTIONS = [
         "subtitle": "Run history, per-table details, alert rules, quality rules",
         "schema": "reconciliation",
         "tables": [
-            "reconciliation_runs", "reconciliation_details",
-            "alert_rules", "alert_history",
-            "quality_rules", "quality_violations",
+            "reconciliation_runs",
+            "reconciliation_details",
+            "alert_rules",
+            "alert_history",
+            "quality_rules",
+            "quality_violations",
             "reconciliation_schedules",
         ],
     },
@@ -161,8 +179,15 @@ TABLE_SECTIONS = [
         "title": "Data Quality Monitoring",
         "subtitle": "Anomaly detection baselines, freshness, trust scores, and coverage",
         "schema": "data_quality",
-        "tables": ["metric_baselines", "freshness_history", "monitoring_configs", "expectation_suites",
-                    "trust_scores", "trust_score_config", "anomaly_correlations"],
+        "tables": [
+            "metric_baselines",
+            "freshness_history",
+            "monitoring_configs",
+            "expectation_suites",
+            "trust_scores",
+            "trust_score_config",
+            "anomaly_correlations",
+        ],
     },
     {
         "key": "lineage",
@@ -190,7 +215,14 @@ TABLE_SECTIONS = [
         "title": "Master Data Management",
         "subtitle": "Golden records, matching, stewardship, and hierarchies",
         "schema": "mdm",
-        "tables": ["mdm_entities", "mdm_source_records", "mdm_match_pairs", "mdm_matching_rules", "mdm_stewardship_queue", "mdm_hierarchies"],
+        "tables": [
+            "mdm_entities",
+            "mdm_source_records",
+            "mdm_match_pairs",
+            "mdm_matching_rules",
+            "mdm_stewardship_queue",
+            "mdm_hierarchies",
+        ],
     },
     {
         "key": "pipelines",
@@ -204,8 +236,15 @@ TABLE_SECTIONS = [
         "title": "State & Scheduler",
         "subtitle": "Clone state tracking, TTL policies, scheduler, and environments",
         "schema": "state",
-        "tables": ["clone_state", "clone_operations", "ttl_policies", "scheduler_state", "scheduler_run_history",
-                    "environments", "environment_templates"],
+        "tables": [
+            "clone_state",
+            "clone_operations",
+            "ttl_policies",
+            "scheduler_state",
+            "scheduler_run_history",
+            "environments",
+            "environment_templates",
+        ],
     },
 ]
 
@@ -221,14 +260,16 @@ def get_all_table_fqns(config: dict) -> list[dict]:
         schema_fqn = get_schema_fqn(config, section_key)
         schema_name = schema_fqn.split(".", 1)[1] if "." in schema_fqn else schema_fqn
         tables = [{"name": t, "fqn": f"{schema_fqn}.{t}"} for t in section["tables"]]
-        result.append({
-            "key": section["key"],
-            "title": section["title"],
-            "subtitle": section["subtitle"],
-            "schema": schema_name,
-            "schema_fqn": schema_fqn,
-            "tables": tables,
-        })
+        result.append(
+            {
+                "key": section["key"],
+                "title": section["title"],
+                "subtitle": section["subtitle"],
+                "schema": schema_name,
+                "schema_fqn": schema_fqn,
+                "tables": tables,
+            }
+        )
     return result
 
 

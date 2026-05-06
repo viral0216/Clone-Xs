@@ -29,6 +29,7 @@ router = APIRouter()
 
 def _get_service():
     from src.ai_service import get_ai_service
+
     return get_ai_service()
 
 
@@ -54,9 +55,15 @@ async def ai_status(
         return AIStatusResponse(available=True, model=x_databricks_model, backend="databricks")
 
     if svc.available:
-        return AIStatusResponse(available=True, model="claude-sonnet-4-20250514", backend="anthropic")
+        return AIStatusResponse(
+            available=True, model="claude-sonnet-4-20250514", backend="anthropic"
+        )
 
-    return AIStatusResponse(available=False, reason="No AI backend configured. Set ANTHROPIC_API_KEY or select a Databricks Model Serving endpoint in Settings.", backend="none")
+    return AIStatusResponse(
+        available=False,
+        reason="No AI backend configured. Set ANTHROPIC_API_KEY or select a Databricks Model Serving endpoint in Settings.",
+        backend="none",
+    )
 
 
 @router.post("/summarize", response_model=AISummarizeResponse)
@@ -71,7 +78,9 @@ async def ai_summarize(
         return AISummarizeResponse(available=False, reason="No AI backend configured")
     try:
         client = await _resolve_client(x_databricks_model, creds)
-        summary = svc.summarize(request.context_type, request.data, endpoint_name=x_databricks_model, client=client)
+        summary = svc.summarize(
+            request.context_type, request.data, endpoint_name=x_databricks_model, client=client
+        )
         return AISummarizeResponse(summary=summary)
     except Exception as e:
         logger.exception("AI summarize failed")
@@ -90,7 +99,12 @@ async def ai_clone_builder(
         return CloneBuilderResponse(available=False, reason="No AI backend configured")
     try:
         client = await _resolve_client(x_databricks_model, creds)
-        result = svc.parse_clone_query(request.query, request.available_catalogs, endpoint_name=x_databricks_model, client=client)
+        result = svc.parse_clone_query(
+            request.query,
+            request.available_catalogs,
+            endpoint_name=x_databricks_model,
+            client=client,
+        )
         explanation = result.pop("explanation", "")
         return CloneBuilderResponse(config=result, explanation=explanation)
     except Exception as e:
@@ -110,7 +124,12 @@ async def ai_dq_suggestions(
         return DQSuggestionResponse(available=False, reason="No AI backend configured")
     try:
         client = await _resolve_client(x_databricks_model, creds)
-        suggestions = svc.suggest_dq_rules(request.profiling_results, request.table_name, endpoint_name=x_databricks_model, client=client)
+        suggestions = svc.suggest_dq_rules(
+            request.profiling_results,
+            request.table_name,
+            endpoint_name=x_databricks_model,
+            client=client,
+        )
         return DQSuggestionResponse(suggestions=suggestions)
     except Exception as e:
         logger.exception("AI DQ suggestions failed")
@@ -129,7 +148,9 @@ async def ai_pii_remediation(
         return PIIRemediationResponse(available=False, reason="No AI backend configured")
     try:
         client = await _resolve_client(x_databricks_model, creds)
-        result = svc.suggest_pii_remediation(request.scan_results, endpoint_name=x_databricks_model, client=client)
+        result = svc.suggest_pii_remediation(
+            request.scan_results, endpoint_name=x_databricks_model, client=client
+        )
         return PIIRemediationResponse(
             summary=result.get("summary", ""),
             recommendations=result.get("recommendations", []),

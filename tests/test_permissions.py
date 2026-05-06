@@ -14,6 +14,7 @@ from src.permissions import (
 
 # ── SQL-based grant copying ──────────────────────────────────────────
 
+
 @patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions.execute_sql")
 def test_copy_catalog_permissions_via_sql(mock_sql, mock_sdk):
@@ -118,6 +119,7 @@ def test_copy_function_permissions(mock_sql, mock_sdk):
 
 # ── SQL-based with spark executor (no warehouse_id) ──────────────────
 
+
 @patch("src.permissions._copy_grants_via_sdk", return_value=False)
 @patch("src.permissions._has_sql_executor", return_value=True)
 @patch("src.permissions.execute_sql")
@@ -131,6 +133,7 @@ def test_copy_permissions_with_spark_executor(mock_sql, mock_has_exec, mock_sdk)
 
 
 # ── update_ownership ─────────────────────────────────────────────────
+
 
 def test_update_ownership_catalog():
     client = MagicMock()

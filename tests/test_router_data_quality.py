@@ -1,4 +1,5 @@
 """Smoke tests for the data-quality router."""
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -25,11 +26,14 @@ def test_metrics_recent(client):
 
 
 def test_record_anomaly(client):
-    resp = client.post("/api/data-quality/anomalies/record", json={
-        "table_fqn": "cat.schema.table",
-        "metric_name": "row_count",
-        "metric_value": 100,
-    })
+    resp = client.post(
+        "/api/data-quality/anomalies/record",
+        json={
+            "table_fqn": "cat.schema.table",
+            "metric_name": "row_count",
+            "metric_value": 100,
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -39,9 +43,12 @@ def test_volume_catalog(client):
 
 
 def test_volume_snapshot(client):
-    resp = client.post("/api/data-quality/volume/snapshot", json={
-        "catalog": "test-catalog",
-    })
+    resp = client.post(
+        "/api/data-quality/volume/snapshot",
+        json={
+            "catalog": "test-catalog",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -51,9 +58,12 @@ def test_list_suites(client):
 
 
 def test_create_suite(client):
-    resp = client.post("/api/data-quality/suites", json={
-        "name": "test-suite",
-    })
+    resp = client.post(
+        "/api/data-quality/suites",
+        json={
+            "name": "test-suite",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -83,9 +93,12 @@ def test_anomaly_settings_get(client):
 
 
 def test_anomaly_settings_update(client):
-    resp = client.put("/api/data-quality/anomaly-settings", json={
-        "freshness_threshold": 24,
-    })
+    resp = client.put(
+        "/api/data-quality/anomaly-settings",
+        json={
+            "freshness_threshold": 24,
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 
@@ -110,9 +123,12 @@ def test_monitoring_configs_list(client):
 
 
 def test_monitoring_configs_create(client):
-    resp = client.post("/api/data-quality/monitoring/configs", json={
-        "table_fqn": "cat.schema.table",
-    })
+    resp = client.post(
+        "/api/data-quality/monitoring/configs",
+        json={
+            "table_fqn": "cat.schema.table",
+        },
+    )
     assert resp.status_code in (200, 400, 422, 500)
 
 

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Table setup
 # ---------------------------------------------------------------------------
 
+
 def _get_fqn(config: dict) -> str:
     return get_table_fqn(config, "data_quality", "expectation_suites")
 
@@ -28,9 +29,13 @@ def ensure_expectation_suites_table(client, warehouse_id: str, config: dict) -> 
     """Create the expectation_suites Delta table if it doesn't exist."""
     fqn = _get_fqn(config)
     from src.catalog_utils import safe_ensure_schema_from_fqn
+
     schema_fqn = fqn.rsplit(".", 1)[0]
     safe_ensure_schema_from_fqn(schema_fqn, client, warehouse_id, config)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {fqn} (
             suite_id STRING,
             name STRING,
@@ -39,7 +44,8 @@ def ensure_expectation_suites_table(client, warehouse_id: str, config: dict) -> 
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         ) USING DELTA
-    """)
+    """,
+    )
     return fqn
 
 
@@ -47,8 +53,15 @@ def ensure_expectation_suites_table(client, warehouse_id: str, config: dict) -> 
 # CRUD operations
 # ---------------------------------------------------------------------------
 
-def create_suite(client, warehouse_id: str, config: dict,
-                 name: str, description: str = "", checks: list[dict] = None) -> dict:
+
+def create_suite(
+    client,
+    warehouse_id: str,
+    config: dict,
+    name: str,
+    description: str = "",
+    checks: list[dict] = None,
+) -> dict:
     """Create a new expectation suite.
 
     Args:
@@ -71,7 +84,10 @@ def create_suite(client, warehouse_id: str, config: dict,
     now = utc_now()
     checks_json = sql_escape(json.dumps(checks))
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {fqn} (suite_id, name, description, checks, created_at, updated_at)
         VALUES (
             '{sql_escape(suite_id)}',
@@ -81,7 +97,8 @@ def create_suite(client, warehouse_id: str, config: dict,
             '{now}',
             '{now}'
         )
-    """)
+    """,
+    )
 
     suite = {
         "suite_id": suite_id,
@@ -103,22 +120,27 @@ def list_suites(client, warehouse_id: str, config: dict) -> list[dict]:
     """
     fqn = _get_fqn(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-                           f"SELECT suite_id, name, description, checks, created_at, updated_at FROM {fqn}")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT suite_id, name, description, checks, created_at, updated_at FROM {fqn}",
+        )
     except Exception:
         return []
 
     result = []
     for row in rows:
         checks = json.loads(row.get("checks", "[]"))
-        result.append({
-            "suite_id": row.get("suite_id", ""),
-            "name": row.get("name", ""),
-            "description": row.get("description", ""),
-            "check_count": len(checks),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        })
+        result.append(
+            {
+                "suite_id": row.get("suite_id", ""),
+                "name": row.get("name", ""),
+                "description": row.get("description", ""),
+                "check_count": len(checks),
+                "created_at": row.get("created_at"),
+                "updated_at": row.get("updated_at"),
+            }
+        )
     return result
 
 
@@ -130,9 +152,12 @@ def get_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict | 
     """
     fqn = _get_fqn(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-                           f"SELECT suite_id, name, description, checks, created_at, updated_at "
-                           f"FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT suite_id, name, description, checks, created_at, updated_at "
+            f"FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'",
+        )
     except Exception:
         return None
 
@@ -150,9 +175,15 @@ def get_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict | 
     }
 
 
-def update_suite(client, warehouse_id: str, config: dict,
-                 suite_id: str, name: str = None, description: str = None,
-                 checks: list[dict] = None) -> dict | None:
+def update_suite(
+    client,
+    warehouse_id: str,
+    config: dict,
+    suite_id: str,
+    name: str = None,
+    description: str = None,
+    checks: list[dict] = None,
+) -> dict | None:
     """Update an existing suite.
 
     Returns:
@@ -170,14 +201,18 @@ def update_suite(client, warehouse_id: str, config: dict,
     fqn = _get_fqn(config)
     checks_json = sql_escape(json.dumps(new_checks))
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         UPDATE {fqn}
         SET name = '{sql_escape(new_name)}',
             description = '{sql_escape(new_description)}',
             checks = '{checks_json}',
             updated_at = '{now}'
         WHERE suite_id = '{sql_escape(suite_id)}'
-    """)
+    """,
+    )
 
     logger.info(f"Updated expectation suite {suite_id}")
     return {
@@ -201,8 +236,9 @@ def delete_suite(client, warehouse_id: str, config: dict, suite_id: str) -> bool
         return False
 
     fqn = _get_fqn(config)
-    execute_sql(client, warehouse_id,
-                f"DELETE FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'")
+    execute_sql(
+        client, warehouse_id, f"DELETE FROM {fqn} WHERE suite_id = '{sql_escape(suite_id)}'"
+    )
     logger.info(f"Deleted expectation suite {suite_id}")
     return True
 
@@ -210,6 +246,7 @@ def delete_suite(client, warehouse_id: str, config: dict, suite_id: str) -> bool
 # ---------------------------------------------------------------------------
 # Suite execution
 # ---------------------------------------------------------------------------
+
 
 def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
     """Execute all checks in a suite and return combined results.
@@ -247,12 +284,17 @@ def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
         try:
             if check_type == "freshness":
                 from src.data_freshness import check_freshness
+
                 catalog = params.get("catalog", check_id)
                 schema_name = params.get("schema")
                 max_stale = params.get("max_stale_hours", 24)
                 freshness = check_freshness(
-                    client, catalog, schema=schema_name,
-                    max_stale_hours=max_stale, warehouse_id=warehouse_id, config=config,
+                    client,
+                    catalog,
+                    schema=schema_name,
+                    max_stale_hours=max_stale,
+                    warehouse_id=warehouse_id,
+                    config=config,
                 )
                 stale_count = freshness.get("stale", 0) if isinstance(freshness, dict) else 0
                 result["status"] = "pass" if stale_count == 0 else "fail"
@@ -260,10 +302,14 @@ def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
 
             elif check_type == "anomaly":
                 from src.anomaly_detection import get_anomalies
+
                 severity = params.get("severity", "critical")
                 anomalies = get_anomalies(
-                    client=client, warehouse_id=warehouse_id,
-                    config=config, limit=10, severity=severity,
+                    client=client,
+                    warehouse_id=warehouse_id,
+                    config=config,
+                    limit=10,
+                    severity=severity,
                 )
                 result["status"] = "pass" if len(anomalies) == 0 else "fail"
                 result["details"] = {"anomaly_count": len(anomalies), "anomalies": anomalies}
@@ -271,8 +317,12 @@ def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
             elif check_type == "reconciliation":
                 # Run a row-level reconciliation
                 from src.reconciliation_store import get_reconciliation_history
+
                 history = get_reconciliation_history(
-                    client=client, warehouse_id=warehouse_id, config=config, limit=1,
+                    client=client,
+                    warehouse_id=warehouse_id,
+                    config=config,
+                    limit=1,
                 )
                 if history:
                     latest = history[0]
@@ -286,12 +336,16 @@ def run_suite(client, warehouse_id: str, config: dict, suite_id: str) -> dict:
             elif check_type == "dq_rule":
                 # Placeholder for DQ rule execution
                 result["status"] = "skip"
-                result["details"] = {"message": f"DQ rule '{check_id}' execution not yet implemented"}
+                result["details"] = {
+                    "message": f"DQ rule '{check_id}' execution not yet implemented"
+                }
 
             elif check_type == "dqx_check":
                 # Placeholder for DQX check execution
                 result["status"] = "skip"
-                result["details"] = {"message": f"DQX check '{check_id}' execution not yet implemented"}
+                result["details"] = {
+                    "message": f"DQX check '{check_id}' execution not yet implemented"
+                }
 
             else:
                 result["status"] = "skip"

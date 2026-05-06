@@ -18,23 +18,35 @@ import pytest
 from src.stale_detection_multi import detect_stale_tables_multi
 
 
-def _per_cat_result(cat: str, *, findings_count: int, reclaim_bytes: int, risk: str = "MEDIUM") -> dict:
+def _per_cat_result(
+    cat: str, *, findings_count: int, reclaim_bytes: int, risk: str = "MEDIUM"
+) -> dict:
     """Build a minimal single-catalog scan response shaped like
     `detect_stale_tables` produces."""
     return {
         "catalog": cat,
         "scanned_at": "2026-04-30T12:00:00+00:00",
-        "days_threshold": 90, "min_age_days": 7, "min_size_bytes": 0,
+        "days_threshold": 90,
+        "min_age_days": 7,
+        "min_size_bytes": 0,
         "total_tables_scanned": findings_count + 5,
         "findings": [
             {
-                "schema": "s", "table": f"{cat}_t{i}", "table_type": "MANAGED",
+                "schema": "s",
+                "table": f"{cat}_t{i}",
+                "table_type": "MANAGED",
                 "size_bytes": reclaim_bytes // max(findings_count, 1) if findings_count else 0,
-                "row_count": 100, "last_altered": None, "last_accessed": None,
-                "days_since_access": None, "query_count_window": 0,
-                "distinct_users_window": 0, "has_stats": True,
-                "never_accessed": True, "is_stale": True,
-                "risk_level": risk, "suggested_action": "Review for drop",
+                "row_count": 100,
+                "last_altered": None,
+                "last_accessed": None,
+                "days_since_access": None,
+                "query_count_window": 0,
+                "distinct_users_window": 0,
+                "has_stats": True,
+                "never_accessed": True,
+                "is_stale": True,
+                "risk_level": risk,
+                "suggested_action": "Review for drop",
             }
             for i in range(findings_count)
         ],
@@ -51,12 +63,13 @@ def _per_cat_result(cat: str, *, findings_count: int, reclaim_bytes: int, risk: 
 
 
 class TestMultiFanout:
-
     @patch("src.stale_detection_multi.detect_stale_tables")
     def test_findings_stamped_with_catalog(self, mock_per_cat):
         """Defining feature: every merged finding carries its catalog."""
         mock_per_cat.side_effect = lambda *a, **kw: _per_cat_result(
-            a[2], findings_count=2, reclaim_bytes=2_000_000_000,
+            a[2],
+            findings_count=2,
+            reclaim_bytes=2_000_000_000,
         )
         result = detect_stale_tables_multi(MagicMock(), "wh", ["main", "samples"])
         assert len(result["findings"]) == 4  # 2 per catalog
@@ -67,7 +80,9 @@ class TestMultiFanout:
         """Top-level `summary` totals are the sum of per-catalog blocks.
         UI uses this for headline cards above the table."""
         mock_per_cat.side_effect = lambda *a, **kw: _per_cat_result(
-            a[2], findings_count=3, reclaim_bytes=5_000_000_000,
+            a[2],
+            findings_count=3,
+            reclaim_bytes=5_000_000_000,
         )
         result = detect_stale_tables_multi(MagicMock(), "wh", ["main", "samples"])
         assert result["summary"]["by_risk_level"]["MEDIUM"] == 6
@@ -78,10 +93,14 @@ class TestMultiFanout:
     def test_per_catalog_rollup_populated(self, mock_per_cat):
         """`per_catalog[cat]` carries each catalog's individual rollup
         so the UI rollup card can show per-catalog reclaimable bytes."""
+
         def stub(_c, _w, cat, **_kw):
             return _per_cat_result(
-                cat, findings_count=2 if cat == "main" else 5, reclaim_bytes=1_000_000_000,
+                cat,
+                findings_count=2 if cat == "main" else 5,
+                reclaim_bytes=1_000_000_000,
             )
+
         mock_per_cat.side_effect = stub
         result = detect_stale_tables_multi(MagicMock(), "wh", ["main", "samples"])
         assert result["per_catalog"]["main"]["findings_count"] == 2
@@ -91,10 +110,12 @@ class TestMultiFanout:
     def test_failure_isolation(self, mock_per_cat):
         """One catalog raising must not abort the multi request — the
         failure surfaces in errors[] and the rest still come through."""
+
         def stub(_c, _w, cat, **_kw):
             if cat == "broken":
                 raise RuntimeError("system.access.audit denied")
             return _per_cat_result(cat, findings_count=1, reclaim_bytes=100_000_000)
+
         mock_per_cat.side_effect = stub
         result = detect_stale_tables_multi(MagicMock(), "wh", ["main", "broken", "samples"])
         # Two healthy + one failure

@@ -110,7 +110,9 @@ def _recipient_exists(client: WorkspaceClient, wh: str, recipient_name: str) -> 
     try:
         rows = execute_sql(client, wh, "SHOW RECIPIENTS")
         if rows:
-            logger.debug(f"SHOW RECIPIENTS returned {len(rows)} rows; columns: {list(rows[0].keys())}")
+            logger.debug(
+                f"SHOW RECIPIENTS returned {len(rows)} rows; columns: {list(rows[0].keys())}"
+            )
         for r in rows:
             for v in r.values():
                 if v == recipient_name:
@@ -130,9 +132,8 @@ def _recipient_global_metastore_id(
     """
     try:
         r = client.recipients.get(name=recipient_name)
-        gmid = (
-            getattr(r, "data_recipient_global_metastore_id", None)
-            or getattr(r, "sharing_code", None)
+        gmid = getattr(r, "data_recipient_global_metastore_id", None) or getattr(
+            r, "sharing_code", None
         )
         if gmid:
             return gmid
@@ -161,7 +162,8 @@ def _recipient_global_metastore_id(
 
 
 def _find_recipient_for_target(
-    client: WorkspaceClient, target_sharing_id: str,
+    client: WorkspaceClient,
+    target_sharing_id: str,
 ) -> str | None:
     """Find an existing recipient on the source pointing at the given target.
 
@@ -181,9 +183,8 @@ def _find_recipient_for_target(
     """
     try:
         for r in client.recipients.list():
-            gmid = (
-                getattr(r, "data_recipient_global_metastore_id", None)
-                or getattr(r, "sharing_code", None)
+            gmid = getattr(r, "data_recipient_global_metastore_id", None) or getattr(
+                r, "sharing_code", None
             )
             if gmid and str(gmid).strip() == str(target_sharing_id).strip():
                 name = getattr(r, "name", None)
@@ -215,9 +216,7 @@ class TableProtections:
         return bool(self.column_masks) or self.row_filter_function is not None
 
 
-def _inventory_table_protections(
-    client: WorkspaceClient, wh: str, fqn: str
-) -> TableProtections:
+def _inventory_table_protections(client: WorkspaceClient, wh: str, fqn: str) -> TableProtections:
     """Parse DESCRIBE EXTENDED output to capture column masks + row filter.
 
     DESCRIBE EXTENDED returns sectioned rows; mask info appears under
@@ -268,7 +267,8 @@ def _drop_table_protections(
     for col, _mask_fn in p.column_masks:
         try:
             execute_sql(
-                client, wh,
+                client,
+                wh,
                 f"ALTER TABLE {fqn} ALTER COLUMN {_quote_ident(col)} DROP MASK",
             )
             logger.info(f"  dropped mask: {fqn}.{col}")
@@ -283,8 +283,12 @@ def _drop_table_protections(
 
 
 def _apply_table_protections(
-    client: WorkspaceClient, wh: str, fqn: str, p: TableProtections,
-    *, rewrite_catalog: tuple[str, str] | None = None,
+    client: WorkspaceClient,
+    wh: str,
+    fqn: str,
+    p: TableProtections,
+    *,
+    rewrite_catalog: tuple[str, str] | None = None,
 ) -> None:
     """Apply column masks + row filter to a table.
 
@@ -292,20 +296,20 @@ def _apply_table_protections(
     the source catalog to the destination catalog (used when re-applying
     on the target workspace).
     """
+
     def _rewrite(fn_fqn: str) -> str:
         if not rewrite_catalog:
             return fn_fqn
         src, dst = rewrite_catalog
         # Handle both backtick-quoted and bare forms
-        return (fn_fqn
-                .replace(f"`{src}`.", f"`{dst}`.")
-                .replace(f"{src}.", f"{dst}."))
+        return fn_fqn.replace(f"`{src}`.", f"`{dst}`.").replace(f"{src}.", f"{dst}.")
 
     for col, mask_fn in p.column_masks:
         target_fn = _rewrite(mask_fn)
         try:
             execute_sql(
-                client, wh,
+                client,
+                wh,
                 f"ALTER TABLE {fqn} ALTER COLUMN {_quote_ident(col)} SET MASK {target_fn}",
             )
             logger.info(f"  applied mask: {fqn}.{col} -> {target_fn}")
@@ -316,7 +320,8 @@ def _apply_table_protections(
         cols_clause = ", ".join(_quote_ident(c) for c in p.row_filter_columns)
         try:
             execute_sql(
-                client, wh,
+                client,
+                wh,
                 f"ALTER TABLE {fqn} SET ROW FILTER {target_fn} ON ({cols_clause})",
             )
             logger.info(f"  applied row filter: {fqn} -> {target_fn} ON ({cols_clause})")
@@ -324,9 +329,7 @@ def _apply_table_protections(
             logger.error(f"  failed to apply row filter on {fqn}: {e}")
 
 
-def _existing_share_tables(
-    client: WorkspaceClient, wh: str, share_name: str
-) -> set[str]:
+def _existing_share_tables(client: WorkspaceClient, wh: str, share_name: str) -> set[str]:
     """Return aliases ('schema.table') of tables currently in the share."""
     try:
         rows = execute_sql(client, wh, f"SHOW ALL IN SHARE {_quote_ident(share_name)}")
@@ -339,12 +342,7 @@ def _existing_share_tables(
         if kind and kind != "TABLE":
             continue
         # The alias appears under various column names depending on DBR version
-        alias = (
-            r.get("shared_as")
-            or r.get("name")
-            or r.get("object_name")
-            or ""
-        )
+        alias = r.get("shared_as") or r.get("name") or r.get("object_name") or ""
         if alias:
             aliases.add(str(alias))
     return aliases
@@ -373,12 +371,13 @@ class TableResult:
 @dataclass
 class ObjectResult:
     """Generic per-object migration outcome (view / function / volume)."""
-    kind: str          # "view" | "function" | "volume"
+
+    kind: str  # "view" | "function" | "volume"
     schema: str
     name: str
-    status: str        # "migrated" | "failed" | "skipped"
+    status: str  # "migrated" | "failed" | "skipped"
     error: str | None = None
-    detail: str | None = None   # e.g. "3 files copied, 1.2 MB"
+    detail: str | None = None  # e.g. "3 files copied, 1.2 MB"
 
 
 @dataclass
@@ -679,9 +678,7 @@ def _rewrite_catalog_refs(sql: str, source_catalog: str, dest_catalog: str) -> s
 
     src_esc = re.escape(source_catalog)
     # Backtick-quoted: `source_catalog`.
-    sql = re.sub(
-        rf"`{src_esc}`\s*\.", f"`{dest_catalog}`.", sql, flags=re.IGNORECASE
-    )
+    sql = re.sub(rf"`{src_esc}`\s*\.", f"`{dest_catalog}`.", sql, flags=re.IGNORECASE)
     # Bare identifier followed by dot: source_catalog.
     sql = re.sub(
         rf"(?<![A-Za-z0-9_`]){src_esc}\s*\.",
@@ -721,7 +718,7 @@ def _qualify_create_target(sql: str, dest_catalog: str) -> str:
     if dot_count >= 2:
         return sql  # already catalog.schema.name
     qualified = f"`{dest_catalog}`.{name_part}"
-    return sql[: m.start(2)] + qualified + sql[m.end(2):]
+    return sql[: m.start(2)] + qualified + sql[m.end(2) :]
 
 
 def _migrate_views(
@@ -741,7 +738,9 @@ def _migrate_views(
     """Re-issue view DDL on target, rewriting catalog references."""
     logger.info("Migrating views...")
     for schema in schemas:
-        views = _list_views(source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re)
+        views = _list_views(
+            source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re
+        )
         if not views:
             continue
         logger.info(f"  {schema}: {len(views)} views")
@@ -752,7 +751,9 @@ def _migrate_views(
                 # Prefer SHOW CREATE TABLE — returns a complete CREATE VIEW statement
                 # that includes column list, comment, etc.
                 rows = execute_sql(
-                    source_client, source_wh, f"SHOW CREATE TABLE {src_fqn}",
+                    source_client,
+                    source_wh,
+                    f"SHOW CREATE TABLE {src_fqn}",
                 )
                 create_stmt = ""
                 if rows:
@@ -768,10 +769,15 @@ def _migrate_views(
                     create_stmt = f"CREATE VIEW {src_fqn} AS\n{view_def}"
 
                 if not create_stmt:
-                    result.object_details.append(ObjectResult(
-                        kind="view", schema=schema, name=name,
-                        status="failed", error="could not retrieve view DDL",
-                    ))
+                    result.object_details.append(
+                        ObjectResult(
+                            kind="view",
+                            schema=schema,
+                            name=name,
+                            status="failed",
+                            error="could not retrieve view DDL",
+                        )
+                    )
                     result.views_failed += 1
                     continue
 
@@ -795,16 +801,26 @@ def _migrate_views(
                 # against target warehouse's current catalog.
                 rewritten = _qualify_create_target(rewritten, dest_catalog)
                 _run(target_client, target_wh, rewritten, dry_run=dry_run)
-                result.object_details.append(ObjectResult(
-                    kind="view", schema=schema, name=name, status="migrated",
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="view",
+                        schema=schema,
+                        name=name,
+                        status="migrated",
+                    )
+                )
                 result.views_migrated += 1
             except Exception as e:
                 logger.warning(f"view migration failed: {src_fqn} → {dst_fqn}: {e}")
-                result.object_details.append(ObjectResult(
-                    kind="view", schema=schema, name=name,
-                    status="failed", error=str(e),
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="view",
+                        schema=schema,
+                        name=name,
+                        status="failed",
+                        error=str(e),
+                    )
+                )
                 result.views_failed += 1
 
 
@@ -823,7 +839,7 @@ def _build_function_ddl(fn_info, source_catalog: str, dest_catalog: str) -> str:
     params: list[str] = []
     in_params = getattr(fn_info, "input_params", None)
     if in_params is not None:
-        for p in (getattr(in_params, "parameters", None) or []):
+        for p in getattr(in_params, "parameters", None) or []:
             pname = getattr(p, "name", "")
             ptype = getattr(p, "type_text", None) or str(getattr(p, "type_name", "") or "")
             if pname and ptype:
@@ -831,8 +847,9 @@ def _build_function_ddl(fn_info, source_catalog: str, dest_catalog: str) -> str:
     params_str = ", ".join(params)
 
     # Return type — full_data_type carries complex types (ARRAY<...>, STRUCT<...>)
-    return_type = (getattr(fn_info, "full_data_type", None)
-                   or str(getattr(fn_info, "data_type", "") or ""))
+    return_type = getattr(fn_info, "full_data_type", None) or str(
+        getattr(fn_info, "data_type", "") or ""
+    )
     # Strip enum wrappers if data_type came back as ColumnTypeName.STRING etc
     if "." in return_type and return_type.startswith("ColumnTypeName"):
         return_type = return_type.split(".")[-1]
@@ -844,9 +861,9 @@ def _build_function_ddl(fn_info, source_catalog: str, dest_catalog: str) -> str:
     is_python = "PYTHON" in language or "EXTERNAL" in routine_body
 
     # Rewrite source catalog → dest catalog inside the body so refs resolve.
-    body_rewritten = (body
-                      .replace(f"`{source_catalog}`.", f"`{dest_catalog}`.")
-                      .replace(f"{source_catalog}.", f"{dest_catalog}."))
+    body_rewritten = body.replace(f"`{source_catalog}`.", f"`{dest_catalog}`.").replace(
+        f"{source_catalog}.", f"{dest_catalog}."
+    )
 
     # Comment (escape single quotes)
     comment = getattr(fn_info, "comment", None)
@@ -887,7 +904,9 @@ def _migrate_functions(
     """
     logger.info("Migrating functions...")
     for schema in schemas:
-        funcs = _list_functions(source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re)
+        funcs = _list_functions(
+            source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re
+        )
         if not funcs:
             continue
         logger.info(f"  {schema}: {len(funcs)} functions")
@@ -898,16 +917,26 @@ def _migrate_functions(
                 fn_info = source_client.functions.get(src_full_name)
                 ddl = _build_function_ddl(fn_info, source_catalog, dest_catalog)
                 _run(target_client, target_wh, ddl, dry_run=dry_run)
-                result.object_details.append(ObjectResult(
-                    kind="function", schema=schema, name=name, status="migrated",
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="function",
+                        schema=schema,
+                        name=name,
+                        status="migrated",
+                    )
+                )
                 result.functions_migrated += 1
             except Exception as e:
                 logger.warning(f"function migration failed: {src_fqn}: {e}")
-                result.object_details.append(ObjectResult(
-                    kind="function", schema=schema, name=name,
-                    status="failed", error=str(e),
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="function",
+                        schema=schema,
+                        name=name,
+                        status="failed",
+                        error=str(e),
+                    )
+                )
                 result.functions_failed += 1
 
 
@@ -946,10 +975,15 @@ def _migrate_volumes(
                     result.warnings.append(
                         f"skipping EXTERNAL volume {schema}.{vname} — no storage_location"
                     )
-                    result.object_details.append(ObjectResult(
-                        kind="volume", schema=schema, name=vname,
-                        status="skipped", error="external volume without location",
-                    ))
+                    result.object_details.append(
+                        ObjectResult(
+                            kind="volume",
+                            schema=schema,
+                            name=vname,
+                            status="skipped",
+                            error="external volume without location",
+                        )
+                    )
                     continue
                 create_sql = f"CREATE VOLUME IF NOT EXISTS {dst_fqn}"
                 if vtype == "EXTERNAL" and storage_location:
@@ -964,25 +998,39 @@ def _migrate_volumes(
                 files_copied, bytes_copied = 0, 0
                 if vtype != "EXTERNAL" and not dry_run:
                     files_copied, bytes_copied = _copy_volume_files(
-                        source_client, target_client,
-                        source_catalog, dest_catalog,
-                        schema, vname, max_file_mb,
+                        source_client,
+                        target_client,
+                        source_catalog,
+                        dest_catalog,
+                        schema,
+                        vname,
+                        max_file_mb,
                         result=result,
                     )
                 result.volume_files_copied += files_copied
                 result.volume_bytes_copied += bytes_copied
 
-                result.object_details.append(ObjectResult(
-                    kind="volume", schema=schema, name=vname, status="migrated",
-                    detail=f"{files_copied} files, {bytes_copied:,} bytes",
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="volume",
+                        schema=schema,
+                        name=vname,
+                        status="migrated",
+                        detail=f"{files_copied} files, {bytes_copied:,} bytes",
+                    )
+                )
                 result.volumes_migrated += 1
             except Exception as e:
                 logger.warning(f"volume migration failed: {schema}.{vname}: {e}")
-                result.object_details.append(ObjectResult(
-                    kind="volume", schema=schema, name=vname,
-                    status="failed", error=str(e),
-                ))
+                result.object_details.append(
+                    ObjectResult(
+                        kind="volume",
+                        schema=schema,
+                        name=vname,
+                        status="failed",
+                        error=str(e),
+                    )
+                )
                 result.volumes_failed += 1
 
 
@@ -1027,7 +1075,7 @@ def _copy_volume_files(
                 f"skipping file > {max_file_mb}MB: {full_src_path} ({size:,} bytes)"
             )
             return
-        rel = full_src_path[len(src_root):].lstrip("/")
+        rel = full_src_path[len(src_root) :].lstrip("/")
         dst_path = f"{dst_root}/{rel}"
         try:
             resp = source_client.files.download(file_path=full_src_path)
@@ -1070,7 +1118,8 @@ def _replay_grants_for(
             continue
         try:
             _run(
-                target_client, target_wh,
+                target_client,
+                target_wh,
                 f"GRANT {privilege} ON {dst_object_sql} TO `{principal}`",
                 dry_run=dry_run,
             )
@@ -1108,7 +1157,8 @@ def _replay_object_owner(
         return
     try:
         _run(
-            target_client, target_wh,
+            target_client,
+            target_wh,
             f"ALTER {alter_object_sql} OWNER TO `{owner}`",
             dry_run=dry_run,
         )
@@ -1143,7 +1193,8 @@ def _replay_object_tags(
         safe_val = value.replace("'", "''")
         try:
             _run(
-                target_client, target_wh,
+                target_client,
+                target_wh,
                 f"ALTER {alter_object_sql} SET TAGS ('{tag}' = '{safe_val}')",
                 dry_run=dry_run,
             )
@@ -1180,12 +1231,26 @@ def _replay_metadata(
     cat_src = f"CATALOG {_quote_ident(source_catalog)}"
     cat_dst = f"CATALOG {_quote_ident(dest_catalog)}"
     if copy_permissions:
-        _replay_grants_for(source_client, target_client, source_wh, target_wh,
-                           cat_src, cat_dst, dry_run=dry_run, result=result)
+        _replay_grants_for(
+            source_client,
+            target_client,
+            source_wh,
+            target_wh,
+            cat_src,
+            cat_dst,
+            dry_run=dry_run,
+            result=result,
+        )
     if copy_ownership:
         _replay_object_owner(
-            source_client, target_client, source_wh, target_wh,
-            cat_src, cat_dst, dry_run=dry_run, result=result,
+            source_client,
+            target_client,
+            source_wh,
+            target_wh,
+            cat_src,
+            cat_dst,
+            dry_run=dry_run,
+            result=result,
         )
 
     # --- Schema level ------------------------------------------------------
@@ -1193,12 +1258,26 @@ def _replay_metadata(
         sch_src = f"SCHEMA {_fqn(source_catalog, schema)}"
         sch_dst = f"SCHEMA {_fqn(dest_catalog, schema)}"
         if copy_permissions:
-            _replay_grants_for(source_client, target_client, source_wh, target_wh,
-                               sch_src, sch_dst, dry_run=dry_run, result=result)
+            _replay_grants_for(
+                source_client,
+                target_client,
+                source_wh,
+                target_wh,
+                sch_src,
+                sch_dst,
+                dry_run=dry_run,
+                result=result,
+            )
         if copy_ownership:
             _replay_object_owner(
-                source_client, target_client, source_wh, target_wh,
-                sch_src, sch_dst, dry_run=dry_run, result=result,
+                source_client,
+                target_client,
+                source_wh,
+                target_wh,
+                sch_src,
+                sch_dst,
+                dry_run=dry_run,
+                result=result,
             )
 
         # --- Table level ---------------------------------------------------
@@ -1206,12 +1285,26 @@ def _replay_metadata(
             tbl_src = f"TABLE {_fqn(source_catalog, schema, table)}"
             tbl_dst = f"TABLE {_fqn(dest_catalog, schema, table)}"
             if copy_permissions:
-                _replay_grants_for(source_client, target_client, source_wh, target_wh,
-                                   tbl_src, tbl_dst, dry_run=dry_run, result=result)
+                _replay_grants_for(
+                    source_client,
+                    target_client,
+                    source_wh,
+                    target_wh,
+                    tbl_src,
+                    tbl_dst,
+                    dry_run=dry_run,
+                    result=result,
+                )
             if copy_ownership:
                 _replay_object_owner(
-                    source_client, target_client, source_wh, target_wh,
-                    tbl_src, tbl_dst, dry_run=dry_run, result=result,
+                    source_client,
+                    target_client,
+                    source_wh,
+                    target_wh,
+                    tbl_src,
+                    tbl_dst,
+                    dry_run=dry_run,
+                    result=result,
                 )
             if copy_tags:
                 # UC table tags live in system.information_schema.table_tags
@@ -1225,8 +1318,14 @@ def _replay_metadata(
                     f"AND table_name = '{tbl_esc}'"
                 )
                 _replay_object_tags(
-                    source_client, target_client, source_wh, target_wh,
-                    tags_sql, tbl_dst, dry_run=dry_run, result=result,
+                    source_client,
+                    target_client,
+                    source_wh,
+                    target_wh,
+                    tags_sql,
+                    tbl_dst,
+                    dry_run=dry_run,
+                    result=result,
                 )
 
 
@@ -1345,7 +1444,9 @@ def run_cross_workspace_clone(
     try:
         # --- 1. Introspect source ---------------------------------------------------
         logger.info(f"Listing schemas in source catalog '{source_catalog}'...")
-        schemas = _list_schemas(source_client, source_catalog, exclude_schemas, include_schemas=include_schemas)
+        schemas = _list_schemas(
+            source_client, source_catalog, exclude_schemas, include_schemas=include_schemas
+        )
         logger.info(f"Found {len(schemas)} schemas")
 
         # tables_by_schema is now schema → list of (table_name, source_format)
@@ -1355,7 +1456,9 @@ def run_cross_workspace_clone(
         tables_by_schema: dict[str, list[tuple[str, str]]] = {}
         total_tables = 0
         for schema in schemas:
-            tables = _list_tables(source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re)
+            tables = _list_tables(
+                source_client, source_catalog, schema, include_re=include_re, exclude_re=exclude_re
+            )
             tables_by_schema[schema] = tables
             total_tables += len(tables)
             logger.info(f"  {schema}: {len(tables)} tables")
@@ -1374,8 +1477,11 @@ def run_cross_workspace_clone(
         # path most likely to benefit from quiesce.
         if config.get("quiesce_source") and not dry_run:
             from src.quiesce import quiesce_source_schemas
+
             quiesce_snapshots = quiesce_source_schemas(
-                source_client, source_catalog, schemas,
+                source_client,
+                source_catalog,
+                schemas,
             )
 
         # --- 2. Target sharing identifier -------------------------------------------
@@ -1427,7 +1533,8 @@ def run_cross_workspace_clone(
         else:
             logger.info(f"Creating Delta Share on source: {share_name}")
             _run(
-                source_client, source_wh,
+                source_client,
+                source_wh,
                 f"CREATE SHARE IF NOT EXISTS {_quote_ident(share_name)}",
                 dry_run=dry_run,
             )
@@ -1472,6 +1579,7 @@ def run_cross_workspace_clone(
             logger.info(f"Creating recipient on source: {recipient_name} (via SDK)")
             try:
                 from databricks.sdk.service.sharing import AuthenticationType
+
                 source_client.recipients.create(
                     name=recipient_name,
                     authentication_type=AuthenticationType.DATABRICKS,
@@ -1531,7 +1639,8 @@ def run_cross_workspace_clone(
                 )
                 try:
                     _run(
-                        source_client, source_wh,
+                        source_client,
+                        source_wh,
                         f"CREATE RECIPIENT {_quote_ident(fallback_name)} "
                         f"USING ID '{target_sharing_id}'",
                         dry_run=dry_run,
@@ -1573,7 +1682,8 @@ def run_cross_workspace_clone(
                 recipient_name = fallback_name
                 result.recipient_name = fallback_name
         existing_gmid = (
-            None if dry_run
+            None
+            if dry_run
             else _recipient_global_metastore_id(source_client, source_wh, recipient_name)
         )
         if not dry_run:
@@ -1588,14 +1698,14 @@ def run_cross_workspace_clone(
             else:
                 logger.debug(
                     "Recipient %s gmid not readable via SDK/SQL — relying on "
-                    "deterministic name match for safety", recipient_name,
+                    "deterministic name match for safety",
+                    recipient_name,
                 )
         recipient_created = True
 
         # Sync share contents — diff against currently-shared tables.
         existing_aliases = (
-            set() if dry_run
-            else _existing_share_tables(source_client, source_wh, share_name)
+            set() if dry_run else _existing_share_tables(source_client, source_wh, share_name)
         )
         desired_aliases = {
             f"{schema}.{table}"
@@ -1615,7 +1725,9 @@ def run_cross_workspace_clone(
         # on tables we're about to add. Tracking dict is read by the finally block
         # for restoration and by the post-clone step for re-application on target.
         if auto_handle_masks and not dry_run and to_add:
-            logger.info("auto_handle_masks=true — checking for column masks / row filters on source tables")
+            logger.info(
+                "auto_handle_masks=true — checking for column masks / row filters on source tables"
+            )
             for alias in sorted(to_add):
                 schema, table = alias.split(".", 1)
                 src_fqn = _fqn(source_catalog, schema, table)
@@ -1644,16 +1756,18 @@ def run_cross_workspace_clone(
         for i, alias in enumerate(sorted(to_add), 1):
             schema, table = alias.split(".", 1)
             src_fqn_full = _fqn(source_catalog, schema, table)
-            sql = (
-                f"ALTER SHARE {_quote_ident(share_name)} ADD TABLE "
-                f"{src_fqn_full} AS {alias}"
-            )
+            sql = f"ALTER SHARE {_quote_ident(share_name)} ADD TABLE {src_fqn_full} AS {alias}"
             try:
                 _run(source_client, source_wh, sql, dry_run=dry_run)
                 if i % 20 == 0 or i == len(to_add):
                     logger.info(f"  added {i}/{len(to_add)} tables to share")
             except Exception as e:
-                if auto_handle_masks and not dry_run and _is_mask_rejection(e) and src_fqn_full not in dropped_protections:
+                if (
+                    auto_handle_masks
+                    and not dry_run
+                    and _is_mask_rejection(e)
+                    and src_fqn_full not in dropped_protections
+                ):
                     # Late-bound mask/filter detected by Delta Sharing's own check.
                     # Inventory and drop, then retry the ADD once.
                     logger.info(
@@ -1668,7 +1782,11 @@ def run_cross_workspace_clone(
                         # Inventory parsing missed it — drop unconditionally as a
                         # last resort. Best-effort; ignore individual failures.
                         try:
-                            execute_sql(source_client, source_wh, f"ALTER TABLE {src_fqn_full} DROP ROW FILTER")
+                            execute_sql(
+                                source_client,
+                                source_wh,
+                                f"ALTER TABLE {src_fqn_full} DROP ROW FILTER",
+                            )
                             # Synthesize a minimal record so we know we did SOMETHING
                             # (even if we can't restore precisely).
                             dropped_protections[src_fqn_full] = TableProtections()
@@ -1697,7 +1815,8 @@ def run_cross_workspace_clone(
         logger.info("Granting SELECT on share to recipient")
         try:
             _run(
-                source_client, source_wh,
+                source_client,
+                source_wh,
                 f"GRANT SELECT ON SHARE {_quote_ident(share_name)} "
                 f"TO RECIPIENT {_quote_ident(recipient_name)}",
                 dry_run=dry_run,
@@ -1735,7 +1854,9 @@ def run_cross_workspace_clone(
 
         # --- 4. Target-side: wait for share to appear, create catalog structure -----
         logger.info("Locating source provider on target workspace...")
-        source_provider_name = _wait_for_provider(target_client, target_wh, share_name, dry_run=dry_run)
+        source_provider_name = _wait_for_provider(
+            target_client, target_wh, share_name, dry_run=dry_run
+        )
         if not source_provider_name and not dry_run:
             raise RuntimeError(
                 "Source provider did not appear on target workspace — Delta Sharing "
@@ -1757,7 +1878,8 @@ def run_cross_workspace_clone(
             )
             try:
                 _run(
-                    target_client, target_wh,
+                    target_client,
+                    target_wh,
                     f"DROP CATALOG IF EXISTS {_quote_ident(shared_catalog_name)}",
                     dry_run=dry_run,
                 )
@@ -1767,7 +1889,8 @@ def run_cross_workspace_clone(
         logger.info(f"Creating shared catalog on target: {shared_catalog_name}")
         if source_provider_name:
             _run(
-                target_client, target_wh,
+                target_client,
+                target_wh,
                 f"CREATE CATALOG IF NOT EXISTS {_quote_ident(shared_catalog_name)} "
                 f"USING SHARE {_quote_ident(source_provider_name)}.{_quote_ident(share_name)}",
                 dry_run=dry_run,
@@ -1783,7 +1906,8 @@ def run_cross_workspace_clone(
 
         for schema in schemas:
             _run(
-                target_client, target_wh,
+                target_client,
+                target_wh,
                 f"CREATE SCHEMA IF NOT EXISTS {_fqn(dest_catalog, schema)}",
                 dry_run=dry_run,
             )
@@ -1802,33 +1926,82 @@ def run_cross_workspace_clone(
             # windows because the first commit has already happened. The
             # field lives on the top-level CloneRequest (applies to both
             # single- and cross-workspace clones), not on TargetWorkspace.
-            tbl_props_clause = _format_tbl_properties(
-                config.get("clone_tbl_properties")
-            )
+            tbl_props_clause = _format_tbl_properties(config.get("clone_tbl_properties"))
             t0 = time.time()
             try:
                 if data_sync_mode == "incremental":
                     rows = _run(
-                        target_client, target_wh,
+                        target_client,
+                        target_wh,
                         f"CREATE OR REPLACE TABLE {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
                 elif data_sync_mode == "force_full":
                     _run(target_client, target_wh, f"DROP TABLE IF EXISTS {dst}", dry_run=dry_run)
                     rows = _run(
-                        target_client, target_wh,
+                        target_client,
+                        target_wh,
                         f"CREATE TABLE {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
                 else:  # snapshot_once
                     rows = _run(
-                        target_client, target_wh,
+                        target_client,
+                        target_wh,
                         f"CREATE TABLE IF NOT EXISTS {dst} DEEP CLONE {src}{tbl_props_clause}",
                         dry_run=dry_run,
                     )
                 metrics = _extract_clone_metrics(rows) if not dry_run else None
+                # Phase A of #9 (extended to cross-workspace in Phase B): when
+                # target_format=ICEBERG and source is Delta, enable UniForm on
+                # the target so external Iceberg engines can read it without a
+                # data copy. Non-Delta sources skip with a warning — UniForm is
+                # a Delta-only feature. Same DDL as the same-workspace path in
+                # clone_tables.clone_table().
+                target_format = (config.get("target_format") or "DELTA").upper()
+                if target_format == "ICEBERG" and not dry_run:
+                    if source_format.upper() != "DELTA":
+                        logger.warning(
+                            f"target_format=ICEBERG ignored for {alias} "
+                            f"(source format is {source_format}, UniForm requires Delta)"
+                        )
+                    else:
+                        # 3-step UniForm enable required by Databricks:
+                        # disable DVs → REORG PURGE → set IcebergCompatV2 +
+                        # column mapping. See same-workspace path in
+                        # clone_tables.clone_table() for the rationale.
+                        try:
+                            _run(
+                                target_client,
+                                target_wh,
+                                f"ALTER TABLE {dst} SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false')",
+                                dry_run=dry_run,
+                            )
+                            _run(
+                                target_client,
+                                target_wh,
+                                f"REORG TABLE {dst} APPLY (PURGE)",
+                                dry_run=dry_run,
+                            )
+                            _run(
+                                target_client,
+                                target_wh,
+                                (
+                                    f"ALTER TABLE {dst} SET TBLPROPERTIES ("
+                                    f"'delta.columnMapping.mode' = 'name', "
+                                    f"'delta.enableIcebergCompatV2' = 'true', "
+                                    f"'delta.universalFormat.enabledFormats' = 'iceberg'"
+                                    f")"
+                                ),
+                                dry_run=dry_run,
+                            )
+                            logger.info(f"Enabled UniForm (Iceberg) on {dst}")
+                        except Exception as uniform_e:
+                            logger.warning(f"UniForm enable failed on {dst}: {uniform_e}")
                 return TableResult(
-                    schema=schema, table=table, status="cloned",
+                    schema=schema,
+                    table=table,
+                    status="cloned",
                     duration_ms=int((time.time() - t0) * 1000),
                     bytes_copied=(metrics or {}).get("copied_files_size"),
                     files_copied=(metrics or {}).get("num_copied_files"),
@@ -1843,7 +2016,9 @@ def run_cross_workspace_clone(
                 # Databricks docs to understand what hit them.
                 err = _format_clone_error(source_format, alias, e)
                 return TableResult(
-                    schema=schema, table=table, status="failed",
+                    schema=schema,
+                    table=table,
+                    status="failed",
                     error=err,
                     duration_ms=int((time.time() - t0) * 1000),
                     source_format=source_format,
@@ -1884,37 +2059,62 @@ def run_cross_workspace_clone(
         # --- Phase 2: views + functions -----------------------------------
         if clone_views:
             _migrate_views(
-                source_client, target_client, source_wh, target_wh,
-                source_catalog, dest_catalog, schemas,
-                dry_run=dry_run, result=result,
-                include_re=include_re, exclude_re=exclude_re,
+                source_client,
+                target_client,
+                source_wh,
+                target_wh,
+                source_catalog,
+                dest_catalog,
+                schemas,
+                dry_run=dry_run,
+                result=result,
+                include_re=include_re,
+                exclude_re=exclude_re,
             )
         if clone_functions:
             _migrate_functions(
-                source_client, target_client, target_wh,
-                source_catalog, dest_catalog, schemas,
-                dry_run=dry_run, result=result,
-                include_re=include_re, exclude_re=exclude_re,
+                source_client,
+                target_client,
+                target_wh,
+                source_catalog,
+                dest_catalog,
+                schemas,
+                dry_run=dry_run,
+                result=result,
+                include_re=include_re,
+                exclude_re=exclude_re,
             )
 
         # --- Phase 3: volumes + file copy ---------------------------------
         if clone_volumes:
             _migrate_volumes(
-                source_client, target_client, target_wh,
-                source_catalog, dest_catalog, schemas,
-                dry_run=dry_run, result=result,
+                source_client,
+                target_client,
+                target_wh,
+                source_catalog,
+                dest_catalog,
+                schemas,
+                dry_run=dry_run,
+                result=result,
                 max_file_mb=volume_max_file_mb,
             )
 
         # --- Phase 4: grants + ownership + tags ---------------------------
         if copy_permissions or copy_ownership or copy_tags:
             _replay_metadata(
-                source_client, target_client, source_wh, target_wh,
-                source_catalog, dest_catalog, schemas, tables_by_schema,
+                source_client,
+                target_client,
+                source_wh,
+                target_wh,
+                source_catalog,
+                dest_catalog,
+                schemas,
+                tables_by_schema,
                 copy_permissions=copy_permissions,
                 copy_ownership=copy_ownership,
                 copy_tags=copy_tags,
-                dry_run=dry_run, result=result,
+                dry_run=dry_run,
+                result=result,
             )
 
         # --- Phase 5: re-apply column masks / row filters on target ----------
@@ -1927,11 +2127,12 @@ def run_cross_workspace_clone(
             for src_fqn, p in dropped_protections.items():
                 # src_fqn like `source_catalog`.`schema`.`table`; rewrite
                 # to target catalog by string-replacing the catalog portion
-                target_fqn = src_fqn.replace(
-                    f"`{source_catalog}`.", f"`{dest_catalog}`.", 1
-                )
+                target_fqn = src_fqn.replace(f"`{source_catalog}`.", f"`{dest_catalog}`.", 1)
                 _apply_table_protections(
-                    target_client, target_wh, target_fqn, p,
+                    target_client,
+                    target_wh,
+                    target_fqn,
+                    p,
                     rewrite_catalog=(source_catalog, dest_catalog),
                 )
 
@@ -1976,6 +2177,7 @@ def run_cross_workspace_clone(
         # track of which write privileges we revoked. Idempotent on retry.
         if quiesce_snapshots and not dry_run:
             from src.quiesce import restore_source_grants
+
             restore_source_grants(source_client, quiesce_snapshots)
 
         # --- 6a. Restore source column masks / row filters --------------------------
@@ -2006,7 +2208,10 @@ def run_cross_workspace_clone(
         # down when the user explicitly opts in via cleanup_after_clone=true.
         if cleanup_after:
             _teardown(
-                source_client, source_wh, target_client, target_wh,
+                source_client,
+                source_wh,
+                target_client,
+                target_wh,
                 share_name if share_created else None,
                 recipient_name if recipient_created else None,
                 shared_catalog_name if shared_catalog_created else None,
@@ -2068,7 +2273,9 @@ def _wait_for_provider(
                     share_rows = execute_sql(
                         target_client, target_wh, f"SHOW SHARES IN PROVIDER {_quote_ident(pname)}"
                     )
-                    if any((r.get("name") or r.get("share_name")) == share_name for r in share_rows):
+                    if any(
+                        (r.get("name") or r.get("share_name")) == share_name for r in share_rows
+                    ):
                         return pname
                 except Exception:
                     continue
@@ -2096,7 +2303,8 @@ def _teardown(
     if shared_catalog_name:
         try:
             _run(
-                target_client, target_wh,
+                target_client,
+                target_wh,
                 f"DROP CATALOG IF EXISTS {_quote_ident(shared_catalog_name)}",
                 dry_run=dry_run,
             )
@@ -2104,11 +2312,21 @@ def _teardown(
             logger.warning(f"teardown: drop shared catalog failed: {e}")
     if share_name:
         try:
-            _run(source_client, source_wh, f"DROP SHARE IF EXISTS {_quote_ident(share_name)}", dry_run=dry_run)
+            _run(
+                source_client,
+                source_wh,
+                f"DROP SHARE IF EXISTS {_quote_ident(share_name)}",
+                dry_run=dry_run,
+            )
         except Exception as e:
             logger.warning(f"teardown: drop share failed: {e}")
     if recipient_name:
         try:
-            _run(source_client, source_wh, f"DROP RECIPIENT IF EXISTS {_quote_ident(recipient_name)}", dry_run=dry_run)
+            _run(
+                source_client,
+                source_wh,
+                f"DROP RECIPIENT IF EXISTS {_quote_ident(recipient_name)}",
+                dry_run=dry_run,
+            )
         except Exception as e:
             logger.warning(f"teardown: drop recipient failed: {e}")

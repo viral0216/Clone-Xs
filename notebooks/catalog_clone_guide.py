@@ -66,6 +66,7 @@ print(f"Repo root: {REPO_ROOT}")
 from src.client import execute_sql
 from src.preflight import run_preflight
 from src.diff import compare_catalogs
+
 print("✅ All imports successful — no wheel needed")
 
 # COMMAND ----------
@@ -94,10 +95,10 @@ config = {
     "source_catalog": SOURCE_CATALOG,
     "destination_catalog": DEST_CATALOG,
     "sql_warehouse_id": WAREHOUSE_ID,
-    "clone_type": "SHALLOW",          # SHALLOW (fast, metadata-only) or DEEP (full data copy)
-    "load_type": "FULL",              # FULL or INCREMENTAL
-    "max_workers": 4,                 # Parallel schemas
-    "parallel_tables": 2,             # Parallel tables per schema
+    "clone_type": "SHALLOW",  # SHALLOW (fast, metadata-only) or DEEP (full data copy)
+    "load_type": "FULL",  # FULL or INCREMENTAL
+    "max_workers": 4,  # Parallel schemas
+    "parallel_tables": 2,  # Parallel tables per schema
     "copy_permissions": True,
     "copy_ownership": True,
     "copy_tags": True,
@@ -105,7 +106,7 @@ config = {
     "copy_security": True,
     "copy_constraints": True,
     "copy_comments": True,
-    "dry_run": True,                  # START WITH DRY RUN — set to False when ready
+    "dry_run": True,  # START WITH DRY RUN — set to False when ready
     "show_progress": True,
     "exclude_schemas": ["information_schema", "default"],
 }
@@ -140,16 +141,15 @@ print(f"Dry run:     {config['dry_run']}")
 
 # COMMAND ----------
 
-from src.preflight import run_preflight
 
 results = run_preflight(client, config)
 
-print(f"\n{'='*50}")
-print(f"Pre-Flight Results:")
+print(f"\n{'=' * 50}")
+print("Pre-Flight Results:")
 print(f"  Passed:   {results['passed']}")
 print(f"  Warnings: {results['warnings']}")
 print(f"  Failed:   {results['failed']}")
-print(f"{'='*50}")
+print(f"{'=' * 50}")
 
 for check in results["checks"]:
     icon = "✅" if check["status"] == "passed" else ("⚠️" if check["status"] == "warning" else "❌")
@@ -165,13 +165,14 @@ for check in results["checks"]:
 
 # COMMAND ----------
 
-from src.diff import compare_catalogs
 
-diff = compare_catalogs(client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG, config.get("exclude_schemas", []))
+diff = compare_catalogs(
+    client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG, config.get("exclude_schemas", [])
+)
 
-print(f"\n{'='*50}")
+print(f"\n{'=' * 50}")
 print(f"Catalog Diff: {SOURCE_CATALOG} vs {DEST_CATALOG}")
-print(f"{'='*50}")
+print(f"{'=' * 50}")
 
 for obj_type in ["schemas", "tables", "views", "functions", "volumes"]:
     only_source = diff[obj_type]["only_in_source"]
@@ -244,15 +245,15 @@ from src.cost_estimation import estimate_clone_cost
 
 estimate = estimate_clone_cost(client, WAREHOUSE_ID, SOURCE_CATALOG, config)
 
-print(f"\n{'='*50}")
-print(f"Clone Cost Estimate")
-print(f"{'='*50}")
+print(f"\n{'=' * 50}")
+print("Clone Cost Estimate")
+print(f"{'=' * 50}")
 print(f"  Total tables:    {estimate['total_tables']}")
 print(f"  Total size:      {estimate['total_size_display']}")
 print(f"  Estimated cost:  ${estimate['estimated_monthly_cost']:.2f}/month")
 print(f"  Clone type:      {config['clone_type']}")
 if config["clone_type"] == "SHALLOW":
-    print(f"  💡 Shallow clone — no additional storage cost (metadata-only)")
+    print("  💡 Shallow clone — no additional storage cost (metadata-only)")
 
 # COMMAND ----------
 
@@ -274,7 +275,9 @@ for t in results["matched_tables"][:10]:
     print(f"  📋 {t}")
 
 # Search columns too
-results_cols = search_tables(client, WAREHOUSE_ID, SOURCE_CATALOG, r"email|phone", config, search_columns=True)
+results_cols = search_tables(
+    client, WAREHOUSE_ID, SOURCE_CATALOG, r"email|phone", config, search_columns=True
+)
 print(f"\nFound {len(results_cols.get('matched_columns', []))} columns matching 'email|phone':")
 for col in results_cols.get("matched_columns", [])[:10]:
     print(f"  📎 {col['table']}.{col['column']}")
@@ -293,16 +296,16 @@ from src.stats import catalog_stats
 
 stats = catalog_stats(client, WAREHOUSE_ID, SOURCE_CATALOG, config)
 
-print(f"\n{'='*50}")
+print(f"\n{'=' * 50}")
 print(f"Catalog Statistics: {SOURCE_CATALOG}")
-print(f"{'='*50}")
+print(f"{'=' * 50}")
 print(f"  Total schemas:  {stats['total_schemas']}")
 print(f"  Total tables:   {stats['total_tables']}")
 print(f"  Total size:     {stats['total_size_display']}")
 print(f"  Total rows:     {stats['total_rows']:,}")
 
 if stats.get("top_by_size"):
-    print(f"\n  Top 5 tables by size:")
+    print("\n  Top 5 tables by size:")
     for t in stats["top_by_size"][:5]:
         print(f"    {t['table']}: {t['size_display']} ({t['rows']:,} rows)")
 
@@ -350,9 +353,9 @@ print("   No data will be modified.\n")
 
 summary = clone_catalog(client, config)
 
-print(f"\n{'='*50}")
-print(f"Dry Run Summary")
-print(f"{'='*50}")
+print(f"\n{'=' * 50}")
+print("Dry Run Summary")
+print(f"{'=' * 50}")
 print(f"  Schemas processed: {summary.get('schemas_processed', 0)}")
 print(f"  Tables cloned:     {summary.get('tables_cloned', 0)}")
 print(f"  Views recreated:   {summary.get('views_cloned', 0)}")
@@ -429,12 +432,12 @@ print("\nUseful for: disaster recovery, auditing, point-in-time snapshots")
 
 # COMMAND ----------
 
-from src.validation import validate_table, get_row_count
+from src.validation import validate_table
 
 # Validate a single table
 result = validate_table(client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG, "my_schema", "my_table")
 
-print(f"Table: my_schema.my_table")
+print("Table: my_schema.my_table")
 print(f"  Source rows:  {result['source_count']}")
 print(f"  Dest rows:    {result['dest_count']}")
 print(f"  Match:        {'✅ Yes' if result['match'] else '❌ No'}")
@@ -458,7 +461,7 @@ sync_config["dry_run"] = True  # Preview first
 
 sync_result = sync_catalog(client, sync_config)
 
-print(f"Sync preview:")
+print("Sync preview:")
 print(f"  Objects to add:  {sync_result.get('added', 0)}")
 print(f"  Objects to drop: {sync_result.get('dropped', 0)}")
 
@@ -472,7 +475,7 @@ print(f"  Objects to drop: {sync_result.get('dropped', 0)}")
 
 # COMMAND ----------
 
-from src.rollback import rollback_clone, list_rollback_logs
+from src.rollback import list_rollback_logs
 
 # List available rollback logs
 logs = list_rollback_logs()
@@ -559,7 +562,7 @@ from src.workflow import generate_workflow
 # Generate Jobs JSON
 wf = generate_workflow(config, schedule="0 0 2 * * ?", cluster_id="<your-cluster-id>")
 print(f"Workflow saved: {wf['output_file']}")
-print(f"Schedule: Daily at 2 AM")
+print("Schedule: Daily at 2 AM")
 
 # Import to Databricks via UI or CLI:
 # databricks jobs create --json @workflow.json
@@ -579,7 +582,7 @@ from src.monitor import monitor_once
 # Run a single check
 check = monitor_once(client, WAREHOUSE_ID, SOURCE_CATALOG, DEST_CATALOG, config)
 
-print(f"Monitor check:")
+print("Monitor check:")
 print(f"  In sync:       {check.get('in_sync', False)}")
 print(f"  Schema drift:  {check.get('has_drift', False)}")
 print(f"  Missing in dest: {len(check.get('missing_in_dest', []))}")
@@ -607,7 +610,7 @@ if diff["added"]:
 if diff["removed"]:
     print(f"Removed keys: {diff['removed']}")
 if diff["changed"]:
-    print(f"Changed keys:")
+    print("Changed keys:")
     for key, change in diff["changed"].items():
         print(f"  {key}: {change['old']} → {change['new']}")
 if not any([diff["added"], diff["removed"], diff["changed"]]):
@@ -624,14 +627,9 @@ if not any([diff["added"], diff["removed"], diff["changed"]]):
 
 # COMMAND ----------
 
-from src.client import execute_sql
 
 # List all schemas in a catalog
-schemas = execute_sql(
-    client,
-    WAREHOUSE_ID,
-    f"SHOW SCHEMAS IN {SOURCE_CATALOG}"
-)
+schemas = execute_sql(client, WAREHOUSE_ID, f"SHOW SCHEMAS IN {SOURCE_CATALOG}")
 
 print(f"Schemas in {SOURCE_CATALOG}:")
 for s in schemas:
@@ -641,11 +639,7 @@ for s in schemas:
 # COMMAND ----------
 
 # List all tables in a schema
-tables = execute_sql(
-    client,
-    WAREHOUSE_ID,
-    f"SHOW TABLES IN {SOURCE_CATALOG}.my_schema"
-)
+tables = execute_sql(client, WAREHOUSE_ID, f"SHOW TABLES IN {SOURCE_CATALOG}.my_schema")
 
 print(f"\nTables in {SOURCE_CATALOG}.my_schema:")
 for t in tables:
@@ -655,9 +649,7 @@ for t in tables:
 
 # Run any SQL — the warehouse executes it
 row_count = execute_sql(
-    client,
-    WAREHOUSE_ID,
-    f"SELECT COUNT(*) as cnt FROM {SOURCE_CATALOG}.my_schema.my_table"
+    client, WAREHOUSE_ID, f"SELECT COUNT(*) as cnt FROM {SOURCE_CATALOG}.my_schema.my_table"
 )
 
 print(f"Row count: {row_count[0]['cnt']}")
@@ -784,6 +776,7 @@ print("  'warn'  → Log warning and continue")
 
 # COMMAND ----------
 
+
 def run_clone_pipeline(client, config):
     """End-to-end clone pipeline with all safety checks."""
 
@@ -828,7 +821,7 @@ def run_clone_pipeline(client, config):
         print(f"  ⚠️ {missing} objects missing in destination")
 
     # Step 5: Summary
-    print(f"\nStep 5/5: Complete!")
+    print("\nStep 5/5: Complete!")
     print(f"  Duration: {summary.get('duration', 'N/A')}")
     print(f"  Report:   {summary.get('report_file', 'N/A')}")
 

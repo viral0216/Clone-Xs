@@ -30,6 +30,7 @@ def _make_config():
 
 # ── Slack ────────────────────────────────────────────────────────────
 
+
 @patch("src.notifications.urlopen")
 def test_slack_notification(mock_urlopen):
     mock_urlopen.return_value = MagicMock()
@@ -48,20 +49,26 @@ def test_slack_handles_error(mock_urlopen):
 
 # ── Teams ────────────────────────────────────────────────────────────
 
+
 @patch("src.notifications.urlopen")
 def test_teams_notification(mock_urlopen):
     mock_urlopen.return_value = MagicMock()
-    send_teams_notification("https://outlook.office.com/webhook/test", _make_summary(), _make_config())
+    send_teams_notification(
+        "https://outlook.office.com/webhook/test", _make_summary(), _make_config()
+    )
     mock_urlopen.assert_called_once()
 
 
 # ── Generic webhook ──────────────────────────────────────────────────
 
+
 @patch("src.notifications.urlopen")
 def test_webhook_notification(mock_urlopen):
     mock_urlopen.return_value = MagicMock()
     send_webhook_notification(
-        "https://myservice.com/hook", _make_summary(), _make_config(),
+        "https://myservice.com/hook",
+        _make_summary(),
+        _make_config(),
         headers={"Authorization": "Bearer token"},
     )
     mock_urlopen.assert_called_once()

@@ -40,8 +40,12 @@ def compare_samples(
     """
     order_clause = f"ORDER BY `{order_by}`" if order_by else ""
 
-    src_sql = f"SELECT * FROM `{source_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
-    dst_sql = f"SELECT * FROM `{dest_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    src_sql = (
+        f"SELECT * FROM `{source_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    )
+    dst_sql = (
+        f"SELECT * FROM `{dest_catalog}`.`{schema}`.`{table_name}` {order_clause} LIMIT {limit}"
+    )
 
     try:
         source_rows = execute_sql(client, warehouse_id, src_sql)
@@ -62,11 +66,13 @@ def compare_samples(
         dst_row = dest_rows[i] if i < len(dest_rows) else None
 
         if src_row != dst_row:
-            differences.append({
-                "row_index": i,
-                "source": src_row,
-                "dest": dst_row,
-            })
+            differences.append(
+                {
+                    "row_index": i,
+                    "source": src_row,
+                    "dest": dst_row,
+                }
+            )
 
     return {
         "schema": schema,
@@ -103,7 +109,7 @@ def preview_table(
             widths[col] = min(max(widths[col], val_len), 40)  # Cap at 40 chars
 
     # Print header
-    header = " | ".join(col.ljust(widths[col])[:widths[col]] for col in columns)
+    header = " | ".join(col.ljust(widths[col])[: widths[col]] for col in columns)
     separator = "-+-".join("-" * widths[col] for col in columns)
 
     logger.info(f"\nPreview: {catalog}.{schema}.{table_name} ({len(rows)} rows)")
@@ -112,7 +118,6 @@ def preview_table(
 
     for row in rows:
         line = " | ".join(
-            str(row.get(col, "")).ljust(widths[col])[:widths[col]]
-            for col in columns
+            str(row.get(col, "")).ljust(widths[col])[: widths[col]] for col in columns
         )
         logger.info(line)

@@ -12,16 +12,24 @@ EXCLUDE_SCHEMAS = {"information_schema", "default"}
 
 
 def list_monitors(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str | None = None,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str | None = None,
 ) -> list[dict]:
     """List quality monitors in a catalog.
 
     Uses SDK to list tables, then checks each for a quality monitor via SDK.
     """
-    schemas = [schema] if schema else [
-        s.name for s in client.schemas.list(catalog_name=catalog)
-        if s.name not in EXCLUDE_SCHEMAS
-    ]
+    schemas = (
+        [schema]
+        if schema
+        else [
+            s.name
+            for s in client.schemas.list(catalog_name=catalog)
+            if s.name not in EXCLUDE_SCHEMAS
+        ]
+    )
 
     table_fqns = []
     for s in schemas:
@@ -36,30 +44,36 @@ def list_monitors(
     for fqn in table_fqns:
         try:
             monitor = client.quality_monitors.get(table_name=fqn)
-            monitors.append({
-                "table_name": fqn,
-                "monitor_version": monitor.monitor_version,
-                "status": str(monitor.status) if monitor.status else None,
-                "output_schema_name": monitor.output_schema_name,
-                "assets_dir": monitor.assets_dir,
-                "slicing_exprs": list(monitor.slicing_exprs) if monitor.slicing_exprs else [],
-                "custom_metrics": [
-                    {
-                        "name": cm.name,
-                        "input_columns": list(cm.input_columns) if cm.input_columns else [],
-                        "definition": cm.definition,
-                        "output_data_type": cm.output_data_type,
+            monitors.append(
+                {
+                    "table_name": fqn,
+                    "monitor_version": monitor.monitor_version,
+                    "status": str(monitor.status) if monitor.status else None,
+                    "output_schema_name": monitor.output_schema_name,
+                    "assets_dir": monitor.assets_dir,
+                    "slicing_exprs": list(monitor.slicing_exprs) if monitor.slicing_exprs else [],
+                    "custom_metrics": [
+                        {
+                            "name": cm.name,
+                            "input_columns": list(cm.input_columns) if cm.input_columns else [],
+                            "definition": cm.definition,
+                            "output_data_type": cm.output_data_type,
+                        }
+                        for cm in (monitor.custom_metrics or [])
+                    ],
+                    "schedule": {
+                        "quartz_cron_expression": monitor.schedule.quartz_cron_expression,
+                        "timezone_id": monitor.schedule.timezone_id,
                     }
-                    for cm in (monitor.custom_metrics or [])
-                ],
-                "schedule": {
-                    "quartz_cron_expression": monitor.schedule.quartz_cron_expression,
-                    "timezone_id": monitor.schedule.timezone_id,
-                } if monitor.schedule else None,
-                "data_classification_config": {
-                    "enabled": monitor.data_classification_config.enabled,
-                } if monitor.data_classification_config else None,
-            })
+                    if monitor.schedule
+                    else None,
+                    "data_classification_config": {
+                        "enabled": monitor.data_classification_config.enabled,
+                    }
+                    if monitor.data_classification_config
+                    else None,
+                }
+            )
         except Exception:
             # Table does not have a monitor — skip
             continue
@@ -69,7 +83,8 @@ def list_monitors(
 
 
 def export_monitor_definition(
-    client: WorkspaceClient, table_fqn: str,
+    client: WorkspaceClient,
+    table_fqn: str,
 ) -> dict | None:
     """Export a quality monitor's full definition."""
     try:
@@ -93,18 +108,26 @@ def export_monitor_definition(
             "schedule": {
                 "quartz_cron_expression": monitor.schedule.quartz_cron_expression,
                 "timezone_id": monitor.schedule.timezone_id,
-            } if monitor.schedule else None,
+            }
+            if monitor.schedule
+            else None,
             "inference_log": {
                 "model_id_col": monitor.inference_log.model_id_col,
                 "prediction_col": monitor.inference_log.prediction_col,
                 "problem_type": str(monitor.inference_log.problem_type),
                 "timestamp_col": monitor.inference_log.timestamp_col,
                 "label_col": monitor.inference_log.label_col,
-            } if monitor.inference_log else None,
+            }
+            if monitor.inference_log
+            else None,
             "time_series": {
                 "timestamp_col": monitor.time_series.timestamp_col,
-                "granularities": list(monitor.time_series.granularities) if monitor.time_series.granularities else [],
-            } if monitor.time_series else None,
+                "granularities": list(monitor.time_series.granularities)
+                if monitor.time_series.granularities
+                else [],
+            }
+            if monitor.time_series
+            else None,
         }
     except Exception as e:
         logger.error(f"Failed to export monitor for {table_fqn}: {e}")
@@ -148,7 +171,9 @@ def clone_monitor(
                     input_columns=cm.get("input_columns", []),
                     definition=cm["definition"],
                     output_data_type=cm.get("output_data_type"),
-                    type=MonitorMetricType(cm["type"]) if cm.get("type") else MonitorMetricType.CUSTOM_METRIC_TYPE_AGGREGATE,
+                    type=MonitorMetricType(cm["type"])
+                    if cm.get("type")
+                    else MonitorMetricType.CUSTOM_METRIC_TYPE_AGGREGATE,
                 )
             )
 
@@ -208,8 +233,10 @@ def clone_monitor(
 
 
 def compare_monitor_metrics(
-    client: WorkspaceClient, warehouse_id: str,
-    source_table_fqn: str, dest_table_fqn: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_table_fqn: str,
+    dest_table_fqn: str,
 ) -> dict:
     """Compare quality monitor metrics between source and destination tables.
 

@@ -83,7 +83,9 @@ class TestSubmitDistributedClone:
 
         config = {"source_catalog": "src", "destination_catalog": "dst"}
         result = submit_distributed_clone(
-            client, "wh-123", config,
+            client,
+            "wh-123",
+            config,
             cluster_id="cluster-abc",
             notebook_path="/Workspace/Shared/clone_nb",
         )
@@ -101,7 +103,9 @@ class TestSubmitDistributedClone:
 
         config = {"source_catalog": "src", "destination_catalog": "dst", "max_workers": 4}
         result = submit_distributed_clone(
-            client, "wh-123", config,
+            client,
+            "wh-123",
+            config,
             notebook_path="/Workspace/Shared/nb",
         )
 

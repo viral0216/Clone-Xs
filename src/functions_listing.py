@@ -38,14 +38,18 @@ def list_functions_for_catalog(
     Returns `[]` on query failure (auth, missing catalog) — the caller
     decides whether that's worth surfacing as an error.
     """
-    rows = execute_sql(client, warehouse_id, f"""
+    rows = execute_sql(
+        client,
+        warehouse_id,
+        f"""
         SELECT routine_catalog, routine_schema, routine_name, routine_type,
                data_type, routine_definition
         FROM {catalog}.information_schema.routines
         WHERE routine_type = 'FUNCTION'
         AND routine_schema NOT IN ('information_schema', '__internal')
         ORDER BY routine_schema, routine_name
-    """)
+    """,
+    )
     return [
         {
             "name": r.get("routine_name", ""),

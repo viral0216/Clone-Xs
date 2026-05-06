@@ -23,6 +23,7 @@ def _config(**overrides):
 
 # ---------- get_audit_table_fqn ----------
 
+
 def test_get_audit_table_fqn_from_config():
     assert get_audit_table_fqn(_config()) == "my_audit.logs.ops"
 
@@ -32,6 +33,7 @@ def test_get_audit_table_fqn_defaults():
 
 
 # ---------- ensure_audit_table ----------
+
 
 @patch("src.audit_trail.execute_sql")
 def test_ensure_audit_table_happy(mock_sql):
@@ -68,6 +70,7 @@ def test_ensure_audit_table_catalog_fallback(mock_sql):
 @patch("src.client.execute_sql")
 def test_ensure_audit_table_catalog_inaccessible(mock_sql):
     """When catalog_utils cannot verify or create the catalog, raise RuntimeError."""
+
     def side_effect(client, wh, sql, **kw):
         if "SHOW CATALOGS" in sql:
             return []  # catalog doesn't exist
@@ -80,6 +83,7 @@ def test_ensure_audit_table_catalog_inaccessible(mock_sql):
     mock_sql.side_effect = side_effect
     # Clear cached catalogs so the check actually runs
     from src.catalog_utils import _verified_catalogs
+
     _verified_catalogs.discard("my_audit")
 
     try:
@@ -90,6 +94,7 @@ def test_ensure_audit_table_catalog_inaccessible(mock_sql):
 
 
 # ---------- log_operation_start ----------
+
 
 @patch("src.audit_trail.execute_sql")
 def test_log_operation_start_happy(mock_sql):
@@ -111,6 +116,7 @@ def test_log_operation_start_sql_failure_no_raise(mock_sql):
 
 # ---------- log_operation_complete ----------
 
+
 @patch("src.audit_trail.execute_sql")
 def test_log_operation_complete_happy(mock_sql):
     mock_sql.return_value = []
@@ -129,14 +135,20 @@ def test_log_operation_complete_with_error(mock_sql):
     mock_sql.return_value = []
     summary = {"tables": {"cloned": 0, "failed": 2}}
     log_operation_complete(
-        MagicMock(), "wh-1", _config(), "op-123", summary,
-        datetime(2025, 1, 1, tzinfo=timezone.utc), error_message="boom",
+        MagicMock(),
+        "wh-1",
+        _config(),
+        "op-123",
+        summary,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        error_message="boom",
     )
     sql_arg = mock_sql.call_args[0][2]
     assert "'failed'" in sql_arg
 
 
 # ---------- query_audit_history ----------
+
 
 @patch("src.audit_trail.execute_sql")
 def test_query_audit_history_happy(mock_sql):
@@ -161,8 +173,11 @@ def test_query_audit_history_happy(mock_sql):
 def test_query_audit_history_with_filters(mock_sql):
     mock_sql.return_value = []
     query_audit_history(
-        MagicMock(), "wh-1", _config(),
-        source_catalog="src", status="success",
+        MagicMock(),
+        "wh-1",
+        _config(),
+        source_catalog="src",
+        status="success",
     )
     sql_arg = mock_sql.call_args[0][2]
     assert "source_catalog = 'src'" in sql_arg

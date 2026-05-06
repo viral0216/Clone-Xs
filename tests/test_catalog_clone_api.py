@@ -5,6 +5,7 @@ from src.catalog_clone_api import _build_config, _get_client, clone_full_catalog
 
 # ── _build_config ────────────────────────────────────────────────────
 
+
 def test_build_config_defaults():
     config = _build_config("prod", "staging", "wh-123")
     assert config["source_catalog"] == "prod"
@@ -20,7 +21,9 @@ def test_build_config_defaults():
 
 def test_build_config_custom():
     config = _build_config(
-        "prod", "dev", "wh",
+        "prod",
+        "dev",
+        "wh",
         clone_type="SHALLOW",
         load_type="INCREMENTAL",
         max_workers=8,
@@ -46,6 +49,7 @@ def test_build_config_kwargs():
 
 # ── _get_client ──────────────────────────────────────────────────────
 
+
 @patch("src.auth.get_client")
 def test_get_client_no_args(mock_gc):
     mock_gc.return_value = MagicMock()
@@ -61,6 +65,7 @@ def test_get_client_with_host_token(mock_gc):
 
 
 # ── clone_full_catalog ───────────────────────────────────────────────
+
 
 @patch("src.clone_catalog.clone_catalog")
 @patch("src.catalog_clone_api._get_client")
@@ -83,7 +88,13 @@ def test_clone_full_catalog_calls_engine(mock_client, mock_clone):
 @patch("src.catalog_clone_api._get_client")
 def test_clone_full_catalog_dry_run(mock_client, mock_clone):
     mock_client.return_value = MagicMock()
-    mock_clone.return_value = {"schemas_processed": 0, "tables": {}, "views": {}, "functions": {}, "volumes": {}}
+    mock_clone.return_value = {
+        "schemas_processed": 0,
+        "tables": {},
+        "views": {},
+        "functions": {},
+        "volumes": {},
+    }
     clone_full_catalog("prod", "staging", dry_run=True)
     config = mock_clone.call_args[0][1]
     assert config["dry_run"] is True

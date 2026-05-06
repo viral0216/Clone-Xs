@@ -31,7 +31,6 @@ def clone_to_multiple_workspaces(
     source = config.get("source_catalog", "unknown")
     logger.info(f"Starting parallel clone of '{source}' to {len(destinations)} workspaces")
 
-
     def _clone_to_workspace(dest_config: dict) -> dict:
         host = dest_config["host"]
         dest_catalog = dest_config.get("destination_catalog", config.get("destination_catalog"))
@@ -69,10 +68,7 @@ def clone_to_multiple_workspaces(
             }
 
     with ThreadPoolExecutor(max_workers=max_parallel) as executor:
-        futures = {
-            executor.submit(_clone_to_workspace, dest): dest
-            for dest in destinations
-        }
+        futures = {executor.submit(_clone_to_workspace, dest): dest for dest in destinations}
 
         workspace_results = []
         for future in as_completed(futures):
@@ -92,5 +88,7 @@ def clone_to_multiple_workspaces(
         "results": workspace_results,
     }
 
-    logger.info(f"Multi-workspace clone complete: {succeeded} succeeded, {failed} failed, {partial} partial")
+    logger.info(
+        f"Multi-workspace clone complete: {succeeded} succeeded, {failed} failed, {partial} partial"
+    )
     return summary

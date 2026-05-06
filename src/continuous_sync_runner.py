@@ -57,6 +57,7 @@ class StreamRecord:
     for why. The minimal authoritative state is `run_id`; everything else
     is decorative metadata for the UI.
     """
+
     stream_id: str
     source_catalog: str
     destination_catalog: str
@@ -143,7 +144,10 @@ def start_stream(
         record.last_status = "starting"
         logger.info(
             "Continuous sync started: stream_id=%s run_id=%s source=%s dest=%s",
-            stream_id, record.run_id, source_catalog, destination_catalog,
+            stream_id,
+            record.run_id,
+            source_catalog,
+            destination_catalog,
         )
     except Exception as e:
         record.last_status = "failed"
@@ -220,19 +224,19 @@ def restart_stream(client: "WorkspaceClient", stream_id: str) -> StreamRecord:
 
 
 _LIFE_CYCLE_TO_STATUS = {
-    "PENDING":     "starting",
-    "RUNNING":     "running",
+    "PENDING": "starting",
+    "RUNNING": "running",
     "TERMINATING": "stopping",
-    "TERMINATED":  None,  # depends on result_state
-    "SKIPPED":     "stopped",
+    "TERMINATED": None,  # depends on result_state
+    "SKIPPED": "stopped",
     "INTERNAL_ERROR": "failed",
-    "BLOCKED":     "running",
+    "BLOCKED": "running",
     "WAITING_FOR_RETRY": "running",
 }
 
 _RESULT_STATE_TO_STATUS = {
-    "SUCCESS":  "stopped",  # streaming usually shouldn't reach SUCCESS — it ran to completion when streams are infinite
-    "FAILED":   "failed",
+    "SUCCESS": "stopped",  # streaming usually shouldn't reach SUCCESS — it ran to completion when streams are infinite
+    "FAILED": "failed",
     "TIMEDOUT": "failed",
     "CANCELED": "stopped",
 }
@@ -350,7 +354,7 @@ def discover_existing_streams(client: "WorkspaceClient") -> int:
         # Best-effort stream_id extraction from run_name. Run name format is
         # `<prefix>-<stream_id>`; we keep stream_id stable across restarts so
         # the UI's URL paths don't break.
-        stream_id = name[len(_RUN_NAME_PREFIX) + 1:] or f"discovered-{run_id}"
+        stream_id = name[len(_RUN_NAME_PREFIX) + 1 :] or f"discovered-{run_id}"
         with _REGISTRY_LOCK:
             if stream_id in _REGISTRY:
                 continue
@@ -385,12 +389,15 @@ def _make_stream_id(
     starting "the same" sync twice without an intervening stop gets the
     same stream_id — UI users see one record, not two."""
     import hashlib
-    payload = "|".join([
-        source_catalog,
-        destination_catalog,
-        schema or "",
-        ",".join(sorted(tables or [])),
-    ])
+
+    payload = "|".join(
+        [
+            source_catalog,
+            destination_catalog,
+            schema or "",
+            ",".join(sorted(tables or [])),
+        ]
+    )
     suffix = hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()[:10]
     return f"sync-{suffix}"
 

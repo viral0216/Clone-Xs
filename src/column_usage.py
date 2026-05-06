@@ -169,7 +169,9 @@ def query_column_users(
                 col_name = alias_match.group(1) if alias_match else None
             else:
                 # Simple column or table.column
-                col_match = col_pattern.search(part.split(" AS ")[0].strip() if " AS " in part.upper() else part.strip())
+                col_match = col_pattern.search(
+                    part.split(" AS ")[0].strip() if " AS " in part.upper() else part.strip()
+                )
                 col_name = col_match.group(1) if col_match else None
 
             if not col_name:
@@ -189,14 +191,18 @@ def query_column_users(
     # Build result
     columns = []
     for (tbl, col), data in column_users.items():
-        users_list = [{"user": u, "count": c} for u, c in sorted(data["users"].items(), key=lambda x: -x[1])]
-        columns.append({
-            "column": data["column"],
-            "table": data["table"],
-            "usage_count": sum(u["count"] for u in users_list),
-            "user_count": len(users_list),
-            "users": users_list[:10],
-        })
+        users_list = [
+            {"user": u, "count": c} for u, c in sorted(data["users"].items(), key=lambda x: -x[1])
+        ]
+        columns.append(
+            {
+                "column": data["column"],
+                "table": data["table"],
+                "usage_count": sum(u["count"] for u in users_list),
+                "user_count": len(users_list),
+                "users": users_list[:10],
+            }
+        )
     columns.sort(key=lambda x: -x["usage_count"])
 
     top_users = [
@@ -208,7 +214,10 @@ def query_column_users(
 
 
 def query_column_stats_fallback(
-    client, warehouse_id: str, catalog: str, limit: int = 50,
+    client,
+    warehouse_id: str,
+    catalog: str,
+    limit: int = 50,
 ) -> list[dict]:
     """Fallback: query information_schema for column statistics when system tables aren't available.
 
@@ -258,15 +267,23 @@ def get_column_usage_summary(
     if use_system_tables:
         # Full mode: query system tables
         lineage_cols = query_column_usage(
-            client, warehouse_id, catalog, table_fqn,
-            days=min(days, 30), limit=30,
+            client,
+            warehouse_id,
+            catalog,
+            table_fqn,
+            days=min(days, 30),
+            limit=30,
         )
 
         user_data = {"columns": [], "top_users": []}
         if include_query_history:
             user_data = query_column_users(
-                client, warehouse_id, catalog, table_fqn,
-                days=min(days, 30), limit=100,
+                client,
+                warehouse_id,
+                catalog,
+                table_fqn,
+                days=min(days, 30),
+                limit=100,
             )
 
         user_lookup = {}
@@ -279,23 +296,32 @@ def get_column_usage_summary(
             tbl_name = lc.get("table_name", "")
             key = (tbl_name, col_name.lower())
             user_info = user_lookup.pop(key, None)
-            top_columns.append({
-                "column": col_name, "table": tbl_name,
-                "lineage_count": lc.get("usage_count", 0),
-                "downstream_count": lc.get("downstream_count", 0),
-                "last_used": str(lc.get("last_used", "")),
-                "query_count": user_info["usage_count"] if user_info else 0,
-                "user_count": user_info["user_count"] if user_info else 0,
-                "users": user_info["users"] if user_info else [],
-            })
+            top_columns.append(
+                {
+                    "column": col_name,
+                    "table": tbl_name,
+                    "lineage_count": lc.get("usage_count", 0),
+                    "downstream_count": lc.get("downstream_count", 0),
+                    "last_used": str(lc.get("last_used", "")),
+                    "query_count": user_info["usage_count"] if user_info else 0,
+                    "user_count": user_info["user_count"] if user_info else 0,
+                    "users": user_info["users"] if user_info else [],
+                }
+            )
 
         for key, c in user_lookup.items():
-            top_columns.append({
-                "column": c["column"], "table": c["table"],
-                "lineage_count": 0, "downstream_count": 0, "last_used": "",
-                "query_count": c["usage_count"], "user_count": c["user_count"],
-                "users": c["users"],
-            })
+            top_columns.append(
+                {
+                    "column": c["column"],
+                    "table": c["table"],
+                    "lineage_count": 0,
+                    "downstream_count": 0,
+                    "last_used": "",
+                    "query_count": c["usage_count"],
+                    "user_count": c["user_count"],
+                    "users": c["users"],
+                }
+            )
 
         top_columns.sort(key=lambda x: -(x["lineage_count"] + x["query_count"]))
 
@@ -312,18 +338,20 @@ def get_column_usage_summary(
                 if key in seen:
                     continue
                 seen.add(key)
-                top_columns.append({
-                    "column": col,
-                    "table": tbl,
-                    "data_type": fc.get("data_type", ""),
-                    "lineage_count": freq,
-                    "downstream_count": 0,
-                    "last_used": "",
-                    "query_count": 0,
-                    "user_count": 0,
-                    "users": [],
-                    "source": "information_schema",
-                })
+                top_columns.append(
+                    {
+                        "column": col,
+                        "table": tbl,
+                        "data_type": fc.get("data_type", ""),
+                        "lineage_count": freq,
+                        "downstream_count": 0,
+                        "last_used": "",
+                        "query_count": 0,
+                        "user_count": 0,
+                        "users": [],
+                        "source": "information_schema",
+                    }
+                )
 
     return {
         "top_columns": top_columns[:50],

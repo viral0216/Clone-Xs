@@ -67,8 +67,5 @@ class SlackNotifyPlugin(ClonePlugin):
         source = config.get("source_catalog", "?")
         dest = config.get("destination_catalog", "?")
 
-        message = (
-            f"Clone FAILED: `{source}` -> `{dest}`\n"
-            f"Error: {error}"
-        )
+        message = f"Clone FAILED: `{source}` -> `{dest}`\nError: {error}"
         self._send_slack_message(webhook_url, message)

@@ -9,6 +9,7 @@ from src.plugin_system import ClonePlugin, LoggingPlugin, PluginManager
 
 class TestPlugin(ClonePlugin):
     """Test plugin for unit tests."""
+
     name = "test_plugin"
     description = "A test plugin"
     version = "0.1.0"
@@ -23,6 +24,7 @@ class TestPlugin(ClonePlugin):
 
 class TestPlugin2(ClonePlugin):
     """Second test plugin for chaining tests."""
+
     name = "test_plugin_2"
 
     def transform_sql(self, sql, table_fqn, config):
@@ -31,6 +33,7 @@ class TestPlugin2(ClonePlugin):
 
 class FailingPlugin(ClonePlugin):
     """Plugin that raises on every hook."""
+
     name = "failing_plugin"
 
     def on_clone_start(self, config, client, warehouse_id):

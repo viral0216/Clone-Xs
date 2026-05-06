@@ -1,4 +1,4 @@
-.PHONY: build install test clean upload deploy publish publish-test help
+.PHONY: build install test clean upload deploy publish publish-test help setup
 
 VOLUME_PATH ?= /Volumes/shared/packages/wheels
 DIST_DIR    := dist
@@ -54,6 +54,15 @@ install: build ## Build and install locally
 
 install-dev: ## Install in editable mode for development
 	pip install -e ".[dev]"
+
+setup: install-dev ## One-shot contributor setup: deps + pre-commit hooks (commit + push)
+	pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
+	@echo ""
+	@echo "Setup complete. Hooks installed:"
+	@echo "  pre-commit  → ruff, ruff-format, eslint, JSON/YAML checks"
+	@echo "  pre-push    → pytest, ui build, vitest"
 
 upload: build ## Build and upload wheel to Databricks Volume
 	databricks fs cp $$(ls $(DIST_DIR)/*.whl | head -1) \

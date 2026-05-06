@@ -29,6 +29,7 @@ def sync_catalogs(
     # RBAC enforcement
     if kwargs.get("rbac_enabled"):
         from src.rbac import enforce_rbac
+
         rbac_config = {
             "source_catalog": source_catalog,
             "destination_catalog": dest_catalog,
@@ -42,9 +43,14 @@ def sync_catalogs(
     pm = None
     if kwargs.get("plugins"):
         from src.plugin_system import PluginManager
+
         pm = PluginManager()
         pm.load_plugins_from_config(kwargs)
-        sync_config = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+        sync_config = {
+            "source_catalog": source_catalog,
+            "destination_catalog": dest_catalog,
+            "clone_type": clone_type,
+        }
         pm.run_on_clone_start(sync_config, client, warehouse_id)
 
     diff = compare_catalogs(client, warehouse_id, source_catalog, dest_catalog, exclude_schemas)
@@ -74,7 +80,9 @@ def sync_catalogs(
             try:
                 execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                 results["schemas_added"] += 1
-                logger.info(f"{'[DRY RUN] ' if dry_run else ''}Created schema: {dest_catalog}.{schema}")
+                logger.info(
+                    f"{'[DRY RUN] ' if dry_run else ''}Created schema: {dest_catalog}.{schema}"
+                )
             except Exception as e:
                 results["errors"].append(f"Create schema {schema}: {e}")
 
@@ -83,12 +91,16 @@ def sync_catalogs(
             try:
                 execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                 results["schemas_dropped"] += 1
-                logger.info(f"{'[DRY RUN] ' if dry_run else ''}Dropped schema: {dest_catalog}.{schema}")
+                logger.info(
+                    f"{'[DRY RUN] ' if dry_run else ''}Dropped schema: {dest_catalog}.{schema}"
+                )
             except Exception as e:
                 results["errors"].append(f"Drop schema {schema}: {e}")
 
     # Process each schema for missing/extra tables
-    for schema_name in _get_common_schemas(client, warehouse_id, source_catalog, dest_catalog, exclude_schemas):
+    for schema_name in _get_common_schemas(
+        client, warehouse_id, source_catalog, dest_catalog, exclude_schemas
+    ):
         # Find missing tables (in source but not in dest)
         src_tables = _get_table_set(client, warehouse_id, source_catalog, schema_name)
         dst_tables = _get_table_set(client, warehouse_id, dest_catalog, schema_name)
@@ -106,7 +118,9 @@ def sync_catalogs(
             try:
                 execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                 results["tables_added"] += 1
-                logger.info(f"{'[DRY RUN] ' if dry_run else ''}Added table: {schema_name}.{table_name}")
+                logger.info(
+                    f"{'[DRY RUN] ' if dry_run else ''}Added table: {schema_name}.{table_name}"
+                )
             except Exception as e:
                 results["errors"].append(f"Add table {schema_name}.{table_name}: {e}")
 
@@ -117,7 +131,9 @@ def sync_catalogs(
                 try:
                     execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                     results["tables_dropped"] += 1
-                    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Dropped table: {schema_name}.{table_name}")
+                    logger.info(
+                        f"{'[DRY RUN] ' if dry_run else ''}Dropped table: {schema_name}.{table_name}"
+                    )
                 except Exception as e:
                     results["errors"].append(f"Drop table {schema_name}.{table_name}: {e}")
 
@@ -145,7 +161,9 @@ def sync_catalogs(
                     sql = f"CREATE OR REPLACE VIEW `{dest_catalog}`.`{schema_name}`.`{view_name}` AS {defn}"
                     execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                     results["views_added"] += 1
-                    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Added view: {schema_name}.{view_name}")
+                    logger.info(
+                        f"{'[DRY RUN] ' if dry_run else ''}Added view: {schema_name}.{view_name}"
+                    )
             except Exception as e:
                 results["errors"].append(f"Add view {schema_name}.{view_name}: {e}")
 
@@ -155,7 +173,9 @@ def sync_catalogs(
                 try:
                     execute_sql(client, warehouse_id, sql, dry_run=dry_run)
                     results["views_dropped"] += 1
-                    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Dropped view: {schema_name}.{view_name}")
+                    logger.info(
+                        f"{'[DRY RUN] ' if dry_run else ''}Dropped view: {schema_name}.{view_name}"
+                    )
                 except Exception as e:
                     results["errors"].append(f"Drop view {schema_name}.{view_name}: {e}")
 
@@ -176,9 +196,15 @@ def sync_catalogs(
     # Plugin: on_clone_complete / on_clone_error
     if pm:
         try:
-            sync_config = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+            sync_config = {
+                "source_catalog": source_catalog,
+                "destination_catalog": dest_catalog,
+                "clone_type": clone_type,
+            }
             if results.get("errors"):
-                pm.run_on_clone_error(sync_config, RuntimeError("; ".join(results["errors"])), client, warehouse_id)
+                pm.run_on_clone_error(
+                    sync_config, RuntimeError("; ".join(results["errors"])), client, warehouse_id
+                )
             else:
                 pm.run_on_clone_complete(sync_config, results, client, warehouse_id)
         except Exception as e:
@@ -193,6 +219,7 @@ def sync_catalogs(
 
         try:
             from src.run_logs import save_run_log
+
             job_record = {
                 "job_id": job_id,
                 "job_type": "sync",
@@ -212,9 +239,16 @@ def sync_catalogs(
 
         try:
             from src.audit_trail import log_operation_start, log_operation_complete
-            cfg = {"source_catalog": source_catalog, "destination_catalog": dest_catalog, "clone_type": clone_type}
+
+            cfg = {
+                "source_catalog": source_catalog,
+                "destination_catalog": dest_catalog,
+                "clone_type": clone_type,
+            }
             log_operation_start(client, warehouse_id, cfg, job_id, operation_type="sync")
-            log_operation_complete(client, warehouse_id, cfg, job_id, results, started_dt, error_message=error_msg)
+            log_operation_complete(
+                client, warehouse_id, cfg, job_id, results, started_dt, error_message=error_msg
+            )
         except Exception as e:
             logger.debug(f"Could not save audit trail to Delta: {e}")
 
@@ -222,8 +256,11 @@ def sync_catalogs(
 
 
 def _get_common_schemas(
-    client: WorkspaceClient, warehouse_id: str,
-    source_catalog: str, dest_catalog: str, exclude_schemas: list[str],
+    client: WorkspaceClient,
+    warehouse_id: str,
+    source_catalog: str,
+    dest_catalog: str,
+    exclude_schemas: list[str],
 ) -> list[str]:
     """Get schemas that exist in both catalogs."""
     exclude_clause = ",".join(f"'{s}'" for s in exclude_schemas)
@@ -238,7 +275,10 @@ def _get_common_schemas(
 
 
 def _get_table_set(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
 ) -> set[str]:
     """Get set of table names in a schema."""
     sql = f"""
@@ -254,7 +294,10 @@ def _get_table_set(
 
 
 def _get_view_set(
-    client: WorkspaceClient, warehouse_id: str, catalog: str, schema: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
 ) -> set[str]:
     """Get set of view names in a schema."""
     sql = f"""

@@ -43,7 +43,8 @@ def test_create_persistent_job_with_schedule(mock_vol, mock_upload, mock_build):
     mock_client.jobs.create.return_value = mock_response
 
     result = create_persistent_job(
-        mock_client, _config(),
+        mock_client,
+        _config(),
         schedule_cron="0 0 6 * * ?",
         schedule_timezone="US/Eastern",
         notification_emails=["admin@co.com"],
@@ -64,7 +65,9 @@ def test_create_persistent_job_update_existing(mock_vol, mock_upload, mock_build
     mock_client.config.host = "https://ws.databricks.com/"
 
     result = create_persistent_job(
-        mock_client, _config(), update_job_id=10,
+        mock_client,
+        _config(),
+        update_job_id=10,
     )
     assert result["job_id"] == 10
     mock_client.jobs.reset.assert_called_once()
@@ -82,7 +85,8 @@ def test_create_persistent_job_custom_name_and_tags(mock_vol, mock_upload, mock_
     mock_client.jobs.create.return_value = mock_response
 
     result = create_persistent_job(
-        mock_client, _config(),
+        mock_client,
+        _config(),
         job_name="My Clone Job",
         tags={"env": "prod"},
     )

@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # suite asserts the inlined output matches the canonical generators
 # for a representative input.
 _PROFILE_GENERATORS_SOURCE = {
-    "generic_sensor": '''
+    "generic_sensor": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -78,8 +78,8 @@ def generate_event(state, seq, now):
         "pressure_hpa": round(d["press_mean"] + random.uniform(-3.0, 3.0), 2),
         "vibration_g": round(max(0.0, d["vib_mean"] + random.uniform(-0.05, 0.15)), 4),
     }
-''',
-    "industrial_machine": '''
+""",
+    "industrial_machine": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -108,8 +108,8 @@ def generate_event(state, seq, now):
         "tool_wear_pct": round(d["tool_wear_pct"], 4),
         "error_code": error_code,
     }
-''',
-    "car_obd2": '''
+""",
+    "car_obd2": """
 def init_state(num_devices):
     vin_chars = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
     return {"devices": [
@@ -144,8 +144,8 @@ def generate_event(state, seq, now):
         "lng": round(d["lng"], 6),
         "dtc": dtc,
     }
-''',
-    "smart_meter": '''
+""",
+    "smart_meter": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -168,8 +168,8 @@ def generate_event(state, seq, now):
         "current_a": round(random.uniform(0.5, 25.0), 2),
         "power_factor": round(random.uniform(0.85, 1.0), 3),
     }
-''',
-    "wearable_health": '''
+""",
+    "wearable_health": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -202,8 +202,8 @@ def generate_event(state, seq, now):
         "calories_burned": round(d["calories"], 2),
         "alert": alert,
     }
-''',
-    "pos_terminal": '''
+""",
+    "pos_terminal": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -228,8 +228,8 @@ def generate_event(state, seq, now):
         "item_count": random.randint(1, 12),
         "status": random.choice(statuses),
     }
-''',
-    "wind_turbine": '''
+""",
+    "wind_turbine": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -258,8 +258,8 @@ def generate_event(state, seq, now):
         "blade_pitch_deg": round(random.uniform(-2.0, 90.0), 2),
         "fault_code": fault,
     }
-''',
-    "atm_transaction": '''
+""",
+    "atm_transaction": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -293,8 +293,8 @@ def generate_event(state, seq, now):
         "lng": d["lng"],
         "is_fraud_suspected": is_fraud,
     }
-''',
-    "server_metrics": '''
+""",
+    "server_metrics": """
 def init_state(num_devices):
     return {"devices": [
         {
@@ -327,8 +327,8 @@ def generate_event(state, seq, now):
         "net_out_mbps": round(random.uniform(0.0, 950.0), 2),
         "status": status,
     }
-''',
-    "clickstream": '''
+""",
+    "clickstream": """
 def init_state(num_devices):
     user_agents = [
         "Mozilla/5.0 (Macintosh) Chrome/120.0",
@@ -374,7 +374,7 @@ def generate_event(state, seq, now):
         "user_agent": d["user_agent"],
         "device_type": d["device_type"],
     }
-''',
+""",
 }
 
 
@@ -480,7 +480,9 @@ print(f"Done — {{events_emitted}} events across {{files_written}} files in {{r
 
 
 def upload_streaming_notebook(
-    client: WorkspaceClient, workspace_path: str, content: str,
+    client: WorkspaceClient,
+    workspace_path: str,
+    content: str,
 ) -> str:
     """Upload the generated notebook to a workspace path. Returns the path.
 
@@ -554,6 +556,7 @@ def create_streaming_job(
             RuntimeEngine,
         )
         from databricks.sdk.service.jobs import JobCluster
+
         cluster = JobCluster(
             job_cluster_key="default",
             new_cluster={
@@ -618,6 +621,16 @@ def schedule_streaming_emission(client: WorkspaceClient, req: dict) -> dict:
     events_per_batch, interval_seconds, total_duration_seconds,
     num_devices, name, schedule_quartz_cron, timezone_id, notebook_path,
     use_serverless) from `req`.
+
+    When `auto_create_bronze` is set on the request, also creates the
+    bronze STREAMING TABLE up front via DBSQL so the table exists with
+    its own refresh schedule from the moment the first scheduled run
+    lands files. Mirrors the in-process emitter's behaviour
+    ([src/demo_streaming.py:create_bronze_streaming_table]) so users
+    see one consistent outcome regardless of which path emitted them.
+    Bronze creation requires `warehouse_id` (from the request or the
+    app config) — without it we skip the step and report it in the
+    response so the UI can surface a hint.
     """
     profile: str = req["profile"]
     if profile not in DEVICE_PROFILES:
@@ -648,7 +661,7 @@ def schedule_streaming_emission(client: WorkspaceClient, req: dict) -> dict:
         or f"clxs-stream-{profile}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     )
 
-    return create_streaming_job(
+    job_result = create_streaming_job(
         client,
         name=auto_name,
         notebook_path=notebook_path,
@@ -658,3 +671,177 @@ def schedule_streaming_emission(client: WorkspaceClient, req: dict) -> dict:
         profile=profile,
         use_serverless=bool(req.get("use_serverless", True)),
     )
+
+    # Provision the bronze STREAMING TABLE up-front so it's polling the
+    # volume from t=0 with its own refresh CRON. The table picks up the
+    # JSON files emitted by each scheduled Job run on its own cadence —
+    # the notebook itself only writes files (it doesn't need to know
+    # about bronze).
+    if req.get("auto_create_bronze"):
+        job_result.update(_provision_bronze_for_schedule(client, req, profile))
+
+    return job_result
+
+
+def _provision_bronze_for_schedule(
+    client: WorkspaceClient,
+    req: dict,
+    profile: str,
+) -> dict:
+    """Seed the volume + create the bronze STREAMING TABLE.
+
+    Returns a dict of bronze_* keys to merge into the schedule
+    response. Callers should call this only when auto_create_bronze
+    is set on the request.
+    """
+    warehouse_id = (req.get("warehouse_id") or "").strip()
+    if not warehouse_id:
+        return {
+            "bronze_status": "skipped",
+            "bronze_error": (
+                "auto_create_bronze=True but no warehouse_id provided — "
+                "bronze table not created. Pass warehouse_id or set "
+                "sql_warehouse_id in app config."
+            ),
+        }
+
+    from src.demo_streaming import create_bronze_streaming_table
+
+    catalog = str(req["catalog"])
+    schema_ = str(req["schema"])
+    volume = str(req.get("volume", "events_volume"))
+
+    # Auto Loader's `read_files()` infers schema from the first files
+    # in the directory. At schedule time the volume is empty (the Job
+    # hasn't run yet) — so without a seed file the CREATE STREAMING
+    # TABLE statement fails with CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE.
+    # Drop a tiny one-batch JSON file using the profile's own generator
+    # so inference works on the first refresh cycle.
+    seed_warning = _try_seed_volume(
+        client,
+        warehouse_id,
+        catalog,
+        schema_,
+        volume,
+        profile,
+    )
+
+    bronze = create_bronze_streaming_table(
+        client,
+        warehouse_id=warehouse_id,
+        catalog=catalog,
+        schema=schema_,
+        profile=profile,
+        refresh_minutes=int(req.get("bronze_refresh_minutes", 5)),
+        volume=volume,
+    )
+    # `create_bronze_streaming_table` returns either:
+    #   {status: "created", table_fqn, schedule, volume_path}
+    #   {status: "failed",  table_fqn, error,    volume_path}
+    # Flatten under bronze_* keys so the UI can read them alongside
+    # the existing job fields without nesting.
+    out: dict = {
+        "bronze_status": bronze.get("status"),
+        "bronze_table_fqn": bronze.get("table_fqn"),
+        "bronze_volume_path": bronze.get("volume_path"),
+    }
+    if bronze.get("schedule"):
+        out["bronze_schedule"] = bronze["schedule"]
+    if bronze.get("error"):
+        err = bronze["error"]
+        if seed_warning:
+            err = f"{seed_warning}; {err}"
+        out["bronze_error"] = err
+    elif seed_warning:
+        # Bronze succeeded despite the seed failure — keep the warning
+        # visible so the user knows why the first refresh might still
+        # pick up no rows.
+        out["bronze_warning"] = seed_warning
+    return out
+
+
+def _try_seed_volume(
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
+    schema_: str,
+    volume: str,
+    profile: str,
+) -> str | None:
+    """Best-effort seed of the volume directory. Returns warning or None.
+
+    Failures are intentionally swallowed (and logged) — bronze creation
+    can still be attempted afterwards, and surfacing the seed problem
+    alongside the bronze outcome gives the user the full picture.
+    """
+    try:
+        _seed_volume_with_one_batch(
+            client,
+            warehouse_id=warehouse_id,
+            catalog=catalog,
+            schema=schema_,
+            volume=volume,
+            profile=profile,
+        )
+        return None
+    except Exception as e:
+        logger.warning(
+            "seed-batch upload failed for %s/%s/%s: %s",
+            catalog,
+            schema_,
+            profile,
+            e,
+        )
+        return f"seed-batch upload failed: {e}"
+
+
+def _seed_volume_with_one_batch(
+    client: WorkspaceClient,
+    *,
+    warehouse_id: str,
+    catalog: str,
+    schema: str,
+    volume: str,
+    profile: str,
+) -> str:
+    """Ensure the per-profile volume directory has at least one JSON file.
+
+    Creates the catalog/schema/volume if missing, then uploads one
+    small batch (10 events) using the profile's own generator. This
+    seeds the directory so that ``CREATE OR REFRESH STREAMING TABLE
+    ... AS SELECT * FROM read_files(...)`` can infer the JSON schema
+    on the first refresh — without a file the Auto Loader call fails
+    with CF_EMPTY_DIR_FOR_SCHEMA_INFERENCE.
+
+    Returns the uploaded file path. Caller is responsible for
+    catching exceptions; this function deliberately doesn't swallow
+    them so the bronze-creation caller can decide how to surface the
+    failure.
+    """
+    from src.demo_streaming import (
+        DEVICE_PROFILES,
+        _ensure_events_volume,
+        emit_batch,
+        write_batch_to_volume,
+    )
+
+    profile_entry = DEVICE_PROFILES[profile]
+    init_state = profile_entry["init_state"]
+
+    # Ensure UC catalog + schema + volume exist. _ensure_events_volume
+    # is idempotent — re-running it on an existing path is cheap.
+    volume_path = _ensure_events_volume(
+        client,
+        warehouse_id,
+        catalog,
+        schema,
+        profile,
+        volume,
+    )
+
+    # 10 events is enough for Auto Loader to confidently infer the
+    # JSON schema. Use a small device count too — 5 is plenty for a
+    # one-shot seed batch and minimises unique values in the seed.
+    state = init_state(5)
+    batch = emit_batch(profile, state, batch_size=10, base_seq=0)
+    return write_batch_to_volume(client, volume_path, batch, seq=0)

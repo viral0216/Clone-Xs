@@ -68,7 +68,8 @@ def export_catalog_metadata(
             # Get size if possible
             try:
                 detail = execute_sql(
-                    client, warehouse_id,
+                    client,
+                    warehouse_id,
                     f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{t['table_name']}`",
                 )
                 if detail:
@@ -93,17 +94,19 @@ def export_catalog_metadata(
         columns = execute_sql(client, warehouse_id, col_sql)
 
         for c in columns:
-            columns_data.append({
-                "catalog": catalog,
-                "schema": schema,
-                "table": c["table_name"],
-                "column": c["column_name"],
-                "data_type": c.get("data_type", ""),
-                "nullable": c.get("is_nullable", ""),
-                "default": c.get("column_default", ""),
-                "position": c.get("ordinal_position", ""),
-                "comment": c.get("comment", ""),
-            })
+            columns_data.append(
+                {
+                    "catalog": catalog,
+                    "schema": schema,
+                    "table": c["table_name"],
+                    "column": c["column_name"],
+                    "data_type": c.get("data_type", ""),
+                    "nullable": c.get("is_nullable", ""),
+                    "default": c.get("column_default", ""),
+                    "position": c.get("ordinal_position", ""),
+                    "comment": c.get("comment", ""),
+                }
+            )
 
     # Generate output path
     if not output_path:
@@ -155,7 +158,10 @@ def _write_csv(output_path: str, tables: list[dict], columns: list[dict]) -> Non
 
 
 def _write_json(
-    output_path: str, catalog: str, tables: list[dict], columns: list[dict],
+    output_path: str,
+    catalog: str,
+    tables: list[dict],
+    columns: list[dict],
 ) -> None:
     """Write tables and columns to a JSON file."""
     data = {

@@ -7,7 +7,7 @@ import {
   ChevronRight, ChevronDown, History, BarChart3,
   Undo2, GitFork, Zap, Layers, Terminal, Sparkles, Database,
   X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
-  Store, Server, Camera,
+  Store, Server, Camera, ArrowRightLeft,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -42,6 +42,7 @@ export const allNavSections: NavSection[] = [
     title: "Operations",
     items: [
       { href: "/clone", label: "Clone", icon: Copy },
+      { href: "/convert", label: "Convert table format", icon: ArrowRightLeft },
       { href: "/sync", label: "Sync", icon: RefreshCw },
       { href: "/rollback", label: "Rollback", icon: Undo2 },
       { href: "/demo-data", label: "Demo Data", icon: Database },

@@ -32,6 +32,7 @@ class DSARStatusUpdate(BaseModel):
 
 def _mgr(client, config):
     from src.dsar import DSARManager
+
     return DSARManager(client, config.get("sql_warehouse_id", ""), config=config)
 
 
@@ -40,17 +41,24 @@ async def submit(req: DSARSubmitRequest, client=Depends(get_db_client)):
     config = await get_app_config()
     try:
         return _mgr(client, config).submit_request(
-            subject_type=req.subject_type, subject_value=req.subject_value,
-            requester_email=req.requester_email, requester_name=req.requester_name,
-            legal_basis=req.legal_basis, export_format=req.export_format,
-            scope_catalogs=req.scope_catalogs or [], subject_column=req.subject_column, notes=req.notes,
+            subject_type=req.subject_type,
+            subject_value=req.subject_value,
+            requester_email=req.requester_email,
+            requester_name=req.requester_name,
+            legal_basis=req.legal_basis,
+            export_format=req.export_format,
+            scope_catalogs=req.scope_catalogs or [],
+            subject_column=req.subject_column,
+            notes=req.notes,
         )
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @router.get("/requests")
-async def list_requests(status: str | None = Query(None), limit: int = Query(50), client=Depends(get_db_client)):
+async def list_requests(
+    status: str | None = Query(None), limit: int = Query(50), client=Depends(get_db_client)
+):
     config = await get_app_config()
     return _mgr(client, config).list_requests(status=status, limit=limit)
 
@@ -102,19 +110,35 @@ async def update_status(request_id: str, body: DSARStatusUpdate, client=Depends(
 
 
 @router.post("/requests/{request_id}/discover")
-async def discover(request_id: str, body: DSARExportRequest, client=Depends(get_db_client), job_manager=Depends(get_job_manager)):
+async def discover(
+    request_id: str,
+    body: DSARExportRequest,
+    client=Depends(get_db_client),
+    job_manager=Depends(get_job_manager),
+):
     config = await get_app_config()
+
     def _run():
         return _mgr(client, config).discover_subject(request_id, body.subject_value)
+
     job_id = job_manager.submit_job(_run, label=f"dsar-discover-{request_id[:8]}")
     return {"job_id": job_id, "status": "submitted"}
 
 
 @router.post("/requests/{request_id}/export")
-async def export_data(request_id: str, body: DSARExportRequest, client=Depends(get_db_client), job_manager=Depends(get_job_manager)):
+async def export_data(
+    request_id: str,
+    body: DSARExportRequest,
+    client=Depends(get_db_client),
+    job_manager=Depends(get_job_manager),
+):
     config = await get_app_config()
+
     def _run():
-        return _mgr(client, config).export_data(request_id, body.subject_value, export_format=body.export_format)
+        return _mgr(client, config).export_data(
+            request_id, body.subject_value, export_format=body.export_format
+        )
+
     job_id = job_manager.submit_job(_run, label=f"dsar-export-{request_id[:8]}")
     return {"job_id": job_id, "status": "submitted"}
 

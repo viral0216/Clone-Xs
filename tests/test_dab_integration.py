@@ -82,7 +82,8 @@ class TestGenerateDabBundle:
             out_dir = os.path.join(tmpdir, "bundle")
             config = self._make_config()
             generate_dab_bundle(
-                config, output_dir=out_dir,
+                config,
+                output_dir=out_dir,
                 schedule_cron="0 0 6 * * ?",
             )
 
@@ -99,7 +100,8 @@ class TestGenerateDabBundle:
             out_dir = os.path.join(tmpdir, "bundle")
             config = self._make_config()
             generate_dab_bundle(
-                config, output_dir=out_dir,
+                config,
+                output_dir=out_dir,
                 notification_email="admin@example.com",
             )
 

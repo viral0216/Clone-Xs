@@ -27,8 +27,10 @@ logger = logging.getLogger(__name__)
 # Schema helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_schema(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "governance")
 
 
@@ -47,11 +49,13 @@ def _parse_val(v):
 # Table creation
 # ---------------------------------------------------------------------------
 
+
 def ensure_odcs_tables(client, warehouse_id, config):
     """Create ODCS Delta tables if they don't exist."""
     schema = _get_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
@@ -92,12 +96,16 @@ def ensure_odcs_tables(client, warehouse_id, config):
 
     for table_name, cols in tables.items():
         try:
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({cols})
                 USING DELTA
                 COMMENT 'Clone-Xs ODCS: {table_name}'
                 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Could not create {schema}.{table_name}: {e}")
 
@@ -105,6 +113,7 @@ def ensure_odcs_tables(client, warehouse_id, config):
 # ---------------------------------------------------------------------------
 # Helpers — extract metadata from ODCS document
 # ---------------------------------------------------------------------------
+
 
 def _extract_table_fqns(doc: dict) -> list[str]:
     """Extract table FQNs from schema objects and servers."""
@@ -139,6 +148,7 @@ def _now_iso() -> str:
 # CRUD
 # ---------------------------------------------------------------------------
 
+
 def create_odcs_contract(client, warehouse_id, config, contract_data: dict, user: str = "") -> dict:
     """Create a new ODCS contract."""
     from api.models.odcs import ODCSContract
@@ -165,28 +175,48 @@ def create_odcs_contract(client, warehouse_id, config, contract_data: dict, user
     table_fqns = json.dumps(_extract_table_fqns(doc))
     doc_json = json.dumps(doc)
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         INSERT INTO {schema}.odcs_contracts
         VALUES ('{_esc(contract_id)}', '{_esc(contract.name)}', '{_esc(contract.version)}',
                 '{_esc(contract.status)}', '{_esc(contract.domain)}',
                 '{_esc(contract.dataProduct)}', '{_esc(contract.tenant)}',
                 '{_esc(table_fqns)}', '{_esc(doc_json)}',
                 '{_esc(user)}', '{now}', '{now}')
-    """)
+    """,
+    )
 
     # Track change
-    _track_change(client, warehouse_id, config, "odcs_contract", contract_id, "created",
-                  {"name": contract.name, "version": contract.version}, user)
+    _track_change(
+        client,
+        warehouse_id,
+        config,
+        "odcs_contract",
+        contract_id,
+        "created",
+        {"name": contract.name, "version": contract.version},
+        user,
+    )
 
-    return {"contract_id": contract_id, "name": contract.name, "version": contract.version, "status": "created"}
+    return {
+        "contract_id": contract_id,
+        "name": contract.name,
+        "version": contract.version,
+        "status": "created",
+    }
 
 
 def get_odcs_contract(client, warehouse_id, config, contract_id: str) -> dict | None:
     """Get a single ODCS contract with full document."""
     schema = _get_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.odcs_contracts WHERE contract_id = '{_esc(contract_id)}'")
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"SELECT * FROM {schema}.odcs_contracts WHERE contract_id = '{_esc(contract_id)}'",
+        )
         if not rows:
             return None
         row = rows[0]
@@ -202,7 +232,9 @@ def get_odcs_contract(client, warehouse_id, config, contract_id: str) -> dict | 
         return None
 
 
-def list_odcs_contracts(client, warehouse_id, config, domain: str = "", status: str = "", table_fqn: str = "") -> list[dict]:
+def list_odcs_contracts(
+    client, warehouse_id, config, domain: str = "", status: str = "", table_fqn: str = ""
+) -> list[dict]:
     """List ODCS contracts with optional filters."""
     schema = _get_schema(config)
     where_parts = []
@@ -215,12 +247,16 @@ def list_odcs_contracts(client, warehouse_id, config, domain: str = "", status: 
     where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
 
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT contract_id, name, version, status, domain, data_product, tenant,
                    table_fqns, created_by, created_at, updated_at
             FROM {schema}.odcs_contracts {where}
             ORDER BY name
-        """)
+        """,
+        )
         results = []
         for r in rows:
             item = {k: _parse_val(v) for k, v in r.items()}
@@ -234,7 +270,9 @@ def list_odcs_contracts(client, warehouse_id, config, domain: str = "", status: 
         return []
 
 
-def update_odcs_contract(client, warehouse_id, config, contract_id: str, updates: dict, user: str = "") -> dict:
+def update_odcs_contract(
+    client, warehouse_id, config, contract_id: str, updates: dict, user: str = ""
+) -> dict:
     """Update an ODCS contract. Archives previous version if version changes."""
     from api.models.odcs import ODCSContract
 
@@ -258,18 +296,25 @@ def update_odcs_contract(client, warehouse_id, config, contract_id: str, updates
     if old_version and new_version != old_version:
         old_doc_json = json.dumps(existing)
         try:
-            execute_sql(client, warehouse_id, f"""
+            execute_sql(
+                client,
+                warehouse_id,
+                f"""
                 INSERT INTO {schema}.odcs_contract_versions
                 VALUES ('{_esc(contract_id)}', '{_esc(old_version)}',
                         '{_esc(old_doc_json)}', '{_esc(user)}', '{now}')
-            """)
+            """,
+            )
         except Exception as e:
             logger.warning(f"Could not archive version: {e}")
 
     # Update main record
     table_fqns = json.dumps(_extract_table_fqns(doc))
     doc_json = json.dumps(doc)
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         UPDATE {schema}.odcs_contracts
         SET name = '{_esc(contract.name)}', version = '{_esc(new_version)}',
             status = '{_esc(contract.status)}', domain = '{_esc(contract.domain)}',
@@ -277,10 +322,19 @@ def update_odcs_contract(client, warehouse_id, config, contract_id: str, updates
             table_fqns = '{_esc(table_fqns)}', odcs_document = '{_esc(doc_json)}',
             updated_at = '{now}'
         WHERE contract_id = '{_esc(contract_id)}'
-    """)
+    """,
+    )
 
-    _track_change(client, warehouse_id, config, "odcs_contract", contract_id, "updated",
-                  {"version": new_version, "changed_fields": list(updates.keys())}, user)
+    _track_change(
+        client,
+        warehouse_id,
+        config,
+        "odcs_contract",
+        contract_id,
+        "updated",
+        {"version": new_version, "changed_fields": list(updates.keys())},
+        user,
+    )
 
     return {"contract_id": contract_id, "version": new_version, "status": "updated"}
 
@@ -288,14 +342,18 @@ def update_odcs_contract(client, warehouse_id, config, contract_id: str, updates
 def delete_odcs_contract(client, warehouse_id, config, contract_id: str, user: str = ""):
     """Delete an ODCS contract."""
     schema = _get_schema(config)
-    execute_sql(client, warehouse_id,
-        f"DELETE FROM {schema}.odcs_contracts WHERE contract_id = '{_esc(contract_id)}'")
+    execute_sql(
+        client,
+        warehouse_id,
+        f"DELETE FROM {schema}.odcs_contracts WHERE contract_id = '{_esc(contract_id)}'",
+    )
     _track_change(client, warehouse_id, config, "odcs_contract", contract_id, "deleted", {}, user)
 
 
 # ---------------------------------------------------------------------------
 # YAML Import / Export
 # ---------------------------------------------------------------------------
+
 
 def import_odcs_yaml(client, warehouse_id, config, yaml_content: str, user: str = "") -> dict:
     """Parse ODCS YAML and store as a new contract."""
@@ -322,29 +380,40 @@ def export_odcs_yaml(client, warehouse_id, config, contract_id: str) -> str:
 # Version History
 # ---------------------------------------------------------------------------
 
+
 def get_contract_versions(client, warehouse_id, config, contract_id: str) -> list[dict]:
     """Get version history for a contract."""
     schema = _get_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT contract_id, version, created_by, created_at
             FROM {schema}.odcs_contract_versions
             WHERE contract_id = '{_esc(contract_id)}'
             ORDER BY created_at DESC
-        """)
+        """,
+        )
         return [{k: _parse_val(v) for k, v in r.items()} for r in rows]
     except Exception:
         return []
 
 
-def get_contract_version(client, warehouse_id, config, contract_id: str, version: str) -> dict | None:
+def get_contract_version(
+    client, warehouse_id, config, contract_id: str, version: str
+) -> dict | None:
     """Get a specific version of a contract."""
     schema = _get_schema(config)
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT odcs_document FROM {schema}.odcs_contract_versions
             WHERE contract_id = '{_esc(contract_id)}' AND version = '{_esc(version)}'
-        """)
+        """,
+        )
         if rows:
             return json.loads(rows[0].get("odcs_document", "{}"))
         return None
@@ -355,6 +424,7 @@ def get_contract_version(client, warehouse_id, config, contract_id: str, version
 # ---------------------------------------------------------------------------
 # Pre-fill from config
 # ---------------------------------------------------------------------------
+
 
 def prefill_from_config(config: dict) -> dict:
     """Generate a partial ODCS server block from clone_config.yaml."""
@@ -377,6 +447,7 @@ def prefill_from_config(config: dict) -> dict:
 # ---------------------------------------------------------------------------
 # DQ / SLA Mapping — bridge existing engines to ODCS format
 # ---------------------------------------------------------------------------
+
 
 def map_dq_rules_to_odcs(client, warehouse_id, config, contract_id: str) -> list[dict]:
     """Read existing DQ rules for the contract's tables and convert to ODCS quality format."""
@@ -419,7 +490,11 @@ def map_dq_rules_to_odcs(client, warehouse_id, config, contract_id: str) -> list
             float(rule.get("threshold", 0))
             if metric == "rowCount":
                 try:
-                    params = json.loads(rule.get("params", "{}")) if isinstance(rule.get("params"), str) else rule.get("params", {})
+                    params = (
+                        json.loads(rule.get("params", "{}"))
+                        if isinstance(rule.get("params"), str)
+                        else rule.get("params", {})
+                    )
                     min_val = params.get("min", 0)
                     if min_val:
                         odcs_rule["mustBeGreaterOrEqualTo"] = min_val
@@ -480,6 +555,7 @@ def map_sla_rules_to_odcs(client, warehouse_id, config, contract_id: str) -> lis
 # DQX Integration
 # ---------------------------------------------------------------------------
 
+
 def _generate_dqx_checks(doc: dict) -> list[dict]:
     """Convert ODCS quality rules to DQX check format.
 
@@ -523,7 +599,9 @@ def _generate_dqx_checks(doc: dict) -> list[dict]:
 
                 args = rule.get("arguments", {}) or {}
                 check = {
-                    "criticality": "error" if rule.get("severity") in ("critical", "error") else "warn",
+                    "criticality": "error"
+                    if rule.get("severity") in ("critical", "error")
+                    else "warn",
                     "check": {
                         "function": dqx_func,
                         "arguments": {},
@@ -547,13 +625,17 @@ def _generate_dqx_checks(doc: dict) -> list[dict]:
             elif rule_type == "sql":
                 query = rule.get("query", "")
                 if query:
-                    checks.append({
-                        "criticality": "error" if rule.get("severity") in ("critical", "error") else "warn",
-                        "check": {
-                            "function": "sql_expression",
-                            "arguments": {"expression": query},
-                        },
-                    })
+                    checks.append(
+                        {
+                            "criticality": "error"
+                            if rule.get("severity") in ("critical", "error")
+                            else "warn",
+                            "check": {
+                                "function": "sql_expression",
+                                "arguments": {"expression": query},
+                            },
+                        }
+                    )
 
     # Process contract-level quality rules
     for rule in doc.get("quality", []):
@@ -561,10 +643,14 @@ def _generate_dqx_checks(doc: dict) -> list[dict]:
 
     # Process schema-object and property-level rules
     for schema_obj in doc.get("schema", []):
-        _process_quality_rules(schema_obj.get("quality", []), schema_obj_name=schema_obj.get("name", ""))
+        _process_quality_rules(
+            schema_obj.get("quality", []), schema_obj_name=schema_obj.get("name", "")
+        )
         for prop in schema_obj.get("properties", []):
             col_name = prop.get("physicalName") or prop.get("name", "")
-            _process_quality_rules(prop.get("quality", []), column=col_name, schema_obj_name=schema_obj.get("name", ""))
+            _process_quality_rules(
+                prop.get("quality", []), column=col_name, schema_obj_name=schema_obj.get("name", "")
+            )
 
     return checks
 
@@ -588,11 +674,15 @@ def run_dqx_validation(client, warehouse_id, config, contract_id: str) -> dict:
         from databricks.sdk import WorkspaceClient as _WC  # noqa: F401
         from databricks.labs.dqx.engine import DQEngine
     except ImportError:
-        return {"status": "dqx_not_installed", "message": "databricks-labs-dqx is not installed. Install with: pip install databricks-labs-dqx"}
+        return {
+            "status": "dqx_not_installed",
+            "message": "databricks-labs-dqx is not installed. Install with: pip install databricks-labs-dqx",
+        }
 
     try:
         ws = client  # authenticated WorkspaceClient from API
         from src.spark_session import get_spark
+
         spark = get_spark()
         dq_engine = DQEngine(ws, spark=spark)
 
@@ -603,6 +693,7 @@ def run_dqx_validation(client, warehouse_id, config, contract_id: str) -> dict:
             try:
                 # Read the table as a DataFrame
                 from src.spark_session import get_spark
+
                 spark = get_spark()
                 df = spark.table(fqn)
 
@@ -614,19 +705,23 @@ def run_dqx_validation(client, warehouse_id, config, contract_id: str) -> dict:
                 invalid_count = invalid_df.count()
                 total = valid_count + invalid_count
 
-                results.append({
-                    "table_fqn": fqn,
-                    "total_rows": total,
-                    "valid_rows": valid_count,
-                    "invalid_rows": invalid_count,
-                    "pass_rate": round(valid_count / max(total, 1) * 100, 2),
-                    "checks_applied": len(checks),
-                })
+                results.append(
+                    {
+                        "table_fqn": fqn,
+                        "total_rows": total,
+                        "valid_rows": valid_count,
+                        "invalid_rows": invalid_count,
+                        "pass_rate": round(valid_count / max(total, 1) * 100, 2),
+                        "checks_applied": len(checks),
+                    }
+                )
             except Exception as e:
-                results.append({
-                    "table_fqn": fqn,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "table_fqn": fqn,
+                        "error": str(e),
+                    }
+                )
 
         return {"status": "completed", "results": results, "checks_count": len(checks)}
 
@@ -637,6 +732,7 @@ def run_dqx_validation(client, warehouse_id, config, contract_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Comprehensive Validation Engine
 # ---------------------------------------------------------------------------
+
 
 def validate_odcs_contract(client, warehouse_id, config, contract_id: str, user: str = "") -> dict:
     """Validate an ODCS contract against all 11 sections.
@@ -693,8 +789,16 @@ def validate_odcs_contract(client, warehouse_id, config, contract_id: str, user:
     dqx_result = run_dqx_validation(client, warehouse_id, config, contract_id)
     if dqx_result.get("status") == "completed":
         sections["dqx"] = {
-            "passed": all(r.get("pass_rate", 0) >= 95 for r in dqx_result.get("results", []) if "error" not in r),
-            "violations": [r for r in dqx_result.get("results", []) if r.get("pass_rate", 100) < 95 or "error" in r],
+            "passed": all(
+                r.get("pass_rate", 0) >= 95
+                for r in dqx_result.get("results", [])
+                if "error" not in r
+            ),
+            "violations": [
+                r
+                for r in dqx_result.get("results", [])
+                if r.get("pass_rate", 100) < 95 or "error" in r
+            ],
             "results": dqx_result.get("results", []),
         }
 
@@ -721,19 +825,39 @@ def _validate_fundamentals(doc: dict) -> dict:
     required = ["apiVersion", "kind", "id", "version", "status"]
     for field in required:
         if not doc.get(field):
-            violations.append({"field": field, "type": "missing_required", "message": f"Required field '{field}' is missing"})
+            violations.append(
+                {
+                    "field": field,
+                    "type": "missing_required",
+                    "message": f"Required field '{field}' is missing",
+                }
+            )
 
     if doc.get("version"):
         semver_re = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$")
         if not semver_re.match(doc["version"]):
-            violations.append({"field": "version", "type": "invalid_format", "message": f"Version '{doc['version']}' is not valid semver"})
+            violations.append(
+                {
+                    "field": "version",
+                    "type": "invalid_format",
+                    "message": f"Version '{doc['version']}' is not valid semver",
+                }
+            )
 
     valid_statuses = {"proposed", "draft", "active", "deprecated", "retired"}
     if doc.get("status") and doc["status"] not in valid_statuses:
-        violations.append({"field": "status", "type": "invalid_value", "message": f"Status '{doc['status']}' not in {valid_statuses}"})
+        violations.append(
+            {
+                "field": "status",
+                "type": "invalid_value",
+                "message": f"Status '{doc['status']}' not in {valid_statuses}",
+            }
+        )
 
     if doc.get("kind") and doc["kind"] != "DataContract":
-        violations.append({"field": "kind", "type": "invalid_value", "message": "kind must be 'DataContract'"})
+        violations.append(
+            {"field": "kind", "type": "invalid_value", "message": "kind must be 'DataContract'"}
+        )
 
     return {"passed": len(violations) == 0, "violations": violations}
 
@@ -749,7 +873,13 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
     for obj in schema_objects:
         physical_name = obj.get("physicalName", obj.get("name", ""))
         if not physical_name:
-            violations.append({"object": obj.get("name", "?"), "type": "missing_name", "message": "Schema object has no name or physicalName"})
+            violations.append(
+                {
+                    "object": obj.get("name", "?"),
+                    "type": "missing_name",
+                    "message": "Schema object has no name or physicalName",
+                }
+            )
             continue
 
         # Build the FQN
@@ -764,7 +894,13 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
                         break
 
         if fqn.count(".") < 2:
-            violations.append({"object": physical_name, "type": "unresolvable_fqn", "message": f"Cannot resolve FQN for '{physical_name}'. Add a Databricks server with catalog/schema or use fully qualified names."})
+            violations.append(
+                {
+                    "object": physical_name,
+                    "type": "unresolvable_fqn",
+                    "message": f"Cannot resolve FQN for '{physical_name}'. Add a Databricks server with catalog/schema or use fully qualified names.",
+                }
+            )
             continue
 
         # Describe actual table columns
@@ -776,7 +912,9 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
                 if col_name and not col_name.startswith("#"):
                     actual_map[col_name.lower()] = c.get("data_type", "")
         except Exception as e:
-            violations.append({"object": fqn, "type": "table_not_found", "message": f"Cannot describe table: {e}"})
+            violations.append(
+                {"object": fqn, "type": "table_not_found", "message": f"Cannot describe table: {e}"}
+            )
             continue
 
         # Check declared properties against actual columns
@@ -786,19 +924,31 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
                 continue
 
             if col_name not in actual_map:
-                violations.append({
-                    "object": fqn, "column": col_name, "type": "missing_column",
-                    "message": f"Expected column '{col_name}' not found in table",
-                })
+                violations.append(
+                    {
+                        "object": fqn,
+                        "column": col_name,
+                        "type": "missing_column",
+                        "message": f"Expected column '{col_name}' not found in table",
+                    }
+                )
             else:
                 # Type comparison (basic)
                 declared_type = (prop.get("physicalType") or "").lower().strip()
                 actual_type = actual_map[col_name].lower().strip()
-                if declared_type and actual_type and not _types_compatible(declared_type, actual_type):
-                    violations.append({
-                        "object": fqn, "column": col_name, "type": "type_mismatch",
-                        "message": f"Type mismatch: declared '{declared_type}', actual '{actual_type}'",
-                    })
+                if (
+                    declared_type
+                    and actual_type
+                    and not _types_compatible(declared_type, actual_type)
+                ):
+                    violations.append(
+                        {
+                            "object": fqn,
+                            "column": col_name,
+                            "type": "type_mismatch",
+                            "message": f"Type mismatch: declared '{declared_type}', actual '{actual_type}'",
+                        }
+                    )
 
         # Check required columns are NOT NULL (via a sample query)
         required_cols = [p for p in obj.get("properties", []) if p.get("required")]
@@ -806,14 +956,21 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
             col_name = prop.get("physicalName") or prop.get("name", "")
             if col_name.lower() in actual_map:
                 try:
-                    rows = execute_sql(client, warehouse_id,
-                        f"SELECT count(*) AS nulls FROM {fqn} WHERE {col_name} IS NULL LIMIT 1")
+                    rows = execute_sql(
+                        client,
+                        warehouse_id,
+                        f"SELECT count(*) AS nulls FROM {fqn} WHERE {col_name} IS NULL LIMIT 1",
+                    )
                     nulls = int(rows[0]["nulls"]) if rows else 0
                     if nulls > 0:
-                        violations.append({
-                            "object": fqn, "column": col_name, "type": "required_violation",
-                            "message": f"Required column '{col_name}' has {nulls} NULL values",
-                        })
+                        violations.append(
+                            {
+                                "object": fqn,
+                                "column": col_name,
+                                "type": "required_violation",
+                                "message": f"Required column '{col_name}' has {nulls} NULL values",
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -823,14 +980,21 @@ def _validate_schema(client, warehouse_id, doc: dict) -> dict:
             col_name = prop.get("physicalName") or prop.get("name", "")
             if col_name.lower() in actual_map:
                 try:
-                    rows = execute_sql(client, warehouse_id,
-                        f"SELECT count(*) - count(DISTINCT {col_name}) AS dups FROM {fqn}")
+                    rows = execute_sql(
+                        client,
+                        warehouse_id,
+                        f"SELECT count(*) - count(DISTINCT {col_name}) AS dups FROM {fqn}",
+                    )
                     dups = int(rows[0]["dups"]) if rows else 0
                     if dups > 0:
-                        violations.append({
-                            "object": fqn, "column": col_name, "type": "uniqueness_violation",
-                            "message": f"Unique column '{col_name}' has {dups} duplicate values",
-                        })
+                        violations.append(
+                            {
+                                "object": fqn,
+                                "column": col_name,
+                                "type": "uniqueness_violation",
+                                "message": f"Unique column '{col_name}' has {dups} duplicate values",
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -887,20 +1051,24 @@ def _validate_quality(client, warehouse_id, config, doc: dict) -> dict:
                 try:
                     result = _execute_single_rule(client, warehouse_id, dq_rule)
                     if not result.get("passed"):
-                        violations.append({
-                            "rule": rule.get("name", metric),
-                            "metric": metric,
-                            "type": "quality_check_failed",
-                            "table": table,
-                            "column": rule.get("_column", ""),
-                            "details": result,
-                        })
+                        violations.append(
+                            {
+                                "rule": rule.get("name", metric),
+                                "metric": metric,
+                                "type": "quality_check_failed",
+                                "table": table,
+                                "column": rule.get("_column", ""),
+                                "details": result,
+                            }
+                        )
                 except Exception as e:
-                    violations.append({
-                        "rule": rule.get("name", metric),
-                        "type": "quality_check_error",
-                        "message": str(e),
-                    })
+                    violations.append(
+                        {
+                            "rule": rule.get("name", metric),
+                            "type": "quality_check_error",
+                            "message": str(e),
+                        }
+                    )
 
         elif rule_type == "sql" and rule.get("query"):
             query = rule["query"].replace("{object}", table)
@@ -911,19 +1079,23 @@ def _validate_quality(client, warehouse_id, config, doc: dict) -> dict:
                 if rows:
                     val = _get_numeric_result(rows[0])
                     if not _check_comparison(rule, val):
-                        violations.append({
-                            "rule": rule.get("name", "sql_check"),
-                            "type": "sql_check_failed",
-                            "table": table,
-                            "value": val,
-                            "query": query[:200],
-                        })
+                        violations.append(
+                            {
+                                "rule": rule.get("name", "sql_check"),
+                                "type": "sql_check_failed",
+                                "table": table,
+                                "value": val,
+                                "query": query[:200],
+                            }
+                        )
             except Exception as e:
-                violations.append({
-                    "rule": rule.get("name", "sql_check"),
-                    "type": "sql_check_error",
-                    "message": str(e),
-                })
+                violations.append(
+                    {
+                        "rule": rule.get("name", "sql_check"),
+                        "type": "sql_check_error",
+                        "message": str(e),
+                    }
+                )
 
     return {"passed": len(violations) == 0, "violations": violations}
 
@@ -944,8 +1116,11 @@ def _validate_sla(client, warehouse_id, doc: dict) -> dict:
             try:
                 detail = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL {table_fqn}")
                 if detail and detail[0].get("lastModified"):
-                    hours_rows = execute_sql(client, warehouse_id,
-                        f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours")
+                    hours_rows = execute_sql(
+                        client,
+                        warehouse_id,
+                        f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours",
+                    )
                     hours = int(hours_rows[0]["hours"]) if hours_rows else 9999
 
                     # Parse threshold
@@ -959,14 +1134,16 @@ def _validate_sla(client, warehouse_id, doc: dict) -> dict:
                         threshold_hours = float(threshold) * 24
 
                     if hours > threshold_hours:
-                        violations.append({
-                            "property": prop,
-                            "element": element,
-                            "type": "sla_breach",
-                            "message": f"Data is {hours}h old, SLA requires update within {threshold_hours}h",
-                            "current_hours": hours,
-                            "threshold_hours": threshold_hours,
-                        })
+                        violations.append(
+                            {
+                                "property": prop,
+                                "element": element,
+                                "type": "sla_breach",
+                                "message": f"Data is {hours}h old, SLA requires update within {threshold_hours}h",
+                                "current_hours": hours,
+                                "threshold_hours": threshold_hours,
+                            }
+                        )
             except Exception:
                 pass
 
@@ -978,12 +1155,14 @@ def _validate_sla(client, warehouse_id, doc: dict) -> dict:
             try:
                 execute_sql(client, warehouse_id, f"SELECT 1 FROM {table_fqn} LIMIT 1")
             except Exception as e:
-                violations.append({
-                    "property": prop,
-                    "element": element,
-                    "type": "availability_failure",
-                    "message": f"Table not available: {e}",
-                })
+                violations.append(
+                    {
+                        "property": prop,
+                        "element": element,
+                        "type": "availability_failure",
+                        "message": f"Table not available: {e}",
+                    }
+                )
 
     return {"passed": len(violations) == 0, "violations": violations}
 
@@ -999,24 +1178,30 @@ def _validate_servers(client, warehouse_id, doc: dict) -> dict:
                     rows = execute_sql(client, warehouse_id, "SHOW CATALOGS")
                     catalog_names = {r.get("catalog", "").lower() for r in rows}
                     if cat.lower() not in catalog_names:
-                        violations.append({
-                            "server": srv.get("server", ""),
-                            "type": "catalog_not_found",
-                            "message": f"Catalog '{cat}' not found",
-                        })
+                        violations.append(
+                            {
+                                "server": srv.get("server", ""),
+                                "type": "catalog_not_found",
+                                "message": f"Catalog '{cat}' not found",
+                            }
+                        )
                 except Exception:
                     pass
 
             if cat and sch:
                 try:
                     rows = execute_sql(client, warehouse_id, f"SHOW SCHEMAS IN {cat}")
-                    schema_names = {r.get("databaseName", r.get("namespace", "")).lower() for r in rows}
+                    schema_names = {
+                        r.get("databaseName", r.get("namespace", "")).lower() for r in rows
+                    }
                     if sch.lower() not in schema_names:
-                        violations.append({
-                            "server": srv.get("server", ""),
-                            "type": "schema_not_found",
-                            "message": f"Schema '{cat}.{sch}' not found",
-                        })
+                        violations.append(
+                            {
+                                "server": srv.get("server", ""),
+                                "type": "schema_not_found",
+                                "message": f"Schema '{cat}.{sch}' not found",
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -1031,7 +1216,9 @@ def _validate_team(doc: dict) -> dict:
             violations.append({"type": "missing_field", "message": "Team name is required"})
         for i, member in enumerate(team.get("members", [])):
             if not member.get("username"):
-                violations.append({"type": "missing_field", "message": f"Team member {i} missing username"})
+                violations.append(
+                    {"type": "missing_field", "message": f"Team member {i} missing username"}
+                )
     return {"passed": len(violations) == 0, "violations": violations}
 
 
@@ -1041,7 +1228,12 @@ def _validate_roles(doc: dict) -> dict:
         if not role.get("role"):
             violations.append({"type": "missing_field", "message": f"Role {i} missing role name"})
         if role.get("access") and role["access"] not in ("read", "write"):
-            violations.append({"type": "invalid_value", "message": f"Role '{role.get('role', i)}' has invalid access '{role['access']}'"})
+            violations.append(
+                {
+                    "type": "invalid_value",
+                    "message": f"Role '{role.get('role', i)}' has invalid access '{role['access']}'",
+                }
+            )
     return {"passed": len(violations) == 0, "violations": violations}
 
 
@@ -1049,7 +1241,9 @@ def _validate_support(doc: dict) -> dict:
     violations = []
     for i, ch in enumerate(doc.get("support", [])):
         if not ch.get("channel"):
-            violations.append({"type": "missing_field", "message": f"Support channel {i} missing channel name"})
+            violations.append(
+                {"type": "missing_field", "message": f"Support channel {i} missing channel name"}
+            )
     return {"passed": len(violations) == 0, "violations": violations}
 
 
@@ -1058,7 +1252,9 @@ def _validate_pricing(doc: dict) -> dict:
     price = doc.get("price")
     if price:
         if price.get("priceAmount") is not None and price["priceAmount"] < 0:
-            violations.append({"type": "invalid_value", "message": "Price amount cannot be negative"})
+            violations.append(
+                {"type": "invalid_value", "message": "Price amount cannot be negative"}
+            )
     return {"passed": len(violations) == 0, "violations": violations}
 
 
@@ -1073,6 +1269,7 @@ def _validate_references(doc: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------
+
 
 def _types_compatible(declared: str, actual: str) -> bool:
     """Check if declared type is compatible with actual type (loose matching)."""
@@ -1179,14 +1376,18 @@ def _store_validation_result(client, warehouse_id, config, result: dict, user: s
     schema = _get_schema(config)
     vid = str(uuid.uuid4())[:8]
     try:
-        execute_sql(client, warehouse_id, f"""
+        execute_sql(
+            client,
+            warehouse_id,
+            f"""
             INSERT INTO {schema}.odcs_validation_results
             VALUES ('{vid}', '{_esc(result["contract_id"])}', '{_esc(result["version"])}',
                     '{_esc(json.dumps(list(result["sections"].keys())))}',
                     '{_esc(json.dumps(result["sections"]))}',
                     {str(result["compliant"]).lower()},
                     '{result["validated_at"]}', '{_esc(user)}')
-        """)
+        """,
+        )
     except Exception as e:
         logger.warning(f"Could not store validation result: {e}")
 
@@ -1195,14 +1396,16 @@ def _store_validation_result(client, warehouse_id, config, result: dict, user: s
 # Legacy migration
 # ---------------------------------------------------------------------------
 
+
 def migrate_legacy_contracts(client, warehouse_id, config, user: str = "") -> list[dict]:
     """Migrate legacy data_contracts to ODCS format."""
     schema = _get_schema(config)
     results = []
 
     try:
-        rows = execute_sql(client, warehouse_id,
-            f"SELECT * FROM {schema}.data_contracts ORDER BY name")
+        rows = execute_sql(
+            client, warehouse_id, f"SELECT * FROM {schema}.data_contracts ORDER BY name"
+        )
     except Exception:
         return [{"error": "No legacy contracts table found"}]
 
@@ -1230,16 +1433,22 @@ def migrate_legacy_contracts(client, warehouse_id, config, user: str = "") -> li
             "description": {
                 "purpose": f"Migrated from legacy contract {row.get('contract_id', '')}",
             },
-            "schema": [{
-                "name": parts[-1] if parts else table_fqn,
-                "physicalName": parts[-1] if parts else table_fqn,
-                "physicalType": "table",
-                "properties": [
-                    {"name": col.get("name", ""), "physicalType": col.get("type", ""), "required": not col.get("nullable", True)}
-                    for col in expected_columns
-                ],
-                "quality": [],
-            }],
+            "schema": [
+                {
+                    "name": parts[-1] if parts else table_fqn,
+                    "physicalName": parts[-1] if parts else table_fqn,
+                    "physicalType": "table",
+                    "properties": [
+                        {
+                            "name": col.get("name", ""),
+                            "physicalType": col.get("type", ""),
+                            "required": not col.get("nullable", True),
+                        }
+                        for col in expected_columns
+                    ],
+                    "quality": [],
+                }
+            ],
             "team": {
                 "name": row.get("producer_team", ""),
                 "members": [],
@@ -1251,33 +1460,39 @@ def migrate_legacy_contracts(client, warehouse_id, config, user: str = "") -> li
         # Map freshness SLA
         freshness_hours = int(row.get("freshness_sla_hours", 0))
         if freshness_hours > 0:
-            odcs_data["slaProperties"].append({
-                "property": "latency",
-                "value": freshness_hours,
-                "unit": "h",
-                "element": table_fqn,
-                "driver": "operational",
-            })
+            odcs_data["slaProperties"].append(
+                {
+                    "property": "latency",
+                    "value": freshness_hours,
+                    "unit": "h",
+                    "element": table_fqn,
+                    "driver": "operational",
+                }
+            )
 
         # Map row count to quality rule
         row_min = int(row.get("row_count_min", 0))
         row_max = int(row.get("row_count_max", 0))
         if row_min > 0:
-            odcs_data["schema"][0]["quality"].append({
-                "metric": "rowCount",
-                "type": "library",
-                "dimension": "completeness",
-                "mustBeGreaterOrEqualTo": row_min,
-                "severity": "error",
-            })
+            odcs_data["schema"][0]["quality"].append(
+                {
+                    "metric": "rowCount",
+                    "type": "library",
+                    "dimension": "completeness",
+                    "mustBeGreaterOrEqualTo": row_min,
+                    "severity": "error",
+                }
+            )
         if row_max > 0:
-            odcs_data["schema"][0]["quality"].append({
-                "metric": "rowCount",
-                "type": "library",
-                "dimension": "completeness",
-                "mustBeLessOrEqualTo": row_max,
-                "severity": "warning",
-            })
+            odcs_data["schema"][0]["quality"].append(
+                {
+                    "metric": "rowCount",
+                    "type": "library",
+                    "dimension": "completeness",
+                    "mustBeLessOrEqualTo": row_max,
+                    "severity": "warning",
+                }
+            )
 
         # Add server from config
         server = prefill_from_config(config)
@@ -1297,9 +1512,13 @@ def migrate_legacy_contracts(client, warehouse_id, config, user: str = "") -> li
 # Change tracking (reuses existing governance module)
 # ---------------------------------------------------------------------------
 
-def _track_change(client, warehouse_id, config, entity_type, entity_id, change_type, details, user=""):
+
+def _track_change(
+    client, warehouse_id, config, entity_type, entity_id, change_type, details, user=""
+):
     try:
         from src.governance import _track_change as _gov_track
+
         _gov_track(client, warehouse_id, config, entity_type, entity_id, change_type, details, user)
     except Exception:
         pass  # Governance tables may not exist yet
@@ -1308,6 +1527,7 @@ def _track_change(client, warehouse_id, config, entity_type, entity_id, change_t
 # ---------------------------------------------------------------------------
 # Deep merge
 # ---------------------------------------------------------------------------
+
 
 def _deep_merge(base: dict, updates: dict) -> dict:
     """Deep merge updates into base dict. Updates take precedence."""
@@ -1327,13 +1547,26 @@ def _deep_merge(base: dict, updates: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 _SPARK_TO_LOGICAL = {
-    "string": "string", "varchar": "string", "char": "string", "text": "string",
-    "int": "integer", "integer": "integer", "smallint": "integer", "tinyint": "integer",
-    "bigint": "integer", "long": "integer",
-    "float": "number", "double": "number", "decimal": "number", "numeric": "number",
-    "boolean": "boolean", "bool": "boolean",
+    "string": "string",
+    "varchar": "string",
+    "char": "string",
+    "text": "string",
+    "int": "integer",
+    "integer": "integer",
+    "smallint": "integer",
+    "tinyint": "integer",
+    "bigint": "integer",
+    "long": "integer",
+    "float": "number",
+    "double": "number",
+    "decimal": "number",
+    "numeric": "number",
+    "boolean": "boolean",
+    "bool": "boolean",
     "date": "date",
-    "timestamp": "timestamp", "timestamp_ntz": "timestamp", "datetime": "timestamp",
+    "timestamp": "timestamp",
+    "timestamp_ntz": "timestamp",
+    "datetime": "timestamp",
     "time": "time",
     "binary": "string",
 }
@@ -1386,26 +1619,32 @@ def _get_upstream_lineage(client, warehouse_id, table_fqn: str) -> list[dict]:
     """Query system.access.table_lineage for upstream sources → ODCS relationships."""
     relationships = []
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT DISTINCT source_table_full_name, source_type, target_type
             FROM system.access.table_lineage
             WHERE target_table_full_name = '{_esc(table_fqn)}'
               AND source_table_full_name IS NOT NULL
             ORDER BY source_table_full_name
             LIMIT 50
-        """)
+        """,
+        )
         for r in rows:
             src = r.get("source_table_full_name", "")
             if src:
-                relationships.append({
-                    "type": "lineage",
-                    "from": [src],
-                    "to": [table_fqn],
-                    "customProperties": [
-                        {"property": "source_type", "value": r.get("source_type", "")},
-                        {"property": "target_type", "value": r.get("target_type", "")},
-                    ],
-                })
+                relationships.append(
+                    {
+                        "type": "lineage",
+                        "from": [src],
+                        "to": [table_fqn],
+                        "customProperties": [
+                            {"property": "source_type", "value": r.get("source_type", "")},
+                            {"property": "target_type", "value": r.get("target_type", "")},
+                        ],
+                    }
+                )
     except Exception as e:
         logger.debug(f"system.access.table_lineage not available: {e}")
     return relationships
@@ -1415,7 +1654,10 @@ def _get_column_lineage_relationships(client, warehouse_id, table_fqn: str) -> l
     """Query system.access.column_lineage for column-level mappings."""
     relationships = []
     try:
-        rows = execute_sql(client, warehouse_id, f"""
+        rows = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT source_table_full_name, source_column_name,
                    target_table_full_name, target_column_name
             FROM system.access.column_lineage
@@ -1423,17 +1665,20 @@ def _get_column_lineage_relationships(client, warehouse_id, table_fqn: str) -> l
               AND source_column_name IS NOT NULL
               AND target_column_name IS NOT NULL
             LIMIT 100
-        """)
+        """,
+        )
         for r in rows:
             src_tbl = r.get("source_table_full_name", "")
             src_col = r.get("source_column_name", "")
             tgt_col = r.get("target_column_name", "")
             if src_tbl and src_col and tgt_col:
-                relationships.append({
-                    "type": "lineage",
-                    "from": [f"{src_tbl}.{src_col}"],
-                    "to": [f"{table_fqn}.{tgt_col}"],
-                })
+                relationships.append(
+                    {
+                        "type": "lineage",
+                        "from": [f"{src_tbl}.{src_col}"],
+                        "to": [f"{table_fqn}.{tgt_col}"],
+                    }
+                )
     except Exception as e:
         logger.debug(f"system.access.column_lineage not available: {e}")
     return relationships
@@ -1453,7 +1698,11 @@ def _estimate_update_frequency(history_rows: list[dict]) -> dict | None:
     # Rough estimate: average gap between last few updates
     try:
         from datetime import datetime as dt
-        parsed = sorted([dt.fromisoformat(t.replace("Z", "+00:00").split("+")[0]) for t in timestamps], reverse=True)
+
+        parsed = sorted(
+            [dt.fromisoformat(t.replace("Z", "+00:00").split("+")[0]) for t in timestamps],
+            reverse=True,
+        )
         gaps_hours = []
         for i in range(min(len(parsed) - 1, 5)):
             gap = (parsed[i] - parsed[i + 1]).total_seconds() / 3600
@@ -1476,16 +1725,20 @@ def _roles_from_row_filters(row_filters: list[dict]) -> list[dict]:
     """Convert row filter policies to ODCS roles."""
     roles = []
     for rf in row_filters:
-        roles.append({
-            "role": rf.get("filter_name", "filtered_access"),
-            "access": "read",
-            "firstLevelApprovers": "",
-            "secondLevelApprovers": "",
-        })
+        roles.append(
+            {
+                "role": rf.get("filter_name", "filtered_access"),
+                "access": "read",
+                "firstLevelApprovers": "",
+                "secondLevelApprovers": "",
+            }
+        )
     return roles
 
 
-def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, options: dict | None = None) -> dict:
+def generate_contract_from_uc(
+    client, warehouse_id, config, table_fqn: str, options: dict | None = None
+) -> dict:
     """Auto-generate an ODCS v3.1.0 contract from Unity Catalog metadata.
 
     Introspects: columns, tags, properties, lineage, freshness, row count,
@@ -1526,6 +1779,7 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     # 2. Richer column metadata from information_schema
     try:
         from src.schema_drift import get_columns_info
+
         rich_cols = get_columns_info(client, warehouse_id, catalog, schema_name, table_name)
         rich_map = {r.get("column_name", "").lower(): r for r in rich_cols}
     except Exception:
@@ -1537,6 +1791,7 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     if opts["include_tags"]:
         try:
             from src.clone_tags import get_table_tags, get_column_tags, get_catalog_tags
+
             table_tags = get_table_tags(client, warehouse_id, catalog, schema_name, table_name)
             col_tags = get_column_tags(client, warehouse_id, catalog, schema_name, table_name)
         except Exception:
@@ -1547,6 +1802,7 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     if opts["include_tags"]:
         try:
             from src.clone_tags import get_catalog_tags
+
             cat_tags = get_catalog_tags(client, warehouse_id, catalog)
             for t in cat_tags:
                 if t.get("tag_name", "").lower() == "domain":
@@ -1560,8 +1816,13 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     if opts["include_properties"]:
         try:
             from src.clone_tags import get_table_properties
+
             props = get_table_properties(client, warehouse_id, catalog, schema_name, table_name)
-            custom_props = [{"property": p.get("key", ""), "value": str(p.get("value", ""))} for p in props if p.get("key")]
+            custom_props = [
+                {"property": p.get("key", ""), "value": str(p.get("value", ""))}
+                for p in props
+                if p.get("key")
+            ]
         except Exception:
             pass
 
@@ -1570,8 +1831,11 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     if opts["include_masks"]:
         try:
             from src.security import get_column_masks
+
             masks = get_column_masks(client, warehouse_id, catalog, schema_name, table_name)
-            mask_map = {m.get("column_name", "").lower(): m.get("mask_function_name", "") for m in masks}
+            mask_map = {
+                m.get("column_name", "").lower(): m.get("mask_function_name", "") for m in masks
+            }
         except Exception:
             pass
 
@@ -1580,6 +1844,7 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     if opts["include_row_filters"]:
         try:
             from src.security import get_row_filters
+
             filters = get_row_filters(client, warehouse_id, catalog, schema_name, table_name)
             roles = _roles_from_row_filters(filters)
         except Exception:
@@ -1599,19 +1864,24 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
         try:
             detail = execute_sql(client, warehouse_id, f"DESCRIBE DETAIL {table_fqn}")
             if detail and detail[0].get("lastModified"):
-                hours_rows = execute_sql(client, warehouse_id,
-                    f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours")
+                hours_rows = execute_sql(
+                    client,
+                    warehouse_id,
+                    f"SELECT datediff(hour, timestamp '{detail[0]['lastModified']}', current_timestamp()) AS hours",
+                )
                 freshness_hours = int(hours_rows[0]["hours"]) if hours_rows else None
                 if freshness_hours is not None:
                     sla_value = max(freshness_hours * opts["freshness_sla_multiplier"], 1)
-                    sla_properties.append({
-                        "property": "latency",
-                        "value": sla_value,
-                        "unit": "h",
-                        "element": table_fqn,
-                        "driver": "operational",
-                        "description": f"Auto-detected: table was {freshness_hours}h old at generation time",
-                    })
+                    sla_properties.append(
+                        {
+                            "property": "latency",
+                            "value": sla_value,
+                            "unit": "h",
+                            "element": table_fqn,
+                            "driver": "operational",
+                            "description": f"Auto-detected: table was {freshness_hours}h old at generation time",
+                        }
+                    )
         except Exception:
             pass
 
@@ -1697,10 +1967,15 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
         col_quality = []
         if opts["include_quality_rules"]:
             if not is_nullable:
-                col_quality.append({
-                    "metric": "nullValues", "type": "library",
-                    "dimension": "completeness", "mustBe": 0, "severity": "error",
-                })
+                col_quality.append(
+                    {
+                        "metric": "nullValues",
+                        "type": "library",
+                        "dimension": "completeness",
+                        "mustBe": 0,
+                        "severity": "error",
+                    }
+                )
 
         if col_quality:
             prop["quality"] = col_quality
@@ -1711,11 +1986,16 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     object_quality = []
     if opts["include_quality_rules"] and row_count > 0:
         min_rows = int(row_count * opts["row_count_threshold_pct"] / 100)
-        object_quality.append({
-            "metric": "rowCount", "type": "library", "dimension": "completeness",
-            "mustBeGreaterOrEqualTo": min_rows, "severity": "error",
-            "description": f"Auto-detected: table had {row_count} rows at generation time",
-        })
+        object_quality.append(
+            {
+                "metric": "rowCount",
+                "type": "library",
+                "dimension": "completeness",
+                "mustBeGreaterOrEqualTo": min_rows,
+                "severity": "error",
+                "description": f"Auto-detected: table had {row_count} rows at generation time",
+            }
+        )
 
     # 13. DQX profiling (optional)
     if opts["include_dqx_profiling"]:
@@ -1744,19 +2024,24 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
             "limitations": "",
             "usage": "",
         },
-        "schema": [{
-            "name": table_name,
-            "physicalName": table_name,
-            "physicalType": physical_type,
-            "businessName": comment or table_name,
-            "description": comment or "",
-            "tags": [t.get("tag_name", "") for t in table_tags],
-            "properties": odcs_properties,
-            "relationships": all_relationships,
-            "quality": object_quality,
-        }],
+        "schema": [
+            {
+                "name": table_name,
+                "physicalName": table_name,
+                "physicalType": physical_type,
+                "businessName": comment or table_name,
+                "description": comment or "",
+                "tags": [t.get("tag_name", "") for t in table_tags],
+                "properties": odcs_properties,
+                "relationships": all_relationships,
+                "quality": object_quality,
+            }
+        ],
         "slaProperties": sla_properties,
-        "team": {"name": owner or "unknown", "members": [{"username": owner, "role": "Owner"}] if owner else []},
+        "team": {
+            "name": owner or "unknown",
+            "members": [{"username": owner, "role": "Owner"}] if owner else [],
+        },
         "roles": roles,
         "servers": [server],
         "customProperties": custom_props,
@@ -1765,12 +2050,16 @@ def generate_contract_from_uc(client, warehouse_id, config, table_fqn: str, opti
     # Add view definition as transformLogic
     if view_definition:
         odcs["schema"][0]["properties"] = odcs_properties  # already set
-        odcs["schema"][0]["customProperties"] = [{"property": "viewDefinition", "value": view_definition[:2000]}]
+        odcs["schema"][0]["customProperties"] = [
+            {"property": "viewDefinition", "value": view_definition[:2000]}
+        ]
 
     return odcs
 
 
-def run_dqx_profiling(client, warehouse_id, table_fqn: str, options: dict | None = None) -> list[dict]:
+def run_dqx_profiling(
+    client, warehouse_id, table_fqn: str, options: dict | None = None
+) -> list[dict]:
     """Run DQX Profiler on a table and return ODCS-formatted quality rules.
 
     Requires databricks-labs-dqx to be installed.
@@ -1786,12 +2075,14 @@ def run_dqx_profiling(client, warehouse_id, table_fqn: str, options: dict | None
     try:
         ws = client  # authenticated WorkspaceClient from API
         from src.spark_session import get_spark
+
         spark = get_spark()
         profiler = DQProfiler(ws, spark=spark)
         generator = DQGenerator(ws, spark=spark)
 
         # Profile the table — requires InputConfig, not raw string
         from databricks.labs.dqx.config import InputConfig
+
         sample = (options or {}).get("dqx_sample_fraction", 0.3)
         input_config = InputConfig(location=table_fqn)
         _stats, profiles = profiler.profile_table(input_config, options={"sample_fraction": sample})
@@ -1832,19 +2123,54 @@ def run_dqx_profiling(client, warehouse_id, table_fqn: str, options: dict | None
 
             # Map known DQX functions to ODCS library metrics
             if "is_not_null" in func_name:
-                odcs_rule.update({"type": "library", "metric": "nullValues", "dimension": "completeness", "mustBe": 0})
+                odcs_rule.update(
+                    {
+                        "type": "library",
+                        "metric": "nullValues",
+                        "dimension": "completeness",
+                        "mustBe": 0,
+                    }
+                )
             elif "is_in_list" in func_name:
                 valid_values = args.get("allowed", args.get("values", []))
-                odcs_rule.update({"type": "library", "metric": "invalidValues", "dimension": "conformity", "arguments": {"validValues": valid_values}})
+                odcs_rule.update(
+                    {
+                        "type": "library",
+                        "metric": "invalidValues",
+                        "dimension": "conformity",
+                        "arguments": {"validValues": valid_values},
+                    }
+                )
             elif "is_in_range" in func_name:
                 min_val = args.get("min_value", args.get("min", None))
                 max_val = args.get("max_value", args.get("max", None))
                 if min_val is not None and max_val is not None:
-                    odcs_rule.update({"type": "library", "metric": "invalidValues", "dimension": "conformity", "mustBeBetween": [min_val, max_val]})
+                    odcs_rule.update(
+                        {
+                            "type": "library",
+                            "metric": "invalidValues",
+                            "dimension": "conformity",
+                            "mustBeBetween": [min_val, max_val],
+                        }
+                    )
             elif "is_unique" in func_name:
-                odcs_rule.update({"type": "library", "metric": "duplicateValues", "dimension": "uniqueness", "mustBe": 0})
+                odcs_rule.update(
+                    {
+                        "type": "library",
+                        "metric": "duplicateValues",
+                        "dimension": "uniqueness",
+                        "mustBe": 0,
+                    }
+                )
             elif "is_not_null_and_not_empty" in func_name:
-                odcs_rule.update({"type": "library", "metric": "missingValues", "dimension": "completeness", "mustBe": 0})
+                odcs_rule.update(
+                    {
+                        "type": "library",
+                        "metric": "missingValues",
+                        "dimension": "completeness",
+                        "mustBe": 0,
+                    }
+                )
 
             if col_name:
                 odcs_rule["name"] = f"{func_name}_{col_name}"
@@ -1860,7 +2186,9 @@ def run_dqx_profiling(client, warehouse_id, table_fqn: str, options: dict | None
         return []
 
 
-def generate_contracts_for_schema(client, warehouse_id, config, catalog: str, schema_name: str, options: dict | None = None) -> list[dict]:
+def generate_contracts_for_schema(
+    client, warehouse_id, config, catalog: str, schema_name: str, options: dict | None = None
+) -> list[dict]:
     """Generate ODCS contracts for all tables in a schema."""
     from src.client import list_tables_sdk
 
@@ -1882,7 +2210,14 @@ def generate_contracts_for_schema(client, warehouse_id, config, catalog: str, sc
     return results
 
 
-def generate_contracts_for_catalog(client, warehouse_id, config, catalog: str, options: dict | None = None, exclude_schemas: list[str] | None = None) -> list[dict]:
+def generate_contracts_for_catalog(
+    client,
+    warehouse_id,
+    config,
+    catalog: str,
+    options: dict | None = None,
+    exclude_schemas: list[str] | None = None,
+) -> list[dict]:
     """Generate ODCS contracts for all tables in a catalog."""
     from src.client import list_schemas_sdk
 
@@ -1890,6 +2225,8 @@ def generate_contracts_for_catalog(client, warehouse_id, config, catalog: str, o
     schemas = list_schemas_sdk(client, catalog, exclude=exclude)
     results = []
     for schema_name in schemas:
-        schema_results = generate_contracts_for_schema(client, warehouse_id, config, catalog, schema_name, options)
+        schema_results = generate_contracts_for_schema(
+            client, warehouse_id, config, catalog, schema_name, options
+        )
         results.extend(schema_results)
     return results

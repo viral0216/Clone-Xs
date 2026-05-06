@@ -177,15 +177,30 @@ def _config():
 @patch("src.clone_catalog.create_schema_if_not_exists")
 @patch("src.clone_catalog.create_catalog_if_not_exists")
 def test_selective_reclone_only_clones_drifted_tables(
-    _mk_cat, _mk_schema, mk_get_schemas, mk_drift, mk_list_tables, mk_clone,
+    _mk_cat,
+    _mk_schema,
+    mk_get_schemas,
+    mk_drift,
+    mk_list_tables,
+    mk_clone,
 ):
     """Five tables in schema; two are drifted. Only those two should be
     cloned. Runtime is proportional to drift count, not schema size — that's
     the whole point of selective."""
     mk_get_schemas.return_value = ["bronze"]
     mk_drift.return_value = [
-        {"table_name": "facts", "reason": "version_drift", "source_version": 5, "target_version": 3},
-        {"table_name": "users", "reason": "never_cloned", "source_version": None, "target_version": None},
+        {
+            "table_name": "facts",
+            "reason": "version_drift",
+            "source_version": 5,
+            "target_version": 3,
+        },
+        {
+            "table_name": "users",
+            "reason": "never_cloned",
+            "source_version": None,
+            "target_version": None,
+        },
     ]
     # list_tables_sdk inside _reclone_drifted_in_schema queries source for format mapping
     mk_list_tables.return_value = [
@@ -221,7 +236,12 @@ def test_selective_reclone_only_clones_drifted_tables(
 @patch("src.clone_catalog.create_schema_if_not_exists")
 @patch("src.clone_catalog.create_catalog_if_not_exists")
 def test_selective_reclone_no_drift_clones_nothing(
-    _mk_cat, _mk_schema, mk_get_schemas, mk_drift, mk_list, mk_clone,
+    _mk_cat,
+    _mk_schema,
+    mk_get_schemas,
+    mk_drift,
+    mk_list,
+    mk_clone,
 ):
     """Edge case from the roadmap: source unchanged since last clone → 0
     tables cloned, no error. Summary shows 0 drifted; orchestrator must not
@@ -245,15 +265,30 @@ def test_selective_reclone_no_drift_clones_nothing(
 @patch("src.clone_catalog.create_schema_if_not_exists")
 @patch("src.clone_catalog.create_catalog_if_not_exists")
 def test_selective_reclone_aggregates_metrics_and_format_counter(
-    _mk_cat, _mk_schema, mk_get_schemas, mk_drift, mk_list, mk_clone,
+    _mk_cat,
+    _mk_schema,
+    mk_get_schemas,
+    mk_drift,
+    mk_list,
+    mk_clone,
 ):
     """Selective re-clone benefits from the same Tier 1/2 fixes that the
     full clone does — verify metrics + format counters propagate. A drifted
     Parquet table should bump `formats[PARQUET]`, not `formats[DELTA]`."""
     mk_get_schemas.return_value = ["bronze"]
     mk_drift.return_value = [
-        {"table_name": "delta_t", "reason": "version_drift", "source_version": 5, "target_version": 3},
-        {"table_name": "parquet_t", "reason": "never_cloned", "source_version": None, "target_version": None},
+        {
+            "table_name": "delta_t",
+            "reason": "version_drift",
+            "source_version": 5,
+            "target_version": 3,
+        },
+        {
+            "table_name": "parquet_t",
+            "reason": "never_cloned",
+            "source_version": None,
+            "target_version": None,
+        },
     ]
     mk_list.return_value = [
         {"table_name": "delta_t", "data_source_format": "DELTA"},
@@ -261,14 +296,26 @@ def test_selective_reclone_aggregates_metrics_and_format_counter(
     ]
     # Distinct metrics dicts so we can verify the sum.
     mk_clone.side_effect = [
-        ("delta_t", True, {
-            "copied_files_size": 1000, "num_copied_files": 5,
-            "source_table_size": 1200, "source_num_of_files": 6,
-        }),
-        ("parquet_t", True, {
-            "copied_files_size": 500, "num_copied_files": 2,
-            "source_table_size": 500, "source_num_of_files": 2,
-        }),
+        (
+            "delta_t",
+            True,
+            {
+                "copied_files_size": 1000,
+                "num_copied_files": 5,
+                "source_table_size": 1200,
+                "source_num_of_files": 6,
+            },
+        ),
+        (
+            "parquet_t",
+            True,
+            {
+                "copied_files_size": 500,
+                "num_copied_files": 2,
+                "source_table_size": 500,
+                "source_num_of_files": 2,
+            },
+        ),
     ]
 
     summary = selective_reclone_catalog(MagicMock(), _config())

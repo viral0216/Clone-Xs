@@ -93,6 +93,29 @@ Behavior modifiers:
 
 Within each schema, `parallel_tables` (default 1) controls how many tables clone simultaneously. Set to 4–8 for catalogs with many small tables; keep at 1 for catalogs dominated by large tables to avoid saturating the warehouse.
 
+#### What gets cloned vs skipped
+
+Clone-Xs only runs `CREATE TABLE … CLONE source` against tables whose `table_type` is `MANAGED` or `EXTERNAL`. Anything else is logged + counted as skipped, with a clear reason in the run output:
+
+| Source `table_type` | What happens | Why |
+|---|---|---|
+| `MANAGED` | ✓ Cloned | Standard Unity Catalog managed Delta — fully cloneable. |
+| `EXTERNAL` | ✓ Cloned | External table (Delta / Parquet / Iceberg) registered in UC. |
+| `STREAMING_TABLE` | △ Skipped | Owned by a Lakeflow / DLT pipeline. The table is the *output* of a streaming pipeline definition; cloning the data files would produce a static snapshot with no way to refresh, silently breaking the user's mental model. **Recreate by running the pipeline against the new schema.** |
+| `MATERIALIZED_VIEW` | △ Skipped | Same shape as streaming tables — pipeline-owned, not standalone. |
+| `VIEW` | (handled by clone_views.py, not here) | Logical view → re-emitted as `CREATE OR REPLACE VIEW` against the new schema. |
+| Any other / unknown | △ Skipped | Defensive default — better to surface "unknown type, skipping" than fire a CLONE that produces a cryptic Databricks error. Open an issue if your environment uses a `table_type` that should be supported. |
+
+The skip line in the run log names the type explicitly so operators can tell at a glance what was filtered:
+
+```
+△ Skipping non-clonable table type STREAMING_TABLE: iot.bronze_pos_terminal
+  (streaming / materialized-view tables are pipeline-owned and must be
+   recreated by re-running their pipeline against the new schema)
+```
+
+If your run summary shows `Tables: 0 success, 0 failed, 0 skipped` but you expected tables to clone, check the schema's table_type via `DESCRIBE TABLE EXTENDED` — almost always it's a streaming table being silently ignored prior to the v0.8.x fix that surfaced the skip.
+
 #### Mixed-format sources (Delta, Parquet, Iceberg)
 
 The CLONE statement is format-agnostic. The same `CREATE TABLE … DEEP CLONE source` syntax works whether the source is Delta, Parquet, or Iceberg — provided the source is registered in Unity Catalog. The destination always lands as Delta, regardless of source format. This means a single Clone-Xs run can migrate a catalog that mixes formats (typical mid-migration state), and the run summary breaks the result down by source format:
@@ -102,14 +125,112 @@ Source formats:  DELTA: 26   PARQUET: 2   ICEBERG: 1
 Bytes Copied: 480 GB    Files Copied: 12,840
 ```
 
-Format-specific gotchas inherited from Databricks CLONE (Clone-Xs surfaces these with an actionable wrapper, but cannot work around them):
+Format-specific gotchas inherited from Databricks CLONE. **Phase B of the Iceberg work** (released alongside `target_format`) added two safety nets so most of these no longer fail-loud:
 
-- **Iceberg + partition evolution** — clone fails. Use a manual CTAS or [`CONVERT TO DELTA`](https://learn.microsoft.com/en-gb/azure/databricks/delta/convert-to-delta) for that table.
-- **Iceberg with truncated decimal partitions** — clone fails on DBR < 13.3. Truncated partitions on string / long / int columns work on DBR 13.3+.
+- **Iceberg + partition evolution** — Clone-Xs auto-retries as `CREATE TABLE … AS SELECT * FROM source` (CTAS) when it sees this error class. The recovered target lands as Delta but **starts at version 0** — Delta source history is lost. A `WARN` line in the run log makes the fallback explicit.
+- **Iceberg with truncated decimal partitions** — same auto-CTAS recovery as above. Truncated partitions on string / long / int columns work natively on DBR 13.3+; the CTAS fallback covers older runtimes.
+- **Iceberg with hidden partitioning** (`bucket(N, col)`, `truncate(N, col)`, `years(col)`, `months(col)`, `days(col)`, `hours(col)`) — **refused at preflight, before any DDL runs.** Hidden partition transforms have no Delta equivalent, and silently dropping them would break partition pruning on the target. Use the [Convert table format](convert.md) endpoint to rewrite the source in place, then re-clone — or write a manual CTAS that materialises the transform as a Delta generated column.
 - **Partitioned Parquet referenced by path** — clone fails. Register the table to UC by name first.
 - **Glob/wildcard paths** — not supported by Databricks CLONE for any format.
 
 See the [Databricks Parquet/Iceberg CLONE reference](https://learn.microsoft.com/en-gb/azure/databricks/ingestion/data-migration/clone-parquet) for the canonical limitations list.
+
+#### Target format — `target_format: ICEBERG` (UniForm)
+
+By default a clone lands as Delta. Set `target_format: ICEBERG` (or pick **ICEBERG** in the wizard's *Target Format* toggle) to additionally enable [Delta UniForm](https://learn.microsoft.com/en-gb/azure/databricks/delta/uniform) on the destination so external Iceberg engines (Snowflake, Trino, Athena, Iceberg-aware Spark, etc.) can read the table without a separate copy.
+
+What it does, mechanically: after each successful Delta DEEP CLONE, Clone-Xs runs **three statements in order** (the order is mandatory — Databricks' IcebergCompatV2 validator rejects any other sequence):
+
+```sql
+-- 1. Disable deletion vectors. Modern DBR has them on by default; UniForm
+--    can't coexist with DVs so we turn them off first.
+ALTER TABLE `dst`.`schema`.`table`
+  SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false');
+
+-- 2. Bake any existing deletion-marker files into rewritten data files.
+--    No-op (but cheap scan) if the freshly-cloned table had no DVs.
+REORG TABLE `dst`.`schema`.`table` APPLY (PURGE);
+
+-- 3. Enable UniForm. Now allowed because the table has no DVs.
+ALTER TABLE `dst`.`schema`.`table` SET TBLPROPERTIES (
+  'delta.columnMapping.mode'             = 'name',
+  'delta.enableIcebergCompatV2'          = 'true',
+  'delta.universalFormat.enabledFormats' = 'iceberg'
+);
+```
+
+If you skip steps 1+2, step 3 fails with `DELTA_ICEBERG_COMPAT_VIOLATION.DELETION_VECTORS_SHOULD_BE_DISABLED`. Earlier Clone-Xs releases emitted only step 3, which is why fresh clones from DV-enabled sources logged a UniForm warning even though the CLONE itself succeeded — fixed in v0.8.x.
+
+Constraints worth knowing:
+
+- **Delta source only.** Non-Delta sources in the same job (Parquet, Iceberg) clone normally but UniForm is skipped for those tables — a `WARN` line is logged and the rest of the run continues.
+- **Destination is still Delta.** UniForm publishes Iceberg-compatible metadata alongside the Delta log; it doesn't physically rewrite to Iceberg. If you need actual Iceberg storage / file format semantics, that's the Phase B explicit-conversion path (currently scoped, not shipped).
+- **One-way.** Disabling UniForm later is `ALTER TABLE … UNSET TBLPROPERTIES`. The Delta history isn't affected.
+- **Dry-run.** No ALTER is emitted in dry-run mode — same discipline as the rest of the clone path.
+- **Cross-workspace clones** (Delta Sharing path) honour `target_format: ICEBERG` too — UniForm is enabled on the target after each successful DEEP CLONE through the share.
+
+##### `iceberg_physical: true` — physical Iceberg target {#physical-iceberg-target}
+
+UniForm makes a Delta table *readable* by Iceberg engines but UC still reports `Data source: Delta`. If you need UC itself to recognise the table as Iceberg (so it shows `Data source: Iceberg` and behaves like a managed Iceberg table for downstream Iceberg-native tooling), set `iceberg_physical: true` (or check the **Physical Iceberg target** box in the wizard, visible only when ICEBERG is selected).
+
+What changes mechanically: instead of `DEEP CLONE … then ALTER TBLPROPERTIES` (UniForm), Clone-Xs emits
+
+```sql
+CREATE TABLE IF NOT EXISTS `dst`.`schema`.`table`
+  USING iceberg
+  AS SELECT * FROM `src`.`schema`.`table`;
+```
+
+Trade-offs you accept by enabling this:
+
+| Lost | Why |
+|---|---|
+| **Delta history** | Target starts at version 0 — CTAS doesn't carry source Delta log. |
+| **Time-travel arguments** | `TIMESTAMP AS OF` / `VERSION AS OF` ignored with a `WARN` log line. Iceberg has its own snapshot model not addressable via Delta time-travel syntax. |
+| **Delta-only features on the target** | Deletion vectors, change feed, row tracking — can't be applied to an Iceberg table. |
+| **Per-CLONE metrics** | The Databricks per-statement counters Clone-Xs surfaces for DEEP CLONE aren't emitted by CTAS. |
+
+What you **gain**: UC sees the table as Iceberg, downstream Iceberg-native tooling (snapshot pruning, Iceberg-spec-compliant compaction, etc.) works directly without the metadata bridge.
+
+**Verify in your workspace before committing to this for a full catalog clone:** Iceberg-managed-table support requires DBR 15+ and is not enabled in every region/billing tier. Try it on one table first:
+
+```sql
+CREATE TABLE my_test_iceberg USING iceberg AS SELECT * FROM source.delta_table LIMIT 1000;
+DESCRIBE EXTENDED my_test_iceberg;  -- confirm `Provider: iceberg`
+```
+
+If your workspace doesn't support this, the clone will fail with a clear `CREATE TABLE … USING iceberg` error. Drop back to the default UniForm path (`iceberg_physical: false`) — it works on every Databricks SQL warehouse.
+
+#### Iceberg source preflight (Phase B)
+
+When the source is Iceberg, Clone-Xs runs `DESCRIBE TABLE EXTENDED` before the CLONE statement and refuses tables that use hidden-partition transforms. The refusal is deliberate — see [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full check. The error message names the offending transform and points at the workaround:
+
+```
+Source Iceberg table `src`.`s`.`t` uses hidden partitioning
+(bucket(16, user_id)) which has no Delta equivalent. Clone-Xs refuses
+this clone rather than silently change the partitioning semantics.
+Workarounds:
+  1) Materialise the transform as a regular column on the source and re-clone, OR
+  2) Run a manual CTAS that replicates the transform via Delta generated columns, OR
+  3) Use CONVERT TO DELTA on the source (in-place; destructive) and then clone normally.
+```
+
+Option 3 has a dedicated endpoint and UI page — see the [Convert table format](convert.md) guide.
+
+Type-level differences (`time`, `uuid`, `fixed(L)`, `timestamptz`) are *not* refusal cases — they map through CLONE with documented losses (uuid → string, fixed → binary, etc.). See `ICEBERG_TYPE_NOTES` in [src/clone_iceberg.py](https://github.com/viral0216/Clone-Xs/blob/main/src/clone_iceberg.py) for the full table.
+
+When the source is Iceberg, the runner emits an informational log line listing the same caveats inline so operators see them in the run output (not just the docs):
+
+```
+INFO Iceberg source `src`.`s`.`t` — type-mapping caveats may apply: time:
+no Delta equivalent — Delta has only date and timestamp, uuid: lands as
+Delta string (lossy but reversible), fixed: lands as Delta binary, fixed
+length is dropped, timestamptz: lands as Delta timestamp (UTC stored,
+zone metadata dropped). Spot-check affected columns on the target if your
+downstream consumers depend on length / zone / format-specific semantics.
+```
+
+This is a log, not a runtime detector: UC surfaces Iceberg-native types as their already-Sparkified equivalents (`uuid` already shows as STRING via `DESCRIBE TABLE`), so a programmatic schema scan can't reliably identify them. The log is the honest "here are the things to watch for" surface — operators can spot-check the columns they care about.
 
 ### Stage 4 — Views, functions, volumes
 
@@ -1198,3 +1319,162 @@ clxs clone --enable-rollback
 # Resume from the rollback log
 clxs clone --resume rollback_logs/rollback_staging_20260310_143022.json
 ```
+
+---
+
+## Auto-mask PII (`auto_mask_pii: true`)
+
+**When to use:**
+You're cloning to a lower environment (staging, dev, QA, UAT) and the source has PII columns tagged in Unity Catalog. You want the destination to land already masked — no separate post-clone step where unmasked rows briefly exist on the target.
+
+**What it does:**
+At clone time, Clone-Xs queries `information_schema.column_tags` once per catalog and builds a list of PII columns (any column with a tag whose name matches the PII tag set Unity Catalog defines: `EMAIL`, `SSN`, `CREDIT_CARD`, `PHONE`, `IBAN`, etc.). After each schema's tables clone successfully, the existing `src/masking.py` pipeline runs an `UPDATE` against the destination using the per-column strategy from `pii_detection.SUGGESTED_MASKING` — `email_mask` for EMAIL, `hash` for SSN / CREDIT_CARD, `partial` for PHONE, etc.
+
+The masked-data exposure window is bounded by the clone job itself — no external reader sees the table before the UPDATE commits, so there's no observable moment when unmasked PII is on the target.
+
+```yaml
+auto_mask_pii: true   # default false
+```
+
+```json
+POST /api/clone
+{ "source_catalog": "production", "destination_catalog": "staging", "auto_mask_pii": true }
+```
+
+The masking column-tag query is cached per clone job — querying `column_tags` once per catalog rather than once per schema. Manual rules supplied via `masking_rules` still apply alongside auto-detected ones.
+
+---
+
+## Auto-retry transient failures (`enable_retry: true`)
+
+**When to use:**
+Long-running clones (hours, sometimes overnight) hit transient failures — Databricks throttles a high-volume warehouse with HTTP 429, a network blip drops a connection, a 5xx returns from the SQL execution endpoint. Without retry, the entire clone fails and the operator has to restart from the rollback log.
+
+**What it does:**
+Wraps clone-job execution in `RetryPolicy` (`src/retry.py`). On a transient error class — `TimeoutError`, `ConnectionError`, requests-style network errors, HTTP 429 / 502 / 503 / 504, Databricks `ThrottledRequest` — Clone-Xs sleeps with exponential backoff and retries the same per-table CLONE statement. **Logical errors never retry**: schema-mismatch, permission-denied, missing-catalog, validation failures, bad config — the next attempt would just fail with the same error and mask the real problem.
+
+```yaml
+enable_retry: true    # default true
+max_retries: 3        # config-level cap on attempts per per-table CLONE
+```
+
+The retry count is surfaced in the clone job status response (`GET /api/clone/{job_id}`) so operators can spot upstream flakiness over time — a sudden uptick in retries usually means the source warehouse is throttling under unrelated load.
+
+---
+
+## Compare DQ after clone (`compare_dq_after_clone: true`)
+
+**When to use:**
+Catching silent data corruption mid-clone before the bad target becomes the new source of truth. Cross-environment promotions ("staging → production") where wrong data on the target is worse than no clone.
+
+**What it does:**
+After each schema finishes cloning, Clone-Xs runs a per-table column-level comparison via the existing `dqx_engine`: row count plus per-column NULL counts on source vs target. The result is a per-table drift score (% of columns where the count delta exceeds 0.5%). When the *max* drift across any cloned table exceeds `dq_drift_rollback_pct` AND `auto_rollback_on_failure` is True, the existing rollback path (Delta `RESTORE`) reverts the destination.
+
+```yaml
+compare_dq_after_clone: true        # default false
+dq_drift_rollback_pct: 5.0          # 0–100, default 5%
+auto_rollback_on_failure: true      # required for the rollback to fire
+```
+
+Adds one extra warehouse round-trip per cloned table — expect a few seconds added per 100 tables. The default 5% threshold matches the existing row-count `rollback_threshold` so operators have one mental model for "acceptable drift."
+
+---
+
+## WHERE-clause filtered clone (`where_clauses: {…}`)
+
+**When to use:**
+You only want a slice of a table on the destination — most-recent year for analyst sandboxes, a specific customer's rows for a DSAR export, a 1% sample for dev-environment fixtures. Different feature shape from `include_tables_regex` (which selects whole tables) and from `data_filters` (which is more limited).
+
+**What it does:**
+For each `(schema, table)` key in the `where_clauses` dict, the per-table CLONE swaps to a CTAS path: `CREATE TABLE IF NOT EXISTS dst AS SELECT * FROM src WHERE <clause>`. **Loses Delta source history** (target lands at version 0) — CTAS doesn't carry the source's `_delta_log`. Time-travel arguments still work (the `WHERE` is applied to the time-travelled view).
+
+```yaml
+where_clauses:
+  "bronze.events": "date >= '2026-01-01'"     # last year only
+  "bronze.users": "country IN ('GB', 'IE')"   # GDPR scope
+  "*": "is_deleted = false"                   # wildcard: applies to every table
+```
+
+```json
+POST /api/clone
+{
+  "source_catalog": "production",
+  "destination_catalog": "analyst_sandbox",
+  "where_clauses": { "bronze.events": "date >= '2026-01-01'" }
+}
+```
+
+Only effective with `clone_type: DEEP` — SHALLOW clones can't take a WHERE filter (they're metadata pointers, not row copies). A `WHERE` on a SHALLOW request is ignored with a `WARN` log line.
+
+---
+
+## Inline TBLPROPERTIES override (`clone_tbl_properties: {…}`)
+
+**When to use:**
+You need a property that has to be set *on the first commit* — applying it post-clone via `ALTER TABLE` is too late for the property to take effect.
+
+The canonical case is **archival retention**: `delta.logRetentionDuration = '3650 days'` controls how long Delta keeps history. If you set it via `ALTER TABLE` after the clone, the first commit has already happened with the default 30-day retention, and the longer window only applies to *future* commits. To extend retention on the existing clone commit, the property has to be inline on the CLONE statement itself.
+
+```yaml
+clone_tbl_properties:
+  delta.logRetentionDuration: "3650 days"
+  delta.deletedFileRetentionDuration: "3650 days"
+```
+
+```sql
+-- Clone-Xs renders this onto every per-table CLONE:
+CREATE TABLE IF NOT EXISTS `dst`.`schema`.`table`
+  DEEP CLONE `src`.`schema`.`table`
+  TBLPROPERTIES (
+    'delta.logRetentionDuration' = '3650 days',
+    'delta.deletedFileRetentionDuration' = '3650 days'
+  )
+```
+
+The override applies to **every** table in the clone — there's no per-table syntax. For per-table property overrides, use a post-clone hook or `ALTER TABLE` follow-up SQL. Single quotes in property values are SQL-escaped by doubling.
+
+---
+
+## Wizard control reference
+
+Every control on the `/clone` wizard maps to a documented section. Use this as the canonical "did we cover X" reference.
+
+| Wizard control | Backend field | Doc home |
+|---|---|---|
+| Clone Type (DEEP / SHALLOW) | `clone_type` | [Deep vs shallow clone](#deep-vs-shallow-clone) |
+| Load Type (FULL / INCREMENTAL) | `load_type` | [Full vs incremental vs selective load](#full-vs-incremental-vs-selective-load) |
+| Target Format (DELTA / ICEBERG) | `target_format` | [Target format — UniForm](#target-format--target_format-iceberg-uniform) |
+| Physical Iceberg target | `iceberg_physical` | [Physical Iceberg target](#physical-iceberg-target) |
+| Dry-run | `dry_run` | [Dry run](#dry-run) |
+| Use Serverless Compute | `serverless` + `volume` | [Serverless execution](#serverless-execution) |
+| Schema-only mode | `schema_only` | See "Schema-only" pattern in [demo-data.md](demo-data.md) and [environments.md](environments.md) |
+| Force re-clone | `force_reclone` | [Stage 3 — Tables](#stage-3--tables) (table) |
+| WHERE clause | `where_clauses` | [WHERE-clause filtered clone](#where-clause-filtered-clone-where_clauses-) |
+| Time travel (timestamp / version) | `as_of_timestamp`, `as_of_version` | [Time travel](#time-travel) |
+| Schema include / exclude | `include_schemas`, `exclude_schemas` | [Schema filtering](#schema-filtering) |
+| Tables include / exclude regex | `include_tables_regex`, `exclude_tables_regex` | [Regex table filtering](#regex-table-filtering) |
+| Tag-based filter | `required_schema_tags` | [Tag-based filtering](#tag-based-filtering) |
+| Scope picker | `include_objects` | [Scope Picker — partial-catalog clones](#scope-picker--partial-catalog-clones) |
+| Parallel tables / workers | `parallel_tables`, `max_workers`, `max_parallel_queries` | [Parallel processing](#parallel-processing) |
+| Order by size | `order_by_size` | [Table size ordering](#table-size-ordering) |
+| Rate limit (max RPS / throttle) | `max_rps`, `throttle` | [Rate limiting](#rate-limiting) |
+| Runtime guardrails | `max_duration_min`, `max_tables` | (CLI / API only — see field comments in `api/models/clone.py`) |
+| Snapshot ID | `source_snapshot_id` | [Snapshots](snapshots.md) |
+| Pre-clone quiesce source | `quiesce_source` | [Pre-clone source quiesce](#pre-clone-source-quiesce) |
+| Auto-mask PII | `auto_mask_pii` | [Auto-mask PII](#auto-mask-pii-auto_mask_pii-true) |
+| Auto-retry transient failures | `enable_retry` | [Auto-retry transient failures](#auto-retry-transient-failures-enable_retry-true) |
+| Compare DQ after clone | `compare_dq_after_clone`, `dq_drift_rollback_pct` | [Compare DQ after clone](#compare-dq-after-clone-compare_dq_after_clone-true) |
+| TBLPROPERTIES override | `clone_tbl_properties` | [Inline TBLPROPERTIES override](#inline-tblproperties-override-clone_tbl_properties-) |
+| Copy options (permissions / ownership / tags / properties / security / constraints / comments) | `copy_*` | [Stage 5 — Metadata replay](#stage-5--metadata-replay) |
+| Validate after clone | `validate_after_clone`, `validate_checksum` | See [scheduling.md](scheduling.md) and [cicd.md](cicd.md) |
+| Auto-rollback | `auto_rollback`, `rollback_threshold` | See [safety.md](safety.md) |
+| Checkpointing | `checkpoint` | See [safety.md](safety.md) and [advanced-features.md](advanced-features.md) |
+| Approval workflow | `require_approval` | See [advanced-clone.md](advanced-clone.md) |
+| Impact check | `impact_check` | (CLI / API only — runs the existing impact-analysis surface against the clone scope) |
+| Skip unused tables | `skip_unused` | See [advanced-features.md](advanced-features.md) |
+| TTL policy | `ttl` | See [advanced-clone.md](advanced-clone.md) and [advanced-features.md](advanced-features.md) |
+| Clone template | `template` | See [advanced-clone.md](advanced-clone.md) and [advanced-features.md](advanced-features.md) |
+| Cross-workspace target | `target_workspace`, `target_workspaces`, `fanout_max_parallel` | See [advanced-clone.md](advanced-clone.md) for cross-workspace + fanout |
+| Generate report | `generate_report` | (CLI / API only — emits a JSON + HTML run report into `reports/`) |
+| Show progress bar | `show_progress` | [Reading the clone log](#reading-the-clone-log) |
+| Verbose logging | `verbose` | (CLI flag — increases log level to DEBUG) |

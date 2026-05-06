@@ -25,10 +25,14 @@ async def monitor_once(
 ):
     """Run a single monitoring check."""
     from src.monitor import monitor_once
+
     config = await get_app_config()
     wid = req.warehouse_id or get_warehouse_id(config)
     result = monitor_once(
-        client, wid, req.source_catalog, req.destination_catalog,
+        client,
+        wid,
+        req.source_catalog,
+        req.destination_catalog,
         config.get("exclude_schemas", req.exclude_schemas),
         check_drift=req.check_drift,
         check_counts=req.check_counts,

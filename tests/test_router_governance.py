@@ -9,6 +9,7 @@ pytest.importorskip("fastapi")
 # Init
 # ---------------------------------------------------------------------------
 
+
 def test_init_governance_tables(client):
     resp = client.post("/api/governance/init")
     assert resp.status_code in (200, 400, 404, 500)
@@ -18,11 +19,15 @@ def test_init_governance_tables(client):
 # Glossary CRUD
 # ---------------------------------------------------------------------------
 
+
 def test_create_glossary_term(client):
-    resp = client.post("/api/governance/glossary", json={
-        "name": "Customer Lifetime Value",
-        "definition": "Total revenue expected from a customer.",
-    })
+    resp = client.post(
+        "/api/governance/glossary",
+        json={
+            "name": "Customer Lifetime Value",
+            "definition": "Total revenue expected from a customer.",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -42,10 +47,13 @@ def test_delete_glossary_term(client):
 
 
 def test_link_glossary_term(client):
-    resp = client.post("/api/governance/glossary/link", json={
-        "term_id": "term-123",
-        "column_fqns": ["cat.schema.table.col1"],
-    })
+    resp = client.post(
+        "/api/governance/glossary/link",
+        json={
+            "term_id": "term-123",
+            "column_fqns": ["cat.schema.table.col1"],
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -53,10 +61,14 @@ def test_link_glossary_term(client):
 # Search
 # ---------------------------------------------------------------------------
 
+
 def test_metadata_search(client):
-    resp = client.post("/api/governance/search", json={
-        "query": "customer",
-    })
+    resp = client.post(
+        "/api/governance/search",
+        json={
+            "query": "customer",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -64,12 +76,16 @@ def test_metadata_search(client):
 # DQ Rules
 # ---------------------------------------------------------------------------
 
+
 def test_create_dq_rule(client):
-    resp = client.post("/api/governance/dq/rules", json={
-        "name": "not_null_id",
-        "table_fqn": "cat.schema.table",
-        "rule_type": "not_null",
-    })
+    resp = client.post(
+        "/api/governance/dq/rules",
+        json={
+            "name": "not_null_id",
+            "table_fqn": "cat.schema.table",
+            "rule_type": "not_null",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -79,9 +95,12 @@ def test_list_dq_rules(client):
 
 
 def test_update_dq_rule(client):
-    resp = client.put("/api/governance/dq/rules/rule-123", json={
-        "severity": "critical",
-    })
+    resp = client.put(
+        "/api/governance/dq/rules/rule-123",
+        json={
+            "severity": "critical",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
@@ -109,11 +128,15 @@ def test_get_dq_history(client):
 # Certifications
 # ---------------------------------------------------------------------------
 
+
 def test_create_certification(client):
-    resp = client.post("/api/governance/certifications", json={
-        "table_fqn": "cat.schema.table",
-        "status": "certified",
-    })
+    resp = client.post(
+        "/api/governance/certifications",
+        json={
+            "table_fqn": "cat.schema.table",
+            "status": "certified",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -123,10 +146,13 @@ def test_list_certifications(client):
 
 
 def test_approve_certification(client):
-    resp = client.post("/api/governance/certifications/approve", json={
-        "cert_id": "cert-123",
-        "action": "approve",
-    })
+    resp = client.post(
+        "/api/governance/certifications/approve",
+        json={
+            "cert_id": "cert-123",
+            "action": "approve",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -134,11 +160,15 @@ def test_approve_certification(client):
 # SLA Rules
 # ---------------------------------------------------------------------------
 
+
 def test_create_sla_rule(client):
-    resp = client.post("/api/governance/sla/rules", json={
-        "table_fqn": "cat.schema.table",
-        "metric": "freshness",
-    })
+    resp = client.post(
+        "/api/governance/sla/rules",
+        json={
+            "table_fqn": "cat.schema.table",
+            "metric": "freshness",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -161,10 +191,14 @@ def test_sla_status(client):
 # ODCS Contracts
 # ---------------------------------------------------------------------------
 
+
 def test_create_odcs_contract(client):
-    resp = client.post("/api/governance/odcs/contracts", json={
-        "name": "test-contract",
-    })
+    resp = client.post(
+        "/api/governance/odcs/contracts",
+        json={
+            "name": "test-contract",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -179,9 +213,12 @@ def test_get_odcs_contract(client):
 
 
 def test_update_odcs_contract(client):
-    resp = client.put("/api/governance/odcs/contracts/contract-123", json={
-        "status": "active",
-    })
+    resp = client.put(
+        "/api/governance/odcs/contracts/contract-123",
+        json={
+            "status": "active",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -206,9 +243,12 @@ def test_get_odcs_version(client):
 
 
 def test_import_odcs_yaml(client):
-    resp = client.post("/api/governance/odcs/import", json={
-        "yaml_content": "apiVersion: v3.1.0\nkind: DataContract\nname: test",
-    })
+    resp = client.post(
+        "/api/governance/odcs/import",
+        json={
+            "yaml_content": "apiVersion: v3.1.0\nkind: DataContract\nname: test",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -246,25 +286,35 @@ def test_dqx_validate_contract(client):
 # ODCS Generation
 # ---------------------------------------------------------------------------
 
+
 def test_generate_odcs_from_uc(client):
-    resp = client.post("/api/governance/odcs/generate", json={
-        "table_fqn": "cat.schema.table",
-    })
+    resp = client.post(
+        "/api/governance/odcs/generate",
+        json={
+            "table_fqn": "cat.schema.table",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
 def test_generate_odcs_schema(client):
-    resp = client.post("/api/governance/odcs/generate-schema", json={
-        "catalog": "cat",
-        "schema_name": "default",
-    })
+    resp = client.post(
+        "/api/governance/odcs/generate-schema",
+        json={
+            "catalog": "cat",
+            "schema_name": "default",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
 def test_generate_odcs_catalog(client):
-    resp = client.post("/api/governance/odcs/generate-catalog", json={
-        "catalog": "cat",
-    })
+    resp = client.post(
+        "/api/governance/odcs/generate-catalog",
+        json={
+            "catalog": "cat",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -272,15 +322,19 @@ def test_generate_odcs_catalog(client):
 # DQX
 # ---------------------------------------------------------------------------
 
+
 def test_dqx_spark_status(client):
     resp = client.get("/api/governance/dqx/spark-status")
     assert resp.status_code in (200, 400, 404, 500)
 
 
 def test_dqx_spark_configure(client):
-    resp = client.post("/api/governance/dqx/spark-configure", json={
-        "serverless": True,
-    })
+    resp = client.post(
+        "/api/governance/dqx/spark-configure",
+        json={
+            "serverless": True,
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
@@ -295,33 +349,45 @@ def test_dqx_functions(client):
 
 
 def test_dqx_profile(client):
-    resp = client.post("/api/governance/dqx/profile", json={
-        "table_fqn": "cat.schema.table",
-    })
+    resp = client.post(
+        "/api/governance/dqx/profile",
+        json={
+            "table_fqn": "cat.schema.table",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
 def test_dqx_profile_schema(client):
-    resp = client.post("/api/governance/dqx/profile-schema", json={
-        "catalog": "cat",
-        "schema_name": "default",
-    })
+    resp = client.post(
+        "/api/governance/dqx/profile-schema",
+        json={
+            "catalog": "cat",
+            "schema_name": "default",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
 def test_dqx_profile_catalog(client):
-    resp = client.post("/api/governance/dqx/profile-catalog", json={
-        "catalog": "cat",
-    })
+    resp = client.post(
+        "/api/governance/dqx/profile-catalog",
+        json={
+            "catalog": "cat",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
 def test_dqx_create_check(client):
-    resp = client.post("/api/governance/dqx/checks", json={
-        "table_fqn": "cat.schema.table",
-        "check_function": "is_not_null",
-        "arguments": {"column": "id"},
-    })
+    resp = client.post(
+        "/api/governance/dqx/checks",
+        json={
+            "table_fqn": "cat.schema.table",
+            "check_function": "is_not_null",
+            "arguments": {"column": "id"},
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -336,9 +402,12 @@ def test_dqx_delete_check(client):
 
 
 def test_dqx_delete_bulk(client):
-    resp = client.post("/api/governance/dqx/checks/delete-bulk", json={
-        "check_ids": ["check-1", "check-2"],
-    })
+    resp = client.post(
+        "/api/governance/dqx/checks/delete-bulk",
+        json={
+            "check_ids": ["check-1", "check-2"],
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
@@ -348,23 +417,32 @@ def test_dqx_clear_all(client):
 
 
 def test_dqx_toggle_check(client):
-    resp = client.post("/api/governance/dqx/checks/check-123/toggle", json={
-        "enabled": False,
-    })
+    resp = client.post(
+        "/api/governance/dqx/checks/check-123/toggle",
+        json={
+            "enabled": False,
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
 def test_dqx_update_check(client):
-    resp = client.put("/api/governance/dqx/checks/check-123", json={
-        "criticality": "warn",
-    })
+    resp = client.put(
+        "/api/governance/dqx/checks/check-123",
+        json={
+            "criticality": "warn",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
 def test_dqx_run(client):
-    resp = client.post("/api/governance/dqx/run", json={
-        "table_fqn": "cat.schema.table",
-    })
+    resp = client.post(
+        "/api/governance/dqx/run",
+        json={
+            "table_fqn": "cat.schema.table",
+        },
+    )
     assert resp.status_code in (200, 422, 500)
 
 
@@ -384,10 +462,13 @@ def test_dqx_export_checks(client):
 
 
 def test_dqx_import_checks(client):
-    resp = client.post("/api/governance/dqx/checks/import", json={
-        "table_fqn": "cat.schema.table",
-        "yaml_content": "checks:\n  - name: test",
-    })
+    resp = client.post(
+        "/api/governance/dqx/checks/import",
+        json={
+            "table_fqn": "cat.schema.table",
+            "yaml_content": "checks:\n  - name: test",
+        },
+    )
     assert resp.status_code in (200, 400, 404, 500)
 
 
@@ -399,6 +480,7 @@ def test_dqx_profiles(client):
 # ---------------------------------------------------------------------------
 # Change History
 # ---------------------------------------------------------------------------
+
 
 def test_get_changes(client):
     resp = client.get("/api/governance/changes")

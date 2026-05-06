@@ -9,8 +9,18 @@ from src.compliance import apply_retention_policy, _build_compliance_html
 class TestBuildComplianceHtml:
     def test_generates_html(self):
         report = {
-            "report_metadata": {"generated_at": "2024-01-01", "generated_by": "user", "from_date": None, "to_date": None},
-            "clone_operations_summary": {"available": True, "total_operations": 5, "successful": 4, "failed": 1},
+            "report_metadata": {
+                "generated_at": "2024-01-01",
+                "generated_by": "user",
+                "from_date": None,
+                "to_date": None,
+            },
+            "clone_operations_summary": {
+                "available": True,
+                "total_operations": 5,
+                "successful": 4,
+                "failed": 1,
+            },
             "pii_handling": {"available": False, "message": "Not configured"},
             "permission_audit": {"available": False, "message": "Not configured"},
             "data_lineage": {"available": False, "message": "Not configured"},
@@ -30,6 +40,7 @@ class TestApplyRetentionPolicy:
                 f.write("{}")
             # Set modification time to 100 days ago
             import time
+
             old_time = time.time() - (100 * 86400)
             os.utime(old_file, (old_time, old_time))
 

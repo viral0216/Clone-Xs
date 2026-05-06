@@ -37,15 +37,20 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
     schema = _get_schema(config)
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             CREATE TABLE IF NOT EXISTS {schema}.nl_rule_audit ({_AUDIT_DDL})
             USING DELTA COMMENT 'Clone-Xs: NL rule builder audit trail'
             TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not create nl_rule_audit: {e}")
 
@@ -53,14 +58,21 @@ def ensure_tables(client=None, warehouse_id: str = "", config: dict = None):
 def _get_table_schema(table_fqn: str, client, warehouse_id) -> list[dict]:
     """Fetch column info for a table."""
     try:
-        return _query_sql(f"DESCRIBE TABLE {table_fqn}", limit=200, client=client, warehouse_id=warehouse_id) or []
+        return (
+            _query_sql(
+                f"DESCRIBE TABLE {table_fqn}", limit=200, client=client, warehouse_id=warehouse_id
+            )
+            or []
+        )
     except Exception:
         return []
 
 
 def _build_prompt(nl_text: str, table_fqn: str, columns: list[dict]) -> str:
-    col_info = "\n".join(f"  - {c.get('col_name', c.get('name', ''))}: {c.get('data_type', c.get('type', ''))}"
-                         for c in columns[:30])
+    col_info = "\n".join(
+        f"  - {c.get('col_name', c.get('name', ''))}: {c.get('data_type', c.get('type', ''))}"
+        for c in columns[:30]
+    )
 
     return f"""You are a data quality rule generator. Convert the natural language description into a JSON rule config.
 
@@ -108,6 +120,7 @@ def parse_nl_rule(
     parsed_rule = None
     try:
         from databricks.sdk import WorkspaceClient
+
         w = client if client else WorkspaceClient()
         model = config.get("ai_model", "databricks-meta-llama-3-1-70b-instruct")
 
@@ -137,12 +150,16 @@ def parse_nl_rule(
     rid = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             INSERT INTO {schema}.nl_rule_audit VALUES (
                 '{rid}', '{_esc(nl_text)}', '{_esc(json.dumps(parsed_rule))}',
-                {parsed_rule.get('confidence', 0.5)}, false, false, '{_esc(created_by)}', '{now}'
+                {parsed_rule.get("confidence", 0.5)}, false, false, '{_esc(created_by)}', '{now}'
             )
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception:
         pass
 
@@ -184,7 +201,8 @@ def _fallback_parse(nl_text: str, table_fqn: str, columns: list[dict]) -> dict:
         rule["confidence"] = 0.6
         # Try to extract numbers
         import re
-        nums = re.findall(r'[\d.]+', text)
+
+        nums = re.findall(r"[\d.]+", text)
         if len(nums) >= 2:
             rule["params"] = {"min": float(nums[0]), "max": float(nums[1])}
         elif "positive" in text:

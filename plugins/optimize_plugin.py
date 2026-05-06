@@ -18,6 +18,7 @@ class OptimizePlugin(ClonePlugin):
         if status != "success":
             return
         from src.client import execute_sql
+
         try:
             execute_sql(client, warehouse_id, f"OPTIMIZE {table_fqn}")
             logger.info(f"[OptimizePlugin] Optimized {table_fqn}")
@@ -27,6 +28,5 @@ class OptimizePlugin(ClonePlugin):
     def on_clone_complete(self, config, summary, client, warehouse_id):
         tables = summary.get("tables", {})
         logger.info(
-            f"[OptimizePlugin] Clone complete — "
-            f"{tables.get('success', 0)} tables optimized"
+            f"[OptimizePlugin] Clone complete — {tables.get('success', 0)} tables optimized"
         )

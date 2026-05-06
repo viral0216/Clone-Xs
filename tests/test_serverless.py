@@ -12,9 +12,11 @@ from src.serverless import (
 
 # ── _find_wheel ──────────────────────────────────────────────────────
 
+
 def test_find_wheel():
     # The wheel should exist in dist/ after build
     import os
+
     dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dist")
     if os.path.exists(dist) and any(f.endswith(".whl") for f in os.listdir(dist)):
         result = _find_wheel()
@@ -24,6 +26,7 @@ def test_find_wheel():
 def test_find_wheel_uses_dist():
     # Just verify it doesn't crash if dist/ has a wheel (it does after build)
     import os
+
     dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dist")
     if os.path.exists(dist) and any(f.endswith(".whl") for f in os.listdir(dist)):
         result = _find_wheel()
@@ -34,6 +37,7 @@ def test_find_wheel_uses_dist():
 
 
 # ── list_volumes ─────────────────────────────────────────────────────
+
 
 def test_list_volumes():
     client = MagicMock()
@@ -89,13 +93,16 @@ def test_list_volumes_handles_errors():
 
 # ── _extract_result ──────────────────────────────────────────────────
 
+
 def test_extract_result_from_notebook():
     client = MagicMock()
     result_data = {"schemas_processed": 5, "tables": {"success": 10}}
     notebook_output = MagicMock()
     notebook_output.result = json.dumps(result_data)
     client.jobs.get_run_output.return_value = MagicMock(
-        notebook_output=notebook_output, logs="", error=None,
+        notebook_output=notebook_output,
+        logs="",
+        error=None,
     )
     run = MagicMock()
     task = MagicMock()
@@ -119,6 +126,7 @@ def test_extract_result_handles_error():
 
 # ── submit_clone_job ─────────────────────────────────────────────────
 
+
 @patch("src.serverless._ensure_uploaded")
 @patch("src.serverless.select_volume")
 def test_submit_clone_job_calls_submit(mock_select, mock_upload):
@@ -136,15 +144,19 @@ def test_submit_clone_job_calls_submit(mock_select, mock_upload):
     client.jobs.submit.return_value = run_waiter
 
     notebook_output = MagicMock()
-    notebook_output.result = json.dumps({
-        "schemas_processed": 2,
-        "tables": {"success": 5, "failed": 0, "skipped": 0},
-        "views": {"success": 0, "failed": 0, "skipped": 0},
-        "functions": {"success": 0, "failed": 0, "skipped": 0},
-        "volumes": {"success": 0, "failed": 0, "skipped": 0},
-    })
+    notebook_output.result = json.dumps(
+        {
+            "schemas_processed": 2,
+            "tables": {"success": 5, "failed": 0, "skipped": 0},
+            "views": {"success": 0, "failed": 0, "skipped": 0},
+            "functions": {"success": 0, "failed": 0, "skipped": 0},
+            "volumes": {"success": 0, "failed": 0, "skipped": 0},
+        }
+    )
     client.jobs.get_run_output.return_value = MagicMock(
-        notebook_output=notebook_output, logs="", error=None,
+        notebook_output=notebook_output,
+        logs="",
+        error=None,
     )
 
     config = {

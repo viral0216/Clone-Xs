@@ -42,13 +42,13 @@ def _format_bytes(size: int | None) -> str | None:
         return None
     if size < 1024:
         return f"{size} B"
-    if size < 1024 ** 2:
+    if size < 1024**2:
         return f"{size / 1024:.1f} KB"
-    if size < 1024 ** 3:
-        return f"{size / 1024 ** 2:.1f} MB"
-    if size < 1024 ** 4:
-        return f"{size / 1024 ** 3:.2f} GB"
-    return f"{size / 1024 ** 4:.2f} TB"
+    if size < 1024**3:
+        return f"{size / 1024**2:.1f} MB"
+    if size < 1024**4:
+        return f"{size / 1024**3:.2f} GB"
+    return f"{size / 1024**4:.2f} TB"
 
 
 def _bulk_tables_query(catalog: str, exclude_schemas: list[str]) -> str:
@@ -129,7 +129,9 @@ def catalog_stats_fast(
 
 
 def _fallback_tables_only(
-    client: WorkspaceClient, warehouse_id: str, catalog: str,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    catalog: str,
     exclude_schemas: list[str],
 ) -> list[dict]:
     """When the joined bulk query fails (rare — usually means
@@ -172,21 +174,21 @@ def _build_summary(catalog: str, rows: list[dict]) -> dict:
         rc_int = int(rc) if rc is not None else None
 
         rec = {
-            "schema":       row.get("table_schema"),
-            "table":        row.get("table_name"),
-            "table_type":   row.get("table_type"),
-            "row_count":    rc_int,
-            "size_bytes":   size_int,
+            "schema": row.get("table_schema"),
+            "table": row.get("table_name"),
+            "table_type": row.get("table_type"),
+            "row_count": rc_int,
+            "size_bytes": size_int,
             "size_display": _format_bytes(size_int),
-            "num_columns":  int(row.get("num_columns") or 0),
+            "num_columns": int(row.get("num_columns") or 0),
             # Fast path can't supply num_files / last_modified / format
             # without a per-table DESCRIBE DETAIL — set to None and let
             # the UI render "—". The detailed path still has these.
-            "num_files":     None,
+            "num_files": None,
             "last_modified": str(row.get("last_altered")) if row.get("last_altered") else None,
-            "format":        None,
-            "comment":       row.get("comment"),
-            "error":         None,
+            "format": None,
+            "comment": row.get("comment"),
+            "error": None,
         }
         tables.append(rec)
         by_schema.setdefault(rec["schema"], []).append(rec)
@@ -195,13 +197,15 @@ def _build_summary(catalog: str, rows: list[dict]) -> dict:
     for schema_name, schema_tables in sorted(by_schema.items()):
         schema_size = sum(int(t["size_bytes"] or 0) for t in schema_tables)
         schema_rows = sum(int(t["row_count"] or 0) for t in schema_tables)
-        schema_summaries.append({
-            "schema": schema_name,
-            "num_tables": len(schema_tables),
-            "total_size_bytes": schema_size,
-            "total_size_display": _format_bytes(schema_size),
-            "total_rows": schema_rows,
-        })
+        schema_summaries.append(
+            {
+                "schema": schema_name,
+                "num_tables": len(schema_tables),
+                "total_size_bytes": schema_size,
+                "total_size_display": _format_bytes(schema_size),
+                "total_rows": schema_rows,
+            }
+        )
 
     total_size = sum(int(t["size_bytes"] or 0) for t in tables)
     total_rows = sum(int(t["row_count"] or 0) for t in tables)

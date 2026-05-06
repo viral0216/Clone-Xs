@@ -26,13 +26,20 @@ def generate_workflow(
 
     # Build the CLI command
     cmd_parts = [
-        "clxs", "clone",
-        "--source", source,
-        "--dest", dest,
-        "--clone-type", config["clone_type"],
-        "--load-type", config["load_type"],
-        "--warehouse-id", config["sql_warehouse_id"],
-        "--max-workers", str(config["max_workers"]),
+        "clxs",
+        "clone",
+        "--source",
+        source,
+        "--dest",
+        dest,
+        "--clone-type",
+        config["clone_type"],
+        "--load-type",
+        config["load_type"],
+        "--warehouse-id",
+        config["sql_warehouse_id"],
+        "--max-workers",
+        str(config["max_workers"]),
     ]
 
     if config.get("generate_report"):
@@ -128,10 +135,14 @@ def generate_workflow_yaml(
                                 "entry_point": "clxs",
                                 "parameters": [
                                     "clone",
-                                    "--source", source,
-                                    "--dest", dest,
-                                    "--clone-type", config["clone_type"],
-                                    "--warehouse-id", config["sql_warehouse_id"],
+                                    "--source",
+                                    source,
+                                    "--dest",
+                                    dest,
+                                    "--clone-type",
+                                    config["clone_type"],
+                                    "--warehouse-id",
+                                    config["sql_warehouse_id"],
                                     "-v",
                                 ],
                             },

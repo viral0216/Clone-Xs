@@ -2,21 +2,73 @@
 
 import asyncio
 import logging
+import random
 import re
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
+from typing import Callable
 
 from api.websocket.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
 
+# Exception classes that must NEVER trigger a retry. These signal logical
+# errors (bad input, schema mismatch, programming bug) that the next attempt
+# won't fix, so retrying just hides the real failure.
+_NON_RETRYABLE_EXC: tuple = (ValueError, KeyError, TypeError, AttributeError, AssertionError)
+
+# Substrings in str(exception) that indicate a transient failure. The
+# Databricks SDK raises domain-specific exception classes whose .__str__()
+# embeds the HTTP status / reason — so we match on message text rather than
+# importing the SDK's internal exception hierarchy.
+_TRANSIENT_SUBSTRINGS: tuple = (
+    "429",
+    "throttl",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "502",
+    "503",
+    "504",
+    "service unavailable",
+    "bad gateway",
+    "temporarily unavailable",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return True if `exc` should trigger a retry, False to fail immediately.
+
+    Conservative on purpose: unknown exception classes return False so that
+    logical errors don't get wrapped in retries and mask the real bug. Add
+    new transient signals to `_TRANSIENT_SUBSTRINGS` rather than broadening
+    the default.
+    """
+    if isinstance(exc, _NON_RETRYABLE_EXC):
+        return False
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    msg = str(exc).lower()
+    return any(s in msg for s in _TRANSIENT_SUBSTRINGS)
+
+
 class JobLogHandler(logging.Handler):
     """Captures log messages into a list for a specific job."""
 
-    def __init__(self, job_logs: list, job_dict: dict | None = None, workspace_host: str = "", max_lines: int = 500):
+    def __init__(
+        self,
+        job_logs: list,
+        job_dict: dict | None = None,
+        workspace_host: str = "",
+        max_lines: int = 500,
+    ):
         super().__init__()
         self.job_logs = job_logs
         self.job_dict = job_dict
@@ -43,7 +95,9 @@ class JobLogHandler(logging.Handler):
                     run_id = run_m.group(1)
                     job_m = self._job_id_re.search(msg)
                     if job_m:
-                        self.job_dict["run_url"] = f"{self.workspace_host}/jobs/{job_m.group(1)}/runs/{run_id}"
+                        self.job_dict["run_url"] = (
+                            f"{self.workspace_host}/jobs/{job_m.group(1)}/runs/{run_id}"
+                        )
                     else:
                         self.job_dict["run_url"] = f"{self.workspace_host}/#job/{run_id}"
         except Exception:
@@ -118,6 +172,9 @@ class JobManager:
             "created_at": now,
             "started_at": None,
             "completed_at": None,
+            "attempt": 1,
+            "max_attempts": 1,
+            "retry_history": [],
         }
 
         # Run in background thread
@@ -130,6 +187,73 @@ class JobManager:
 
         return job_id
 
+    def _execute_clone_with_retry(
+        self,
+        fn: Callable[[], dict],
+        job_id: str,
+        config: dict,
+        loop,
+        job_logs: list,
+        label: str,
+    ) -> dict:
+        """Run a clone callable with auto-retry on transient failures.
+
+        Bounded by `config['max_retries']` (default 3) and disabled entirely
+        when `config['enable_retry']` is False (single attempt). Only errors
+        classified by `_is_transient_error` trigger a retry; logical errors
+        re-raise on the first attempt so flaky upstreams don't mask real
+        bugs. On each retry the job's `attempt` field advances and a
+        `retry_history` entry is appended (visible via GET /clone/{id}).
+        """
+        enable_retry = bool(config.get("enable_retry", True))
+        max_attempts = max(1, int(config.get("max_retries", 3))) if enable_retry else 1
+        self.jobs[job_id]["max_attempts"] = max_attempts
+
+        last_exc: BaseException | None = None
+        for attempt in range(1, max_attempts + 1):
+            self.jobs[job_id]["attempt"] = attempt
+            try:
+                return fn()
+            except Exception as e:
+                last_exc = e
+                if not _is_transient_error(e) or attempt >= max_attempts:
+                    raise
+
+                # Exponential backoff with jitter, capped at 60s.
+                delay = min(2.0 * (2 ** (attempt - 1)), 60.0)
+                delay *= 0.5 + random.random() * 0.5
+
+                self.jobs[job_id]["retry_history"].append(
+                    {
+                        "attempt": attempt,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "retried_at": datetime.now().isoformat(),
+                        "delay_s": round(delay, 1),
+                    }
+                )
+                ts = datetime.now().strftime("%H:%M:%S")
+                job_logs.append(
+                    f"[{ts}] {label} attempt {attempt}/{max_attempts} failed "
+                    f"({type(e).__name__}: {e}). Retrying in {delay:.1f}s..."
+                )
+                self._broadcast_sync(
+                    loop,
+                    job_id,
+                    {
+                        "type": "retry",
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "error": str(e),
+                        "delay_s": round(delay, 1),
+                    },
+                )
+                time.sleep(delay)
+
+        # Unreachable: loop either returns or raises; this just keeps
+        # type-checkers happy about the function always returning.
+        raise last_exc  # type: ignore[misc]
+
     def _run_job(self, job_id: str, job_type: str, config: dict, client, loop):
         """Execute the job in a background thread with log capture."""
         self._executor_semaphore.acquire()
@@ -140,7 +264,9 @@ class JobManager:
         workspace_host = getattr(getattr(client, "config", None), "host", None) or ""
 
         # Set up log capture for src.* loggers
-        log_handler = JobLogHandler(job_logs, job_dict=self.jobs[job_id], workspace_host=workspace_host)
+        log_handler = JobLogHandler(
+            job_logs, job_dict=self.jobs[job_id], workspace_host=workspace_host
+        )
         log_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         src_logger = logging.getLogger("src")
         src_logger.addHandler(log_handler)
@@ -156,7 +282,9 @@ class JobManager:
         try:
             self.jobs[job_id]["status"] = "running"
             self.jobs[job_id]["started_at"] = datetime.now().isoformat()
-            job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Job {job_id} started — {job_type}")
+            job_logs.append(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Job {job_id} started — {job_type}"
+            )
             self._broadcast_sync(loop, job_id, {"type": "status", "status": "running"})
 
             # Mark as API-managed so clone_catalog doesn't double-save run logs
@@ -167,9 +295,15 @@ class JobManager:
             audit_ready = False
             try:
                 from src.audit_trail import ensure_audit_table, log_operation_start
+
                 ensure_audit_table(client, config.get("sql_warehouse_id", ""), config)
-                log_operation_start(client, config.get("sql_warehouse_id", ""),
-                                    config, job_id, operation_type=job_type)
+                log_operation_start(
+                    client,
+                    config.get("sql_warehouse_id", ""),
+                    config,
+                    job_id,
+                    operation_type=job_type,
+                )
                 audit_ready = True
             except Exception as e:
                 # Don't fail the job, but make it visible WHY the completion
@@ -178,44 +312,76 @@ class JobManager:
             self.jobs[job_id]["_audit_ready"] = audit_ready
 
             if job_type == "clone":
-                if config.get("serverless") and config.get("volume"):
-                    from src.serverless import submit_clone_job
-                    result = submit_clone_job(
-                        client,
-                        config,
-                        volume_path=config["volume"],
-                    )
-                elif (config.get("load_type") or "").upper() == "SELECTIVE":
-                    # Selective re-clone: only touch tables that have drifted
-                    # between source and target. Routed inside the "clone" job
-                    # type (rather than a new job_type) so existing /api/clone
-                    # callers can opt in by setting load_type=SELECTIVE without
-                    # changing endpoints, and the audit-trail / run-id flow
-                    # stays identical.
-                    from src.selective_reclone import selective_reclone_catalog
-                    result = selective_reclone_catalog(client, config)
-                else:
-                    from src.clone_catalog import clone_catalog
-                    result = clone_catalog(client, config)
+
+                def _do_clone():
+                    if config.get("serverless") and config.get("volume"):
+                        from src.serverless import submit_clone_job
+
+                        return submit_clone_job(
+                            client,
+                            config,
+                            volume_path=config["volume"],
+                        )
+                    elif (config.get("load_type") or "").upper() == "SELECTIVE":
+                        # Selective re-clone: only touch tables that have drifted
+                        # between source and target. Routed inside the "clone" job
+                        # type (rather than a new job_type) so existing /api/clone
+                        # callers can opt in by setting load_type=SELECTIVE without
+                        # changing endpoints, and the audit-trail / run-id flow
+                        # stays identical.
+                        from src.selective_reclone import selective_reclone_catalog
+
+                        return selective_reclone_catalog(client, config)
+                    else:
+                        from src.clone_catalog import clone_catalog
+
+                        return clone_catalog(client, config)
+
+                result = self._execute_clone_with_retry(
+                    _do_clone, job_id, config, loop, job_logs, "clone"
+                )
             elif job_type == "clone_cross_workspace":
                 from src.clone_cross_workspace import run_cross_workspace_clone
-                result = run_cross_workspace_clone(client, config)
+
+                result = self._execute_clone_with_retry(
+                    lambda: run_cross_workspace_clone(client, config),
+                    job_id,
+                    config,
+                    loop,
+                    job_logs,
+                    "clone_cross_workspace",
+                )
             elif job_type == "clone_fanout":
                 from src.clone_fanout import run_cross_workspace_fanout
-                result = run_cross_workspace_fanout(client, config)
+
+                result = self._execute_clone_with_retry(
+                    lambda: run_cross_workspace_fanout(client, config),
+                    job_id,
+                    config,
+                    loop,
+                    job_logs,
+                    "clone_fanout",
+                )
             elif job_type == "validate":
                 from src.validation import validate_catalog
+
                 result = validate_catalog(
-                    client, config["sql_warehouse_id"],
-                    config["source_catalog"], config["destination_catalog"],
-                    config.get("exclude_schemas", []), config.get("max_workers", 4),
+                    client,
+                    config["sql_warehouse_id"],
+                    config["source_catalog"],
+                    config["destination_catalog"],
+                    config.get("exclude_schemas", []),
+                    config.get("max_workers", 4),
                     _api_managed_logs=True,
                 )
             elif job_type == "sync":
                 from src.sync_catalog import sync_catalogs
+
                 result = sync_catalogs(
-                    client, config["sql_warehouse_id"],
-                    config["source_catalog"], config["destination_catalog"],
+                    client,
+                    config["sql_warehouse_id"],
+                    config["source_catalog"],
+                    config["destination_catalog"],
                     config.get("exclude_schemas", ["information_schema", "default"]),
                     dry_run=config.get("dry_run", True),
                     drop_extra=config.get("drop_extra", False),
@@ -225,6 +391,7 @@ class JobManager:
                 if config.get("serverless") and config.get("volume"):
                     # Serverless: build a clone config and submit via serverless
                     from src.serverless import submit_clone_job
+
                     clone_config = {
                         "source_catalog": config["source_catalog"],
                         "destination_catalog": config["destination_catalog"],
@@ -243,18 +410,25 @@ class JobManager:
                     # Spark Connect: run locally via databricks-connect serverless
                     from src.client import spark_connect_executor
                     from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+
                     schema = config["schema_name"]
                     with spark_connect_executor():
                         tables = get_tables_needing_sync(
-                            client, "SPARK_CONNECT",
-                            config["source_catalog"], config["destination_catalog"], schema,
+                            client,
+                            "SPARK_CONNECT",
+                            config["source_catalog"],
+                            config["destination_catalog"],
+                            schema,
                         )
                         synced, failed = 0, 0
                         for t in tables:
                             ok = sync_changed_table(
-                                client, "SPARK_CONNECT",
-                                config["source_catalog"], config["destination_catalog"],
-                                schema, t["table_name"],
+                                client,
+                                "SPARK_CONNECT",
+                                config["source_catalog"],
+                                config["destination_catalog"],
+                                schema,
+                                t["table_name"],
                                 clone_type=config.get("clone_type", "DEEP"),
                                 dry_run=config.get("dry_run", False),
                             )
@@ -263,23 +437,32 @@ class JobManager:
                             else:
                                 failed += 1
                     result = {
-                        "schema": schema, "tables_checked": len(tables),
-                        "synced": synced, "failed": failed,
+                        "schema": schema,
+                        "tables_checked": len(tables),
+                        "synced": synced,
+                        "failed": failed,
                         "mode": "spark_connect",
                     }
                 else:
                     from src.incremental_sync import get_tables_needing_sync, sync_changed_table
+
                     schema = config["schema_name"]
                     tables = get_tables_needing_sync(
-                        client, config["sql_warehouse_id"],
-                        config["source_catalog"], config["destination_catalog"], schema,
+                        client,
+                        config["sql_warehouse_id"],
+                        config["source_catalog"],
+                        config["destination_catalog"],
+                        schema,
                     )
                     synced, failed = 0, 0
                     for t in tables:
                         ok = sync_changed_table(
-                            client, config["sql_warehouse_id"],
-                            config["source_catalog"], config["destination_catalog"],
-                            schema, t["table_name"],
+                            client,
+                            config["sql_warehouse_id"],
+                            config["source_catalog"],
+                            config["destination_catalog"],
+                            schema,
+                            t["table_name"],
                             clone_type=config.get("clone_type", "DEEP"),
                             dry_run=config.get("dry_run", False),
                         )
@@ -288,40 +471,50 @@ class JobManager:
                         else:
                             failed += 1
                     result = {
-                        "schema": schema, "tables_checked": len(tables),
-                        "synced": synced, "failed": failed,
+                        "schema": schema,
+                        "tables_checked": len(tables),
+                        "synced": synced,
+                        "failed": failed,
                     }
             elif job_type == "pii-scan":
                 from src.pii_detection import scan_catalog_for_pii
+
                 result = scan_catalog_for_pii(
-                    client, config["sql_warehouse_id"],
+                    client,
+                    config["sql_warehouse_id"],
                     config["source_catalog"],
                     config.get("exclude_schemas", ["information_schema", "default"]),
                     max_workers=config.get("max_workers", 4),
                 )
             elif job_type == "preflight":
                 from src.preflight import run_preflight
+
                 result = run_preflight(
-                    client, config["sql_warehouse_id"],
-                    config["source_catalog"], config["destination_catalog"],
+                    client,
+                    config["sql_warehouse_id"],
+                    config["source_catalog"],
+                    config["destination_catalog"],
                     check_write=config.get("check_write", True),
                 )
             elif job_type == "terraform":
                 from src.terraform import generate_terraform, generate_pulumi
+
                 fmt = config.get("format", "terraform")
                 catalog = config["source_catalog"]
                 default_path = f"{catalog}_pulumi.py" if fmt == "pulumi" else f"{catalog}.tf.json"
                 out_path = config.get("output_path") or default_path
                 if fmt == "pulumi":
                     output = generate_pulumi(
-                        client, config["sql_warehouse_id"],
+                        client,
+                        config["sql_warehouse_id"],
                         catalog,
                         config.get("exclude_schemas", ["information_schema", "default"]),
                         output_path=out_path,
                     )
                 else:
                     output = generate_terraform(
-                        client, config["sql_warehouse_id"],
+                        client,
+                        config["sql_warehouse_id"],
                         catalog,
                         config.get("exclude_schemas", ["information_schema", "default"]),
                         output_path=out_path,
@@ -336,6 +529,7 @@ class JobManager:
                 result = {"output_path": output, "content": content, "format": fmt}
             elif job_type == "streaming-emit":
                 from src.demo_streaming import run_streaming_emission
+
                 # Live progress + stop flag are read by the runner via
                 # the closures below. The stop flag is flipped by
                 # POST /demo-data/streaming/{job_id}/stop on the route
@@ -344,16 +538,20 @@ class JobManager:
                 self.jobs[job_id]["stop_requested"] = False
                 jobs = self.jobs
                 result = run_streaming_emission(
-                    client, config["sql_warehouse_id"], config,
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
                     progress_dict=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
+
                 # Use the job dict's "progress" key for live progress updates
                 self.jobs[job_id]["progress"] = {}
                 result = generate_demo_catalog(
-                    client, config["sql_warehouse_id"],
+                    client,
+                    config["sql_warehouse_id"],
                     config["catalog_name"],
                     industries=config.get("industries"),
                     owner=config.get("owner"),
@@ -372,7 +570,9 @@ class JobManager:
                     realistic_data=config.get("realistic_data", False),
                     locale=config.get("locale", "en_US"),
                     seed=config.get("seed"),
-                    validate_referential_integrity=config.get("validate_referential_integrity", True),
+                    validate_referential_integrity=config.get(
+                        "validate_referential_integrity", True
+                    ),
                     dq_profile=config.get("dq_profile", "realistic"),
                     anomaly_rate=config.get("anomaly_rate", 0.02),
                     inject_anomalies=config.get("inject_anomalies", True),
@@ -389,8 +589,10 @@ class JobManager:
                 all_details = []
 
                 self.jobs[job_id]["progress"] = {
-                    "total": total, "completed": 0,
-                    "current_table": "", "results": [],
+                    "total": total,
+                    "completed": 0,
+                    "current_table": "",
+                    "results": [],
                 }
 
                 for idx, tbl in enumerate(tables_list):
@@ -400,47 +602,75 @@ class JobManager:
 
                     self.jobs[job_id]["progress"]["current_table"] = fqn
                     self.jobs[job_id]["progress"]["completed"] = idx
-                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Validating {fqn}...")
+                    job_logs.append(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] [{idx + 1}/{total}] Validating {fqn}..."
+                    )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "progress",
-                        "completed": idx,
-                        "total": total,
-                        "current_table": fqn,
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "progress",
+                            "completed": idx,
+                            "total": total,
+                            "current_table": fqn,
+                        },
+                    )
 
                     try:
                         if use_spark:
                             from src.reconciliation_spark import validate_table_spark
+
                             detail = validate_table_spark(
-                                config["source_catalog"], config["destination_catalog"],
-                                schema_name, table_name, use_checksum,
+                                config["source_catalog"],
+                                config["destination_catalog"],
+                                schema_name,
+                                table_name,
+                                use_checksum,
                             )
                         else:
                             from src.validation import validate_table
+
                             detail = validate_table(
-                                client, wid,
-                                config["source_catalog"], config["destination_catalog"],
-                                schema_name, table_name, use_checksum,
+                                client,
+                                wid,
+                                config["source_catalog"],
+                                config["destination_catalog"],
+                                schema_name,
+                                table_name,
+                                use_checksum,
                             )
                         status = "OK" if detail.get("match") else "MISMATCH"
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {status} {fqn}: src={detail.get('source_count', '?')} dst={detail.get('dest_count', '?')}")
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}]   {status} {fqn}: src={detail.get('source_count', '?')} dst={detail.get('dest_count', '?')}"
+                        )
                         all_details.append(detail)
                     except Exception as e:
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
-                        all_details.append({
-                            "schema": schema_name, "table": table_name,
-                            "source_count": None, "dest_count": None,
-                            "match": False, "error": str(e),
-                        })
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}"
+                        )
+                        all_details.append(
+                            {
+                                "schema": schema_name,
+                                "table": table_name,
+                                "source_count": None,
+                                "dest_count": None,
+                                "match": False,
+                                "error": str(e),
+                            }
+                        )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "table_result",
-                        "index": idx + 1,
-                        "total": total,
-                        "table_fqn": fqn,
-                        "detail": all_details[-1],
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "table_result",
+                            "index": idx + 1,
+                            "total": total,
+                            "table_fqn": fqn,
+                            "detail": all_details[-1],
+                        },
+                    )
 
                 matched = sum(1 for d in all_details if d.get("match"))
                 errors = sum(1 for d in all_details if d.get("error"))
@@ -455,10 +685,18 @@ class JobManager:
                 # Store in Delta
                 try:
                     from src.reconciliation_store import store_reconciliation_result
+
                     started = self.jobs[job_id].get("started_at", "")
-                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    duration = (
+                        (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+                        if started
+                        else 0
+                    )
                     run_id = store_reconciliation_result(
-                        client, wid, config, result,
+                        client,
+                        wid,
+                        config,
+                        result,
                         run_type="row-level-batch",
                         source_catalog=config.get("source_catalog", ""),
                         destination_catalog=config.get("destination_catalog", ""),
@@ -474,8 +712,13 @@ class JobManager:
                 # Evaluate alert rules
                 try:
                     from src.reconciliation_alerts import evaluate_alerts
-                    evaluate_alerts(client, wid, config,
-                        run_id=result.get("run_id", ""), result=result,
+
+                    evaluate_alerts(
+                        client,
+                        wid,
+                        config,
+                        run_id=result.get("run_id", ""),
+                        result=result,
                         source_catalog=config.get("source_catalog", ""),
                         destination_catalog=config.get("destination_catalog", ""),
                     )
@@ -485,18 +728,25 @@ class JobManager:
                 # Auto-evaluate SLAs after reconciliation batch
                 try:
                     from src.sla_monitor import check_sla
+
                     sla_results = check_sla(client, wid, config)
                     sla_failed = sum(1 for s in sla_results if not s.get("passed"))
                     if sla_failed:
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: {sla_failed} SLA(s) failing")
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: {sla_failed} SLA(s) failing"
+                        )
                     else:
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: all SLAs passing")
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] SLA check: all SLAs passing"
+                        )
                 except Exception as sla_err:
                     logger.debug(f"Post-reconciliation SLA check failed: {sla_err}")
 
                 self.jobs[job_id]["progress"]["completed"] = total
                 self.jobs[job_id]["progress"]["current_table"] = ""
-                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch complete: {matched}/{total} matched, {errors} errors")
+                job_logs.append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Batch complete: {matched}/{total} matched, {errors} errors"
+                )
 
             elif job_type == "reconciliation-batch-compare":
                 tables_list = config.get("tables", [])
@@ -508,8 +758,10 @@ class JobManager:
                 all_details = []
 
                 self.jobs[job_id]["progress"] = {
-                    "total": total, "completed": 0,
-                    "current_table": "", "results": [],
+                    "total": total,
+                    "completed": 0,
+                    "current_table": "",
+                    "results": [],
                 }
 
                 for idx, tbl in enumerate(tables_list):
@@ -519,47 +771,71 @@ class JobManager:
 
                     self.jobs[job_id]["progress"]["current_table"] = fqn
                     self.jobs[job_id]["progress"]["completed"] = idx
-                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Comparing {fqn}...")
+                    job_logs.append(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] [{idx + 1}/{total}] Comparing {fqn}..."
+                    )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "progress",
-                        "completed": idx,
-                        "total": total,
-                        "current_table": fqn,
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "progress",
+                            "completed": idx,
+                            "total": total,
+                            "current_table": fqn,
+                        },
+                    )
 
                     try:
                         if use_spark:
                             from src.reconciliation_spark import compare_table_spark
+
                             detail = compare_table_spark(
-                                config["source_catalog"], config["destination_catalog"],
-                                schema_name, table_name, use_checksum,
+                                config["source_catalog"],
+                                config["destination_catalog"],
+                                schema_name,
+                                table_name,
+                                use_checksum,
                             )
                         else:
                             from src.compare import compare_table_deep
+
                             detail = compare_table_deep(
-                                client, wid,
-                                config["source_catalog"], config["destination_catalog"],
-                                schema_name, table_name, use_checksum,
+                                client,
+                                wid,
+                                config["source_catalog"],
+                                config["destination_catalog"],
+                                schema_name,
+                                table_name,
+                                use_checksum,
                             )
                         has_issues = bool(detail.get("issues"))
                         status = "ISSUES" if has_issues else "OK"
                         job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {status} {fqn}")
                         all_details.append(detail)
                     except Exception as e:
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
-                        all_details.append({
-                            "schema": schema_name, "table": table_name,
-                            "issues": [str(e)],
-                        })
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}"
+                        )
+                        all_details.append(
+                            {
+                                "schema": schema_name,
+                                "table": table_name,
+                                "issues": [str(e)],
+                            }
+                        )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "table_result",
-                        "index": idx + 1,
-                        "total": total,
-                        "table_fqn": fqn,
-                        "detail": all_details[-1],
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "table_result",
+                            "index": idx + 1,
+                            "total": total,
+                            "table_fqn": fqn,
+                            "detail": all_details[-1],
+                        },
+                    )
 
                 tables_ok = sum(1 for d in all_details if not d.get("issues"))
                 result = {
@@ -571,8 +847,13 @@ class JobManager:
 
                 try:
                     from src.reconciliation_store import store_reconciliation_result
+
                     started = self.jobs[job_id].get("started_at", "")
-                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    duration = (
+                        (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+                        if started
+                        else 0
+                    )
                     adapted = {
                         "total_tables": total,
                         "matched": tables_ok,
@@ -586,13 +867,18 @@ class JobManager:
                                 "dest_count": d.get("dest_rows"),
                                 "match": not d.get("issues"),
                                 "checksum_match": d.get("checksum_match"),
-                                "error": "; ".join(d.get("issues", [])) if d.get("issues") else None,
+                                "error": "; ".join(d.get("issues", []))
+                                if d.get("issues")
+                                else None,
                             }
                             for d in all_details
                         ],
                     }
                     run_id = store_reconciliation_result(
-                        client, wid, config, adapted,
+                        client,
+                        wid,
+                        config,
+                        adapted,
                         run_type="column-level-batch",
                         source_catalog=config.get("source_catalog", ""),
                         destination_catalog=config.get("destination_catalog", ""),
@@ -607,7 +893,9 @@ class JobManager:
 
                 self.jobs[job_id]["progress"]["completed"] = total
                 self.jobs[job_id]["progress"]["current_table"] = ""
-                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch compare complete: {tables_ok}/{total} OK")
+                job_logs.append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Batch compare complete: {tables_ok}/{total} OK"
+                )
 
             elif job_type == "reconciliation-batch-deep":
                 tables_list = config.get("tables", [])
@@ -623,8 +911,10 @@ class JobManager:
                 all_details = []
 
                 self.jobs[job_id]["progress"] = {
-                    "total": total, "completed": 0,
-                    "current_table": "", "results": [],
+                    "total": total,
+                    "completed": 0,
+                    "current_table": "",
+                    "results": [],
                 }
 
                 for idx, tbl in enumerate(tables_list):
@@ -634,21 +924,33 @@ class JobManager:
 
                     self.jobs[job_id]["progress"]["current_table"] = fqn
                     self.jobs[job_id]["progress"]["completed"] = idx
-                    job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [{idx+1}/{total}] Deep reconciling {fqn}...")
+                    job_logs.append(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] [{idx + 1}/{total}] Deep reconciling {fqn}..."
+                    )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "progress",
-                        "completed": idx,
-                        "total": total,
-                        "current_table": fqn,
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "progress",
+                            "completed": idx,
+                            "total": total,
+                            "current_table": fqn,
+                        },
+                    )
 
                     try:
                         from src.reconciliation_deep import deep_reconcile_table
+
                         detail = deep_reconcile_table(
-                            config["source_catalog"], config["destination_catalog"],
-                            schema_name, table_name, key_columns,
-                            include_columns, ignore_columns, sample_diffs,
+                            config["source_catalog"],
+                            config["destination_catalog"],
+                            schema_name,
+                            table_name,
+                            key_columns,
+                            include_columns,
+                            ignore_columns,
+                            sample_diffs,
                             use_checksum=use_checksum,
                             comparison_options=comparison_options,
                         )
@@ -656,25 +958,39 @@ class JobManager:
                         missing = detail.get("missing_in_dest", 0)
                         extra = detail.get("extra_in_dest", 0)
                         modified = detail.get("modified_rows", 0)
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   {fqn}: matched={matched} missing={missing} extra={extra} modified={modified}")
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}]   {fqn}: matched={matched} missing={missing} extra={extra} modified={modified}"
+                        )
                         all_details.append(detail)
                     except Exception as e:
-                        job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}")
-                        all_details.append({
-                            "schema": schema_name, "table": table_name,
-                            "source_count": 0, "dest_count": 0,
-                            "matched_rows": 0, "missing_in_dest": 0,
-                            "extra_in_dest": 0, "modified_rows": 0,
-                            "error": str(e),
-                        })
+                        job_logs.append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}]   ERROR {fqn}: {e}"
+                        )
+                        all_details.append(
+                            {
+                                "schema": schema_name,
+                                "table": table_name,
+                                "source_count": 0,
+                                "dest_count": 0,
+                                "matched_rows": 0,
+                                "missing_in_dest": 0,
+                                "extra_in_dest": 0,
+                                "modified_rows": 0,
+                                "error": str(e),
+                            }
+                        )
 
-                    self._broadcast_sync(loop, job_id, {
-                        "type": "table_result",
-                        "index": idx + 1,
-                        "total": total,
-                        "table_fqn": fqn,
-                        "detail": all_details[-1],
-                    })
+                    self._broadcast_sync(
+                        loop,
+                        job_id,
+                        {
+                            "type": "table_result",
+                            "index": idx + 1,
+                            "total": total,
+                            "table_fqn": fqn,
+                            "detail": all_details[-1],
+                        },
+                    )
 
                 total_matched = sum(d.get("matched_rows", 0) for d in all_details)
                 total_missing = sum(d.get("missing_in_dest", 0) for d in all_details)
@@ -697,8 +1013,13 @@ class JobManager:
 
                 try:
                     from src.reconciliation_store import store_reconciliation_result
+
                     started = self.jobs[job_id].get("started_at", "")
-                    duration = (datetime.now() - datetime.fromisoformat(started)).total_seconds() if started else 0
+                    duration = (
+                        (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+                        if started
+                        else 0
+                    )
                     adapted = {
                         "total_tables": total,
                         "matched": total_matched,
@@ -710,7 +1031,9 @@ class JobManager:
                                 "table": d.get("table", ""),
                                 "source_count": d.get("source_count"),
                                 "dest_count": d.get("dest_count"),
-                                "match": d.get("missing_in_dest", 0) == 0 and d.get("extra_in_dest", 0) == 0 and d.get("modified_rows", 0) == 0,
+                                "match": d.get("missing_in_dest", 0) == 0
+                                and d.get("extra_in_dest", 0) == 0
+                                and d.get("modified_rows", 0) == 0,
                                 "checksum_match": d.get("checksum_match"),
                                 "error": d.get("error"),
                             }
@@ -718,7 +1041,10 @@ class JobManager:
                         ],
                     }
                     run_id = store_reconciliation_result(
-                        client, wid, config, adapted,
+                        client,
+                        wid,
+                        config,
+                        adapted,
                         run_type="deep-batch",
                         source_catalog=config.get("source_catalog", ""),
                         destination_catalog=config.get("destination_catalog", ""),
@@ -733,7 +1059,9 @@ class JobManager:
 
                 self.jobs[job_id]["progress"]["completed"] = total
                 self.jobs[job_id]["progress"]["current_table"] = ""
-                job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Batch deep complete: {total_matched} matched across {total} tables")
+                job_logs.append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Batch deep complete: {total_matched} matched across {total} tables"
+                )
 
             else:
                 result = {"error": f"Unknown job type: {job_type}"}
@@ -751,7 +1079,9 @@ class JobManager:
             self.jobs[job_id]["status"] = "completed"
             self.jobs[job_id]["result"] = result
             self.jobs[job_id]["completed_at"] = datetime.now().isoformat()
-            job_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Job {job_id} completed successfully")
+            job_logs.append(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Job {job_id} completed successfully"
+            )
             self._broadcast_sync(loop, job_id, {"type": "completed", "result": result})
 
         except Exception as e:
@@ -772,6 +1102,7 @@ class JobManager:
             if job_type in ("clone", "sync", "incremental_sync"):
                 try:
                     from src.client import invalidate_catalog_cache
+
                     for cat_key in ("source_catalog", "destination_catalog"):
                         cat = config.get(cat_key, "")
                         if cat:
@@ -782,6 +1113,7 @@ class JobManager:
             # Persist run logs to Unity Catalog Delta table
             try:
                 from src.run_logs import save_run_log, ensure_run_logs_table
+
                 ensure_run_logs_table(client, config.get("sql_warehouse_id", ""), config)
                 save_run_log(client, config.get("sql_warehouse_id", ""), self.jobs[job_id], config)
             except Exception as log_err:
@@ -792,11 +1124,16 @@ class JobManager:
             if self.jobs[job_id].get("_audit_ready"):
                 try:
                     from src.audit_trail import log_operation_complete
+
                     job_data = self.jobs[job_id]
                     summary = job_data.get("result") or {}
                     log_operation_complete(
-                        client, config.get("sql_warehouse_id", ""), config,
-                        job_id, summary, audit_start_time,
+                        client,
+                        config.get("sql_warehouse_id", ""),
+                        config,
+                        job_id,
+                        summary,
+                        audit_start_time,
                         error_message=job_data.get("error"),
                     )
                 except Exception as audit_err:
@@ -805,17 +1142,17 @@ class JobManager:
             # Save operation metrics to clone_metrics table
             try:
                 from src.metrics import save_operation_metrics
-                save_operation_metrics(client, config.get("sql_warehouse_id", ""),
-                                       self.jobs[job_id], config)
+
+                save_operation_metrics(
+                    client, config.get("sql_warehouse_id", ""), self.jobs[job_id], config
+                )
             except Exception as metrics_err:
                 logger.debug(f"Could not persist metrics to Delta: {metrics_err}")
 
     def _broadcast_sync(self, loop, job_id: str, data: dict):
         """Thread-safe broadcast to WebSocket clients."""
         try:
-            asyncio.run_coroutine_threadsafe(
-                self.connection_manager.broadcast(job_id, data), loop
-            )
+            asyncio.run_coroutine_threadsafe(self.connection_manager.broadcast(job_id, data), loop)
         except Exception:
             pass
 

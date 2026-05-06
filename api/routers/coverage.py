@@ -12,6 +12,7 @@ async def get_coverage(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.coverage_map import get_coverage
+
     return get_coverage(catalog, client, wid, config)
 
 
@@ -20,6 +21,7 @@ async def get_coverage_summary(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.coverage_map import get_coverage_summary
+
     return get_coverage_summary(catalog, client, wid, config)
 
 
@@ -28,6 +30,7 @@ async def get_gaps(catalog: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.coverage_map import get_gaps
+
     return get_gaps(catalog, client, wid, config)
 
 
@@ -40,4 +43,5 @@ async def compute_coverage(
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.coverage_map import compute_coverage
+
     return compute_coverage(catalog, schema_filter, client, wid, config)

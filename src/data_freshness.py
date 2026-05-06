@@ -15,6 +15,7 @@ from src.client import sql_escape as _esc, query_sql as _query_sql, run_sql as _
 
 def _get_schema_prefix(config: dict) -> str:
     from src.table_registry import get_schema_fqn
+
     return get_schema_fqn(config, "data_quality")
 
 
@@ -39,17 +40,22 @@ def _ensure_freshness_table(client=None, warehouse_id: str = "", config: dict = 
 
     try:
         from src.catalog_utils import safe_ensure_schema_from_fqn
+
         safe_ensure_schema_from_fqn(schema, client, warehouse_id, config)
     except Exception:
         pass
 
     try:
-        _run_sql(f"""
+        _run_sql(
+            f"""
             CREATE TABLE IF NOT EXISTS {schema}.freshness_history ({_FRESHNESS_DDL})
             USING DELTA
             COMMENT 'Clone-Xs Data Quality: table freshness history'
             TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-        """, client, warehouse_id)
+        """,
+            client,
+            warehouse_id,
+        )
     except Exception as e:
         logger.warning(f"Could not create freshness_history table: {e}")
 
@@ -57,6 +63,7 @@ def _ensure_freshness_table(client=None, warehouse_id: str = "", config: dict = 
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def check_freshness(
     client,
@@ -80,9 +87,17 @@ def check_freshness(
     # Skip Databricks internal catalogs that don't have information_schema
     _skip_catalogs = {"system", "hive_metastore", "__databricks_internal", "samples"}
     if catalog.lower() in _skip_catalogs or catalog.startswith("__"):
-        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
-                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
-                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
+        return {
+            "catalog": catalog,
+            "schema_filter": schema,
+            "max_stale_hours": max_stale_hours,
+            "total_tables": 0,
+            "fresh": 0,
+            "stale": 0,
+            "unknown": 0,
+            "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            "tables": [],
+        }
 
     # Verify catalog has schemas before querying information_schema
     # This avoids noisy Spark JVM ERROR stacktraces for invalid catalogs
@@ -90,10 +105,18 @@ def check_freshness(
         _query_sql(f"SHOW SCHEMAS IN `{_esc(catalog)}`", limit=1, client=client, warehouse_id=wid)
     except Exception as e:
         logger.warning(f"Catalog '{catalog}' not accessible, skipping freshness check: {e}")
-        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
-                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
-                "error": f"Catalog not accessible: {e}",
-                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
+        return {
+            "catalog": catalog,
+            "schema_filter": schema,
+            "max_stale_hours": max_stale_hours,
+            "total_tables": 0,
+            "fresh": 0,
+            "stale": 0,
+            "unknown": 0,
+            "error": f"Catalog not accessible: {e}",
+            "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            "tables": [],
+        }
 
     # Query information_schema for table modification times
     schema_filter = ""
@@ -113,10 +136,18 @@ def check_freshness(
         tables = _query_sql(tables_query, limit=5000, client=client, warehouse_id=wid)
     except Exception as e:
         logger.warning(f"Could not query information_schema for {catalog}: {e}")
-        return {"catalog": catalog, "schema_filter": schema, "max_stale_hours": max_stale_hours,
-                "total_tables": 0, "fresh": 0, "stale": 0, "unknown": 0,
-                "error": f"Failed to query information_schema: {e}",
-                "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "tables": []}
+        return {
+            "catalog": catalog,
+            "schema_filter": schema,
+            "max_stale_hours": max_stale_hours,
+            "total_tables": 0,
+            "fresh": 0,
+            "stale": 0,
+            "unknown": 0,
+            "error": f"Failed to query information_schema: {e}",
+            "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            "tables": [],
+        }
 
     now = datetime.now(timezone.utc)
     now_str = now.strftime("%Y-%m-%dT%H:%M:%S")
@@ -133,14 +164,22 @@ def check_freshness(
                     # Handle various timestamp formats
                     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
                         try:
-                            last_dt = datetime.strptime(last_altered, fmt).replace(tzinfo=timezone.utc)
+                            last_dt = datetime.strptime(last_altered, fmt).replace(
+                                tzinfo=timezone.utc
+                            )
                             break
                         except ValueError:
                             continue
                     else:
-                        last_dt = datetime.strptime(last_altered[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                        last_dt = datetime.strptime(last_altered[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                            tzinfo=timezone.utc
+                        )
                 else:
-                    last_dt = last_altered if last_altered.tzinfo else last_altered.replace(tzinfo=timezone.utc)
+                    last_dt = (
+                        last_altered
+                        if last_altered.tzinfo
+                        else last_altered.replace(tzinfo=timezone.utc)
+                    )
 
                 hours_since = (now - last_dt).total_seconds() / 3600.0
                 last_modified_str = last_dt.strftime("%Y-%m-%dT%H:%M:%S")
@@ -160,22 +199,25 @@ def check_freshness(
         else:
             status = "fresh"
 
-        results.append({
-            "table_fqn": table_fqn,
-            "last_modified": last_modified_str,
-            "hours_since_update": round(hours_since, 2) if hours_since >= 0 else None,
-            "is_stale": is_stale,
-            "status": status,
-        })
+        results.append(
+            {
+                "table_fqn": table_fqn,
+                "last_modified": last_modified_str,
+                "hours_since_update": round(hours_since, 2) if hours_since >= 0 else None,
+                "is_stale": is_stale,
+                "status": status,
+            }
+        )
 
     # Store freshness snapshot in Delta for history
     try:
         _ensure_freshness_table(client, wid, config)
         schema_prefix = _get_schema_prefix(config)
         from src.table_registry import get_batch_insert_size
+
         batch_size = get_batch_insert_size(config)
         for i in range(0, len(results), batch_size):
-            batch = results[i:i + batch_size]
+            batch = results[i : i + batch_size]
             values = []
             for r in batch:
                 last_mod = f"'{_esc(r['last_modified'])}'" if r["last_modified"] else "NULL"
@@ -185,9 +227,13 @@ def check_freshness(
                     f"{str(r['is_stale']).lower()}, '{r['status']}', '{now_str}')"
                 )
             if values:
-                _run_sql(f"""
-                    INSERT INTO {schema_prefix}.freshness_history VALUES {', '.join(values)}
-                """, client, wid)
+                _run_sql(
+                    f"""
+                    INSERT INTO {schema_prefix}.freshness_history VALUES {", ".join(values)}
+                """,
+                    client,
+                    wid,
+                )
     except Exception as e:
         logger.warning(f"Could not store freshness snapshot: {e}")
 

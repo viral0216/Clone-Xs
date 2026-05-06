@@ -9,7 +9,6 @@ from src.dsar import DSARManager
 
 
 class TestDSARStore:
-
     def setup_method(self):
         self.store = DSARStore(MagicMock(), "wh-1", "audit", "dsar")
 
@@ -27,9 +26,13 @@ class TestDSARStore:
     @patch("src.dsar_store.execute_sql")
     def test_save_request(self, mock_sql):
         self.store.save_request(
-            request_id="r1", subject_type="email", subject_value_hash="h1",
-            requester_email="a@b.com", requester_name="A",
-            legal_basis="GDPR", deadline="2025-04-01",
+            request_id="r1",
+            subject_type="email",
+            subject_value_hash="h1",
+            requester_email="a@b.com",
+            requester_name="A",
+            legal_basis="GDPR",
+            deadline="2025-04-01",
         )
         sql = mock_sql.call_args[0][2]
         assert "INSERT INTO" in sql
@@ -49,7 +52,6 @@ class TestDSARStore:
 
 
 class TestDSARStatusTransitions:
-
     def test_all_statuses_have_entries(self):
         for s in DSAR_STATUSES:
             if s not in ("completed", "cancelled"):
@@ -62,11 +64,11 @@ class TestDSARStatusTransitions:
 
 
 class TestDSARManager:
-
     def setup_method(self):
         self.client = MagicMock()
         self.config = {
-            "source_catalog": "src", "destination_catalog": "dst",
+            "source_catalog": "src",
+            "destination_catalog": "dst",
             "audit_trail": {"catalog": "audit"},
             "dsar": {"deadline_days": 30, "export_output_dir": "/tmp/dsar_test"},
         }
@@ -75,8 +77,10 @@ class TestDSARManager:
     @patch("src.dsar_store.execute_sql")
     def test_submit_request(self, mock_sql):
         result = self.mgr.submit_request(
-            subject_type="email", subject_value="user@example.com",
-            requester_email="dpo@co.com", requester_name="DPO",
+            subject_type="email",
+            subject_value="user@example.com",
+            requester_email="dpo@co.com",
+            requester_name="DPO",
         )
         assert "request_id" in result
         assert result["status"] == "received"
@@ -84,8 +88,10 @@ class TestDSARManager:
     @patch("src.dsar_store.execute_sql")
     def test_submit_hashes_value(self, mock_sql):
         self.mgr.submit_request(
-            subject_type="email", subject_value="user@example.com",
-            requester_email="dpo@co.com", requester_name="DPO",
+            subject_type="email",
+            subject_value="user@example.com",
+            requester_email="dpo@co.com",
+            requester_name="DPO",
         )
         sql = mock_sql.call_args[0][2]
         expected_hash = hashlib.sha256("user@example.com".encode()).hexdigest()
@@ -113,14 +119,22 @@ class TestDSARManager:
     def test_export_data_creates_file(self):
         import os
         import tempfile
+
         export_dir = tempfile.mkdtemp()
         self.mgr.export_dir = export_dir
 
         def smart_sql(client, wid, sql, **kw):
             if "SELECT *" in sql and "dsar_requests" in sql:
-                return [{"request_id": "r1", "status": "approved", "export_format": "json",
-                         "discovery_json": '[{"catalog":"c","schema":"s","table":"t","column":"email","row_count":1}]',
-                         "subject_type": "email", "subject_column": None}]
+                return [
+                    {
+                        "request_id": "r1",
+                        "status": "approved",
+                        "export_format": "json",
+                        "discovery_json": '[{"catalog":"c","schema":"s","table":"t","column":"email","row_count":1}]',
+                        "subject_type": "email",
+                        "subject_column": None,
+                    }
+                ]
             if "UPDATE" in sql:
                 return None
             if "INSERT" in sql:
@@ -129,8 +143,10 @@ class TestDSARManager:
                 return [{"id": 1, "email": "user@example.com", "name": "Test"}]
             return []
 
-        with patch("src.dsar_store.execute_sql", side_effect=smart_sql), \
-             patch("src.dsar.execute_sql", side_effect=smart_sql):
+        with (
+            patch("src.dsar_store.execute_sql", side_effect=smart_sql),
+            patch("src.dsar.execute_sql", side_effect=smart_sql),
+        ):
             result = self.mgr.export_data("r1", "user@example.com")
 
         assert result["total_rows"] == 1

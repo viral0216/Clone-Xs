@@ -36,7 +36,6 @@ def _config_patch():
 
 
 class TestBuildNotebook:
-
     def test_unknown_profile_raises(self):
         with pytest.raises(ValueError, match="Unknown profile"):
             _build_streaming_notebook("nope")
@@ -76,9 +75,13 @@ class TestBuildNotebook:
         every parameter name the runner accepts must have a widget."""
         nb = _build_streaming_notebook("generic_sensor")
         for widget in (
-            "catalog", "schema", "volume",
-            "events_per_batch", "interval_seconds",
-            "total_duration_seconds", "num_devices",
+            "catalog",
+            "schema",
+            "volume",
+            "events_per_batch",
+            "interval_seconds",
+            "total_duration_seconds",
+            "num_devices",
         ):
             assert f'dbutils.widgets.text("{widget}"' in nb
 
@@ -87,7 +90,6 @@ class TestBuildNotebook:
 
 
 class TestCreateStreamingJob:
-
     def test_creates_job_with_correct_tags_and_schedule(self):
         """Job is tagged `created_by=clone-xs, kind=streaming-emit,
         profile=<profile>` — required for the existing /clone-jobs
@@ -135,9 +137,14 @@ class TestCreateStreamingJob:
         client.jobs.create.return_value = MagicMock(job_id=1)
 
         create_streaming_job(
-            client, name="x", notebook_path="/p",
-            schedule_quartz_cron="0 0 * * * ?", timezone_id="UTC",
-            parameters={}, profile="generic_sensor", use_serverless=True,
+            client,
+            name="x",
+            notebook_path="/p",
+            schedule_quartz_cron="0 0 * * * ?",
+            timezone_id="UTC",
+            parameters={},
+            profile="generic_sensor",
+            use_serverless=True,
         )
         kwargs = client.jobs.create.call_args.kwargs
         assert "job_clusters" not in kwargs
@@ -147,7 +154,6 @@ class TestCreateStreamingJob:
 
 
 class TestScheduleStreamingEmission:
-
     @patch("src.demo_streaming_schedule.create_streaming_job")
     @patch("src.demo_streaming_schedule.upload_streaming_notebook")
     def test_orchestrates_build_upload_create(self, mock_upload, mock_create):
@@ -159,18 +165,21 @@ class TestScheduleStreamingEmission:
         client = MagicMock()
         client.current_user.me.return_value = MagicMock(user_name="x")
 
-        result = schedule_streaming_emission(client, {
-            "catalog": "main",
-            "schema": "iot",
-            "volume": "events_volume",
-            "profile": "generic_sensor",
-            "events_per_batch": 50,
-            "interval_seconds": 5.0,
-            "total_duration_seconds": 60,
-            "schedule_quartz_cron": "0 */5 * * * ?",
-            "name": "my-stream",
-            "use_serverless": True,
-        })
+        result = schedule_streaming_emission(
+            client,
+            {
+                "catalog": "main",
+                "schema": "iot",
+                "volume": "events_volume",
+                "profile": "generic_sensor",
+                "events_per_batch": 50,
+                "interval_seconds": 5.0,
+                "total_duration_seconds": 60,
+                "schedule_quartz_cron": "0 */5 * * * ?",
+                "name": "my-stream",
+                "use_serverless": True,
+            },
+        )
         assert result["job_id"] == 99
         # Upload was called with notebook content (some non-empty string).
         upload_args = mock_upload.call_args.args
@@ -186,23 +195,29 @@ class TestScheduleStreamingEmission:
         before we incur the upload + Job-create round-trip costs."""
         client = MagicMock()
         with pytest.raises(ValueError, match="Unknown profile"):
-            schedule_streaming_emission(client, {
-                "profile": "nope",
-                "catalog": "x", "schema": "y",
-                "schedule_quartz_cron": "0 0 * * * ?",
-            })
+            schedule_streaming_emission(
+                client,
+                {
+                    "profile": "nope",
+                    "catalog": "x",
+                    "schema": "y",
+                    "schedule_quartz_cron": "0 0 * * * ?",
+                },
+            )
 
 
 # ─── StreamingScheduleRequest validators ──────────────────────────
 
 
 class TestScheduleRequestValidators:
-
     def test_empty_cron_rejected(self):
         from api.models.demo import StreamingScheduleRequest
+
         with pytest.raises(ValueError):
             StreamingScheduleRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 schedule_quartz_cron="",
             )
 
@@ -210,9 +225,12 @@ class TestScheduleRequestValidators:
         """Quartz cron has 6 or 7 fields. A 5-field standard cron is
         a common mistake — reject early with a clear message."""
         from api.models.demo import StreamingScheduleRequest
+
         with pytest.raises(ValueError, match="6 or 7 fields"):
             StreamingScheduleRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 schedule_quartz_cron="0 */5 * * *",  # 5 fields
             )
 
@@ -221,9 +239,12 @@ class TestScheduleRequestValidators:
         `StreamingEmissionRequest` — the events_per_batch range
         validator should still apply."""
         from api.models.demo import StreamingScheduleRequest
+
         with pytest.raises(ValueError):
             StreamingScheduleRequest(
-                catalog="c", schema="s", profile="generic_sensor",
+                catalog="c",
+                schema="s",
+                profile="generic_sensor",
                 schedule_quartz_cron="0 */5 * * * ?",
                 events_per_batch=0,  # below ge=1
             )
@@ -233,11 +254,13 @@ class TestScheduleRequestValidators:
 
 
 class TestEndpointDispatch:
-
     def test_post_schedules_via_helper(self, client):
-        with _config_patch(), patch(
-            "src.demo_streaming_schedule.schedule_streaming_emission",
-        ) as mock_schedule:
+        with (
+            _config_patch(),
+            patch(
+                "src.demo_streaming_schedule.schedule_streaming_emission",
+            ) as mock_schedule,
+        ):
             mock_schedule.return_value = {
                 "job_id": 7,
                 "run_url": "https://x/#job/7",
@@ -246,12 +269,15 @@ class TestEndpointDispatch:
                 "timezone_id": "UTC",
                 "tags": {"created_by": "clone-xs"},
             }
-            resp = client.post("/api/generate/demo-data/streaming/schedule", json={
-                "catalog": "main",
-                "schema": "iot",
-                "profile": "generic_sensor",
-                "schedule_quartz_cron": "0 */5 * * * ?",
-            })
+            resp = client.post(
+                "/api/generate/demo-data/streaming/schedule",
+                json={
+                    "catalog": "main",
+                    "schema": "iot",
+                    "profile": "generic_sensor",
+                    "schedule_quartz_cron": "0 */5 * * * ?",
+                },
+            )
             assert resp.status_code == 200, resp.text
             body = resp.json()
             assert body["job_id"] == 7
@@ -262,25 +288,34 @@ class TestEndpointDispatch:
             assert "schema_name" not in payload
 
     def test_failure_returns_500_with_detail(self, client):
-        with _config_patch(), patch(
-            "src.demo_streaming_schedule.schedule_streaming_emission",
-        ) as mock_schedule:
+        with (
+            _config_patch(),
+            patch(
+                "src.demo_streaming_schedule.schedule_streaming_emission",
+            ) as mock_schedule,
+        ):
             mock_schedule.side_effect = RuntimeError("Serverless required")
-            resp = client.post("/api/generate/demo-data/streaming/schedule", json={
-                "catalog": "main",
-                "schema": "iot",
-                "profile": "generic_sensor",
-                "schedule_quartz_cron": "0 */5 * * * ?",
-            })
+            resp = client.post(
+                "/api/generate/demo-data/streaming/schedule",
+                json={
+                    "catalog": "main",
+                    "schema": "iot",
+                    "profile": "generic_sensor",
+                    "schedule_quartz_cron": "0 */5 * * * ?",
+                },
+            )
             assert resp.status_code == 500
             assert "Serverless required" in resp.json()["detail"]
 
     def test_validator_rejects_empty_cron_at_route(self, client):
         with _config_patch():
-            resp = client.post("/api/generate/demo-data/streaming/schedule", json={
-                "catalog": "main",
-                "schema": "iot",
-                "profile": "generic_sensor",
-                "schedule_quartz_cron": "",
-            })
+            resp = client.post(
+                "/api/generate/demo-data/streaming/schedule",
+                json={
+                    "catalog": "main",
+                    "schema": "iot",
+                    "profile": "generic_sensor",
+                    "schedule_quartz_cron": "",
+                },
+            )
             assert resp.status_code == 422

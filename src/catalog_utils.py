@@ -37,7 +37,9 @@ def ensure_catalog(client, warehouse_id: str, catalog: str, storage_location: st
     # Catalog doesn't exist — try to create it
     try:
         location_clause = f" MANAGED LOCATION '{storage_location}'" if storage_location else ""
-        execute_sql(client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location_clause}")
+        execute_sql(
+            client, warehouse_id, f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location_clause}"
+        )
         _verified_catalogs.add(catalog)
     except Exception as e:
         # Check if it's actually usable despite the error
@@ -76,15 +78,20 @@ def ensure_schema(client, warehouse_id: str, catalog: str, schema: str, storage_
         if storage_location:
             schema_location = f"{storage_location.rstrip('/')}/{schema}"
             location_clause = f" MANAGED LOCATION '{schema_location}'"
-        execute_sql(client, warehouse_id, f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`{location_clause}")
+        execute_sql(
+            client,
+            warehouse_id,
+            f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`{location_clause}",
+        )
         _verified_schemas.add(fqn)
     except Exception as e:
         logger.warning(f"Cannot create schema '{fqn}': {e}")
         raise
 
 
-def ensure_catalog_and_schema(client, warehouse_id: str, catalog: str, schema: str,
-                               storage_location: str = ""):
+def ensure_catalog_and_schema(
+    client, warehouse_id: str, catalog: str, schema: str, storage_location: str = ""
+):
     """Ensure both catalog and schema exist."""
     ensure_catalog(client, warehouse_id, catalog, storage_location)
     ensure_schema(client, warehouse_id, catalog, schema, storage_location)

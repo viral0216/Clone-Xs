@@ -3,8 +3,11 @@
 from fastapi import APIRouter, Depends
 from api.dependencies import get_db_client
 from api.models.job_clone import (
-    JobCloneRequest, CrossWorkspaceJobCloneRequest,
-    JobDiffRequest, JobBackupRequest, JobRestoreRequest,
+    JobCloneRequest,
+    CrossWorkspaceJobCloneRequest,
+    JobDiffRequest,
+    JobBackupRequest,
+    JobRestoreRequest,
 )
 
 router = APIRouter()
@@ -12,6 +15,7 @@ router = APIRouter()
 
 def _manager(client):
     from src.job_cloning import JobCloneManager
+
     return JobCloneManager(client)
 
 
@@ -31,8 +35,12 @@ async def clone_job(req: JobCloneRequest, client=Depends(get_db_client)):
 
 
 @router.post("/clone-cross-workspace")
-async def clone_job_cross_workspace(req: CrossWorkspaceJobCloneRequest, client=Depends(get_db_client)):
-    return _manager(client).clone_job_cross_workspace(req.job_id, req.dest_host, req.dest_token, req.new_name)
+async def clone_job_cross_workspace(
+    req: CrossWorkspaceJobCloneRequest, client=Depends(get_db_client)
+):
+    return _manager(client).clone_job_cross_workspace(
+        req.job_id, req.dest_host, req.dest_token, req.new_name
+    )
 
 
 @router.post("/diff")

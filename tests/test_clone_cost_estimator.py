@@ -21,11 +21,11 @@ class TestFormatBytes:
         assert result == "1.0 MB"
 
     def test_gigabytes(self):
-        result = _format_bytes(1024 ** 3)
+        result = _format_bytes(1024**3)
         assert result == "1.0 GB"
 
     def test_terabytes(self):
-        result = _format_bytes(1024 ** 4)
+        result = _format_bytes(1024**4)
         assert result == "1.0 TB"
 
 
@@ -55,18 +55,20 @@ class TestEstimateCloneCost:
                 "table_schema": "sales",
                 "table_name": "orders",
                 "table_type": "MANAGED",
-                "size_bytes": str(10 * 1024 ** 3),  # 10 GB
+                "size_bytes": str(10 * 1024**3),  # 10 GB
             },
             {
                 "table_schema": "sales",
                 "table_name": "customers",
                 "table_type": "MANAGED",
-                "size_bytes": str(5 * 1024 ** 3),  # 5 GB
+                "size_bytes": str(5 * 1024**3),  # 5 GB
             },
         ]
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             clone_type="DEEP",
         )
 
@@ -82,12 +84,14 @@ class TestEstimateCloneCost:
                 "table_schema": "sales",
                 "table_name": "orders",
                 "table_type": "MANAGED",
-                "size_bytes": str(10 * 1024 ** 3),
+                "size_bytes": str(10 * 1024**3),
             },
         ]
 
         result = estimate_clone_cost(
-            MagicMock(), "wh-123", "my_catalog",
+            MagicMock(),
+            "wh-123",
+            "my_catalog",
             clone_type="SHALLOW",
         )
 

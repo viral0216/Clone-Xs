@@ -11,21 +11,27 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 def _rules_table(config: dict | None = None) -> str:
     from src.table_registry import get_table_fqn
+
     return get_table_fqn(config or {}, "reconciliation", "quality_rules")
 
 
 def _violations_table(config: dict | None = None) -> str:
     from src.table_registry import get_table_fqn
+
     return get_table_fqn(config or {}, "reconciliation", "quality_violations")
 
 
 def _get_spark():
     from src.spark_session import get_spark
+
     spark = get_spark()
     if spark is None:
-        raise RuntimeError("Spark session not available. Configure a cluster or enable serverless first.")
+        raise RuntimeError(
+            "Spark session not available. Configure a cluster or enable serverless first."
+        )
     return spark
 
 
@@ -33,9 +39,11 @@ def _get_spark():
 # Rule persistence (Delta table)
 # ---------------------------------------------------------------------------
 
+
 def _ensure_rules_table(spark, config: dict | None = None) -> None:
     """Create the quality_rules Delta table if it does not exist."""
     from src.table_registry import get_schema_fqn
+
     schema_fqn = get_schema_fqn(config or {}, "reconciliation")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_fqn}")
     spark.sql(f"""
@@ -59,6 +67,7 @@ def _ensure_rules_table(spark, config: dict | None = None) -> None:
 def _ensure_violations_table(spark, config: dict | None = None) -> None:
     """Create the quality_violations Delta table if it does not exist."""
     from src.table_registry import get_schema_fqn
+
     schema_fqn = get_schema_fqn(config or {}, "reconciliation")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_fqn}")
     spark.sql(f"""
@@ -88,7 +97,10 @@ def ensure_quality_tables_sql(client, warehouse_id: str, config: dict | None = N
     schema_fqn = get_schema_fqn(config or {}, "reconciliation")
     safe_ensure_schema_from_fqn(schema_fqn, client, warehouse_id, config)
 
-    execute_sql(client, warehouse_id, f"""
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {_rules_table(config)} (
             rule_id STRING,
             name STRING,
@@ -103,8 +115,12 @@ def ensure_quality_tables_sql(client, warehouse_id: str, config: dict | None = N
             created_at TIMESTAMP
         )
         USING DELTA
-    """)
-    execute_sql(client, warehouse_id, f"""
+    """,
+    )
+    execute_sql(
+        client,
+        warehouse_id,
+        f"""
         CREATE TABLE IF NOT EXISTS {_violations_table(config)} (
             violation_id STRING,
             rule_id STRING,
@@ -119,10 +135,13 @@ def ensure_quality_tables_sql(client, warehouse_id: str, config: dict | None = N
             executed_at TIMESTAMP
         )
         USING DELTA
-    """)
+    """,
+    )
 
 
-def list_quality_rules(catalog: str = "", schema_name: str = "", table_name: str = "", config: dict | None = None) -> list[dict]:
+def list_quality_rules(
+    catalog: str = "", schema_name: str = "", table_name: str = "", config: dict | None = None
+) -> list[dict]:
     """List quality rules, optionally filtered by catalog/schema/table."""
     spark = _get_spark()
     _ensure_rules_table(spark, config)
@@ -195,6 +214,7 @@ def create_quality_rule(
     }
 
     from pyspark.sql import Row
+
     row = Row(**rule)
     spark.createDataFrame([row]).write.mode("append").saveAsTable(_rules_table(config))
 
@@ -224,9 +244,11 @@ def toggle_quality_rule(rule_id: str, enabled: bool, config: dict | None = None)
 # Rule evaluation engine
 # ---------------------------------------------------------------------------
 
+
 def _eval_not_null(spark, fqn: str, column_name: str) -> dict:
     """Check that a column has no NULL values."""
     from pyspark.sql.functions import col
+
     df = spark.table(fqn)
     null_count = df.filter(col(column_name).isNull()).count()
     return {
@@ -244,6 +266,7 @@ def _eval_unique(spark, fqn: str, column_name: str) -> dict:
     total_extra = 0
     if dup_count > 0:
         from pyspark.sql.functions import sum as spark_sum
+
         total_extra = dup_df.agg(spark_sum("count")).collect()[0][0] - dup_count
     return {
         "violation_count": dup_count,
@@ -261,6 +284,7 @@ def _eval_referential(spark, fqn: str, column_name: str, parameters: dict) -> di
     ref_fqn = f"`{ref_catalog}`.`{ref_schema}`.`{ref_table}`"
 
     from pyspark.sql.functions import col
+
     source_df = spark.table(fqn).select(col(column_name)).distinct()
     ref_df = spark.table(ref_fqn).select(col(ref_column).alias(column_name)).distinct()
 
@@ -277,6 +301,7 @@ def _eval_referential(spark, fqn: str, column_name: str, parameters: dict) -> di
 def _eval_range(spark, fqn: str, column_name: str, parameters: dict) -> dict:
     """Check that numeric values fall within a min/max range."""
     from pyspark.sql.functions import col
+
     min_val = parameters.get("min")
     max_val = parameters.get("max")
 
@@ -351,7 +376,10 @@ def evaluate_quality_rules(
 
     if rules is None:
         rules = list_quality_rules(
-            catalog=source_catalog, schema_name=schema, table_name=table_name, config=config,
+            catalog=source_catalog,
+            schema_name=schema,
+            table_name=table_name,
+            config=config,
         )
         rules = [r for r in rules if r.get("enabled", True)]
 
@@ -367,15 +395,17 @@ def evaluate_quality_rules(
 
         evaluator = _EVALUATORS.get(rule_type)
         if evaluator is None:
-            results.append({
-                "rule_id": rule.get("rule_id", ""),
-                "rule_name": rule.get("name", ""),
-                "rule_type": rule_type,
-                "passed": False,
-                "violation_count": 0,
-                "details": f"Unknown rule type: {rule_type}",
-                "error": True,
-            })
+            results.append(
+                {
+                    "rule_id": rule.get("rule_id", ""),
+                    "rule_name": rule.get("name", ""),
+                    "rule_type": rule_type,
+                    "passed": False,
+                    "violation_count": 0,
+                    "details": f"Unknown rule type: {rule_type}",
+                    "error": True,
+                }
+            )
             continue
 
         try:
@@ -412,7 +442,10 @@ def evaluate_quality_rules(
                 "executed_at": now,
             }
             from pyspark.sql import Row
-            spark.createDataFrame([Row(**violation_row)]).write.mode("append").saveAsTable(_violations_table(config))
+
+            spark.createDataFrame([Row(**violation_row)]).write.mode("append").saveAsTable(
+                _violations_table(config)
+            )
         except Exception as e:
             logger.warning(f"Could not persist violation result: {e}")
 

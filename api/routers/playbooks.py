@@ -1,7 +1,7 @@
 """Automated Remediation Playbooks API endpoints."""
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from api.dependencies import get_db_client, get_app_config
 
@@ -34,6 +34,7 @@ async def list_playbooks(client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import list_playbooks
+
     return list_playbooks(client, wid, config)
 
 
@@ -42,16 +43,25 @@ async def create_playbook(req: CreatePlaybookRequest, client=Depends(get_db_clie
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import create_playbook
+
     return create_playbook(
-        req.name, req.trigger_type, req.trigger_config, req.conditions,
-        req.actions, req.description, req.max_executions_per_hour,
-        client=client, warehouse_id=wid, config=config,
+        req.name,
+        req.trigger_type,
+        req.trigger_config,
+        req.conditions,
+        req.actions,
+        req.description,
+        req.max_executions_per_hour,
+        client=client,
+        warehouse_id=wid,
+        config=config,
     )
 
 
 @router.get("/templates", summary="Get playbook templates")
 async def get_templates():
     from src.playbooks import get_templates
+
     return get_templates()
 
 
@@ -60,14 +70,18 @@ async def get_playbook(playbook_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import get_playbook
+
     return get_playbook(playbook_id, client, wid, config)
 
 
 @router.put("/{playbook_id}", summary="Update a playbook")
-async def update_playbook(playbook_id: str, req: UpdatePlaybookRequest, client=Depends(get_db_client)):
+async def update_playbook(
+    playbook_id: str, req: UpdatePlaybookRequest, client=Depends(get_db_client)
+):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import update_playbook
+
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     return update_playbook(playbook_id, updates, client, wid, config)
 
@@ -77,6 +91,7 @@ async def delete_playbook(playbook_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import delete_playbook
+
     delete_playbook(playbook_id, client, wid, config)
     return {"status": "deleted"}
 
@@ -86,6 +101,7 @@ async def execute_playbook(playbook_id: str, client=Depends(get_db_client)):
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import execute_playbook
+
     return execute_playbook(playbook_id, client=client, warehouse_id=wid, config=config)
 
 
@@ -94,4 +110,5 @@ async def get_execution_history(playbook_id: str, client=Depends(get_db_client))
     config = await get_app_config()
     wid = config.get("sql_warehouse_id", "")
     from src.playbooks import get_execution_history
+
     return get_execution_history(playbook_id, client, wid, config)

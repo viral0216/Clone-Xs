@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,20 @@ import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
   ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
+  Copy,
 } from "lucide-react";
+
+// Small helper used by the streaming card's copy buttons. Falls back
+// gracefully on browsers without `navigator.clipboard` (older Safari,
+// non-secure contexts) so the click still feels responsive.
+async function copyToClipboard(text: string, label = "Copied") {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(label);
+  } catch {
+    toast.error("Could not copy to clipboard");
+  }
+}
 
 const INDUSTRIES = ["healthcare", "financial", "retail", "telecom", "manufacturing", "energy", "education", "real_estate", "logistics", "insurance"] as const;
 
@@ -31,6 +44,79 @@ const SCALE_OPTIONS = [
   { value: "0.1", label: "0.1 — Small (~100M rows)" },
   { value: "0.5", label: "0.5 — Medium (~500M rows)" },
   { value: "1.0", label: "1.0 — Full (~1B rows)" },
+];
+
+// Compact number formatter for chart axes / tooltips. Turns 3,000,000
+// into "3M" — the throughput chart Y-axis is unreadable without it
+// once batch sizes pass ~10K.
+const fmtN = (n: number): string => {
+  if (n == null || Number.isNaN(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(abs >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B";
+  if (abs >= 1e6) return (n / 1e6).toFixed(abs >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (abs >= 1e3) return (n / 1e3).toFixed(abs >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+  return String(Math.round(n));
+};
+
+// Streaming-emit performance presets. Each preset bundles a destination
+// + cadence combo that targets a different throughput tier — clicking
+// one sets all four state vars (with clamping to streamLimits if the
+// admin has narrowed bounds in Settings). "Custom" is auto-selected
+// whenever the live values don't match any preset; clicking it is a
+// no-op (it's only there to indicate the current state).
+//
+// Throughput numbers in the descriptions are typical for a small/medium
+// DBSQL Serverless warehouse — actual numbers vary by warehouse size,
+// network, and event-shape complexity.
+type StreamPresetId = "demo" | "direct_small" | "bulk_files" | "zerobus" | "custom";
+type StreamDestinationVal = "volume" | "volume_bronze" | "direct_table" | "zerobus";
+const STREAMING_PRESETS: {
+  id: StreamPresetId;
+  label: string;
+  desc: string;
+  destination: StreamDestinationVal;
+  events_per_batch: number;
+  interval_seconds: number;
+  total_duration_seconds: number;
+  requiresZerobus?: boolean;
+}[] = [
+  {
+    id: "demo",
+    label: "Demo (default)",
+    desc: "~5K rows/s — fastest to start, good for screen-shares",
+    destination: "volume_bronze",
+    events_per_batch: 100,
+    interval_seconds: 5,
+    total_duration_seconds: 60,
+  },
+  {
+    id: "direct_small",
+    label: "Direct (small batches)",
+    desc: "~30–50K rows/s — INSERT VALUES tuned for steady cadence",
+    destination: "direct_table",
+    events_per_batch: 50000,
+    interval_seconds: 1,
+    total_duration_seconds: 300,
+  },
+  {
+    id: "bulk_files",
+    label: "Bulk files",
+    desc: "~100–500K rows/s — large JSON files + Auto Loader",
+    destination: "volume_bronze",
+    events_per_batch: 100000,
+    interval_seconds: 2,
+    total_duration_seconds: 300,
+  },
+  {
+    id: "zerobus",
+    label: "Streaming (Zerobus)",
+    desc: "~100K–1M+ rows/s — gRPC direct append (Premium tier)",
+    destination: "zerobus",
+    events_per_batch: 1000000,
+    interval_seconds: 5,
+    total_duration_seconds: 600,
+    requiresZerobus: true,
+  },
 ];
 
 const INDUSTRY_TABLES: Record<string, { name: string; rows: number }[]> = {
@@ -125,6 +211,59 @@ const INDUSTRY_TABLES: Record<string, { name: string; rows: number }[]> = {
     { name: "product_lines", rows: 100_000 }, { name: "agency_contracts", rows: 100_000 },
   ],
 };
+
+// Numbered step in the Zerobus credentials block. Renders a circle
+// (number when pending, green check when done) on the left, the title
+// + optional/done badges on the right, and the step body underneath.
+// Used only by the Zerobus form — kept here at module scope so the
+// main page component doesn't grow another render helper.
+function ZerobusStep({
+  number,
+  title,
+  done,
+  optional = false,
+  children,
+}: Readonly<{
+  number: number;
+  title: string;
+  done: boolean;
+  optional?: boolean;
+  children: React.ReactNode;
+}>) {
+  return (
+    <div className="flex gap-3">
+      <div
+        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+          done
+            ? "bg-emerald-500 text-white border border-emerald-500"
+            : "bg-background text-muted-foreground border border-border"
+        }`}
+        aria-label={done ? `Step ${number} done` : `Step ${number}`}
+      >
+        {done ? <CheckCircle2 className="h-4 w-4" /> : number}
+      </div>
+      <div className="flex-1 space-y-1.5 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-[13px]">{title}</span>
+          {optional && (
+            <Badge variant="outline" className="text-[10px]">
+              Optional
+            </Badge>
+          )}
+          {done && !optional && (
+            <Badge
+              variant="outline"
+              className="text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50"
+            >
+              Done
+            </Badge>
+          )}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function statusBadge(status: string) {
   switch (status?.toLowerCase()) {
@@ -379,11 +518,249 @@ export default function DemoDataPage() {
   const [streamEventsPerBatch, setStreamEventsPerBatch] = useState(100);
   const [streamIntervalSeconds, setStreamIntervalSeconds] = useState(5);
   const [streamDurationSeconds, setStreamDurationSeconds] = useState(60);
+  // Form bounds fetched from /generate/demo-data/streaming/limits.
+  // Sourced from `streaming_limits` in clone_config.yaml — workspace
+  // admins can widen / narrow the inputs without a code change. Falls
+  // back to the values previously hardcoded in the JSX so the page
+  // stays usable if the API is unreachable.
+  type StreamLimit = { default: number; min: number; max: number };
+  type StreamLimits = {
+    events_per_batch: StreamLimit;
+    interval_seconds: StreamLimit;
+    total_duration_seconds: StreamLimit;
+  };
+  const [streamLimits, setStreamLimits] = useState<StreamLimits>({
+    events_per_batch: { default: 100, min: 1, max: 10000 },
+    interval_seconds: { default: 5, min: 1, max: 300 },
+    total_duration_seconds: { default: 60, min: 1, max: 3600 },
+  });
+  useEffect(() => {
+    api.get<StreamLimits>("/generate/demo-data/streaming/limits")
+      .then((limits) => {
+        setStreamLimits(limits);
+        // Re-seed the inputs if the user hasn't touched them yet —
+        // detect "untouched" by comparing against the prior fallback
+        // defaults (100/5/60). If the user already typed a custom
+        // value we leave it alone.
+        setStreamEventsPerBatch((v) => (v === 100 ? limits.events_per_batch.default : v));
+        setStreamIntervalSeconds((v) => (v === 5 ? limits.interval_seconds.default : v));
+        setStreamDurationSeconds((v) => (v === 60 ? limits.total_duration_seconds.default : v));
+      })
+      .catch(() => {
+        /* keep fallback bounds — endpoint may be on an older API */
+      });
+  }, []);
   // Destination mode for streaming events:
   //   "volume"        — JSON files only, no Bronze
   //   "volume_bronze" — files + auto-create Bronze STREAMING TABLE (default)
   //   "direct_table"  — INSERT INTO Delta table directly (no Volume)
-  const [streamDestination, setStreamDestination] = useState<"volume" | "volume_bronze" | "direct_table">("volume_bronze");
+  const [streamDestination, setStreamDestination] = useState<"volume" | "volume_bronze" | "direct_table" | "zerobus">("volume_bronze");
+  // Whether the Zerobus runtime destination is usable. Fetched once at
+  // page load from /demo-data/zerobus/availability — the radio renders
+  // disabled when `available === false` so the user sees the option exists
+  // but understands they need to fall back to the Phase 1 snippet panel.
+  const [zerobusAvailable, setZerobusAvailable] = useState<{ available: boolean; reason: string | null } | null>(null);
+  useEffect(() => {
+    api.get<{ available: boolean; reason: string | null }>("/generate/demo-data/zerobus/availability")
+      .then(setZerobusAvailable)
+      .catch(() => setZerobusAvailable({ available: false, reason: "availability check failed" }));
+  }, []);
+
+  // ── Performance presets (Streaming Events tab) ──────────────────
+  // applyStreamingPreset() bundles destination + cadence into a
+  // one-click setup. Named distinctly from the batch-tab applyPreset()
+  // above so the two never collide. Values are clamped to streamLimits
+  // so an admin-narrowed cap (set via Settings → Performance → Streaming
+  // Form Limits) still wins — a toast warns when clamping changes a
+  // preset value.
+  const applyStreamingPreset = (presetId: StreamPresetId) => {
+    if (presetId === "custom") return;
+    const preset = STREAMING_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    if (preset.requiresZerobus && !zerobusAvailable?.available) {
+      toast.error(
+        `Zerobus is not available: ${zerobusAvailable?.reason ?? "checking…"}`,
+      );
+      return;
+    }
+    const epbClamped = Math.max(
+      streamLimits.events_per_batch.min,
+      Math.min(streamLimits.events_per_batch.max, preset.events_per_batch),
+    );
+    const intClamped = Math.max(
+      Math.max(1, Math.ceil(streamLimits.interval_seconds.min)),
+      Math.min(streamLimits.interval_seconds.max, preset.interval_seconds),
+    );
+    const durClamped = Math.max(
+      streamLimits.total_duration_seconds.min,
+      Math.min(streamLimits.total_duration_seconds.max, preset.total_duration_seconds),
+    );
+    setStreamDestination(preset.destination);
+    setStreamEventsPerBatch(epbClamped);
+    setStreamIntervalSeconds(intClamped);
+    setStreamDurationSeconds(durClamped);
+    const clamped = (
+      epbClamped !== preset.events_per_batch ||
+      intClamped !== preset.interval_seconds ||
+      durClamped !== preset.total_duration_seconds
+    );
+    if (clamped) {
+      toast.warning(
+        `Preset applied with clamping — your admin has narrower limits than ${preset.label} requires. Edit them in Settings → Performance.`,
+      );
+    } else {
+      toast.success(`Preset applied: ${preset.label}`);
+    }
+  };
+
+  // Derive which preset (if any) matches the current state. When the
+  // user manually edits a field after applying a preset, this drops to
+  // "custom" and the preset row's highlight clears — purely visual.
+  const activePreset: StreamPresetId = (() => {
+    const match = STREAMING_PRESETS.find(
+      (p) =>
+        p.destination === streamDestination &&
+        p.events_per_batch === streamEventsPerBatch &&
+        p.interval_seconds === streamIntervalSeconds &&
+        p.total_duration_seconds === streamDurationSeconds,
+    );
+    return match ? match.id : "custom";
+  })();
+  // Per-request Zerobus credentials. Required only when the user picks
+  // destination="zerobus"; the form gates Start/Schedule on these being
+  // present (matches the Pydantic validator on the request model).
+  //
+  // Two auth modes — "oauth" uses an SP's client_id/client_secret (the
+  // original path; works on Premium/Enterprise tiers). "pat" reuses the
+  // PAT the user logged into the app with — no SP needed, but the
+  // Zerobus server may still reject PATs that lack the right scopes.
+  // Default "oauth" preserves the existing flow for users who already
+  // have a working SP.
+  const [zerobusAuthMode, setZerobusAuthMode] = useState<"oauth" | "pat">("oauth");
+  const [zerobusServerEndpoint, setZerobusServerEndpoint] = useState("");
+  const [zerobusClientId, setZerobusClientId] = useState("");
+  const [zerobusClientSecret, setZerobusClientSecret] = useState("");
+  // Optional MANAGED LOCATION for new catalogs. Required only when the
+  // workspace metastore has no default storage root — without it the
+  // CREATE CATALOG IF NOT EXISTS fails with INVALID_STATE. Cloud-
+  // agnostic: s3://, abfss://, gs:// all work as long as a UC external
+  // location / storage credential covers the path. Leave blank when
+  // the catalog already exists or the metastore has a default root.
+  const [zerobusCatalogLocation, setZerobusCatalogLocation] = useState("");
+  // Helper: paste a Databricks workspace URL → server-side resolver
+  // parses it, DNS-probes the AWS region, and auto-fills the Server
+  // endpoint field. Browsers can't do DNS, so we delegate.
+  const [zerobusDeriveUrl, setZerobusDeriveUrl] = useState("");
+  const [zerobusDeriving, setZerobusDeriving] = useState(false);
+  const [zerobusDeriveError, setZerobusDeriveError] = useState<string | null>(null);
+  // Verify-credentials helper — runs the OAuth client_credentials
+  // exchange against the workspace's /oidc/v1/token endpoint, same
+  // call the SDK does internally. Decouples credential debugging from
+  // a full streaming run (no need to read job logs to know if creds
+  // are bad).
+  const [zerobusVerifying, setZerobusVerifying] = useState(false);
+  const [zerobusVerifyResult, setZerobusVerifyResult] = useState<
+    null | { ok: boolean; status_code: number | null; error: string | null; hint: string | null }
+  >(null);
+  async function verifyZerobusCredentials() {
+    if (!zerobusDeriveUrl.trim()) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: "Paste your workspace URL in the field above first — the verifier needs it to know which OAuth endpoint to hit.",
+        hint: null,
+      });
+      return;
+    }
+    if (!zerobusClientId.trim() || !zerobusClientSecret.trim()) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: "Fill in Client ID and Client secret first.",
+        hint: null,
+      });
+      return;
+    }
+    setZerobusVerifying(true);
+    setZerobusVerifyResult(null);
+    try {
+      // The endpoint only needs the workspace ROOT URL, not the path/query.
+      // Strip whatever the user pasted down to scheme+host.
+      let root = zerobusDeriveUrl.trim();
+      try {
+        const u = new URL(root.startsWith("http") ? root : `https://${root}`);
+        root = `${u.protocol}//${u.host}`;
+      } catch { /* leave as-is, backend will still try */ }
+
+      const r = await api.post<{ ok: boolean; status_code: number | null; error: string | null; hint: string | null }>(
+        "/generate/demo-data/zerobus/verify-credentials",
+        {
+          workspace_url: root,
+          client_id: zerobusClientId.trim(),
+          client_secret: zerobusClientSecret.trim(),
+        },
+      );
+      setZerobusVerifyResult(r);
+      if (r.ok) toast.success("Zerobus credentials are valid");
+    } catch (e: any) {
+      setZerobusVerifyResult({
+        ok: false, status_code: null,
+        error: e?.message ?? "Verify request failed",
+        hint: null,
+      });
+    } finally {
+      setZerobusVerifying(false);
+    }
+  }
+
+  async function deriveZerobusEndpoint() {
+    const url = zerobusDeriveUrl.trim();
+    if (!url) {
+      setZerobusDeriveError("Paste a workspace URL first");
+      return;
+    }
+    setZerobusDeriving(true);
+    setZerobusDeriveError(null);
+    try {
+      const r = await api.post<{
+        server_endpoint: string | null;
+        workspace_id: string | null;
+        region: string | null;
+        cloud: string;
+        error: string | null;
+        region_supported: boolean | null;
+        region_single_az: boolean;
+      }>("/generate/demo-data/zerobus/derive-endpoint", { workspace_url: url });
+      if (r.server_endpoint) {
+        setZerobusServerEndpoint(r.server_endpoint);
+        // Surface region availability + single-AZ hints inline. We
+        // don't block — Databricks publishes region availability
+        // separately from connectivity, so a "not on the list" region
+        // might still work if the user has early access. Just warn.
+        if (r.region_supported === false) {
+          setZerobusDeriveError(
+            `⚠ Region "${r.region}" is not on the published Zerobus availability list for ${r.cloud.toUpperCase()}. ` +
+            `The endpoint was constructed using the standard pattern, but the connection may fail. ` +
+            `Verify availability with Databricks support before relying on this in production.`,
+          );
+          toast.warning(`Resolved ${r.server_endpoint} — region may not be supported`);
+        } else if (r.region_single_az) {
+          setZerobusDeriveError(
+            `Note: region ${r.region} is documented as single-AZ on Azure. The connector works there, ` +
+            `but availability characteristics differ from multi-AZ regions.`,
+          );
+          toast.success(`Resolved ${r.server_endpoint} (single-AZ region)`);
+        } else {
+          setZerobusDeriveError(null);
+          toast.success(`Resolved (${r.cloud} ${r.region}): ${r.server_endpoint}`);
+        }
+      } else {
+        setZerobusDeriveError(r.error ?? "Could not derive endpoint");
+      }
+    } catch (e: any) {
+      setZerobusDeriveError(e?.message ?? "Derive request failed");
+    } finally {
+      setZerobusDeriving(false);
+    }
+  }
   const [streamBronzeTable, setStreamBronzeTable] = useState("");
   // Legacy auto-create flag — derived from destination on submit. Kept
   // as state only to render the refresh-cadence input in volume_bronze mode.
@@ -403,7 +780,11 @@ export default function DemoDataPage() {
         tick: prog.ticks,
         elapsed: typeof prog.elapsed_seconds === "number" ? prog.elapsed_seconds : 0,
         events: prog.events_emitted,
-        // delta is filled in on read using the previous snapshot (see streamingSeries memo)
+        // tickErrors is captured per-snapshot so the chart can mark the
+        // exact tick where a failure happened (red dot on the cumulative
+        // line). delta + hasError are filled in on read — see
+        // streamingSeries memo below.
+        tickErrors: typeof prog.tick_errors === "number" ? prog.tick_errors : 0,
       };
     },
     isProgressEqual: (a, b) => a?.tick === b?.tick,
@@ -418,13 +799,19 @@ export default function DemoDataPage() {
   const streamingJob = streamJob.entry?.data ?? null;
   // Recompute deltas from the persisted history. The hook stores absolute
   // counts; the chart wants per-tick deltas, so we derive them here.
+  // Also computes hasError: true whenever the cumulative tick_errors
+  // count went up between two snapshots — used to drop a red dot on
+  // that exact tick in the chart.
   const streamingSeries = (() => {
     const hist = streamJob.progressHistory ?? [];
     let lastEvents = 0;
+    let lastErrors = 0;
     return hist.map((p: any) => {
       const delta = (p?.events ?? 0) - lastEvents;
+      const errorDelta = (p?.tickErrors ?? 0) - lastErrors;
       lastEvents = p?.events ?? lastEvents;
-      return { ...p, delta };
+      lastErrors = p?.tickErrors ?? lastErrors;
+      return { ...p, delta, hasError: errorDelta > 0 };
     });
   })();
   const streamingEmit = useStreamingEmit();
@@ -502,6 +889,21 @@ export default function DemoDataPage() {
       toast.error("Catalog and schema are required");
       return;
     }
+    if (streamDestination === "zerobus") {
+      const missing: string[] = [];
+      if (!zerobusServerEndpoint.trim()) missing.push("server endpoint");
+      // SP creds are only required in OAuth mode. PAT mode pulls the
+      // bearer token from the logged-in client at runtime, so the
+      // form doesn't need to collect anything beyond the endpoint.
+      if (zerobusAuthMode === "oauth") {
+        if (!zerobusClientId.trim()) missing.push("client ID");
+        if (!zerobusClientSecret.trim()) missing.push("client secret");
+      }
+      if (missing.length) {
+        toast.error(`Zerobus requires: ${missing.join(", ")}`);
+        return;
+      }
+    }
     try {
       // Wipe previous streaming-job state (including chart history) so a new
       // run starts clean visually instead of merging with the prior series.
@@ -518,6 +920,25 @@ export default function DemoDataPage() {
         bronze_table: streamBronzeTable.trim(),
         auto_create_bronze: streamDestination === "volume_bronze",
         bronze_refresh_minutes: streamBronzeRefreshMinutes,
+        // Only thread Zerobus creds when it's actually selected. Sending
+        // them on every payload would log secrets unnecessarily and the
+        // backend ignores them when destination !== "zerobus". The
+        // SP fields are only sent in oauth mode — the API validator
+        // doesn't accept them as required when auth_mode='pat', and we
+        // don't want stale form state to confuse the request shape.
+        ...(streamDestination === "zerobus" && {
+          zerobus_server_endpoint: zerobusServerEndpoint.trim(),
+          zerobus_auth_mode: zerobusAuthMode,
+          ...(zerobusAuthMode === "oauth" && {
+            zerobus_client_id: zerobusClientId.trim(),
+            zerobus_client_secret: zerobusClientSecret.trim(),
+          }),
+          // Only send when populated — empty string = "let UC pick the
+          // default storage root". The runner treats blank as omitted.
+          ...(zerobusCatalogLocation.trim() && {
+            zerobus_catalog_location: zerobusCatalogLocation.trim(),
+          }),
+        }),
       };
       await streamJob.start(params, async () => {
         const res = await streamingEmit.mutateAsync(params);
@@ -1334,7 +1755,12 @@ export default function DemoDataPage() {
                   <Button size="sm" variant="destructive" className="h-7 text-xs"
                     onClick={async () => {
                       try {
-                        await api.post(`/clone/${jobId}/cancel`);
+                        // Backend cancellation is `DELETE /api/clone/{job_id}`
+                        // (see api/routers/clone.py:cancel_job). The previous
+                        // `POST /clone/{id}/cancel` call returned 405 because
+                        // that path doesn't exist — the closest match is the
+                        // GET endpoint at the same prefix, which rejected POST.
+                        await api.delete(`/clone/${jobId}`);
                         toast.success("Job cancelled");
                       } catch (e: any) {
                         toast.error("Cancel failed: " + (e.message || ""));
@@ -1666,24 +2092,108 @@ export default function DemoDataPage() {
           </p>
         </CardHeader>
           <CardContent className="space-y-5">
+            {/* Performance presets — one-click bundles of destination + cadence
+                tuned for different throughput tiers. Active preset gets a
+                primary border; "Custom" auto-lights when fields drift from
+                any preset. Zerobus preset disables when the SDK isn't
+                available, mirroring the destination radio. */}
+            <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
+              <FieldLabel hint="One-click presets that set destination + events-per-batch + interval + duration to combinations tuned for different throughput tiers. Click any preset to apply; manually editing a field below switches the indicator to Custom. Throughput numbers are typical for a small/medium DBSQL Serverless warehouse — your mileage will vary by warehouse size and event-shape complexity.">
+                Performance preset
+              </FieldLabel>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                {STREAMING_PRESETS.map((preset) => {
+                  const isActive = activePreset === preset.id;
+                  const disabled = !!preset.requiresZerobus && !zerobusAvailable?.available;
+                  const disabledReason = preset.requiresZerobus
+                    ? (zerobusAvailable?.reason ?? "Checking availability...")
+                    : null;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyStreamingPreset(preset.id)}
+                      disabled={disabled}
+                      title={disabled ? (disabledReason ?? undefined) : undefined}
+                      className={`flex flex-col items-start gap-0.5 p-2 border rounded-md text-xs transition-colors text-left ${
+                        disabled
+                          ? "border-input bg-muted/20 opacity-60 cursor-not-allowed"
+                          : isActive
+                            ? "border-[#E8453C] bg-[#E8453C]/5 cursor-pointer"
+                            : "border-input hover:bg-muted/30 cursor-pointer"
+                      }`}
+                    >
+                      <div className="font-medium">{preset.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{preset.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              {activePreset === "custom" && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Custom — current settings don&apos;t match any preset. Pick a preset above to reset, or keep editing.
+                </p>
+              )}
+            </div>
+
             {/* Destination mode — controls which downstream fields are visible
                 and what the runner does each tick. */}
             <div className="border border-dashed border-border rounded-md p-3 bg-muted/20">
-              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition.">
+              <FieldLabel hint="Volume only: emit JSON files; you wire Auto Loader yourself. Volume + Bronze: same files plus an auto-created STREAMING TABLE on a CRON refresh (needs DBSQL Serverless tier that supports it). Direct to table: each tick INSERTs straight into a Delta table — no Volume, no Auto Loader, works on any tier including Free Edition. Zerobus: direct gRPC append via the Databricks Zerobus low-latency API. Requires Premium/Enterprise tier with a UC External Location + the destination schema configured with managed storage — NOT compatible with Free Edition. On Free Edition, use Direct to table instead, or paste the snippet panel below into a Premium workspace.">
                 Destination
               </FieldLabel>
-              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
-                {[
-                  { val: "volume", title: "Volume only", sub: "JSON files → Volume" },
-                  { val: "volume_bronze", title: "Volume + Bronze", sub: "Files + Auto Loader STREAMING TABLE" },
-                  { val: "direct_table", title: "Direct to table", sub: "INSERT each batch into Delta (no Volume)" },
-                ].map((opt) => (
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                {([
+                  {
+                    val: "volume",
+                    title: "Volume only",
+                    sub: "JSON files → Volume",
+                    disabled: false,
+                    disabledReason: null,
+                    // Per-destination warehouse impact. tone:
+                    //   "none"  — warehouse not used at all (green)
+                    //   "low"   — used once at startup for DDL only (green)
+                    //   "high"  — used every tick; warehouse size matters (amber)
+                    whImpact: { tone: "none", text: "Warehouse: not used. Files write directly to UC Volume." },
+                  },
+                  {
+                    val: "volume_bronze",
+                    title: "Volume + Bronze",
+                    sub: "Files + Auto Loader STREAMING TABLE",
+                    disabled: false,
+                    disabledReason: null,
+                    whImpact: { tone: "low", text: "Warehouse: one-time CREATE OR REFRESH STREAMING TABLE. Refresh runs on its own DBSQL Serverless pool." },
+                  },
+                  {
+                    val: "direct_table",
+                    title: "Direct to table",
+                    sub: "INSERT each batch into Delta (no Volume)",
+                    disabled: false,
+                    disabledReason: null,
+                    whImpact: { tone: "high", text: "Warehouse: every tick. INSERT VALUES is single-driver-bound — pick the largest serverless you can." },
+                  },
+                  {
+                    val: "zerobus",
+                    title: "Zerobus",
+                    sub: "Direct gRPC append (low-latency) — Premium/Enterprise tier",
+                    // Disabled until the availability check returns true.
+                    // While the check is in flight (zerobusAvailable===null)
+                    // we keep the option disabled too — better to render
+                    // disabled-then-enabled than enabled-then-disabled.
+                    disabled: !zerobusAvailable?.available,
+                    disabledReason: zerobusAvailable?.reason ?? "Checking availability...",
+                    whImpact: { tone: "low", text: "Warehouse: one-time DDL only (CREATE TABLE + GRANTs). Idle during streaming. Smallest warehouse is fine." },
+                  },
+                ] as const).map((opt) => (
                   <label
                     key={opt.val}
-                    className={`flex items-start gap-2 p-2 border rounded-md cursor-pointer text-xs transition-colors ${
-                      streamDestination === opt.val
-                        ? "border-[#E8453C] bg-[#E8453C]/5"
-                        : "border-input hover:bg-muted/30"
+                    title={opt.disabled ? (opt.disabledReason ?? undefined) : undefined}
+                    className={`flex items-start gap-2 p-2 border rounded-md text-xs transition-colors ${
+                      opt.disabled
+                        ? "border-input bg-muted/20 opacity-60 cursor-not-allowed"
+                        : streamDestination === opt.val
+                          ? "border-[#E8453C] bg-[#E8453C]/5 cursor-pointer"
+                          : "border-input hover:bg-muted/30 cursor-pointer"
                     }`}
                   >
                     <input
@@ -1691,17 +2201,344 @@ export default function DemoDataPage() {
                       name="stream-destination"
                       value={opt.val}
                       checked={streamDestination === opt.val}
+                      disabled={opt.disabled}
                       onChange={() => setStreamDestination(opt.val as typeof streamDestination)}
                       className="mt-0.5 h-3.5 w-3.5 text-[#E8453C] focus:ring-[#E8453C]"
                     />
-                    <div>
-                      <div className="font-medium">{opt.title}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium flex items-center gap-1">
+                        {opt.title}
+                        {opt.val === "zerobus" && (
+                          <Badge variant="outline" className="text-[9px]">Preview</Badge>
+                        )}
+                      </div>
                       <div className="text-[10px] text-muted-foreground">{opt.sub}</div>
+                      {/* Warehouse-impact line — green for none/low, amber for high.
+                          Uses Tailwind's emerald/amber palette which renders sensibly
+                          in both light and dark themes. */}
+                      <div
+                        className={`mt-1 text-[10px] italic leading-snug ${
+                          opt.whImpact.tone === "high"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        {opt.whImpact.text}
+                      </div>
                     </div>
                   </label>
                 ))}
               </div>
             </div>
+
+            {/* Zerobus credentials — visible only when destination=zerobus
+                AND the SDK is available. The form's Pydantic validator on
+                the backend will 422 if any of these are blank, but we also
+                client-side guard handleStartStreaming to fail earlier.
+                Step-by-step layout: numbered circles that turn into green
+                checks once each step's "done" predicate is satisfied. The
+                step numbers are computed (not hard-coded) because step 4
+                only exists in OAuth mode — PAT mode skips Verify and the
+                storage step renumbers down. */}
+            {streamDestination === "zerobus" && zerobusAvailable?.available && (() => {
+              // Per-step done predicates. These drive the numbered-circle →
+              // green-check transition AND let us decide which steps still
+              // hold the user back from clicking Start streaming.
+              const step1Done = true; // auth mode always picked (default oauth)
+              const step2Done = !!zerobusServerEndpoint.trim();
+              const step3Done = zerobusAuthMode === "pat"
+                || (!!zerobusClientId.trim() && !!zerobusClientSecret.trim());
+              const step4Done = zerobusVerifyResult?.ok === true;
+              const showVerifyStep = zerobusAuthMode === "oauth";
+              // Step 5 (storage) is optional → never affects the "all done"
+              // computation but still gets a number for orientation.
+              const storageStepNumber = showVerifyStep ? 5 : 4;
+              return (
+              <div className="border border-border rounded-md bg-muted/20 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Radio className="h-3.5 w-3.5 text-[#E8453C]" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Zerobus credentials
+                  </span>
+                  <Badge variant="outline" className="text-[10px]">Required</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Zerobus uses a region-specific gRPC endpoint. Two auth modes:
+                  pick <strong>OAuth</strong> if you have a service principal already
+                  set up (the original Zerobus contract), or <strong>PAT</strong> to
+                  reuse the token you logged into this app with — no SP needed.
+                  Secrets stay in your browser session and are sent only when
+                  starting a Zerobus run.
+                </p>
+
+                {/* Prerequisites (one-time admin work outside the form).
+                    Collapsed by default — most users only need it once and
+                    don't need to re-read it on every visit. Click to expand. */}
+                <details className="text-[11px] text-muted-foreground border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-sm">
+                  <summary className="cursor-pointer text-amber-700 font-medium">
+                    One-time admin prerequisite (Premium/Enterprise tier)
+                  </summary>
+                  <div className="space-y-1 mt-1.5">
+                    <div>
+                      Zerobus only writes to managed Delta tables in non-default
+                      storage. As a workspace admin, run once on the destination
+                      schema:
+                    </div>
+                    <pre className="text-[10px] bg-background border border-border rounded p-1.5 overflow-x-auto">{`ALTER SCHEMA \`<catalog>\`.\`<schema>\` SET MANAGED LOCATION 's3://your-bucket/path';`}</pre>
+                    <div>
+                      Without this, the run fails with{" "}
+                      <code className="bg-background px-1 rounded">
+                        Error Code: 4024 — Unsupported table kind
+                      </code>.
+                    </div>
+                    <div className="border-t border-amber-300/50 pt-1 mt-1">
+                      <strong className="text-amber-700">On Databricks Free Edition?</strong>{" "}
+                      You can&apos;t run{" "}
+                      <code className="bg-background px-1 rounded">
+                        ALTER SCHEMA … SET MANAGED LOCATION
+                      </code>{" "}
+                      there (no External Locations / paid SKU). Either switch the
+                      destination to <strong>Direct to table</strong> (works on any
+                      tier), or copy the snippet from the{" "}
+                      <strong>Try with Zerobus</strong> panel below and run it from
+                      a Premium workspace.
+                    </div>
+                    <div className="border-t border-amber-300/50 pt-1 mt-1">
+                      <strong className="text-amber-700">Other unsupported configurations</strong>{" "}
+                      (per the{" "}
+                      <a
+                        href="https://learn.microsoft.com/en-us/azure/databricks/ingestion/zerobus-limits"
+                        target="_blank" rel="noreferrer"
+                        className="underline"
+                      >
+                        Azure Zerobus limits
+                      </a>{" "}docs):
+                      <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                        <li>
+                          Workspaces with the <strong>Compliance Security Profile</strong>{" "}
+                          (FedRAMP / HIPAA / PCI-DSS) — Zerobus is explicitly not
+                          supported and the docs say not to use it for
+                          compliance workloads.
+                        </li>
+                        <li>
+                          Tables backed by storage <strong>secured through a private
+                          endpoint</strong> — the connector can&apos;t reach them.
+                        </li>
+                        <li>
+                          Tables with <strong>catalog commits enabled</strong> — Zerobus
+                          doesn&apos;t support catalog-commit semantics.
+                        </li>
+                      </ul>
+                      Clone-Xs can&apos;t detect these from the workspace API, so
+                      this is a checklist — confirm before relying on the
+                      runtime mode.
+                    </div>
+                  </div>
+                </details>
+
+                {/* Step 1 — Auth mode */}
+                <ZerobusStep number={1} title="Choose auth mode" done={step1Done}>
+                  <div className="flex gap-3 text-[12px]">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="zb-auth-mode"
+                        checked={zerobusAuthMode === "oauth"}
+                        onChange={() => setZerobusAuthMode("oauth")}
+                      />
+                      <span>OAuth (service principal)</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="zb-auth-mode"
+                        checked={zerobusAuthMode === "pat"}
+                        onChange={() => setZerobusAuthMode("pat")}
+                      />
+                      <span>PAT (logged-in user)</span>
+                    </label>
+                  </div>
+                  {zerobusAuthMode === "pat" && (
+                    <p className="text-[11px] text-amber-600">
+                      Zerobus' server may still reject PATs that lack the right
+                      scopes. If you get{" "}
+                      <code className="bg-background px-1 rounded">invalid_client</code>{" "}
+                      with PAT mode, switch back to OAuth and supply an SP.
+                    </p>
+                  )}
+                </ZerobusStep>
+
+                {/* Step 2 — Server endpoint (with derive helper). */}
+                <ZerobusStep number={2} title="Set the Zerobus server endpoint" done={step2Done}>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-derive-url">
+                      Don't know it? Paste your workspace URL and let us derive it:
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="zb-derive-url"
+                        placeholder="https://dbc-….cloud.databricks.com/?o=… (or Azure / GCP equivalent)"
+                        value={zerobusDeriveUrl}
+                        onChange={(e) => setZerobusDeriveUrl(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); deriveZerobusEndpoint(); } }}
+                        className="flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={deriveZerobusEndpoint}
+                        disabled={zerobusDeriving || !zerobusDeriveUrl.trim()}
+                      >
+                        {zerobusDeriving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1" />}
+                        {zerobusDeriving ? "Resolving..." : "Derive endpoint"}
+                      </Button>
+                    </div>
+                    {zerobusDeriveError && (
+                      <p className="text-[11px] text-amber-600">{zerobusDeriveError}</p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      AWS workspaces only expose the workspace ID after login —
+                      open any page in the workspace and copy the URL with
+                      <code className="bg-background px-1 rounded mx-0.5">?o=…</code>
+                      appended.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground" htmlFor="zb-endpoint">
+                      Server endpoint
+                    </label>
+                    <Input
+                      id="zb-endpoint"
+                      placeholder="https://<wsid>.zerobus.<region>.cloud.databricks.com"
+                      value={zerobusServerEndpoint}
+                      onChange={(e) => setZerobusServerEndpoint(e.target.value)}
+                    />
+                  </div>
+                </ZerobusStep>
+
+                {/* Step 3 — Credentials. Shape depends on auth mode:
+                    OAuth wants client_id + client_secret; PAT auto-lifts
+                    the token off the logged-in WorkspaceClient. */}
+                <ZerobusStep
+                  number={3}
+                  title={zerobusAuthMode === "oauth" ? "Service principal credentials" : "PAT (auto-lifted)"}
+                  done={step3Done}
+                >
+                  {zerobusAuthMode === "oauth" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-id">
+                          Client ID
+                        </label>
+                        <Input
+                          id="zb-client-id"
+                          placeholder="service-principal app id"
+                          value={zerobusClientId}
+                          onChange={(e) => setZerobusClientId(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground" htmlFor="zb-client-secret">
+                          Client secret
+                        </label>
+                        <Input
+                          id="zb-client-secret"
+                          type="password"
+                          placeholder="service-principal secret"
+                          value={zerobusClientSecret}
+                          onChange={(e) => setZerobusClientSecret(e.target.value)}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      The Zerobus SDK call uses your logged-in PAT directly via a
+                      custom <code className="bg-background px-1 rounded">HeadersProvider</code>.
+                      No fields to fill in here.
+                    </p>
+                  )}
+                </ZerobusStep>
+
+                {/* Step 4 — Verify (OAuth only; PAT has no equivalent). */}
+                {showVerifyStep && (
+                  <ZerobusStep
+                    number={4}
+                    title="Verify credentials"
+                    done={step4Done}
+                    optional
+                  >
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={verifyZerobusCredentials}
+                        disabled={zerobusVerifying}
+                      >
+                        {zerobusVerifying
+                          ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                        {zerobusVerifying ? "Verifying..." : "Verify credentials"}
+                      </Button>
+                      <span className="text-[10px] text-muted-foreground">
+                        Tests the OAuth client_credentials exchange — same call the SDK does internally.
+                      </span>
+                    </div>
+                  </ZerobusStep>
+                )}
+
+                {/* Step (4 or 5) — Optional catalog storage location. */}
+                <ZerobusStep
+                  number={storageStepNumber}
+                  title="Catalog storage location"
+                  done={!!zerobusCatalogLocation.trim()}
+                  optional
+                >
+                  <Input
+                    id="zb-catalog-loc"
+                    placeholder="abfss://container@account.dfs.core.windows.net/path  ·  s3://bucket/path  ·  gs://bucket/path"
+                    value={zerobusCatalogLocation}
+                    onChange={(e) => setZerobusCatalogLocation(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Required only when CREATE CATALOG fails with{" "}
+                    <code className="bg-background px-1 rounded">INVALID_STATE</code> —
+                    workspaces without a metastore default storage root need an explicit{" "}
+                    <code className="bg-background px-1 rounded">MANAGED LOCATION</code>.
+                    A UC external location / storage credential must already cover the path.
+                    Ignored when the catalog already exists.
+                  </p>
+                </ZerobusStep>
+
+                {/* Verify result — kept outside the Step 4 button block
+                    so a long failure hint doesn't push the next step out
+                    of view, but rendered just below it visually. */}
+                {showVerifyStep && zerobusVerifyResult && (
+                  zerobusVerifyResult.ok ? (
+                    <div className="text-[11px] text-green-600 flex items-center gap-1 ml-9">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Credentials valid — Databricks issued a token successfully.
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-600 space-y-1 border border-amber-200 rounded-md px-2 py-1.5 bg-amber-50/50 ml-9">
+                      <div className="flex items-start gap-1">
+                        <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-medium">
+                            Failed{zerobusVerifyResult.status_code ? ` (HTTP ${zerobusVerifyResult.status_code})` : ""}
+                          </span>
+                          {zerobusVerifyResult.error && <>: {zerobusVerifyResult.error}</>}
+                        </div>
+                      </div>
+                      {zerobusVerifyResult.hint && (
+                        <div className="pl-4 text-muted-foreground">{zerobusVerifyResult.hint}</div>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+              );
+            })()}
 
             {/* Device profile */}
             <div className="space-y-1.5">
@@ -1884,18 +2721,40 @@ export default function DemoDataPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <FieldLabel>Events per batch</FieldLabel>
-                <Input type="number" min={1} max={10000} value={streamEventsPerBatch}
-                  onChange={(e) => setStreamEventsPerBatch(Math.max(1, Math.min(10000, parseInt(e.target.value) || 100)))} />
+                <Input type="number"
+                  min={streamLimits.events_per_batch.min}
+                  max={streamLimits.events_per_batch.max}
+                  value={streamEventsPerBatch}
+                  onChange={(e) => {
+                    const { min, max, default: dflt } = streamLimits.events_per_batch;
+                    setStreamEventsPerBatch(Math.max(min, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
               <div className="space-y-1.5">
                 <FieldLabel>Interval (seconds)</FieldLabel>
-                <Input type="number" min={1} max={300} value={streamIntervalSeconds}
-                  onChange={(e) => setStreamIntervalSeconds(Math.max(1, Math.min(300, parseInt(e.target.value) || 5)))} />
+                <Input type="number"
+                  min={streamLimits.interval_seconds.min}
+                  max={streamLimits.interval_seconds.max}
+                  value={streamIntervalSeconds}
+                  onChange={(e) => {
+                    // UI rounds to whole seconds via parseInt; the API
+                    // accepts fractional via direct calls (see the YAML
+                    // comment on streaming_limits.interval_seconds).
+                    const { min, max, default: dflt } = streamLimits.interval_seconds;
+                    const lo = Math.max(1, Math.ceil(min));
+                    setStreamIntervalSeconds(Math.max(lo, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
               <div className="space-y-1.5">
-                <FieldLabel>Total duration (seconds, max 3600)</FieldLabel>
-                <Input type="number" min={1} max={3600} value={streamDurationSeconds}
-                  onChange={(e) => setStreamDurationSeconds(Math.max(1, Math.min(3600, parseInt(e.target.value) || 60)))} />
+                <FieldLabel>Total duration (seconds, max {streamLimits.total_duration_seconds.max})</FieldLabel>
+                <Input type="number"
+                  min={streamLimits.total_duration_seconds.min}
+                  max={streamLimits.total_duration_seconds.max}
+                  value={streamDurationSeconds}
+                  onChange={(e) => {
+                    const { min, max, default: dflt } = streamLimits.total_duration_seconds;
+                    setStreamDurationSeconds(Math.max(min, Math.min(max, parseInt(e.target.value) || dflt)));
+                  }} />
               </div>
             </div>
 
@@ -1965,115 +2824,384 @@ export default function DemoDataPage() {
                     </span>
                     <span className="text-xs text-muted-foreground ml-auto">Job {streamingJobId}</span>
                   </div>
-                  {streamingJob.progress && (
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-                      <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{streamingJob.progress.events_emitted ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{streamingJob.progress.files_written ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Rows inserted:</span> <span className="font-mono">{streamingJob.progress.rows_inserted ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
-                      <div><span className="text-muted-foreground">Elapsed:</span> <span className="font-mono">{streamingJob.progress.elapsed_seconds ?? 0}s</span></div>
-                    </div>
-                  )}
+                  {streamingJob.progress && (() => {
+                    const elapsed = Number(streamingJob.progress.elapsed_seconds ?? 0);
+                    const events = Number(streamingJob.progress.events_emitted ?? 0);
+                    const filesWritten = Number(streamingJob.progress.files_written ?? 0);
+                    const rowsInserted = Number(streamingJob.progress.rows_inserted ?? 0);
+                    // Throughput: cumulative events / wall-clock elapsed.
+                    // Bias the divisor to >=1s so the rate doesn't blow up
+                    // on the first sub-second tick.
+                    const eventsPerSec = elapsed > 0
+                      ? (events / Math.max(elapsed, 1)).toFixed(1)
+                      : "—";
+                    // Time remaining is derived from the form-controlled
+                    // total duration. Only shown while running, and only
+                    // when emission hasn't already overrun (rare but
+                    // possible with a slow warehouse).
+                    const isRunning = streamingJob.status === "running";
+                    const remaining = isRunning && streamDurationSeconds > elapsed
+                      ? Math.max(0, Math.round(streamDurationSeconds - elapsed))
+                      : null;
+                    // "Rows inserted: 0" is a frequent FAQ in volume_bronze
+                    // mode — rows are inserted by the bronze streaming
+                    // table's refresh job, not the emitter. Surface that
+                    // inline with a small Info icon + native title tooltip
+                    // when the situation is exactly that (files landed,
+                    // rows haven't yet).
+                    const showRowsHint =
+                      streamDestination === "volume_bronze"
+                      && rowsInserted === 0
+                      && filesWritten > 0;
+                    // Per-tick error bubbled up from the runner's
+                    // try/except so the UI doesn't silently report
+                    // "Completed — 0 events" when every tick threw.
+                    // The user previously had to comb the API server
+                    // logs to see the real cause.
+                    const tickErrors = Number(streamingJob.progress.tick_errors ?? 0);
+                    const lastError = (streamingJob.progress.last_error ?? "") as string;
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+                          <div><span className="text-muted-foreground">Events emitted:</span> <span className="font-mono">{events}</span></div>
+                          <div><span className="text-muted-foreground">Files written:</span> <span className="font-mono">{filesWritten}</span></div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-muted-foreground">Rows inserted:</span>
+                            <span className="font-mono">{rowsInserted}</span>
+                            {showRowsHint && (
+                              <Info
+                                className="h-3 w-3 text-muted-foreground cursor-help"
+                                aria-label="Rows-inserted explainer"
+                                title="Rows are inserted by the bronze streaming table's refresh job, not by this emitter. They'll appear after the next refresh cycle (configured above)."
+                              />
+                            )}
+                          </div>
+                          <div><span className="text-muted-foreground">Ticks:</span> <span className="font-mono">{streamingJob.progress.ticks ?? 0}</span></div>
+                          <div><span className="text-muted-foreground">Events/s:</span> <span className="font-mono">{eventsPerSec}</span></div>
+                          <div>
+                            <span className="text-muted-foreground">Elapsed:</span>{" "}
+                            <span className="font-mono">{elapsed}s</span>
+                            {remaining !== null && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">
+                                · {remaining}s left
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {tickErrors > 0 && lastError && (
+                          <div className="mt-2 border border-amber-300 rounded-md px-2 py-1.5 bg-amber-50/50 text-[11px] space-y-0.5">
+                            <div className="text-amber-700">
+                              <strong>{tickErrors}</strong> tick{tickErrors === 1 ? "" : "s"} failed.
+                              Last error:
+                            </div>
+                            <code className="block font-mono text-amber-900 whitespace-pre-wrap break-words">
+                              {lastError}
+                            </code>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
-                  {/* Throughput chart — dual-axis line chart of cumulative
-                      events (left) and per-tick delta (right) over elapsed
-                      seconds. Hidden until we have ≥2 samples (one point
-                      isn't a line). */}
-                  {streamingSeries.length >= 2 && (
+                  {/* Throughput chart — dual-axis composed chart of
+                      cumulative events (left, area-filled) and per-tick
+                      delta (right, dashed line) over elapsed seconds.
+                      A horizontal dashed reference line on the right axis
+                      marks the configured `events_per_batch` (what each
+                      tick should land if the runner is keeping up).
+                      Red dots on the cumulative line mark ticks where
+                      `tick_errors` increased. Hidden until we have ≥2
+                      samples (one point isn't a line). */}
+                  {streamingSeries.length >= 2 && (() => {
+                    // Peak per-tick events seen in the run — used to
+                    // decide whether the "expected /tick" reference line
+                    // is meaningful. If the form value is < 1% of the
+                    // peak delta (e.g. user changed the form to 100 after
+                    // running with 1M batches) the line is essentially at
+                    // the X-axis and the label collides with the last
+                    // X-tick. Hide it in that case.
+                    const maxDelta = streamingSeries.reduce(
+                      (m: number, p: any) => Math.max(m, Number(p?.delta) || 0),
+                      0,
+                    );
+                    const showExpectedLine =
+                      streamEventsPerBatch > 0 &&
+                      maxDelta > 0 &&
+                      streamEventsPerBatch >= maxDelta * 0.01;
+                    return (
                     <div className="border border-border rounded-md bg-background p-2 mt-2">
                       <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Throughput</div>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <LineChart data={streamingSeries} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                      <ResponsiveContainer width="100%" height={220}>
+                        {/* bottom margin: 30 — leaves room for the X-axis
+                            tick row + "elapsed (s)" label + the Legend
+                            without any overlap. The previous 18 was tight
+                            and "elapsed (s)" sat almost on top of the
+                            legend at narrow widths. */}
+                        <ComposedChart data={streamingSeries} margin={{ top: 8, right: 24, bottom: 30, left: 8 }}>
+                          {/* Subtle area fill under the cumulative line.
+                              Defined as a linearGradient so the alpha
+                              fades to ~0 at the bottom — gives the line
+                              visual weight without dominating the chart. */}
+                          <defs>
+                            <linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#E8453C" stopOpacity={0.25} />
+                              <stop offset="100%" stopColor="#E8453C" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-muted-foreground/20" />
                           <XAxis
                             dataKey="elapsed"
                             type="number"
                             domain={[0, "dataMax"]}
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
-                            label={{ value: "elapsed (s)", position: "insideBottom", offset: -2, style: { fontSize: 10, fill: "var(--text-muted, #666)" } }}
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
+                            label={{
+                              value: "elapsed (s)",
+                              // Render the X-axis title BELOW the tick row
+                              // (negative offset = further from chart),
+                              // and let the Legend sit below it via the
+                              // increased bottom margin. Previously
+                              // "insideBottom" + small offset put the
+                              // title flush against the tick labels.
+                              position: "insideBottom",
+                              offset: -16,
+                              style: { fontSize: 10, fill: "currentColor" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <YAxis
                             yAxisId="cumulative"
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             allowDecimals={false}
+                            tickFormatter={fmtN}
+                            width={48}
+                            label={{
+                              value: "cumulative",
+                              angle: -90,
+                              position: "insideLeft",
+                              offset: 10,
+                              style: { fontSize: 10, fill: "currentColor", textAnchor: "middle" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <YAxis
                             yAxisId="delta"
                             orientation="right"
-                            tick={{ fontSize: 10 }}
-                            stroke="var(--text-muted, #666)"
+                            tick={{ fontSize: 10, fill: "currentColor" }}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             allowDecimals={false}
+                            tickFormatter={fmtN}
+                            width={48}
+                            label={{
+                              value: "per tick",
+                              angle: 90,
+                              position: "insideRight",
+                              offset: 10,
+                              style: { fontSize: 10, fill: "currentColor", textAnchor: "middle" },
+                              className: "text-muted-foreground",
+                            }}
                           />
                           <Tooltip
-                            contentStyle={{ background: "var(--card, #2C2C2C)", border: "1px solid var(--border, #404040)", borderRadius: 8, fontSize: 11 }}
-                            formatter={(v: number, name: string) => [v, name === "events" ? "Cumulative events" : "Events / tick"]}
+                            contentStyle={{
+                              background: "var(--popover, var(--card, #2C2C2C))",
+                              border: "1px solid var(--border, #404040)",
+                              borderRadius: 8,
+                              fontSize: 11,
+                              color: "var(--popover-foreground, var(--card-foreground, #fff))",
+                            }}
+                            // dataKey-based naming so the legend label
+                            // and tooltip label always match — fixes the
+                            // earlier bug where both rows said "Events /
+                            // tick" because the formatter checked `name`
+                            // (the legend label) instead of the dataKey.
+                            formatter={(v: number, _name: string, item: any) => {
+                              const key = item?.dataKey;
+                              const label = key === "events"
+                                ? "Cumulative events"
+                                : key === "delta"
+                                  ? "Events / tick"
+                                  : String(_name);
+                              return [fmtN(v), label];
+                            }}
                             labelFormatter={(v: number) => `t=${v}s`}
                           />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line
+                          {/* Legend pinned to the very bottom of the
+                              wrapper so the X-axis title ("elapsed (s)")
+                              sits ABOVE it inside the bottom margin —
+                              previously the two crowded each other. */}
+                          <Legend
+                            verticalAlign="bottom"
+                            align="center"
+                            wrapperStyle={{ fontSize: 10, paddingTop: 8, position: "relative", marginTop: 2 }}
+                          />
+                          {/* Reference line at the configured events_per_batch
+                              on the per-tick axis — visualises "this is what
+                              each tick should land if we're keeping up".
+                              Hidden when the configured value is < 1% of
+                              peak delta (e.g. user changed the form value
+                              after running) — at that scale the line
+                              renders flush against the X-axis and the
+                              label collides with the last X-tick. */}
+                          {showExpectedLine && (
+                            <ReferenceLine
+                              yAxisId="delta"
+                              y={streamEventsPerBatch}
+                              stroke="currentColor"
+                              className="text-muted-foreground"
+                              strokeDasharray="2 4"
+                              strokeOpacity={0.5}
+                              label={{
+                                value: `expected ${fmtN(streamEventsPerBatch)}/tick`,
+                                // "insideTopLeft" places the label inside
+                                // the chart area at the top-left of the
+                                // line — far from the bottom-right corner
+                                // where the last X-axis tick lives, so the
+                                // two never collide regardless of where
+                                // the line ends up vertically.
+                                position: "insideTopLeft",
+                                fill: "currentColor",
+                                fontSize: 9,
+                                className: "text-muted-foreground",
+                              }}
+                            />
+                          )}
+                          <Area
                             yAxisId="cumulative"
                             type="monotone"
                             dataKey="events"
                             name="Cumulative events"
                             stroke="#E8453C"
                             strokeWidth={2}
+                            fill="url(#cumulativeFill)"
                             dot={false}
+                            // Render a red ⨯-style dot at any tick where
+                            // tick_errors incremented. Using activeDot is
+                            // wrong here (it only fires on hover); we want
+                            // the marker to be persistent.
                             isAnimationActive={false}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            activeDot={{ r: 4, stroke: "#E8453C", strokeWidth: 2, fill: "var(--background, #fff)" }}
                           />
                           <Line
                             yAxisId="delta"
                             type="monotone"
                             dataKey="delta"
                             name="Events / tick"
-                            stroke="#374151"
+                            stroke="currentColor"
+                            className="text-muted-foreground"
                             strokeWidth={1.5}
                             strokeDasharray="3 3"
                             dot={false}
                             isAnimationActive={false}
                           />
-                        </LineChart>
+                          {/* Error markers — render as a separate Line
+                              with hidden stroke and a custom dot that
+                              only appears when payload.hasError is true.
+                              A separate series keeps the visual layer
+                              decoupled from the cumulative Area. */}
+                          <Line
+                            yAxisId="cumulative"
+                            type="monotone"
+                            dataKey="events"
+                            name="Tick errors"
+                            stroke="transparent"
+                            strokeWidth={0}
+                            isAnimationActive={false}
+                            legendType="none"
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            dot={(props: any) => {
+                              if (!props?.payload?.hasError) {
+                                // Recharts requires a valid SVG element
+                                // here, not null — a zero-radius circle
+                                // is the cheapest no-op.
+                                return <circle key={`no-err-${props?.index ?? 0}`} cx={props?.cx} cy={props?.cy} r={0} />;
+                              }
+                              return (
+                                <g key={`err-${props.index}`} transform={`translate(${props.cx},${props.cy})`}>
+                                  <circle r={4} fill="#dc2626" stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                  <line x1={-2} y1={-2} x2={2} y2={2} stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                  <line x1={-2} y1={2} x2={2} y2={-2} stroke="var(--background, #fff)" strokeWidth={1.5} />
+                                </g>
+                              );
+                            }}
+                          />
+                        </ComposedChart>
                       </ResponsiveContainer>
                     </div>
-                  )}
+                    );
+                  })()}
                   {streamingJob.progress?.current_batch_path && (
-                    <div className="text-[11px] text-muted-foreground font-mono truncate" title={streamingJob.progress.current_batch_path}>
-                      Latest: {streamingJob.progress.current_batch_path}
+                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
+                      <span className="truncate flex-1" title={streamingJob.progress.current_batch_path}>
+                        Latest: {streamingJob.progress.current_batch_path}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(streamingJob.progress.current_batch_path, "Path copied")}
+                        className="shrink-0 p-1 rounded hover:bg-muted/50"
+                        aria-label="Copy batch path"
+                        title="Copy batch path"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
                     </div>
                   )}
                   {/* Bronze status — only shown when result has landed */}
-                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (
-                    <div className="border-t border-border pt-2 mt-2 text-xs">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline mr-1" />
-                      Bronze streaming table created: <code className="text-[11px] bg-muted/50 px-1 rounded">{streamingJob.result.bronze_table_fqn}</code>
-                      <a
-                        href={(() => {
-                          // Deep-link into Data Lab with a pre-filled SELECT against the bronze
-                          // table and run=1 so the workbench fires the query immediately on
-                          // arrival. Pull catalog/schema/profile off the job result rather than
-                          // the form state — the form fields can be empty by the time the user
-                          // clicks (e.g. after a fresh load that hydrated the job from
-                          // sessionStorage but didn't restore the form), which used to produce
-                          // SELECT * FROM ``.`iot`.`bronze_…`.
-                          const r = streamingJob.result || {};
-                          const cat = r.catalog || streamCatalog;
-                          const sch = r.schema || streamSchema;
-                          const prof = r.profile || streamProfile;
-                          const fqn = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
-                          // captured_at is the per-event timestamp populated by every device
-                          // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
-                          // across atm_transaction, smart_meter, car_obd2, etc.
-                          const sql = `SELECT * FROM ${fqn} ORDER BY captured_at DESC LIMIT 100`;
-                          const encoded = btoa(encodeURIComponent(sql));
-                          return `/data-lab#q=${encoded}&run=1`;
-                        })()}
-                        className="text-[#E8453C] hover:underline ml-2"
-                      >
-                        Query latest rows →
-                      </a>
-                    </div>
-                  )}
+                  {streamingJob.result?.bronze_status === "created" && streamingJob.result?.bronze_table_fqn && (() => {
+                    // Pull catalog/schema/profile off the job result rather than the form
+                    // state — the form fields can be empty by the time the user clicks
+                    // (e.g. after a fresh load that hydrated the job from sessionStorage
+                    // but didn't restore the form).
+                    const r = streamingJob.result || {};
+                    const cat = r.catalog || streamCatalog;
+                    const sch = r.schema || streamSchema;
+                    const prof = r.profile || streamProfile;
+                    const fqnQuoted = `\`${cat}\`.\`${sch}\`.\`bronze_${prof}\``;
+                    // captured_at is the per-event timestamp populated by every device
+                    // profile (see DEVICE_PROFILES in src/demo_streaming.py) — uniform
+                    // across atm_transaction, smart_meter, car_obd2, etc.
+                    const previewSql = `SELECT * FROM ${fqnQuoted} ORDER BY captured_at DESC LIMIT 10`;
+                    const workbenchSql = `SELECT * FROM ${fqnQuoted} ORDER BY captured_at DESC LIMIT 100`;
+                    const workbenchHref = `/data-lab#q=${btoa(encodeURIComponent(workbenchSql))}&run=1`;
+                    return (
+                      <div className="border-t border-border pt-2 mt-2 space-y-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline" />
+                          <span>Bronze streaming table created:</span>
+                          <code className="text-[11px] bg-muted/50 px-1 rounded">
+                            {streamingJob.result.bronze_table_fqn}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(streamingJob.result.bronze_table_fqn, "Table FQN copied")}
+                            className="shrink-0 p-1 rounded hover:bg-muted/50"
+                            aria-label="Copy table FQN"
+                            title="Copy table FQN"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                          <a
+                            href={workbenchHref}
+                            className="text-[#E8453C] hover:underline ml-auto"
+                          >
+                            Open in workbench →
+                          </a>
+                        </div>
+                        <StreamingPreview
+                          sql={previewSql}
+                          // Refetch when emission progresses — events_emitted
+                          // monotonically increases, so passing it as a key
+                          // dependency naturally drives a refresh per batch.
+                          version={streamingJob.progress?.events_emitted ?? 0}
+                          done={streamingJob.status !== "running"}
+                        />
+                      </div>
+                    );
+                  })()}
                   {streamingJob.result?.bronze_status === "failed" && (
                     <div className="border-t border-border pt-2 mt-2 text-xs text-amber-600">
                       <XCircle className="h-3.5 w-3.5 inline mr-1" />
@@ -2101,6 +3229,21 @@ export default function DemoDataPage() {
                 <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre">{autoLoaderSnippet}</pre>
               </div>
             )}
+
+            {/* Try-with-Zerobus snippet panel — independent of the
+                selected destination (Zerobus is a parallel emit path,
+                not tied to any of the three current modes). Lazy-fetches
+                the snippet from /api/generate/demo-data/zerobus-snippet
+                only when the user expands the panel, then refetches
+                whenever the form values change. */}
+            <ZerobusSnippetPanel
+              profile={streamProfile}
+              catalog={streamCatalog.trim() || "main"}
+              schema={streamSchema.trim() || "iot"}
+              table={`bronze_${streamProfile}`}
+              eventsPerBatch={streamEventsPerBatch}
+              intervalSeconds={streamIntervalSeconds}
+            />
           </CardContent>
       </Card>
       </>)}
@@ -2342,6 +3485,36 @@ export default function DemoDataPage() {
                       <dt className="text-muted-foreground w-32 shrink-0">Notebook:</dt>
                       <dd className="font-mono text-[11px] break-all">{scheduleResult.notebook_path}</dd>
                     </div>
+                    {scheduleResult.bronze_status && (
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-32 shrink-0">Bronze table:</dt>
+                        <dd className="text-[11px] flex-1">
+                          {scheduleResult.bronze_status === "created" && (
+                            <span className="inline-flex items-center gap-1 text-green-600">
+                              <CheckCircle2 className="h-3 w-3" />
+                              <code className="bg-muted/50 px-1 rounded font-mono">
+                                {scheduleResult.bronze_table_fqn}
+                              </code>
+                            </span>
+                          )}
+                          {scheduleResult.bronze_status === "failed" && (
+                            <span className="inline-flex items-start gap-1 text-amber-600">
+                              <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                              <span>
+                                Bronze auto-create failed: {scheduleResult.bronze_error}.
+                                Files will still land in the volume; create the table manually after enabling DBSQL Serverless.
+                              </span>
+                            </span>
+                          )}
+                          {scheduleResult.bronze_status === "skipped" && (
+                            <span className="inline-flex items-start gap-1 text-amber-600">
+                              <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                              <span>Bronze table not created: {scheduleResult.bronze_error}</span>
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                   <a href={scheduleResult.run_url} target="_blank" rel="noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs text-[#E8453C] hover:underline">
@@ -2389,6 +3562,269 @@ export default function DemoDataPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// Inline preview of the most-recently-emitted rows in the bronze table.
+//
+// The schema chips above the table are derived from the first response's
+// keys — they cost nothing extra (we already SELECT *), and they let the
+// user confirm field names without leaving the page.
+//
+// `version` is bumped each emission tick (events_emitted) so React's
+// dependency array refetches naturally on each new batch. Failures are
+// rendered inline (rather than thrown as toasts) because warehouse-cold-
+// start is the most common cause and that's expected to clear within a
+// few seconds — toast spam would be worse than a quiet inline message.
+function StreamingPreview({
+  sql,
+  version,
+  done,
+}: {
+  sql: string;
+  version: number;
+  done: boolean;
+}) {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.post<Record<string, unknown>[]>("/execute-sql", { sql })
+      .then((data) => {
+        if (cancelled) return;
+        setRows(Array.isArray(data) ? data : []);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e?.message ?? "preview unavailable");
+        setRows([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sql, version]);
+
+  if (loading && rows.length === 0) {
+    return (
+      <div className="text-[11px] text-muted-foreground italic">
+        Loading preview...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-[11px] text-amber-600">
+        Preview unavailable: {error}
+        {!done && " (will retry on next batch)"}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-[11px] text-muted-foreground italic">
+        No rows landed yet — bronze refresh runs on its own cadence.
+      </div>
+    );
+  }
+
+  // Use the first row's keys as the schema. Insertion order in JSON
+  // matches the SELECT projection, which is the natural reading order
+  // for the user.
+  const columns = Object.keys(rows[0]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {columns.map((c) => (
+          <Badge key={c} variant="outline" className="text-[10px] font-mono">
+            {c}
+          </Badge>
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded border border-border">
+        <table className="w-full text-[11px] font-mono">
+          <thead className="bg-muted/30">
+            <tr>
+              {columns.map((c) => (
+                <th key={c} className="text-left px-2 py-1 font-medium text-muted-foreground whitespace-nowrap">
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-t border-border">
+                {columns.map((c) => (
+                  <td key={c} className="px-2 py-1 whitespace-nowrap max-w-[200px] truncate" title={String(row[c] ?? "")}>
+                    {row[c] === null || row[c] === undefined
+                      ? <span className="text-muted-foreground">null</span>
+                      : String(row[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        Showing {rows.length} most recent {rows.length === 1 ? "row" : "rows"}.
+      </div>
+    </div>
+  );
+}
+
+
+// Try-with-Zerobus inline panel.
+//
+// Renders a copy-pastable Python snippet that emits the same per-profile
+// events to Delta via Databricks Zerobus (low-latency direct append).
+// Backend handles snippet rendering — see /api/generate/demo-data/zerobus-snippet
+// — so the per-profile generator code stays in one place
+// (src/demo_streaming_schedule._PROFILE_GENERATORS_SOURCE).
+//
+// The panel defaults collapsed to keep the completion card tight; expand
+// triggers a fetch with the current form values, and any form change
+// re-fetches as long as it stays expanded.
+function ZerobusSnippetPanel({
+  profile, catalog, schema, table,
+  eventsPerBatch, intervalSeconds,
+}: {
+  profile: string;
+  catalog: string;
+  schema: string;
+  table: string;
+  eventsPerBatch: number;
+  intervalSeconds: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [snippet, setSnippet] = useState<string>("");
+  const [filenameSuggestion, setFilenameSuggestion] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.post<{ snippet: string; language: string; filename_suggestion: string }>(
+      "/generate/demo-data/zerobus-snippet",
+      {
+        profile,
+        catalog,
+        schema,
+        table,
+        events_per_batch: eventsPerBatch,
+        interval_seconds: intervalSeconds,
+      },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        setSnippet(r.snippet);
+        setFilenameSuggestion(r.filename_suggestion);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setError(e?.message ?? "snippet unavailable");
+        setSnippet("");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, profile, catalog, schema, table, eventsPerBatch, intervalSeconds]);
+
+  function downloadAsFile() {
+    if (!snippet) return;
+    const blob = new Blob([snippet], { type: "text/x-python" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filenameSuggestion || `zerobus_emit_${profile}.py`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="border border-border rounded-md bg-muted/20 p-3 space-y-2">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 text-left"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2">
+          <Radio className="h-3.5 w-3.5 text-[#E8453C]" />
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Try with Zerobus (low-latency direct append)
+          </span>
+          <Badge variant="outline" className="text-[10px]">Preview</Badge>
+        </span>
+        {open
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-muted-foreground">
+            Zerobus is Databricks' direct append API — no warehouse, no Volume,
+            no Auto Loader. The snippet below uses the same per-profile event
+            generator as this demo, configured for your current selections.
+            The official <code className="text-[10px] bg-background px-1 rounded">databricks-zerobus</code> Python SDK
+            is not yet released; the snippet's import line will start working
+            once it ships.
+          </p>
+
+          {loading && (
+            <div className="text-[11px] text-muted-foreground italic">
+              Rendering snippet...
+            </div>
+          )}
+
+          {error && (
+            <div className="text-[11px] text-amber-600 flex items-center gap-2">
+              <span>Snippet unavailable: {error}</span>
+              <Button size="sm" variant="ghost" onClick={() => {
+                setOpen(false);
+                setTimeout(() => setOpen(true), 0);
+              }}>
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!loading && !error && snippet && (
+            <>
+              <div className="flex items-center justify-end gap-1">
+                <Button size="sm" variant="ghost" onClick={() => copyToClipboard(snippet, "Snippet copied")}>
+                  <ClipboardCopy className="h-3.5 w-3.5 mr-1" />Copy
+                </Button>
+                <Button size="sm" variant="ghost" onClick={downloadAsFile}>
+                  <Download className="h-3.5 w-3.5 mr-1" />Download .py
+                </Button>
+              </div>
+              <pre className="text-[11px] font-mono bg-background border border-border rounded p-2 overflow-x-auto whitespace-pre max-h-96">
+                {snippet}
+              </pre>
+            </>
+          )}
         </div>
       )}
     </div>

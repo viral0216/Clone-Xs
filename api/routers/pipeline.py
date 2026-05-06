@@ -32,6 +32,7 @@ class PipelineRunRequest(BaseModel):
 
 def _engine(client, config):
     from src.pipeline_engine import PipelineEngine
+
     return PipelineEngine(client, config.get("sql_warehouse_id", ""), config=config)
 
 
@@ -44,7 +45,9 @@ async def create_pipeline(req: PipelineCreate, client=Depends(get_db_client)):
 
 
 @router.get("/pipelines")
-async def list_pipelines(templates_only: bool = Query(False), limit: int = Query(50), client=Depends(get_db_client)):
+async def list_pipelines(
+    templates_only: bool = Query(False), limit: int = Query(50), client=Depends(get_db_client)
+):
     config = await get_app_config()
     return _engine(client, config).list_pipelines(templates_only=templates_only, limit=limit)
 
@@ -65,16 +68,22 @@ async def delete_pipeline(pipeline_id: str, client=Depends(get_db_client)):
 
 
 @router.post("/pipelines/{pipeline_id}/run")
-async def run_pipeline(pipeline_id: str, client=Depends(get_db_client), job_manager=Depends(get_job_manager)):
+async def run_pipeline(
+    pipeline_id: str, client=Depends(get_db_client), job_manager=Depends(get_job_manager)
+):
     config = await get_app_config()
+
     def _run():
         return _engine(client, config).run_pipeline(pipeline_id)
+
     job_id = job_manager.submit_job(_run, label=f"pipeline-run-{pipeline_id[:8]}")
     return {"job_id": job_id, "status": "submitted"}
 
 
 @router.get("/runs")
-async def list_runs(pipeline_id: str | None = Query(None), limit: int = Query(50), client=Depends(get_db_client)):
+async def list_runs(
+    pipeline_id: str | None = Query(None), limit: int = Query(50), client=Depends(get_db_client)
+):
     config = await get_app_config()
     return _engine(client, config).list_runs(pipeline_id=pipeline_id, limit=limit)
 
@@ -101,10 +110,14 @@ async def list_templates(client=Depends(get_db_client)):
 
 
 @router.post("/templates/{template_name}/create")
-async def create_from_template(template_name: str, body: PipelineFromTemplate = None, client=Depends(get_db_client)):
+async def create_from_template(
+    template_name: str, body: PipelineFromTemplate = None, client=Depends(get_db_client)
+):
     config = await get_app_config()
     try:
-        pid = _engine(client, config).create_from_template(template_name, overrides=body.overrides if body else None)
+        pid = _engine(client, config).create_from_template(
+            template_name, overrides=body.overrides if body else None
+        )
         return {"pipeline_id": pid, "template": template_name, "status": "created"}
     except ValueError as e:
         raise HTTPException(400, str(e))

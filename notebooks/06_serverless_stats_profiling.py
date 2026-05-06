@@ -52,7 +52,7 @@ print(f"  Total size:     {stats['total_size_display']}")
 print(f"  Total rows:     {stats['total_rows']:,}")
 
 if stats.get("top_by_size"):
-    print(f"\n  Top 5 tables by size:")
+    print("\n  Top 5 tables by size:")
     for t in stats["top_by_size"][:5]:
         print(f"    {t['table']}: {t['size_display']} ({t['rows']:,} rows)")
 

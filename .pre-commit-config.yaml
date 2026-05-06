@@ -1,0 +1,71 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-docstring-first
+    -   id: check-json
+        # tsconfig.json files contain JSONC (JSON with comments), which strict
+        # check-json rejects. They're validated by tsc/Docusaurus instead.
+        exclude: '(^|/)tsconfig.*\.json$'
+    -   id: check-yaml
+    -   id: debug-statements
+        # Databricks notebook source files contain IPython magics (%pip, %sql)
+        # that aren't valid Python AST; they're executed by the notebook runtime.
+        exclude: '^notebooks/'
+-   repo: https://github.com/python-jsonschema/check-jsonschema
+    rev:  '0.33.0'
+    hooks:
+    -   id: check-github-workflows
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.11.6
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [ --fix ]
+      # Run the formatter.
+      - id: ruff-format
+
+# Local hooks mirror the remaining CI jobs in .github/workflows/ci.yml.
+# Fast checks run on every commit; slow ones are gated to `pre-push` so they
+# don't block routine commits but still run before code leaves the machine.
+-   repo: local
+    hooks:
+    # UI lint — matches `npm run lint` (eslint). Fast, runs on every commit.
+    # pre-commit passes paths from repo root (ui/src/...); strip the `ui/`
+    # prefix and run eslint from inside the ui workspace.
+    -   id: ui-eslint
+        name: ui eslint
+        entry: bash -c 'cd ui && exec npx eslint "${@#ui/}"' --
+        language: system
+        files: ^ui/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: true
+
+    # Python tests — matches the CI `test` job. Slow, runs on `git push` only.
+    -   id: pytest
+        name: pytest
+        entry: python3 -m pytest tests/ -q --tb=short
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+
+    # UI build — matches CI `build-ui` (tsc + vite). Slow, pre-push only.
+    -   id: ui-build
+        name: ui build (tsc + vite)
+        entry: bash -c 'cd ui && npm run build'
+        language: system
+        files: ^ui/.*\.(ts|tsx|js|jsx|css|json)$
+        pass_filenames: false
+        stages: [pre-push]
+
+    # UI unit tests — matches `npm test` (vitest). Pre-push only.
+    -   id: ui-vitest
+        name: ui vitest
+        entry: bash -c 'cd ui && npm test'
+        language: system
+        files: ^ui/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+        stages: [pre-push]

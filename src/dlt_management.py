@@ -24,17 +24,21 @@ def list_pipelines(client: WorkspaceClient, filter_expr: str = "") -> list[dict]
                 latest = {
                     "update_id": getattr(u, "update_id", None),
                     "state": str(getattr(u, "state", "")) if getattr(u, "state", None) else None,
-                    "creation_time": str(getattr(u, "creation_time", "")) if getattr(u, "creation_time", None) else None,
+                    "creation_time": str(getattr(u, "creation_time", ""))
+                    if getattr(u, "creation_time", None)
+                    else None,
                 }
-            pipelines.append({
-                "pipeline_id": p.pipeline_id,
-                "name": p.name,
-                "state": str(p.state) if p.state else None,
-                "health": str(getattr(p, "health", "")) if getattr(p, "health", None) else None,
-                "creator": getattr(p, "creator_user_name", None),
-                "cluster_id": getattr(p, "cluster_id", None),
-                "latest_update": latest,
-            })
+            pipelines.append(
+                {
+                    "pipeline_id": p.pipeline_id,
+                    "name": p.name,
+                    "state": str(p.state) if p.state else None,
+                    "health": str(getattr(p, "health", "")) if getattr(p, "health", None) else None,
+                    "creator": getattr(p, "creator_user_name", None),
+                    "cluster_id": getattr(p, "cluster_id", None),
+                    "latest_update": latest,
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to list DLT pipelines: {e}")
     return pipelines
@@ -59,22 +63,38 @@ def get_pipeline_details(client: WorkspaceClient, pipeline_id: str) -> dict | No
                 "serverless": getattr(spec, "serverless", False),
                 "development": getattr(spec, "development", False),
                 "libraries": [
-                    {"notebook": getattr(lib, "notebook", None), "jar": getattr(lib, "jar", None),
-                     "file": getattr(lib, "file", None)}
+                    {
+                        "notebook": getattr(lib, "notebook", None),
+                        "jar": getattr(lib, "jar", None),
+                        "file": getattr(lib, "file", None),
+                    }
                     for lib in (getattr(spec, "libraries", []) or [])
-                ] if spec else [],
+                ]
+                if spec
+                else [],
                 "clusters": [
-                    {"label": getattr(c, "label", None), "num_workers": getattr(c, "num_workers", None),
-                     "node_type_id": getattr(c, "node_type_id", None)}
+                    {
+                        "label": getattr(c, "label", None),
+                        "num_workers": getattr(c, "num_workers", None),
+                        "node_type_id": getattr(c, "node_type_id", None),
+                    }
                     for c in (getattr(spec, "clusters", []) or [])
-                ] if spec else [],
+                ]
+                if spec
+                else [],
                 "configuration": dict(getattr(spec, "configuration", {}) or {}) if spec else {},
                 "notifications": [
-                    {"email_recipients": getattr(n, "email_recipients", []),
-                     "alerts": [str(a) for a in (getattr(n, "alerts", []) or [])]}
+                    {
+                        "email_recipients": getattr(n, "email_recipients", []),
+                        "alerts": [str(a) for a in (getattr(n, "alerts", []) or [])],
+                    }
                     for n in (getattr(spec, "notifications", []) or [])
-                ] if spec else [],
-            } if spec else None,
+                ]
+                if spec
+                else [],
+            }
+            if spec
+            else None,
         }
     except Exception as e:
         logger.error(f"Failed to get DLT pipeline {pipeline_id}: {e}")
@@ -105,7 +125,9 @@ def stop_pipeline(client: WorkspaceClient, pipeline_id: str) -> dict:
         raise
 
 
-def clone_pipeline(client: WorkspaceClient, pipeline_id: str, new_name: str, dry_run: bool = False) -> dict:
+def clone_pipeline(
+    client: WorkspaceClient, pipeline_id: str, new_name: str, dry_run: bool = False
+) -> dict:
     """Clone a DLT pipeline definition."""
     try:
         # Get the source pipeline spec
@@ -132,20 +154,27 @@ def clone_pipeline(client: WorkspaceClient, pipeline_id: str, new_name: str, dry
 
         # Handle library-less pipelines by creating a placeholder notebook
         if not libs:
-            placeholder_path = f"/Shared/clone-xs/dlt_placeholder_{new_name.replace(' ', '_').lower()}"
+            placeholder_path = (
+                f"/Shared/clone-xs/dlt_placeholder_{new_name.replace(' ', '_').lower()}"
+            )
             try:
                 import base64
+
                 notebook_content = base64.b64encode(
                     b"# Placeholder notebook created by Clone-Xs DLT clone\n"
                     b"# Replace this with your actual DLT pipeline code\n"
                 ).decode()
                 client.workspace.import_(
-                    path=placeholder_path, content=notebook_content,
-                    format="SOURCE", language="PYTHON", overwrite=True,
+                    path=placeholder_path,
+                    content=notebook_content,
+                    format="SOURCE",
+                    language="PYTHON",
+                    overwrite=True,
                 )
             except Exception:
                 placeholder_path = "/Shared/clone-xs/dlt_placeholder"
             from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
+
             libs = [PipelineLibrary(notebook=NotebookLibrary(path=placeholder_path))]
 
         response = client.pipelines.create(
@@ -221,6 +250,7 @@ def clone_pipeline_cross_workspace(
 
         # Create destination client
         from src.auth import get_client
+
         dest_client = get_client(host=dest_host, token=dest_token)
 
         # Extract libraries — reconstruct for the API
@@ -228,24 +258,37 @@ def clone_pipeline_cross_workspace(
         libraries = []
         for lib in raw_libs:
             if hasattr(lib, "notebook") and lib.notebook:
-                path = getattr(lib.notebook, "path", None) if hasattr(lib.notebook, "path") else str(lib.notebook)
+                path = (
+                    getattr(lib.notebook, "path", None)
+                    if hasattr(lib.notebook, "path")
+                    else str(lib.notebook)
+                )
                 if path:
                     from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
+
                     libraries.append(PipelineLibrary(notebook=NotebookLibrary(path=path)))
             elif hasattr(lib, "file") and lib.file:
-                path = getattr(lib.file, "path", None) if hasattr(lib.file, "path") else str(lib.file)
+                path = (
+                    getattr(lib.file, "path", None) if hasattr(lib.file, "path") else str(lib.file)
+                )
                 if path:
                     from databricks.sdk.service.pipelines import PipelineLibrary, FileLibrary
+
                     libraries.append(PipelineLibrary(file=FileLibrary(path=path)))
             else:
                 libraries.append(lib)
 
         # Pipelines without libraries — create a placeholder notebook in dest workspace
         if not libraries:
-            logger.info("Source pipeline has no notebook libraries — creating placeholder in destination")
-            placeholder_path = f"/Shared/clone-xs/dlt_placeholder_{new_name.replace(' ', '_').lower()}"
+            logger.info(
+                "Source pipeline has no notebook libraries — creating placeholder in destination"
+            )
+            placeholder_path = (
+                f"/Shared/clone-xs/dlt_placeholder_{new_name.replace(' ', '_').lower()}"
+            )
             try:
                 import base64
+
                 notebook_content = base64.b64encode(
                     b"# Placeholder notebook created by Clone-Xs DLT clone\n"
                     b"# Replace this with your actual DLT pipeline code\n"
@@ -264,9 +307,10 @@ def clone_pipeline_cross_workspace(
                 placeholder_path = "/Shared/clone-xs/dlt_placeholder"
 
             from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
+
             libraries = [PipelineLibrary(notebook=NotebookLibrary(path=placeholder_path))]
 
-        # Create pipeline in destination workspace via SDK
+            # Create pipeline in destination workspace via SDK
             # Create pipeline in destination workspace via SDK
             response = dest_client.pipelines.create(
                 name=new_name,
@@ -283,7 +327,9 @@ def clone_pipeline_cross_workspace(
             new_id = getattr(response, "pipeline_id", None)
         new_id = getattr(response, "pipeline_id", None)
 
-        logger.info(f"DLT pipeline cloned cross-workspace: {pipeline_id} -> {new_id} ({source_host} -> {dest_host})")
+        logger.info(
+            f"DLT pipeline cloned cross-workspace: {pipeline_id} -> {new_id} ({source_host} -> {dest_host})"
+        )
         return {
             **preview,
             "dry_run": False,
@@ -298,19 +344,27 @@ def clone_pipeline_cross_workspace(
 # ── Event Monitoring ──────────────────────────────────────────────────────
 
 
-def list_pipeline_events(client: WorkspaceClient, pipeline_id: str, max_events: int = 100) -> list[dict]:
+def list_pipeline_events(
+    client: WorkspaceClient, pipeline_id: str, max_events: int = 100
+) -> list[dict]:
     """Get pipeline event log (expectations, errors, completions)."""
     events = []
     try:
-        for ev in client.pipelines.list_pipeline_events(pipeline_id=pipeline_id, max_results=max_events):
-            events.append({
-                "id": getattr(ev, "id", None),
-                "event_type": getattr(ev, "event_type", None),
-                "level": str(ev.level) if getattr(ev, "level", None) else None,
-                "message": str(ev.message)[:500] if getattr(ev, "message", None) else None,
-                "timestamp": str(ev.timestamp) if getattr(ev, "timestamp", None) else None,
-                "maturity_level": str(getattr(ev, "maturity_level", "")) if getattr(ev, "maturity_level", None) else None,
-            })
+        for ev in client.pipelines.list_pipeline_events(
+            pipeline_id=pipeline_id, max_results=max_events
+        ):
+            events.append(
+                {
+                    "id": getattr(ev, "id", None),
+                    "event_type": getattr(ev, "event_type", None),
+                    "level": str(ev.level) if getattr(ev, "level", None) else None,
+                    "message": str(ev.message)[:500] if getattr(ev, "message", None) else None,
+                    "timestamp": str(ev.timestamp) if getattr(ev, "timestamp", None) else None,
+                    "maturity_level": str(getattr(ev, "maturity_level", ""))
+                    if getattr(ev, "maturity_level", None)
+                    else None,
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to get events for pipeline {pipeline_id}: {e}")
     return events
@@ -321,14 +375,18 @@ def list_pipeline_updates(client: WorkspaceClient, pipeline_id: str) -> list[dic
     updates = []
     try:
         response = client.pipelines.list_updates(pipeline_id=pipeline_id)
-        for u in (getattr(response, "updates", []) or []):
-            updates.append({
-                "update_id": getattr(u, "update_id", None),
-                "state": str(getattr(u, "state", "")) if getattr(u, "state", None) else None,
-                "creation_time": str(getattr(u, "creation_time", "")) if getattr(u, "creation_time", None) else None,
-                "full_refresh": getattr(u, "full_refresh", False),
-                "cause": str(getattr(u, "cause", "")) if getattr(u, "cause", None) else None,
-            })
+        for u in getattr(response, "updates", []) or []:
+            updates.append(
+                {
+                    "update_id": getattr(u, "update_id", None),
+                    "state": str(getattr(u, "state", "")) if getattr(u, "state", None) else None,
+                    "creation_time": str(getattr(u, "creation_time", ""))
+                    if getattr(u, "creation_time", None)
+                    else None,
+                    "full_refresh": getattr(u, "full_refresh", False),
+                    "cause": str(getattr(u, "cause", "")) if getattr(u, "cause", None) else None,
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to get updates for pipeline {pipeline_id}: {e}")
     return updates
@@ -338,7 +396,10 @@ def list_pipeline_updates(client: WorkspaceClient, pipeline_id: str) -> list[dic
 
 
 def query_expectation_results(
-    client: WorkspaceClient, warehouse_id: str, pipeline_id: str | None = None, days: int = 7,
+    client: WorkspaceClient,
+    warehouse_id: str,
+    pipeline_id: str | None = None,
+    days: int = 7,
 ) -> list[dict]:
     """Query DLT expectation results from system tables."""
     start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -372,7 +433,9 @@ def get_dlt_dashboard(client: WorkspaceClient, warehouse_id: str | None = None) 
     failed = sum(1 for p in pipelines if p.get("state") and "FAILED" in str(p["state"]).upper())
     idle = sum(1 for p in pipelines if p.get("state") and "IDLE" in str(p["state"]).upper())
     healthy = sum(1 for p in pipelines if p.get("health") and "HEALTHY" in str(p["health"]).upper())
-    unhealthy = sum(1 for p in pipelines if p.get("health") and "UNHEALTHY" in str(p["health"]).upper())
+    unhealthy = sum(
+        1 for p in pipelines if p.get("health") and "UNHEALTHY" in str(p["health"]).upper()
+    )
 
     # Collect recent events for failed/running pipelines
     recent_events = []
@@ -412,15 +475,23 @@ def get_dlt_lineage(client: WorkspaceClient, warehouse_id: str, pipeline_id: str
     catalog = details.get("spec", {}).get("catalog")
     target = details.get("spec", {}).get("target")
     if not catalog or not target:
-        return {"pipeline_id": pipeline_id, "datasets": [], "message": "Pipeline has no catalog/target"}
+        return {
+            "pipeline_id": pipeline_id,
+            "datasets": [],
+            "message": "Pipeline has no catalog/target",
+        }
 
     # Query UC tables in the pipeline's target schema
     try:
-        tables = execute_sql(client, warehouse_id, f"""
+        tables = execute_sql(
+            client,
+            warehouse_id,
+            f"""
             SELECT table_name, table_type, data_source_format, comment
             FROM {catalog}.information_schema.tables
             WHERE table_schema = '{target}'
-        """)
+        """,
+        )
     except Exception:
         tables = []
 

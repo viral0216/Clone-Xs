@@ -1,15 +1,76 @@
 name: Release
 
+# Two ways to cut a release:
+#
+#   1. Push a tag matching `v*` — the legacy path. The tag name IS the
+#      version. Operator runs `git tag v0.9.0 && git push origin v0.9.0`.
+#
+#   2. Click **Actions → Release → Run workflow** in GitHub and type
+#      the version (e.g. `v0.9.0` or `0.9.0`). The workflow validates
+#      the input matches `pyproject.toml`, builds every artifact, then
+#      creates AND pushes the tag at the end so the repo's git history
+#      reflects what was released.
+#
+# Both paths produce the same set of artifacts and the same GitHub
+# Release. The `determine-version` job is the single source of truth
+# for the version string downstream — every job reads it from there
+# rather than from `github.ref_name`, so we don't have to special-case
+# the trigger in each step.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. v0.9.0 or 0.9.0). Must match pyproject.toml. Tag is created + pushed at the end.'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  # ── Resolve the version once, share with every downstream job ──────
+  #
+  # Tag-push trigger:    version = github.ref_name (e.g. "v0.8.0")
+  # workflow_dispatch:   version = inputs.version (normalised with `v` prefix)
+  #                      AND must match pyproject.toml — fail loud
+  #                      otherwise the wheel artifact and the Release
+  #                      tag would disagree.
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: v
+        name: Resolve release version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ inputs.version }}"
+            # Normalise: ensure v-prefix.
+            if [[ "$v" != v* ]]; then
+              v="v$v"
+            fi
+            # Drift check vs pyproject.toml — without this, a dispatch
+            # for v0.9.0 against a pyproject.toml that still says 0.8.0
+            # would publish a 0.8.0 wheel under a v0.9.0 GitHub Release.
+            pv=$(grep -E '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/' | head -n1)
+            if [ "v$pv" != "$v" ]; then
+              echo "::error::Dispatch version $v does not match pyproject.toml version v$pv. Bump pyproject.toml in a PR first, then dispatch with the new version."
+              exit 1
+            fi
+          else
+            v="${{ github.ref_name }}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $v"
+
   # ── Build Python wheel ──────────────────────────────────────────────
   build-wheel:
+    needs: determine-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,6 +93,7 @@ jobs:
 
   # ── Build React frontend ────────────────────────────────────────────
   build-frontend:
+    needs: determine-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -55,6 +117,7 @@ jobs:
 
   # ── Build macOS Desktop App ─────────────────────────────────────────
   build-desktop-mac:
+    needs: determine-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -86,6 +149,7 @@ jobs:
 
   # ── Build Windows Desktop App ───────────────────────────────────────
   build-desktop-win:
+    needs: determine-version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -120,16 +184,19 @@ jobs:
 
   # ── Build Docker image ──────────────────────────────────────────────
   build-docker:
+    needs: determine-version
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Build Docker image
-        run: docker build -t clone-xs:${{ github.ref_name }} .
+        run: docker build -t "clone-xs:${RELEASE_VERSION}" .
 
       - name: Save Docker image
         run: |
-          docker save clone-xs:${{ github.ref_name }} | gzip > clone-xs-${{ github.ref_name }}-docker.tar.gz
+          docker save "clone-xs:${RELEASE_VERSION}" | gzip > "clone-xs-${RELEASE_VERSION}-docker.tar.gz"
 
       - uses: actions/upload-artifact@v6
         with:
@@ -138,10 +205,18 @@ jobs:
 
   # ── Create GitHub Release ───────────────────────────────────────────
   release:
-    needs: [build-wheel, build-frontend, build-desktop-mac, build-desktop-win, build-docker]
+    needs: [determine-version, build-wheel, build-frontend, build-desktop-mac, build-desktop-win, build-docker]
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # `fetch-depth: 0` so we can `git rev-parse <tag>` against
+          # the full ref history when checking whether the tag already
+          # exists in the dispatch path. Default depth=1 only pulls
+          # HEAD and would mis-report missing tags.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v5
         with:
@@ -150,9 +225,31 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f | sort
 
+      # Dispatch path only — the tag-push path already has a tag by
+      # definition. Done BEFORE the GitHub Release creation so a
+      # tag-create failure (e.g. someone else pushed the tag in the
+      # meantime) aborts the release before it publishes.
+      #
+      # GITHUB_TOKEN-pushed tags do NOT re-trigger this workflow, so
+      # there's no double-fire risk.
+      - name: Create and push tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          if git rev-parse "$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_VERSION already exists. Pick a new version."
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$RELEASE_VERSION"
+          git push origin "$RELEASE_VERSION"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.determine-version.outputs.version }}
+          name: ${{ needs.determine-version.outputs.version }}
           generate_release_notes: true
           files: |
             artifacts/wheel/*.whl
@@ -161,7 +258,7 @@ jobs:
             artifacts/desktop-win/*.zip
             artifacts/docker/*.tar.gz
           body: |
-            ## Clone-Xs ${{ github.ref_name }}
+            ## Clone-Xs ${{ needs.determine-version.outputs.version }}
 
             ### Installation
 
@@ -177,8 +274,8 @@ jobs:
 
             **Docker:**
             ```bash
-            docker load < clone-xs-${{ github.ref_name }}-docker.tar.gz
-            docker run -p 8080:8080 clone-xs:${{ github.ref_name }}
+            docker load < clone-xs-${{ needs.determine-version.outputs.version }}-docker.tar.gz
+            docker run -p 8080:8080 clone-xs:${{ needs.determine-version.outputs.version }}
             ```
 
             **Desktop:** Download the `.zip` (macOS) or `.exe` (Windows) below.

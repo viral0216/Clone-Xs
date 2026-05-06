@@ -1755,7 +1755,12 @@ export default function DemoDataPage() {
                   <Button size="sm" variant="destructive" className="h-7 text-xs"
                     onClick={async () => {
                       try {
-                        await api.post(`/clone/${jobId}/cancel`);
+                        // Backend cancellation is `DELETE /api/clone/{job_id}`
+                        // (see api/routers/clone.py:cancel_job). The previous
+                        // `POST /clone/{id}/cancel` call returned 405 because
+                        // that path doesn't exist — the closest match is the
+                        // GET endpoint at the same prefix, which rejected POST.
+                        await api.delete(`/clone/${jobId}`);
                         toast.success("Job cancelled");
                       } catch (e: any) {
                         toast.error("Cancel failed: " + (e.message || ""));

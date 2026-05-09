@@ -599,6 +599,27 @@ class JobManager:
                     progress=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-logs":
+                # Logs tab — generates NGINX access / JSON app /
+                # syslog / OTel trace files. Pure stdlib + Faker.
+                # Differs from the other unstructured tabs in two
+                # ways: (1) each "count" is a number of FILES, with
+                # configurable lines_per_file (default 1000); (2)
+                # the direct_table variant inserts ONE ROW PER LINE
+                # (not per file) — log analytics demos query by
+                # level/timestamp, not by file.
+                from src.demo_logs import generate_logs
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_logs(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

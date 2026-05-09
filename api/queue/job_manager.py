@@ -620,6 +620,25 @@ class JobManager:
                     progress=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-code":
+                # Code tab — generates synthetic source-code repos
+                # (Python / JS / Java) for code-search demos. Each
+                # "count" is a number of REPOS, not files; each repo
+                # is ~25-35 source files. direct_table writes one
+                # row per source FILE with `content STRING` —
+                # natural shape for code-search embeddings.
+                from src.demo_code import generate_code
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_code(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

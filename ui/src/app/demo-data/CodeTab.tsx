@@ -1,25 +1,27 @@
 // @ts-nocheck
 //
-// Documents tab on /demo-data — generates a corpus of unstructured
-// files (PDFs, Office docs, Excel, .eml) into either a UC Volume,
-// a Volume + indexing catalog table, or a direct (inline-bytes)
-// Delta table.
+// Code tab on /demo-data — fifth and final unstructured-asset tab.
 //
-// Surfaces:
-//   - destination radio (3 modes — mirrors the streaming module)
-//   - catalog / schema / Volume picker (Volume disabled for direct_table)
-//   - per-industry context dropdown
-//   - per-doc-type checkbox grid grouped by category, each with a count
-//   - AI-draft toggle (opt-in, requires API key)
-//   - live preview tile (calls /preview on every form change)
-//   - submit + job-progress card via useDurableJob
-//   - completion summary with per-type counts + table FQN
+// Generates synthetic source-code repos (Python / JS / Java) into
+// either a UC Volume, a Volume + per-file catalog table, or a
+// direct table with `content STRING` per file.
+//
+// Distinct shape vs the other tabs:
+//   1. Each "count" is a number of REPOS (not files). Each repo is
+//      ~25-35 source files (src/, tests/, README, manifest).
+//   2. direct_table is one row per FILE with content as STRING —
+//      natural shape for code-search embeddings.
+//   3. Per-type cap is 50 repos (50 × 30 files = 1500 files per
+//      type). Lower than the other tabs because each unit of work
+//      generates ~30 files.
+//   4. Files NOT runnable — they're templates for code-search /
+//      Copilot demos, not for compilation.
 //
 // Pairs with backend:
-//   - GET    /api/generate/demo-documents/types     → registry inventory
-//   - POST   /api/generate/demo-documents/preview   → bytes/duration estimate
-//   - POST   /api/generate/demo-documents           → submit job → {job_id}
-//   - GET    /api/clone/{job_id}                    → poll progress (shared shape)
+//   - GET    /api/generate/demo-code/types    → registry
+//   - POST   /api/generate/demo-code/preview  → estimate
+//   - POST   /api/generate/demo-code          → submit job
+//   - GET    /api/clone/{job_id}              → poll progress
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,21 +35,20 @@ import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
 import {
   AlertTriangle,
   CheckCircle2,
-  FileText,
+  Code2,
   Loader2,
   Play,
   Sparkles,
 } from "lucide-react";
 
-// ── Types matching the backend ─────────────────────────────────────
+type CodeDestination = "volume" | "volume_with_catalog" | "direct_table";
 
-type DocumentDestination = "volume" | "volume_with_catalog" | "direct_table";
-
-interface DocumentTypeInfo {
+interface CodeTypeInfo {
   type: string;
   category: string;
   label: string;
   extension: string;
+  language: string;
 }
 
 interface PerTypePreview {
@@ -55,12 +56,14 @@ interface PerTypePreview {
   category: string;
   label: string;
   count: number;
+  file_count: number;
   estimated_bytes: number;
   estimated_seconds: number;
 }
 
 interface PreviewResponse {
   per_type: PerTypePreview[];
+  total_repos: number;
   total_files: number;
   total_bytes: number;
   estimated_seconds: number;
@@ -68,7 +71,7 @@ interface PreviewResponse {
 }
 
 interface TypesResponse {
-  types: DocumentTypeInfo[];
+  types: CodeTypeInfo[];
   available: boolean;
   unavailable_reason: string | null;
 }
@@ -85,103 +88,65 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export default function DocumentsTab() {
-  // ── Form state ───────────────────────────────────────────────────
-  const [destination, setDestination] = useState<DocumentDestination>("volume_with_catalog");
+export default function CodeTab() {
+  const [destination, setDestination] = useState<CodeDestination>("volume_with_catalog");
   const [catalog, setCatalog] = useState("");
   const [schema, setSchema] = useState("");
   const [volume, setVolume] = useState("demo_unstructured");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
 
-  // Per-type state: which are checked, how many of each.
   const [selectedTypes, setSelectedTypes] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
 
-  // ── Loaded from /types ──────────────────────────────────────────
-  const [typeRegistry, setTypeRegistry] = useState<DocumentTypeInfo[]>([]);
+  const [typeRegistry, setTypeRegistry] = useState<CodeTypeInfo[]>([]);
   const [available, setAvailable] = useState<boolean>(true);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
   const [registryLoading, setRegistryLoading] = useState(false);
 
-  // ── Live preview ────────────────────────────────────────────────
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
 
-  // ── Submit / job tracking ───────────────────────────────────────
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const docsJob = useDurableJob({
-    key: "demo-documents",
+  const codeJob = useDurableJob({
+    key: "demo-code",
     pollUrl: (id) => `/clone/${id}`,
     isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
   });
 
-  // ── Fetch type registry whenever industry changes ──────────────
-  // The backend filters + relabels the type list per industry — e.g.
-  // pdf_contract is "Lease agreement" for real_estate but "Loan
-  // agreement" for financial. Refetching on every industry change
-  // keeps the picker labels honest. The dependency array excludes
-  // `counts` deliberately: re-running this effect must NOT clobber
-  // user-entered counts on every keystroke.
   useEffect(() => {
     setRegistryLoading(true);
     api
-      .get<TypesResponse>(
-        `/generate/demo-documents/types?industry=${encodeURIComponent(industry)}`,
-      )
+      .get<TypesResponse>("/generate/demo-code/types")
       .then((res) => {
         setTypeRegistry(res.types || []);
         setAvailable(res.available);
         setUnavailableReason(res.unavailable_reason);
-        // Seed default counts (5) for any type the user hasn't yet
-        // touched. Existing user-entered counts are preserved across
-        // industry switches so toggling industry doesn't blow away
-        // a half-filled form.
-        setCounts((prev) => {
-          const next: Record<string, number> = { ...prev };
-          for (const t of res.types) {
-            if (next[t.type] === undefined) next[t.type] = 5;
-          }
-          return next;
-        });
-        // Prune selections to only types visible for the new industry.
-        // Without this, switching from healthcare → real_estate while
-        // pdf_lab_report is checked leaves the checkbox state set
-        // even though the picker no longer shows it, so the submit
-        // payload would carry an invalid type and 422 server-side.
-        setSelectedTypes((prev) => {
-          const visible = new Set((res.types || []).map((t) => t.type));
-          const next: Record<string, boolean> = {};
-          for (const [k, v] of Object.entries(prev)) {
-            if (visible.has(k)) next[k] = v;
-          }
-          return next;
-        });
+        const initialCounts: Record<string, number> = {};
+        for (const t of res.types) initialCounts[t.type] = 3;
+        setCounts(initialCounts);
       })
       .catch(() => {
         setTypeRegistry([]);
         setAvailable(false);
-        setUnavailableReason("Could not load document types from the API.");
+        setUnavailableReason("Could not load code types from the API.");
       })
       .finally(() => setRegistryLoading(false));
-  }, [industry]);
+  }, []);
 
-  // ── Derived: types currently selected for submit ────────────────
   const activeTypes = useMemo(
     () => Object.keys(selectedTypes).filter((k) => selectedTypes[k]),
     [selectedTypes],
   );
 
-  // ── Group types by category for the checkbox grid ───────────────
   const groupedTypes = useMemo(() => {
-    const out: Record<string, DocumentTypeInfo[]> = {};
+    const out: Record<string, CodeTypeInfo[]> = {};
     for (const t of typeRegistry) {
       (out[t.category] ??= []).push(t);
     }
     return out;
   }, [typeRegistry]);
 
-  // ── Live preview — debounced on form changes ────────────────────
   useEffect(() => {
     if (activeTypes.length === 0) {
       setPreview(null);
@@ -189,9 +154,9 @@ export default function DocumentsTab() {
     }
     const handle = setTimeout(() => {
       const activeCounts: Record<string, number> = {};
-      for (const t of activeTypes) activeCounts[t] = counts[t] ?? 5;
+      for (const t of activeTypes) activeCounts[t] = counts[t] ?? 3;
       api
-        .post<PreviewResponse>("/generate/demo-documents/preview", {
+        .post<PreviewResponse>("/generate/demo-code/preview", {
           types: activeTypes,
           counts: activeCounts,
         })
@@ -201,7 +166,6 @@ export default function DocumentsTab() {
     return () => clearTimeout(handle);
   }, [activeTypes, counts]);
 
-  // ── Validation gates for the submit button ──────────────────────
   const volumeRequired = destination !== "direct_table";
   const canSubmit =
     available &&
@@ -216,9 +180,9 @@ export default function DocumentsTab() {
     setSubmitError("");
     try {
       const activeCounts: Record<string, number> = {};
-      for (const t of activeTypes) activeCounts[t] = counts[t] ?? 5;
+      for (const t of activeTypes) activeCounts[t] = counts[t] ?? 3;
       const res = await api.post<{ job_id: string; status: string }>(
-        "/generate/demo-documents",
+        "/generate/demo-code",
         {
           catalog: catalog.trim(),
           schema: schema.trim(),
@@ -230,63 +194,48 @@ export default function DocumentsTab() {
           realistic_content: realisticContent,
         },
       );
-      docsJob.start({}, async () => res.job_id);
+      codeJob.start({}, async () => res.job_id);
       toast.success(`Job ${res.job_id} submitted`);
     } catch (e: any) {
-      // Normalise the 503 dependencies-missing payload so the UI
-      // can render an install hint instead of a generic toast.
       const msg = e?.message || "Submission failed";
-      if (msg.includes("dependencies_missing")) {
-        setSubmitError(
-          "Documents extra not installed. Run `pip install clone-xs[documents]` and restart the API.",
-        );
-      } else {
-        setSubmitError(msg);
-      }
+      setSubmitError(msg);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ── Render ──────────────────────────────────────────────────────
-
   if (registryLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading document types…
+        Loading code types…
       </div>
     );
   }
 
   return (
     <div className="space-y-5">
-      {/* Missing-dep banner — calm, not an error */}
       {!available && (
         <div className="border border-amber-500/60 bg-amber-500/10 rounded-md p-3 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="text-sm">
             <p className="font-medium text-amber-700 dark:text-amber-200">
-              Documents extra not installed
+              Code generator unavailable
             </p>
             <p className="text-amber-700 dark:text-amber-100 mt-1">
-              {unavailableReason || "Install the optional extra to enable document generation."}
+              {unavailableReason || "Internal error loading the generator."}
             </p>
-            <code className="inline-block mt-2 px-2 py-1 bg-amber-500/20 rounded font-mono text-xs">
-              pip install clone-xs[documents]
-            </code>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Form column — spans 2 of 3 */}
+        {/* Form column */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Destination */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+                <Code2 className="h-4 w-4" />
                 Destination
               </CardTitle>
             </CardHeader>
@@ -295,18 +244,18 @@ export default function DocumentsTab() {
                 {[
                   {
                     value: "volume_with_catalog",
-                    label: "Volume + catalog table (Recommended)",
-                    desc: "Files in the Volume + a Delta table indexing them with metadata. Best for RAG/observability demos.",
+                    label: "Volume + per-file catalog (Recommended)",
+                    desc: "Repo trees in the Volume + a Delta table indexing every file (path, language, repo_name, line_count).",
                   },
                   {
                     value: "volume",
                     label: "Volume only",
-                    desc: "Files only — no Delta table. Inspect via the Volume browser.",
+                    desc: "Repo trees only — no Delta table. Inspect via the Volume browser.",
                   },
                   {
                     value: "direct_table",
-                    label: "Direct table (inline bytes)",
-                    desc: "Bytes inline in a Delta table (`content BINARY`). No Volume writes. Best for vector-search demos that want bytes + embeddings on the same row.",
+                    label: "Direct table (one row per FILE, inline content STRING)",
+                    desc: "Each source file lands as its own row with the source code in a STRING column. Natural shape for code-search demos: embeddings can be added as a sibling ARRAY<FLOAT> column without re-reading from the Volume.",
                   },
                 ].map(({ value, label, desc }) => (
                   <label
@@ -315,10 +264,10 @@ export default function DocumentsTab() {
                   >
                     <input
                       type="radio"
-                      name="destination"
+                      name="code-destination"
                       value={value}
                       checked={destination === value}
-                      onChange={() => setDestination(value as DocumentDestination)}
+                      onChange={() => setDestination(value as CodeDestination)}
                       className="mt-1"
                     />
                     <div className="text-sm">
@@ -343,7 +292,7 @@ export default function DocumentsTab() {
               </div>
               {volumeRequired && (
                 <p className="text-xs text-muted-foreground">
-                  Volume is auto-created (<code className="px-1 bg-muted rounded">CREATE VOLUME IF NOT EXISTS</code>) if it doesn&apos;t exist.
+                  Volume is auto-created (<code className="px-1 bg-muted rounded">CREATE VOLUME IF NOT EXISTS</code>) if it doesn&apos;t exist. Repo trees land in <code className="px-1 bg-muted rounded">/code/&lt;lang&gt;/&lt;repo_name&gt;/&lt;tree&gt;</code>.
                 </p>
               )}
             </CardContent>
@@ -356,11 +305,11 @@ export default function DocumentsTab() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <label className="text-xs font-medium mb-1 block" htmlFor="docs-industry">
+                <label className="text-xs font-medium mb-1 block" htmlFor="code-industry">
                   Industry context
                 </label>
                 <select
-                  id="docs-industry"
+                  id="code-industry"
                   className="w-full border rounded-md bg-transparent px-2 py-1.5 text-sm"
                   value={industry}
                   onChange={(e) => setIndustry(e.target.value as typeof INDUSTRIES[number])}
@@ -370,7 +319,7 @@ export default function DocumentsTab() {
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Drives template selection (e.g. healthcare → ICD codes in PDF claims; financial → transaction types in invoices).
+                  Drives repo naming (e.g. <code className="px-1 bg-muted rounded">payments-service-...</code> for financial).
                 </p>
               </div>
 
@@ -382,17 +331,17 @@ export default function DocumentsTab() {
                 />
                 <span className="flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="font-medium">AI-draft document content</span>
-                  <span className="text-muted-foreground">— slower, requires API key</span>
+                  <span className="font-medium">AI-draft function bodies</span>
+                  <span className="text-muted-foreground">— more interesting embeddings; requires API key</span>
                 </span>
               </label>
             </CardContent>
           </Card>
 
-          {/* Document types */}
+          {/* Code types */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Document types</CardTitle>
+              <CardTitle className="text-base">Code types (one per language)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {Object.entries(groupedTypes).map(([category, types]) => (
@@ -421,16 +370,16 @@ export default function DocumentsTab() {
                         </span>
                         <Input
                           type="number"
-                          value={counts[t.type] ?? 5}
+                          value={counts[t.type] ?? 3}
                           onChange={(e) =>
                             setCounts({
                               ...counts,
-                              [t.type]: Math.max(0, Math.min(10000, parseInt(e.target.value) || 0)),
+                              [t.type]: Math.max(0, Math.min(50, parseInt(e.target.value) || 0)),
                             })
                           }
                           disabled={!selectedTypes[t.type]}
                           min={0}
-                          max={10000}
+                          max={50}
                           className="w-20 h-7 text-xs"
                         />
                       </div>
@@ -440,13 +389,12 @@ export default function DocumentsTab() {
               ))}
               {activeTypes.length === 0 && (
                 <p className="text-xs text-muted-foreground italic">
-                  Pick at least one document type to enable submit.
+                  Pick at least one language. Each count is a number of repos; each repo is ~30 files.
                 </p>
               )}
             </CardContent>
           </Card>
 
-          {/* Submit + error */}
           <div className="flex items-center gap-3">
             <Button onClick={submit} disabled={!canSubmit} size="lg">
               {submitting ? (
@@ -457,7 +405,7 @@ export default function DocumentsTab() {
               ) : (
                 <>
                   <Play className="h-4 w-4 mr-2" />
-                  Generate documents
+                  Generate code repos
                 </>
               )}
             </Button>
@@ -467,9 +415,8 @@ export default function DocumentsTab() {
           </div>
         </div>
 
-        {/* Live preview + progress column — spans 1 of 3 */}
+        {/* Live preview + progress column */}
         <div className="space-y-5">
-          {/* Preview tile */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Estimate</CardTitle>
@@ -478,7 +425,7 @@ export default function DocumentsTab() {
               {preview ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex items-baseline justify-between border-b pb-2">
-                    <span className="font-medium">{preview.total_files} files</span>
+                    <span className="font-medium">{preview.total_repos} repos · {preview.total_files} files</span>
                     <span className="font-mono text-xs text-muted-foreground">
                       {formatBytes(preview.total_bytes)}
                     </span>
@@ -491,7 +438,7 @@ export default function DocumentsTab() {
                       <div key={p.type} className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">{p.label}</span>
                         <span className="font-mono">
-                          {p.count} · {formatBytes(p.estimated_bytes)}
+                          {p.count}r · {p.file_count}f · {formatBytes(p.estimated_bytes)}
                         </span>
                       </div>
                     ))}
@@ -505,34 +452,33 @@ export default function DocumentsTab() {
             </CardContent>
           </Card>
 
-          {/* Progress / completion */}
-          {docsJob.jobId && (
+          {codeJob.jobId && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  {docsJob.data?.status === "completed" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                  {docsJob.data?.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {docsJob.data?.status === "failed" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                  Job {docsJob.jobId}
+                  {codeJob.data?.status === "completed" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                  {codeJob.data?.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {codeJob.data?.status === "failed" && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                  Job {codeJob.jobId}
                   <Badge variant="outline" className="text-xs">
-                    {docsJob.data?.status ?? "queued"}
+                    {codeJob.data?.status ?? "queued"}
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {docsJob.data?.progress && (
+                {codeJob.data?.progress && (
                   <>
                     <div className="flex items-baseline justify-between border-b pb-2">
                       <span className="font-medium">
-                        {docsJob.data.progress.files_written ?? 0} files written
+                        {codeJob.data.progress.repos_written ?? 0} repos · {codeJob.data.progress.files_written ?? 0} files
                       </span>
                       <span className="font-mono text-xs text-muted-foreground">
-                        {formatBytes(docsJob.data.progress.total_bytes ?? 0)}
+                        {formatBytes(codeJob.data.progress.total_bytes ?? 0)}
                       </span>
                     </div>
-                    {docsJob.data.progress.per_type && (
+                    {codeJob.data.progress.per_type && (
                       <div className="space-y-0.5 pt-1">
-                        {Object.entries(docsJob.data.progress.per_type).map(([type, n]) => (
+                        {Object.entries(codeJob.data.progress.per_type).map(([type, n]) => (
                           <div key={type} className="flex items-center justify-between text-xs">
                             <span className="text-muted-foreground">{type}</span>
                             <span className="font-mono">{n as number}</span>
@@ -540,36 +486,36 @@ export default function DocumentsTab() {
                         ))}
                       </div>
                     )}
-                    {docsJob.data.progress.current_path && (
+                    {codeJob.data.progress.current_path && (
                       <div className="text-xs text-muted-foreground font-mono break-all">
-                        Current: {docsJob.data.progress.current_path}
+                        Current: {codeJob.data.progress.current_path}
                       </div>
                     )}
                   </>
                 )}
-                {docsJob.data?.result && (
+                {codeJob.data?.result && (
                   <div className="border-t pt-2 space-y-1">
-                    {docsJob.data.result.table_fqn && (
+                    {codeJob.data.result.table_fqn && (
                       <div className="text-xs">
                         <span className="text-muted-foreground">Table: </span>
                         <code className="px-1 bg-muted rounded font-mono">
-                          {docsJob.data.result.table_fqn}
+                          {codeJob.data.result.table_fqn}
                         </code>
                       </div>
                     )}
-                    {docsJob.data.result.volume_path && (
+                    {codeJob.data.result.volume_path && (
                       <div className="text-xs">
                         <span className="text-muted-foreground">Volume: </span>
                         <code className="px-1 bg-muted rounded font-mono break-all">
-                          {docsJob.data.result.volume_path}
+                          {codeJob.data.result.volume_path}
                         </code>
                       </div>
                     )}
                   </div>
                 )}
-                {docsJob.data?.error && (
+                {codeJob.data?.error && (
                   <div className="text-xs text-red-500 border-t pt-2">
-                    {docsJob.data.error}
+                    {codeJob.data.error}
                   </div>
                 )}
               </CardContent>

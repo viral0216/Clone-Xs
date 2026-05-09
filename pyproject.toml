@@ -64,8 +64,19 @@ spark = [
     "databricks-connect>=14.0.0",
     "databricks-labs-dqx>=0.4.0",
 ]
+# Optional: unstructured Document generation for the /demo-data
+# Documents tab. Pure-Python deps — no system binaries required.
+# The router lazily imports these so the API server starts cleanly
+# without the extra installed; missing imports surface as a clean
+# 503 dependencies_missing JSON response with an install hint.
+documents = [
+    "reportlab>=4.0.0",
+    "python-docx>=1.0.0",
+    "python-pptx>=0.6.21",
+    "openpyxl>=3.1.0",
+]
 all = [
-    "clone-xs[web,nlp,spark,dev]",
+    "clone-xs[web,nlp,spark,dev,documents]",
 ]
 
 [project.urls]

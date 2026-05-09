@@ -544,6 +544,24 @@ class JobManager:
                     progress_dict=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-documents":
+                # Documents tab — generates a corpus of unstructured
+                # files (PDFs, Word, Excel, .eml). Lives in
+                # src.demo_documents and lazy-imports the heavy doc
+                # libs from the [documents] extra. The router has
+                # already gated on availability before getting here.
+                from src.demo_documents import generate_documents
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_documents(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

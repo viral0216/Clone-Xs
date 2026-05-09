@@ -580,6 +580,25 @@ class JobManager:
                     progress=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-knowledge":
+                # Knowledge base tab — generates wiki articles /
+                # Q&A pairs / chat threads. Pure stdlib + Faker, no
+                # optional Python deps to gate on. Topic structure
+                # comes from per-industry topic lists in
+                # src.demo_knowledge so the corpus has a coherent
+                # information architecture for RAG demos.
+                from src.demo_knowledge import generate_knowledge
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_knowledge(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

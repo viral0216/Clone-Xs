@@ -197,7 +197,7 @@ export default function KnowledgeTab() {
           realistic_content: realisticContent,
         },
       );
-      knowledgeJob.attach(res.job_id);
+      knowledgeJob.start({}, async () => res.job_id);
       toast.success(`Job ${res.job_id} submitted`);
     } catch (e: any) {
       const msg = e?.message || "Submission failed";
@@ -479,14 +479,14 @@ export default function KnowledgeTab() {
             </CardContent>
           </Card>
 
-          {knowledgeJob.id && (
+          {knowledgeJob.jobId && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   {knowledgeJob.data?.status === "completed" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                   {knowledgeJob.data?.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
                   {knowledgeJob.data?.status === "failed" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                  Job {knowledgeJob.id}
+                  Job {knowledgeJob.jobId}
                   <Badge variant="outline" className="text-xs">
                     {knowledgeJob.data?.status ?? "queued"}
                   </Badge>

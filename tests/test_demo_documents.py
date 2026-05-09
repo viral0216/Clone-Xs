@@ -15,7 +15,9 @@ from src.demo_documents import (
     DOCUMENT_TYPES,
     DOCUMENTS_AVAILABLE,
     is_available,
+    label_for,
     preview_documents,
+    types_for_industry,
     _build_summary,
     _sql_str,
 )
@@ -34,10 +36,12 @@ pytestmark_if_unavailable = pytest.mark.skipif(
 
 
 def test_registry_contains_expected_categories():
-    """The 9 v1 doc types should cover PDF/Word/PowerPoint/Excel/Email.
-    Pin the registry shape so a future PR that drops a category trips
-    this test instead of silently breaking the UI's checkbox grid."""
-    expected = {
+    """The original 9 generic doc types are always registered. Pin the
+    SUBSET so future PRs that drop a category trip this test instead
+    of silently breaking the UI's checkbox grid. The full set now
+    includes 20 industry-specific additions — covered by separate
+    tests below."""
+    core = {
         "pdf_claim",
         "pdf_invoice",
         "pdf_contract",
@@ -48,9 +52,102 @@ def test_registry_contains_expected_categories():
         "xlsx_inventory",
         "eml_message",
     }
-    assert set(DOCUMENT_TYPES) == expected
+    assert core.issubset(set(DOCUMENT_TYPES))
     categories = {t["category"] for t in DOCUMENT_TYPES.values()}
     assert categories == {"PDF", "Word", "PowerPoint", "Excel", "Email"}
+
+
+def test_registry_includes_industry_specific_types():
+    """The 20 industry-specific types ship in the registry too. Pin
+    the IDs so accidental rename / removal breaks loud."""
+    industry_specific = {
+        "pdf_lab_report",
+        "pdf_discharge_summary",
+        "pdf_account_statement",
+        "pdf_wire_confirmation",
+        "pdf_purchase_order",
+        "pdf_receipt",
+        "pdf_sla_report",
+        "docx_outage_notice",
+        "pdf_bom",
+        "pdf_qa_report",
+        "pdf_meter_reading",
+        "pdf_transcript",
+        "docx_syllabus",
+        "pdf_property_listing",
+        "pdf_disclosure",
+        "pdf_bol",
+        "pdf_customs",
+        "pdf_underwriting_report",
+        "docx_endorsement",
+    }
+    assert industry_specific.issubset(set(DOCUMENT_TYPES))
+    # Every industry-specific type must declare an `industries` map
+    # (with at least one industry — otherwise it would be hidden
+    # everywhere, which is a registry bug).
+    for type_id in industry_specific:
+        entry = DOCUMENT_TYPES[type_id]
+        assert entry.get("industries"), f"{type_id} is missing the industries map"
+
+
+# ── Per-industry filtering ────────────────────────────────────────
+
+
+def test_types_for_industry_real_estate_includes_lease_excludes_lab_report():
+    """Real-estate operators should see Lease agreement (relabeled
+    pdf_contract) and Property listing, NOT pdf_lab_report (which is
+    healthcare-only)."""
+    visible = {t["id"] for t in types_for_industry("real_estate")}
+    assert "pdf_contract" in visible
+    assert "pdf_property_listing" in visible
+    assert "pdf_disclosure" in visible
+    assert "pdf_lab_report" not in visible
+    assert "pdf_account_statement" not in visible
+
+
+def test_types_for_industry_healthcare_shows_claim_form():
+    """pdf_claim renders for healthcare and insurance only."""
+    hc = {t["id"] for t in types_for_industry("healthcare")}
+    fin = {t["id"] for t in types_for_industry("financial")}
+    ins = {t["id"] for t in types_for_industry("insurance")}
+    assert "pdf_claim" in hc
+    assert "pdf_claim" in ins
+    assert "pdf_claim" not in fin
+
+
+def test_types_for_industry_returns_industry_specific_label():
+    """The label for pdf_contract should switch per industry."""
+    by_id = {t["id"]: t["label"] for t in types_for_industry("real_estate")}
+    assert by_id["pdf_contract"] == "Lease agreement"
+    by_id = {t["id"]: t["label"] for t in types_for_industry("financial")}
+    assert by_id["pdf_contract"] == "Loan agreement"
+    by_id = {t["id"]: t["label"] for t in types_for_industry("telecom")}
+    assert by_id["pdf_contract"] == "Service agreement"
+
+
+def test_label_for_falls_back_to_star_then_label():
+    """label_for() resolution order: industry-specific → '*' default
+    → entry's `label` field → type id."""
+    # pdf_invoice has '*' default — unknown industry uses it
+    assert label_for("pdf_invoice", "_unknown_") == "Invoice"
+    # pdf_invoice has industry-specific 'telecom' label
+    assert label_for("pdf_invoice", "telecom") == "Service bill"
+    # pdf_lab_report only has 'healthcare' — unknown industry falls
+    # back to entry's `label` field (which is "Lab report")
+    assert label_for("pdf_lab_report", "_unknown_") == "Lab report"
+
+
+def test_types_for_industry_unknown_industry_returns_star_only():
+    """An unknown industry yields only types with a '*' default —
+    industry-specific types (no '*' entry) get filtered out."""
+    visible = {t["id"] for t in types_for_industry("_unknown_")}
+    # '*' types: invoice, contract, letter, report, deck, budget,
+    # inventory, eml_message — pdf_claim has no '*', so it's hidden
+    assert "pdf_invoice" in visible
+    assert "pdf_contract" in visible
+    assert "eml_message" in visible
+    assert "pdf_claim" not in visible
+    assert "pdf_lab_report" not in visible
 
 
 def test_is_available_reports_a_reason_when_unavailable():
@@ -108,6 +205,67 @@ def test_each_generator_emits_correct_file_magic(type_id, magic_or_subseq):
     # + ZIP local-file-header signature).
     assert magic_or_subseq in file_bytes[:200], (
         f"{type_id} bytes don't start with expected magic {magic_or_subseq!r}; "
+        f"first 80 bytes: {file_bytes[:80]!r}"
+    )
+
+
+# ── New industry-specific generators (file-magic + non-empty bytes) ──
+
+
+@pytestmark_if_unavailable
+@pytest.mark.parametrize(
+    "type_id,industry,magic",
+    [
+        # Healthcare
+        ("pdf_lab_report", "healthcare", b"%PDF-"),
+        ("pdf_discharge_summary", "healthcare", b"%PDF-"),
+        # Financial
+        ("pdf_account_statement", "financial", b"%PDF-"),
+        ("pdf_wire_confirmation", "financial", b"%PDF-"),
+        # Retail / manufacturing
+        ("pdf_purchase_order", "retail", b"%PDF-"),
+        ("pdf_receipt", "retail", b"%PDF-"),
+        # Telecom / energy
+        ("pdf_sla_report", "telecom", b"%PDF-"),
+        ("docx_outage_notice", "telecom", b"PK\x03\x04"),
+        # Manufacturing
+        ("pdf_bom", "manufacturing", b"%PDF-"),
+        ("pdf_qa_report", "manufacturing", b"%PDF-"),
+        # Energy
+        ("pdf_meter_reading", "energy", b"%PDF-"),
+        # Education
+        ("pdf_transcript", "education", b"%PDF-"),
+        ("docx_syllabus", "education", b"PK\x03\x04"),
+        # Real estate
+        ("pdf_property_listing", "real_estate", b"%PDF-"),
+        ("pdf_disclosure", "real_estate", b"%PDF-"),
+        # Logistics
+        ("pdf_bol", "logistics", b"%PDF-"),
+        ("pdf_customs", "logistics", b"%PDF-"),
+        # Insurance
+        ("pdf_underwriting_report", "insurance", b"%PDF-"),
+        ("docx_endorsement", "insurance", b"PK\x03\x04"),
+    ],
+)
+def test_industry_specific_generators_emit_valid_bytes(type_id, industry, magic):
+    """Each new industry-specific generator emits valid file bytes
+    with the right file-magic prefix and a non-trivial payload size."""
+    from faker import Faker
+
+    fkr = Faker()
+    fkr.seed_instance(42)
+    fn_name = DOCUMENT_TYPES[type_id]["gen_fn"]
+    from src import demo_documents
+
+    fn = getattr(demo_documents, fn_name)
+    file_bytes, meta = fn(industry, fkr, None)
+    assert isinstance(file_bytes, bytes)
+    assert isinstance(meta, dict)
+    assert len(file_bytes) > 200, (
+        f"{type_id} produced suspiciously small output ({len(file_bytes)} bytes)"
+    )
+    assert magic in file_bytes[:200], (
+        f"{type_id} bytes don't start with expected magic {magic!r}; "
         f"first 80 bytes: {file_bytes[:80]!r}"
     )
     # Every generator returns a non-empty metadata dict.

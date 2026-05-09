@@ -41,34 +41,59 @@ router = APIRouter()
 @router.get(
     "/demo-documents/types",
     response_model=DemoDocumentsTypesResponse,
-    summary="List the registered document types + dep availability",
+    summary="List document types visible for the chosen industry + dep availability",
 )
-async def get_document_types() -> DemoDocumentsTypesResponse:
-    """Return the registered document types + whether the optional
-    `[documents]` extra is installed.
+async def get_document_types(industry: str | None = None) -> DemoDocumentsTypesResponse:
+    """Return the document types visible for ``industry`` (or all
+    types when ``industry`` is omitted) + whether the ``[documents]``
+    extra is installed.
 
-    The UI calls this on mount to render the checkbox grid + show
-    the install hint when deps are missing — without the deps
-    installed we can still surface the type list (it's defined in
-    the models module) but the user can't actually run a job until
-    they install.
+    Each entry's ``label`` is already resolved for the requested
+    industry — e.g. ``pdf_contract`` returns ``"Lease agreement"``
+    for ``real_estate`` and ``"Loan agreement"`` for ``financial``.
+    Types with no matching industry entry (and no ``"*"`` default in
+    their registry block) are filtered out, so the picker only shows
+    documents that make sense for the chosen vertical.
+
+    The UI calls this on mount AND on every industry change so the
+    checkbox grid + labels stay in sync with the form.
     """
     # Lazy import — the models module is dep-free, so we can import
     # the registry from src/demo_documents only after the availability
     # probe to avoid noise on systems without the extra.
     try:
-        from src.demo_documents import DOCUMENT_TYPES, is_available
+        from src.demo_documents import (
+            DOCUMENT_TYPES,
+            is_available,
+            label_for,
+            types_for_industry,
+        )
 
         available, reason = is_available()
-        types = [
-            DemoDocumentsTypeInfo(
-                type=type_id,
-                category=info["category"],
-                label=info["label"],
-                extension=info["extension"],
-            )
-            for type_id, info in DOCUMENT_TYPES.items()
-        ]
+        if industry:
+            entries = types_for_industry(industry)
+            types = [
+                DemoDocumentsTypeInfo(
+                    type=e["id"],
+                    category=e["category"],
+                    label=e["label"],
+                    extension=e["extension"],
+                )
+                for e in entries
+            ]
+        else:
+            # Industry omitted — return every registered type with its
+            # legacy ``label`` so callers that haven't yet upgraded to
+            # pass an industry param keep working.
+            types = [
+                DemoDocumentsTypeInfo(
+                    type=type_id,
+                    category=info["category"],
+                    label=label_for(type_id, ""),
+                    extension=info["extension"],
+                )
+                for type_id, info in DOCUMENT_TYPES.items()
+            ]
         return DemoDocumentsTypesResponse(
             types=types,
             available=available,

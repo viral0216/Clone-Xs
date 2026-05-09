@@ -22,8 +22,10 @@ _UC_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Operator-facing IDs. Must match `src.demo_documents.DOCUMENT_TYPES`
 # keys exactly — the router validates this at request-validation time
-# via the model below.
+# via the model below. New industry-specific types are appended below
+# the original 9.
 _DOCUMENT_TYPE_IDS = (
+    # Original 9 (industry-aware via the per-industry label map)
     "pdf_claim",
     "pdf_invoice",
     "pdf_contract",
@@ -33,6 +35,26 @@ _DOCUMENT_TYPE_IDS = (
     "xlsx_budget",
     "xlsx_inventory",
     "eml_message",
+    # 20 industry-specific additions
+    "pdf_lab_report",
+    "pdf_discharge_summary",
+    "pdf_account_statement",
+    "pdf_wire_confirmation",
+    "pdf_purchase_order",
+    "pdf_receipt",
+    "pdf_sla_report",
+    "docx_outage_notice",
+    "pdf_bom",
+    "pdf_qa_report",
+    "pdf_meter_reading",
+    "pdf_transcript",
+    "docx_syllabus",
+    "pdf_property_listing",
+    "pdf_disclosure",
+    "pdf_bol",
+    "pdf_customs",
+    "pdf_underwriting_report",
+    "docx_endorsement",
 )
 
 DocumentTypeID = Literal[
@@ -45,6 +67,25 @@ DocumentTypeID = Literal[
     "xlsx_budget",
     "xlsx_inventory",
     "eml_message",
+    "pdf_lab_report",
+    "pdf_discharge_summary",
+    "pdf_account_statement",
+    "pdf_wire_confirmation",
+    "pdf_purchase_order",
+    "pdf_receipt",
+    "pdf_sla_report",
+    "docx_outage_notice",
+    "pdf_bom",
+    "pdf_qa_report",
+    "pdf_meter_reading",
+    "pdf_transcript",
+    "docx_syllabus",
+    "pdf_property_listing",
+    "pdf_disclosure",
+    "pdf_bol",
+    "pdf_customs",
+    "pdf_underwriting_report",
+    "docx_endorsement",
 ]
 
 DocumentDestination = Literal["volume", "volume_with_catalog", "direct_table"]
@@ -198,6 +239,37 @@ class DemoDocumentsRequest(BaseModel):
                     f"counts[{type_id!r}] = {n} exceeds the per-type cap of "
                     f"10000. Split into multiple smaller runs."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _types_must_be_visible_for_industry(self) -> "DemoDocumentsRequest":
+        """Reject types that aren't visible for the chosen industry.
+
+        E.g. `pdf_lease_agreement` is real-estate-only — submitting it
+        with `industry=financial` is an operator mistake (typo, stale
+        UI state from before an industry switch). The UI prunes
+        invisible selections client-side, but a direct API caller
+        could still send a mismatched pair, so the server enforces too.
+
+        Lazy-imports `types_for_industry` so this module stays dep-free
+        when the `[documents]` extra isn't installed (the helper is
+        pure dict access — no reportlab / python-docx needed).
+        """
+        try:
+            from src.demo_documents import types_for_industry
+        except Exception:
+            # If the registry can't import (extreme edge — module
+            # itself broken), let the request through; the runner will
+            # surface a real error instead of a confusing 422.
+            return self
+        visible = {t["id"] for t in types_for_industry(self.industry)}
+        invalid = sorted({str(t) for t in self.types} - visible)
+        if invalid:
+            raise ValueError(
+                f"types {invalid} are not available for industry "
+                f"{self.industry!r}. Pick types from the picker for that "
+                f"industry, or change the industry."
+            )
         return self
 
 

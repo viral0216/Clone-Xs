@@ -112,22 +112,50 @@ export default function DocumentsTab() {
   const docsJob = useDurableJob({
     key: "demo-documents",
     pollUrl: (id) => `/clone/${id}`,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
   });
 
-  // ── Fetch type registry on mount ────────────────────────────────
+  // ── Fetch type registry whenever industry changes ──────────────
+  // The backend filters + relabels the type list per industry — e.g.
+  // pdf_contract is "Lease agreement" for real_estate but "Loan
+  // agreement" for financial. Refetching on every industry change
+  // keeps the picker labels honest. The dependency array excludes
+  // `counts` deliberately: re-running this effect must NOT clobber
+  // user-entered counts on every keystroke.
   useEffect(() => {
     setRegistryLoading(true);
     api
-      .get<TypesResponse>("/generate/demo-documents/types")
+      .get<TypesResponse>(
+        `/generate/demo-documents/types?industry=${encodeURIComponent(industry)}`,
+      )
       .then((res) => {
         setTypeRegistry(res.types || []);
         setAvailable(res.available);
         setUnavailableReason(res.unavailable_reason);
-        // Default counts: 5 per type so first-time users have something
-        // sensible if they tick a checkbox.
-        const initialCounts: Record<string, number> = {};
-        for (const t of res.types) initialCounts[t.type] = 5;
-        setCounts(initialCounts);
+        // Seed default counts (5) for any type the user hasn't yet
+        // touched. Existing user-entered counts are preserved across
+        // industry switches so toggling industry doesn't blow away
+        // a half-filled form.
+        setCounts((prev) => {
+          const next: Record<string, number> = { ...prev };
+          for (const t of res.types) {
+            if (next[t.type] === undefined) next[t.type] = 5;
+          }
+          return next;
+        });
+        // Prune selections to only types visible for the new industry.
+        // Without this, switching from healthcare → real_estate while
+        // pdf_lab_report is checked leaves the checkbox state set
+        // even though the picker no longer shows it, so the submit
+        // payload would carry an invalid type and 422 server-side.
+        setSelectedTypes((prev) => {
+          const visible = new Set((res.types || []).map((t) => t.type));
+          const next: Record<string, boolean> = {};
+          for (const [k, v] of Object.entries(prev)) {
+            if (visible.has(k)) next[k] = v;
+          }
+          return next;
+        });
       })
       .catch(() => {
         setTypeRegistry([]);
@@ -135,7 +163,7 @@ export default function DocumentsTab() {
         setUnavailableReason("Could not load document types from the API.");
       })
       .finally(() => setRegistryLoading(false));
-  }, []);
+  }, [industry]);
 
   // ── Derived: types currently selected for submit ────────────────
   const activeTypes = useMemo(
@@ -201,7 +229,7 @@ export default function DocumentsTab() {
           realistic_content: realisticContent,
         },
       );
-      docsJob.attach(res.job_id);
+      docsJob.start({}, async () => res.job_id);
       toast.success(`Job ${res.job_id} submitted`);
     } catch (e: any) {
       // Normalise the 503 dependencies-missing payload so the UI
@@ -497,14 +525,14 @@ export default function DocumentsTab() {
           </Card>
 
           {/* Progress / completion */}
-          {docsJob.id && (
+          {docsJob.jobId && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   {docsJob.data?.status === "completed" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                   {docsJob.data?.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
                   {docsJob.data?.status === "failed" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                  Job {docsJob.id}
+                  Job {docsJob.jobId}
                   <Badge variant="outline" className="text-xs">
                     {docsJob.data?.status ?? "queued"}
                   </Badge>

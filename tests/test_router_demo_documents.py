@@ -31,6 +31,58 @@ def test_get_types_returns_registry_with_availability_flag(client):
                 assert key in t, f"types entry missing key: {key}"
 
 
+def test_get_types_with_industry_filters_and_relabels(client):
+    """Passing ?industry=real_estate filters out healthcare/financial
+    types and relabels pdf_contract → 'Lease agreement'."""
+    resp = client.get("/api/generate/demo-documents/types?industry=real_estate")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    by_id = {t["type"]: t["label"] for t in body["types"]}
+    # Real-estate-only types appear
+    assert "pdf_property_listing" in by_id
+    assert "pdf_disclosure" in by_id
+    # pdf_contract is relabeled
+    assert by_id.get("pdf_contract") == "Lease agreement"
+    # Healthcare-only types are filtered out
+    assert "pdf_claim" not in by_id
+    assert "pdf_lab_report" not in by_id
+    # Financial-only types are filtered out
+    assert "pdf_account_statement" not in by_id
+
+
+def test_get_types_industry_specific_label_changes_per_industry(client):
+    """Same generator (pdf_contract) renders with different labels
+    per industry — confirms the relabeling round-trips through the API."""
+    fin = client.get("/api/generate/demo-documents/types?industry=financial").json()
+    tel = client.get("/api/generate/demo-documents/types?industry=telecom").json()
+    fin_labels = {t["type"]: t["label"] for t in fin["types"]}
+    tel_labels = {t["type"]: t["label"] for t in tel["types"]}
+    assert fin_labels.get("pdf_contract") == "Loan agreement"
+    assert tel_labels.get("pdf_contract") == "Service agreement"
+
+
+def test_submit_rejects_type_not_visible_for_industry(client):
+    """A direct API caller passing pdf_lab_report (healthcare-only)
+    with industry=real_estate gets a 422 from the per-industry
+    validator — the UI prunes invisible types client-side, but the
+    server enforces too."""
+    resp = client.post(
+        "/api/generate/demo-documents",
+        json={
+            "catalog": "demo",
+            "schema": "docs",
+            "volume": "events",
+            "destination": "volume",
+            "industry": "real_estate",
+            "types": ["pdf_lab_report"],
+            "counts": {"pdf_lab_report": 1},
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    # FastAPI surfaces the validator error somewhere in the detail tree
+    assert "pdf_lab_report" in resp.text or "real_estate" in resp.text
+
+
 # ── POST /demo-documents/preview ──────────────────────────────────
 
 

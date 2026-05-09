@@ -108,6 +108,7 @@ export default function MediaTab() {
   const mediaJob = useDurableJob({
     key: "demo-media",
     pollUrl: (id) => `/clone/${id}`,
+    isComplete: (d) => ["completed", "failed", "cancelled"].includes(d?.status),
   });
 
   // Fetch type registry on mount.
@@ -202,7 +203,7 @@ export default function MediaTab() {
           realistic_content: realisticContent,
         },
       );
-      mediaJob.attach(res.job_id);
+      mediaJob.start({}, async () => res.job_id);
       toast.success(`Job ${res.job_id} submitted`);
     } catch (e: any) {
       const msg = e?.message || "Submission failed";
@@ -520,14 +521,14 @@ export default function MediaTab() {
             </CardContent>
           </Card>
 
-          {mediaJob.id && (
+          {mediaJob.jobId && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   {mediaJob.data?.status === "completed" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                   {mediaJob.data?.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
                   {mediaJob.data?.status === "failed" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                  Job {mediaJob.id}
+                  Job {mediaJob.jobId}
                   <Badge variant="outline" className="text-xs">
                     {mediaJob.data?.status ?? "queued"}
                   </Badge>

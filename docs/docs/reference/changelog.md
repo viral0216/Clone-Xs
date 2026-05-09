@@ -9,6 +9,266 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — AI-drafted narrative content + token budget for the Documents tab
+
+The Documents tab on `/demo-data` (see
+[guide/unstructured-demo-data → Documents](../guide/unstructured-demo-data.md#documents-tab))
+gains an AI mode that drafts narrative text via a user-picked
+Databricks Model Serving endpoint, with a per-job token budget and
+graceful template fallback. Pure-template generation continues to
+work unchanged when AI is off or unconfigured.
+
+### Added — `_AIAdapter` for narrative drafting
+
+- **New class `_AIAdapter`** in `src/demo_documents.py`. Wraps
+  `AIService._call_llm` with a per-job token counter and a system
+  prompt tuned for synthetic-document text ("output ONLY the
+  requested content, no preamble, no markdown"). The adapter is
+  constructed once per job and threaded through every generator as
+  an `ai_client` parameter; generators don't need to know the
+  budget exists — they call `.draft(prompt, fallback)` and the
+  adapter degrades to the fallback when exhausted.
+- **Dual-backend routing.** When the request carries an
+  `X-Databricks-Model: <endpoint-name>` header, the adapter routes
+  through Databricks Model Serving — the UI's api-client sets it
+  automatically from `localStorage.dbx_model` whenever the user has
+  picked an endpoint in Settings (same pattern the AI assistant
+  uses). Otherwise falls back to the Anthropic API path
+  (`ANTHROPIC_API_KEY`). When neither is configured the runner logs
+  a warning and proceeds in template-only mode.
+- **Per-job token budget.** New `ai_token_budget` field on
+  `DemoDocumentsRequest` (default 50,000, range `0–10,000,000`).
+  Default ≈ \$0.50 on Sonnet at typical `max_tokens`. Set to `0` to
+  disable AI even when `realistic_content=True`. Accounting is
+  conservative: every call charges the full requested `max_tokens`
+  (the SDK doesn't surface usage), biasing toward stopping early
+  for cost safety.
+- **Job summary fields.** Completion now reports `ai_backend`
+  (e.g. `"databricks:my-endpoint"` or `"anthropic"`), `ai_calls`,
+  `ai_tokens_used`, and `ai_fallbacks` so operators can see how the
+  budget was spent.
+
+### Added — Distinctness primitives + expanded industry context
+
+To avoid the "every PDF reads identical" problem on a 10,000-row
+corpus, the generators gain three small primitives — used regardless
+of AI mode:
+
+- **`_rotate(*variants)`** — `random.choice` over phrasing variants
+  for openings, salutations, transitions.
+- **`_maybe_section(prob)`** — random optional inclusion of
+  secondary sections so document length and shape vary.
+- **`_INDUSTRY_CONTEXT` registry expansion** — 2–3× more diagnosis
+  codes, treatment codes, department names, transaction types,
+  store codes, product categories, and services across all ten
+  industries. Sized large enough that a 10,000-row corpus has
+  visible variety without AI mode.
+
+### Changed — Documents request model
+
+- `realistic_content` description updated to call out both backends
+  ("a Databricks Model Serving endpoint picked in Settings or
+  `ANTHROPIC_API_KEY`") instead of Anthropic only.
+- New `ai_token_budget` field accepted on
+  `POST /api/generate/demo-documents`. Older clients omitting it
+  pick up the default; no breaking change.
+- Router accepts the new `X-Databricks-Model` header and forwards
+  it to the JobManager as `ai_endpoint_name` in the job config.
+
+---
+
+## Unreleased — Code tab + dynamic catalog/schema/volume picker on `/demo-data`
+
+Adds a fifth unstructured tab and unifies destination selection
+across all five tabs behind a single picker component. See
+[guide/unstructured-demo-data → Code](../guide/unstructured-demo-data.md#code-tab).
+
+### Added — Code tab
+
+- **Three generators** in `src/demo_code.py`: `python_repo` (src/
+  package + tests + README + `pyproject.toml`), `js_repo` (ES6 with
+  `package.json`), `java_repo` (`src/main/java` + `src/test/java`
+  + `pom.xml`). Each repo is ~25–35 files.
+- **Per-type cap is 50 *repos*** (≈1,500 source files per type) —
+  intentionally lower than Documents/Knowledge because building the
+  per-repo file set is non-trivial.
+- **`direct_table` is one row per source file** with `content
+  STRING` inline — the natural shape for code-search embeddings,
+  which work at the file level not the repo level. The schema is
+  `(repo_name, language, file_path, content STRING, …)`.
+- **Endpoints**: `GET /api/generate/demo-code/types`,
+  `POST /api/generate/demo-code/preview`,
+  `POST /api/generate/demo-code`.
+- **UI**: `ui/src/app/demo-data/CodeTab.tsx` — same shape as
+  Documents/Media/Knowledge/Logs (destination radio, picker,
+  industry, type grid, preview).
+
+### Added — `CatalogSchemaVolumePicker` shared component
+
+- **New file**: `ui/src/components/CatalogSchemaVolumePicker.tsx`.
+  Replaces free-text catalog/schema/volume `Input` fields across all
+  five unstructured tabs (Documents, Media, Knowledge, Logs, Code).
+- **Three dropdowns + custom-name fallback per field.** Each field
+  shows existing names from the workspace plus a "Custom name…
+  (create new)" option that swaps in a free-text input. The runner
+  auto-creates new schemas and volumes on submit via
+  `CREATE SCHEMA IF NOT EXISTS` / `CREATE VOLUME IF NOT EXISTS`.
+- **API endpoints called**: `GET /api/catalogs`,
+  `GET /api/catalogs/{catalog}/schemas`, `GET /api/auth/volumes`.
+  Volumes are filtered to the chosen `catalog.schema` scope; schemas
+  fetch is skipped while the user is still typing a custom catalog
+  name.
+- **Volume picker disables on `direct_table`.** The label flips to
+  "(unused for direct_table)" but the field stays visible so layout
+  doesn't shift.
+
+---
+
+## Unreleased — Logs tab on `/demo-data`
+
+Adds a Logs tab generating synthetic log corpora for observability,
+SIEM, and anomaly-detection demos. See
+[guide/unstructured-demo-data → Logs](../guide/unstructured-demo-data.md#logs-tab).
+
+### Added — Four log generators
+
+- **`nginx_access`** — combined-log-format with a 24-hour traffic
+  curve peaking at 10 and 16 UTC; status distribution ~94% 2xx /
+  4% 3xx / 1% 4xx / 1% 5xx.
+- **`app_json`** — JSON Lines, level mix ~94% INFO / 5% WARN /
+  1% ERROR with realistic message templates.
+- **`syslog`** — RFC 5424 with a per-industry service registry
+  (e.g. `auth-svc`, `billing-svc` for financial; `pacs-gw`,
+  `ehr-api` for healthcare).
+- **`otel_trace`** — OpenTelemetry span trees, 3–8 spans per
+  trace with `parent_span_id` wired so traces render correctly in
+  Tempo / Jaeger / Databricks observability dashboards.
+
+### Added — Two extra cadence inputs
+
+- **`lines_per_file`** (default 1,000, range 1–100,000) — lets a
+  single file represent anything from a 5-minute slice to a full-day
+  log without changing the file count.
+- **`days_back`** (default 7, range 1–365) — files are spread evenly
+  across `days_back` UTC days with peak-hour clustering inside each
+  day, so a 7-day corpus produces a realistic weekly pattern.
+
+### Added — `direct_table` writes one row per LINE (not per file)
+
+- **Schema** for `direct_table`:
+
+  ```sql
+  CREATE OR REPLACE TABLE <fqn> (
+      log_id        STRING,
+      log_type      STRING,
+      service       STRING,
+      ts            TIMESTAMP,
+      level         STRING,
+      message       STRING,
+      attrs         MAP<STRING, STRING>,
+      generated_at  TIMESTAMP
+  ) USING delta;
+  ```
+
+  Operators query `attrs['status']` etc. without reshaping. The
+  per-file `volume_with_catalog` schema is preserved separately for
+  file-level metadata demos.
+- **Per-type cap**: 1,000 *files*. With `lines_per_file=100,000`
+  that's 100 M rows max per type per submit.
+- **Endpoints**: `GET /api/generate/demo-logs/types`,
+  `POST /api/generate/demo-logs/preview`,
+  `POST /api/generate/demo-logs`.
+
+---
+
+## Unreleased — Documents, Media, Knowledge tabs on `/demo-data`
+
+Introduces three new tabs on the existing `/demo-data` page that
+generate **unstructured** demo corpora — files (and inline-bytes
+Delta tables) instead of typed Delta columns. See the full guide at
+[guide/unstructured-demo-data](../guide/unstructured-demo-data.md).
+
+### Added — Documents tab
+
+- **29 document types** in a registry on `src/demo_documents.py`:
+  9 industry-aware originals (`pdf_claim`, `pdf_invoice`,
+  `pdf_contract`, `docx_letter`, `docx_report`, `pptx_deck`,
+  `xlsx_budget`, `xlsx_inventory`, `eml_message`) plus 20
+  industry-specific additions (lab reports, account statements,
+  BOL/customs forms, property listings, syllabi, …). The picker
+  filters to types that make sense for the chosen industry; e.g.
+  `pdf_lab_report` only appears when `industry=healthcare`.
+- **Three destinations**: `volume` (files only),
+  `volume_with_catalog` (default — files + Delta index, one row per
+  file), `direct_table` (`content BINARY` inline; no Volume writes).
+- **Per-type cap**: 10,000.
+- **Dependency gate**: requires `clone-xs[documents]` (reportlab,
+  python-docx, python-pptx, openpyxl). The `/types` endpoint
+  surfaces `available: false` with an install hint when missing,
+  and `POST /demo-documents` returns a structured 503 with the
+  install command instead of a generic error.
+- **Endpoints**: `GET /api/generate/demo-documents/types`,
+  `POST /api/generate/demo-documents/preview`,
+  `POST /api/generate/demo-documents`.
+- **UI**: `ui/src/app/demo-data/DocumentsTab.tsx`.
+
+### Added — Media tab
+
+- **Five generators** in `src/demo_media.py`: `img_xray`
+  (512×512 grayscale), `img_scan` (800×1000 off-white scanned-doc
+  look), `img_photo` (600×400 stock-photo placeholder),
+  `audio_voicemail` (2-second sine + Faker transcript line),
+  `video_clip` (320×240 H.264 MP4 at 15 fps).
+- **Per-type cap**: 5,000 (lower than Documents because media
+  files are larger).
+- **Dual dependency probe.** `/types` returns both `available`
+  (Pillow — required for images and the voicemail transcript path)
+  and `ffmpeg_available` (required only for `video_clip`).
+  When `ffmpeg_available: false` the UI greys out the Video Clip
+  checkbox; the four other types remain selectable.
+- **`direct_table` caveat for video.** Delta has a ~16 MB row-size
+  cap that a busy `video_clip` run can blow through. The runner
+  doesn't split or truncate today (v2 work). Video-heavy demos
+  should pick `volume_with_catalog`; direct-table video demos
+  should keep counts low.
+- **Endpoints**: `GET /api/generate/demo-media/types`,
+  `POST /api/generate/demo-media/preview`,
+  `POST /api/generate/demo-media`.
+- **UI**: `ui/src/app/demo-data/MediaTab.tsx`.
+
+### Added — Knowledge tab
+
+- **Three generators** in `src/demo_knowledge.py`: `wiki_article`
+  (markdown body + YAML frontmatter), `qa_pair` (one-question-per-
+  file JSON), `chat_thread` (Slack-export-shaped JSONL threads).
+- **No extra deps** — pure stdlib + Faker. The `/types` endpoint
+  always returns `available: true`.
+- **Per-industry topic IA.** Each output file lands in a
+  `<topic>` sub-directory (e.g. `wiki_article/billing/…`) so RAG
+  demos can filter on topic without parsing filenames.
+- **`direct_table` content type is `STRING` (not `BINARY`).**
+  Knowledge bodies are text and should be queryable inline:
+  `SELECT content FROM demo_knowledge WHERE topic='billing' AND
+  content LIKE '%refund%'`.
+- **Per-type cap**: 10,000.
+- **Endpoints**: `GET /api/generate/demo-knowledge/types`,
+  `POST /api/generate/demo-knowledge/preview`,
+  `POST /api/generate/demo-knowledge`.
+- **UI**: `ui/src/app/demo-data/KnowledgeTab.tsx`.
+
+### Added — Shared validation
+
+The five unstructured request models (DocumentsRequest, MediaRequest,
+KnowledgeRequest, LogsRequest, CodeRequest) share validators:
+
+- Catalog / schema / volume must each be a single Unity Catalog
+  identifier (no dotted FQNs).
+- `volume` is required when destination is `volume` or
+  `volume_with_catalog`; ignored on `direct_table`.
+- `counts` keys must appear in `types` (catches stale form state).
+
+---
+
 ## Unreleased — Streaming Events form: presets, configurable limits, warehouse-impact hints, chart polish
 
 A focused round of ergonomics on the `/demo-data` Streaming Events

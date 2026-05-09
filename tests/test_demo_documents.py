@@ -577,3 +577,269 @@ def test_generate_documents_stop_check_aborts_loop(mock_sql):
     # We stopped early — far fewer than the requested 100 files.
     assert client.files.upload.call_count < 100
     assert result["files_written"] < 100
+
+
+# ── AI mode plumbing ──────────────────────────────────────────────
+#
+# The "AI-draft document content" toggle was a no-op until this PR:
+# the orchestrator imported the wrong module path and no generator
+# referenced the ai_client parameter. These tests pin the new
+# behaviour — that the toggle actually plumbs through, that the
+# Databricks endpoint name is forwarded, that the budget enforcer
+# kicks in, and that any LLM failure falls back cleanly to the
+# templated text.
+
+
+@pytest.mark.parametrize(
+    "endpoint_name,expected_backend",
+    [
+        (None, "anthropic"),
+        (
+            "databricks-meta-llama-3-1-70b-instruct",
+            "databricks:databricks-meta-llama-3-1-70b-instruct",
+        ),
+    ],
+)
+def test_ai_adapter_routes_through_correct_backend(endpoint_name, expected_backend):
+    """The adapter sets ``backend`` based on endpoint_name and forwards
+    the Databricks SDK client when the endpoint path is in use."""
+    from src.ai_drafter import AIDrafter as _AIAdapter
+
+    svc = MagicMock()
+    svc._call_llm.return_value = "fake LLM output"
+    sdk_client = MagicMock()
+    adapter = _AIAdapter(svc, endpoint_name=endpoint_name, sdk_client=sdk_client)
+    assert adapter.backend == expected_backend
+    out = adapter.draft("test prompt", fallback="FALLBACK")
+    assert out == "fake LLM output"
+    # Endpoint + sdk_client are forwarded on every _call_llm invocation.
+    svc._call_llm.assert_called_once()
+    kwargs = svc._call_llm.call_args.kwargs
+    assert kwargs["endpoint_name"] == endpoint_name
+    assert kwargs["client"] is sdk_client
+
+
+def test_ai_adapter_falls_back_on_exception():
+    """LLM raises → adapter returns the supplied fallback (no crash)."""
+    from src.ai_drafter import AIDrafter as _AIAdapter
+
+    svc = MagicMock()
+    svc._call_llm.side_effect = RuntimeError("upstream model unavailable")
+    adapter = _AIAdapter(svc, endpoint_name=None)
+    assert adapter.draft("p", fallback="FB") == "FB"
+    assert adapter.fallbacks == 1
+    assert adapter.calls_made == 0
+
+
+def test_ai_adapter_falls_back_on_empty_response():
+    """LLM returns "" → adapter returns the fallback (don't ship empty
+    paragraphs into the generated document)."""
+    from src.ai_drafter import AIDrafter as _AIAdapter
+
+    svc = MagicMock()
+    svc._call_llm.return_value = "   "  # whitespace only
+    adapter = _AIAdapter(svc, endpoint_name=None)
+    assert adapter.draft("p", fallback="FB") == "FB"
+    assert adapter.fallbacks == 1
+
+
+def test_ai_adapter_enforces_token_budget():
+    """When the running total of approximate tokens hits the budget,
+    further draft() calls return the fallback without invoking the
+    LLM. Critical for cost control on large runs."""
+    from src.ai_drafter import AIDrafter as _AIAdapter
+
+    svc = MagicMock()
+    svc._call_llm.return_value = "OK"
+    # Tiny budget — first call (max_tokens=200) should consume it; second
+    # call should short-circuit to the fallback.
+    adapter = _AIAdapter(svc, endpoint_name=None, token_budget=200)
+    assert adapter.draft("p1", fallback="F1", max_tokens=200) == "OK"
+    assert adapter.draft("p2", fallback="F2", max_tokens=200) == "F2"
+    assert svc._call_llm.call_count == 1, "second draft should not have hit the LLM"
+
+
+def test_orchestrator_constructs_adapter_with_endpoint_from_config():
+    """When ``ai_endpoint_name`` is set in the job config (router puts
+    it there from the X-Databricks-Model header), the orchestrator
+    builds an AI adapter pointed at that Databricks endpoint.
+
+    Patches ``build_drafter`` (the shared factory in ``src.ai_drafter``)
+    to capture the config it receives and return a recordable
+    adapter — more reliable than monkeypatching down through
+    ``src.ai_service.get_ai_service``, which is sensitive to other
+    tests' import-time state in the full-suite run."""
+    from src import demo_documents
+    from src.demo_documents import generate_documents
+
+    captured: dict = {}
+
+    class _RecordingAdapter:
+        backend = "databricks:databricks-llama-endpoint"
+        tokens_used = 1234
+        calls_made = 5
+        fallbacks = 0
+
+        def draft(self, prompt, fallback, max_tokens=200):
+            captured.setdefault("prompts", []).append(prompt)
+            return "AI-DRAFTED-NARRATIVE"
+
+    def fake_build(config, sdk_client=None):
+        captured["config"] = config
+        captured["sdk_client"] = sdk_client
+        return _RecordingAdapter()
+
+    sdk_client = MagicMock()
+    sdk_client.files.upload = MagicMock()
+
+    # Use docx_letter — its opening paragraph is an unconditional
+    # ``.draft()`` call (no random structural gate), so the test can
+    # reliably assert the adapter reached the generator.
+    config = {
+        "catalog": "demo",
+        "schema": "iot",
+        "volume": "v",
+        "destination": "volume",
+        "types": ["docx_letter"],
+        "counts": {"docx_letter": 1},
+        "industry": "healthcare",
+        "realistic_content": True,
+        "ai_endpoint_name": "databricks-llama-endpoint",
+        "ai_token_budget": 50_000,
+        "faker_seed": 42,
+    }
+    with (
+        patch.object(demo_documents, "execute_sql"),
+        patch("src.ai_drafter.build_drafter", fake_build),
+    ):
+        result = generate_documents(sdk_client, "wh-1", config)
+
+    assert result["status"] == "completed"
+    # Pin that the AI plumbing actually engaged.
+    assert result.get("ai_mode") is True
+    assert result.get("ai_backend") == "databricks:databricks-llama-endpoint"
+    assert result.get("ai_calls") == 5
+    # Verify the orchestrator forwarded the endpoint config + sdk client
+    # into build_drafter so the adapter can route through Databricks.
+    assert captured["config"]["ai_endpoint_name"] == "databricks-llama-endpoint"
+    assert captured["config"]["realistic_content"] is True
+    assert captured["sdk_client"] is sdk_client
+    # And that the generator actually called .draft() — proves
+    # ai_client reaches the per-type generators.
+    assert captured.get("prompts"), "expected at least one .draft() call from a generator"
+
+
+def test_orchestrator_falls_back_to_template_when_no_ai_backend():
+    """``realistic_content=True`` but ``build_drafter`` returns None
+    (e.g. no Databricks endpoint AND no Anthropic key) → the
+    orchestrator runs cleanly against templates and ``ai_mode`` is
+    absent from the result."""
+    from src import demo_documents
+    from src.demo_documents import generate_documents
+
+    sdk_client = MagicMock()
+    config = {
+        "catalog": "demo",
+        "schema": "iot",
+        "volume": "v",
+        "destination": "volume",
+        "types": ["pdf_claim"],
+        "counts": {"pdf_claim": 1},
+        "industry": "healthcare",
+        "realistic_content": True,
+        "faker_seed": 42,
+    }
+    with (
+        patch.object(demo_documents, "execute_sql"),
+        patch("src.ai_drafter.build_drafter", return_value=None),
+    ):
+        result = generate_documents(sdk_client, "wh-1", config)
+
+    assert result["status"] == "completed"
+    # ai_mode key absent → adapter wasn't constructed.
+    assert "ai_mode" not in result
+
+
+# ── Distinctness ─────────────────────────────────────────────────
+#
+# Each generator must emit unique bytes per call once randomness is
+# in play (no faker seed). Without this, customers who generate
+# 100 documents of one type get 100 nearly-identical files which
+# breaks the demo story for RAG/embeddings.
+
+
+import hashlib  # noqa: E402
+
+_GENERATOR_TYPES = sorted(DOCUMENT_TYPES.keys())
+
+
+@pytest.mark.parametrize("type_id", _GENERATOR_TYPES)
+def test_each_generator_produces_distinct_bytes(type_id):
+    """Generate 15 of the same type — assert at least 14 unique
+    SHA-256 hashes. Allows 1 collision for legitimate randomness;
+    tighter than 0 because the structural-variation knobs aren't
+    seeded against pytest's process state."""
+    from faker import Faker
+    from src import demo_documents as d
+
+    industry = "healthcare"
+    fkr = Faker()
+    info = DOCUMENT_TYPES[type_id]
+    # ``industries`` is a dict ``{industry_name: label_for_that_industry}``;
+    # use a supported industry when "healthcare" isn't in it (and there's
+    # no "*" wildcard).
+    industries = info.get("industries", {})
+    if industries and "healthcare" not in industries and "*" not in industries:
+        industry = next(iter(industries))
+    gen_fn = getattr(d, info["gen_fn"])
+
+    hashes = set()
+    for _ in range(15):
+        bytes_out, _meta = gen_fn(industry, fkr, None)
+        hashes.add(hashlib.sha256(bytes_out).hexdigest())
+    assert len(hashes) >= 14, (
+        f"{type_id}: only {len(hashes)} unique hashes out of 15 — "
+        f"distinctness too low; generator needs more variation"
+    )
+
+
+# ── Industry pool expansion ──────────────────────────────────────
+#
+# Pin that the per-industry context pools are large enough — 5-item
+# pools were the root cause of the original distinctness problem.
+
+
+@pytest.mark.parametrize(
+    "industry,key,min_size",
+    [
+        ("healthcare", "claim_diagnoses", 12),
+        ("healthcare", "treatment_codes", 12),
+        ("healthcare", "department_names", 12),
+        ("financial", "transaction_types", 12),
+        ("financial", "fee_categories", 12),
+        ("financial", "department_names", 12),
+        ("retail", "product_categories", 12),
+        ("retail", "department_names", 12),
+        ("manufacturing", "part_categories", 12),
+        ("energy", "outage_causes", 12),
+        ("telecom", "sla_metrics", 10),
+        ("telecom", "outage_causes", 12),
+        ("education", "course_codes", 14),
+        ("education", "grade_letters", 12),
+        ("real_estate", "property_types", 12),
+        ("real_estate", "disclosure_items", 12),
+        ("logistics", "freight_classes", 10),
+        ("logistics", "incoterms", 10),
+        ("insurance", "policy_types", 12),
+        ("insurance", "endorsement_codes", 12),
+    ],
+)
+def test_industry_context_pools_are_large_enough(industry, key, min_size):
+    """Pin minimum pool sizes to prevent regression to the old
+    5-item pools that gave near-duplicate corpora."""
+    from src.demo_documents import _ctx
+
+    pool = _ctx(industry, key)
+    assert len(pool) >= min_size, (
+        f"{industry}.{key} has only {len(pool)} items — needs ≥ {min_size} for distinctness"
+    )

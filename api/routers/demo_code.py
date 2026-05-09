@@ -5,9 +5,9 @@ No 503 missing-deps path because Code has no optional Python deps.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from api.dependencies import get_app_config, get_db_client
 from api.models.demo_code import (
@@ -88,6 +88,7 @@ async def submit(
     request: Request,
     client=Depends(get_db_client),
     app_config=Depends(get_app_config),
+    x_databricks_model: Optional[str] = Header(None, alias="X-Databricks-Model"),
 ) -> DemoCodeSubmitResponse:
     warehouse_id = req.warehouse_id or app_config.get("sql_warehouse_id", "")
     if not warehouse_id:
@@ -109,6 +110,10 @@ async def submit(
         "counts": dict(req.counts),
         "industry": req.industry,
         "realistic_content": req.realistic_content,
+        "ai_token_budget": req.ai_token_budget,
+        # X-Databricks-Model is set by ui/src/lib/api-client.ts from
+        # localStorage.dbx_model (the model picked in Settings).
+        "ai_endpoint_name": x_databricks_model,
         "faker_locale": req.faker_locale,
         "faker_seed": req.faker_seed,
         "sql_warehouse_id": warehouse_id,
@@ -117,6 +122,9 @@ async def submit(
     jm = request.app.state.job_manager
     job_id = await jm.submit_job("demo-code", config, client)
     logger.info(
-        f"Submitted demo-code job {job_id} (types={list(req.types)}, destination={req.destination})"
+        f"Submitted demo-code job {job_id} "
+        f"(types={list(req.types)}, destination={req.destination}, "
+        f"ai_mode={req.realistic_content}, "
+        f"ai_endpoint={x_databricks_model or 'anthropic'})"
     )
     return DemoCodeSubmitResponse(job_id=job_id, status="queued")

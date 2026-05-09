@@ -605,7 +605,6 @@ def generate_media(
     counts = config.get("counts") or {}
     industry = config.get("industry", "healthcare")
     destination = config.get("destination", "volume_with_catalog")
-    realistic_content = bool(config.get("realistic_content", False))
 
     if destination not in ("volume", "volume_with_catalog", "direct_table"):
         raise ValueError(f"Unknown destination: {destination!r}")
@@ -621,14 +620,15 @@ def generate_media(
     if config.get("faker_seed") is not None:
         fkr.seed_instance(int(config["faker_seed"]))
 
-    ai_client = None
-    if realistic_content:
-        try:
-            from src.ai import get_ai_client  # type: ignore
+    # AI client — opt-in via realistic_content. Reuses the shared
+    # adapter that routes through Databricks Model Serving (when an
+    # endpoint is picked in Settings) or the Anthropic API. Media
+    # generators that produce binary bytes (images / video) ignore
+    # the adapter; audio_voicemail uses it to draft a transcript when
+    # available.
+    from src.ai_drafter import build_drafter
 
-            ai_client = get_ai_client()
-        except Exception as e:
-            logger.warning(f"realistic_content=True but no AI client available: {e}")
+    ai_client = build_drafter(config, sdk_client=client)
 
     volume_path: str | None = None
     table_fqn: str | None = None
@@ -778,7 +778,9 @@ def generate_media(
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-    return {
+    from src.ai_drafter import adapter_summary
+
+    result = {
         "status": "completed",
         "files_written": progress["files_written"],
         "total_bytes": progress["total_bytes"],
@@ -791,6 +793,8 @@ def generate_media(
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
     }
+    result.update(adapter_summary(ai_client))
+    return result
 
 
 def _insert_direct_row(

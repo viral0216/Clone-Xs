@@ -32,13 +32,13 @@ import { api } from "@/lib/api-client";
 import { useDurableJob } from "@/hooks/useDurableJob";
 import { toast } from "sonner";
 import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
+import AIModeToggle from "@/components/AIModeToggle";
 import {
   AlertTriangle,
   CheckCircle2,
   Code2,
   Loader2,
   Play,
-  Sparkles,
 } from "lucide-react";
 
 type CodeDestination = "volume" | "volume_with_catalog" | "direct_table";
@@ -95,6 +95,7 @@ export default function CodeTab() {
   const [volume, setVolume] = useState("demo_unstructured");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
+  const [tokenBudget, setTokenBudget] = useState(50_000);
 
   const [selectedTypes, setSelectedTypes] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -192,6 +193,7 @@ export default function CodeTab() {
           counts: activeCounts,
           industry,
           realistic_content: realisticContent,
+          ai_token_budget: tokenBudget,
         },
       );
       codeJob.start({}, async () => res.job_id);
@@ -323,18 +325,14 @@ export default function CodeTab() {
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={realisticContent}
-                  onChange={(e) => setRealisticContent(e.target.checked)}
-                />
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="font-medium">AI-draft function bodies</span>
-                  <span className="text-muted-foreground">— more interesting embeddings; requires API key</span>
-                </span>
-              </label>
+              <AIModeToggle
+                enabled={realisticContent}
+                onEnabledChange={setRealisticContent}
+                tokenBudget={tokenBudget}
+                onTokenBudgetChange={setTokenBudget}
+                label="AI-draft function bodies"
+                note="more interesting embeddings"
+              />
             </CardContent>
           </Card>
 

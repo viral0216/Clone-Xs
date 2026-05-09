@@ -29,13 +29,13 @@ import { api } from "@/lib/api-client";
 import { useDurableJob } from "@/hooks/useDurableJob";
 import { toast } from "sonner";
 import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
+import AIModeToggle from "@/components/AIModeToggle";
 import {
   AlertTriangle,
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
   Play,
-  Sparkles,
 } from "lucide-react";
 
 type MediaDestination = "volume" | "volume_with_catalog" | "direct_table";
@@ -91,6 +91,7 @@ export default function MediaTab() {
   const [volume, setVolume] = useState("demo_unstructured");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
+  const [tokenBudget, setTokenBudget] = useState(50_000);
 
   const [selectedTypes, setSelectedTypes] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -202,6 +203,7 @@ export default function MediaTab() {
           counts: activeCounts,
           industry,
           realistic_content: realisticContent,
+          ai_token_budget: tokenBudget,
         },
       );
       mediaJob.start({}, async () => res.job_id);
@@ -360,18 +362,14 @@ export default function MediaTab() {
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={realisticContent}
-                  onChange={(e) => setRealisticContent(e.target.checked)}
-                />
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="font-medium">AI-draft voicemail transcripts</span>
-                  <span className="text-muted-foreground">— images / video ignore this flag</span>
-                </span>
-              </label>
+              <AIModeToggle
+                enabled={realisticContent}
+                onEnabledChange={setRealisticContent}
+                tokenBudget={tokenBudget}
+                onTokenBudgetChange={setTokenBudget}
+                label="AI-draft voicemail transcripts"
+                note="images / video ignore this flag"
+              />
             </CardContent>
           </Card>
 

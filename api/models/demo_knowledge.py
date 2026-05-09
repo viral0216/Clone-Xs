@@ -95,8 +95,22 @@ class DemoKnowledgeRequest(BaseModel):
         default=False,
         description=(
             "When True, wiki article body sections and Q&A answers are "
-            "AI-drafted (slower, requires API key). chat_thread ignores "
-            "the flag — Faker sentences are fine for short messages."
+            "AI-drafted (slower, requires either a Databricks Model Serving "
+            "endpoint picked in Settings or ANTHROPIC_API_KEY). "
+            "chat_thread ignores the flag — Faker sentences are fine for "
+            "short messages."
+        ),
+    )
+    ai_token_budget: int = Field(
+        default=50_000,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Approximate per-job ceiling on AI tokens. When the budget is "
+            "hit, remaining draft calls fall back to templates. Default "
+            "50,000 ≈ ~$0.50 on Sonnet at typical max_tokens settings. "
+            "Ignored when realistic_content is False; set to 0 to disable "
+            "AI entirely even when realistic_content=True."
         ),
     )
     faker_locale: str = Field(default="en_US")

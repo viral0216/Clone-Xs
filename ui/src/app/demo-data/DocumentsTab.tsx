@@ -30,13 +30,13 @@ import { api } from "@/lib/api-client";
 import { useDurableJob } from "@/hooks/useDurableJob";
 import { toast } from "sonner";
 import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
+import AIModeToggle from "@/components/AIModeToggle";
 import {
   AlertTriangle,
   CheckCircle2,
   FileText,
   Loader2,
   Play,
-  Sparkles,
 } from "lucide-react";
 
 // ── Types matching the backend ─────────────────────────────────────
@@ -93,6 +93,7 @@ export default function DocumentsTab() {
   const [volume, setVolume] = useState("demo_unstructured");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
+  const [tokenBudget, setTokenBudget] = useState(50_000);
 
   // Per-type state: which are checked, how many of each.
   const [selectedTypes, setSelectedTypes] = useState<Record<string, boolean>>({});
@@ -228,6 +229,7 @@ export default function DocumentsTab() {
           counts: activeCounts,
           industry,
           realistic_content: realisticContent,
+          ai_token_budget: tokenBudget,
         },
       );
       docsJob.start({}, async () => res.job_id);
@@ -374,18 +376,14 @@ export default function DocumentsTab() {
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={realisticContent}
-                  onChange={(e) => setRealisticContent(e.target.checked)}
-                />
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="font-medium">AI-draft document content</span>
-                  <span className="text-muted-foreground">— slower, requires API key</span>
-                </span>
-              </label>
+              <AIModeToggle
+                enabled={realisticContent}
+                onEnabledChange={setRealisticContent}
+                tokenBudget={tokenBudget}
+                onTokenBudgetChange={setTokenBudget}
+                label="AI-draft document content"
+                note="spreadsheets ignore this flag"
+              />
             </CardContent>
           </Card>
 

@@ -327,26 +327,14 @@ def _gen_wiki_article(industry: str, fkr: Any, ai_client: Any | None) -> tuple[b
     section_titles = random.sample(section_headings, k=section_count)
     sections_md: list[str] = []
     for st in section_titles:
+        prompt = (
+            f"Write a 2-paragraph wiki section titled '{st}' about "
+            f"'{topic.replace('-', ' ')}' in the {industry} industry. "
+            f"Use a professional internal-docs tone. Do not start with "
+            f"the section heading."
+        )
         if ai_client is not None:
-            try:
-                # AI prompt is intentionally short — the generator
-                # doesn't need narrative perfection, just topical
-                # variation in the content.
-                prompt = (
-                    f"Write a 2-paragraph wiki section titled '{st}' "
-                    f"about '{topic.replace('-', ' ')}' in the {industry} "
-                    f"industry. Use a professional internal-docs tone. "
-                    f"Do not start with the section heading."
-                )
-                # Lazy access — different AI clients expose different
-                # surfaces; fall back to template if unavailable.
-                completion = getattr(ai_client, "complete", None)
-                if completion is not None:
-                    body = completion(prompt) or ""
-                else:
-                    body = fkr.text(max_nb_chars=350)
-            except Exception:
-                body = fkr.text(max_nb_chars=350)
+            body = ai_client.draft(prompt, fallback=fkr.text(max_nb_chars=350), max_tokens=350)
         else:
             body = fkr.text(max_nb_chars=350)
         sections_md.append(f"## {st}\n\n{body}\n")
@@ -427,18 +415,13 @@ def _gen_qa_pair(industry: str, fkr: Any, ai_client: Any | None) -> tuple[bytes,
     ).capitalize()
 
     # Answer body — AI-drafted or templated.
+    prompt = (
+        f"You are an internal knowledge base. Answer this question in "
+        f"2-3 sentences as if you were the {industry}-industry runbook "
+        f"for the topic '{topic.replace('-', ' ')}': {question}"
+    )
     if ai_client is not None:
-        try:
-            prompt = (
-                f"You are an internal knowledge base. Answer this question "
-                f"in 2-3 sentences as if you were the {industry}-industry "
-                f"runbook for the topic '{topic.replace('-', ' ')}': "
-                f"{question}"
-            )
-            completion = getattr(ai_client, "complete", None)
-            answer = completion(prompt) if completion else fkr.paragraph(nb_sentences=4)
-        except Exception:
-            answer = fkr.paragraph(nb_sentences=4)
+        answer = ai_client.draft(prompt, fallback=fkr.paragraph(nb_sentences=4), max_tokens=200)
     else:
         answer = fkr.paragraph(nb_sentences=4)
 
@@ -661,7 +644,6 @@ def generate_knowledge(
     counts = config.get("counts") or {}
     industry = config.get("industry", "healthcare")
     destination = config.get("destination", "volume_with_catalog")
-    realistic_content = bool(config.get("realistic_content", False))
 
     if destination not in ("volume", "volume_with_catalog", "direct_table"):
         raise ValueError(f"Unknown destination: {destination!r}")
@@ -677,14 +659,12 @@ def generate_knowledge(
     if config.get("faker_seed") is not None:
         fkr.seed_instance(int(config["faker_seed"]))
 
-    ai_client = None
-    if realistic_content:
-        try:
-            from src.ai import get_ai_client  # type: ignore
+    # AI client — opt-in via realistic_content. Reuses the shared
+    # adapter that routes through Databricks Model Serving (when an
+    # endpoint is picked in Settings) or the Anthropic API.
+    from src.ai_drafter import build_drafter
 
-            ai_client = get_ai_client()
-        except Exception as e:
-            logger.warning(f"realistic_content=True but no AI client available: {e}")
+    ai_client = build_drafter(config, sdk_client=client)
 
     volume_path: str | None = None
     table_fqn: str | None = None
@@ -822,7 +802,9 @@ def generate_knowledge(
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-    return {
+    from src.ai_drafter import adapter_summary
+
+    result = {
         "status": "completed",
         "files_written": progress["files_written"],
         "total_bytes": progress["total_bytes"],
@@ -834,6 +816,8 @@ def generate_knowledge(
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
     }
+    result.update(adapter_summary(ai_client))
+    return result
 
 
 def _insert_direct_row(

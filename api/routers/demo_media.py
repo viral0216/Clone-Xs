@@ -7,9 +7,9 @@ checkbox when ffmpeg isn't on PATH.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from api.dependencies import get_app_config, get_db_client
 from api.models.demo_media import (
@@ -105,6 +105,7 @@ async def submit(
     request: Request,
     client=Depends(get_db_client),
     app_config=Depends(get_app_config),
+    x_databricks_model: Optional[str] = Header(None, alias="X-Databricks-Model"),
 ) -> DemoMediaSubmitResponse:
     """Submit a media-generation job. Returns 503 when [media] extra
     is missing. Per-type ffmpeg availability is enforced inside the
@@ -145,6 +146,10 @@ async def submit(
         "counts": dict(req.counts),
         "industry": req.industry,
         "realistic_content": req.realistic_content,
+        "ai_token_budget": req.ai_token_budget,
+        # X-Databricks-Model is set by ui/src/lib/api-client.ts from
+        # localStorage.dbx_model (the model picked in Settings).
+        "ai_endpoint_name": x_databricks_model,
         "faker_locale": req.faker_locale,
         "faker_seed": req.faker_seed,
         "sql_warehouse_id": warehouse_id,
@@ -154,6 +159,8 @@ async def submit(
     job_id = await jm.submit_job("demo-media", config, client)
     logger.info(
         f"Submitted demo-media job {job_id} "
-        f"(types={list(req.types)}, destination={req.destination})"
+        f"(types={list(req.types)}, destination={req.destination}, "
+        f"ai_mode={req.realistic_content}, "
+        f"ai_endpoint={x_databricks_model or 'anthropic'})"
     )
     return DemoMediaSubmitResponse(job_id=job_id, status="queued")

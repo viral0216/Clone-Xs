@@ -29,15 +29,18 @@ export default function FieldLabel({ field, hint, children, className }: Props) 
       {children}
       {resolved && (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label={`What is ${field || "this"}?`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-            </button>
+          {/* base-ui's Tooltip.Trigger always renders its own <button>
+              and does NOT support radix-style asChild. Use it as the
+              button directly — passing button props through. Wrapping
+              another <button> inside (with asChild) produces nested
+              buttons + an asChild attribute that leaks to the DOM. */}
+          <TooltipTrigger
+            type="button"
+            tabIndex={-1}
+            aria-label={`What is ${field || "this"}?`}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-xs whitespace-normal leading-snug">
             {resolved}
@@ -60,16 +63,15 @@ export function InfoDot({ field, hint }: { field?: string; hint?: string }) {
   if (!resolved) return null;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={(e) => e.preventDefault()}
-          aria-label={`What is ${field || "this"}?`}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <HelpCircle className="h-3 w-3" />
-        </button>
+      {/* See FieldLabel above — base-ui Trigger is the button itself. */}
+      <TooltipTrigger
+        type="button"
+        tabIndex={-1}
+        onClick={(e) => e.preventDefault()}
+        aria-label={`What is ${field || "this"}?`}
+        className="text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <HelpCircle className="h-3 w-3" />
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs whitespace-normal leading-snug">
         {resolved}

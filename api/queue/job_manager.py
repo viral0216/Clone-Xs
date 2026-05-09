@@ -544,6 +544,61 @@ class JobManager:
                     progress_dict=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-documents":
+                # Documents tab — generates a corpus of unstructured
+                # files (PDFs, Word, Excel, .eml). Lives in
+                # src.demo_documents and lazy-imports the heavy doc
+                # libs from the [documents] extra. The router has
+                # already gated on availability before getting here.
+                from src.demo_documents import generate_documents
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_documents(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
+            elif job_type == "demo-media":
+                # Media tab — generates synthetic images / audio /
+                # video. Same lazy-import + availability-gate posture
+                # as demo-documents. Per-type ffmpeg checks happen
+                # inside the orchestrator so a missing ffmpeg only
+                # blocks video_clip, not the whole batch.
+                from src.demo_media import generate_media
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_media(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
+            elif job_type == "demo-knowledge":
+                # Knowledge base tab — generates wiki articles /
+                # Q&A pairs / chat threads. Pure stdlib + Faker, no
+                # optional Python deps to gate on. Topic structure
+                # comes from per-industry topic lists in
+                # src.demo_knowledge so the corpus has a coherent
+                # information architecture for RAG demos.
+                from src.demo_knowledge import generate_knowledge
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_knowledge(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

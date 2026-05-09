@@ -562,6 +562,24 @@ class JobManager:
                     progress=self.jobs[job_id]["progress"],
                     stop_check=lambda: jobs[job_id].get("stop_requested", False),
                 )
+            elif job_type == "demo-media":
+                # Media tab — generates synthetic images / audio /
+                # video. Same lazy-import + availability-gate posture
+                # as demo-documents. Per-type ffmpeg checks happen
+                # inside the orchestrator so a missing ffmpeg only
+                # blocks video_clip, not the whole batch.
+                from src.demo_media import generate_media
+
+                self.jobs[job_id]["progress"] = {}
+                self.jobs[job_id]["stop_requested"] = False
+                jobs = self.jobs
+                result = generate_media(
+                    client,
+                    config["sql_warehouse_id"],
+                    config,
+                    progress=self.jobs[job_id]["progress"],
+                    stop_check=lambda: jobs[job_id].get("stop_requested", False),
+                )
             elif job_type == "demo-data":
                 from src.demo_generator import generate_demo_catalog
 

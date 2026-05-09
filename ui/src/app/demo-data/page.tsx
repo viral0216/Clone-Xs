@@ -22,9 +22,10 @@ import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
   ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
-  Copy, FileText,
+  Copy, FileText, Image as ImageIcon,
 } from "lucide-react";
 import DocumentsTab from "./DocumentsTab";
+import MediaTab from "./MediaTab";
 
 // Small helper used by the streaming card's copy buttons. Falls back
 // gracefully on browsers without `navigator.clipboard` (older Safari,
@@ -438,10 +439,10 @@ export default function DemoDataPage() {
   // tab so users aren't scrolling past inapplicable controls.
   // Persisted to sessionStorage so refresh keeps the user where they
   // were.
-  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "documents" | "manage">(() => {
+  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "documents" | "media" | "manage">(() => {
     try {
       const v = sessionStorage.getItem("clxs-demo-gen-tab");
-      if (v === "batch" || v === "streaming" || v === "documents" || v === "manage") return v;
+      if (v === "batch" || v === "streaming" || v === "documents" || v === "media" || v === "manage") return v;
     } catch {}
     return "batch";
   });
@@ -1049,6 +1050,7 @@ export default function DemoDataPage() {
           { key: "batch", label: "Batch Catalog", icon: Database, hint: "Generate one-shot synthetic data across N industries" },
           { key: "streaming", label: "Streaming Events", icon: Radio, hint: "Continuously emit IoT events to a UC Volume" },
           { key: "documents", label: "Documents", icon: FileText, hint: "Generate unstructured corpora — PDFs, Office docs, Excel, .eml — for RAG / GenAI demos" },
+          { key: "media", label: "Media", icon: ImageIcon, hint: "Generate synthetic images, audio, and video for multimodal AI / vision / speech demos" },
           { key: "manage", label: "Manage Catalogs", icon: Trash2, hint: "List and drop existing demo catalogs" },
         ].map(({ key, label, icon: TabIcon, hint }) => (
           <button key={key}
@@ -3251,6 +3253,8 @@ export default function DemoDataPage() {
       </>)}
 
       {activeGenTab === "documents" && <DocumentsTab />}
+
+      {activeGenTab === "media" && <MediaTab />}
 
       {activeGenTab === "manage" && (() => {
         const rows = (demoCatalogsQuery.data?.catalogs || []) as any[];

@@ -143,6 +143,28 @@ export default function MediaTab() {
     [selectedTypes],
   );
 
+  // Rough AI-call accounting per selected media type. Mirrors the
+  // `_maybe_ai` call counts in src/demo_media.py — keep in sync if
+  // generators add or remove LLM calls.
+  const AI_CALLS_PER_FILE: Record<string, number> = {
+    img_xray: 2,         // findings + caption
+    img_scan: 2,         // title + body
+    img_photo: 1,        // caption
+    audio_voicemail: 1,  // transcript
+    video_clip: 1,       // scene description
+  };
+  const AI_AVG_TOKENS_PER_CALL = 200;
+
+  const aiEstimate = useMemo(() => {
+    let calls = 0;
+    for (const t of activeTypes) {
+      const n = counts[t] ?? 5;
+      calls += n * (AI_CALLS_PER_FILE[t] ?? 1);
+    }
+    const tokens = calls * AI_AVG_TOKENS_PER_CALL;
+    return { calls, tokens };
+  }, [activeTypes, counts]);
+
   const groupedTypes = useMemo(() => {
     const out: Record<string, MediaTypeInfo[]> = {};
     for (const t of typeRegistry) {
@@ -358,7 +380,7 @@ export default function MediaTab() {
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Surfaces in metadata; v2 will drive image / audio variations per industry.
+                  Drives captions, alt-text, scanned-page body, voicemail transcripts, and video scene descriptions per industry.
                 </p>
               </div>
 
@@ -367,9 +389,26 @@ export default function MediaTab() {
                 onEnabledChange={setRealisticContent}
                 tokenBudget={tokenBudget}
                 onTokenBudgetChange={setTokenBudget}
-                label="AI-draft voicemail transcripts"
-                note="images / video ignore this flag"
+                label="AI-draft media content"
+                note="captions, transcripts, and document body text"
               />
+              {realisticContent && aiEstimate.calls > 0 && (
+                <div className="text-xs space-y-1 px-1">
+                  <div className="text-muted-foreground">
+                    Estimate: <span className="font-mono">{aiEstimate.calls}</span> AI calls
+                    {" · "}
+                    <span className="font-mono">~{aiEstimate.tokens.toLocaleString()}</span> tokens
+                  </div>
+                  {aiEstimate.tokens > tokenBudget && (
+                    <div className="text-amber-600 dark:text-amber-500">
+                      ⚠ Estimate exceeds budget of{" "}
+                      <span className="font-mono">{tokenBudget.toLocaleString()}</span>{" "}
+                      — {aiEstimate.calls - Math.floor(tokenBudget / AI_AVG_TOKENS_PER_CALL)} late
+                      calls will fall back to templates.
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -571,6 +610,43 @@ export default function MediaTab() {
                         <code className="px-1 bg-muted rounded font-mono break-all">
                           {mediaJob.data.result.volume_path}
                         </code>
+                      </div>
+                    )}
+                    {mediaJob.data.result.ai_mode && (
+                      <div className="text-xs flex flex-wrap gap-x-3 gap-y-0.5 pt-1">
+                        <span>
+                          <span className="text-muted-foreground">AI calls: </span>
+                          <span className="font-mono">{mediaJob.data.result.ai_calls ?? 0}</span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Fallbacks: </span>
+                          <span className={`font-mono ${(mediaJob.data.result.ai_fallbacks ?? 0) > 0 ? "text-amber-600 dark:text-amber-500" : ""}`}>
+                            {mediaJob.data.result.ai_fallbacks ?? 0}
+                          </span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Tokens: </span>
+                          <span className="font-mono">
+                            {(mediaJob.data.result.ai_tokens_used ?? 0).toLocaleString()}
+                          </span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Backend: </span>
+                          <code className="px-1 bg-muted rounded font-mono">
+                            {mediaJob.data.result.ai_backend ?? "—"}
+                          </code>
+                        </span>
+                      </div>
+                    )}
+                    {(mediaJob.data.result.upload_count ?? 0) > 0 && (
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Uploads: </span>
+                        <span className="font-mono">{mediaJob.data.result.upload_count}</span>
+                        {(mediaJob.data.result.upload_failures ?? 0) > 0 && (
+                          <span className="text-red-500 dark:text-red-400 ml-1">
+                            ({mediaJob.data.result.upload_failures} failed)
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

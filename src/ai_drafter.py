@@ -25,9 +25,16 @@ handling, and the per-job token budget.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Retry tuning for rate-limit errors. Three attempts with exponential
+# backoff (0.5s, 1.5s, 4.5s) — total worst-case ~6.5s before falling
+# back. Only triggers on "Rate limited" exceptions; other failures
+# (auth, 404, network) fall back immediately.
+_RATE_LIMIT_BACKOFF_S: tuple[float, ...] = (0.5, 1.5, 4.5)
 
 
 _SYSTEM_PROMPT = (
@@ -89,17 +96,50 @@ class AIDrafter:
     def draft(self, prompt: str, fallback: str, max_tokens: int = 200) -> str:
         if self._used >= self._budget:
             self._fallbacks += 1
-            return fallback
-        try:
-            text = self._svc._call_llm(
-                system_prompt=_SYSTEM_PROMPT,
-                user_message=prompt,
-                max_tokens=max_tokens,
-                endpoint_name=self._endpoint,
-                client=self._sdk_client,
+            logger.warning(
+                "AI fallback (budget exhausted, %d/%d tokens used)",
+                self._used,
+                self._budget,
             )
-        except Exception as e:
-            logger.debug("AI draft failed (will use fallback): %s", e)
+            return fallback
+
+        # Retry loop — only re-tries on rate-limit (429) errors. The
+        # serving endpoint surfaces these as RuntimeError("Rate limited
+        # by …"); we sleep with exponential backoff and try again. Any
+        # other exception (auth, 404, network, model error) breaks
+        # the loop immediately and falls back.
+        text: str | None = None
+        last_exc: Exception | None = None
+        for attempt, backoff in enumerate((0.0, *_RATE_LIMIT_BACKOFF_S)):
+            if backoff > 0.0:
+                time.sleep(backoff)
+            try:
+                text = self._svc._call_llm(
+                    system_prompt=_SYSTEM_PROMPT,
+                    user_message=prompt,
+                    max_tokens=max_tokens,
+                    endpoint_name=self._endpoint,
+                    client=self._sdk_client,
+                )
+                last_exc = None
+                break
+            except Exception as e:
+                last_exc = e
+                if "Rate limited" in str(e) and attempt < len(_RATE_LIMIT_BACKOFF_S):
+                    logger.info(
+                        "AI rate-limited (attempt %d), backing off %.1fs",
+                        attempt + 1,
+                        _RATE_LIMIT_BACKOFF_S[attempt],
+                    )
+                    continue
+                break
+
+        if last_exc is not None:
+            logger.warning(
+                "AI fallback (exception: %s): prompt[:80]=%r",
+                last_exc,
+                prompt[:80],
+            )
             self._fallbacks += 1
             return fallback
         self._calls += 1
@@ -109,6 +149,12 @@ class AIDrafter:
         self._used += max_tokens
         text = (text or "").strip()
         if not text:
+            logger.warning(
+                "AI fallback (empty response from %s): prompt[:80]=%r, max_tokens=%d",
+                self.backend,
+                prompt[:80],
+                max_tokens,
+            )
             self._fallbacks += 1
             return fallback
         return text
@@ -133,6 +179,15 @@ def build_drafter(
     so callers can stay on the templated path.
     """
     if not bool(config.get("realistic_content", False)):
+        return None
+    # When a deterministic faker_seed is set, skip AI entirely so test
+    # runs and reproducibility scenarios stay byte-stable. Production
+    # runs (no seed) get the full AI experience.
+    if config.get("faker_seed") is not None:
+        logger.info(
+            "faker_seed=%s set — skipping AI for reproducibility, using templates instead",
+            config.get("faker_seed"),
+        )
         return None
     try:
         from src.ai_service import get_ai_service

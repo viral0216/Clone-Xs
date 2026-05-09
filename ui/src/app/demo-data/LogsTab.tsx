@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useDurableJob } from "@/hooks/useDurableJob";
 import { toast } from "sonner";
+import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -290,37 +291,17 @@ export default function LogsTab() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-2">
-                <div>
-                  <label className="text-xs font-medium mb-1 block">Catalog</label>
-                  <Input
-                    value={catalog}
-                    onChange={(e) => setCatalog(e.target.value)}
-                    placeholder="demo_quick"
-                    className="font-mono text-sm h-8"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium mb-1 block">Schema</label>
-                  <Input
-                    value={schema}
-                    onChange={(e) => setSchema(e.target.value)}
-                    placeholder="iot"
-                    className="font-mono text-sm h-8"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium mb-1 block">
-                    Volume {volumeRequired ? "" : "(unused for direct_table)"}
-                  </label>
-                  <Input
-                    value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
-                    placeholder="demo_unstructured"
-                    className="font-mono text-sm h-8"
-                    disabled={!volumeRequired}
-                  />
-                </div>
+              <div className="pt-2">
+                <CatalogSchemaVolumePicker
+                  catalog={catalog}
+                  setCatalog={setCatalog}
+                  schema={schema}
+                  setSchema={setSchema}
+                  volume={volume}
+                  setVolume={setVolume}
+                  volumeEnabled={volumeRequired}
+                  defaultVolumeName="demo_unstructured"
+                />
               </div>
               {volumeRequired && (
                 <p className="text-xs text-muted-foreground">

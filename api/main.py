@@ -18,6 +18,7 @@ from api.routers import (
     clone,
     config,
     convert_to_delta,
+    demo_code,
     demo_documents,
     demo_knowledge,
     demo_logs,
@@ -458,6 +459,7 @@ app.include_router(demo_documents.router, prefix="/api/generate", tags=["demo-do
 app.include_router(demo_media.router, prefix="/api/generate", tags=["demo-media"])
 app.include_router(demo_knowledge.router, prefix="/api/generate", tags=["demo-knowledge"])
 app.include_router(demo_logs.router, prefix="/api/generate", tags=["demo-logs"])
+app.include_router(demo_code.router, prefix="/api/generate", tags=["demo-code"])
 app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(incremental.router, prefix="/api", tags=["incremental"])

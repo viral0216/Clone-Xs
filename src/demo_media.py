@@ -705,6 +705,7 @@ def _ensure_catalog_table(
             industry         STRING,
             generated_at     TIMESTAMP,
             content_summary  STRING,
+            content_full     STRING,
             duration_ms      BIGINT,
             dimensions       STRING,
             codec            STRING,
@@ -775,6 +776,46 @@ def _build_sidecar(type_id: str, meta: dict) -> str | None:
             f"Duration: {meta.get('duration_ms', 0)}ms\n"
         )
     return None
+
+
+def _build_content_full(type_id: str, meta: dict) -> str:
+    """Flat textual projection of a media file for the indexed
+    catalog table. Concatenates the AI-drafted text fields already on
+    the metadata dict so RAG queries can hit ``content_full`` directly
+    without joining to the sidecar `.txt` on the volume.
+
+    Mirrors the per-type field selection in :func:`_build_sidecar` but
+    returns a single space-joined string with empty fields skipped.
+    Returns "" when the metadata has no text worth surfacing — keeps
+    the orchestrator's INSERT call simple (always non-NULL string).
+    """
+    parts: list[str] = []
+
+    def _add(value: Any) -> None:
+        if not value:
+            return
+        text = str(value).strip()
+        if text:
+            parts.append(text)
+
+    if type_id == "audio_voicemail":
+        _add(meta.get("transcript"))
+    elif type_id == "img_xray":
+        _add(meta.get("caption"))
+        _add(meta.get("findings"))
+        _add(meta.get("alt_text"))
+    elif type_id == "img_scan":
+        _add(meta.get("title"))
+        _add(meta.get("body_preview"))
+        _add(meta.get("alt_text"))
+    elif type_id == "img_photo":
+        _add(meta.get("caption"))
+        _add(meta.get("alt_text"))
+    elif type_id == "video_clip":
+        _add(meta.get("scene_description"))
+        _add(meta.get("alt_text"))
+
+    return "\n\n".join(parts)
 
 
 def _build_summary(type_id: str, meta: dict) -> str:
@@ -854,11 +895,15 @@ def generate_media(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/media"
 
+    # Custom table name (optional) — overrides the default
+    # demo_media_catalog / demo_media when an operator wants distinct
+    # table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_media_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_media_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_media"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_media'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("files_written", 0)
@@ -898,6 +943,7 @@ def generate_media(
             "industry",
             "generated_at",
             "content_summary",
+            "content_full",
             "duration_ms",
             "dimensions",
             "codec",
@@ -972,6 +1018,7 @@ def generate_media(
                     _submit_upload(sidecar_path, sidecar_text.encode("utf-8"))
 
             content_summary = _build_summary(type_id, meta)
+            content_full = _build_content_full(type_id, meta)
             duration_ms = int(meta.get("duration_ms") or 0)
             dimensions = meta.get("dimensions") or meta.get("page_dimensions") or ""
             codec = meta.get("codec") or meta.get("format", "")
@@ -989,6 +1036,7 @@ def generate_media(
                     f"{_sql_str(industry)}, "
                     f"current_timestamp(), "
                     f"{_sql_str(content_summary)}, "
+                    f"{_sql_str(content_full)}, "
                     f"{duration_ms}, "
                     f"{_sql_str(dimensions)}, "
                     f"{_sql_str(codec)}, "

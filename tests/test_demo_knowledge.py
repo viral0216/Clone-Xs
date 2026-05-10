@@ -246,8 +246,14 @@ def test_generate_knowledge_volume_with_catalog_creates_catalog_table(mock_sql):
     assert client.files.upload.call_count == 3
     sqls = [c.args[2] for c in mock_sql.call_args_list]
     assert any("CREATE VOLUME IF NOT EXISTS" in s for s in sqls)
-    assert any("CREATE OR REPLACE TABLE" in s and "demo_knowledge_catalog" in s for s in sqls)
-    assert any("INSERT INTO" in s for s in sqls)
+    create_sql = next(
+        s for s in sqls if "CREATE OR REPLACE TABLE" in s and "demo_knowledge_catalog" in s
+    )
+    # content_full holds the full body — RAG queries hit this column
+    # directly without needing to read the Volume.
+    assert "content_full" in create_sql
+    insert_sql = next(s for s in sqls if "INSERT INTO" in s)
+    assert "content_full" in insert_sql
 
     # Output paths include the per-topic sub-directory.
     upload_paths = [

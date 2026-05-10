@@ -423,8 +423,14 @@ def test_generate_documents_volume_with_catalog_creates_catalog_table(mock_sql):
     # TABLE + at least one INSERT INTO ... VALUES.
     sqls = [c.args[2] for c in mock_sql.call_args_list]
     assert any("CREATE VOLUME IF NOT EXISTS" in s for s in sqls)
-    assert any("CREATE OR REPLACE TABLE" in s and "demo_documents_catalog" in s for s in sqls)
-    assert any("INSERT INTO" in s for s in sqls)
+    create_sql = next(
+        s for s in sqls if "CREATE OR REPLACE TABLE" in s and "demo_documents_catalog" in s
+    )
+    # content_full = textual projection (sender / recipient / subject / body)
+    # — searchable from SQL without parsing the binary file.
+    assert "content_full" in create_sql
+    insert_sql = next(s for s in sqls if "INSERT INTO" in s)
+    assert "content_full" in insert_sql
 
     # Result summary surfaces the right destination + table FQN.
     assert result["status"] == "completed"
@@ -680,7 +686,7 @@ def test_orchestrator_constructs_adapter_with_endpoint_from_config():
         calls_made = 5
         fallbacks = 0
 
-        def draft(self, prompt, fallback, max_tokens=200):
+        def draft(self, prompt, fallback, max_tokens=200, **kwargs):
             captured.setdefault("prompts", []).append(prompt)
             return "AI-DRAFTED-NARRATIVE"
 

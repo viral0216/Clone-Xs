@@ -238,8 +238,14 @@ def test_generate_media_volume_with_catalog_creates_catalog_table(mock_sql):
     assert len(sidecar_uploads) == 3
     sqls = [c.args[2] for c in mock_sql.call_args_list]
     assert any("CREATE VOLUME IF NOT EXISTS" in s for s in sqls)
-    assert any("CREATE OR REPLACE TABLE" in s and "demo_media_catalog" in s for s in sqls)
-    assert any("INSERT INTO" in s for s in sqls)
+    create_sql = next(
+        s for s in sqls if "CREATE OR REPLACE TABLE" in s and "demo_media_catalog" in s
+    )
+    # content_full = textual projection (caption + findings + alt_text)
+    # so RAG queries can hit ``content_full`` instead of joining sidecars.
+    assert "content_full" in create_sql
+    insert_sql = next(s for s in sqls if "INSERT INTO" in s)
+    assert "content_full" in insert_sql
 
     assert result["status"] == "completed"
     assert result["destination"] == "volume_with_catalog"

@@ -593,6 +593,7 @@ def _ensure_catalog_table(
             topic            STRING,
             generated_at     TIMESTAMP,
             content_summary  STRING,
+            content_full     STRING,
             word_count       BIGINT,
             message_count    BIGINT,
             metadata_json    STRING
@@ -674,11 +675,16 @@ def generate_knowledge(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/knowledge"
 
+    # Custom table name (optional). Operators can override the default
+    # `demo_knowledge_catalog` / `demo_knowledge` to land the catalog
+    # in a chosen Delta table — useful when several demo runs share a
+    # workspace and need distinct table namespaces.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_knowledge_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_knowledge_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_knowledge"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_knowledge'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("files_written", 0)
@@ -702,6 +708,7 @@ def generate_knowledge(
             "topic",
             "generated_at",
             "content_summary",
+            "content_full",
             "word_count",
             "message_count",
             "metadata_json",
@@ -752,6 +759,9 @@ def generate_knowledge(
                 )
 
             content_summary = _build_summary(type_id, meta)
+            # Knowledge bytes are always UTF-8 (markdown / JSON / JSONL)
+            # — decode for the queryable content_full column.
+            content_full = file_bytes.decode("utf-8", errors="replace")
             word_count = int(meta.get("word_count") or 0)
             message_count = int(meta.get("message_count") or 0)
             metadata_json = json.dumps(meta, default=str)
@@ -766,6 +776,7 @@ def generate_knowledge(
                     f"{_sql_str(topic)}, "
                     f"current_timestamp(), "
                     f"{_sql_str(content_summary)}, "
+                    f"{_sql_str(content_full)}, "
                     f"{word_count}, "
                     f"{message_count}, "
                     f"{_sql_str(metadata_json)})"

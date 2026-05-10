@@ -656,6 +656,7 @@ def _ensure_catalog_table(
             size_bytes       BIGINT,
             line_count       BIGINT,
             generated_at     TIMESTAMP,
+            content_full     STRING,
             metadata_json    STRING
         ) USING delta
         """
@@ -726,11 +727,15 @@ def generate_code(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/code"
 
+    # Custom table name (optional) — overrides the default
+    # demo_code_catalog / demo_code when an operator wants distinct
+    # table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_code_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_code_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_code"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_code'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("repos_written", 0)
@@ -755,6 +760,7 @@ def generate_code(
             "size_bytes",
             "line_count",
             "generated_at",
+            "content_full",
             "metadata_json",
         )
         sql = (
@@ -842,6 +848,7 @@ def generate_code(
                         f"{len(content_bytes)}, "
                         f"{line_count}, "
                         f"current_timestamp(), "
+                        f"{_sql_str(content)}, "
                         f"{_sql_str(file_metadata_json)})"
                     )
                     pending_catalog_rows.append(row)

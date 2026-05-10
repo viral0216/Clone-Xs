@@ -519,6 +519,12 @@ def test_generate_logs_volume_with_catalog_writes_per_file_rows(fake_client):
     assert "file_path" in combined
     assert "line_count" in combined
     assert "error_rate" in combined
+    # content_full holds the full log file text — searchable from SQL.
+    create_sqls = [
+        s for s in sql_texts if "CREATE OR REPLACE TABLE" in s and "demo_logs_catalog" in s
+    ]
+    assert any("content_full" in s for s in create_sqls)
+    assert "content_full" in combined
     # Volume uploads happened for all 3 files.
     assert fake_client.files.upload.call_count == 3
 

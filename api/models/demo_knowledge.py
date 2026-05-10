@@ -49,6 +49,15 @@ class DemoKnowledgeRequest(BaseModel):
             "ignored when 'direct_table' is picked."
         ),
     )
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Custom table name (within `<catalog>.<schema>`). When unset, "
+            "defaults to `demo_knowledge_catalog` (volume_with_catalog) or "
+            "`demo_knowledge` (direct_table). Ignored when destination is "
+            "'volume' (no catalog table is created)."
+        ),
+    )
     destination: KnowledgeDestination = Field(
         default="volume_with_catalog",
         description=(

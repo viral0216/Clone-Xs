@@ -89,6 +89,7 @@ export default function MediaTab() {
   const [catalog, setCatalog] = useState("");
   const [schema, setSchema] = useState("");
   const [volume, setVolume] = useState("demo_unstructured");
+  const [tableName, setTableName] = useState("");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
   const [tokenBudget, setTokenBudget] = useState(50_000);
@@ -142,6 +143,14 @@ export default function MediaTab() {
     () => Object.keys(selectedTypes).filter((k) => selectedTypes[k]),
     [selectedTypes],
   );
+
+  const projectedTableFqn = useMemo(() => {
+    if (destination === "volume") return null;
+    if (!catalog || !schema) return null;
+    const defaultName =
+      destination === "direct_table" ? "demo_media" : "demo_media_catalog";
+    return `${catalog}.${schema}.${tableName.trim() || defaultName}`;
+  }, [destination, catalog, schema, tableName]);
 
   // Rough AI-call accounting per selected media type. Mirrors the
   // `_maybe_ai` call counts in src/demo_media.py — keep in sync if
@@ -220,6 +229,7 @@ export default function MediaTab() {
           catalog: catalog.trim(),
           schema: schema.trim(),
           volume: volumeRequired ? volume.trim() : undefined,
+          table_name: tableName.trim() || undefined,
           destination,
           types: activeTypes,
           counts: activeCounts,
@@ -351,6 +361,24 @@ export default function MediaTab() {
                   defaultVolumeName="demo_unstructured"
                 />
               </div>
+              {destination !== "volume" && (
+                <div className="pt-2">
+                  <label className="text-xs font-medium mb-1 block" htmlFor="media-table-name">
+                    Table name{" "}
+                    <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <Input
+                    id="media-table-name"
+                    value={tableName}
+                    onChange={(e) => setTableName(e.target.value)}
+                    placeholder={destination === "direct_table" ? "demo_media" : "demo_media_catalog"}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Lands in <code className="px-1 bg-muted rounded font-mono">&lt;catalog&gt;.&lt;schema&gt;.&lt;table&gt;</code>. Leave blank to use the default.
+                  </p>
+                </div>
+              )}
               {volumeRequired && (
                 <p className="text-xs text-muted-foreground">
                   Volume is auto-created (<code className="px-1 bg-muted rounded">CREATE VOLUME IF NOT EXISTS</code>) if it doesn&apos;t exist.
@@ -520,6 +548,14 @@ export default function MediaTab() {
                   <div className="text-xs text-muted-foreground">
                     Estimated duration: {preview.estimated_seconds.toFixed(1)}s
                   </div>
+                  {projectedTableFqn && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Table: </span>
+                      <code className="px-1 bg-muted rounded font-mono break-all">
+                        {projectedTableFqn}
+                      </code>
+                    </div>
+                  )}
                   <div className="space-y-0.5 pt-2">
                     {preview.per_type.map((p) => (
                       <div key={p.type} className="flex items-center justify-between text-xs">

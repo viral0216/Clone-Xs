@@ -899,6 +899,7 @@ def _ensure_catalog_table(
             error_count     BIGINT,
             error_rate      DOUBLE,
             generated_at    TIMESTAMP,
+            content_full    STRING,
             metadata_json   STRING
         ) USING delta
         """
@@ -996,11 +997,15 @@ def generate_logs(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/logs"
 
+    # Custom table name (optional) — overrides the default
+    # demo_logs_catalog / demo_logs when an operator wants distinct
+    # table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_logs_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_logs_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_logs"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_logs'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("files_written", 0)
@@ -1031,6 +1036,7 @@ def generate_logs(
             "error_count",
             "error_rate",
             "generated_at",
+            "content_full",
             "metadata_json",
         )
         sql = (
@@ -1112,6 +1118,10 @@ def generate_logs(
                 )
 
             metadata_json = json.dumps(file_meta, default=str)
+            # Log files are always UTF-8 (text or NDJSON) — decode for
+            # the queryable content_full column. Errors=replace keeps
+            # malformed bytes from blowing up the run.
+            content_full = file_bytes.decode("utf-8", errors="replace")
 
             if destination == "volume_with_catalog" and current_path:
                 row = (
@@ -1124,6 +1134,7 @@ def generate_logs(
                     f"{file_meta['error_count']}, "
                     f"{file_meta['error_rate']}, "
                     f"current_timestamp(), "
+                    f"{_sql_str(content_full)}, "
                     f"{_sql_str(metadata_json)})"
                 )
                 pending_catalog_rows.append(row)

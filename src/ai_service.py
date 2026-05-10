@@ -4,7 +4,7 @@ import os
 import json
 import logging
 import requests
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +109,24 @@ class AIService:
         return response.content[0].text
 
     def _call_databricks_model(
-        self, endpoint_name: str, system_prompt: str, user_message: str, max_tokens: int, client
+        self,
+        endpoint_name: str,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int,
+        client,
+        image_bytes: bytes | None = None,
+        image_mime: str | None = None,
     ) -> str:
-        """Call a Databricks Model Serving endpoint (OpenAI chat format)."""
+        """Call a Databricks Model Serving endpoint (OpenAI chat format).
+
+        When ``image_bytes`` is provided and the endpoint is multimodal
+        (e.g. ``databricks-llama-4-maverick``), the bytes are sent
+        inline as a base64 data URL ``image_url`` content block. The
+        endpoint sees the actual frame and grounds its caption in the
+        visual content. Falls back to text-only if the endpoint
+        rejects multimodal input.
+        """
         config = client.config
         host = (config.host or "").rstrip("/")
         if not host:
@@ -138,10 +153,23 @@ class AIService:
             )
 
         url = f"{host}/serving-endpoints/{endpoint_name}/invocations"
+        # Build the user-message content. Plain string when no image;
+        # OpenAI-compatible content-blocks list when we want the model
+        # to actually see the frame.
+        user_content: Any = user_message
+        if image_bytes:
+            import base64
+
+            mime = (image_mime or "image/jpeg").lower()
+            data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+            user_content = [
+                {"type": "text", "text": user_message},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ]
         payload = {
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
+                {"role": "user", "content": user_content},
             ],
             "max_tokens": max_tokens,
         }
@@ -209,11 +237,25 @@ class AIService:
         max_tokens: int = 1024,
         endpoint_name: str = None,
         client=None,
+        image_bytes: bytes | None = None,
+        image_mime: str | None = None,
     ) -> str:
-        """Route to Databricks or Anthropic based on configuration."""
+        """Route to Databricks or Anthropic based on configuration.
+
+        ``image_bytes`` is forwarded to the Databricks path only — the
+        Anthropic fallback (used when no Databricks endpoint is set)
+        ignores it for now and produces a text-grounded caption from
+        the prompt alone.
+        """
         if endpoint_name and client:
             return self._call_databricks_model(
-                endpoint_name, system_prompt, user_message, max_tokens, client
+                endpoint_name,
+                system_prompt,
+                user_message,
+                max_tokens,
+                client,
+                image_bytes=image_bytes,
+                image_mime=image_mime,
             )
         return self._call_claude(system_prompt, user_message, max_tokens)
 

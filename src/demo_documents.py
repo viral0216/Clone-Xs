@@ -3983,11 +3983,49 @@ def _ensure_catalog_table(
             industry         STRING,
             generated_at     TIMESTAMP,
             content_summary  STRING,
+            content_full     STRING,
             page_count       BIGINT,
             metadata_json    STRING
         ) USING delta
         """
     execute_sql(client, warehouse_id, sql)
+
+
+def _build_content_full(meta: dict) -> str:
+    """Flat textual projection of a document for the indexed catalog.
+
+    Documents are binary (PDF / DOCX / PPTX / XLSX / EML) so the
+    inline bytes can't be searched from SQL. We synthesise a queryable
+    text blob from the string-shaped fields each generator already
+    stashes on its return-meta — claim diagnoses, invoice line items,
+    letter body paragraphs, report sections, deck slides, etc.
+
+    Heuristic, not a full text extraction: catches string and
+    list-of-string fields, skips numeric / structured fields. Good
+    enough for `WHERE content_full LIKE '%billing%'` style RAG
+    queries without forcing every generator to return identical
+    metadata shapes.
+    """
+    parts: list[str] = []
+
+    def _add(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            text = value.strip()
+            # Skip short identifier-shaped fields (case_id, "PA chest")
+            # that don't add search value.
+            if len(text) >= 8 and not text.replace("-", "").replace("_", "").isalnum():
+                parts.append(text)
+            elif len(text) >= 12:  # longer alnum strings still useful
+                parts.append(text)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _add(item)
+
+    for value in meta.values():
+        _add(value)
+    return "\n\n".join(parts)
 
 
 def _sql_str(s: str | None) -> str:
@@ -4076,11 +4114,15 @@ def generate_documents(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/documents"
 
+    # Custom table name (optional) — overrides the default
+    # demo_documents_catalog / demo_documents when an operator wants
+    # distinct table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_documents_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_documents_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_documents"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_documents'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     # Initialise progress
@@ -4108,6 +4150,7 @@ def generate_documents(
                 "industry",
                 "generated_at",
                 "content_summary",
+                "content_full",
                 "page_count",
                 "metadata_json",
             )
@@ -4166,6 +4209,7 @@ def generate_documents(
 
             # ── Build the row to INSERT ──
             content_summary = meta.get("content_summary") or _build_summary(type_id, meta)
+            content_full = _build_content_full(meta)
             page_count = int(meta.get("page_count") or 0)
             metadata_json = json.dumps(meta, default=str)
 
@@ -4178,6 +4222,7 @@ def generate_documents(
                     f"{_sql_str(industry)}, "
                     f"current_timestamp(), "
                     f"{_sql_str(content_summary)}, "
+                    f"{_sql_str(content_full)}, "
                     f"{page_count}, "
                     f"{_sql_str(metadata_json)})"
                 )

@@ -93,7 +93,15 @@ class AIDrafter:
     def backend(self) -> str:
         return f"databricks:{self._endpoint}" if self._endpoint else "anthropic"
 
-    def draft(self, prompt: str, fallback: str, max_tokens: int = 200) -> str:
+    def draft(
+        self,
+        prompt: str,
+        fallback: str,
+        max_tokens: int = 200,
+        *,
+        image_bytes: bytes | None = None,
+        image_mime: str | None = None,
+    ) -> str:
         if self._used >= self._budget:
             self._fallbacks += 1
             logger.warning(
@@ -120,6 +128,8 @@ class AIDrafter:
                     max_tokens=max_tokens,
                     endpoint_name=self._endpoint,
                     client=self._sdk_client,
+                    image_bytes=image_bytes,
+                    image_mime=image_mime,
                 )
                 last_exc = None
                 break
@@ -226,12 +236,93 @@ def maybe_ai(
     prompt: str,
     fallback: str,
     max_tokens: int = 150,
+    *,
+    image_bytes: bytes | None = None,
+    image_mime: str | None = None,
 ) -> str:
     """Single-line AI call with template fallback. Used pervasively
-    in generators to keep the call sites terse."""
+    in generators to keep the call sites terse.
+
+    Pass ``image_bytes`` for image-grounded calls (the Databricks
+    Llama 4 / Claude vision endpoints accept inline images via the
+    OpenAI ``image_url`` content block). Ignored when no AI backend
+    is configured or the model is text-only.
+    """
     if drafter is None:
         return fallback
-    return drafter.draft(prompt, fallback, max_tokens=max_tokens)
+    return drafter.draft(
+        prompt,
+        fallback,
+        max_tokens=max_tokens,
+        image_bytes=image_bytes,
+        image_mime=image_mime,
+    )
+
+
+def maybe_ai_json(
+    drafter: AIDrafter | None,
+    prompt: str,
+    fallback_dict: dict,
+    max_tokens: int = 400,
+    *,
+    image_bytes: bytes | None = None,
+    image_mime: str | None = None,
+) -> dict:
+    """Single multimodal AI call that returns a parsed JSON object.
+
+    Mirrors ``maybe_ai`` for the JSON-output case: one call, parse the
+    response, fill any missing keys from ``fallback_dict``. On any
+    failure (no drafter, exception, non-JSON response, parse error)
+    returns ``fallback_dict`` unchanged so callers always get the full
+    expected key set.
+
+    Strips common LLM noise (markdown code fences, leading/trailing
+    prose) before parsing — Foundation Models occasionally wrap JSON
+    in ```json ... ``` even when told not to.
+    """
+    if drafter is None:
+        return dict(fallback_dict)
+
+    raw = drafter.draft(
+        prompt,
+        fallback="",
+        max_tokens=max_tokens,
+        image_bytes=image_bytes,
+        image_mime=image_mime,
+    )
+    if not raw:
+        return dict(fallback_dict)
+
+    import json
+    import re
+
+    text = raw.strip()
+    # Strip ```json ... ``` or ``` ... ``` fences if present.
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    # If the model prefixed prose, slice from the first { to the last }.
+    first = text.find("{")
+    last = text.rfind("}")
+    if first != -1 and last > first:
+        text = text[first : last + 1]
+
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError) as e:
+        logger.warning("maybe_ai_json: parse failed (%s); raw[:120]=%r", e, raw[:120])
+        return dict(fallback_dict)
+    if not isinstance(parsed, dict):
+        logger.warning("maybe_ai_json: response was not an object; got %s", type(parsed).__name__)
+        return dict(fallback_dict)
+
+    # Merge: parsed wins for keys it provides, fallback fills the rest.
+    merged = dict(fallback_dict)
+    for k, v in parsed.items():
+        if v is None:
+            continue
+        merged[k] = v
+    return merged
 
 
 def adapter_summary(drafter: AIDrafter | None) -> dict:

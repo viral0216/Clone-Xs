@@ -141,6 +141,7 @@ async def submit(
         "catalog": req.catalog,
         "schema": req.schema_name,
         "volume": req.volume,
+        "table_name": req.table_name,
         "destination": req.destination,
         "types": list(req.types),
         "counts": dict(req.counts),

@@ -5,7 +5,7 @@ title: Unstructured Demo Data
 
 # Unstructured Demo Data
 
-The `/demo-data` page hosts five tabs that generate **unstructured**
+The `/demo-data` page hosts six tabs that generate **unstructured**
 demo corpora — files and per-line records that complement the
 structured-catalog generator documented in
 [Demo Data Generator](./demo-data.md). They exist for RAG, GenAI,
@@ -19,11 +19,18 @@ WAV, log) or a long-form text row, not a typed Delta column.
 | **Knowledge** | Markdown wiki, Q&A JSON, JSONL chat | 10,000 | none (pure stdlib + Faker) |
 | **Logs** | NGINX, JSON, syslog, OTel traces | 1,000 files | none |
 | **Code** | Python / JS / Java repos | 50 repos | none |
+| **Live Capture** | Webcam photos / video chunks → Volume + Delta with inline `BINARY` | per-tab session (no fixed cap) | none (browser `MediaRecorder` + `<canvas>.toBlob()`) |
 
-All five tabs share the same destination model, the same
+The first five tabs share the same destination model, the same
 catalog/schema/volume picker, the same industry registry, and the
 same preview → submit → poll lifecycle. Read **Shared architecture**
 once; per-tab sections cover only what's specific.
+
+**Live Capture is architecturally different** — it's synchronous (no
+JobManager / no polling), each capture is one HTTP multipart upload
+the request handler completes before returning, and the bytes arrive
+from the user's browser webcam rather than being synthesised on the
+server. See [Live Capture](#live-capture-tab) below.
 
 ---
 
@@ -49,7 +56,7 @@ The `direct_table` content column type varies by tab:
 
 ### Catalog / schema / volume picker
 
-All five tabs use the same picker component
+All six tabs use the same picker component
 ([ui/src/components/CatalogSchemaVolumePicker.tsx](https://github.com/viral0216/Clone-Xs/blob/main/ui/src/components/CatalogSchemaVolumePicker.tsx)).
 Each of the three fields renders as a dropdown of existing names with
 a **Custom name… (create new)** fallback that swaps in a free-text
@@ -533,7 +540,7 @@ GROUP BY level;
 ### UI walkthrough
 
 1. Navigate to **Operations → Demo Data** in the sidebar and pick
-   one of the five unstructured tabs.
+   one of the six unstructured tabs.
 2. Pick a **destination** (Volume / Volume + catalog / Direct table).
    The picker rewires itself automatically.
 3. Use the **catalog / schema / volume picker** — pick an existing
@@ -548,3 +555,178 @@ GROUP BY level;
    `ANTHROPIC_API_KEY` configured.
 7. Click **Generate** — the job submits, the page subscribes to
    progress, and the toast bar tracks it through completion.
+
+---
+
+## Live Capture tab
+
+> Browser webcam → UC Volume + Delta catalog with inline `BINARY` bytes.
+
+Live Capture inverts the data flow of the other five tabs: instead of
+a synthetic generator on the server building bytes from Pillow /
+ffmpeg, the bytes arrive from the user's browser webcam (one HTTP
+multipart request per snapshot or video chunk). Each capture is
+processed synchronously — uploaded to a Volume and INSERTed into a
+single indexed catalog table with the bytes embedded inline as a
+`BINARY` column.
+
+### What it produces
+
+Every capture lands as one row in `<catalog>.<schema>.<table>` (default
+`demo_capture_catalog`) with **both** a `file_path` (Volume pointer
+for browsable / downloadable bytes) **and** `content BINARY` (inline
+bytes for SQL-only RAG demos that don't want to round-trip the
+Volume). The bytes also exist on the Volume so any tool that prefers
+file paths over BLOBs keeps working.
+
+The table schema:
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `capture_id` | STRING | UUID hex |
+| `capture_type` | STRING | `photo` or `video` |
+| `file_path` | STRING | `/Volumes/<catalog>/<schema>/<volume>/capture/<type>/<YYYY-MM-DD>/<file>` |
+| `file_extension` | STRING | `jpg` / `webm` / `mp4` |
+| `size_bytes`, `width`, `height`, `duration_ms` | numeric | duration is NULL for photos |
+| `mime_type`, `industry`, `captured_at`, `session_id`, `submitted_by` | metadata | session_id is one-per-tab; submitted_by is best-effort `current_user.me()` |
+| `caption` | STRING | 1 sentence, ≤14 words |
+| `alt_text` | STRING | 1 sentence accessibility text, ≤18 words |
+| `summary` | STRING | 2–3 sentence scene description |
+| `tags` | STRING | 5–8 single-word visual keywords, comma-separated |
+| `detected_text` | STRING | OCR of any visible text (signs, screens, whiteboards) |
+| `scene_category` | STRING | 1–2 word category (`office`, `lab`, `outdoor`, …) |
+| `content_full` | STRING | `summary \n\n caption \n\n alt_text \n\n detected_text` — queryable RAG projection |
+| `content` | BINARY | Raw bytes, inline |
+| `metadata_json` | STRING | JSON copy of dimensions / mime / industry / captured_at |
+
+Tables are created with `CREATE TABLE IF NOT EXISTS` (not `OR
+REPLACE`) so captures accumulate across browser sessions. Existing
+tables get the newer columns added on next call via `ALTER TABLE
+ADD COLUMN IF NOT EXISTS`.
+
+### AI mode — one consolidated multimodal call
+
+When **AI mode** is on and a Databricks Foundation Model is selected
+in Settings, every photo capture triggers **one** multimodal call to
+that endpoint asking for all six AI-derived fields (`caption`,
+`alt_text`, `summary`, `tags`, `detected_text`, `scene_category`) as
+a single JSON blob. The response is parsed locally and any field
+missing or malformed falls back to a templated string.
+
+Image bytes are forwarded as base64 inline via the OpenAI-style
+`image_url` content block — the same shape `databricks-llama-4-maverick`
+and `databricks-claude-3-7-sonnet` accept. Video chunks (webm / mp4)
+do **not** go to the vision endpoint (Llama 4 / Claude vision accept
+images, not video); video captures use a metadata-only prompt and
+the visual-only fields (`detected_text`, `scene_category`) are
+forced to `""` / `"unknown"` so SQL aggregates aren't polluted with
+hallucinated values.
+
+When AI mode is off (the default) or no Foundation Model is selected,
+every field uses templated fallbacks and the row still inserts
+cleanly. No Anthropic API path is exercised by Live Capture — only
+Databricks Model Serving endpoints listed in your workspace are
+called.
+
+### Description style — Strict vs Permissive
+
+A small segmented control next to the AI mode toggle picks the
+prompt style:
+
+- **Strict** *(default)* — industry-neutral, demographics-neutral.
+  No gender, age, ethnicity, profession, or industry claims. People
+  are referred to as `"a person"` (or `"two people"`) and only
+  directly-observable features are described (clothing colour,
+  posture, action). Best for accessibility demos and for avoiding
+  the "man-at-desk-in-healthcare-mode → labelled nurse" failure
+  mode.
+- **Permissive** — vivid description. Industry priming is back on
+  and the model may describe apparent gender / profession when the
+  scene supports it. Caller has accepted the bias risk.
+
+Defence-in-depth: any unknown style value from the wire (typo, enum
+drift) clamps back to `strict` server-side rather than silently
+re-enabling the bias-prone permissive prompt.
+
+### Capture modes
+
+| Mode | What happens | Notes |
+| --- | --- | --- |
+| **Take photo** | One JPEG via `<canvas>.toBlob()` per click | Industry default, simplest path |
+| **Burst photos** | Same as Take photo, repeated every N ms | Warning fires under 500 ms (warehouse INSERT load) |
+| **Record video** | `MediaRecorder` chunks every N ms; each chunk is a separate row | First chunk carries the WebM init/header; subsequent chunks are continuation segments and won't play standalone (concatenate by `session_id` to reassemble) |
+
+### Endpoints
+
+- `POST /api/capture/init` — idempotent volume + table create. Called
+  on tab mount so the first `/frame` doesn't pay the create cost.
+- `POST /api/capture/frame` — multipart upload: blob + form fields →
+  Volume upload + INSERT row. Returns the row that was written so
+  the UI can append it to the live "Recent" strip without a
+  follow-up SELECT.
+- `GET  /api/capture/recent` — recent metadata rows for the live UI
+  strip. Never carries the inline `BINARY` content — the response
+  stays small even when the table has thousands of rows. Filters
+  by `session_id` so concurrent browser tabs don't see each other's
+  captures.
+
+### UI walkthrough
+
+1. Navigate to **Operations → Demo Data → Live Capture**.
+2. Pick the **catalog / schema / volume** trio (a default
+   `demo_unstructured` volume is created if missing). Optionally
+   override the table name.
+3. Pick an **industry** — drives templated fallbacks and (Permissive
+   mode only) the AI prompt prime.
+4. Toggle **AI mode** on if you want image-grounded captions, summary,
+   tags, OCR, and category. Pick a Foundation Model in Settings if
+   you haven't already.
+5. Pick **Strict** or **Permissive** description style. Strict is
+   the default and is what you want for accessibility / unbiased
+   demos.
+6. Click **Take photo**, **Burst photos**, or **Record video**. Rows
+   appear in the **Recent** strip immediately, with the AI summary,
+   scene category, tag chips, and detected text rendered per tile.
+
+### SQL — explore captures
+
+```sql
+-- Most recent captures, with all AI-derived fields
+SELECT capture_id, capture_type, scene_category, summary, tags,
+       detected_text, captured_at, session_id
+FROM <catalog>.<schema>.demo_capture_catalog
+ORDER BY captured_at DESC
+LIMIT 20;
+
+-- Group by scene category (works because Strict mode never
+-- pollutes scene_category with hallucinated values on text-only paths)
+SELECT scene_category, count(*) AS n
+FROM <catalog>.<schema>.demo_capture_catalog
+WHERE capture_type = 'photo'
+GROUP BY scene_category
+ORDER BY n DESC;
+
+-- RAG-style search over the unified content_full projection
+SELECT capture_id, summary
+FROM <catalog>.<schema>.demo_capture_catalog
+WHERE content_full ILIKE '%whiteboard%';
+```
+
+### Troubleshooting
+
+- **"Internal Server Error" on capture, table existed previously** —
+  the four newer columns (`summary` / `tags` / `detected_text` /
+  `scene_category`) need to be added via `ALTER TABLE ADD COLUMN
+  IF NOT EXISTS`. If the ALTER fails (permission denied, warehouse
+  doesn't support it on that table), the next INSERT fails with
+  "column not found". Check the API log for `ALTER ADD COLUMN …
+  failed` warnings. Quickest fix: change the table name field to
+  a fresh value, or `DROP TABLE` and let the next capture recreate
+  it with all 22 columns.
+- **AI says "nurse" when the photo shows a man at a desk** — you're
+  on **Permissive** mode with industry priming on. Switch to
+  **Strict** in the Description style toggle.
+- **Video won't play in the notebook** — only the *first* chunk of a
+  recording session carries the WebM init segment; later chunks are
+  continuation segments. Concatenate `content` by `session_id`
+  ordered by `captured_at`, or play the first chunk only.

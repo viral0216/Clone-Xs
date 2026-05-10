@@ -82,6 +82,43 @@ def _ensure_volume(client: WorkspaceClient, warehouse_id: str, vol_fqn: str) -> 
     execute_sql(client, warehouse_id, f"CREATE VOLUME IF NOT EXISTS {vol_fqn}")
 
 
+_EXPECTED_COLUMNS: dict[str, str] = {
+    "session_id": "STRING",
+    "submitted_by": "STRING",
+    "summary": "STRING",
+    "tags": "STRING",
+    "detected_text": "STRING",
+    "scene_category": "STRING",
+}
+
+
+def _existing_columns(client: WorkspaceClient, warehouse_id: str, table_fqn: str) -> set[str]:
+    """Return the lower-cased column names currently on ``table_fqn``.
+
+    Uses ``DESCRIBE TABLE`` because it works across every Databricks
+    runtime (unlike ``ALTER ... IF NOT EXISTS`` which needs a recent
+    runtime). DESCRIBE output ends with synthetic rows like
+    ``# Detailed Table Information`` and partition markers — we stop
+    at the first empty / hash-prefixed col_name.
+    """
+    try:
+        rows = execute_sql(client, warehouse_id, f"DESCRIBE TABLE {table_fqn}")
+    except Exception as e:
+        logger.debug("DESCRIBE TABLE %s failed (table may not exist yet): %s", table_fqn, e)
+        return set()
+
+    cols: set[str] = set()
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name = (r.get("col_name") or "").strip()
+        if not name or name.startswith("#"):
+            # Hit the metadata footer — no more real column rows after this.
+            break
+        cols.add(name.lower())
+    return cols
+
+
 def _ensure_capture_table(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -92,6 +129,13 @@ def _ensure_capture_table(
     Schema combines the synthetic Media tab's volume_with_catalog row
     shape with the direct_table inline-bytes column. Every capture row
     has both ``file_path`` and ``content BINARY``.
+
+    For tables that pre-date one of the newer columns, we introspect
+    existing columns via ``DESCRIBE TABLE`` and issue a single
+    ``ALTER TABLE ADD COLUMNS (...)`` for only the missing ones.
+    Plain ``ADD COLUMNS`` is universally supported across Databricks
+    runtimes, unlike ``ADD COLUMN IF NOT EXISTS`` which is gated on
+    a recent runtime version.
     """
     sql = f"""
     CREATE TABLE IF NOT EXISTS {table_fqn} (
@@ -120,32 +164,39 @@ def _ensure_capture_table(
     ) USING delta
     """
     execute_sql(client, warehouse_id, sql)
-    # Best-effort additive migration for tables created before the
-    # newer columns existed. ALTER ADD COLUMN IF NOT EXISTS is a no-op
-    # when the column is already present, and never fails on a fresh
-    # table because the CREATE above carries every column. We swallow
-    # exceptions so first-call failure against an old table doesn't
-    # block new captures.
-    for col in (
-        "session_id STRING",
-        "submitted_by STRING",
-        "summary STRING",
-        "tags STRING",
-        "detected_text STRING",
-        "scene_category STRING",
-    ):
-        try:
-            execute_sql(
-                client,
-                warehouse_id,
-                f"ALTER TABLE {table_fqn} ADD COLUMN IF NOT EXISTS {col}",
-            )
-        except Exception as e:
-            # Bumped from debug to warning so a genuine migration
-            # failure (e.g. ALTER not supported on this warehouse,
-            # permission denied) shows up in the API log instead of
-            # silently leading to "column not found" on the INSERT.
-            logger.warning("ALTER ADD COLUMN %s on %s failed: %s", col, table_fqn, e)
+
+    existing = _existing_columns(client, warehouse_id, table_fqn)
+    if not existing:
+        # Fresh table — CREATE just laid down every column, nothing to
+        # migrate. Or DESCRIBE failed for an unrelated reason; either
+        # way, skipping the ALTER is the safe call.
+        return
+
+    missing = [
+        (name, sql_type) for name, sql_type in _EXPECTED_COLUMNS.items() if name not in existing
+    ]
+    if not missing:
+        return
+
+    cols_clause = ", ".join(f"{name} {sql_type}" for name, sql_type in missing)
+    try:
+        execute_sql(
+            client,
+            warehouse_id,
+            f"ALTER TABLE {table_fqn} ADD COLUMNS ({cols_clause})",
+        )
+        logger.info("Added missing columns to %s: %s", table_fqn, [n for n, _ in missing])
+    except Exception as e:
+        # Genuine migration failure (permission denied, table format
+        # rejects ALTER, etc.) — surface at warning so the operator
+        # sees it instead of silently hitting column-not-found on
+        # the next INSERT.
+        logger.warning(
+            "ALTER ADD COLUMNS %s on %s failed: %s",
+            [n for n, _ in missing],
+            table_fqn,
+            e,
+        )
 
 
 def init_capture_target(

@@ -53,6 +53,88 @@ def test_init_creates_volume_and_table_if_not_exists(mock_sql):
 
 
 @patch("src.demo_capture.execute_sql")
+def test_init_migrates_only_missing_columns_via_describe(mock_sql):
+    """For a pre-existing table, the migration must NOT use
+    ``ALTER ADD COLUMN IF NOT EXISTS`` (older Databricks runtimes
+    reject the syntax). Instead we DESCRIBE the table, diff against
+    expected columns, and issue one bulk ``ALTER ADD COLUMNS (...)``
+    for only the missing ones."""
+
+    # Simulate an existing table that has the original 14 columns
+    # but is missing all four new AI fields + session_id.
+    pre_existing_columns = {
+        "capture_id",
+        "capture_type",
+        "file_path",
+        "file_extension",
+        "size_bytes",
+        "width",
+        "height",
+        "duration_ms",
+        "mime_type",
+        "industry",
+        "caption",
+        "alt_text",
+        "content_full",
+        "captured_at",
+        "submitted_by",
+        "content",
+        "metadata_json",
+    }
+
+    def fake_execute(_client, _wh, sql):
+        if sql.startswith("DESCRIBE TABLE"):
+            rows = [{"col_name": c, "data_type": "string"} for c in pre_existing_columns]
+            # Add the synthetic footer DESCRIBE always emits.
+            rows.append({"col_name": "", "data_type": ""})
+            rows.append({"col_name": "# Detailed Table Information", "data_type": ""})
+            return rows
+        return []
+
+    mock_sql.side_effect = fake_execute
+
+    init_capture_target(
+        _make_client(),
+        "wh-1",
+        {"catalog": "demo", "schema": "iot", "volume": "v"},
+    )
+
+    sqls = [c.args[2] for c in mock_sql.call_args_list]
+
+    # No "IF NOT EXISTS" form — that's the syntax some runtimes reject.
+    for s in sqls:
+        assert "ADD COLUMN IF NOT EXISTS" not in s
+
+    # One bulk ADD COLUMNS for the missing columns. Order from the
+    # _EXPECTED_COLUMNS dict; session_id, summary, tags, detected_text,
+    # scene_category should all appear (submitted_by already exists).
+    alter_sqls = [s for s in sqls if "ADD COLUMNS" in s]
+    assert len(alter_sqls) == 1, alter_sqls
+    bulk = alter_sqls[0]
+    assert "session_id STRING" in bulk
+    assert "summary STRING" in bulk
+    assert "tags STRING" in bulk
+    assert "detected_text STRING" in bulk
+    assert "scene_category STRING" in bulk
+    # submitted_by is already present so it must NOT be in the ALTER.
+    assert "submitted_by STRING" not in bulk
+
+
+@patch("src.demo_capture.execute_sql")
+def test_init_skips_alter_when_describe_returns_no_columns(mock_sql):
+    """Fresh table — the CREATE just laid down every column. DESCRIBE
+    failing or returning empty must not trigger a spurious ALTER."""
+    mock_sql.return_value = []
+    init_capture_target(
+        _make_client(),
+        "wh-1",
+        {"catalog": "demo", "schema": "iot", "volume": "v"},
+    )
+    sqls = [c.args[2] for c in mock_sql.call_args_list]
+    assert not any("ALTER" in s for s in sqls)
+
+
+@patch("src.demo_capture.execute_sql")
 def test_init_honours_custom_table_name(mock_sql):
     out = init_capture_target(
         _make_client(),

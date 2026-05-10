@@ -9,6 +9,117 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — Live Capture tab with image-grounded multimodal AI
+
+A sixth unstructured-data tab — **Live Capture** — joins
+`/demo-data` (see
+[guide/unstructured-demo-data → Live Capture](../guide/unstructured-demo-data.md#live-capture-tab)).
+Instead of synthesising bytes on the server, captures arrive from the
+user's browser webcam (one HTTP multipart request per snapshot or
+video chunk) and land synchronously in a UC Volume + Delta catalog
+table that carries both `file_path` and inline `content BINARY`.
+
+### Added — Live Capture orchestrator
+
+- **New module `src/demo_capture.py`** — `init_capture_target`,
+  `handle_frame`, `list_recent`. No JobManager and no batching: each
+  capture is one synchronous HTTP request the handler completes
+  before returning, so the UI's Recent strip updates immediately.
+- **New router `api/routers/demo_capture.py`** with three endpoints:
+  - `POST /api/capture/init` — idempotent volume + table create
+    (called on tab mount).
+  - `POST /api/capture/frame` — multipart upload → Volume upload +
+    INSERT row.
+  - `GET /api/capture/recent` — recent metadata rows for the live
+    UI (no inline `BINARY` in the payload).
+- **Combined-shape table** at `<catalog>.<schema>.demo_capture_catalog`
+  (default name; override via the `Table name` field). Created with
+  `CREATE TABLE IF NOT EXISTS` so captures accumulate across browser
+  sessions; existing tables get newer columns added on next call via
+  `ALTER TABLE ADD COLUMN IF NOT EXISTS`.
+- **Per-tab session isolation.** Each browser tab generates a
+  `session_id` on mount and the Recent strip filters by it
+  server-side, so concurrent users don't see each other's captures.
+- **Best-effort `submitted_by`.** Pulls the caller's email from
+  `client.current_user.me()`. Captures never block on this — if the
+  SDK call fails, the row lands with NULL `submitted_by` and the
+  upload still succeeds.
+
+### Added — Six AI-derived fields per photo, in one consolidated call
+
+When AI mode is on and a Databricks Foundation Model is selected,
+every photo capture triggers **one** multimodal call returning all
+six fields as a JSON blob:
+
+| Field | Purpose | Length |
+| --- | --- | --- |
+| `caption` | 1-sentence visual caption | ≤14 words |
+| `alt_text` | accessibility text | ≤18 words |
+| `summary` | scene description | 2–3 sentences |
+| `tags` | comma-separated visual keywords | 5–8 single words |
+| `detected_text` | OCR of any visible text | empty if none readable |
+| `scene_category` | high-level scene class | 1–2 words |
+
+- **New helper `maybe_ai_json` in `src/ai_drafter.py`.** Mirrors the
+  existing `maybe_ai` ergonomic but parses a JSON response (with
+  code-fence stripping and brace-slicing for noisy outputs) and
+  falls back to a `fallback_dict` per-key on any failure. Six AI
+  calls collapsed to one — meaningful on free-tier endpoints.
+- **Image-grounded only for photos.** Photos with `image/jpeg|png|webp`
+  mimes are forwarded as base64 inline via the OpenAI-style
+  `image_url` content block (Llama 4 Maverick / Claude 3.7 Sonnet
+  on Databricks Model Serving accept this shape). Video chunks
+  (webm / mp4) bypass the vision endpoint and use a metadata-only
+  prompt; visual-only fields (`detected_text`, `scene_category`)
+  are forced to `""` / `"unknown"` so SQL aggregates aren't
+  polluted with hallucinated values.
+- **Databricks Model Serving only.** Live Capture never uses the
+  Anthropic API path. The endpoint comes from the same
+  `X-Databricks-Model` header the Documents tab uses, sourced from
+  Settings.
+
+### Added — Strict vs Permissive description style toggle
+
+A new segmented control next to the AI mode toggle picks the prompt
+style:
+
+- **Strict** *(default)* — industry-neutral, demographics-neutral.
+  No gender / age / ethnicity / profession claims; people are
+  referred to as `"a person"` and only directly-observable features
+  are described. Fixes the failure mode where industry-priming
+  caused the model to label any person at a desk in healthcare
+  mode as "nurse".
+- **Permissive** — vivid description. Industry priming is back on
+  and the model may describe apparent gender / profession when the
+  scene supports it. Caller has accepted the bias risk.
+
+Defence-in-depth: any unknown style value from the wire (typo,
+enum drift) clamps back to `strict` server-side. The router accepts
+the choice as a `description_style` form field on
+`POST /api/capture/frame`.
+
+### Added — UI: Live Capture tab with rendered AI fields
+
+- **New tab** at `/demo-data` → **Live Capture** with three modes:
+  Take photo, Burst photos (interval-driven), Record video
+  (`MediaRecorder` chunked with operator-set chunk length).
+- **Recent strip** now renders the AI work per tile: 1-line
+  truncated `summary`, `scene_category` as a small pill, `tags` as
+  chips (max 4 visible), and `detected_text` as an OCR caption.
+  Previously the strip rendered only file size / capture id.
+- **Description style** segmented control (Strict / Permissive)
+  beside the AI mode toggle, disabled until AI mode is on.
+
+### Changed — Migration logging
+
+- `ALTER TABLE ADD COLUMN IF NOT EXISTS` failures in
+  `_ensure_capture_table` now log at **warning** level instead of
+  debug, so a genuine migration failure shows up in the API log
+  instead of silently leading to "column not found" on the next
+  INSERT.
+
+---
+
 ## Unreleased — AI-drafted narrative content + token budget for the Documents tab
 
 The Documents tab on `/demo-data` (see

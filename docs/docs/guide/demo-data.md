@@ -12,9 +12,10 @@ All 13 fields on the Demo Data page (Catalog Name, Industries, Scale Factor, Med
 :::info Unstructured corpora
 This page covers the **structured** demo-data generator (catalogs,
 industries, tables, streaming events). The same `/demo-data` page
-also hosts five **unstructured** tabs — Documents, Media, Knowledge,
-Logs, and Code — that generate files and inline-bytes Delta tables
-for RAG, observability, and code-search demos. See
+also hosts six **unstructured** tabs — Documents, Media, Knowledge,
+Logs, Code, and Live Capture — that generate files / inline-bytes
+Delta tables / browser-webcam captures for RAG, observability,
+code-search, and image-grounded multimodal demos. See
 [Unstructured Demo Data](unstructured-demo-data.md).
 :::
 

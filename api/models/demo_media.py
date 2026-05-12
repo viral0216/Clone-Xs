@@ -53,6 +53,14 @@ class DemoMediaRequest(BaseModel):
             "ignored when 'direct_table' is picked."
         ),
     )
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Custom table name (within `<catalog>.<schema>`). Defaults to "
+            "`demo_media_catalog` (volume_with_catalog) or `demo_media` "
+            "(direct_table). Ignored when destination is 'volume'."
+        ),
+    )
     destination: MediaDestination = Field(
         default="volume_with_catalog",
         description=(
@@ -93,9 +101,23 @@ class DemoMediaRequest(BaseModel):
     realistic_content: bool = Field(
         default=False,
         description=(
-            "When True, audio_voicemail transcripts are AI-drafted "
-            "(slower, requires API key). Image and video types ignore "
-            "the flag — their content is structural, not narrative."
+            "When True, narrative content (e.g. audio_voicemail transcripts) "
+            "is drafted by the AI client (slower, requires either a Databricks "
+            "Model Serving endpoint picked in Settings or ANTHROPIC_API_KEY). "
+            "Image and video types ignore the flag — their content is "
+            "structural, not narrative."
+        ),
+    )
+    ai_token_budget: int = Field(
+        default=50_000,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Approximate per-job ceiling on AI tokens. When the budget is "
+            "hit, remaining draft calls fall back to templates. Default "
+            "50,000 ≈ ~$0.50 on Sonnet at typical max_tokens settings. "
+            "Ignored when realistic_content is False; set to 0 to disable "
+            "AI entirely even when realistic_content=True."
         ),
     )
     faker_locale: str = Field(default="en_US")

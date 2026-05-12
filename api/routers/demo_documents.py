@@ -18,9 +18,9 @@ crashes the API server at import time.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from api.dependencies import get_app_config, get_db_client
 from api.models.demo_documents import (
@@ -140,6 +140,7 @@ async def submit(
     request: Request,
     client=Depends(get_db_client),
     app_config=Depends(get_app_config),
+    x_databricks_model: Optional[str] = Header(None, alias="X-Databricks-Model"),
 ) -> DemoDocumentsSubmitResponse:
     """Submit a document-corpus generation job to the JobManager.
 
@@ -182,11 +183,19 @@ async def submit(
         "catalog": req.catalog,
         "schema": req.schema_name,
         "volume": req.volume,
+        "table_name": req.table_name,
         "destination": req.destination,
         "types": list(req.types),
         "counts": dict(req.counts),
         "industry": req.industry,
         "realistic_content": req.realistic_content,
+        "ai_token_budget": req.ai_token_budget,
+        # AI endpoint name is forwarded from the X-Databricks-Model
+        # header — same pattern api/routers/ai.py uses. The header is
+        # set automatically by the UI's api-client from
+        # localStorage.dbx_model whenever the user has picked a
+        # Databricks Model Serving endpoint in Settings.
+        "ai_endpoint_name": x_databricks_model,
         "faker_locale": req.faker_locale,
         "faker_seed": req.faker_seed,
         # JobManager reads this for per-job warehouse routing — same
@@ -198,6 +207,8 @@ async def submit(
     job_id = await jm.submit_job("demo-documents", config, client)
     logger.info(
         f"Submitted demo-documents job {job_id} "
-        f"(types={list(req.types)}, destination={req.destination})"
+        f"(types={list(req.types)}, destination={req.destination}, "
+        f"ai_mode={req.realistic_content}, "
+        f"ai_endpoint={x_databricks_model or 'anthropic'})"
     )
     return DemoDocumentsSubmitResponse(job_id=job_id, status="queued")

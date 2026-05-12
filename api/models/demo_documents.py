@@ -116,6 +116,15 @@ class DemoDocumentsRequest(BaseModel):
             "ignored when 'direct_table' is picked."
         ),
     )
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Custom table name (within `<catalog>.<schema>`). Defaults to "
+            "`demo_documents_catalog` (volume_with_catalog) or "
+            "`demo_documents` (direct_table). Ignored when destination is "
+            "'volume'."
+        ),
+    )
     destination: DocumentDestination = Field(
         default="volume_with_catalog",
         description=(
@@ -157,9 +166,23 @@ class DemoDocumentsRequest(BaseModel):
     realistic_content: bool = Field(
         default=False,
         description=(
-            "When True, document body text is drafted by the AI client "
-            "(slower, requires API key). When False, templated text with "
-            "Faker substitutions is used. Spreadsheets ignore the flag."
+            "When True, narrative text in generated documents is drafted "
+            "by the AI client (slower, requires either a Databricks Model "
+            "Serving endpoint picked in Settings or ANTHROPIC_API_KEY). "
+            "When False, templated text with Faker substitutions is used. "
+            "Spreadsheets ignore the flag (no narrative content)."
+        ),
+    )
+    ai_token_budget: int = Field(
+        default=50_000,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Approximate per-job ceiling on AI tokens. When the budget is "
+            "hit, remaining draft calls fall back to templates instead of "
+            "calling the LLM. Default 50,000 ≈ ~$0.50 on Sonnet at typical "
+            "max_tokens settings. Ignored when realistic_content is False. "
+            "Set to 0 to disable AI entirely even when realistic_content=True."
         ),
     )
 

@@ -29,13 +29,13 @@ import { api } from "@/lib/api-client";
 import { useDurableJob } from "@/hooks/useDurableJob";
 import { toast } from "sonner";
 import CatalogSchemaVolumePicker from "@/components/CatalogSchemaVolumePicker";
+import AIModeToggle from "@/components/AIModeToggle";
 import {
   AlertTriangle,
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
   Play,
-  Sparkles,
 } from "lucide-react";
 
 type MediaDestination = "volume" | "volume_with_catalog" | "direct_table";
@@ -89,8 +89,10 @@ export default function MediaTab() {
   const [catalog, setCatalog] = useState("");
   const [schema, setSchema] = useState("");
   const [volume, setVolume] = useState("demo_unstructured");
+  const [tableName, setTableName] = useState("");
   const [industry, setIndustry] = useState<typeof INDUSTRIES[number]>("healthcare");
   const [realisticContent, setRealisticContent] = useState(false);
+  const [tokenBudget, setTokenBudget] = useState(50_000);
 
   const [selectedTypes, setSelectedTypes] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -141,6 +143,36 @@ export default function MediaTab() {
     () => Object.keys(selectedTypes).filter((k) => selectedTypes[k]),
     [selectedTypes],
   );
+
+  const projectedTableFqn = useMemo(() => {
+    if (destination === "volume") return null;
+    if (!catalog || !schema) return null;
+    const defaultName =
+      destination === "direct_table" ? "demo_media" : "demo_media_catalog";
+    return `${catalog}.${schema}.${tableName.trim() || defaultName}`;
+  }, [destination, catalog, schema, tableName]);
+
+  // Rough AI-call accounting per selected media type. Mirrors the
+  // `_maybe_ai` call counts in src/demo_media.py — keep in sync if
+  // generators add or remove LLM calls.
+  const AI_CALLS_PER_FILE: Record<string, number> = {
+    img_xray: 2,         // findings + caption
+    img_scan: 2,         // title + body
+    img_photo: 1,        // caption
+    audio_voicemail: 1,  // transcript
+    video_clip: 1,       // scene description
+  };
+  const AI_AVG_TOKENS_PER_CALL = 200;
+
+  const aiEstimate = useMemo(() => {
+    let calls = 0;
+    for (const t of activeTypes) {
+      const n = counts[t] ?? 5;
+      calls += n * (AI_CALLS_PER_FILE[t] ?? 1);
+    }
+    const tokens = calls * AI_AVG_TOKENS_PER_CALL;
+    return { calls, tokens };
+  }, [activeTypes, counts]);
 
   const groupedTypes = useMemo(() => {
     const out: Record<string, MediaTypeInfo[]> = {};
@@ -197,11 +229,13 @@ export default function MediaTab() {
           catalog: catalog.trim(),
           schema: schema.trim(),
           volume: volumeRequired ? volume.trim() : undefined,
+          table_name: tableName.trim() || undefined,
           destination,
           types: activeTypes,
           counts: activeCounts,
           industry,
           realistic_content: realisticContent,
+          ai_token_budget: tokenBudget,
         },
       );
       mediaJob.start({}, async () => res.job_id);
@@ -327,6 +361,24 @@ export default function MediaTab() {
                   defaultVolumeName="demo_unstructured"
                 />
               </div>
+              {destination !== "volume" && (
+                <div className="pt-2">
+                  <label className="text-xs font-medium mb-1 block" htmlFor="media-table-name">
+                    Table name{" "}
+                    <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <Input
+                    id="media-table-name"
+                    value={tableName}
+                    onChange={(e) => setTableName(e.target.value)}
+                    placeholder={destination === "direct_table" ? "demo_media" : "demo_media_catalog"}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Lands in <code className="px-1 bg-muted rounded font-mono">&lt;catalog&gt;.&lt;schema&gt;.&lt;table&gt;</code>. Leave blank to use the default.
+                  </p>
+                </div>
+              )}
               {volumeRequired && (
                 <p className="text-xs text-muted-foreground">
                   Volume is auto-created (<code className="px-1 bg-muted rounded">CREATE VOLUME IF NOT EXISTS</code>) if it doesn&apos;t exist.
@@ -356,22 +408,35 @@ export default function MediaTab() {
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Surfaces in metadata; v2 will drive image / audio variations per industry.
+                  Drives captions, alt-text, scanned-page body, voicemail transcripts, and video scene descriptions per industry.
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={realisticContent}
-                  onChange={(e) => setRealisticContent(e.target.checked)}
-                />
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="font-medium">AI-draft voicemail transcripts</span>
-                  <span className="text-muted-foreground">— images / video ignore this flag</span>
-                </span>
-              </label>
+              <AIModeToggle
+                enabled={realisticContent}
+                onEnabledChange={setRealisticContent}
+                tokenBudget={tokenBudget}
+                onTokenBudgetChange={setTokenBudget}
+                label="AI-draft media content"
+                note="captions, transcripts, and document body text"
+              />
+              {realisticContent && aiEstimate.calls > 0 && (
+                <div className="text-xs space-y-1 px-1">
+                  <div className="text-muted-foreground">
+                    Estimate: <span className="font-mono">{aiEstimate.calls}</span> AI calls
+                    {" · "}
+                    <span className="font-mono">~{aiEstimate.tokens.toLocaleString()}</span> tokens
+                  </div>
+                  {aiEstimate.tokens > tokenBudget && (
+                    <div className="text-amber-600 dark:text-amber-500">
+                      ⚠ Estimate exceeds budget of{" "}
+                      <span className="font-mono">{tokenBudget.toLocaleString()}</span>{" "}
+                      — {aiEstimate.calls - Math.floor(tokenBudget / AI_AVG_TOKENS_PER_CALL)} late
+                      calls will fall back to templates.
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -483,6 +548,14 @@ export default function MediaTab() {
                   <div className="text-xs text-muted-foreground">
                     Estimated duration: {preview.estimated_seconds.toFixed(1)}s
                   </div>
+                  {projectedTableFqn && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Table: </span>
+                      <code className="px-1 bg-muted rounded font-mono break-all">
+                        {projectedTableFqn}
+                      </code>
+                    </div>
+                  )}
                   <div className="space-y-0.5 pt-2">
                     {preview.per_type.map((p) => (
                       <div key={p.type} className="flex items-center justify-between text-xs">
@@ -573,6 +646,43 @@ export default function MediaTab() {
                         <code className="px-1 bg-muted rounded font-mono break-all">
                           {mediaJob.data.result.volume_path}
                         </code>
+                      </div>
+                    )}
+                    {mediaJob.data.result.ai_mode && (
+                      <div className="text-xs flex flex-wrap gap-x-3 gap-y-0.5 pt-1">
+                        <span>
+                          <span className="text-muted-foreground">AI calls: </span>
+                          <span className="font-mono">{mediaJob.data.result.ai_calls ?? 0}</span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Fallbacks: </span>
+                          <span className={`font-mono ${(mediaJob.data.result.ai_fallbacks ?? 0) > 0 ? "text-amber-600 dark:text-amber-500" : ""}`}>
+                            {mediaJob.data.result.ai_fallbacks ?? 0}
+                          </span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Tokens: </span>
+                          <span className="font-mono">
+                            {(mediaJob.data.result.ai_tokens_used ?? 0).toLocaleString()}
+                          </span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">Backend: </span>
+                          <code className="px-1 bg-muted rounded font-mono">
+                            {mediaJob.data.result.ai_backend ?? "—"}
+                          </code>
+                        </span>
+                      </div>
+                    )}
+                    {(mediaJob.data.result.upload_count ?? 0) > 0 && (
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Uploads: </span>
+                        <span className="font-mono">{mediaJob.data.result.upload_count}</span>
+                        {(mediaJob.data.result.upload_failures ?? 0) > 0 && (
+                          <span className="text-red-500 dark:text-red-400 ml-1">
+                            ({mediaJob.data.result.upload_failures} failed)
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

@@ -358,6 +358,12 @@ def test_generate_code_volume_with_catalog_writes_per_file_rows(fake_client):
     # Catalog rows include language + repo_name.
     combined = " ".join(insert_sqls)
     assert "language" in combined or "repo_name" in combined
+    # content_full holds the full source — searchable from SQL.
+    create_sqls = [
+        s for s in sql_texts if "CREATE OR REPLACE TABLE" in s and "demo_code_catalog" in s
+    ]
+    assert any("content_full" in s for s in create_sqls)
+    assert "content_full" in combined
 
 
 def test_generate_code_respects_stop_check(fake_client):

@@ -22,7 +22,11 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev,web]"
+        # `documents` (reportlab / python-docx / python-pptx / openpyxl)
+        # and `media` (Pillow) are required by tests/test_demo_documents.py
+        # and tests/test_demo_media.py — without them the suite fails
+        # with ModuleNotFoundError on every PDF / DOCX / image generator.
+        run: pip install -e ".[dev,web,documents,media]"
 
       - name: Run tests
         run: |

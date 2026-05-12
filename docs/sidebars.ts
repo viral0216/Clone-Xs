@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
         'guide/rollback',
         'guide/snapshots',
         'guide/demo-data',
+        'guide/unstructured-demo-data',
         'guide/dlt',
         'guide/advanced-tables',
       ],

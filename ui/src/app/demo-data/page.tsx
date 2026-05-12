@@ -22,13 +22,14 @@ import {
   Database, Loader2, CheckCircle2, XCircle, Play, RefreshCw, Clock,
   ChevronDown, ChevronUp, Info, Zap, DollarSign, Trash2, ExternalLink,
   ClipboardCopy, Check, Download, Radio, StopCircle, Calendar, Settings2,
-  Copy, FileText, Image as ImageIcon, BookOpen, ScrollText, Code2,
+  Copy, FileText, Image as ImageIcon, BookOpen, ScrollText, Code2, Camera,
 } from "lucide-react";
 import DocumentsTab from "./DocumentsTab";
 import MediaTab from "./MediaTab";
 import KnowledgeTab from "./KnowledgeTab";
 import LogsTab from "./LogsTab";
 import CodeTab from "./CodeTab";
+import LiveCaptureTab from "./LiveCaptureTab";
 
 // Small helper used by the streaming card's copy buttons. Falls back
 // gracefully on browsers without `navigator.clipboard` (older Safari,
@@ -442,10 +443,10 @@ export default function DemoDataPage() {
   // tab so users aren't scrolling past inapplicable controls.
   // Persisted to sessionStorage so refresh keeps the user where they
   // were.
-  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "documents" | "media" | "knowledge" | "logs" | "code" | "manage">(() => {
+  const [activeGenTab, setActiveGenTab] = useState<"batch" | "streaming" | "documents" | "media" | "knowledge" | "logs" | "code" | "capture" | "manage">(() => {
     try {
       const v = sessionStorage.getItem("clxs-demo-gen-tab");
-      if (v === "batch" || v === "streaming" || v === "documents" || v === "media" || v === "knowledge" || v === "logs" || v === "code" || v === "manage") return v;
+      if (v === "batch" || v === "streaming" || v === "documents" || v === "media" || v === "knowledge" || v === "logs" || v === "code" || v === "capture" || v === "manage") return v;
     } catch {}
     return "batch";
   });
@@ -1057,6 +1058,7 @@ export default function DemoDataPage() {
           { key: "knowledge", label: "Knowledge Base", icon: BookOpen, hint: "Generate wiki articles, Q&A pairs, and chat threads for KB-RAG / conversational AI demos" },
           { key: "logs", label: "Logs", icon: ScrollText, hint: "Generate NGINX / JSON / syslog / OTel trace logs for observability and SIEM demos" },
           { key: "code", label: "Code", icon: Code2, hint: "Generate synthetic Python / JS / Java repos for code-search / Copilot-style demos" },
+          { key: "capture", label: "Live Capture", icon: Camera, hint: "Capture photos and video from your webcam directly into a UC Volume + Delta table with inline BINARY" },
           { key: "manage", label: "Manage Catalogs", icon: Trash2, hint: "List and drop existing demo catalogs" },
         ].map(({ key, label, icon: TabIcon, hint }) => (
           <button key={key}
@@ -3267,6 +3269,8 @@ export default function DemoDataPage() {
       {activeGenTab === "logs" && <LogsTab />}
 
       {activeGenTab === "code" && <CodeTab />}
+
+      {activeGenTab === "capture" && <LiveCaptureTab />}
 
       {activeGenTab === "manage" && (() => {
         const rows = (demoCatalogsQuery.data?.catalogs || []) as any[];

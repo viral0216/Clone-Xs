@@ -46,6 +46,14 @@ class DemoCodeRequest(BaseModel):
             "ignored when 'direct_table' is picked."
         ),
     )
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Custom table name (within `<catalog>.<schema>`). Defaults to "
+            "`demo_code_catalog` (volume_with_catalog) or `demo_code` "
+            "(direct_table). Ignored when destination is 'volume'."
+        ),
+    )
     destination: CodeDestination = Field(
         default="volume_with_catalog",
         description=(
@@ -90,8 +98,21 @@ class DemoCodeRequest(BaseModel):
         default=False,
         description=(
             "When True, function/method bodies are AI-drafted (slower, "
-            "requires API key). When off, bodies are templated with "
-            "Faker-generated identifiers."
+            "requires either a Databricks Model Serving endpoint picked in "
+            "Settings or ANTHROPIC_API_KEY). When off, bodies are templated "
+            "with Faker-generated identifiers."
+        ),
+    )
+    ai_token_budget: int = Field(
+        default=50_000,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Approximate per-job ceiling on AI tokens. When the budget is "
+            "hit, remaining draft calls fall back to templates. Default "
+            "50,000 ≈ ~$0.50 on Sonnet at typical max_tokens settings. "
+            "Ignored when realistic_content is False; set to 0 to disable "
+            "AI entirely even when realistic_content=True."
         ),
     )
     faker_locale: str = Field(default="en_US")

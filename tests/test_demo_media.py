@@ -26,6 +26,19 @@ pytestmark_if_unavailable = pytest.mark.skipif(
 )
 
 
+def _split_uploads(upload_mock, *, sidecar: bool) -> list:
+    """Partition `client.files.upload` calls into binary-media uploads
+    vs `.txt` sidecar uploads. Phase B.5 introduced sidecars so the
+    raw call_count doubled for every successfully generated file."""
+    out = []
+    for call in upload_mock.call_args_list:
+        path = call.kwargs.get("file_path") or (call.args[0] if call.args else "")
+        is_sidecar = str(path).endswith(".txt")
+        if is_sidecar == sidecar:
+            out.append(call)
+    return out
+
+
 # ── Registry ──────────────────────────────────────────────────────
 
 
@@ -218,11 +231,21 @@ def test_generate_media_volume_with_catalog_creates_catalog_table(mock_sql):
     progress: dict = {}
     result = generate_media(client, "wh-1", config, progress=progress)
 
-    assert client.files.upload.call_count == 3
+    # 3 media files + 3 .txt sidecars (one per media file) = 6 uploads.
+    file_uploads = _split_uploads(client.files.upload, sidecar=False)
+    sidecar_uploads = _split_uploads(client.files.upload, sidecar=True)
+    assert len(file_uploads) == 3
+    assert len(sidecar_uploads) == 3
     sqls = [c.args[2] for c in mock_sql.call_args_list]
     assert any("CREATE VOLUME IF NOT EXISTS" in s for s in sqls)
-    assert any("CREATE OR REPLACE TABLE" in s and "demo_media_catalog" in s for s in sqls)
-    assert any("INSERT INTO" in s for s in sqls)
+    create_sql = next(
+        s for s in sqls if "CREATE OR REPLACE TABLE" in s and "demo_media_catalog" in s
+    )
+    # content_full = textual projection (caption + findings + alt_text)
+    # so RAG queries can hit ``content_full`` instead of joining sidecars.
+    assert "content_full" in create_sql
+    insert_sql = next(s for s in sqls if "INSERT INTO" in s)
+    assert "content_full" in insert_sql
 
     assert result["status"] == "completed"
     assert result["destination"] == "volume_with_catalog"
@@ -248,7 +271,9 @@ def test_generate_media_volume_only_skips_catalog_table(mock_sql):
         "industry": "healthcare",
     }
     result = generate_media(client, "wh-1", config)
-    assert client.files.upload.call_count == 2
+    # 2 media files + 2 .txt sidecars = 4 uploads.
+    assert len(_split_uploads(client.files.upload, sidecar=False)) == 2
+    assert len(_split_uploads(client.files.upload, sidecar=True)) == 2
     sqls = [c.args[2] for c in mock_sql.call_args_list]
     assert any("CREATE VOLUME IF NOT EXISTS" in s for s in sqls)
     assert not any("CREATE OR REPLACE TABLE" in s for s in sqls)
@@ -368,8 +393,10 @@ def test_generate_media_skips_video_clip_cleanly_when_ffmpeg_missing(mock_sql, _
     assert result["per_type"]["video_clip"] == 0
     assert "video_clip" in result["per_type_failures"]
     assert "ffmpeg" in result["per_type_failures"]["video_clip"].lower()
-    # The 2 img_xray uploads happened — the ffmpeg miss didn't block.
-    assert client.files.upload.call_count == 2
+    # The 2 img_xray uploads happened (+ 2 sidecars) — the ffmpeg miss
+    # didn't block.
+    assert len(_split_uploads(client.files.upload, sidecar=False)) == 2
+    assert len(_split_uploads(client.files.upload, sidecar=True)) == 2
 
 
 @pytestmark_if_unavailable

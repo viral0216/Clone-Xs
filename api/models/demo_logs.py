@@ -53,6 +53,14 @@ class DemoLogsRequest(BaseModel):
             "ignored when 'direct_table' is picked."
         ),
     )
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Custom table name (within `<catalog>.<schema>`). Defaults to "
+            "`demo_logs_catalog` (volume_with_catalog) or `demo_logs` "
+            "(direct_table). Ignored when destination is 'volume'."
+        ),
+    )
     destination: LogDestination = Field(
         default="volume_with_catalog",
         description=(

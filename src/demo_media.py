@@ -42,16 +42,31 @@ import subprocess
 import tempfile
 import uuid
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from databricks.sdk import WorkspaceClient
 
+from src.ai_drafter import maybe_ai as _maybe_ai
 from src.client import execute_sql
 
 logger = logging.getLogger(__name__)
+
+# Concurrency cap for the parallel gen_fn fan-out when AI mode is on.
+# Five matches the Databricks Model Serving rate-limit headroom we
+# observed empirically (claude / llama-4 endpoints handle 5 concurrent
+# requests cleanly; higher starts triggering 429s).
+_AI_PARALLELISM: int = 5
+
+# Concurrency cap for the volume upload pool. Volume PUTs are I/O bound
+# and the SDK's HTTP client is thread-safe, so 5 parallel workers
+# overlap upload latency without saturating any single connection. Pair
+# with `_AI_PARALLELISM` — together they keep both the LLM and the
+# storage path off the critical path.
+_UPLOAD_PARALLELISM: int = 5
 
 
 # ── Lazy import probe ──────────────────────────────────────────────
@@ -210,13 +225,39 @@ def _gen_img_xray(industry: str, fkr: Any, ai_client: Any | None) -> tuple[bytes
     img.save(buf, format="PNG", optimize=True)
 
     case_id = f"XR-{uuid.uuid4().hex[:10].upper()}"
+    view = random.choice(["AP chest", "PA chest", "Lateral chest"])
+    patient_age = random.randint(18, 88)
+
+    findings = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Draft a 1-sentence radiology impression for a synthetic {view} "
+            f"X-ray, fictional patient age {patient_age}, in a {industry} "
+            f"setting. Use clinical phrasing (e.g. 'No acute cardiopulmonary "
+            f"findings.'). Use ONLY fictional placeholder names. No quotes."
+        ),
+        fallback="No acute findings. Synthetic image — for demo use only.",
+        max_tokens=80,
+    )
+    caption = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Write a 1-sentence caption for a synthetic {view} X-ray for a "
+            f"{industry} demo dataset. Max 12 words. No quotes."
+        ),
+        fallback=f"Synthetic {view} X-ray (case {case_id})",
+        max_tokens=40,
+    )
     return buf.getvalue(), {
         "case_id": case_id,
         "modality": "X-ray",
-        "view": random.choice(["AP chest", "PA chest", "Lateral chest"]),
-        "patient_age_years": random.randint(18, 88),
+        "view": view,
+        "patient_age_years": patient_age,
         "dimensions": f"{size}x{size}",
         "format": "PNG (synthetic — not a real X-ray)",
+        "findings": findings,
+        "caption": caption,
+        "alt_text": f"Synthetic {view} X-ray. {findings}",
     }
 
 
@@ -246,8 +287,19 @@ def _gen_img_scan(industry: str, fkr: Any, ai_client: Any | None) -> tuple[bytes
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
 
-    # Title — centred near the top.
-    title = fkr.catch_phrase().title()
+    # Title — centred near the top. AI-drafted when an adapter is
+    # available so titles match the chosen industry; else Faker.
+    title = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Generate a plausible {industry} document title (e.g. healthcare "
+            f"→ 'Patient Discharge Summary'; financial → 'Loan Approval Notice'; "
+            f"retail → 'Quarterly Inventory Report'). Title case, max 6 words, "
+            f"no quotes."
+        ),
+        fallback=fkr.catch_phrase().title(),
+        max_tokens=20,
+    )
     draw.text((width // 2 - 200, 80), title, fill=(20, 20, 20), font=title_font)
     draw.text(
         (width // 2 - 100, 120),
@@ -256,27 +308,45 @@ def _gen_img_scan(industry: str, fkr: Any, ai_client: Any | None) -> tuple[bytes
         font=body_font,
     )
 
-    # 6 paragraphs of placeholder body text.
+    # Body text — when AI is available, draft 4-6 short paragraphs of
+    # industry-specific content. Else fall back to Faker. The render
+    # loop is shared; truncate with a y-bound guardrail so a verbose
+    # LLM doesn't overflow the page.
+    fallback_body = "\n\n".join(fkr.text(max_nb_chars=350) for _ in range(6))
+    body_text = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Draft the body of a {industry} document titled '{title}'. "
+            f"4-6 short paragraphs, plain text, no markdown, no headings. "
+            f"Include realistic detail (dates, reference numbers, names — "
+            f"use fictional placeholders only). Total ~350 words. Separate "
+            f"paragraphs with a blank line."
+        ),
+        fallback=fallback_body,
+        max_tokens=600,
+    )
+
     y = 170
-    paragraphs = []
-    for _ in range(6):
-        text = fkr.text(max_nb_chars=350)
-        # Word-wrap at ~80 chars; the bitmap font isn't great for
-        # measurement so this approximates rather than measures.
+    paragraphs = [p.strip() for p in body_text.split("\n\n") if p.strip()]
+    page_y_limit = height - 60
+    for text in paragraphs:
+        if y >= page_y_limit:
+            break
         words = text.split()
         line = ""
         for w in words:
+            if y >= page_y_limit:
+                break
             if len(line) + len(w) + 1 > 80:
                 draw.text((60, y), line, fill=(30, 30, 30), font=body_font)
                 y += 18
                 line = w
             else:
                 line = (line + " " + w).strip()
-        if line:
+        if line and y < page_y_limit:
             draw.text((60, y), line, fill=(30, 30, 30), font=body_font)
             y += 18
         y += 12  # paragraph spacing
-        paragraphs.append(text[:80])
 
     # Subtle rotation so it looks scanned, not exported.
     angle = random.uniform(-0.6, 0.6)
@@ -290,6 +360,9 @@ def _gen_img_scan(industry: str, fkr: Any, ai_client: Any | None) -> tuple[bytes
         "page_dimensions": f"{width}x{height}",
         "paragraph_count": len(paragraphs),
         "format": "PNG (synthetic scanned page)",
+        "caption": title,
+        "alt_text": f"Scanned page: {title}",
+        "body_preview": body_text[:240],
     }
 
 
@@ -340,10 +413,23 @@ def _gen_img_photo(industry: str, fkr: Any, ai_client: Any | None) -> tuple[byte
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
+
+    caption = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Describe a stock photo for a {industry} demo dataset in 1 "
+            f"sentence (e.g. 'Modern hospital reception desk at dusk'). "
+            f"Max 12 words. No quotes."
+        ),
+        fallback=f"Abstract {industry} photograph",
+        max_tokens=40,
+    )
     return buf.getvalue(), {
         "dimensions": f"{width}x{height}",
         "shape_count": shape_count,
         "format": "PNG (synthetic abstract)",
+        "caption": caption,
+        "alt_text": caption,
     }
 
 
@@ -370,14 +456,26 @@ def _gen_audio_voicemail(industry: str, fkr: Any, ai_client: Any | None) -> tupl
     caller_phone = fkr.phone_number()
     callee_name = fkr.name()
 
-    # Faker-drafted "transcript" — what the audio would say. Pure
-    # text, lives in the metadata and gets surfaced as a `.txt`
-    # sidecar by the orchestrator if `_with_transcript_sidecar` is
-    # set (v2 — for now it's just metadata).
-    transcript = (
+    # Transcript: AI-drafted when an adapter is provided, otherwise
+    # Faker template. The audio bytes themselves stay synthetic — the
+    # transcript is what RAG / NLP demos actually embed.
+    fallback_transcript = (
         f"Hi {callee_name.split()[0]}, this is {caller_name.split()[0]}. "
         f"I'm calling about {fkr.bs()}. Could you give me a call back at "
         f"{caller_phone} when you have a moment? Thanks."
+    )
+    transcript = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Draft a realistic 2-3 sentence voicemail transcript for the "
+            f"{industry} industry. Caller: {caller_name}. Callee first name: "
+            f"{callee_name.split()[0]}. Callback number: {caller_phone}. "
+            f"Topic should be plausible for {industry} (healthcare → "
+            f"appointment / lab result; financial → fraud alert / loan; "
+            f"retail → order update). Conversational, no formatting, no quotes."
+        ),
+        fallback=fallback_transcript,
+        max_tokens=180,
     )
 
     # Synthesise audio. Sine wave + amplitude envelope that varies on a
@@ -486,6 +584,16 @@ def _gen_video_clip(industry: str, fkr: Any, ai_client: Any | None) -> tuple[byt
     finally:
         Path(out_path).unlink(missing_ok=True)
 
+    scene_description = _maybe_ai(
+        ai_client,
+        prompt=(
+            f"Write a 1-sentence scene description for a {industry} demo "
+            f"video clip (e.g. 'Operating room overhead view during surgery'). "
+            f"Max 14 words. No quotes."
+        ),
+        fallback=f"{industry.title()} demo clip",
+        max_tokens=40,
+    )
     return video_bytes, {
         "duration_ms": duration_s * 1000,
         "dimensions": f"{width}x{height}",
@@ -493,10 +601,59 @@ def _gen_video_clip(industry: str, fkr: Any, ai_client: Any | None) -> tuple[byt
         "audio_frequency_hz": audio_freq_hz,
         "codec": "h264 + aac",
         "format": "MP4 (ffmpeg testsrc + sine)",
+        "scene_description": scene_description,
+        "caption": scene_description,
+        "alt_text": scene_description,
     }
 
 
 # ── Top-level orchestrator ────────────────────────────────────────
+
+
+def _iter_gen_results(
+    *,
+    gen_fn: Callable[..., tuple[bytes, dict]],
+    industry: str,
+    locale: str,
+    ai_client: Any | None,
+    fkr_seq: Any,
+    n_items: int,
+) -> Iterable[tuple[int, bytes | None, dict | None, Exception | None]]:
+    """Yield ``(seq, file_bytes, meta, exc)`` tuples for ``n_items``
+    invocations of ``gen_fn``.
+
+    When ``ai_client`` is set and ``n_items > 1``, fan the gen_fn calls
+    out across :data:`_AI_PARALLELISM` worker threads — the LLM I/O is
+    the wall-clock bottleneck so concurrency cuts the per-type duration
+    by ~5x. Each task gets a fresh :class:`Faker` instance because
+    Faker isn't thread-safe.
+
+    When ``ai_client`` is ``None`` (templates only), stay sequential
+    using the shared ``fkr_seq`` instance — Pillow / ffmpeg work is
+    fast and seeded fakers need stable consumption order.
+    """
+    from faker import Faker
+
+    if ai_client is not None and n_items > 1:
+        with ThreadPoolExecutor(max_workers=_AI_PARALLELISM) as ex:
+            futures = {
+                ex.submit(gen_fn, industry, Faker(locale=locale), ai_client): seq_i
+                for seq_i in range(n_items)
+            }
+            for fut in as_completed(futures):
+                seq_i = futures[fut]
+                try:
+                    fb, m = fut.result()
+                    yield seq_i, fb, m, None
+                except Exception as e:
+                    yield seq_i, None, None, e
+        return
+    for seq_i in range(n_items):
+        try:
+            fb, m = gen_fn(industry, fkr_seq, ai_client)
+            yield seq_i, fb, m, None
+        except Exception as e:
+            yield seq_i, None, None, e
 
 
 def _ensure_volume(client: WorkspaceClient, warehouse_id: str, vol_fqn: str) -> None:
@@ -531,6 +688,9 @@ def _ensure_catalog_table(
             duration_ms      BIGINT,
             dimensions       STRING,
             codec            STRING,
+            caption          STRING,
+            alt_text         STRING,
+            transcript       STRING,
             content          BINARY,
             metadata_json    STRING
         ) USING delta
@@ -545,9 +705,13 @@ def _ensure_catalog_table(
             industry         STRING,
             generated_at     TIMESTAMP,
             content_summary  STRING,
+            content_full     STRING,
             duration_ms      BIGINT,
             dimensions       STRING,
             codec            STRING,
+            caption          STRING,
+            alt_text         STRING,
+            transcript       STRING,
             metadata_json    STRING
         ) USING delta
         """
@@ -559,6 +723,99 @@ def _sql_str(s: str | None) -> str:
     if s is None:
         return "NULL"
     return "'" + s.replace("'", "''") + "'"
+
+
+def _build_sidecar(type_id: str, meta: dict) -> str | None:
+    """Build a plaintext `.txt` sidecar exposing AI-drafted content
+    next to the binary file. Returns None when the metadata has no
+    text worth surfacing (i.e. AI mode was off).
+
+    The sidecar is uploaded next to each media file so the AI-drafted
+    captions / transcripts / scene descriptions are visible directly
+    on the volume — without needing the catalog table.
+    """
+    caption = meta.get("caption") or ""
+    alt_text = meta.get("alt_text") or ""
+
+    if type_id == "audio_voicemail":
+        transcript = meta.get("transcript") or ""
+        if not transcript:
+            return None
+        return (
+            f"Caller: {meta.get('caller_name', '')}\n"
+            f"Callee: {meta.get('callee_name', '')}\n"
+            f"Callback: {meta.get('caller_phone', '')}\n"
+            f"Duration: {meta.get('duration_ms', 0)}ms\n"
+            f"\n--- Transcript ---\n{transcript}\n"
+        )
+    if type_id == "img_xray":
+        return (
+            f"Case ID: {meta.get('case_id', '')}\n"
+            f"View: {meta.get('view', '')}\n"
+            f"Patient age: {meta.get('patient_age_years', '')}\n"
+            f"Caption: {caption}\n"
+            f"Alt-text: {alt_text}\n"
+            f"\n--- Findings ---\n{meta.get('findings', '')}\n"
+        )
+    if type_id == "img_scan":
+        return (
+            f"Title: {meta.get('title', '')}\n"
+            f"Caption: {caption}\n"
+            f"Alt-text: {alt_text}\n"
+            f"\n--- Body preview ---\n{meta.get('body_preview', '')}\n"
+        )
+    if type_id == "img_photo":
+        return (
+            f"Caption: {caption}\nAlt-text: {alt_text}\nDimensions: {meta.get('dimensions', '')}\n"
+        )
+    if type_id == "video_clip":
+        return (
+            f"Scene: {meta.get('scene_description', '')}\n"
+            f"Caption: {caption}\nAlt-text: {alt_text}\n"
+            f"Dimensions: {meta.get('dimensions', '')} @ {meta.get('fps', 0)}fps\n"
+            f"Duration: {meta.get('duration_ms', 0)}ms\n"
+        )
+    return None
+
+
+def _build_content_full(type_id: str, meta: dict) -> str:
+    """Flat textual projection of a media file for the indexed
+    catalog table. Concatenates the AI-drafted text fields already on
+    the metadata dict so RAG queries can hit ``content_full`` directly
+    without joining to the sidecar `.txt` on the volume.
+
+    Mirrors the per-type field selection in :func:`_build_sidecar` but
+    returns a single space-joined string with empty fields skipped.
+    Returns "" when the metadata has no text worth surfacing — keeps
+    the orchestrator's INSERT call simple (always non-NULL string).
+    """
+    parts: list[str] = []
+
+    def _add(value: Any) -> None:
+        if not value:
+            return
+        text = str(value).strip()
+        if text:
+            parts.append(text)
+
+    if type_id == "audio_voicemail":
+        _add(meta.get("transcript"))
+    elif type_id == "img_xray":
+        _add(meta.get("caption"))
+        _add(meta.get("findings"))
+        _add(meta.get("alt_text"))
+    elif type_id == "img_scan":
+        _add(meta.get("title"))
+        _add(meta.get("body_preview"))
+        _add(meta.get("alt_text"))
+    elif type_id == "img_photo":
+        _add(meta.get("caption"))
+        _add(meta.get("alt_text"))
+    elif type_id == "video_clip":
+        _add(meta.get("scene_description"))
+        _add(meta.get("alt_text"))
+
+    return "\n\n".join(parts)
 
 
 def _build_summary(type_id: str, meta: dict) -> str:
@@ -605,7 +862,6 @@ def generate_media(
     counts = config.get("counts") or {}
     industry = config.get("industry", "healthcare")
     destination = config.get("destination", "volume_with_catalog")
-    realistic_content = bool(config.get("realistic_content", False))
 
     if destination not in ("volume", "volume_with_catalog", "direct_table"):
         raise ValueError(f"Unknown destination: {destination!r}")
@@ -621,14 +877,15 @@ def generate_media(
     if config.get("faker_seed") is not None:
         fkr.seed_instance(int(config["faker_seed"]))
 
-    ai_client = None
-    if realistic_content:
-        try:
-            from src.ai import get_ai_client  # type: ignore
+    # AI client — opt-in via realistic_content. Reuses the shared
+    # adapter that routes through Databricks Model Serving (when an
+    # endpoint is picked in Settings) or the Anthropic API. Media
+    # generators that produce binary bytes (images / video) ignore
+    # the adapter; audio_voicemail uses it to draft a transcript when
+    # available.
+    from src.ai_drafter import build_drafter
 
-            ai_client = get_ai_client()
-        except Exception as e:
-            logger.warning(f"realistic_content=True but no AI client available: {e}")
+    ai_client = build_drafter(config, sdk_client=client)
 
     volume_path: str | None = None
     table_fqn: str | None = None
@@ -638,11 +895,15 @@ def generate_media(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/media"
 
+    # Custom table name (optional) — overrides the default
+    # demo_media_catalog / demo_media when an operator wants distinct
+    # table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_media_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_media_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_media"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_media'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("files_written", 0)
@@ -653,6 +914,22 @@ def generate_media(
 
     pending_rows: list[str] = []
     BATCH_SIZE = 50
+
+    # Upload pool — fan volume PUTs out across workers. Each gen-fn
+    # result schedules a file upload (and optional sidecar), letting
+    # the next file's gen run while the previous file's bytes stream
+    # to storage in the background. Drained at the end of the job.
+    upload_pool = ThreadPoolExecutor(max_workers=_UPLOAD_PARALLELISM)
+    upload_futures: list[Any] = []
+
+    def _submit_upload(path: str, content: bytes) -> None:
+        fut = upload_pool.submit(
+            client.files.upload,
+            file_path=path,
+            contents=io.BytesIO(content),
+            overwrite=True,
+        )
+        upload_futures.append(fut)
 
     def _flush_pending() -> None:
         nonlocal pending_rows
@@ -666,9 +943,13 @@ def generate_media(
             "industry",
             "generated_at",
             "content_summary",
+            "content_full",
             "duration_ms",
             "dimensions",
             "codec",
+            "caption",
+            "alt_text",
+            "transcript",
             "metadata_json",
         )
         sql = f"INSERT INTO {table_fqn} ({', '.join(cols)}) VALUES {', '.join(pending_rows)}"
@@ -701,18 +982,24 @@ def generate_media(
 
         progress["current_type"] = type_id
 
-        for seq in range(n):
+        for seq, file_bytes, meta, gen_exc in _iter_gen_results(
+            gen_fn=gen_fn,
+            industry=industry,
+            locale=config.get("faker_locale", "en_US"),
+            ai_client=ai_client,
+            fkr_seq=fkr,
+            n_items=n,
+        ):
             if stopped():
                 break
-            try:
-                file_bytes, meta = gen_fn(industry, fkr, ai_client)
-            except Exception as e:
-                logger.error(f"  ✗ {type_id} #{seq}: {e}")
+            if gen_exc is not None:
+                logger.error(f"  ✗ {type_id} #{seq}: {gen_exc}")
                 # Record the first failure per-type but keep trying
                 # the remaining seq — a transient ffmpeg error on one
                 # frame shouldn't blank the rest of the type.
-                progress["per_type_failures"].setdefault(type_id, str(e))
+                progress["per_type_failures"].setdefault(type_id, str(gen_exc))
                 continue
+            assert file_bytes is not None and meta is not None
             file_id = uuid.uuid4().hex
             ext = type_def["extension"]
             file_name = f"{type_id}_{file_id}.{ext}"
@@ -720,16 +1007,24 @@ def generate_media(
             current_path: str | None = None
             if volume_path is not None:
                 current_path = f"{volume_path}/{type_id}/{file_name}"
-                client.files.upload(
-                    file_path=current_path,
-                    contents=io.BytesIO(file_bytes),
-                    overwrite=True,
-                )
+                _submit_upload(current_path, file_bytes)
+                # Sidecar: surface AI-drafted text alongside the binary
+                # so volume-only consumers see captions / transcripts
+                # without needing the catalog table. Failures are
+                # collected during the final drain — non-fatal.
+                sidecar_text = _build_sidecar(type_id, meta)
+                if sidecar_text:
+                    sidecar_path = current_path.rsplit(".", 1)[0] + ".txt"
+                    _submit_upload(sidecar_path, sidecar_text.encode("utf-8"))
 
             content_summary = _build_summary(type_id, meta)
+            content_full = _build_content_full(type_id, meta)
             duration_ms = int(meta.get("duration_ms") or 0)
             dimensions = meta.get("dimensions") or meta.get("page_dimensions") or ""
             codec = meta.get("codec") or meta.get("format", "")
+            caption = meta.get("caption") or ""
+            alt_text = meta.get("alt_text") or ""
+            transcript = meta.get("transcript") or ""
             metadata_json = json.dumps(meta, default=str)
 
             if destination == "volume_with_catalog" and current_path:
@@ -741,9 +1036,13 @@ def generate_media(
                     f"{_sql_str(industry)}, "
                     f"current_timestamp(), "
                     f"{_sql_str(content_summary)}, "
+                    f"{_sql_str(content_full)}, "
                     f"{duration_ms}, "
                     f"{_sql_str(dimensions)}, "
                     f"{_sql_str(codec)}, "
+                    f"{_sql_str(caption)}, "
+                    f"{_sql_str(alt_text)}, "
+                    f"{_sql_str(transcript)}, "
                     f"{_sql_str(metadata_json)})"
                 )
                 pending_rows.append(row)
@@ -761,6 +1060,9 @@ def generate_media(
                     duration_ms=duration_ms,
                     dimensions=dimensions,
                     codec=codec,
+                    caption=caption,
+                    alt_text=alt_text,
+                    transcript=transcript,
                     content=file_bytes,
                     metadata_json=metadata_json,
                 )
@@ -776,9 +1078,31 @@ def generate_media(
 
     _flush_pending()
 
+    # Drain the upload pool — block until every queued file (and
+    # sidecar) has streamed to storage. shutdown(wait=True) is the
+    # canonical idiom; failures don't raise here, they're surfaced
+    # via fut.exception() below so a single bad upload doesn't blank
+    # an otherwise successful run.
+    upload_pool.shutdown(wait=True)
+    upload_failures = [f for f in upload_futures if f.exception() is not None]
+    if upload_failures:
+        first_err = upload_failures[0].exception()
+        logger.warning(
+            "%d/%d uploads failed (first: %s)",
+            len(upload_failures),
+            len(upload_futures),
+            first_err,
+        )
+        progress["per_type_failures"].setdefault(
+            "upload",
+            f"{len(upload_failures)}/{len(upload_futures)} uploads failed: {first_err}",
+        )
+
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-    return {
+    from src.ai_drafter import adapter_summary
+
+    result = {
         "status": "completed",
         "files_written": progress["files_written"],
         "total_bytes": progress["total_bytes"],
@@ -788,9 +1112,13 @@ def generate_media(
         "volume_path": volume_path,
         "table_fqn": table_fqn,
         "duration_ms": duration_ms,
+        "upload_count": len(upload_futures),
+        "upload_failures": len(upload_failures),
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
     }
+    result.update(adapter_summary(ai_client))
+    return result
 
 
 def _insert_direct_row(
@@ -807,6 +1135,9 @@ def _insert_direct_row(
     duration_ms: int,
     dimensions: str,
     codec: str,
+    caption: str,
+    alt_text: str,
+    transcript: str,
     content: bytes,
     metadata_json: str,
 ) -> None:
@@ -822,7 +1153,7 @@ def _insert_direct_row(
         f"INSERT INTO {table_fqn} "
         f"(file_id, media_type, file_extension, size_bytes, industry, "
         f"generated_at, content_summary, duration_ms, dimensions, codec, "
-        f"content, metadata_json) "
+        f"caption, alt_text, transcript, content, metadata_json) "
         f"VALUES ("
         f"{_sql_str(file_id)}, "
         f"{_sql_str(media_type)}, "
@@ -834,6 +1165,9 @@ def _insert_direct_row(
         f"{duration_ms}, "
         f"{_sql_str(dimensions)}, "
         f"{_sql_str(codec)}, "
+        f"{_sql_str(caption)}, "
+        f"{_sql_str(alt_text)}, "
+        f"{_sql_str(transcript)}, "
         f"unhex('{hex_content}'), "
         f"{_sql_str(metadata_json)})"
     )

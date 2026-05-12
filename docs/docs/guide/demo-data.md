@@ -9,6 +9,16 @@ title: Demo Data Generator
 All 13 fields on the Demo Data page (Catalog Name, Industries, Scale Factor, Medallion, UC Best Practices, Create UDFs, Create Volumes, …) have an info icon — hover for a 1-line description of what each option does. Existing inline `text-xs` helper lines still sit under each field for casual reading; the tooltip has the longer form.
 :::
 
+:::info Unstructured corpora
+This page covers the **structured** demo-data generator (catalogs,
+industries, tables, streaming events). The same `/demo-data` page
+also hosts six **unstructured** tabs — Documents, Media, Knowledge,
+Logs, Code, and Live Capture — that generate files / inline-bytes
+Delta tables / browser-webcam captures for RAG, observability,
+code-search, and image-grounded multimodal demos. See
+[Unstructured Demo Data](unstructured-demo-data.md).
+:::
+
 ## Overview
 The Demo Data Generator creates realistic Unity Catalog demo catalogs with synthetic data for showcasing Clone-Xs capabilities. All data is generated server-side using Databricks SQL — no data is transferred from the client.
 

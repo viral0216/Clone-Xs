@@ -188,18 +188,15 @@ def _class_name() -> str:
 
 
 def _maybe_ai_body(ai_client: Any | None, prompt: str, fallback: str) -> str:
-    """Draft a function/class body via the AI client if available;
-    otherwise return a templated fallback. Errors fall back too."""
+    """Draft a function/class body via the shared AI adapter if
+    available; otherwise return a templated fallback.
+
+    Delegates to :class:`src.ai_drafter.AIDrafter.draft` (which handles
+    the Databricks/Anthropic backend selection, token budgeting, and
+    error fallback)."""
     if ai_client is None:
         return fallback
-    try:
-        completion = getattr(ai_client, "complete", None)
-        if completion is None:
-            return fallback
-        result = completion(prompt) or ""
-        return result if result.strip() else fallback
-    except Exception:
-        return fallback
+    return ai_client.draft(prompt, fallback=fallback, max_tokens=300)
 
 
 def _gen_python_module(industry: str, fkr: Any, ai_client: Any | None) -> tuple[str, str]:
@@ -659,6 +656,7 @@ def _ensure_catalog_table(
             size_bytes       BIGINT,
             line_count       BIGINT,
             generated_at     TIMESTAMP,
+            content_full     STRING,
             metadata_json    STRING
         ) USING delta
         """
@@ -697,7 +695,6 @@ def generate_code(
     counts = config.get("counts") or {}
     industry = config.get("industry", "healthcare")
     destination = config.get("destination", "volume_with_catalog")
-    realistic_content = bool(config.get("realistic_content", False))
 
     if destination not in ("volume", "volume_with_catalog", "direct_table"):
         raise ValueError(f"Unknown destination: {destination!r}")
@@ -714,14 +711,13 @@ def generate_code(
         fkr.seed_instance(int(config["faker_seed"]))
         random.seed(int(config["faker_seed"]))
 
-    ai_client = None
-    if realistic_content:
-        try:
-            from src.ai import get_ai_client  # type: ignore
+    # AI client — opt-in via realistic_content. Reuses the shared
+    # adapter that routes through Databricks Model Serving (when an
+    # endpoint is picked in Settings) or the Anthropic API. Used to
+    # draft function/class bodies for richer code-search embeddings.
+    from src.ai_drafter import build_drafter
 
-            ai_client = get_ai_client()
-        except Exception as e:
-            logger.warning(f"realistic_content=True but no AI client available: {e}")
+    ai_client = build_drafter(config, sdk_client=client)
 
     volume_path: str | None = None
     table_fqn: str | None = None
@@ -731,11 +727,15 @@ def generate_code(
         _ensure_volume(client, warehouse_id, vol_fqn)
         volume_path = f"/Volumes/{catalog}/{schema}/{volume}/code"
 
+    # Custom table name (optional) — overrides the default
+    # demo_code_catalog / demo_code when an operator wants distinct
+    # table namespaces across runs.
+    custom_table = (config.get("table_name") or "").strip()
     if destination == "volume_with_catalog":
-        table_fqn = f"{catalog}.{schema}.demo_code_catalog"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_code_catalog'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=False)
     elif destination == "direct_table":
-        table_fqn = f"{catalog}.{schema}.demo_code"
+        table_fqn = f"{catalog}.{schema}.{custom_table or 'demo_code'}"
         _ensure_catalog_table(client, warehouse_id, table_fqn, direct=True)
 
     progress.setdefault("repos_written", 0)
@@ -760,6 +760,7 @@ def generate_code(
             "size_bytes",
             "line_count",
             "generated_at",
+            "content_full",
             "metadata_json",
         )
         sql = (
@@ -847,6 +848,7 @@ def generate_code(
                         f"{len(content_bytes)}, "
                         f"{line_count}, "
                         f"current_timestamp(), "
+                        f"{_sql_str(content)}, "
                         f"{_sql_str(file_metadata_json)})"
                     )
                     pending_catalog_rows.append(row)
@@ -883,7 +885,9 @@ def generate_code(
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-    return {
+    from src.ai_drafter import adapter_summary
+
+    result = {
         "status": "completed",
         "repos_written": progress["repos_written"],
         "files_written": progress["files_written"],
@@ -896,6 +900,8 @@ def generate_code(
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
     }
+    result.update(adapter_summary(ai_client))
+    return result
 
 
 # ── Preview ───────────────────────────────────────────────────────

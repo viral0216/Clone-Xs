@@ -9,7 +9,10 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
-## Unreleased — Live Capture tab with image-grounded multimodal AI
+## v1.0.0 — Live Capture tab with image-grounded multimodal AI
+
+*Released 2026-05-12.*
+
 
 A sixth unstructured-data tab — **Live Capture** — joins
 `/demo-data` (see

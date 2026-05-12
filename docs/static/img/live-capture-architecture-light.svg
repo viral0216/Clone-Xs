@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style><![CDATA[
+      .bg            { fill: #ffffff; }
+      .frame         { fill: none; stroke: #e2e8f0; stroke-width: 1; }
+      .card          { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }
+      .card-input    { fill: #fff5f4; stroke: #FF3621; stroke-width: 1.5; }
+      .card-gold     { fill: #FF3621; stroke: #FF3621; stroke-width: 1.5; }
+      .brand         { fill: #FF3621; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+      .title         { fill: #0f172a; font-size: 18px; font-weight: 800; }
+      .section-label { fill: #FF3621; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+      .h             { fill: #0f172a; font-size: 13px; font-weight: 700; }
+      .h-gold        { fill: #ffffff; font-size: 13px; font-weight: 800; }
+      .sub           { fill: #475569; font-size: 10.5px; }
+      .sub-gold      { fill: #ffffff; font-size: 10.5px; opacity: 0.95; }
+      .mono          { fill: #475569; font-size: 10px; font-family: 'SF Mono', Menlo, monospace; }
+      .mono-gold     { fill: #ffffff; font-size: 10px; font-family: 'SF Mono', Menlo, monospace; opacity: 0.95; }
+      .legend-text   { fill: #475569; font-size: 10.5px; font-weight: 600; }
+      .arrow         { fill: none; stroke: #FF3621; stroke-width: 1.6; }
+      .arrow-dim     { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 4 3; }
+      .arrowhead     { fill: #FF3621; }
+      .arrowhead-dim { fill: #94a3b8; opacity: 0.7; }
+    ]]></style>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <polygon points="0,0 10,5 0,10" class="arrowhead"/>
+    </marker>
+    <marker id="ah-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <polygon points="0,0 10,5 0,10" class="arrowhead-dim"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1400" height="900"/>
+
+  <!-- Title block -->
+  <text class="brand" x="700" y="32" text-anchor="middle">Clone-Xs · Multimodal RAG Demo Data</text>
+  <text class="title" x="700" y="62" text-anchor="middle">Live Capture — Browser Webcam → UC Volume + Delta with Inline BINARY</text>
+
+  <!-- Frame around the three lanes -->
+  <rect class="frame" x="20" y="90" width="1360" height="700" rx="8"/>
+
+  <!-- Lane dividers -->
+  <line x1="475" y1="90" x2="475" y2="790" class="frame"/>
+  <line x1="925" y1="90" x2="925" y2="790" class="frame"/>
+
+  <!-- Lane labels -->
+  <text class="section-label" x="247" y="115" text-anchor="middle">Lane 1 — Browser</text>
+  <text class="section-label" x="700" y="115" text-anchor="middle">Lane 2 — FastAPI Backend</text>
+  <text class="section-label" x="1152" y="115" text-anchor="middle">Lane 3 — Databricks</text>
+
+  <!-- ============================================================ -->
+  <!-- ROW 1 — Input + transport + landing                          -->
+  <!-- ============================================================ -->
+
+  <!-- Lane 1 Row 1: getUserMedia -->
+  <rect class="card-input" x="50" y="140" width="395" height="90" rx="6"/>
+  <text class="h" x="65" y="162">getUserMedia()</text>
+  <text class="sub" x="65" y="180">1280×720 stream · device picker · optional mic</text>
+  <text class="mono" x="65" y="200">navigator.mediaDevices.getUserMedia({video, audio})</text>
+  <text class="sub" x="65" y="220">→ &lt;video&gt; preview bound via useCamera() hook</text>
+
+  <!-- Lane 2 Row 1: multipart POST endpoint -->
+  <rect class="card" x="505" y="140" width="395" height="90" rx="6"/>
+  <text class="h" x="520" y="162">POST /api/capture/frame</text>
+  <text class="sub" x="520" y="180">multipart/form-data · synchronous · no JobManager</text>
+  <text class="mono" x="520" y="200">file=&lt;blob&gt; · capture_type · session_id · width · height</text>
+  <text class="sub" x="520" y="220">FastAPI UploadFile + Form(...) parameters</text>
+
+  <!-- Lane 3 Row 1: UC Volume upload -->
+  <rect class="card" x="955" y="140" width="395" height="90" rx="6"/>
+  <text class="h" x="970" y="162">UC Volume — client.files.upload()</text>
+  <text class="sub" x="970" y="180">CREATE VOLUME IF NOT EXISTS · idempotent</text>
+  <text class="mono" x="970" y="200">/Volumes/&lt;cat&gt;/&lt;sch&gt;/&lt;vol&gt;/capture/&lt;type&gt;/&lt;day&gt;/</text>
+  <text class="sub" x="970" y="220">Partition-by-day for cheap LIST scans</text>
+
+  <!-- ============================================================ -->
+  <!-- ROW 2 — Capture orchestration + Delta INSERT                 -->
+  <!-- ============================================================ -->
+
+  <!-- Lane 1 Row 2: Capture modes -->
+  <rect class="card" x="50" y="265" width="395" height="100" rx="6"/>
+  <text class="h" x="65" y="287">Capture mode</text>
+  <text class="sub" x="65" y="305">Single photo · Burst (100ms–5s) · Video chunks (1–30s)</text>
+  <text class="mono" x="65" y="324">setInterval(snapshot, ms) | recorder.start(chunkMs)</text>
+  <text class="sub" x="65" y="343">Each tick / chunk → one HTTP POST = one Delta row</text>
+  <text class="sub" x="65" y="358">UI warning when interval ≤ 500ms</text>
+
+  <!-- Lane 2 Row 2: handle_frame orchestrator -->
+  <rect class="card" x="505" y="265" width="395" height="100" rx="6"/>
+  <text class="h" x="520" y="287">handle_frame() orchestrator</text>
+  <text class="sub" x="520" y="305">src/demo_capture.py · synchronous · ~1 sec/call</text>
+  <text class="mono" x="520" y="324">_ensure_volume → _ensure_table → upload → INSERT</text>
+  <text class="sub" x="520" y="343">Idempotent table create (IF NOT EXISTS — not OR REPLACE)</text>
+  <text class="sub" x="520" y="358">Captures accumulate across browser sessions</text>
+
+  <!-- Lane 3 Row 2: Delta INSERT — GOLD card (primary RAG payload) -->
+  <rect class="card-gold" x="955" y="265" width="395" height="100" rx="6"/>
+  <text class="h-gold" x="970" y="287">demo_capture_catalog (Delta)</text>
+  <text class="sub-gold" x="970" y="305">file_path AND content BINARY in one row</text>
+  <text class="mono-gold" x="970" y="324">INSERT … unhex('&lt;hex(bytes)&gt;') …</text>
+  <text class="sub-gold" x="970" y="343">+ caption · alt_text · content_full · mime · width · height</text>
+  <text class="sub-gold" x="970" y="358">+ session_id · submitted_by · captured_at</text>
+
+  <!-- ============================================================ -->
+  <!-- ROW 3 — AI captioning (image-grounded vs text-grounded)      -->
+  <!-- ============================================================ -->
+
+  <!-- Lane 1 Row 3: blob encoding -->
+  <rect class="card" x="50" y="400" width="395" height="100" rx="6"/>
+  <text class="h" x="65" y="422">Blob encoding</text>
+  <text class="sub" x="65" y="440">Photos: canvas.toBlob('image/jpeg', 0.85)</text>
+  <text class="sub" x="65" y="458">Video chunks: MediaRecorder + pickRecorderMime()</text>
+  <text class="mono" x="65" y="478">webm;vp9 → webm;vp8 → webm → mp4</text>
+  <text class="sub" x="65" y="493">isTypeSupported() probes from highest quality down</text>
+
+  <!-- Lane 2 Row 3: AI adapter -->
+  <rect class="card" x="505" y="400" width="395" height="100" rx="6"/>
+  <text class="h" x="520" y="422">AI adapter — _draft_caption()</text>
+  <text class="sub" x="520" y="440">build_drafter() + _maybe_ai() · rate-limit retry</text>
+  <text class="mono" x="520" y="460">_is_image_describable(type, mime)</text>
+  <text class="sub" x="520" y="478">Photo + JPEG/PNG → image-grounded prompt + bytes</text>
+  <text class="sub" x="520" y="493">Video chunk → text-grounded prompt only</text>
+
+  <!-- Lane 3 Row 3: Llama-4 Maverick endpoint -->
+  <rect class="card-input" x="955" y="400" width="395" height="100" rx="6"/>
+  <text class="h" x="970" y="422">Llama-4 Maverick · Model Serving</text>
+  <text class="sub" x="970" y="440">OpenAI-compatible chat completions endpoint</text>
+  <text class="mono" x="970" y="460">{"type":"image_url","image_url":{"url":"data:..."}}</text>
+  <text class="sub" x="970" y="478">Inline base64 data URL — model sees the actual frame</text>
+  <text class="sub" x="970" y="493">Returns caption + alt_text → back into Delta row</text>
+
+  <!-- ============================================================ -->
+  <!-- ROW 4 — Session attribution + recent strip                   -->
+  <!-- ============================================================ -->
+
+  <!-- Lane 1 Row 4: FormData submit -->
+  <rect class="card" x="50" y="535" width="395" height="90" rx="6"/>
+  <text class="h" x="65" y="557">FormData POST</text>
+  <text class="sub" x="65" y="575">Browser-set multipart boundary · no Content-Type override</text>
+  <text class="mono" x="65" y="595">crypto.randomUUID() per tab → session_id</text>
+  <text class="sub" x="65" y="615">X-Clone-Session + X-Databricks-Model headers</text>
+
+  <!-- Lane 2 Row 4: user attribution -->
+  <rect class="card" x="505" y="535" width="395" height="90" rx="6"/>
+  <text class="h" x="520" y="557">_resolve_user(client)</text>
+  <text class="sub" x="520" y="575">Best-effort: client.current_user.me().user_name</text>
+  <text class="mono" x="520" y="595">submitted_by = email | display_name | NULL</text>
+  <text class="sub" x="520" y="615">Failure degrades to NULL — never blocks the capture</text>
+
+  <!-- Lane 3 Row 4: GET /recent + session filter -->
+  <rect class="card" x="955" y="535" width="395" height="90" rx="6"/>
+  <text class="h" x="970" y="557">GET /api/capture/recent</text>
+  <text class="sub" x="970" y="575">SELECT metadata only — never the inline BINARY column</text>
+  <text class="mono" x="970" y="595">WHERE session_id = '…' ORDER BY captured_at DESC</text>
+  <text class="sub" x="970" y="615">Concurrent users see isolated Recent strips</text>
+
+  <!-- ============================================================ -->
+  <!-- ARROWS — primary data flow (orange, solid)                   -->
+  <!-- ============================================================ -->
+
+  <!-- Row 1 horizontal: Lane1 → Lane2 → Lane3 -->
+  <line x1="445" y1="185" x2="500" y2="185" class="arrow" marker-end="url(#ah)"/>
+  <line x1="900" y1="185" x2="950" y2="185" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Row 2 horizontal -->
+  <line x1="445" y1="315" x2="500" y2="315" class="arrow" marker-end="url(#ah)"/>
+  <line x1="900" y1="315" x2="950" y2="315" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Row 3 horizontal -->
+  <line x1="445" y1="450" x2="500" y2="450" class="arrow" marker-end="url(#ah)"/>
+  <line x1="900" y1="450" x2="950" y2="450" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Lane 1 vertical: row1→row2→row3→row4 -->
+  <line x1="247" y1="230" x2="247" y2="260" class="arrow" marker-end="url(#ah)"/>
+  <line x1="247" y1="365" x2="247" y2="395" class="arrow" marker-end="url(#ah)"/>
+  <line x1="247" y1="500" x2="247" y2="530" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Lane 2 vertical -->
+  <line x1="700" y1="230" x2="700" y2="260" class="arrow" marker-end="url(#ah)"/>
+  <line x1="700" y1="365" x2="700" y2="395" class="arrow" marker-end="url(#ah)"/>
+  <line x1="700" y1="500" x2="700" y2="530" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Lane 3 vertical row1→row2 (upload happens before INSERT) -->
+  <line x1="1152" y1="230" x2="1152" y2="260" class="arrow" marker-end="url(#ah)"/>
+
+  <!-- Lane 3 row3 (Llama-4) → row2 (Delta INSERT) — caption flows back up -->
+  <path d="M 1152 400 L 1152 380 L 1340 380 L 1340 365" class="arrow" fill="none" marker-end="url(#ah)"/>
+
+  <!-- Lane 3 row4 (recent) reads from row2 (Delta) — dashed control flow upward -->
+  <path d="M 990 535 L 990 515 L 970 515 L 970 365" class="arrow-dim" fill="none" marker-end="url(#ah-dim)"/>
+
+  <!-- ============================================================ -->
+  <!-- LEGEND                                                        -->
+  <!-- ============================================================ -->
+
+  <rect class="frame" x="40" y="810" width="1320" height="70" rx="6"/>
+  <text class="section-label" x="60" y="832">Legend</text>
+
+  <!-- Solid arrow legend -->
+  <line x1="60" y1="855" x2="100" y2="855" class="arrow" marker-end="url(#ah)"/>
+  <text class="legend-text" x="110" y="859">Synchronous data path — per-frame POST → Volume upload → Delta INSERT</text>
+
+  <!-- Dashed arrow legend -->
+  <line x1="620" y1="855" x2="660" y2="855" class="arrow-dim" marker-end="url(#ah-dim)"/>
+  <text class="legend-text" x="670" y="859">Metadata / read path — recent strip query, no inline BINARY pulled</text>
+
+  <!-- Gold card legend -->
+  <rect class="card-gold" x="1080" y="846" width="20" height="14" rx="3"/>
+  <text class="legend-text" x="1108" y="859">Primary RAG payload — Delta row with both file_path AND content BINARY</text>
+</svg>

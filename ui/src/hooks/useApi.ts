@@ -836,6 +836,98 @@ export function useJobCosts(days: number = 30) {
   });
 }
 
+// ─── Assessment ─────────────────────────────────────────────────────────────
+
+const ASSESSMENT_STALE = 60_000;
+
+export function useAssessmentLatest() {
+  return useQuery<any>({
+    queryKey: ["assessment-latest"],
+    queryFn: () => api.get("/assessment/latest"),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useAssessmentFindings(filters?: { severity?: string; category?: string; status?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.severity) params.set("severity", filters.severity);
+  if (filters?.category) params.set("category", filters.category);
+  if (filters?.status) params.set("status", filters.status);
+  return useQuery<any[]>({
+    queryKey: ["assessment-findings", filters],
+    queryFn: () => api.get(`/assessment/findings?${params}`),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useAssessmentCategories() {
+  return useQuery<any[]>({
+    queryKey: ["assessment-categories"],
+    queryFn: () => api.get("/assessment/categories"),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useAssessmentRecommendations() {
+  return useQuery<any[]>({
+    queryKey: ["assessment-recommendations"],
+    queryFn: () => api.get("/assessment/recommendations"),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useAssessmentHistory() {
+  return useQuery<any[]>({
+    queryKey: ["assessment-history"],
+    queryFn: () => api.get("/assessment/results"),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useAssessmentInventory() {
+  return useQuery<any>({
+    queryKey: ["assessment-inventory"],
+    queryFn: () => api.get("/assessment/inventory"),
+    staleTime: ASSESSMENT_STALE,
+    retry: 1,
+  });
+}
+
+export function useRunAssessment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: { workspace_name?: string; with_inventory?: boolean }) => {
+      const params = new URLSearchParams({
+        workspace_name: config.workspace_name ?? "",
+        with_inventory: String(config.with_inventory ?? true),
+      });
+      return api.post(`/assessment/run?${params}`, {});
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assessment-latest"] });
+      qc.invalidateQueries({ queryKey: ["assessment-history"] });
+    },
+  });
+}
+
+export function useAssessmentJobStatus(jobId: string | null) {
+  return useQuery<any>({
+    queryKey: ["assessment-job", jobId],
+    queryFn: () => api.get(`/assessment/status/${jobId}`),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "queued" ? 2000 : false;
+    },
+    retry: false,
+  });
+}
+
 // Azure (supplementary — deferred)
 export function useAzureCosts(days: number = 30) {
   return useQuery<any>({

@@ -58,6 +58,7 @@ import SecuritySidebar from "@/components/layout/SecuritySidebar";
 import AutomationSidebar from "@/components/layout/AutomationSidebar";
 import InfrastructureSidebar from "@/components/layout/InfrastructureSidebar";
 import MdmSidebar from "@/components/layout/MdmSidebar";
+import AssessmentSidebar from "@/components/layout/AssessmentSidebar";
 import GovernanceOverview from "@/app/governance/page";
 
 // Lazy-load new UC enhancement pages
@@ -161,6 +162,20 @@ const MdmConsent = lazy(() => import("@/app/mdm/consent/page"));
 const MdmCrossDomain = lazy(() => import("@/app/mdm/cross-domain/page"));
 const MdmReports = lazy(() => import("@/app/mdm/reports/page"));
 const MdmProfiling = lazy(() => import("@/app/mdm/profiling/page"));
+
+// Assessment portal pages
+const AssessmentOverview = lazy(() => import("@/app/assessment/page"));
+const AssessmentRun = lazy(() => import("@/app/assessment/run/page"));
+const AssessmentFindings = lazy(() => import("@/app/assessment/findings/page"));
+const AssessmentCategories = lazy(() => import("@/app/assessment/categories/page"));
+const AssessmentRecommendations = lazy(() => import("@/app/assessment/recommendations/page"));
+const AssessmentInventory = lazy(() => import("@/app/assessment/inventory/page"));
+const AssessmentInventoryTree = lazy(() => import("@/app/assessment/inventory/tree/page"));
+const AssessmentInventorySunburst = lazy(() => import("@/app/assessment/inventory/sunburst/page"));
+const AssessmentInventoryHubspoke = lazy(() => import("@/app/assessment/inventory/hubspoke/page"));
+const AssessmentInventoryTopology = lazy(() => import("@/app/assessment/inventory/topology/page"));
+const AssessmentHistory = lazy(() => import("@/app/assessment/history/page"));
+const AssessmentExport = lazy(() => import("@/app/assessment/export/page"));
 
 function PageFallback() {
   return (
@@ -267,6 +282,7 @@ export default function App() {
             <Route path="/automation/*" element={<AutomationSidebar />} />
             <Route path="/infrastructure/*" element={<InfrastructureSidebar />} />
             <Route path="/mdm/*" element={<MdmSidebar />} />
+            <Route path="/assessment/*" element={<AssessmentSidebar />} />
             <Route path="/compliance/*" element={<GovernanceSidebar />} />
             <Route path="*" element={
               <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
@@ -472,6 +488,20 @@ export default function App() {
               <Route path="/mdm/cross-domain" element={<Suspense fallback={<PageFallback />}><MdmCrossDomain /></Suspense>} />
               <Route path="/mdm/reports" element={<Suspense fallback={<PageFallback />}><MdmReports /></Suspense>} />
               <Route path="/mdm/profiling" element={<Suspense fallback={<PageFallback />}><MdmProfiling /></Suspense>} />
+
+              {/* Assessment Portal */}
+              <Route path="/assessment" element={<Suspense fallback={<PageFallback />}><AssessmentOverview /></Suspense>} />
+              <Route path="/assessment/run" element={<Suspense fallback={<PageFallback />}><AssessmentRun /></Suspense>} />
+              <Route path="/assessment/findings" element={<Suspense fallback={<PageFallback />}><AssessmentFindings /></Suspense>} />
+              <Route path="/assessment/categories" element={<Suspense fallback={<PageFallback />}><AssessmentCategories /></Suspense>} />
+              <Route path="/assessment/recommendations" element={<Suspense fallback={<PageFallback />}><AssessmentRecommendations /></Suspense>} />
+              <Route path="/assessment/inventory" element={<Suspense fallback={<PageFallback />}><AssessmentInventory /></Suspense>} />
+              <Route path="/assessment/inventory/tree" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTree /></Suspense>} />
+              <Route path="/assessment/inventory/sunburst" element={<Suspense fallback={<PageFallback />}><AssessmentInventorySunburst /></Suspense>} />
+              <Route path="/assessment/inventory/hubspoke" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryHubspoke /></Suspense>} />
+              <Route path="/assessment/inventory/topology" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTopology /></Suspense>} />
+              <Route path="/assessment/history" element={<Suspense fallback={<PageFallback />}><AssessmentHistory /></Suspense>} />
+              <Route path="/assessment/export" element={<Suspense fallback={<PageFallback />}><AssessmentExport /></Suspense>} />
             </Routes>
           </main>
         </div>

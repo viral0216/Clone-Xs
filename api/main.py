@@ -640,6 +640,10 @@ from api.routers import schedules as schedules_router
 
 app.include_router(schedules_router.router, prefix="/api/schedules", tags=["schedules"])
 
+from api.routers import assessment as assessment_router
+
+app.include_router(assessment_router.router, prefix="/api/assessment", tags=["assessment"])
+
 # Serve frontend static files in production
 import os
 from pathlib import Path as _Path

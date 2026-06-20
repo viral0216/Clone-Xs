@@ -7,7 +7,7 @@ import {
   ChevronRight, ChevronDown, History, BarChart3,
   Undo2, GitFork, Zap, Layers, Terminal, Sparkles, Database,
   X, Plus, PanelLeftClose, PanelLeftOpen, BookOpen,
-  Store, Server, Camera, ArrowRightLeft,
+  Store, Server, Camera, ArrowRightLeft, ShieldCheck,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: React.ComponentType<{ className?: string }>; }
@@ -68,6 +68,7 @@ export const allNavSections: NavSection[] = [
     items: [
       { href: "/marketplace", label: "Marketplace", icon: Store },
       { href: "/environments", label: "Environments", icon: Server },
+      { href: "/assessment", label: "Assessment", icon: ShieldCheck },
     ],
   },
   {

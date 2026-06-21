@@ -2,13 +2,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Download, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, Download, Loader2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { usePersistedState } from "@/hooks/usePersistedState";
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -39,7 +38,20 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function ExpandRow({ finding }: { finding: any }) {
+const REMEDIATION_OPTIONS = [
+  { val: "open", label: "Open" },
+  { val: "in_progress", label: "In Progress" },
+  { val: "resolved", label: "Resolved ✓" },
+  { val: "accepted_risk", label: "Accepted Risk" },
+  { val: "false_positive", label: "False Positive" },
+];
+
+function ExpandRow({ finding, scanId, remStatus, onUpdateRemediation }: {
+  finding: any;
+  scanId: string | null;
+  remStatus?: { status: string };
+  onUpdateRemediation: (checkId: string, status: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -85,6 +97,20 @@ function ExpandRow({ finding }: { finding: any }) {
               </a>
             </p>
           )}
+          {scanId && (
+            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+              <span className="font-medium text-foreground">Remediation:</span>
+              <select
+                value={remStatus?.status ?? "open"}
+                onChange={e => onUpdateRemediation(finding.check_id, e.target.value)}
+                className="text-xs border border-border rounded px-2 py-0.5 bg-background focus:outline-none cursor-pointer"
+              >
+                {REMEDIATION_OPTIONS.map(o => (
+                  <option key={o.val} value={o.val}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -92,33 +118,79 @@ function ExpandRow({ finding }: { finding: any }) {
 }
 
 const SEVERITIES = ["critical", "high", "medium", "low"];
-const STATUSES = ["FAIL", "WARN", "PASS", "NOT_APPLICABLE"];
 
 export default function FindingsPage() {
+  const location = useLocation();
+  const urlParams = new URLSearchParams(location.search);
+
   const [findings, setFindings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [severity, setSeverity] = usePersistedState<string>("assessment-filter-severity", "");
   const [status, setStatus] = usePersistedState<string>("assessment-filter-status", "FAIL,WARN");
+  const [category, setCategory] = useState<string>(urlParams.get("category") ?? "");
+  const [remFilter, setRemFilter] = useState<string>("");
+  const [scanId, setScanId] = useState<string | null>(null);
+  const [remediation, setRemediation] = useState<Record<string, any>>({});
+
+  async function loadRemediation(sid: string) {
+    try {
+      const rem = await api.get(`/assessment/remediation/${sid}`);
+      setRemediation(rem ?? {});
+    } catch {
+      setRemediation({});
+    }
+  }
 
   async function load() {
     setLoading(true);
     try {
+      // Get scan_id from latest result
+      const meta = await api.get("/assessment/latest").catch(() => null);
+      if (meta?.scan_id && meta.scan_id !== scanId) {
+        setScanId(meta.scan_id);
+        loadRemediation(meta.scan_id);
+      }
+
       const params = new URLSearchParams();
       if (severity) params.set("severity", severity);
       if (status) params.set("status", status);
+      if (category) params.set("category", category);
       const data = await api.get(`/assessment/findings?${params}`);
-      setFindings(Array.isArray(data) ? data : []);
+      const SEV_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+      setFindings(
+        (Array.isArray(data) ? data : []).map(f => ({
+          ...f,
+          severity_order: SEV_ORDER[f.severity?.toLowerCase()] ?? 4,
+        }))
+      );
     } catch {}
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [severity, status]);
+  async function updateRemediation(checkId: string, remStatus: string) {
+    if (!scanId) return;
+    try {
+      const updated = await api.put(`/assessment/remediation/${scanId}/${checkId}`, { status: remStatus, note: "" });
+      setRemediation(prev => ({ ...prev, [checkId]: updated }));
+    } catch {}
+  }
+
+  useEffect(() => { load(); }, [severity, status, category]);
+
+  // Client-side remediation filter
+  const visibleFindings = remFilter
+    ? findings.filter(f => (remediation[f.check_id]?.status ?? "open") === remFilter)
+    : findings;
+
+  const totalIssues = findings.filter(f => f.status === "FAIL" || f.status === "WARN").length;
+  const resolvedCount = Object.values(remediation).filter(v => v?.status === "resolved").length;
 
   const columns = [
     {
       key: "check_id",
       label: "Check ID",
       width: "100px",
+      sortable: true,
       render: (v: string) => <span className="font-mono text-xs">{v}</span>,
     },
     {
@@ -135,19 +207,29 @@ export default function FindingsPage() {
       key: "severity",
       label: "Severity",
       width: "90px",
+      sortable: true,
+      sortKey: "severity_order",
       render: (v: string) => <SeverityBadge severity={v} />,
     },
     {
       key: "status",
       label: "Status",
       width: "100px",
+      sortable: true,
       render: (v: string) => <StatusBadge status={v} />,
     },
     {
       key: "_expand",
       label: "",
       width: "80px",
-      render: (_: any, row: any) => <ExpandRow finding={row} />,
+      render: (_: any, row: any) => (
+        <ExpandRow
+          finding={row}
+          scanId={scanId}
+          remStatus={remediation[row.check_id]}
+          onUpdateRemediation={updateRemediation}
+        />
+      ),
     },
   ];
 
@@ -169,6 +251,21 @@ export default function FindingsPage() {
           </Button>
         }
       />
+
+      {/* Remediation progress bar */}
+      {scanId && totalIssues > 0 && (
+        <div className="flex items-center gap-3 bg-muted/40 rounded-lg px-4 py-2.5">
+          <div className="flex-1 h-2 bg-muted-foreground/20 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 transition-all duration-300"
+              style={{ width: `${Math.round((resolvedCount / totalIssues) * 100)}%` }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground whitespace-nowrap font-medium">
+            {resolvedCount}/{totalIssues} issues resolved
+          </span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -215,8 +312,42 @@ export default function FindingsPage() {
         {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
 
+      {/* Active filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {category && (
+          <div className="flex items-center gap-1.5 bg-primary/10 text-primary rounded-full px-3 py-1 text-xs font-medium">
+            <span>Category: {category}</span>
+            <button onClick={() => setCategory("")} className="hover:text-primary/70 ml-0.5">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        {scanId && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <label className="text-xs font-medium text-muted-foreground">Remediation:</label>
+            <div className="flex gap-1">
+              {[
+                { val: "", label: "All" },
+                { val: "open", label: "Open" },
+                { val: "in_progress", label: "In Progress" },
+                { val: "resolved", label: "Resolved" },
+                { val: "accepted_risk", label: "Accepted Risk" },
+              ].map(({ val, label }) => (
+                <button
+                  key={val}
+                  onClick={() => setRemFilter(val)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${remFilter === val ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={findings}
+        data={visibleFindings}
         columns={columns}
         searchable
         pageSize={25}

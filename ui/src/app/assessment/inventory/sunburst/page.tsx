@@ -1,43 +1,13 @@
 // @ts-nocheck
 "use client";
-
-import { useState } from "react";
-import { ExternalLink, Loader2, GitBranch } from "lucide-react";
-import PageHeader from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
+import IframeView from "../IframeView";
 
 export default function SunburstViewPage() {
-  const [loaded, setLoaded] = useState(false);
-
   return (
-    <div className="flex flex-col h-full space-y-2">
-      <PageHeader
-        title="Sunburst View"
-        icon={GitBranch}
-        breadcrumbs={["Assessment", "UC Inventory", "Sunburst View"]}
-        description="Zoomable concentric ring chart — click any segment to drill in, click the center ring to zoom out."
-        actions={
-          <Button size="sm" variant="outline" onClick={() => window.open("/api/assessment/html/sunburst", "_blank")}>
-            <ExternalLink className="h-4 w-4 mr-1.5" />
-            Open fullscreen
-          </Button>
-        }
-      />
-      <div className="relative flex-1 rounded-lg border border-border overflow-hidden" style={{ minHeight: "calc(100vh - 160px)" }}>
-        {!loaded && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading sunburst view…</span>
-          </div>
-        )}
-        <iframe
-          src="/api/assessment/html/sunburst"
-          className="w-full h-full border-0"
-          title="UC Catalog Sunburst View"
-          onLoad={() => setLoaded(true)}
-          style={{ minHeight: "calc(100vh - 160px)" }}
-        />
-      </div>
-    </div>
+    <IframeView
+      viewKey="sunburst"
+      title="Sunburst View"
+      description="Zoomable concentric ring chart — click any segment to drill in, click the center ring to zoom out."
+    />
   );
 }

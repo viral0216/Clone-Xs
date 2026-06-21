@@ -2,18 +2,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, XCircle, Info,
-  Play, BarChart2, Lightbulb, Clock, Loader2, RefreshCw, Database,
+  Play, BarChart2, Lightbulb, Clock, Loader2, RefreshCw,
+  TrendingUp, TrendingDown, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  AreaChart, Area,
 } from "recharts";
 
 function gradeColor(grade: string) {
@@ -43,21 +44,42 @@ function SeverityBadge({ severity }: { severity: string }) {
 }
 
 export default function AssessmentOverview() {
+  const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [prevScore, setPrevScore] = useState<number | null>(null);
+  const [trendData, setTrendData] = useState<any[]>([]);
+  const [quickWins, setQuickWins] = useState<any[]>([]);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [latest, cats] = await Promise.allSettled([
+      const [latest, cats, results, qwData] = await Promise.allSettled([
         api.get("/assessment/latest"),
         api.get("/assessment/categories"),
+        api.get("/assessment/results"),
+        api.get("/assessment/findings?status=FAIL"),
       ]);
       if (latest.status === "fulfilled") setData(latest.value);
       if (cats.status === "fulfilled") setCategories(Array.isArray(cats.value) ? cats.value : []);
+      if (results.status === "fulfilled") {
+        const r = Array.isArray(results.value) ? results.value : [];
+        const fullScans = r.filter(x => x.overall_score !== null && x.overall_score !== undefined);
+        setPrevScore(fullScans[1]?.overall_score ?? null);
+        setTrendData(fullScans.slice(0, 7).reverse().map(x => ({ score: x.overall_score })));
+      }
+      if (qwData.status === "fulfilled") {
+        const arr = Array.isArray(qwData.value) ? qwData.value : [];
+        setQuickWins(
+          arr.filter(f => {
+            const e = typeof f.effort === "string" ? f.effort : "";
+            return (e.includes("5") && e.includes("15")) || e.toLowerCase().includes("quick");
+          }).slice(0, 5)
+        );
+      }
     } catch (e: any) {
       setError(e?.message ?? "Failed to load assessment data");
     }
@@ -70,11 +92,23 @@ export default function AssessmentOverview() {
   const score = data?.overall_score ?? 0;
   const grade = data?.grade ?? "—";
   const topFindings = data?.findings_preview ?? [];
+  const scoreDelta = prevScore !== null && score > 0 ? score - prevScore : null;
+
   const chartData = categories
     .slice()
     .sort((a, b) => a.score - b.score)
     .slice(0, 12)
-    .map(c => ({ name: c.category.replace(/ (Extended|Governance)$/i, ""), score: c.score }));
+    .map(c => ({
+      name: c.category.replace(/ (Extended|Governance)$/i, ""),
+      fullName: c.category,
+      score: c.score,
+    }));
+
+  function handleBarClick(entry: any) {
+    if (entry?.fullName) {
+      navigate(`/assessment/findings?category=${encodeURIComponent(entry.fullName)}&status=FAIL,WARN`);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -159,12 +193,43 @@ export default function AssessmentOverview() {
         <>
           {/* Score + Stats row */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Score gauge */}
-            <Card className="md:col-span-1 flex flex-col items-center justify-center py-6">
+            {/* Score gauge with trend sparkline */}
+            <Card className="md:col-span-1 flex flex-col items-center justify-center py-5 px-4">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Security Score</p>
               <p className="text-6xl font-black" style={{ color: scoreColor(score) }}>{score}</p>
               <p className={`text-2xl font-bold mt-1 ${gradeColor(grade)}`}>Grade {grade}</p>
-              <p className="text-xs text-muted-foreground mt-2">{data.scanned_at ? new Date(data.scanned_at).toLocaleString() : ""}</p>
+              {scoreDelta !== null && (
+                <div className={`flex items-center gap-1 text-xs mt-1 font-medium ${scoreDelta >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+                  {scoreDelta >= 0
+                    ? <TrendingUp className="h-3 w-3" />
+                    : <TrendingDown className="h-3 w-3" />}
+                  {scoreDelta >= 0 ? "+" : ""}{scoreDelta} vs last scan
+                </div>
+              )}
+              {trendData.length > 1 && (
+                <div className="w-full mt-3">
+                  <ResponsiveContainer width="100%" height={44}>
+                    <AreaChart data={trendData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={scoreColor(score)} stopOpacity={0.25} />
+                          <stop offset="95%" stopColor={scoreColor(score)} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <Area
+                        type="monotone"
+                        dataKey="score"
+                        stroke={scoreColor(score)}
+                        fill="url(#scoreGrad)"
+                        strokeWidth={1.5}
+                        dot={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <p className="text-[10px] text-muted-foreground text-center -mt-1">Last {trendData.length} scans</p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-2 text-center">{data.scanned_at ? new Date(data.scanned_at).toLocaleString() : ""}</p>
             </Card>
 
             {/* Stat cards */}
@@ -188,22 +253,23 @@ export default function AssessmentOverview() {
             ))}
           </div>
 
-          {/* Category chart + Top findings */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Category chart + Critical Findings + Quick Wins */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-1">
                 <CardTitle className="text-sm font-medium">Lowest Category Scores</CardTitle>
+                <p className="text-[11px] text-muted-foreground">Click a bar to filter findings by that category</p>
               </CardHeader>
               <CardContent>
                 {chartData.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">No category data</p>
                 ) : (
-                  <ResponsiveContainer width="100%" height={280}>
+                  <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 8 }}>
                       <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
                       <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
                       <Tooltip formatter={(v: number) => [`${v}`, "Score"]} />
-                      <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                      <Bar dataKey="score" radius={[0, 4, 4, 0]} cursor="pointer" onClick={handleBarClick}>
                         {chartData.map((entry, i) => (
                           <Cell key={i} fill={scoreColor(entry.score)} />
                         ))}
@@ -251,14 +317,47 @@ export default function AssessmentOverview() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="pb-1">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-yellow-500" />
+                  Quick Wins
+                </CardTitle>
+                <p className="text-[11px] text-muted-foreground">FAIL findings fixable in 5–15 min</p>
+              </CardHeader>
+              <CardContent>
+                {quickWins.length === 0 ? (
+                  <div className="flex items-center gap-2 py-6 justify-center text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="text-sm font-medium">No quick fixes needed!</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {quickWins.map((f: any, i: number) => (
+                      <div key={i} className="flex items-start gap-2 py-1.5 border-b border-border last:border-0">
+                        <SeverityBadge severity={f.severity} />
+                        <p className="text-xs leading-tight flex-1 mt-0.5">{f.title}</p>
+                      </div>
+                    ))}
+                    <Link
+                      to="/assessment/recommendations"
+                      className="block text-xs text-primary hover:underline text-right mt-2"
+                    >
+                      View all recommendations →
+                    </Link>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Quick links */}
+          {/* Quick nav links */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { href: "/assessment/findings", label: "All Findings", icon: AlertTriangle, desc: `${data.failed + data.warnings} need attention` },
+              { href: "/assessment/findings", label: "All Findings", icon: AlertTriangle, desc: `${(data.failed ?? 0) + (data.warnings ?? 0)} need attention` },
               { href: "/assessment/recommendations", label: "Recommendations", icon: Lightbulb, desc: "Prioritised by severity" },
-              { href: "/assessment/inventory", label: "UC Inventory", icon: ShieldCheck, desc: "Catalog object browser" },
+              { href: "/assessment/compare", label: "Compare Scans", icon: BarChart2, desc: "Diff two scan results" },
               { href: "/assessment/history", label: "Scan History", icon: Clock, desc: "Track posture over time" },
             ].map(({ href, label, icon: Icon, desc }) => (
               <Link key={href} to={href}>

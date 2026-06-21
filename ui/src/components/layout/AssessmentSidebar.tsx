@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Play, AlertTriangle, BarChart2,
   Lightbulb, Database, GitBranch, Clock, Download,
-  PanelLeftClose, PanelLeftOpen, Network, TreePine, Layers,
+  PanelLeftClose, PanelLeftOpen, Network, TreePine, Layers, ArrowLeftRight, Search,
+  Workflow, Server, Users, BrainCircuit, FileCode,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -26,6 +27,7 @@ const NAV_SECTIONS = [
     title: "UC Inventory",
     items: [
       { href: "/assessment/inventory", label: "Summary", icon: Database },
+      { href: "/assessment/inventory/search", label: "Object Search", icon: Search },
       { href: "/assessment/inventory/tree", label: "Tree View", icon: TreePine },
       { href: "/assessment/inventory/sunburst", label: "Sunburst View", icon: GitBranch },
       { href: "/assessment/inventory/hubspoke", label: "Hub & Spoke", icon: Network },
@@ -33,9 +35,21 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    title: "Workspace Resources",
+    items: [
+      { href: "/assessment/inventory/jobs",      label: "Jobs & Workflows",  icon: Workflow },
+      { href: "/assessment/inventory/compute",   label: "Compute",           icon: Server },
+      { href: "/assessment/inventory/identity",  label: "Identity & Access", icon: Users },
+      { href: "/assessment/inventory/sql",       label: "SQL & Analytics",   icon: BarChart2 },
+      { href: "/assessment/inventory/aiml",      label: "AI / ML",           icon: BrainCircuit },
+      { href: "/assessment/inventory/notebooks", label: "Notebooks & Files", icon: FileCode },
+    ],
+  },
+  {
     title: "History",
     items: [
       { href: "/assessment/history", label: "Scan History", icon: Clock },
+      { href: "/assessment/compare", label: "Compare Scans", icon: ArrowLeftRight },
       { href: "/assessment/export", label: "Export", icon: Download },
     ],
   },

@@ -174,8 +174,16 @@ const AssessmentInventoryTree = lazy(() => import("@/app/assessment/inventory/tr
 const AssessmentInventorySunburst = lazy(() => import("@/app/assessment/inventory/sunburst/page"));
 const AssessmentInventoryHubspoke = lazy(() => import("@/app/assessment/inventory/hubspoke/page"));
 const AssessmentInventoryTopology = lazy(() => import("@/app/assessment/inventory/topology/page"));
+const AssessmentInventorySearch = lazy(() => import("@/app/assessment/inventory/search/page"));
+const AssessmentInventoryJobs = lazy(() => import("@/app/assessment/inventory/jobs/page"));
+const AssessmentInventoryCompute = lazy(() => import("@/app/assessment/inventory/compute/page"));
+const AssessmentInventoryIdentity = lazy(() => import("@/app/assessment/inventory/identity/page"));
+const AssessmentInventorySql = lazy(() => import("@/app/assessment/inventory/sql/page"));
+const AssessmentInventoryAiMl = lazy(() => import("@/app/assessment/inventory/aiml/page"));
+const AssessmentInventoryNotebooks = lazy(() => import("@/app/assessment/inventory/notebooks/page"));
 const AssessmentHistory = lazy(() => import("@/app/assessment/history/page"));
 const AssessmentExport = lazy(() => import("@/app/assessment/export/page"));
+const AssessmentCompare = lazy(() => import("@/app/assessment/compare/page"));
 
 function PageFallback() {
   return (
@@ -500,7 +508,15 @@ export default function App() {
               <Route path="/assessment/inventory/sunburst" element={<Suspense fallback={<PageFallback />}><AssessmentInventorySunburst /></Suspense>} />
               <Route path="/assessment/inventory/hubspoke" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryHubspoke /></Suspense>} />
               <Route path="/assessment/inventory/topology" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTopology /></Suspense>} />
+              <Route path="/assessment/inventory/search" element={<Suspense fallback={<PageFallback />}><AssessmentInventorySearch /></Suspense>} />
+              <Route path="/assessment/inventory/jobs" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryJobs /></Suspense>} />
+              <Route path="/assessment/inventory/compute" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryCompute /></Suspense>} />
+              <Route path="/assessment/inventory/identity" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryIdentity /></Suspense>} />
+              <Route path="/assessment/inventory/sql" element={<Suspense fallback={<PageFallback />}><AssessmentInventorySql /></Suspense>} />
+              <Route path="/assessment/inventory/aiml" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryAiMl /></Suspense>} />
+              <Route path="/assessment/inventory/notebooks" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryNotebooks /></Suspense>} />
               <Route path="/assessment/history" element={<Suspense fallback={<PageFallback />}><AssessmentHistory /></Suspense>} />
+              <Route path="/assessment/compare" element={<Suspense fallback={<PageFallback />}><AssessmentCompare /></Suspense>} />
               <Route path="/assessment/export" element={<Suspense fallback={<PageFallback />}><AssessmentExport /></Suspense>} />
             </Routes>
           </main>

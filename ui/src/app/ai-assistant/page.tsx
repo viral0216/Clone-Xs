@@ -29,7 +29,7 @@ interface ModelEndpoint {
 }
 
 export default function AiAssistantPage() {
-  const { messages, streaming, sessionId, error, send, stop, reset, loadSession } = useChatStream();
+  const { messages, streaming, sessionId, error, send, stop, reset, loadSession, regenerate } = useChatStream();
   const agents = useAgents();
 
   const [catalog, setCatalog]       = useState<string>(() => localStorage.getItem("dbx_catalog_filter") || "");
@@ -87,6 +87,10 @@ export default function AiAssistantPage() {
     },
     [send, activeMode, catalog, schemaName],
   );
+
+  const handleRegenerate = useCallback(() => {
+    regenerate(activeMode, catalog || undefined, schemaName || undefined);
+  }, [regenerate, activeMode, catalog, schemaName]);
 
   useEffect(() => {
     if (!streaming && sessionId && messages.length > 0) {
@@ -149,6 +153,8 @@ export default function AiAssistantPage() {
             schemaName={schemaName}
             activeMode={activeMode}
             onSuggestedPrompt={handleSuggestedPrompt}
+            onRegenerate={handleRegenerate}
+            streaming={streaming}
           />
 
           <ChatInput

@@ -106,6 +106,115 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_tables",
+            "description": (
+                "Search across Unity Catalog for tables (and columns) whose name matches "
+                "a term. Use when the user doesn't know the exact location of a table or "
+                "asks 'which tables have a customer_id column'."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["term"],
+                "properties": {
+                    "term":    {"type": "string", "description": "Substring to match in table or column names"},
+                    "catalog": {"type": "string", "description": "Optional catalog to restrict the search to"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_table_lineage",
+            "description": (
+                "Return the upstream (sources) and downstream (consumers) tables for a "
+                "given table. Use to answer 'what feeds this table' or 'what depends on it'."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["table"],
+                "properties": {
+                    "table": {"type": "string", "description": "Fully-qualified table name catalog.schema.table"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "profile_column",
+            "description": (
+                "Profile a single column: null percentage, distinct count, min/max, and "
+                "sample distinct values. Use for data-quality questions about a column."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["catalog", "schema", "table", "column"],
+                "properties": {
+                    "catalog": {"type": "string"},
+                    "schema":  {"type": "string"},
+                    "table":   {"type": "string"},
+                    "column":  {"type": "string"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain_query",
+            "description": (
+                "Return the physical execution plan (EXPLAIN FORMATTED) for a SQL query. "
+                "Use to diagnose slow queries, shuffles, scans, and join strategies."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "The SQL query to explain"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_assessment_findings",
+            "description": (
+                "Return the latest workspace security/WAF assessment findings, optionally "
+                "filtered by severity, category, or status. Use for security-audit questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "severity": {"type": "string", "description": "Comma-separated: critical,high,medium,low"},
+                    "category": {"type": "string", "description": "Finding category, e.g. security or governance"},
+                    "status":   {"type": "string", "description": "Comma-separated: PASS,FAIL"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_pii_columns",
+            "description": (
+                "List columns tagged as PII/sensitive in a catalog (from Unity Catalog "
+                "column tags). Call this before running SQL that may expose sensitive data."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["catalog"],
+                "properties": {
+                    "catalog": {"type": "string"},
+                },
+            },
+        },
+    },
 ]
 
 
@@ -162,6 +271,23 @@ def execute_tool(name: str, args: dict, client, warehouse_id: str) -> str:
             return ai_tools.dbx_list_catalogs(client)
         elif name == "get_workspace_info":
             return _get_workspace_info(client, warehouse_id)
+        elif name == "search_tables":
+            return ai_tools.dbx_search_tables(args["term"], client, args.get("catalog", ""))
+        elif name == "get_table_lineage":
+            return ai_tools.dbx_table_lineage(args["table"], client)
+        elif name == "profile_column":
+            return ai_tools.dbx_profile_column(
+                args["catalog"], args["schema"], args["table"], args["column"],
+                client, warehouse_id,
+            )
+        elif name == "explain_query":
+            return ai_tools.dbx_explain_query(args["query"], client, warehouse_id)
+        elif name == "get_assessment_findings":
+            return ai_tools.dbx_assessment_findings(
+                args.get("severity", ""), args.get("category", ""), args.get("status", ""),
+            )
+        elif name == "list_pii_columns":
+            return ai_tools.dbx_pii_columns(args["catalog"], client, warehouse_id)
         else:
             return f"ERROR: Unknown tool '{name}'"
     except KeyError as e:

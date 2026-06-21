@@ -5,8 +5,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SqlResultTable } from "./SqlResultTable";
 import { ToolCallStepView } from "./ToolCallStep";
+import { CopyButton } from "./CopyButton";
 import { cn } from "@/lib/utils";
-import { Sparkles, User } from "lucide-react";
+import { RefreshCw, Sparkles, User } from "lucide-react";
 import type { ToolCallStep } from "../hooks/useChatStream";
 
 interface MessageBubbleProps {
@@ -17,7 +18,11 @@ interface MessageBubbleProps {
   schemaName?: string;
   tool_steps?: ToolCallStep[];
   context_pruned?: boolean;
+  total_tokens?: number;
+  tool_count?: number;
   onSuggestionClick?: (text: string) => void;
+  onRegenerate?: () => void;
+  isLast?: boolean;
 }
 
 // Split content on fenced code blocks so SQL blocks get the Run Query button
@@ -34,6 +39,11 @@ function splitOnCodeBlocks(content: string) {
   }
   if (last < content.length) parts.push({ type: "text", lang: "", body: content.slice(last) });
   return parts;
+}
+
+// Strip the trailing ```next-steps block so it isn't included when copying.
+function stripBlocks(content: string): string {
+  return content.replace(/```next-steps\n[\s\S]*?```/g, "").trim();
 }
 
 const mdComponents = {
@@ -103,7 +113,11 @@ export const MessageBubble = memo(function MessageBubble({
   schemaName,
   tool_steps,
   context_pruned,
+  total_tokens,
+  tool_count,
   onSuggestionClick,
+  onRegenerate,
+  isLast,
 }: MessageBubbleProps) {
   const isUser = role === "user";
 
@@ -162,12 +176,20 @@ export const MessageBubble = memo(function MessageBubble({
                       ))}
                     </div>
                   ) : (
-                  <div key={i} className="my-2.5">
+                  <div key={i} className="my-2.5 group/code relative">
+                    <div className="absolute right-1.5 top-1.5 opacity-0 group-hover/code:opacity-100 transition-opacity">
+                      <CopyButton text={part.body} className="rounded bg-background/80 border border-border/60 px-1.5 py-1" />
+                    </div>
                     <pre className="rounded-lg bg-muted/80 border border-border/60 px-3.5 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
                       <code>{part.body}</code>
                     </pre>
                     {(part.lang === "sql" || part.lang === "") && (
-                      <SqlResultTable sql={part.body} catalog={catalog} schemaName={schemaName} />
+                      <SqlResultTable
+                        sql={part.body}
+                        catalog={catalog}
+                        schemaName={schemaName}
+                        onExplainResults={onSuggestionClick}
+                      />
                     )}
                   </div>
                   )
@@ -184,6 +206,29 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             {streaming && (
               <span className="inline-block h-4 w-0.5 ml-0.5 align-middle bg-current animate-pulse rounded-full" />
+            )}
+            {/* Action row: copy + regenerate (completed assistant messages only) */}
+            {!streaming && content && (
+              <div className="flex items-center gap-3 mt-2 pt-1.5 border-t border-border/40">
+                <CopyButton text={stripBlocks(content)} label="Copy" />
+                {isLast && onRegenerate && (
+                  <button
+                    type="button"
+                    onClick={onRegenerate}
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                    title="Regenerate response"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Regenerate
+                  </button>
+                )}
+                {(total_tokens || tool_count) ? (
+                  <span className="text-[10px] text-muted-foreground/60 ml-auto">
+                    {tool_count ? `${tool_count} tool${tool_count > 1 ? "s" : ""} · ` : ""}
+                    {total_tokens ? `${total_tokens.toLocaleString()} tokens` : ""}
+                  </span>
+                ) : null}
+              </div>
             )}
           </>
         )}

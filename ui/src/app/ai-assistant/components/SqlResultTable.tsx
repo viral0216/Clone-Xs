@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, Sparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
 
 interface SqlResultTableProps {
   sql: string;
   catalog?: string;
   schemaName?: string;
+  onExplainResults?: (prompt: string) => void;
 }
 
 interface QueryResult {
@@ -20,7 +21,18 @@ interface QueryResult {
   error?: string;
 }
 
-export function SqlResultTable({ sql, catalog, schemaName }: SqlResultTableProps) {
+// Build a compact markdown table (max 20 rows) to feed query results back to the agent.
+function resultToMarkdown(cols: string[], rows: Record<string, unknown>[], total: number): string {
+  const head = `| ${cols.join(" | ")} |`;
+  const sep  = `| ${cols.map(() => "---").join(" | ")} |`;
+  const body = rows.slice(0, 20).map(
+    (r) => `| ${cols.map((c) => (r[c] == null ? "" : String(r[c]))).join(" | ")} |`,
+  ).join("\n");
+  const more = total > 20 ? `\n\n(${total} rows total; first 20 shown)` : "";
+  return `${head}\n${sep}\n${body}${more}`;
+}
+
+export function SqlResultTable({ sql, catalog, schemaName, onExplainResults }: SqlResultTableProps) {
   const [result, setResult]   = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [ran, setRan]         = useState(false);
@@ -75,31 +87,51 @@ export function SqlResultTable({ sql, catalog, schemaName }: SqlResultTableProps
   const cols = Object.keys(result.results[0]);
 
   return (
-    <div className="mt-2 rounded border border-border overflow-auto max-h-64">
-      <Table className="text-xs">
-        <TableHeader>
-          <TableRow>
-            {cols.map((c) => (
-              <TableHead key={c} className="h-7 px-2 whitespace-nowrap">{c}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {result.results.slice(0, 100).map((row, i) => (
-            <TableRow key={i}>
+    <div className="mt-2">
+      <div className="rounded border border-border overflow-auto max-h-64">
+        <Table className="text-xs">
+          <TableHeader>
+            <TableRow>
               {cols.map((c) => (
-                <TableCell key={c} className="px-2 py-1 max-w-xs truncate">
-                  {row[c] == null ? "" : String(row[c])}
-                </TableCell>
+                <TableHead key={c} className="h-7 px-2 whitespace-nowrap">{c}</TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {result.row_count > 100 && (
-        <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          Showing 100 of {result.row_count} rows
-        </p>
+          </TableHeader>
+          <TableBody>
+            {result.results.slice(0, 100).map((row, i) => (
+              <TableRow key={i}>
+                {cols.map((c) => (
+                  <TableCell key={c} className="px-2 py-1 max-w-xs truncate">
+                    {row[c] == null ? "" : String(row[c])}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {result.row_count > 100 && (
+          <p className="px-2 py-1 text-[10px] text-muted-foreground">
+            Showing 100 of {result.row_count} rows
+          </p>
+        )}
+      </div>
+      {onExplainResults && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-1.5 h-7 gap-1.5 text-xs"
+          onClick={() =>
+            onExplainResults(
+              `Here are the results of the query I ran:\n\n` +
+              `\`\`\`sql\n${result.sql || sql}\n\`\`\`\n\n` +
+              resultToMarkdown(cols, result.results, result.row_count) +
+              `\n\nExplain what this shows, highlight anything notable, and suggest a follow-up.`,
+            )
+          }
+        >
+          <Sparkles className="h-3 w-3" />
+          Explain results
+        </Button>
       )}
     </div>
   );

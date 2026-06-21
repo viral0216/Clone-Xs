@@ -401,8 +401,9 @@ async def _call_llm_non_streaming(
     auth_headers: dict,
     model: str,
     tools: list | None = None,
-) -> dict:
-    """One-shot (non-streaming) LLM call. Returns choices[0] dict.
+) -> tuple[dict, dict]:
+    """One-shot (non-streaming) LLM call. Returns (choices[0], usage) where usage
+    holds prompt/completion/total token counts (or {} if absent).
     Used for tool-decision turns so tool_call JSON arrives complete, not split
     across streaming delta chunks (which requires complex stitching).
     Gracefully retries without tools on 400/422 (model doesn't support tool_calls)."""
@@ -429,7 +430,7 @@ async def _call_llm_non_streaming(
             body_text = resp.text[:400]
             raise RuntimeError(f"Model endpoint returned {resp.status_code}: {body_text}")
         data = resp.json()
-        return data["choices"][0]
+        return data["choices"][0], (data.get("usage") or {})
 
 
 def _estimate_tokens(messages: list) -> int:
@@ -575,6 +576,7 @@ class ChatStreamRequest(BaseModel):
     mode: str = "assistant"
     catalog: Optional[str] = None
     schema_name: Optional[str] = None
+    regenerate: bool = False
 
 
 @router.post("/stream")
@@ -606,6 +608,14 @@ async def chat_stream(
     record  = ai_sessions.load(sid)
     history = record["messages"] if record else []
 
+    # On regenerate, drop the previous answer turn so the model doesn't see its
+    # own prior response (body.message re-sends the same user prompt).
+    if body.regenerate and history:
+        if history and history[-1].get("role") == "assistant":
+            history = history[:-1]
+        if history and history[-1].get("role") == "user":
+            history = history[:-1]
+
     warehouse_id = x_databricks_warehouse or ""
 
     # Build system prompt with rich workspace context (async, non-blocking)
@@ -616,15 +626,23 @@ async def chat_stream(
     if workspace_ctx:
         system_prompt += f"\n\n{workspace_ctx}"
 
-    # Always end every response with clickable next-step suggestions.
-    # The frontend renders ```next-steps blocks as clickable chips.
+    # Behavioural rules applied to every agent.
     system_prompt += (
         "\n\n---\n"
-        "**Output rule — apply to every response without exception:**\n"
-        "After your answer, append a fenced code block with language `next-steps` "
-        "containing exactly 2–3 short follow-up actions or questions the user could "
-        "ask next (one per line, ≤ 12 words each, no bullet symbols or numbering). "
-        "These are rendered as clickable buttons — keep them specific and actionable.\n"
+        "**Working rules — apply to every response without exception:**\n\n"
+        "1. When a `run_sql`, `explain_query`, `profile_column`, or `describe_table` tool "
+        "returns a result starting with `ERROR:`, do NOT surface the raw error. Read the "
+        "error, fix the SQL (wrong column, missing backticks, bad function), and retry the "
+        "tool — up to 2 times. Only if it still fails, explain the problem plainly.\n\n"
+        "2. Before running `run_sql` that returns raw rows from a table you haven't seen, "
+        "consider whether it may expose sensitive data. If the question touches a table that "
+        "likely holds personal data, call `list_pii_columns(catalog)` first and warn the user "
+        "(one short line) if PII-tagged columns are present, then proceed with aggregated or "
+        "masked output where possible.\n\n"
+        "3. After your answer, append a fenced code block with language `next-steps` "
+        "containing exactly 2–3 short follow-up actions or questions the user could ask next "
+        "(one per line, ≤ 12 words each, no bullets or numbering). These render as clickable "
+        "buttons — keep them specific and actionable.\n"
         "Example:\n"
         "```next-steps\n"
         "Describe the orders table to see its column structure\n"
@@ -649,14 +667,17 @@ async def chat_stream(
 
         loop_messages = list(working_messages)
         MAX_TOOL_TURNS = 5
+        total_tokens = 0
+        tool_count = 0
 
         try:
             for turn in range(MAX_TOOL_TURNS + 1):
                 use_tools = turn < MAX_TOOL_TURNS
-                choice = await _call_llm_non_streaming(
+                choice, usage = await _call_llm_non_streaming(
                     loop_messages, host, auth_headers, x_databricks_model,
                     tools=ai_tool_definitions.TOOLS if use_tools else None,
                 )
+                total_tokens += int(usage.get("total_tokens") or 0)
                 message = choice.get("message", {})
                 finish_reason = choice.get("finish_reason", "")
                 tool_calls = message.get("tool_calls") or []
@@ -679,13 +700,14 @@ async def chat_stream(
                             args = {}
 
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'args': args, 'call_id': call_id})}\n\n"
+                        tool_count += 1
 
                         result = await asyncio.to_thread(
                             ai_tool_definitions.execute_tool,
                             name, args, client, warehouse_id,
                         )
 
-                        yield f"data: {json.dumps({'type': 'tool_done', 'tool': name, 'call_id': call_id, 'result_preview': result[:300]})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_done', 'tool': name, 'call_id': call_id, 'result_preview': result[:1500]})}\n\n"
 
                         loop_messages.append({
                             "role": "tool",
@@ -713,6 +735,9 @@ async def chat_stream(
                 ]
                 clean_history.append({"role": "assistant", "content": full_response})
                 ai_sessions.save(sid, clean_history, body.message)
+
+            if total_tokens or tool_count:
+                yield f"data: {json.dumps({'type': 'usage', 'total_tokens': total_tokens, 'tool_count': tool_count})}\n\n"
 
         except Exception as exc:
             logger.exception("Agentic loop failed")

@@ -56,3 +56,15 @@ Present two things immediately:
 
 Return format: rule summary table (column | rule | tool | action), then the code block,
 then observability wiring, then exact next command to run or deploy.
+
+## Tools available — use these proactively
+
+- **`profile_column(catalog, schema, table, column)`** — Get real null %, distinct count,
+  and min/max. ALWAYS profile a column before recommending a threshold — set DQ rules from
+  the actual data distribution, not guesses.
+- **`describe_table(catalog, schema, table)`** — Confirm column names and types first.
+- **`run_sql(query)`** — Count bad rows to prove a rule catches real issues.
+- **`get_table_lineage(table)`** — See upstream sources when deciding where to enforce checks.
+
+Workflow: describe the table → profile the key columns → derive thresholds from the real
+null/distinct stats → write the DLT/DQX/GE rule → run_sql to count rows that would fail.

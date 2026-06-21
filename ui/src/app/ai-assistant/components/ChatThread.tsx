@@ -15,9 +15,11 @@ interface ChatThreadProps {
   schemaName?: string;
   activeMode?: string;
   onSuggestedPrompt?: (text: string) => void;
+  onRegenerate?: () => void;
+  streaming?: boolean;
 }
 
-export function ChatThread({ messages, agents, catalog, schemaName, activeMode = "assistant", onSuggestedPrompt }: ChatThreadProps) {
+export function ChatThread({ messages, agents, catalog, schemaName, activeMode = "assistant", onSuggestedPrompt, onRegenerate, streaming }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,7 +86,11 @@ export function ChatThread({ messages, agents, catalog, schemaName, activeMode =
           schemaName={schemaName}
           tool_steps={msg.tool_steps}
           context_pruned={msg.context_pruned}
+          total_tokens={msg.total_tokens}
+          tool_count={msg.tool_count}
           onSuggestionClick={onSuggestedPrompt}
+          onRegenerate={onRegenerate}
+          isLast={i === messages.length - 1 && msg.role === "assistant" && !streaming}
         />
       ))}
       <div ref={bottomRef} />

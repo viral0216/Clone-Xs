@@ -14,6 +14,8 @@ export interface ChatMessage {
   streaming?: boolean;
   tool_steps?: ToolCallStep[];
   context_pruned?: boolean;
+  total_tokens?: number;
+  tool_count?: number;
 }
 
 function getAuthHeaders(): Record<string, string> {
@@ -44,6 +46,7 @@ export function useChatStream() {
       mode: string,
       catalog?: string,
       schemaName?: string,
+      regenerate = false,
     ) => {
       setError(null);
       setStreaming(true);
@@ -65,6 +68,7 @@ export function useChatStream() {
             mode,
             catalog:     catalog     || null,
             schema_name: schemaName  || null,
+            regenerate,
           }),
           signal: abortRef.current.signal,
         });
@@ -90,7 +94,7 @@ export function useChatStream() {
             const line = part.trim();
             if (!line.startsWith("data: ")) continue;
             const raw = line.slice(6);
-            let evt: Record<string, string>;
+            let evt: Record<string, any>;
             try { evt = JSON.parse(raw); } catch { continue; }
 
             if (evt.type === "session_id") {
@@ -135,6 +139,16 @@ export function useChatStream() {
                 copy[copy.length - 1] = { ...copy[copy.length - 1], context_pruned: true };
                 return copy;
               });
+            } else if (evt.type === "usage") {
+              setMessages((prev) => {
+                const copy = [...prev];
+                copy[copy.length - 1] = {
+                  ...copy[copy.length - 1],
+                  total_tokens: Number(evt.total_tokens) || 0,
+                  tool_count: Number(evt.tool_count) || 0,
+                };
+                return copy;
+              });
             } else if (evt.type === "done") {
               setMessages((prev) => {
                 const copy = [...prev];
@@ -177,6 +191,27 @@ export function useChatStream() {
     });
   }, []);
 
+  // Re-run the last user prompt, replacing the last assistant answer.
+  const regenerate = useCallback(
+    (mode: string, catalog?: string, schemaName?: string) => {
+      if (streaming) return;
+      let lastUser = "";
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") { lastUser = messages[i].content; break; }
+      }
+      if (!lastUser) return;
+      // Drop the trailing assistant + user turns; send() re-adds the user turn.
+      setMessages((prev) => {
+        const copy = [...prev];
+        if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
+        if (copy.length && copy[copy.length - 1].role === "user") copy.pop();
+        return copy;
+      });
+      void send(lastUser, mode, catalog, schemaName, true);
+    },
+    [messages, streaming, send],
+  );
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
@@ -192,5 +227,5 @@ export function useChatStream() {
     setStreaming(false);
   }, []);
 
-  return { messages, streaming, sessionId, error, send, stop, reset, loadSession };
+  return { messages, streaming, sessionId, error, send, stop, reset, loadSession, regenerate };
 }

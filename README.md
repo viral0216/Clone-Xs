@@ -3,7 +3,7 @@
 **Enterprise-grade Unity Catalog Toolkit for Databricks — clone, compare, sync, and manage catalogs from CLI, Web UI, or REST API.**
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.6.1-green.svg)
+![Version](https://img.shields.io/badge/version-0.9.0-green.svg)
 ![Platform](https://img.shields.io/badge/platform-CLI%20%7C%20Web%20%7C%20Desktop%20%7C%20Databricks%20App%20%7C%20Notebooks%20%7C%20Serverless-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
 
@@ -11,7 +11,7 @@
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 60 CLI commands, and a full REST API — all backed by 91 Python modules.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 60 CLI commands, and a full REST API — all backed by 100+ Python modules. It also includes a **Security Assessment Portal** (345-check WAF scanner) and an **AI Assistant** with streaming chat and 6 specialist agent modes.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
@@ -37,6 +37,8 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 - **Multi-Clone** — Clone to multiple workspaces simultaneously
 - **IaC Generation** — Export as Terraform, Pulumi, or Databricks Workflows
 - **Contextual Help** — Every page includes a detailed description and links to official Azure Databricks documentation
+- **Security Assessment Portal** — 345 security checks across 34 categories mapped to the 7 Databricks WAF pillars. Full scan, inventory-only, or security-only modes. Scheduled scanning, HTML export, remediation tracking, and custom policy engine
+- **AI Assistant** — Streaming chat with Databricks Model Serving endpoints. 6 specialist agent modes (Data Analyst, SQL Analyzer, UC Explorer, Security Auditor, Data Engineer). Persistent session history, UC context injection, and inline SQL execution
 
 ### Feature Summary
 
@@ -47,8 +49,9 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 | **Safety** | Pre-flight checks, post-clone validation (row count + checksum), rollback via Delta RESTORE, execution plan with SQL capture |
 | **PII** | Multi-phase detection, structural validators (Luhn, IBAN, IP), confidence scoring, UC tag integration, scan history, remediation |
 | **Storage** | Per-table storage metrics, OPTIMIZE/VACUUM from UI, Predictive Optimization detection |
-| **Discovery** | Lineage graph, catalog explorer, diff & compare, schema drift, impact analysis, data profiling, cost estimation |
+| **Discovery** | Lineage graph, catalog explorer, diff & compare, schema drift, impact analysis, data profiling, cost estimation, AI Assistant with 6 agent modes |
 | **Governance** | RBAC policies, compliance reports, audit trail to Delta (run_logs, clone_operations, clone_metrics) |
+| **Security Assessment** | 345 WAF security checks, 7 pillar scoring, SAT scanner, remediation tracking, custom policies, scheduled scans, HTML export |
 | **Scheduling** | Databricks Jobs with cron, email alerts, retries, tags, TTL policies for auto-expiring catalogs |
 | **Web UI** | 33 pages, login page (PAT + Azure wizard), server-side sessions, 10 themes, WCAG 2.1 AA, page state persistence |
 | **Run Modes** | CLI, Web UI, REST API, Desktop App, Databricks App, Notebook (wheel), Serverless Job |
@@ -216,6 +219,95 @@ Every page includes a detailed description and links to official [Azure Databric
 
 ---
 
+## Security Assessment Portal
+
+The built-in Security Assessment Portal runs the [Databricks Security Analysis Tool (SAT)](https://github.com/databricks-industry-solutions/security-analysis-tool) scanner — 345 checks across 34 categories — and maps results to the 7 [Databricks Well-Architected Framework (WAF)](https://www.databricks.com/blog/introducing-databricks-well-architected-framework) pillars.
+
+### WAF Pillars Covered
+
+| Pillar | Focus |
+|--------|-------|
+| **Security** | Network, identity, secrets, encryption, admin controls |
+| **Data Governance** | Unity Catalog, access control, PII, lineage |
+| **Operational Excellence** | Monitoring, alerting, runbooks, incident management |
+| **Performance Efficiency** | Compute sizing, caching, query optimization |
+| **Cost Optimization** | Idle resources, storage waste, inefficient compute |
+| **Reliability** | HA, backup, recovery, SLA compliance |
+| **AI & ML** | Model governance, feature store, MLflow security |
+
+### Running a Scan
+
+Navigate to **Assessment → Run Scan** in the Web UI, or call the API:
+
+```bash
+# Full scan (security checks + UC inventory)
+curl -X POST /api/assessment/run?scan_type=full \
+  -H "X-Databricks-Host: https://your-workspace.azuredatabricks.net" \
+  -H "X-Databricks-Token: dapi..."
+
+# Security checks only
+curl -X POST /api/assessment/run?scan_type=security ...
+
+# UC inventory only
+curl -X POST /api/assessment/run?scan_type=inventory ...
+```
+
+### What You Get
+
+- **WAF Pillar Scores** — Weighted score (0–100) per pillar with letter grade (A–F)
+- **Category Scores** — Per-category breakdown across all 34 check categories
+- **Findings** — Full list of PASS/FAIL/WARN with severity, recommendation, and reference URL
+- **Remediation Tracker** — Mark findings as resolved or suppressed; generate AI-written remediation plans
+- **UC Inventory** — Catalogs, schemas, tables, grants, volumes, models with hierarchy view
+- **Workspace Resources** — Jobs, clusters, warehouses, tokens, notebooks, serving endpoints, dashboards
+- **Scheduled Scans** — Configure daily/weekly auto-scans
+- **HTML Export** — Full report as a standalone downloadable HTML file
+- **Custom Policies** — Define org-specific rules; evaluate against the latest scan
+
+---
+
+## AI Assistant
+
+An AI-powered chat interface backed by your Databricks Model Serving endpoints. Configure the model in **Settings → AI Model**, then open the **Discovery → AI Assistant** page.
+
+### Agent Modes
+
+| Mode | System Prompt Behaviour |
+|------|------------------------|
+| **General Assistant** | General UC and SQL questions |
+| **Data Analyst** | Analytical queries, LIMIT enforced, citations required |
+| **SQL Analyzer** | Anti-pattern detection and optimized rewrites |
+| **UC Explorer** | Read-only catalog/schema/table exploration |
+| **Security Auditor** | WAF finding interpretation and remediation guidance |
+| **Data Engineer** | Pipeline design — Auto Loader, DLT, Delta MERGE, OPTIMIZE |
+
+### How It Works
+
+1. **Select a mode** from the dropdown in the input bar
+2. **Optionally pick a catalog/schema** — injected into the system prompt as live UC context
+3. **Type your question** — response streams token by token
+4. **SQL blocks** in responses get a "Run Query" button — click to execute via your configured warehouse
+5. **Sessions persist** across page reloads — browse history in the left sidebar
+
+### API
+
+```bash
+# Streaming chat (SSE)
+curl -X POST /api/ai-assistant/stream \
+  -H "X-Databricks-Model: databricks-claude-sonnet-4" \
+  -H "X-Databricks-Host: ..." \
+  -H "X-Databricks-Token: ..." \
+  -d '{"message": "List tables in my catalog", "mode": "uc_explorer", "catalog": "main"}'
+
+# List sessions
+GET /api/ai-assistant/sessions
+
+# Get Databricks UC context (catalogs + schemas)
+GET /api/ai-assistant/context/databricks?catalog=main
+```
+
+---
+
 ## CLI Reference
 
 ```bash
@@ -320,14 +412,17 @@ audit_trail:
 | Metric | Value |
 |--------|-------|
 | CLI commands | 60+ |
-| Python modules | 91 |
+| Python modules | 103+ |
 | Web UI pages | 33 |
-| REST API endpoints | 69+ |
+| REST API endpoints | 105+ |
 | Clone templates | 12 |
 | Built-in themes | 10 |
 | PII detection patterns | 20+ |
 | Pages with catalog dropdowns | 19 |
 | Desktop platforms | macOS, Windows |
+| **WAF security checks** | 345 |
+| **AI agent modes** | 6 |
+| **SAT check categories** | 34 |
 
 ---
 

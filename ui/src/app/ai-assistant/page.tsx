@@ -1,51 +1,170 @@
-// @ts-nocheck
-import { Badge } from "@/components/ui/badge";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Sparkles, Cpu } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Sparkles, Wand2, Database, Code, MessageSquare, Search } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChatThread } from "./components/ChatThread";
+import { ChatInput } from "./components/ChatInput";
+import { SessionSidebar } from "./components/SessionSidebar";
+import { useChatStream } from "./hooks/useChatStream";
+import { useAgents } from "./hooks/useAgents";
+import { api } from "@/lib/api-client";
+
+interface CatalogContext {
+  catalogs: string[];
+  schemas: string[];
+}
+
+interface ModelEndpoint {
+  name: string;
+  state: string;
+  provider: string;
+}
 
 export default function AiAssistantPage() {
+  const { messages, streaming, sessionId, error, send, stop, reset, loadSession } = useChatStream();
+  const agents = useAgents();
+
+  const [catalog, setCatalog]       = useState<string>(() => localStorage.getItem("dbx_catalog_filter") || "");
+  const [schemaName, setSchemaName] = useState<string>("");
+  const [context, setContext]       = useState<CatalogContext>({ catalogs: [], schemas: [] });
+  const [modelName, setModelName]   = useState<string>("");
+  const [models, setModels]         = useState<ModelEndpoint[]>([]);
+  const [activeMode, setActiveMode] = useState("assistant");
+  const [refreshSidebar, setRefreshSidebar] = useState(0);
+
+  const noModel = !modelName;
+
+  useEffect(() => {
+    setModelName(localStorage.getItem("dbx_model") || "");
+
+    const host = localStorage.getItem("dbx_host");
+    if (!host) return;
+    api
+      .get<{ success: boolean; endpoints: ModelEndpoint[] }>("/auth/serving-endpoints")
+      .then((data) => { if (data.success) setModels(data.endpoints); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const host = localStorage.getItem("dbx_host");
+    if (!host) return;
+    api
+      .get<CatalogContext>("/ai-assistant/context/databricks", {
+        params: catalog ? { catalog } : {},
+      })
+      .then(setContext)
+      .catch(() => {});
+  }, [catalog]);
+
+  const handleModelChange = useCallback((name: string) => {
+    localStorage.setItem("dbx_model", name);
+    setModelName(name);
+  }, []);
+
+  const handleSend = useCallback(
+    (text: string, mode: string) => {
+      send(text, mode, catalog || undefined, schemaName || undefined);
+    },
+    [send, catalog, schemaName],
+  );
+
+  const handleNew = useCallback(() => {
+    reset();
+    setRefreshSidebar((n) => n + 1);
+  }, [reset]);
+
+  const handleSuggestedPrompt = useCallback(
+    (text: string) => {
+      send(text, activeMode, catalog || undefined, schemaName || undefined);
+    },
+    [send, activeMode, catalog, schemaName],
+  );
+
+  useEffect(() => {
+    if (!streaming && sessionId && messages.length > 0) {
+      setRefreshSidebar((n) => n + 1);
+    }
+  }, [streaming, sessionId, messages.length]);
+
   return (
-    <div className="space-y-4">
-      <PageHeader title="AI Assistant" icon={Sparkles} breadcrumbs={["Discovery", "AI Assistant"]}
-        description="Ask questions about your data in natural language — AI generates SQL, executes it, and explains results." />
+    <div className="flex flex-col h-full overflow-hidden">
+      <PageHeader
+        title="AI Assistant"
+        icon={Sparkles}
+        breadcrumbs={["Discovery", "AI Assistant"]}
+        description="Chat with your Databricks workspace — ask questions, write SQL, explore Unity Catalog."
+      />
 
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center max-w-lg">
-          <div className="relative inline-block mb-6">
-            <Sparkles className="h-16 w-16 text-muted-foreground/20" />
-            <Badge className="absolute -top-2 -right-8 bg-[#E8453C] text-white text-[10px] px-2 py-0.5 shadow-lg">
-              COMING SOON
-            </Badge>
+      <div className="flex flex-1 overflow-hidden border-t border-border">
+        {/* Session sidebar */}
+        <div className="w-[200px] shrink-0 border-r border-border overflow-hidden flex flex-col">
+          <SessionSidebar
+            activeSessionId={sessionId}
+            onSelect={loadSession}
+            onNew={handleNew}
+            refreshTrigger={refreshSidebar}
+          />
+        </div>
+
+        {/* Chat area */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Model selector bar — always visible */}
+          <div className="flex items-center justify-between px-4 py-1.5 border-b border-border bg-muted/10 shrink-0 gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <Cpu className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {models.length > 0 ? (
+                <Select value={modelName || ""} onValueChange={(v) => v && handleModelChange(v)}>
+                  <SelectTrigger size="sm" className="h-6 text-[11px] min-w-[160px] max-w-[320px] border-border/60 bg-muted/40">
+                    <SelectValue placeholder="Select a model…" />
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    {models.map((m) => (
+                      <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="text-[11px] text-muted-foreground font-medium truncate">
+                  {modelName || "No model — connect to Databricks first"}
+                </span>
+              )}
+            </div>
+            {error && (
+              <p className="text-[11px] text-destructive truncate shrink min-w-0">{error}</p>
+            )}
           </div>
 
-          <h2 className="text-xl font-semibold mb-2">AI Assistant</h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            Natural language to SQL powered by Databricks Model Serving endpoints.
-            Ask questions about your data, get AI-generated queries, automatic execution, and plain-English explanations.
-          </p>
+          <ChatThread
+            messages={messages}
+            agents={agents}
+            catalog={catalog}
+            schemaName={schemaName}
+            activeMode={activeMode}
+            onSuggestedPrompt={handleSuggestedPrompt}
+          />
 
-          <div className="grid grid-cols-2 gap-3 text-left mb-6">
-            {[
-              { icon: Wand2, label: "AI Model & Genie", desc: "Use Databricks LLM or Genie spaces" },
-              { icon: Database, label: "Auto Schema Discovery", desc: "Catalog and schema auto-populated" },
-              { icon: Code, label: "SQL Generation", desc: "Natural language to Databricks SQL" },
-              { icon: MessageSquare, label: "Multi-turn Chat", desc: "Follow-up questions with context" },
-              { icon: Search, label: "Execute & Explain", desc: "Run queries and explain results" },
-              { icon: Sparkles, label: "Smart Prompts", desc: "Databricks-aware SQL generation" },
-            ].map(f => (
-              <div key={f.label} className="flex items-start gap-2.5 p-3 rounded-lg bg-muted/30 border border-border">
-                <f.icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-medium">{f.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{f.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[10px] text-muted-foreground">
-            Configure your AI model in Settings → AI Model. Supports Claude, DBRX, Llama, Mixtral via Databricks serving endpoints.
-          </p>
+          <ChatInput
+            onSend={handleSend}
+            onStop={stop}
+            streaming={streaming}
+            disabled={noModel}
+            agents={agents}
+            catalog={catalog}
+            onCatalogChange={setCatalog}
+            catalogs={context.catalogs}
+            schemaName={schemaName}
+            onSchemaChange={setSchemaName}
+            schemas={context.schemas}
+            onModeChange={setActiveMode}
+          />
         </div>
       </div>
     </div>

@@ -77,6 +77,8 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
   - [Webhook Dispatcher (Slack/Teams/Email)](#webhook-dispatcher)
   - [Slack Bot](#slack-bot)
   - [AI-Powered Insights](#ai-powered-insights)
+  - [Security Assessment Portal (WAF)](#security-assessment-portal)
+  - [AI Assistant (Streaming Chat)](#ai-assistant)
   - [Delta Sharing](#delta-sharing)
   - [Lakehouse Federation](#lakehouse-federation)
   - [Databricks Asset Bundles (DAB)](#databricks-asset-bundles)
@@ -1193,6 +1195,93 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
 - A data steward asks the AI: "Clone the customer data from production to staging, shallow, without PII" — the AI generates the complete clone configuration
 - After a PII scan, AI recommends: "Mask SSN columns using SHA-256 hashing, redact email addresses to domain-only, and tokenize credit card numbers"
 - A dashboard summary reads: "Clone operations increased 40% this month, driven by the new analytics team. 3 failures were all related to warehouse timeouts — consider increasing max_retries"
+
+---
+
+### Security Assessment Portal
+
+**What**: A built-in security scanner that runs 345 checks across 34 categories, mapped to the 7 Databricks Well-Architected Framework (WAF) pillars. Powered by the bundled `sat_scanner` package.
+
+**WAF Pillars**:
+- **Security** — Network access, admin accounts, tokens, secrets, encryption
+- **Data Governance** — Unity Catalog adoption, lineage, PII, access control
+- **Operational Excellence** — Monitoring, alerting, runbooks, workspace health
+- **Performance Efficiency** — Compute configuration, warehouse sizing, caching
+- **Cost Optimization** — Idle clusters, storage waste, compute sprawl
+- **Reliability** — High availability, backup, disaster recovery
+- **AI & ML** — MLflow governance, model serving security, feature store
+
+**What you get from a scan**:
+- Per-pillar scores (0–100) with letter grade (A–F)
+- Per-category scores across 34 check categories
+- Full findings list (PASS/FAIL/WARN) with severity, recommendation, and reference URL
+- Remediation tracker — mark findings resolved or suppressed
+- AI-generated remediation plans (via `/ai/remediation-plan`)
+- UC Inventory — catalogs, schemas, tables, grants, volumes, models
+- Workspace resource snapshot — jobs, clusters, tokens, notebooks, endpoints
+- HTML report export
+
+**Scan types**:
+| Type | What runs |
+|------|-----------|
+| `full` | 345 security checks + UC inventory (default) |
+| `security` | 345 security checks only |
+| `inventory` | UC inventory only (no security checks) |
+
+**Benefits**:
+- Identifies security gaps before auditors do
+- Maps every check to a WAF pillar so findings are contextualised
+- Scheduled scanning catches regressions automatically
+- Custom policy engine lets organisations define workspace-specific rules
+
+**Use Cases**:
+- A platform team runs a weekly full scan and tracks the WAF pillar scores over time to demonstrate governance improvement to stakeholders
+- A security team exports the HTML report and attaches it to their quarterly compliance review
+- A workspace admin enables scheduled scanning — gets alerted when new CRITICAL findings appear after a configuration change
+
+---
+
+### AI Assistant
+
+**What**: A streaming chat interface backed by Databricks Model Serving endpoints. Ask questions about your data in natural language — responses stream token by token. Six specialist agent modes let the LLM reason differently for different tasks.
+
+**Agent Modes**:
+| Mode | Behaviour |
+|------|-----------|
+| General Assistant | UC + SQL questions, concise answers |
+| Data Analyst | Analytical queries, LIMIT enforcement, cites query and table |
+| SQL Analyzer | Anti-pattern detection (SELECT *, correlated subqueries, non-sargable dates), optimised rewrite with inline comments |
+| UC Explorer | Read-only catalog/schema/table exploration, structured output |
+| Security Auditor | WAF finding interpretation, prioritised remediation steps, pillar mapping |
+| Data Engineer | Pipeline design — Auto Loader, DLT, Delta MERGE, liquid clustering, OPTIMIZE patterns |
+
+**Session History**:
+- Every conversation persists as JSON at `~/.clone-xs/ai-sessions/`
+- Sessions survive server restarts
+- Left sidebar shows all sessions with rename, pin, and delete
+- Sessions can be searched and re-opened
+
+**UC Context Injection**:
+- Select a catalog and/or schema in the context bar above the chat
+- Schema lists and table names are injected into the system prompt automatically
+- The LLM can then generate accurate SQL without guessing table names
+
+**SQL Execution**:
+- SQL code blocks in assistant responses automatically render a "Run Query" button
+- Click it to execute the SQL against your configured warehouse
+- Result table renders inline below the code block
+
+**Benefits**:
+- No context window loss — token streaming starts immediately
+- Agent modes prevent the LLM from hallucinating when the task is well-defined
+- Session history makes iterative analysis possible across sessions
+- UC context injection dramatically improves SQL accuracy vs. a blank-slate prompt
+
+**Use Cases**:
+- A data analyst asks "how many orders did we receive last month?" in Data Analyst mode — the assistant writes a SQL query, the analyst clicks Run Query, and sees the result inline without leaving the page
+- A DBA pastes a slow query into SQL Analyzer mode — gets a structured anti-pattern report and an optimised rewrite with OPTIMIZATION comments
+- A new team member uses UC Explorer mode to map out the catalog structure before writing their first pipeline
+- A security engineer opens Security Auditor mode and asks "what should I fix first?" — gets a prioritised remediation plan based on the latest scan
 
 ---
 

@@ -494,16 +494,28 @@ async def list_serving_endpoints(client=Depends(get_db_client)):
         for ep in client.serving_endpoints.list():
             name = ep.name or ""
             state = str(ep.state.ready) if ep.state else "UNKNOWN"
-            # Extract provider from served entities
+            # Extract provider and task from served entities
             provider = "custom"
+            task = ""
             try:
                 entities = ep.config.served_entities if ep.config else []
                 if entities:
+                    task = str(getattr(entities[0], "task", "") or "")
                     ext = getattr(entities[0], "external_model", None)
                     if ext and hasattr(ext, "provider"):
                         provider = ext.provider or "custom"
             except Exception:
                 pass
+
+            # Exclude embedding-only endpoints — they don't support chat invocations
+            _EMBED_KEYWORDS = {"embed", "bge", "e5-large", "e5-small", "e5-base", "nomic", "rerank"}
+            is_embedding = (
+                any(kw in name.lower() for kw in _EMBED_KEYWORDS)
+                or "embed" in task.lower()
+            )
+            if is_embedding:
+                continue
+
             endpoints.append(
                 {
                     "name": name,

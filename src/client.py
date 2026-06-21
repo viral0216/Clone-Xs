@@ -312,6 +312,25 @@ def get_workspace_client(
     return get_client(host, token, profile)
 
 
+def _pick_running_warehouse(client: WorkspaceClient) -> str:
+    """Return the ID of the first RUNNING (or STARTING) warehouse in the workspace.
+
+    Prefers RUNNING over STARTING. Returns "" if none are available.
+    """
+    try:
+        running, starting = "", ""
+        for wh in client.warehouses.list():
+            state = str(getattr(wh, "state", "")).upper()
+            if "RUNNING" in state and not running:
+                running = wh.id or ""
+            elif "STARTING" in state and not starting:
+                starting = wh.id or ""
+        return running or starting
+    except Exception as e:
+        logger.debug("warehouse auto-discovery failed: %s", e)
+        return ""
+
+
 def execute_sql(
     client: WorkspaceClient,
     warehouse_id: str,
@@ -344,12 +363,16 @@ def execute_sql(
         logger.debug("SQL via spark executor (not warehouse): %s", sql[:120])
         return _sql_executor(sql)
 
-    # Guard: fail fast if no warehouse is configured (only when using warehouse-based execution)
-    logger.debug("SQL via warehouse API (warehouse_id=%s): %s", warehouse_id, sql[:120])
+    # Auto-discover the first running warehouse when none is configured in Settings.
     if not warehouse_id or not warehouse_id.strip():
-        raise ValueError(
-            "No SQL warehouse selected. Go to Settings → SQL Warehouses and select a running warehouse."
-        )
+        warehouse_id = _pick_running_warehouse(client)
+        if not warehouse_id:
+            raise ValueError(
+                "No SQL warehouse available. Start a warehouse in Databricks or select one in Settings."
+            )
+        logger.info("No warehouse configured — auto-selected warehouse %s", warehouse_id)
+
+    logger.debug("SQL via warehouse API (warehouse_id=%s): %s", warehouse_id, sql[:120])
 
     last_exception = None
     for attempt in range(1, max_retries + 1):
@@ -375,6 +398,9 @@ def execute_sql(
                     "no warehouse",
                     "not a valid endpoint",
                     "invalid endpoint",
+                    "could not be processed",
+                    "warehouse is not running",
+                    "warehouse is stopped",
                 ]
             ):
                 logger.error(f"SQL execution failed (non-retryable): {e}")

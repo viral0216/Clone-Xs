@@ -11,19 +11,19 @@
 
 ## What is Clone-Xs?
 
-Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 33-page Web UI, a native Desktop App, 60 CLI commands, and a full REST API — all backed by 100+ Python modules. It also includes a **Security Assessment Portal** (345-check WAF scanner) and an **AI Assistant** with streaming chat and 6 specialist agent modes.
+Clone-Xs is an open-source toolkit for cloning, comparing, syncing, and managing Databricks Unity Catalog catalogs. It combines a 40+ page Web UI, a native Desktop App, 60 CLI commands, and a full REST API — all backed by 100+ Python modules. It also includes a **Security Assessment Portal** (345-check WAF scanner) and an **AI Assistant** with streaming chat and 6 specialist agent modes.
 
 No more manual SQL scripts, fragile notebooks, or missing permissions after clone.
 
 ### Key Features
 
 - **Deep & Shallow Clone** — Full data copy or metadata-only, with incremental sync, time-travel support, and schema-only clone (empty tables)
-- **33-Page Web UI** — Modern React frontend with dedicated login page, 10 built-in themes, collapsible sidebar, command palette search, and WCAG 2.1 AA accessibility
+- **40+ Page Web UI** — Modern React frontend with dedicated login page, 10 built-in themes, dark/light mode toggle, collapsible sidebar, global keyboard shortcuts (G+L/F/I/A, ?), and WCAG 2.1 AA accessibility
 - **Desktop App** — Native macOS/Windows app via Electron — launches backend automatically, no terminal required
 - **Databricks App** — Deploy directly into your workspace with automatic service principal auth — no PAT tokens
 - **60+ CLI Commands** — Clone, diff, sync, rollback, validate, profile, schedule, create-job, storage-metrics, optimize, vacuum, pii-scan, demo-data, and more
 - **PII Detection Engine** — Multi-phase scanning (regex + structural validators + UC tags), weighted confidence scoring, cross-column correlation, scan history to Delta, remediation workflow, and auto-tagging back to Unity Catalog
-- **Interactive Lineage** — Multi-hop lineage graph with column-level tracing, notebook/job attribution, and insights panel
+- **Interactive Lineage** — Databricks-style lineage graph with column-level tracing (dashed SVG lines), support for Notebooks/Jobs/Dashboards/Pipelines/Queries as nodes, entity type filters, time-range picker, multi-hop expand, impact analysis panel, and SVG export
 - **Storage Metrics + OPTIMIZE/VACUUM** — Analyze storage breakdown per table, then run OPTIMIZE and VACUUM on selected tables directly from the UI with multi-select
 - **Predictive Optimization Detection** — Warns when Databricks Predictive Optimization is enabled, so you can skip manual maintenance
 - **Create Databricks Job** — Create persistent scheduled jobs directly from the UI or CLI — no manual JSON or `databricks` CLI needed
@@ -49,11 +49,11 @@ No more manual SQL scripts, fragile notebooks, or missing permissions after clon
 | **Safety** | Pre-flight checks, post-clone validation (row count + checksum), rollback via Delta RESTORE, execution plan with SQL capture |
 | **PII** | Multi-phase detection, structural validators (Luhn, IBAN, IP), confidence scoring, UC tag integration, scan history, remediation |
 | **Storage** | Per-table storage metrics, OPTIMIZE/VACUUM from UI, Predictive Optimization detection |
-| **Discovery** | Lineage graph, catalog explorer, diff & compare, schema drift, impact analysis, data profiling, cost estimation, AI Assistant with 6 agent modes |
-| **Governance** | RBAC policies, compliance reports, audit trail to Delta (run_logs, clone_operations, clone_metrics) |
-| **Security Assessment** | 345 WAF security checks, 7 pillar scoring, SAT scanner, remediation tracking, custom policies, scheduled scans, HTML export |
+| **Discovery** | Lineage graph (column-level, multi-entity, time-range filter), catalog explorer, diff & compare, schema drift, impact analysis, data profiling, cost estimation, AI Assistant with 6 agent modes |
+| **Governance** | RBAC policies, compliance reports, audit trail to Delta (run_logs, clone_operations, clone_metrics), UC Inventory (PII Scanner, Freshness Tracker, Permission Audit Matrix) |
+| **Security Assessment** | 345 WAF security checks, 7 pillar scoring, SAT scanner, remediation tracking with Fix buttons, custom policies, scheduled scans, HTML export, UC Health Score |
 | **Scheduling** | Databricks Jobs with cron, email alerts, retries, tags, TTL policies for auto-expiring catalogs |
-| **Web UI** | 33 pages, login page (PAT + Azure wizard), server-side sessions, 10 themes, WCAG 2.1 AA, page state persistence |
+| **Web UI** | 40+ pages, login page (PAT + Azure wizard), server-side sessions, 10 themes, dark/light mode toggle, global keyboard shortcuts, WCAG 2.1 AA, page state persistence |
 | **Run Modes** | CLI, Web UI, REST API, Desktop App, Databricks App, Notebook (wheel), Serverless Job |
 
 ---
@@ -65,7 +65,7 @@ Different teams have different workflows — Clone-Xs meets you where you are:
 | Mode | Best for |
 |------|----------|
 | **CLI** (`clxs`) | Engineers who prefer the terminal. Scriptable, works in CI/CD. |
-| **Web UI** | Teams who need a visual interface — 33 pages for clone, diff, sync, storage metrics, and more. |
+| **Web UI** | Teams who need a visual interface — 40+ pages for clone, diff, sync, lineage, inventory, and more. |
 | **Desktop App** | Users who want a native app. Double-click to launch — no terminal needed. macOS + Windows. |
 | **Databricks App** | Production teams. Runs inside your workspace with automatic service principal auth — no PAT tokens. |
 | **Wheel Package** | Notebook users. `pip install clone-xs` and call from any Databricks notebook cell. |

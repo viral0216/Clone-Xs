@@ -4,6 +4,7 @@ import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SqlResultTable } from "./SqlResultTable";
+import { OpenInDatabricks } from "./OpenInDatabricks";
 import { ToolCallStepView } from "./ToolCallStep";
 import { CopyButton } from "./CopyButton";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,7 @@ interface MessageBubbleProps {
 // while everything else goes through react-markdown.
 function splitOnCodeBlocks(content: string) {
   const parts: Array<{ type: "text" | "code"; lang: string; body: string }> = [];
-  const RE = /```(\w*)\n([\s\S]*?)```/g;
+  const RE = /```([\w-]*)\n([\s\S]*?)```/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = RE.exec(content)) !== null) {
@@ -43,7 +44,7 @@ function splitOnCodeBlocks(content: string) {
 
 // Strip the trailing ```next-steps block so it isn't included when copying.
 function stripBlocks(content: string): string {
-  return content.replace(/```next-steps\n[\s\S]*?```/g, "").trim();
+  return content.replace(/```next[-_]?steps\n[\s\S]*?```/g, "").trim();
 }
 
 const mdComponents = {
@@ -162,7 +163,7 @@ export const MessageBubble = memo(function MessageBubble({
             ) : (
               splitOnCodeBlocks(content).map((part, i) =>
                 part.type === "code" ? (
-                  part.lang === "next-steps" ? (
+                  (part.lang === "next-steps" || part.lang === "next_steps" || part.lang === "nextsteps") ? (
                     // Render next-steps block as clickable suggestion chips
                     <div key={i} className="mt-3 flex flex-wrap gap-1.5">
                       {part.body.split("\n").map(s => s.trim()).filter(Boolean).map((s, j) => (
@@ -184,12 +185,15 @@ export const MessageBubble = memo(function MessageBubble({
                       <code>{part.body}</code>
                     </pre>
                     {(part.lang === "sql" || part.lang === "") && (
-                      <SqlResultTable
-                        sql={part.body}
-                        catalog={catalog}
-                        schemaName={schemaName}
-                        onExplainResults={onSuggestionClick}
-                      />
+                      <>
+                        <SqlResultTable
+                          sql={part.body}
+                          catalog={catalog}
+                          schemaName={schemaName}
+                          onExplainResults={onSuggestionClick}
+                        />
+                        <OpenInDatabricks sql={part.body} />
+                      </>
                     )}
                   </div>
                   )

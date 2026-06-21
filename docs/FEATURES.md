@@ -776,18 +776,28 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
 
 ### Lineage Tracing
 
-**What**: Track the source-to-destination mapping for all cloned objects, with support for multi-hop lineage and column-level tracing.
+**What**: Interactive Databricks-style lineage graph at `/assessment/inventory/lineage` that shows upstream sources and downstream consumers for any Unity Catalog table, with full column-level tracing and support for Notebooks, Jobs, Dashboards, Pipelines, and Queries — not just tables.
 
 **Benefits**:
-- Complete audit trail of where data came from
-- Multi-hop lineage shows the full chain (prod → staging → dev)
-- Column-level tracing for granular impact analysis
-- Stored in both JSON files and UC Delta tables
+- **Column-level lineage** — click any column to see dashed SVG lines tracing it through all upstream sources and downstream consumers
+- **All entity types** — lineage graph shows Tables, Views, Notebooks, Jobs, Dashboards, DLT Pipelines, and SQL Queries
+- **Time-range filtering** — restrict lineage to a 7-day, 30-day, 90-day, 1-year, or all-time window
+- **Entity type filter** — pill buttons with live counts let you focus on specific entity types
+- **Multi-hop expand** — click "+" on any node to load one additional hop of lineage
+- **Impact Analysis panel** — slide-in view listing all downstream consumers grouped by type
+- **System Events panel** — raw `system.access.table_lineage` events for the last year
+- **Deep-link sharing** — URL encodes selected table and time range for bookmarks and Slack links
+- **SVG export** — download the full lineage graph as a vector image
+
+**API Endpoints**:
+- `GET /api/assessment/lineage/table` — table lineage with optional time-range filter
+- `GET /api/assessment/lineage/column` — column-level upstream/downstream
+- `GET /api/assessment/lineage/system-events` — raw system table events
 
 **Use Cases**:
-- A data quality issue is found in a staging table — lineage tracing shows it was cloned from `production.sales.transactions` at 2025-01-15 14:30 UTC
-- An auditor needs to verify the provenance of financial data — lineage shows the complete chain from source to reporting catalog
-- Before modifying a production table, lineage shows all downstream clones that would be affected
+- A data quality issue is found in a reporting table — lineage tracing pinpoints the upstream notebook that wrote incorrect values
+- Before dropping a column, column-level lineage shows every downstream table and dashboard that reads it
+- An auditor queries the system events panel to see who last wrote to a financial table and when
 
 ---
 
@@ -895,6 +905,54 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
 - A monthly compliance scorecard shows the organization at 78% (WARNING) — the top recommendation is to tag 45 untagged tables
 - A PII audit reveals that 12% of detected PII columns lack masking — prioritized by risk level for remediation
 - An ownership audit finds 30 tables owned by a service principal that was decommissioned — flagged for reassignment
+
+---
+
+### UC Inventory Tools
+
+Three focused inventory pages under **Assessment → Inventory** that surface Unity Catalog health data without requiring custom SQL queries.
+
+#### PII Scanner (UC)
+
+**What**: Scans `system.information_schema.columns` and `column_tags` for columns whose names or existing UC tags indicate PII content.
+
+**Benefits**:
+- One-click catalog-wide PII surface scan — no sampling required
+- Summary cards: total PII columns, distinct tables affected, high-risk count
+- Color-coded results table with column name, table FQN, and PII signal type
+- Complements the deep multi-phase PII engine for a fast first-look
+
+**Use Cases**:
+- A new catalog is added — the UC PII scan runs in seconds to surface any obviously-named PII columns before the full scan is scheduled
+- A compliance officer wants to confirm that existing UC `pii_type` tags have been applied — the results table shows tag coverage at a glance
+
+#### Freshness Tracker
+
+**What**: Queries `system.information_schema.tables` for `last_altered` and computes days since last update for every table in a catalog.
+
+**Benefits**:
+- Configurable staleness threshold (default 30 days)
+- Status badges: Fresh (< threshold), Stale (≥ threshold), Dead (no write ever recorded)
+- Summary cards with counts per status
+- Identifies tables that may have broken pipelines or abandoned owners
+
+**Use Cases**:
+- A data engineer reviews freshness before a quarterly compliance report — 12 tables flagged as Stale prompt an investigation into broken ingestion jobs
+- An ops team uses the Dead badge to find tables that have never been written to and schedules them for cleanup
+
+#### Permission Audit Matrix
+
+**What**: Queries `system.information_schema.grants` and displays all catalog-level grants in a filterable table.
+
+**Benefits**:
+- `ALL PRIVILEGES` rows highlighted in amber for immediate attention
+- CSV export for offline review and audit submission
+- Shows grantee, privilege type, granted-on object, and grantor
+- Surfaces overly-broad grants that should be narrowed
+
+**Use Cases**:
+- A security review before a workspace audit — the matrix exports as CSV and attaches to the compliance report
+- A platform team discovers that a service principal has `ALL PRIVILEGES` on three production catalogs — they narrow it to SELECT + MODIFY
 
 ---
 
@@ -1258,8 +1316,17 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
 **Session History**:
 - Every conversation persists as JSON at `~/.clone-xs/ai-sessions/`
 - Sessions survive server restarts
-- Left sidebar shows all sessions with rename, pin, and delete
+- Left sidebar shows all sessions grouped by date (Today / Yesterday / Older) with rename, pin, and delete
 - Sessions can be searched and re-opened
+
+**Saved Prompts**:
+- Save frequently-used prompts with a custom label from the left sidebar
+- Run ▶ or delete × each saved prompt; stored in `localStorage["clxs-saved-prompts"]`
+- Prompts survive page reloads and browser restarts
+
+**"View Lineage →" chip**:
+- When the assistant mentions a three-part FQN (`catalog.schema.table`) in its response, a chip automatically appears below that message
+- Clicking the chip navigates to the Lineage page pre-loaded with that table
 
 **UC Context Injection**:
 - Select a catalog and/or schema in the context bar above the chat
@@ -1489,7 +1556,7 @@ A comprehensive guide to every feature in Clone-Xs, with descriptions, benefits,
 
 ### Web UI
 
-**What**: 40+ page React SPA with TanStack Query, shadcn/ui components, Tailwind CSS, dark mode, and 10 built-in themes. Covers all clone operations, governance, analytics, and administration.
+**What**: 40+ page React SPA with TanStack Query, shadcn/ui components, Tailwind CSS, dark/light mode toggle, global keyboard shortcuts (G+L/F/I/A, ?, /), and 10 built-in themes. Covers all clone operations, governance, analytics, and administration.
 
 **Page Categories**:
 - **Operations** (9 pages): Clone wizard, sync, incremental sync, rollback, templates, job creation, multi-clone, demo data

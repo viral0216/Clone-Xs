@@ -90,6 +90,25 @@ def dbx_describe_table(
     return "\n".join(parts)
 
 
+def dbx_table_columns_meta(catalog: str, schema: str, table: str, client) -> str:
+    """Return a table's columns from the Unity Catalog metastore via the SDK.
+    Runs NO warehouse query (no DESCRIBE / COUNT) — pure metadata, safe to call
+    proactively for context building."""
+    try:
+        t = client.tables.get(f"{catalog}.{schema}.{table}")
+        cols = t.columns or []
+        if not cols:
+            return "(no columns)"
+        lines = [
+            f"{c.name}\t{c.type_text or getattr(c.type_name, 'value', c.type_name)}"
+            + (f"\t{c.comment}" if getattr(c, "comment", None) else "")
+            for c in cols
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 def dbx_search_tables(term: str, client, catalog: str = "") -> str:
     """Search Unity Catalog for tables (and columns) whose name matches `term`.
     Walks catalogs → schemas → tables via the SDK (no SQL warehouse needed).

@@ -21,6 +21,7 @@ import { api } from "@/lib/api-client";
 interface CatalogContext {
   catalogs: string[];
   schemas: string[];
+  tables?: string[];
 }
 
 interface ModelEndpoint {
@@ -58,13 +59,14 @@ export default function AiAssistantPage() {
   useEffect(() => {
     const host = localStorage.getItem("dbx_host");
     if (!host) return;
+    const params: Record<string, string> = {};
+    if (catalog) params.catalog = catalog;
+    if (catalog && schemaName) params.schema_name = schemaName;
     api
-      .get<CatalogContext>("/ai-assistant/context/databricks", {
-        params: catalog ? { catalog } : {},
-      })
+      .get<CatalogContext>("/ai-assistant/context/databricks", { params })
       .then(setContext)
       .catch(() => {});
-  }, [catalog]);
+  }, [catalog, schemaName]);
 
   const handleModelChange = useCallback((name: string) => {
     localStorage.setItem("dbx_model", name);
@@ -183,6 +185,7 @@ export default function AiAssistantPage() {
             schemaName={schemaName}
             onSchemaChange={setSchemaName}
             schemas={context.schemas}
+            tables={context.tables ?? []}
             onModeChange={setActiveMode}
           />
         </div>

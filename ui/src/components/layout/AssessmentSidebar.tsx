@@ -7,6 +7,7 @@ import {
   Workflow, Server, Users, BrainCircuit, FileCode, ShieldCheck, Activity,
   GitCompareArrows, AlertOctagon, Share2, TrendingUp,
   HardDrive, FunctionSquare, Tag, LayoutGrid,
+  ShieldAlert, Leaf, Lock,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -41,6 +42,9 @@ const NAV_SECTIONS = [
       { href: "/assessment/inventory/functions", label: "Functions (UDFs)",   icon: FunctionSquare },
       { href: "/assessment/inventory/models",    label: "Registered Models",  icon: BrainCircuit },
       { href: "/assessment/inventory/tags",      label: "Tags Browser",       icon: Tag },
+      { href: "/assessment/inventory/pii",         label: "PII Scanner",      icon: ShieldAlert },
+      { href: "/assessment/inventory/freshness",   label: "Freshness",        icon: Leaf },
+      { href: "/assessment/inventory/permissions", label: "Permissions",      icon: Lock },
       { href: "/assessment/inventory/tree", label: "Tree View", icon: TreePine },
       { href: "/assessment/inventory/sunburst", label: "Sunburst View", icon: GitBranch },
       { href: "/assessment/inventory/hubspoke", label: "Hub & Spoke", icon: Network },

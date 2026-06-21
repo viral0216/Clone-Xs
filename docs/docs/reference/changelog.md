@@ -9,6 +9,63 @@ All notable changes to Clone-Xs are documented here.
 
 ---
 
+## Unreleased — UC Explorer enhancements
+
+Full Databricks-parity lineage page, three new UC Inventory tools, AI Assistant improvements, dark mode toggle, and global keyboard shortcuts.
+
+### Added — Data Lineage page (`/assessment/inventory/lineage`)
+
+- **Full lineage graph rewrite** — Databricks-style three-column layout (upstream / target / downstream) with SVG bezier arrows
+- **Column-level lineage** — click any column row to see dashed SVG lines highlighting upstream source columns and downstream consumer columns across all visible cards; calls `GET /api/assessment/lineage/column`
+- **Non-table entity support** — Notebook, Job, Dashboard, Pipeline, and Query nodes with contextual metadata cards (in addition to Table and View)
+- **Entity type filter pills** — ALL / TABLE / VIEW / NOTEBOOK / JOB / DASHBOARD / PIPELINE / QUERY with live counts
+- **Time range picker** — 7 days / 30 days / 90 days / 1 year / All; passes `start_time_ms` / `end_time_ms` to the Databricks lineage API
+- **Table node cards** — column list with type icons (timestamp, int, decimal, bool, array/struct), owner badge, column search, paginated (8 per page)
+- **Multi-hop expand** — "+" button on any non-target node fetches one additional hop
+- **Impact Analysis panel** — slide-in right panel listing all downstream entities grouped by type
+- **System Events panel** — collapsible table of raw `system.access.table_lineage` events via `GET /api/assessment/lineage/system-events`
+- **Deep-link sharing** — URL auto-updates with `?table=` and `?timeRange=` query params on every selection
+- **SVG export** — downloads current graph as `lineage-{tableName}.svg`
+- **New backend endpoints**: `GET /api/assessment/lineage/table` (time-range filter), `GET /api/assessment/lineage/column`, `GET /api/assessment/lineage/system-events`
+
+### Added — UC Inventory: PII Scanner (`/assessment/inventory/pii`)
+
+- Queries `system.information_schema.columns` and `column_tags` to surface PII-named or PII-tagged columns
+- Catalog picker, scan button, summary cards (total PII columns, tables affected, high-risk count)
+- Color-coded results table with ShieldAlert icon; backed by `GET /api/assessment/pii/scan`
+
+### Added — UC Inventory: Freshness Tracker (`/assessment/inventory/freshness`)
+
+- Queries `system.information_schema.tables` for `last_altered`, computes `days_since_update`
+- Configurable staleness threshold picker; summary cards (Fresh / Stale / Dead counts)
+- Status badges per table; backed by `GET /api/assessment/freshness/tables`
+
+### Added — UC Inventory: Permission Audit Matrix (`/assessment/inventory/permissions`)
+
+- Queries `system.information_schema.grants` for all catalog-level grants
+- Highlights `ALL PRIVILEGES` rows; CSV export button
+- Backed by `GET /api/assessment/permissions/grants`
+
+### Added — AI Assistant enhancements
+
+- **Saved Prompts** — "Saved Prompts" section in the SessionSidebar; prompts stored in `localStorage["clxs-saved-prompts"]`; run ▶ and delete × per prompt
+- **"View Lineage →" chip** — when assistant response contains a three-part FQN, a chip appears that navigates to `/assessment/inventory/lineage?table={fqn}`
+
+### Added — Platform
+
+- **Dark / light mode toggle** — Sun/Moon button in the HeaderBar; persists in `localStorage["clxs-theme"]`; toggles `dark` class on `<html>`
+- **Global keyboard shortcuts** — G+L (lineage), G+F (findings), G+I (inventory), G+A (AI assistant); `?` opens shortcuts modal; `/` focuses search
+- **Remediation Fix buttons** on each finding card — context-specific actions (set owner, view permissions, open UC Explorer, acknowledge)
+- **UC Health Score** on the timeline page — score circle (red/amber/green) with ownership %, description coverage %, policy compliance %
+
+### Changed
+
+- `api/routers/assessment/__init__.py` registers `_pii_router`, `_freshness_router`, `_permissions_router`
+- AssessmentSidebar has PII Scanner, Freshness, and Permissions links in the UC Inventory section
+- `api/routers/assessment/lineage.py` rewritten: `_extract_all()` handles all eight Databricks entity types; time-range params forwarded to Databricks API
+
+---
+
 ## v1.0.0 — Live Capture tab with image-grounded multimodal AI
 
 *Released 2026-05-12.*

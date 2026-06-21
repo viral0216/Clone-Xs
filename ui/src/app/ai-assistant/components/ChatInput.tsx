@@ -22,6 +22,7 @@ import {
   GitBranch,
   FlaskConical,
   Bot,
+  Database,
   type LucideIcon,
 } from "lucide-react";
 import type { AgentMode } from "../hooks/useAgents";
@@ -54,6 +55,7 @@ interface ChatInputProps {
   schemaName?: string;
   onSchemaChange?: (s: string) => void;
   schemas?: string[];
+  tables?: string[];
   onModeChange?: (mode: string) => void;
 }
 
@@ -62,6 +64,7 @@ export function ChatInput({
   agents,
   catalog, onCatalogChange, catalogs = [],
   schemaName, onSchemaChange, schemas = [],
+  tables = [],
   onModeChange,
 }: ChatInputProps) {
   const [text, setText] = useState("");
@@ -71,7 +74,43 @@ export function ChatInput({
   const savedInputRef = useRef("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // @-mention autocomplete state
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
+  const [mentionIdx, setMentionIdx] = useState(0);
+
+  const mentionMatches = mention
+    ? tables.filter((t) => t.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 8)
+    : [];
+
   const activeMode = agents.find((m) => m.value === mode) ?? agents[0];
+
+  // Detect an @-token at the cursor and open the mention picker.
+  const onTextChange = (value: string, cursor: number) => {
+    setText(value);
+    const upto = value.slice(0, cursor);
+    const m = /(?:^|\s)@([\w.]*)$/.exec(upto);
+    if (m && tables.length > 0) {
+      setMention({ query: m[1], start: cursor - m[1].length - 1 });
+      setMentionIdx(0);
+    } else {
+      setMention(null);
+    }
+  };
+
+  const applyMention = (table: string) => {
+    if (!mention) return;
+    const el = textareaRef.current;
+    const cursor = el?.selectionStart ?? text.length;
+    const fq = [catalog, schemaName, table].filter(Boolean).join(".");
+    const next = text.slice(0, mention.start) + fq + " " + text.slice(cursor);
+    setText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const pos = mention.start + fq.length + 1;
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    });
+  };
 
   const changeMode = (v: string) => {
     setMode(v);
@@ -90,6 +129,30 @@ export function ChatInput({
   }, [text, streaming, mode, onSend]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Mention picker navigation takes priority while open
+    if (mention && mentionMatches.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        applyMention(mentionMatches[mentionIdx]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit();
@@ -157,7 +220,29 @@ export function ChatInput({
       </div>
 
       {/* Input card */}
-      <div className="px-3 py-2">
+      <div className="px-3 py-2 relative">
+        {/* @-mention table picker */}
+        {mention && mentionMatches.length > 0 && (
+          <div className="absolute bottom-full left-3 mb-1 w-72 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg z-50 py-1">
+            <p className="px-2.5 py-1 text-[10px] text-muted-foreground border-b border-border/50">
+              Tables in {catalog}.{schemaName}
+            </p>
+            {mentionMatches.map((t, i) => (
+              <button
+                key={t}
+                onMouseDown={(e) => { e.preventDefault(); applyMention(t); }}
+                onMouseEnter={() => setMentionIdx(i)}
+                className={cn(
+                  "flex items-center gap-2 w-full text-left px-2.5 py-1.5 text-xs",
+                  i === mentionIdx ? "bg-primary/10 text-primary" : "hover:bg-muted",
+                )}
+              >
+                <Database className="h-3 w-3 shrink-0 opacity-60" />
+                <span className="font-mono truncate">{t}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className={cn(
           "rounded-xl border transition-colors",
           streaming ? "border-primary/40 bg-primary/5" : "border-border bg-muted/30 focus-within:border-primary/50 focus-within:bg-background",
@@ -165,7 +250,7 @@ export function ChatInput({
           <Textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onTextChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
             onKeyDown={onKey}
             placeholder={streaming ? `${activeMode?.label ?? "Assistant"} is responding…` : `Ask ${activeMode?.label.toLowerCase() ?? "anything"}…`}
             rows={1}

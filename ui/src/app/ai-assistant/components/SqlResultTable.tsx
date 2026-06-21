@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, Sparkles } from "lucide-react";
+import { BarChart3, Loader2, Play, Sparkles, TableIcon } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { ResultChart } from "./ResultChart";
 
 interface SqlResultTableProps {
   sql: string;
@@ -36,6 +37,7 @@ export function SqlResultTable({ sql, catalog, schemaName, onExplainResults }: S
   const [result, setResult]   = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [ran, setRan]         = useState(false);
+  const [view, setView]       = useState<"table" | "chart">("table");
 
   const run = async () => {
     setLoading(true);
@@ -88,33 +90,57 @@ export function SqlResultTable({ sql, catalog, schemaName, onExplainResults }: S
 
   return (
     <div className="mt-2">
-      <div className="rounded border border-border overflow-auto max-h-64">
-        <Table className="text-xs">
-          <TableHeader>
-            <TableRow>
-              {cols.map((c) => (
-                <TableHead key={c} className="h-7 px-2 whitespace-nowrap">{c}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {result.results.slice(0, 100).map((row, i) => (
-              <TableRow key={i}>
+      {/* Table / Chart toggle */}
+      <div className="flex items-center gap-1 mb-1.5">
+        <button
+          onClick={() => setView("table")}
+          className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] transition-colors ${
+            view === "table" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <TableIcon className="h-3 w-3" /> Table
+        </button>
+        <button
+          onClick={() => setView("chart")}
+          className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] transition-colors ${
+            view === "chart" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <BarChart3 className="h-3 w-3" /> Chart
+        </button>
+      </div>
+
+      {view === "chart" ? (
+        <ResultChart rows={result.results} columns={cols} />
+      ) : (
+        <div className="rounded border border-border overflow-auto max-h-64">
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow>
                 {cols.map((c) => (
-                  <TableCell key={c} className="px-2 py-1 max-w-xs truncate">
-                    {row[c] == null ? "" : String(row[c])}
-                  </TableCell>
+                  <TableHead key={c} className="h-7 px-2 whitespace-nowrap">{c}</TableHead>
                 ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {result.row_count > 100 && (
-          <p className="px-2 py-1 text-[10px] text-muted-foreground">
-            Showing 100 of {result.row_count} rows
-          </p>
-        )}
-      </div>
+            </TableHeader>
+            <TableBody>
+              {result.results.slice(0, 100).map((row, i) => (
+                <TableRow key={i}>
+                  {cols.map((c) => (
+                    <TableCell key={c} className="px-2 py-1 max-w-xs truncate">
+                      {row[c] == null ? "" : String(row[c])}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {result.row_count > 100 && (
+            <p className="px-2 py-1 text-[10px] text-muted-foreground">
+              Showing 100 of {result.row_count} rows
+            </p>
+          )}
+        </div>
+      )}
       {onExplainResults && (
         <Button
           size="sm"

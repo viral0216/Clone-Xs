@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { KeyboardShortcutHelp } from "@/components/KeyboardShortcutHelp";
+import { useGlobalShortcuts, ShortcutsModal } from "@/hooks/useGlobalShortcuts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import LoginPage from "@/app/login/page";
 import HeaderBar from "@/components/layout/HeaderBar";
@@ -191,7 +192,10 @@ const AssessmentInventoryTimeline  = lazy(() => import("@/app/assessment/invento
 const AssessmentInventoryVolumes   = lazy(() => import("@/app/assessment/inventory/volumes/page"));
 const AssessmentInventoryFunctions = lazy(() => import("@/app/assessment/inventory/functions/page"));
 const AssessmentInventoryModels    = lazy(() => import("@/app/assessment/inventory/models/page"));
-const AssessmentInventoryTags      = lazy(() => import("@/app/assessment/inventory/tags/page"));
+const AssessmentInventoryTags        = lazy(() => import("@/app/assessment/inventory/tags/page"));
+const AssessmentInventoryPii         = lazy(() => import("@/app/assessment/inventory/pii/page"));
+const AssessmentInventoryFreshness   = lazy(() => import("@/app/assessment/inventory/freshness/page"));
+const AssessmentInventoryPermissions = lazy(() => import("@/app/assessment/inventory/permissions/page"));
 const AssessmentHistory = lazy(() => import("@/app/assessment/history/page"));
 const AssessmentExport = lazy(() => import("@/app/assessment/export/page"));
 const AssessmentCompare = lazy(() => import("@/app/assessment/compare/page"));
@@ -221,6 +225,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   useKeyboardShortcuts(() => setShortcutHelpOpen(true));
+  useGlobalShortcuts();
   // null = checking, false = not authenticated, true = authenticated
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
 
@@ -286,6 +291,7 @@ export default function App() {
       <RouteAnnouncer />
       <Toaster richColors position="top-right" />
       <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      <ShortcutsModal />
       <div className="flex flex-col h-screen">
         {/* Top Header Bar */}
         <HeaderBar onMenuToggle={() => setMobileMenuOpen((prev) => !prev)} />
@@ -536,7 +542,10 @@ export default function App() {
               <Route path="/assessment/inventory/volumes"   element={<Suspense fallback={<PageFallback />}><AssessmentInventoryVolumes /></Suspense>} />
               <Route path="/assessment/inventory/functions" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryFunctions /></Suspense>} />
               <Route path="/assessment/inventory/models"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryModels /></Suspense>} />
-              <Route path="/assessment/inventory/tags"      element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTags /></Suspense>} />
+              <Route path="/assessment/inventory/tags"        element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTags /></Suspense>} />
+              <Route path="/assessment/inventory/pii"         element={<Suspense fallback={<PageFallback />}><AssessmentInventoryPii /></Suspense>} />
+              <Route path="/assessment/inventory/freshness"   element={<Suspense fallback={<PageFallback />}><AssessmentInventoryFreshness /></Suspense>} />
+              <Route path="/assessment/inventory/permissions" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryPermissions /></Suspense>} />
               <Route path="/assessment/history" element={<Suspense fallback={<PageFallback />}><AssessmentHistory /></Suspense>} />
               <Route path="/assessment/compare" element={<Suspense fallback={<PageFallback />}><AssessmentCompare /></Suspense>} />
               <Route path="/assessment/export" element={<Suspense fallback={<PageFallback />}><AssessmentExport /></Suspense>} />

@@ -24,6 +24,9 @@ from .html_export import router as _html_export_router
 from .remediation import router as _remediation_router
 from .policies    import router as _policies_router
 from .lineage     import router as _lineage_router
+from .pii         import router as _pii_router
+from .freshness   import router as _freshness_router
+from .permissions import router as _permissions_router
 
 router = APIRouter()
 
@@ -36,5 +39,8 @@ router.include_router(_html_export_router)
 router.include_router(_remediation_router)
 router.include_router(_policies_router)
 router.include_router(_lineage_router)
+router.include_router(_pii_router)
+router.include_router(_freshness_router)
+router.include_router(_permissions_router)
 
 __all__ = ["router", "start_scan_scheduler"]

@@ -413,6 +413,70 @@ async def list_tables_with_format(catalog: str, schema: str, client=Depends(get_
         return []
 
 
+@router.get("/catalogs/{catalog}/{schema}/{table}/profile")
+async def get_table_profile(catalog: str, schema: str, table: str, client=Depends(get_db_client)):
+    """Return basic statistics for a table: row count, column count, size.
+
+    Used by the Column Statistics (Stats tab) in the lineage node card.
+    """
+    from src.client import execute_sql
+
+    config = await get_app_config()
+    wid = config.get("sql_warehouse_id", "")
+
+    row_count: int | None = None
+    column_count: int | None = None
+    size_gb: float | None = None
+
+    # Row count via COUNT(*)
+    try:
+        rows = execute_sql(
+            client,
+            wid,
+            f"SELECT COUNT(*) AS total_rows FROM `{catalog}`.`{schema}`.`{table}`",
+        )
+        if rows:
+            row_count = int(rows[0].get("total_rows", 0))
+    except Exception:
+        pass
+
+    # Column count from information_schema
+    try:
+        rows = execute_sql(
+            client,
+            wid,
+            (
+                f"SELECT COUNT(*) AS col_count FROM `{catalog}`.information_schema.columns "
+                f"WHERE table_schema = '{schema}' AND table_name = '{table}'"
+            ),
+        )
+        if rows:
+            column_count = int(rows[0].get("col_count", 0))
+    except Exception:
+        # Fallback: SDK
+        try:
+            cols = list(client.tables.get(full_name=f"{catalog}.{schema}.{table}").columns or [])
+            column_count = len(cols)
+        except Exception:
+            pass
+
+    # Estimated size via DESCRIBE DETAIL (Delta tables only)
+    try:
+        rows = execute_sql(
+            client,
+            wid,
+            f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{table}`",
+        )
+        if rows:
+            size_bytes = rows[0].get("sizeInBytes") or rows[0].get("size_in_bytes")
+            if size_bytes is not None:
+                size_gb = round(int(size_bytes) / (1024 ** 3), 4)
+    except Exception:
+        pass
+
+    return {"row_count": row_count, "column_count": column_count, "size_gb": size_gb}
+
+
 @router.get("/catalogs/{catalog}/{schema}/objects")
 async def list_schema_objects(catalog: str, schema: str, client=Depends(get_db_client)):
     """List every cloneable object in a schema: tables, views, functions, volumes.

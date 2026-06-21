@@ -433,6 +433,77 @@ async def _call_llm_non_streaming(
         return data["choices"][0], (data.get("usage") or {})
 
 
+async def _stream_llm_with_tools(
+    messages: list,
+    host: str,
+    auth_headers: dict,
+    model: str,
+    tools: list | None = None,
+) -> AsyncGenerator[tuple, None]:
+    """Stream a turn from the serving endpoint. Yields tuples:
+      ("text", str)            — a content delta (stream live to the client)
+      ("final", {tool_calls, usage, finish_reason})  — emitted once at the end
+    Tool-call argument fragments arrive split across chunks and are stitched by index."""
+    url = f"{host.rstrip('/')}/serving-endpoints/{model}/invocations"
+    payload: dict = {"messages": messages, "stream": True, "max_tokens": 4096, "temperature": 0.7}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    headers = {**auth_headers, "Content-Type": "application/json"}
+
+    tool_acc: dict[int, dict] = {}
+    usage: dict = {}
+    finish_reason = ""
+
+    async with httpx.AsyncClient(timeout=120) as c:
+        async with c.stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                body_bytes = await resp.aread()
+                raise RuntimeError(f"Model endpoint returned {resp.status_code}: {body_bytes.decode()[:400]}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                ch = choices[0]
+                if ch.get("finish_reason"):
+                    finish_reason = ch["finish_reason"]
+                delta = ch.get("delta") or ch.get("message") or {}
+                content = delta.get("content")
+                if content:
+                    yield ("text", content)
+                for tc in (delta.get("tool_calls") or []):
+                    idx = tc.get("index", 0)
+                    slot = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        slot["arguments"] += fn["arguments"]
+
+    tool_calls = [
+        {
+            "id": v["id"] or f"call_{v['name']}",
+            "type": "function",
+            "function": {"name": v["name"], "arguments": v["arguments"] or "{}"},
+        }
+        for _, v in sorted(tool_acc.items()) if v["name"]
+    ]
+    yield ("final", {"tool_calls": tool_calls, "usage": usage, "finish_reason": finish_reason})
+
+
 def _estimate_tokens(messages: list) -> int:
     """Rough token estimate: ~4 chars per token + 4 overhead per message."""
     total = 0
@@ -512,7 +583,9 @@ async def _build_workspace_context(
         try:
             tables_text = await asyncio.to_thread(ai_tools.dbx_list_tables, catalog, schema_name, client)
             parts.append(f"\n## Tables in `{catalog}`.`{schema_name}`\n{tables_text}")
-            # Describe up to 3 tables inline (0 sample rows for speed)
+            # Column metadata for up to 3 tables — METASTORE ONLY (no warehouse query,
+            # no COUNT/DESCRIBE). The agent can run describe_table on demand if it needs
+            # row counts or samples.
             table_names = [
                 line.split("\t")[0].strip()
                 for line in tables_text.splitlines()
@@ -520,11 +593,10 @@ async def _build_workspace_context(
             ]
             for tbl in table_names[:3]:
                 try:
-                    desc = await asyncio.to_thread(
-                        ai_tools.dbx_describe_table,
-                        catalog, schema_name, tbl, client, warehouse_id, 0,
+                    cols = await asyncio.to_thread(
+                        ai_tools.dbx_table_columns_meta, catalog, schema_name, tbl, client,
                     )
-                    parts.append(f"\n### Columns: `{catalog}`.`{schema_name}`.`{tbl}`\n{desc}")
+                    parts.append(f"\n### Columns: `{catalog}`.`{schema_name}`.`{tbl}`\n{cols}")
                 except Exception:
                     pass
         except Exception:
@@ -673,20 +745,46 @@ async def chat_stream(
         try:
             for turn in range(MAX_TOOL_TURNS + 1):
                 use_tools = turn < MAX_TOOL_TURNS
-                choice, usage = await _call_llm_non_streaming(
-                    loop_messages, host, auth_headers, x_databricks_model,
-                    tools=ai_tool_definitions.TOOLS if use_tools else None,
-                )
+                tools_param = ai_tool_definitions.TOOLS if use_tools else None
+
+                turn_text = ""
+                tool_calls: list = []
+                usage: dict = {}
+
+                # Stream this turn live. Text deltas go straight to the client;
+                # tool-call fragments are stitched and returned in the final tuple.
+                try:
+                    async for kind, payload in _stream_llm_with_tools(
+                        loop_messages, host, auth_headers, x_databricks_model, tools=tools_param
+                    ):
+                        if kind == "text":
+                            turn_text += payload
+                            full_response += payload
+                            yield f"data: {json.dumps({'type': 'text', 'delta': payload})}\n\n"
+                        elif kind == "final":
+                            tool_calls = payload.get("tool_calls") or []
+                            usage = payload.get("usage") or {}
+                except Exception:
+                    # Streaming failed (e.g. model rejects stream+tools) — fall back.
+                    logger.warning("Streaming turn failed; falling back to non-streaming", exc_info=True)
+                    choice, usage = await _call_llm_non_streaming(
+                        loop_messages, host, auth_headers, x_databricks_model, tools=tools_param,
+                    )
+                    msg = choice.get("message", {})
+                    tool_calls = msg.get("tool_calls") or []
+                    fallback_text = msg.get("content") or ""
+                    if not tool_calls and fallback_text:
+                        turn_text = fallback_text
+                        full_response += fallback_text
+                        yield f"data: {json.dumps({'type': 'text', 'delta': fallback_text})}\n\n"
+
                 total_tokens += int(usage.get("total_tokens") or 0)
-                message = choice.get("message", {})
-                finish_reason = choice.get("finish_reason", "")
-                tool_calls = message.get("tool_calls") or []
 
                 # Model wants to call one or more tools
-                if tool_calls or finish_reason == "tool_calls":
+                if tool_calls:
                     loop_messages.append({
                         "role": "assistant",
-                        "content": message.get("content") or "",
+                        "content": turn_text,
                         "tool_calls": tool_calls,
                     })
 
@@ -716,13 +814,7 @@ async def chat_stream(
                         })
                     continue  # next turn — model now synthesises the answer
 
-                # Model produced a final text answer — stream in chunks for typewriter feel
-                text_content = message.get("content") or ""
-                CHUNK = 80
-                for i in range(0, len(text_content), CHUNK):
-                    chunk = text_content[i : i + CHUNK]
-                    full_response += chunk
-                    yield f"data: {json.dumps({'type': 'text', 'delta': chunk})}\n\n"
+                # No tool calls — this turn's text is the final answer (already streamed)
                 break
 
             if not full_response:
@@ -809,12 +901,110 @@ async def pin_session(sid: str, body: PinRequest):
 @router.get("/context/databricks")
 async def get_databricks_context(
     catalog: Optional[str] = Query(None),
+    schema_name: Optional[str] = Query(None),
     client=Depends(get_db_client),
 ):
-    """Return catalogs (and optionally schemas) for UC context injection."""
+    """Return catalogs, schemas, and (when a schema is given) tables for UC
+    context injection and @-mention autocomplete."""
     catalogs_text = ai_tools.dbx_list_catalogs(client)
     schemas_text  = ai_tools.dbx_list_schemas(catalog, client) if catalog else ""
+    tables: list[str] = []
+    if catalog and schema_name:
+        tables_text = ai_tools.dbx_list_tables(catalog, schema_name, client)
+        tables = [
+            line.split("\t")[0].strip()
+            for line in tables_text.splitlines()
+            if line.strip() and not line.startswith("(") and not line.startswith("ERROR")
+        ]
     return {
         "catalogs": [c for c in catalogs_text.splitlines() if c and not c.startswith("ERROR")],
         "schemas":  [s for s in schemas_text.splitlines()  if s and not s.startswith("ERROR")],
+        "tables":   tables,
     }
+
+
+# ---------------------------------------------------------------------------
+# Open in Databricks — push generated SQL to a notebook or saved query
+# ---------------------------------------------------------------------------
+
+class OpenInDatabricksRequest(BaseModel):
+    sql: str
+    title: Optional[str] = None
+    language: str = "sql"  # "sql" or "python"
+
+
+@router.post("/open/notebook")
+async def open_in_notebook(
+    body: OpenInDatabricksRequest,
+    client=Depends(get_db_client),
+):
+    """Create a workspace notebook from the given SQL/code and return a deep link."""
+    import base64
+    from databricks.sdk.service.workspace import ImportFormat, Language
+
+    host = (client.config.host or "").rstrip("/")
+    title = (body.title or "Clone-Xs AI query").strip().replace("/", "-")[:80]
+    path = f"/Shared/clone-xs-ai/{title}"
+
+    try:
+        await _to_thread_safe(client.workspace.mkdirs, "/Shared/clone-xs-ai")
+    except Exception:
+        pass
+
+    lang = Language.PYTHON if body.language.lower() == "python" else Language.SQL
+    content = body.sql
+    if lang == Language.SQL:
+        content = "-- Generated by Clone-Xs AI Assistant\n" + content
+
+    try:
+        encoded = base64.b64encode(content.encode()).decode()
+        await _to_thread_safe(
+            client.workspace.import_,
+            path=path, content=encoded, format=ImportFormat.SOURCE,
+            language=lang, overwrite=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create notebook: {e}")
+
+    return {"path": path, "url": f"{host}/#workspace{path}"}
+
+
+@router.post("/open/query")
+async def open_in_query(
+    body: OpenInDatabricksRequest,
+    x_databricks_warehouse: Optional[str] = Header(None, alias="X-Databricks-Warehouse"),
+    client=Depends(get_db_client),
+):
+    """Create a saved Databricks SQL query and return a deep link to the SQL editor."""
+    host = (client.config.host or "").rstrip("/")
+    headers = _get_auth_headers(client)
+    if "Authorization" not in headers:
+        token = getattr(client.config, "token", None)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+    payload = {
+        "name": (body.title or "Clone-Xs AI query")[:120],
+        "query": body.sql,
+        "description": "Created by the Clone-Xs AI Assistant",
+    }
+    if x_databricks_warehouse:
+        payload["warehouse_id"] = x_databricks_warehouse
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            resp = await c.post(f"{host}/api/2.0/sql/queries", headers=headers, json=payload)
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=400, detail=f"Query API returned {resp.status_code}: {resp.text[:200]}")
+        qid = resp.json().get("id", "")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create query: {e}")
+
+    return {"query_id": qid, "url": f"{host}/sql/editor/{qid}" if qid else f"{host}/sql/editor"}
+
+
+async def _to_thread_safe(fn, *args, **kwargs):
+    import asyncio
+    return await asyncio.to_thread(lambda: fn(*args, **kwargs))

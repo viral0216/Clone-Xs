@@ -183,6 +183,14 @@ const AssessmentInventoryAiMl = lazy(() => import("@/app/assessment/inventory/ai
 const AssessmentInventoryNotebooks = lazy(() => import("@/app/assessment/inventory/notebooks/page"));
 const AssessmentInventoryAccess    = lazy(() => import("@/app/assessment/inventory/access/page"));
 const AssessmentInventoryHealth    = lazy(() => import("@/app/assessment/inventory/health/page"));
+const AssessmentInventoryDrift     = lazy(() => import("@/app/assessment/inventory/drift/page"));
+const AssessmentInventoryPolicies  = lazy(() => import("@/app/assessment/inventory/policies/page"));
+const AssessmentInventoryLineage   = lazy(() => import("@/app/assessment/inventory/lineage/page"));
+const AssessmentInventoryTimeline  = lazy(() => import("@/app/assessment/inventory/timeline/page"));
+const AssessmentInventoryVolumes   = lazy(() => import("@/app/assessment/inventory/volumes/page"));
+const AssessmentInventoryFunctions = lazy(() => import("@/app/assessment/inventory/functions/page"));
+const AssessmentInventoryModels    = lazy(() => import("@/app/assessment/inventory/models/page"));
+const AssessmentInventoryTags      = lazy(() => import("@/app/assessment/inventory/tags/page"));
 const AssessmentHistory = lazy(() => import("@/app/assessment/history/page"));
 const AssessmentExport = lazy(() => import("@/app/assessment/export/page"));
 const AssessmentCompare = lazy(() => import("@/app/assessment/compare/page"));
@@ -519,6 +527,14 @@ export default function App() {
               <Route path="/assessment/inventory/notebooks" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryNotebooks /></Suspense>} />
               <Route path="/assessment/inventory/access"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryAccess /></Suspense>} />
               <Route path="/assessment/inventory/health"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryHealth /></Suspense>} />
+              <Route path="/assessment/inventory/drift"     element={<Suspense fallback={<PageFallback />}><AssessmentInventoryDrift /></Suspense>} />
+              <Route path="/assessment/inventory/policies"  element={<Suspense fallback={<PageFallback />}><AssessmentInventoryPolicies /></Suspense>} />
+              <Route path="/assessment/inventory/lineage"   element={<Suspense fallback={<PageFallback />}><AssessmentInventoryLineage /></Suspense>} />
+              <Route path="/assessment/inventory/timeline"  element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTimeline /></Suspense>} />
+              <Route path="/assessment/inventory/volumes"   element={<Suspense fallback={<PageFallback />}><AssessmentInventoryVolumes /></Suspense>} />
+              <Route path="/assessment/inventory/functions" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryFunctions /></Suspense>} />
+              <Route path="/assessment/inventory/models"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryModels /></Suspense>} />
+              <Route path="/assessment/inventory/tags"      element={<Suspense fallback={<PageFallback />}><AssessmentInventoryTags /></Suspense>} />
               <Route path="/assessment/history" element={<Suspense fallback={<PageFallback />}><AssessmentHistory /></Suspense>} />
               <Route path="/assessment/compare" element={<Suspense fallback={<PageFallback />}><AssessmentCompare /></Suspense>} />
               <Route path="/assessment/export" element={<Suspense fallback={<PageFallback />}><AssessmentExport /></Suspense>} />

@@ -5,6 +5,8 @@ import {
   Lightbulb, Database, GitBranch, Clock, Download,
   PanelLeftClose, PanelLeftOpen, Network, TreePine, Layers, ArrowLeftRight, Search,
   Workflow, Server, Users, BrainCircuit, FileCode, ShieldCheck, Activity,
+  GitCompareArrows, AlertOctagon, Share2, TrendingUp,
+  HardDrive, FunctionSquare, Tag,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -28,8 +30,16 @@ const NAV_SECTIONS = [
     items: [
       { href: "/assessment/inventory", label: "Summary", icon: Database },
       { href: "/assessment/inventory/search", label: "Object Search",   icon: Search },
-      { href: "/assessment/inventory/access", label: "Access Control",  icon: ShieldCheck },
-      { href: "/assessment/inventory/health", label: "Metadata Health", icon: Activity },
+      { href: "/assessment/inventory/access",   label: "Access Control",   icon: ShieldCheck },
+      { href: "/assessment/inventory/health",   label: "Metadata Health",  icon: Activity },
+      { href: "/assessment/inventory/drift",    label: "Drift Detection",  icon: GitCompareArrows },
+      { href: "/assessment/inventory/policies", label: "Policy Violations",icon: AlertOctagon },
+      { href: "/assessment/inventory/lineage",  label: "Column Lineage",   icon: Share2 },
+      { href: "/assessment/inventory/timeline",  label: "Inventory Timeline", icon: TrendingUp },
+      { href: "/assessment/inventory/volumes",   label: "Volumes",            icon: HardDrive },
+      { href: "/assessment/inventory/functions", label: "Functions (UDFs)",   icon: FunctionSquare },
+      { href: "/assessment/inventory/models",    label: "Registered Models",  icon: BrainCircuit },
+      { href: "/assessment/inventory/tags",      label: "Tags Browser",       icon: Tag },
       { href: "/assessment/inventory/tree", label: "Tree View", icon: TreePine },
       { href: "/assessment/inventory/sunburst", label: "Sunburst View", icon: GitBranch },
       { href: "/assessment/inventory/hubspoke", label: "Hub & Spoke", icon: Network },

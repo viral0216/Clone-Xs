@@ -95,9 +95,19 @@ export default function AiMlPage() {
           emptyMsg: "No marketplace listings installed.",
           columns: [
             { key: "id",       label: "Listing ID", width: "120px", render: r => <span className="font-mono text-[10px] text-muted-foreground">{r.listing_id ?? r.id ?? "—"}</span> },
-            { key: "name",     label: "Name",                       render: r => <span className="font-medium">{r.listing?.summary?.name ?? r.name ?? "—"}</span> },
-            { key: "provider", label: "Provider",                   render: r => <span className="text-muted-foreground">{r.listing?.summary?.provider_region?.cloud ?? r.provider_name ?? "—"}</span> },
-            { key: "status",   label: "Status",                     render: r => <span className="text-muted-foreground">{r.status ?? "—"}</span> },
+            { key: "name",     label: "Name",       render: r => <span className="font-medium">{r.summary?.name ?? r.listing?.summary?.name ?? r.name ?? "—"}</span> },
+            { key: "provider", label: "Provider",   render: r => <span className="text-muted-foreground">{
+              r.summary?.publisher_name ?? r.summary?.publisherName ??
+              r.summary?.provider_id   ?? r.summary?.providerId ??
+              r.listing?.summary?.publisher_name ?? r.provider_name ?? "—"
+            }</span> },
+            { key: "type",     label: "Type",       render: r => <span className="text-muted-foreground">{
+              r.summary?.listing_type ?? r.summary?.listingType ??
+              r.listing?.summary?.listing_type ?? r.listing_type ?? "—"
+            }</span> },
+            { key: "status",   label: "Status",     render: r => <span className="text-muted-foreground">{
+              r.status ?? r.summary?.status ?? r.summary?.listingStatus ?? "—"
+            }</span> },
           ],
         },
       ]}

@@ -2410,6 +2410,43 @@ const PORTAL_FEATURES = [
       { title: "Audit & Reports", items: [{ href: "/mdm/audit-log", label: "Audit Log" }, { href: "/mdm/reports", label: "Reports" }] },
     ],
   },
+  {
+    id: "assessment",
+    label: "Assessment Portal",
+    description: "UC security assessment, inventory, policy governance & workspace resources",
+    required: false,
+    sections: [
+      { title: "Assessment", items: [{ href: "/assessment", label: "Overview" }, { href: "/assessment/run", label: "Run Scan" }] },
+      { title: "Results", items: [{ href: "/assessment/findings", label: "Findings" }, { href: "/assessment/categories", label: "Category Scores" }, { href: "/assessment/recommendations", label: "Recommendations" }] },
+      { title: "UC Inventory", items: [
+        { href: "/assessment/inventory", label: "Summary" },
+        { href: "/assessment/inventory/search", label: "Object Search" },
+        { href: "/assessment/inventory/access", label: "Access Control" },
+        { href: "/assessment/inventory/health", label: "Metadata Health" },
+        { href: "/assessment/inventory/drift", label: "Drift Detection" },
+        { href: "/assessment/inventory/policies", label: "Policy Violations" },
+        { href: "/assessment/inventory/lineage", label: "Column Lineage" },
+        { href: "/assessment/inventory/timeline", label: "Inventory Timeline" },
+        { href: "/assessment/inventory/volumes", label: "Volumes" },
+        { href: "/assessment/inventory/functions", label: "Functions (UDFs)" },
+        { href: "/assessment/inventory/models", label: "Registered Models" },
+        { href: "/assessment/inventory/tags", label: "Tags Browser" },
+        { href: "/assessment/inventory/tree", label: "Tree View" },
+        { href: "/assessment/inventory/sunburst", label: "Sunburst View" },
+        { href: "/assessment/inventory/hubspoke", label: "Hub & Spoke" },
+        { href: "/assessment/inventory/topology", label: "Infrastructure" },
+      ]},
+      { title: "Workspace Resources", items: [
+        { href: "/assessment/inventory/jobs", label: "Jobs & Workflows" },
+        { href: "/assessment/inventory/compute", label: "Compute" },
+        { href: "/assessment/inventory/identity", label: "Identity & Access" },
+        { href: "/assessment/inventory/sql", label: "SQL & Analytics" },
+        { href: "/assessment/inventory/aiml", label: "AI / ML" },
+        { href: "/assessment/inventory/notebooks", label: "Notebooks & Files" },
+      ]},
+      { title: "History", items: [{ href: "/assessment/history", label: "Scan History" }, { href: "/assessment/compare", label: "Compare Scans" }, { href: "/assessment/export", label: "Export" }] },
+    ],
+  },
 ];
 
 const DEFAULT_DISABLED_PORTALS = ["finops", "infrastructure", "mdm"];

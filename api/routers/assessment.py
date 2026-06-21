@@ -325,6 +325,7 @@ async def _run_inventory_only(
         }
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
+        await _fire_scan_webhooks(scan_id, meta)
         _JOBS[job_id]["status"] = "completed"
         _JOBS[job_id]["progress"] = "Done"
         _JOBS[job_id]["result_id"] = scan_id
@@ -438,6 +439,7 @@ async def _run_scan_task(
         }
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
+        await _fire_scan_webhooks(scan_id, meta)
         _JOBS[job_id]["status"] = "completed"
         _JOBS[job_id]["progress"] = "Done"
         _JOBS[job_id]["result_id"] = scan_id
@@ -445,6 +447,104 @@ async def _run_scan_task(
     except Exception as exc:
         _JOBS[job_id]["status"] = "error"
         _JOBS[job_id]["error"] = str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Feature 5 helper — fire webhooks on scan completion
+# ---------------------------------------------------------------------------
+
+async def _fire_scan_webhooks(scan_id: str, meta: dict) -> None:
+    """POST scan summary to all configured webhooks (non-blocking, never raises)."""
+    try:
+        wh_file = Path("config/webhooks.json")
+        if not wh_file.exists():
+            return
+        webhooks = json.loads(wh_file.read_text())
+        if not webhooks:
+            return
+        import httpx
+        payload = {
+            "event": "scan_complete",
+            "scan_id": scan_id,
+            "workspace": meta.get("workspace_name") or meta.get("workspace_url", ""),
+            "score": meta.get("overall_score"),
+            "grade": meta.get("grade"),
+            "passed": meta.get("passed"),
+            "failed": meta.get("failed"),
+            "scan_type": meta.get("scan_type"),
+            "scanned_at": meta.get("scanned_at"),
+        }
+        async with httpx.AsyncClient(timeout=10) as c:
+            for wh in webhooks:
+                try:
+                    await c.post(
+                        wh.get("url", ""), json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Scan scheduler background task (Feature 3)
+# ---------------------------------------------------------------------------
+
+_SCHEDULE_PATH = _STORE.parent / "scan_schedule.json"
+
+
+async def start_scan_scheduler() -> None:
+    """Check every 60 s whether a scheduled scan is due and trigger it."""
+    from datetime import timedelta
+    while True:
+        await asyncio.sleep(60)
+        try:
+            if not _SCHEDULE_PATH.exists():
+                continue
+            cfg = json.loads(_SCHEDULE_PATH.read_text())
+            if not cfg.get("enabled"):
+                continue
+            host = cfg.get("host", "")
+            token = cfg.get("token", "")
+            if not host or not token:
+                continue
+            next_run_str = cfg.get("next_run")
+            if next_run_str:
+                next_run = datetime.fromisoformat(next_run_str)
+                if next_run.tzinfo is None:
+                    next_run = next_run.replace(tzinfo=timezone.utc)
+                if next_run > datetime.now(timezone.utc):
+                    continue
+            # Trigger a new scan
+            job_id = str(uuid.uuid4())
+            scan_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + "_" + job_id[:8]
+            _JOBS[job_id] = {
+                "job_id": job_id,
+                "scan_id": scan_id,
+                "scan_type": cfg.get("scan_type", "full"),
+                "status": "queued",
+                "progress": "Scheduled scan queued…",
+                "submitted_at": datetime.now(timezone.utc).isoformat(),
+                "result_id": None,
+                "error": None,
+            }
+            asyncio.create_task(
+                _run_scan_task(
+                    job_id, scan_id,
+                    host, token,
+                    cfg.get("workspace_name", ""),
+                    cfg.get("scan_type", "full"),
+                )
+            )
+            # Advance next_run
+            freq = cfg.get("frequency", "daily")
+            delta = timedelta(days=1 if freq == "daily" else 7)
+            cfg["next_run"] = (datetime.now(timezone.utc) + delta).isoformat()
+            cfg["last_triggered"] = datetime.now(timezone.utc).isoformat()
+            _SCHEDULE_PATH.write_text(json.dumps(cfg, indent=2))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1132,3 +1232,462 @@ async def export_result(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Feature 1 — Inventory Drift Detection
+# ---------------------------------------------------------------------------
+
+@router.get("/inventory/diff")
+async def inventory_diff(
+    scan_a: str = Query(..., description="Baseline scan ID"),
+    scan_b: str = Query(..., description="Comparison scan ID"),
+):
+    """Diff two UC inventory snapshots — new/removed/modified tables, schemas, catalogs."""
+
+    def _load_inv(sid: str) -> dict:
+        p = _STORE / sid / "inventory.json"
+        if not p.exists():
+            raise HTTPException(status_code=404, detail=f"Inventory not found for scan {sid}")
+        return json.loads(p.read_text())
+
+    inv_a = _load_inv(scan_a)
+    inv_b = _load_inv(scan_b)
+
+    def _flatten_tables(inv: dict) -> dict:
+        rows: dict = {}
+        for cat in inv.get("catalogs", []):
+            for sch in cat.get("schemas", []):
+                for tbl in sch.get("tables", []):
+                    fn = tbl.get("full_name") or f"{cat['name']}.{sch['name']}.{tbl['name']}"
+                    rows[fn] = {
+                        "owner": (tbl.get("owner") or ""),
+                        "comment": (tbl.get("comment") or ""),
+                        "table_type": (tbl.get("table_type") or ""),
+                        "catalog": cat["name"],
+                        "schema": sch["name"],
+                        "grants": len(tbl.get("grants", [])),
+                        "columns": len(tbl.get("columns", [])),
+                    }
+        return rows
+
+    a, b = _flatten_tables(inv_a), _flatten_tables(inv_b)
+    all_keys = set(a) | set(b)
+
+    added   = [{"full_name": k, **b[k]} for k in sorted(all_keys) if k not in a]
+    removed = [{"full_name": k, **a[k]} for k in sorted(all_keys) if k not in b]
+    modified = []
+    for k in sorted(all_keys):
+        if k in a and k in b:
+            fields = ("owner", "comment", "grants", "columns", "table_type")
+            changes = {
+                f: {"before": a[k].get(f), "after": b[k].get(f)}
+                for f in fields if a[k].get(f) != b[k].get(f)
+            }
+            if changes:
+                modified.append({
+                    "full_name": k,
+                    "catalog": b[k].get("catalog", ""),
+                    "schema": b[k].get("schema", ""),
+                    "changes": changes,
+                })
+
+    cats_a  = {c["name"] for c in inv_a.get("catalogs", [])}
+    cats_b  = {c["name"] for c in inv_b.get("catalogs", [])}
+    schs_a: set[str] = {
+        f"{cat['name']}.{sch['name']}"
+        for cat in inv_a.get("catalogs", []) for sch in cat.get("schemas", [])
+    }
+    schs_b: set[str] = {
+        f"{cat['name']}.{sch['name']}"
+        for cat in inv_b.get("catalogs", []) for sch in cat.get("schemas", [])
+    }
+
+    return {
+        "scan_a": scan_a,
+        "scan_b": scan_b,
+        "catalogs_added":   sorted(cats_b - cats_a),
+        "catalogs_removed": sorted(cats_a - cats_b),
+        "schemas_added":    sorted(schs_b - schs_a),
+        "schemas_removed":  sorted(schs_a - schs_b),
+        "tables_added":     added,
+        "tables_removed":   removed,
+        "tables_modified":  modified,
+        "summary": {
+            "catalogs_added":   len(cats_b - cats_a),
+            "catalogs_removed": len(cats_a - cats_b),
+            "schemas_added":    len(schs_b - schs_a),
+            "schemas_removed":  len(schs_a - schs_b),
+            "tables_added":     len(added),
+            "tables_removed":   len(removed),
+            "tables_modified":  len(modified),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 2 — Governance Policy Engine
+# ---------------------------------------------------------------------------
+
+_BUILT_IN_POLICIES: list[dict] = [
+    {"id": "table_needs_owner",       "name": "Tables must have an owner",           "severity": "high"},
+    {"id": "table_needs_description", "name": "Tables must have a description",       "severity": "medium"},
+    {"id": "schema_needs_owner",      "name": "Schemas must have an owner",           "severity": "medium"},
+    {"id": "no_catalog_all_privs",    "name": "No ALL PRIVILEGES grants on catalogs", "severity": "critical"},
+    {"id": "pii_must_be_masked",      "name": "PII-named columns must have masking",  "severity": "high"},
+]
+_PII_PATTERNS = [
+    "email", "ssn", "social_security", "phone", "mobile", "dob", "birth",
+    "passport", "salary", "credit_card", "card_number", "cvv", "tax_id",
+    "address", "zip", "postal", "ip_address",
+]
+
+
+@router.get("/policies/evaluate")
+async def evaluate_policies(scan_id: str | None = Query(None)):
+    """Evaluate built-in governance policies against the UC inventory."""
+    sid = scan_id or ((_latest_result() or {}).get("scan_id"))
+    if not sid:
+        raise HTTPException(status_code=404, detail="No scan found")
+    p = _STORE / sid / "inventory.json"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Inventory not available — run an inventory scan first")
+    inv = json.loads(p.read_text())
+
+    violations: dict[str, list] = {pol["id"]: [] for pol in _BUILT_IN_POLICIES}
+
+    for cat in inv.get("catalogs", []):
+        for g in cat.get("grants", []):
+            privs = g.get("privileges", [])
+            if "ALL PRIVILEGES" in privs or "MANAGE" in privs:
+                violations["no_catalog_all_privs"].append({
+                    "object": cat["name"],
+                    "principal": g.get("principal", ""),
+                    "privileges": privs,
+                })
+        for sch in cat.get("schemas", []):
+            fn_sch = sch.get("full_name") or f"{cat['name']}.{sch['name']}"
+            if not (sch.get("owner") or "").strip():
+                violations["schema_needs_owner"].append({"object": fn_sch})
+            for tbl in sch.get("tables", []):
+                fn = tbl.get("full_name") or f"{cat['name']}.{sch['name']}.{tbl['name']}"
+                if not (tbl.get("owner") or "").strip():
+                    violations["table_needs_owner"].append({"object": fn})
+                if not (tbl.get("comment") or "").strip():
+                    violations["table_needs_description"].append({"object": fn})
+                for col in tbl.get("columns", []):
+                    col_lower = (col.get("name") or "").lower()
+                    if any(pat in col_lower for pat in _PII_PATTERNS) and not col.get("mask"):
+                        violations["pii_must_be_masked"].append({
+                            "object": fn,
+                            "column": col.get("name", ""),
+                        })
+
+    # Evaluate custom policies
+    custom_policies = _load_custom_policies()
+    custom_results = [
+        {
+            **pol,
+            "violations": _evaluate_custom_policy(pol, inv),
+            "type": "custom",
+        }
+        for pol in custom_policies
+    ]
+    for cr in custom_results:
+        cr["count"]  = len(cr["violations"])
+        cr["status"] = "pass" if not cr["violations"] else "fail"
+
+    all_policies = [
+        {**pol, "violations": violations[pol["id"]], "count": len(violations[pol["id"]]),
+         "status": "pass" if not violations[pol["id"]] else "fail", "type": "built_in"}
+        for pol in _BUILT_IN_POLICIES
+    ] + custom_results
+
+    total_violations = sum(p["count"] for p in all_policies)
+
+    return {
+        "scan_id": sid,
+        "policies": all_policies,
+        "summary": {
+            "total":            len(all_policies),
+            "passing":          sum(1 for p in all_policies if p["status"] == "pass"),
+            "failing":          sum(1 for p in all_policies if p["status"] == "fail"),
+            "total_violations": total_violations,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 3 — Scan Scheduler endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/schedule")
+async def get_schedule():
+    """Return current scan schedule config."""
+    if _SCHEDULE_PATH.exists():
+        try:
+            return json.loads(_SCHEDULE_PATH.read_text())
+        except Exception:
+            pass
+    return {"enabled": False}
+
+
+@router.put("/schedule")
+async def update_schedule(body: dict):
+    """Save scan schedule. body: {enabled, frequency, hour, host, token, scan_type, workspace_name}"""
+    _SCHEDULE_PATH.write_text(json.dumps(body, indent=2))
+    return body
+
+
+@router.delete("/schedule")
+async def delete_schedule():
+    """Delete scan schedule."""
+    if _SCHEDULE_PATH.exists():
+        _SCHEDULE_PATH.unlink()
+    return {"enabled": False}
+
+
+# ---------------------------------------------------------------------------
+# Feature 4 — Column Lineage proxy
+# ---------------------------------------------------------------------------
+
+@router.get("/lineage/table")
+async def table_lineage(
+    table_name: str = Query(..., description="Full table name: catalog.schema.table"),
+    x_databricks_host: str | None = Header(None),
+    x_databricks_token: str | None = Header(None),
+):
+    """Proxy Databricks lineage-tracking/table-lineage for a given table."""
+    import httpx
+    host  = (x_databricks_host  or "").rstrip("/")
+    token = (x_databricks_token or "")
+    if not host or not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Databricks credentials required (X-Databricks-Host, X-Databricks-Token headers)",
+        )
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(
+                f"{host}/api/2.0/lineage-tracking/table-lineage",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"table_name": table_name, "include_entity_lineage": "true"},
+            )
+        if r.status_code == 404:
+            return {"upstream_tables": [], "downstream_tables": [], "table_name": table_name}
+        if r.status_code != 200:
+            raise HTTPException(status_code=r.status_code, detail=r.text[:500])
+        data = r.json()
+        data["table_name"] = table_name
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Databricks lineage API unreachable: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# AI-powered Remediation Plans (Feature — Databricks Foundation Model)
+# ---------------------------------------------------------------------------
+
+@router.post("/ai/remediation-plan")
+async def ai_remediation_plan(
+    body: dict,
+    x_databricks_host: str | None = Header(None),
+    x_databricks_token: str | None = Header(None),
+    model: str = Query("databricks-meta-llama-3-1-70b-instruct"),
+):
+    """Generate a step-by-step remediation plan for a security finding via Databricks Foundation Model."""
+    import httpx
+    host  = (x_databricks_host  or "").rstrip("/")
+    token = (x_databricks_token or "")
+    if not host or not token:
+        raise HTTPException(status_code=401, detail="Databricks credentials required")
+
+    finding = body.get("finding", {})
+    system_prompt = (
+        "You are a Databricks security expert specialising in Unity Catalog governance and workspace security. "
+        "Generate a concise, actionable step-by-step remediation plan for the given security finding. "
+        "Use markdown. Include specific Databricks SQL or Python snippets where helpful. "
+        "Keep the plan focused — no unnecessary padding."
+    )
+    user_prompt = f"""## Security Finding
+
+**Check ID:** {finding.get('check_id', '')}
+**Title:** {finding.get('title', '')}
+**Category:** {finding.get('category', '')}
+**Severity:** {finding.get('severity', '')}
+**Description:** {finding.get('description', '')}
+**Current Recommendation:** {finding.get('recommendation', '')}
+**Effort:** {finding.get('effort', '')}
+
+Please provide:
+1. **Root Cause** (1-2 sentences on why this happens)
+2. **Step-by-Step Fix** (numbered steps with Databricks SQL/Python snippets where applicable)
+3. **Validation** (how to confirm the fix worked)
+4. **Prevention** (how to avoid recurrence)
+5. **Quick Win** (if there's a sub-5-minute partial fix, highlight it)"""
+
+    try:
+        async with httpx.AsyncClient(timeout=45) as c:
+            r = await c.post(
+                f"{host}/serving-endpoints/{model}/invocations",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": user_prompt},
+                    ],
+                    "max_tokens": 1500,
+                    "temperature": 0.1,
+                },
+            )
+        if r.status_code != 200:
+            raise HTTPException(status_code=r.status_code, detail=f"AI model error: {r.text[:500]}")
+        content = r.json()["choices"][0]["message"]["content"]
+        return {"plan": content, "model": model, "check_id": finding.get("check_id", "")}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI service unreachable: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Custom Policy CRUD
+# ---------------------------------------------------------------------------
+
+_CUSTOM_POLICIES_PATH = _STORE.parent / "custom_policies.json"
+
+# Supported custom rule types and their evaluator keys
+_CUSTOM_RULE_TYPES = [
+    "tables_need_owner",
+    "tables_need_description",
+    "schemas_need_owner",
+    "no_all_privs_on_catalog",
+    "pii_columns_must_be_masked",
+]
+
+
+def _load_custom_policies() -> list[dict]:
+    if _CUSTOM_POLICIES_PATH.exists():
+        try:
+            return json.loads(_CUSTOM_POLICIES_PATH.read_text())
+        except Exception:
+            pass
+    return []
+
+
+def _evaluate_custom_policy(policy: dict, inv: dict) -> list[dict]:
+    """Run a single custom policy rule against an inventory snapshot."""
+    rt      = policy.get("rule_type", "")
+    scope   = (policy.get("catalog_scope") or "").strip()   # empty = all catalogs
+    pat     = (policy.get("column_pattern") or "").lower()  # for PII check
+
+    violations: list[dict] = []
+
+    for cat in inv.get("catalogs", []):
+        if scope and cat["name"] != scope:
+            continue
+
+        if rt == "no_all_privs_on_catalog":
+            for g in cat.get("grants", []):
+                if "ALL PRIVILEGES" in g.get("privileges", []) or "MANAGE" in g.get("privileges", []):
+                    violations.append({"object": cat["name"], "principal": g.get("principal", "")})
+            continue
+
+        for sch in cat.get("schemas", []):
+            fn_sch = sch.get("full_name") or f"{cat['name']}.{sch['name']}"
+
+            if rt == "schemas_need_owner" and not (sch.get("owner") or "").strip():
+                violations.append({"object": fn_sch})
+
+            for tbl in sch.get("tables", []):
+                fn = tbl.get("full_name") or f"{cat['name']}.{sch['name']}.{tbl['name']}"
+                if rt == "tables_need_owner" and not (tbl.get("owner") or "").strip():
+                    violations.append({"object": fn})
+                elif rt == "tables_need_description" and not (tbl.get("comment") or "").strip():
+                    violations.append({"object": fn})
+                elif rt == "pii_columns_must_be_masked":
+                    for col in tbl.get("columns", []):
+                        col_lower = (col.get("name") or "").lower()
+                        if (not pat or pat in col_lower) and any(p in col_lower for p in _PII_PATTERNS) and not col.get("mask"):
+                            violations.append({"object": fn, "column": col.get("name", "")})
+
+    return violations
+
+
+@router.get("/policies")
+async def list_policies():
+    """Return built-in and custom policy definitions."""
+    return {"built_in": _BUILT_IN_POLICIES, "custom": _load_custom_policies()}
+
+
+@router.post("/policies")
+async def create_policy(body: dict):
+    """Create a custom governance policy."""
+    import time
+    policies = _load_custom_policies()
+    new_pol = {
+        "id":             f"custom_{int(time.time() * 1000)}",
+        "name":           (body.get("name") or "Custom Policy").strip(),
+        "severity":       body.get("severity", "medium"),
+        "rule_type":      body.get("rule_type", "tables_need_owner"),
+        "catalog_scope":  body.get("catalog_scope", ""),
+        "column_pattern": body.get("column_pattern", ""),
+        "type":           "custom",
+    }
+    policies.append(new_pol)
+    _CUSTOM_POLICIES_PATH.write_text(json.dumps(policies, indent=2))
+    return new_pol
+
+
+@router.delete("/policies/{policy_id}")
+async def delete_policy(policy_id: str):
+    """Delete a custom policy by ID."""
+    policies = [p for p in _load_custom_policies() if p.get("id") != policy_id]
+    _CUSTOM_POLICIES_PATH.write_text(json.dumps(policies, indent=2))
+    return {"deleted": policy_id}
+
+
+# ---------------------------------------------------------------------------
+# Inventory Timeline
+# ---------------------------------------------------------------------------
+
+@router.get("/inventory/timeline")
+async def inventory_timeline():
+    """Return catalog/schema/table/column counts across all scans over time (oldest-first)."""
+    results = list(reversed(_list_results()))  # oldest first
+    timeline = []
+    for meta in results:
+        sid = meta.get("scan_id")
+        if not sid:
+            continue
+        entry: dict = {
+            "scan_id":        sid,
+            "scanned_at":     meta.get("scanned_at", ""),
+            "workspace_name": meta.get("workspace_name") or meta.get("workspace_url", ""),
+            "catalogs":       meta.get("catalog_count", 0) or 0,
+            "schemas":        meta.get("schema_count",  0) or 0,
+            "tables":         meta.get("table_count",   0) or 0,
+            "columns":        0,
+        }
+        # Enrich from inventory.json when available
+        inv_path = _STORE / sid / "inventory.json"
+        if inv_path.exists():
+            try:
+                inv = json.loads(inv_path.read_text())
+                cats = inv.get("catalogs", [])
+                entry["catalogs"] = len(cats)
+                entry["schemas"]  = sum(len(c.get("schemas", [])) for c in cats)
+                entry["tables"]   = sum(
+                    len(s.get("tables", []))
+                    for c in cats for s in c.get("schemas", [])
+                )
+                entry["columns"]  = sum(
+                    len(t.get("columns", []))
+                    for c in cats for s in c.get("schemas", []) for t in s.get("tables", [])
+                )
+            except Exception:
+                pass
+        timeline.append(entry)
+    return timeline

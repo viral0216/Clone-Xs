@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Play, CheckCircle2, XCircle, Loader2, AlertTriangle, ShieldCheck,
+  Clock, Bell,
 } from "lucide-react";
 
 function getStoredCreds() {
@@ -30,13 +31,18 @@ export default function RunAssessmentPage() {
   const [host, setHost] = useState(creds.host);
   const [token, setToken] = useState(creds.token);
   const [workspaceName, setWorkspaceName] = useState("");
-  const [scanType, setScanType] = useState<"full" | "security" | "inventory">("full");
+  const [scanType, setScanType] = useState("full");
 
   const [jobId, setJobId] = useState("");
-  const [jobStatus, setJobStatus] = useState<any>(null);
+  const [jobStatus, setJobStatus] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef(null);
+
+  // Schedule state
+  const [schedule, setSchedule] = useState({ enabled: false, frequency: "daily", hour: "08", scan_type: "full" });
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [schedSaved, setSchedSaved] = useState(false);
 
   function clearPoll() {
     if (pollRef.current) {
@@ -46,6 +52,53 @@ export default function RunAssessmentPage() {
   }
 
   useEffect(() => () => clearPoll(), []);
+
+  // Load current schedule on mount
+  useEffect(() => {
+    api.get("/assessment/schedule").then(r => {
+      if (r && typeof r === "object") {
+        setSchedule(prev => ({
+          ...prev,
+          enabled: r.enabled || false,
+          frequency: r.frequency || "daily",
+          hour: r.hour || "08",
+          scan_type: r.scan_type || "full",
+        }));
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function saveSchedule() {
+    setSchedSaving(true);
+    try {
+      const payload = {
+        ...schedule,
+        host,
+        token,
+        workspace_name: workspaceName,
+      };
+      if (schedule.enabled) {
+        // Compute first next_run at the configured hour today or tomorrow
+        const now = new Date();
+        const target = new Date(now);
+        target.setUTCHours(parseInt(schedule.hour, 10), 0, 0, 0);
+        if (target <= now) target.setDate(target.getDate() + 1);
+        payload.next_run = target.toISOString();
+      }
+      await api.put("/assessment/schedule", payload, { headers: { "Content-Type": "application/json" } });
+      setSchedSaved(true);
+      setTimeout(() => setSchedSaved(false), 3000);
+    } catch {
+      // ignore
+    } finally {
+      setSchedSaving(false);
+    }
+  }
+
+  async function disableSchedule() {
+    await api.delete("/assessment/schedule").catch(() => {});
+    setSchedule(prev => ({ ...prev, enabled: false }));
+  }
 
   async function startScan() {
     if (!host || !token) {
@@ -280,6 +333,110 @@ export default function RunAssessmentPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Scan completion notification CTA */}
+      {isDone && (
+        <Card className="border-blue-200 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-950/20">
+          <CardContent className="pt-4 pb-3 flex items-start gap-3">
+            <Bell className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Get notified on future scans</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Configure webhook destinations to receive scan completion notifications automatically.
+              </p>
+            </div>
+            <Link to="/settings/notifications">
+              <Button size="sm" variant="outline" className="shrink-0">
+                Configure Webhooks
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Scan Scheduler */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Automatic Scan Schedule
+            {schedule.enabled && (
+              <Badge className="text-[10px] bg-green-500/10 text-green-700 border-green-200">Active</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={schedule.enabled}
+              onChange={e => setSchedule(prev => ({ ...prev, enabled: e.target.checked }))}
+              className="h-4 w-4 accent-primary"
+            />
+            <div>
+              <p className="text-sm font-medium">Enable automatic scans</p>
+              <p className="text-xs text-muted-foreground">Run scans automatically on the configured schedule</p>
+            </div>
+          </label>
+
+          {schedule.enabled && (
+            <div className="grid grid-cols-2 gap-3 pl-7">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Frequency</label>
+                <select
+                  value={schedule.frequency}
+                  onChange={e => setSchedule(prev => ({ ...prev, frequency: e.target.value }))}
+                  className="w-full px-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Run at (UTC hour)</label>
+                <select
+                  value={schedule.hour}
+                  onChange={e => setSchedule(prev => ({ ...prev, hour: e.target.value }))}
+                  className="w-full px-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map(h => (
+                    <option key={h} value={h}>{h}:00 UTC</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Scan type</label>
+                <select
+                  value={schedule.scan_type}
+                  onChange={e => setSchedule(prev => ({ ...prev, scan_type: e.target.value }))}
+                  className="w-full px-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="full">Full Assessment</option>
+                  <option value="security">Security Only</option>
+                  <option value="inventory">Inventory Only</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={saveSchedule} disabled={schedSaving}>
+              {schedSaving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              {schedSaved ? "Saved!" : "Save Schedule"}
+            </Button>
+            {schedule.enabled && (
+              <Button size="sm" variant="outline" onClick={disableSchedule}>
+                Disable
+              </Button>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Scheduled scans use the workspace credentials entered above.
+            The backend checks every 60 seconds whether a scan is due.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* What will be scanned */}
       <Card>

@@ -47,12 +47,93 @@ function scoreColor(n: number) {
   return "#ef4444";
 }
 
+function CategoryComparisonTable({ categoriesA, categoriesB, labelA, labelB }) {
+  const allNames = [...new Set([
+    ...(categoriesA || []).map(c => c.category),
+    ...(categoriesB || []).map(c => c.category),
+  ])].sort();
+
+  const mapA = Object.fromEntries((categoriesA || []).map(c => [c.category, c]));
+  const mapB = Object.fromEntries((categoriesB || []).map(c => [c.category, c]));
+
+  function ScoreBar({ score }) {
+    const color = score >= 90 ? "#22c55e" : score >= 75 ? "#84cc16" : score >= 60 ? "#eab308" : score >= 45 ? "#f97316" : "#ef4444";
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, backgroundColor: color }} />
+        </div>
+        <span className="text-xs font-medium w-8 text-right" style={{ color }}>{score ?? "—"}</span>
+      </div>
+    );
+  }
+
+  function DeltaChip({ a, b }) {
+    if (a == null || b == null) return <span className="text-muted-foreground text-xs">—</span>;
+    const d = b - a;
+    if (d === 0) return <span className="text-xs text-muted-foreground">±0</span>;
+    return (
+      <span className={`text-xs font-semibold ${d > 0 ? "text-green-600" : "text-red-600"}`}>
+        {d > 0 ? "+" : ""}{d}
+      </span>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Category Score Comparison</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2 px-2 text-muted-foreground font-medium">Category</th>
+                <th className="py-2 px-2 text-muted-foreground font-medium w-36">
+                  <span className="text-blue-600">A</span> — {labelA}
+                </th>
+                <th className="py-2 px-2 text-muted-foreground font-medium w-36">
+                  <span className="text-purple-600">B</span> — {labelB}
+                </th>
+                <th className="text-center py-2 px-2 text-muted-foreground font-medium w-16">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allNames.map(name => {
+                const ca = mapA[name];
+                const cb = mapB[name];
+                return (
+                  <tr key={name} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                    <td className="py-1.5 px-2 font-medium">{name}</td>
+                    <td className="py-1.5 px-2 w-36">
+                      {ca ? <ScoreBar score={ca.score} /> : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                    <td className="py-1.5 px-2 w-36">
+                      {cb ? <ScoreBar score={cb.score} /> : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      <DeltaChip a={ca?.score} b={cb?.score} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ComparePage() {
   const [scans, setScans] = useState<any[]>([]);
   const [scanA, setScanA] = useState("");
   const [scanB, setScanB] = useState("");
   const [findingsA, setFindingsA] = useState<any[]>([]);
   const [findingsB, setFindingsB] = useState<any[]>([]);
+  const [categoriesA, setCategoriesA] = useState<any[]>([]);
+  const [categoriesB, setCategoriesB] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<DiffType>("new");
 
@@ -73,9 +154,13 @@ export default function ComparePage() {
     Promise.all([
       api.get(`/assessment/findings?scan_id=${scanA}`).catch(() => []),
       api.get(`/assessment/findings?scan_id=${scanB}`).catch(() => []),
-    ]).then(([a, b]) => {
-      setFindingsA(Array.isArray(a) ? a : []);
-      setFindingsB(Array.isArray(b) ? b : []);
+      api.get(`/assessment/categories?scan_id=${scanA}`).catch(() => []),
+      api.get(`/assessment/categories?scan_id=${scanB}`).catch(() => []),
+    ]).then(([fa, fb, ca, cb]) => {
+      setFindingsA(Array.isArray(fa) ? fa : []);
+      setFindingsB(Array.isArray(fb) ? fb : []);
+      setCategoriesA(Array.isArray(ca) ? ca : []);
+      setCategoriesB(Array.isArray(cb) ? cb : []);
       setLoading(false);
     });
   }, [scanA, scanB]);
@@ -232,6 +317,16 @@ export default function ComparePage() {
             </div>
           ) : (
             <>
+              {/* Category Score Comparison */}
+              {(categoriesA.length > 0 || categoriesB.length > 0) && (
+                <CategoryComparisonTable
+                  categoriesA={categoriesA}
+                  categoriesB={categoriesB}
+                  labelA={scanLabel(metaA)}
+                  labelB={scanLabel(metaB)}
+                />
+              )}
+
               {/* Tab buttons */}
               <div className="flex gap-1 flex-wrap">
                 {DIFF_TABS.map(({ key, label }) => (

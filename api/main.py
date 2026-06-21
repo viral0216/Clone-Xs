@@ -1,5 +1,6 @@
 """FastAPI application for Clone-Xs web UI."""
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -84,6 +85,14 @@ async def lifespan(app: FastAPI):
         start_scheduler(app)
     except Exception as e:
         logger.warning(f"Could not start monitoring scheduler: {e}")
+
+    # Start assessment scan scheduler (Feature 3 — Scan Scheduler)
+    try:
+        from api.routers.assessment import start_scan_scheduler
+
+        asyncio.create_task(start_scan_scheduler())
+    except Exception as e:
+        logger.warning(f"Could not start assessment scan scheduler: {e}")
 
     yield
 

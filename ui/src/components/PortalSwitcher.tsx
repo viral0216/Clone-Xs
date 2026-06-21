@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Copy, Shield, ChevronDown, BarChart3, DollarSign, Lock, Zap, Server, Database } from "lucide-react";
+import { Copy, Shield, ChevronDown, BarChart3, DollarSign, Lock, Zap, Server, Database, ShieldCheck } from "lucide-react";
 
 const ALL_PORTALS = [
-  { id: "clone-xs", label: "Clone \u2192 Xs", description: "Catalog cloning & management", icon: Copy, path: "/" },
-  { id: "governance", label: "Governance", description: "Metadata management & contracts", icon: Shield, path: "/governance" },
-  { id: "data-quality", label: "Data Quality", description: "Quality rules, profiling & reconciliation", icon: BarChart3, path: "/data-quality" },
-  { id: "finops", label: "FinOps", description: "Cost management, billing & optimization", icon: DollarSign, path: "/finops" },
-  { id: "security", label: "Security", description: "PII detection, compliance & validation", icon: Lock, path: "/security" },
-  { id: "automation", label: "Automation", description: "Pipelines, jobs & templates", icon: Zap, path: "/automation" },
-  { id: "infrastructure", label: "Infrastructure", description: "Warehouses, federation & sharing", icon: Server, path: "/infrastructure" },
-  { id: "mdm", label: "MDM", description: "Master data management", icon: Database, path: "/mdm" },
+  { id: "clone-xs",    label: "Clone \u2192 Xs", description: "Catalog cloning & management",               icon: Copy,       path: "/" },
+  { id: "governance",  label: "Governance",       description: "Metadata management & contracts",            icon: Shield,     path: "/governance" },
+  { id: "data-quality",label: "Data Quality",     description: "Quality rules, profiling & reconciliation",  icon: BarChart3,  path: "/data-quality" },
+  { id: "finops",      label: "FinOps",           description: "Cost management, billing & optimization",    icon: DollarSign, path: "/finops" },
+  { id: "security",    label: "Security",         description: "PII detection, compliance & validation",     icon: Lock,       path: "/security" },
+  { id: "automation",  label: "Automation",       description: "Pipelines, jobs & templates",                icon: Zap,        path: "/automation" },
+  { id: "infrastructure",label: "Infrastructure", description: "Warehouses, federation & sharing",           icon: Server,     path: "/infrastructure" },
+  { id: "mdm",         label: "MDM",              description: "Master data management",                     icon: Database,   path: "/mdm" },
+  { id: "assessment",  label: "Assessment",       description: "UC security assessment & inventory",         icon: ShieldCheck,path: "/assessment" },
 ];
 
 function getDisabledPortals(): Set<string> {
@@ -21,7 +22,7 @@ function getDisabledPortals(): Set<string> {
 }
 
 function detectPortal(pathname: string) {
-  const prefixes = ["/governance", "/data-quality", "/finops", "/security", "/automation", "/infrastructure", "/mdm"];
+  const prefixes = ["/governance", "/data-quality", "/finops", "/security", "/automation", "/infrastructure", "/mdm", "/assessment"];
   for (const prefix of prefixes) {
     if (pathname.startsWith(prefix)) {
       return ALL_PORTALS.find(p => p.path === prefix)!;

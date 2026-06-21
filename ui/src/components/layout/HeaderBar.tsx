@@ -94,6 +94,22 @@ const ALL_PAGES = [
   { href: "/mdm/cross-domain", label: "Cross-Domain", keywords: "cross domain matching customer supplier entity types" },
   { href: "/mdm/reports", label: "MDM Reports", keywords: "compliance report export entity merge stewardship" },
   { href: "/mdm/profiling", label: "MDM Profiling", keywords: "profile attributes completeness distinct values patterns" },
+  // Assessment portal
+  { href: "/assessment", label: "Assessment", keywords: "assessment security scan unity catalog uc governance policy" },
+  { href: "/assessment/run", label: "Run Scan", keywords: "run scan assessment trigger start security scan" },
+  { href: "/assessment/findings", label: "Findings", keywords: "findings security issues violations checks fail warn" },
+  { href: "/assessment/categories", label: "Category Scores", keywords: "category scores security posture grade assessment" },
+  { href: "/assessment/recommendations", label: "Recommendations", keywords: "recommendations remediation fix security suggestions" },
+  { href: "/assessment/inventory", label: "UC Inventory", keywords: "unity catalog inventory catalogs schemas tables columns" },
+  { href: "/assessment/inventory/access", label: "Access Control", keywords: "access control grants permissions privileges principal acl" },
+  { href: "/assessment/inventory/health", label: "Metadata Health", keywords: "metadata health owner description coverage pii columns" },
+  { href: "/assessment/inventory/drift", label: "Drift Detection", keywords: "drift detection inventory change diff added removed tables" },
+  { href: "/assessment/inventory/policies", label: "Policy Violations", keywords: "policy violations governance rules owner masking" },
+  { href: "/assessment/inventory/lineage", label: "Column Lineage", keywords: "lineage column upstream downstream table dependency" },
+  { href: "/assessment/inventory/timeline", label: "Inventory Timeline", keywords: "timeline growth trend catalog schema table count over time" },
+  { href: "/assessment/history", label: "Scan History", keywords: "scan history past results previous assessment runs" },
+  { href: "/assessment/compare", label: "Compare Scans", keywords: "compare scans diff assessment before after regression" },
+  { href: "/assessment/export", label: "Assessment Export", keywords: "export download json csv excel assessment findings inventory" },
   // Other
   { href: "/help", label: "Help & Guides", keywords: "help documentation guide tutorial how to keyboard shortcuts" },
 ];

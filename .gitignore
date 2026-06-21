@@ -50,6 +50,8 @@ htmlcov/
 !.vscode/extensions.json
 .idea/
 .claude/settings.json
+.claude/worktrees/
+.claude/plans/
 *.swp
 *.swo
 *~

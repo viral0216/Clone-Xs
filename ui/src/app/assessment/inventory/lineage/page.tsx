@@ -14,6 +14,7 @@ import {
   LayoutDashboard, GitBranch, Code2, FileText, X, Columns,
   ArrowUpCircle, ArrowDownCircle, AlertCircle, Download,
   PanelRightOpen, PanelRightClose, Plus, AlertTriangle,
+  Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -527,11 +528,108 @@ function ImpactAnalysisPanel({ lineage, onClose }) {
 // ─── Lineage graph ────────────────────────────────────────────────────────────
 
 function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetchTableInfo, graphContainerRef }) {
-  const graphRef  = useRef(null);
-  const centerRef = useRef(null);
-  const upRefs    = useRef([]);
-  const downRefs  = useRef([]);
-  const colRefs   = useRef(new Map());   // "${fqn}:${colName}" → HTMLElement
+  const graphRef      = useRef(null);
+  const centerRef     = useRef(null);
+  const upRefs        = useRef([]);
+  const downRefs      = useRef([]);
+  const panContainerRef = useRef(null);
+  const colRefs       = useRef(new Map());   // "${fqn}:${colName}" → HTMLElement
+
+  // Pan + zoom
+  const [offset,     setOffset]    = useState({ x: 0, y: 0 });
+  const [scale,      setScale]     = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);   // ref copy — no stale-closure in document handlers
+  const dragOrigin    = useRef({ x: 0, y: 0 });
+  const offsetRef     = useRef({ x: 0, y: 0 });
+  // Keep offsetRef in sync so mousedown always uses the latest offset
+  useEffect(() => { offsetRef.current = offset; }, [offset]);
+
+  // Per-card drag offsets: { [cardKey]: { x, y } }
+  const [cardOffsets, setCardOffsets] = useState({});
+  const cardOffsetsRef = useRef({});
+  useEffect(() => { cardOffsetsRef.current = cardOffsets; }, [cardOffsets]);
+  const cardDragRef = useRef(null);   // { key, startX, startY, origX, origY }
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
+  // ref copy of scale so document-level handlers don't go stale
+  const scaleRef = useRef(1);
+  useEffect(() => { scaleRef.current = scale; }, [scale]);
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+
+    // Card drag: grip handle takes priority
+    const dragHandle = e.target.closest("[data-drag-handle]");
+    if (dragHandle) {
+      e.preventDefault();
+      const cardKey = dragHandle.dataset.dragHandle;
+      if (cardKey) {
+        const orig = cardOffsetsRef.current[cardKey] || { x: 0, y: 0 };
+        cardDragRef.current = { key: cardKey, startX: e.clientX, startY: e.clientY, origX: orig.x, origY: orig.y };
+        setIsDraggingCard(true);
+      }
+      return;
+    }
+
+    // Skip interactive elements for canvas pan
+    if (e.target.closest("button, a, input, select, textarea")) return;
+
+    // Canvas pan
+    e.preventDefault();
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    dragOrigin.current = {
+      x: e.clientX - offsetRef.current.x,
+      y: e.clientY - offsetRef.current.y,
+    };
+  }, []);
+
+  // Attach mousemove + mouseup to document so dragging works anywhere on the page
+  useEffect(() => {
+    const onMove = (e) => {
+      // Per-card drag
+      if (cardDragRef.current) {
+        const { key, startX, startY, origX, origY } = cardDragRef.current;
+        const s = scaleRef.current;
+        const dx = (e.clientX - startX) / s;
+        const dy = (e.clientY - startY) / s;
+        setCardOffsets(prev => ({ ...prev, [key]: { x: origX + dx, y: origY + dy } }));
+        return;
+      }
+      // Canvas pan
+      if (!isDraggingRef.current) return;
+      setOffset({ x: e.clientX - dragOrigin.current.x, y: e.clientY - dragOrigin.current.y });
+    };
+    const onUp = () => {
+      if (cardDragRef.current) {
+        cardDragRef.current = null;
+        setIsDraggingCard(false);
+        return;
+      }
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup",   onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup",   onUp);
+    };
+  }, []);
+
+  // Non-passive wheel so preventDefault() actually works
+  useEffect(() => {
+    const el = panContainerRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.08 : 0.08;
+      setScale(s => Math.min(2, Math.max(0.25, +(s + delta).toFixed(2))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   const [tableLines, setTableLines] = useState([]);
   const [selectedCol, setSelectedCol] = useState(null);    // {tableFqn, colName}
@@ -662,45 +760,43 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     function calc() {
       if (!graphRef.current || !centerRef.current) return;
       const base  = graphRef.current.getBoundingClientRect();
+      const S     = scale; // scale factor for coordinate conversion
+      const px    = (v) => v / S; // screen-px → canvas CSS-px
       const cRect = centerRef.current.getBoundingClientRect();
-      const cx1   = cRect.left  - base.left;
-      const cx2   = cRect.right - base.left;
-      const cy    = cRect.top + cRect.height / 2 - base.top;
+      const cx1   = px(cRect.left  - base.left);
+      const cx2   = px(cRect.right - base.left);
+      const cy    = px(cRect.top + cRect.height / 2 - base.top);
       const next  = [];
       upRefs.current.forEach(ref => {
         if (!ref) return;
         const r = ref.getBoundingClientRect();
-        next.push({ x1: r.right - base.left, y1: r.top + r.height/2 - base.top, x2: cx1, y2: cy, type: "upstream" });
+        next.push({ x1: px(r.right - base.left), y1: px(r.top + r.height/2 - base.top), x2: cx1, y2: cy, type: "upstream" });
       });
       downRefs.current.forEach(ref => {
         if (!ref) return;
         const r = ref.getBoundingClientRect();
-        next.push({ x1: cx2, y1: cy, x2: r.left - base.left, y2: r.top + r.height/2 - base.top, type: "downstream" });
+        next.push({ x1: cx2, y1: cy, x2: px(r.left - base.left), y2: px(r.top + r.height/2 - base.top), type: "downstream" });
       });
-      // 2nd level upstream lines: from up2 to up1 if the up1 node is expanded
       up2Refs.current.forEach((ref, idx) => {
         if (!ref) return;
         const node2 = upstream2[idx];
         if (!node2) return;
-        // connect to any up1 node that has this in its expanded data
         upRefs.current.forEach((ref1, idx1) => {
           if (!ref1) return;
           const fqn1 = upstream[idx1]?.table_name;
           if (!fqn1 || !expandedNodes.has(fqn1)) return;
           const data1 = expandedData[fqn1];
           if (!data1) return;
-          const hasNode = (data1.upstream_tables || []).some(x => x.table_name === node2.table_name);
-          if (!hasNode) return;
+          if (!(data1.upstream_tables || []).some(x => x.table_name === node2.table_name)) return;
           const r1 = ref1.getBoundingClientRect();
           const r2 = ref.getBoundingClientRect();
           next.push({
-            x1: r2.right - base.left, y1: r2.top + r2.height/2 - base.top,
-            x2: r1.left  - base.left, y2: r1.top + r1.height/2 - base.top,
+            x1: px(r2.right - base.left), y1: px(r2.top + r2.height/2 - base.top),
+            x2: px(r1.left  - base.left), y2: px(r1.top + r1.height/2 - base.top),
             type: "upstream",
           });
         });
       });
-      // 2nd level downstream lines: from dn1 to dn2
       down2Refs.current.forEach((ref, idx) => {
         if (!ref) return;
         const node2 = downstream2[idx];
@@ -711,13 +807,12 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
           if (!fqn1 || !expandedNodes.has(fqn1)) return;
           const data1 = expandedData[fqn1];
           if (!data1) return;
-          const hasNode = (data1.downstream_tables || []).some(x => x.table_name === node2.table_name);
-          if (!hasNode) return;
+          if (!(data1.downstream_tables || []).some(x => x.table_name === node2.table_name)) return;
           const r1 = ref1.getBoundingClientRect();
           const r2 = ref.getBoundingClientRect();
           next.push({
-            x1: r1.right - base.left, y1: r1.top + r1.height/2 - base.top,
-            x2: r2.left  - base.left, y2: r2.top + r2.height/2 - base.top,
+            x1: px(r1.right - base.left), y1: px(r1.top + r1.height/2 - base.top),
+            x2: px(r2.left  - base.left), y2: px(r2.top + r2.height/2 - base.top),
             type: "downstream",
           });
         });
@@ -727,7 +822,7 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     calc();
     window.addEventListener("resize", calc);
     return () => window.removeEventListener("resize", calc);
-  }, [upstream, downstream, upstream2, downstream2, tableInfoMap, expandedNodes, expandedData]);
+  }, [upstream, downstream, upstream2, downstream2, tableInfoMap, expandedNodes, expandedData, scale, cardOffsets]);
 
   // Column-level bezier lines
   useLayoutEffect(() => {
@@ -735,13 +830,16 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     const base = graphRef.current?.getBoundingClientRect();
     if (!base) return;
 
+    const S  = scale;
+    const px = (v) => v / S;
+
     const srcEl = colRefs.current.get(`${selectedCol.tableFqn}:${selectedCol.colName}`);
     if (!srcEl) return;
 
     const srcRect = srcEl.getBoundingClientRect();
-    const srcL    = srcRect.left  - base.left;
-    const srcR    = srcRect.right - base.left;
-    const srcMy   = srcRect.top + srcRect.height / 2 - base.top;
+    const srcL    = px(srcRect.left  - base.left);
+    const srcR    = px(srcRect.right - base.left);
+    const srcMy   = px(srcRect.top + srcRect.height / 2 - base.top);
 
     const lines = [];
 
@@ -750,7 +848,7 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
       if (!el) return;
       const r = el.getBoundingClientRect();
       lines.push({
-        x1: r.right - base.left, y1: r.top + r.height/2 - base.top,
+        x1: px(r.right - base.left), y1: px(r.top + r.height/2 - base.top),
         x2: srcL, y2: srcMy,
         type: "upstream",
       });
@@ -762,13 +860,13 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
       const r = el.getBoundingClientRect();
       lines.push({
         x1: srcR, y1: srcMy,
-        x2: r.left - base.left, y2: r.top + r.height/2 - base.top,
+        x2: px(r.left - base.left), y2: px(r.top + r.height/2 - base.top),
         type: "downstream",
       });
     });
 
     setColLines(lines);
-  }, [colLineage, selectedCol]);
+  }, [colLineage, selectedCol, scale, cardOffsets]);
 
   if (!hasData) return (
     <div className="py-12 text-center text-muted-foreground">
@@ -791,9 +889,22 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     const fqn = entity.table_name || "";
     const isExpanded = expandedNodes.has(fqn);
     const isExpLoading = expandLoading[fqn];
+    const cardKey = `${direction}-${isSecondLevel ? "2" : "1"}-${i}`;
+    const co = cardOffsets[cardKey] || { x: 0, y: 0 };
+
+    const dragHandle = (
+      <div
+        data-drag-handle={cardKey}
+        className="flex items-center justify-center gap-1 w-full py-1 cursor-grab active:cursor-grabbing select-none opacity-40 hover:opacity-80 transition-opacity"
+        title="Drag to reposition"
+      >
+        <GripVertical className="h-3 w-3 text-muted-foreground" />
+      </div>
+    );
 
     if (isTable) return (
-      <div key={`${direction}-${isSecondLevel ? "2" : "1"}-${i}`} className="relative">
+      <div key={cardKey} className="relative" data-draggable-card={cardKey} style={{ transform: `translate(${co.x}px, ${co.y}px)` }}>
+        {dragHandle}
         {isExpLoading && (
           <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-20">
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -816,12 +927,14 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
       </div>
     );
     return (
-      <EntityCard
-        key={`${direction}-${isSecondLevel ? "2" : "1"}-${i}`}
-        entity={entity}
-        direction={direction}
-        nodeRef={el => (refs.current[i] = el)}
-      />
+      <div key={cardKey} className="relative" data-draggable-card={cardKey} style={{ transform: `translate(${co.x}px, ${co.y}px)` }}>
+        {dragHandle}
+        <EntityCard
+          entity={entity}
+          direction={direction}
+          nodeRef={el => (refs.current[i] = el)}
+        />
+      </div>
     );
   }
 
@@ -852,8 +965,18 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
         </div>
       )}
 
-      <div ref={el => { graphRef.current = el; if (graphContainerRef) graphContainerRef.current = el; }}
-        className="relative flex items-start justify-center gap-10 py-8 px-6 overflow-x-auto min-h-[200px]">
+      {/* Pan / zoom container */}
+      <div
+        ref={panContainerRef}
+        className="relative overflow-hidden min-h-[200px] select-none"
+        style={{ cursor: isDragging ? "grabbing" : "grab" }}
+        onMouseDown={handleMouseDown}
+      >
+        {/* Canvas — translated + scaled */}
+        <div ref={el => { graphRef.current = el; if (graphContainerRef) graphContainerRef.current = el; }}
+          className="relative flex items-start justify-center gap-10 py-8 px-6 min-h-[200px]"
+          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, transformOrigin: "0 0", willChange: "transform" }}
+        >
         <LineageOverlay tableLines={tableLines} colLines={colLines} />
 
         {/* Upstream level 2 */}
@@ -881,8 +1004,19 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
         )}
 
         {/* Center */}
-        <div className="flex flex-col items-center gap-2 z-10">
+        <div
+          className="flex flex-col items-center gap-2 z-10"
+          data-draggable-card="center"
+          style={{ transform: `translate(${(cardOffsets["center"]||{x:0}).x}px, ${(cardOffsets["center"]||{y:0}).y}px)` }}
+        >
           <p className="text-[10px] font-semibold text-foreground/60 uppercase tracking-widest text-center">Current Table</p>
+          <div
+            data-drag-handle="center"
+            className="flex items-center justify-center gap-1 w-full py-1 cursor-grab active:cursor-grabbing select-none opacity-40 hover:opacity-80 transition-opacity"
+            title="Drag to reposition"
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </div>
           <TableNodeCard
             entity={{ table_name: lineage.table_name, entity_type: "TABLE" }}
             isTarget
@@ -921,7 +1055,46 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
             {downstream2.map((e, i) => renderNode(e, i, "downstream", true))}
           </div>
         )}
-      </div>
+        </div>{/* end canvas */}
+
+        {/* Pan/zoom controls overlay */}
+        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 rounded-lg border border-border bg-background/90 backdrop-blur px-1.5 py-1 shadow-sm">
+          <button
+            onClick={() => setScale(s => Math.min(2, +(s + 0.15).toFixed(2)))}
+            title="Zoom in"
+            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[10px] font-mono text-muted-foreground w-9 text-center">
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            onClick={() => setScale(s => Math.max(0.25, +(s - 0.15).toFixed(2)))}
+            title="Zoom out"
+            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <button
+            onClick={() => { setOffset({ x: 0, y: 0 }); setScale(1); setCardOffsets({}); }}
+            title="Reset view and card positions"
+            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Hint */}
+        {(offset.x !== 0 || offset.y !== 0 || scale !== 1) && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <span className="text-[10px] text-muted-foreground/60 bg-background/80 backdrop-blur px-2 py-0.5 rounded-full border border-border/40">
+              Drag to pan · Scroll to zoom · Reset ↺
+            </span>
+          </div>
+        )}
+      </div>{/* end pan container */}
     </div>
   );
 }
@@ -1048,8 +1221,18 @@ export default function DataLineagePage() {
   // Impact Analysis panel
   const [impactOpen, setImpactOpen] = useState(false);
 
+  // Full-screen mode
+  const [fullscreen, setFullscreen] = useState(false);
+
   // Graph container ref for SVG export
   const graphContainerRef = useRef(null);
+
+  // Escape key exits full-screen
+  useEffect(() => {
+    const handler = (e) => { if (e.key === "Escape" && fullscreen) setFullscreen(false); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [fullscreen]);
 
   // ── Feature 1: Deep-link – read URL params on mount ──────────────────────
   useEffect(() => {
@@ -1160,7 +1343,12 @@ export default function DataLineagePage() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className={cn(
+      "flex flex-col overflow-hidden",
+      fullscreen
+        ? "fixed inset-0 z-50 bg-background"
+        : "h-full",
+    )}>
       <PageHeader
         title="Data Lineage Explorer"
         icon={Share2}
@@ -1305,6 +1493,18 @@ export default function DataLineagePage() {
                       >
                         <Download className="h-3 w-3" />
                         Export SVG
+                      </button>
+
+                      {/* Full-screen toggle */}
+                      <button
+                        onClick={() => setFullscreen(f => !f)}
+                        title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/70 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                      >
+                        {fullscreen
+                          ? <><Minimize2 className="h-3 w-3" /> Exit full screen</>
+                          : <><Maximize2 className="h-3 w-3" /> Full screen</>
+                        }
                       </button>
 
                       {/* Feature 3: Impact Analysis button */}

@@ -15,6 +15,7 @@ import {
   ArrowUpCircle, ArrowDownCircle, AlertCircle, Download,
   PanelRightOpen, PanelRightClose, Plus, AlertTriangle,
   Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, GripVertical,
+  Copy, Check, ExternalLink, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +57,25 @@ function ColTypeIcon({ type = "" }) {
   return <Type className="h-3 w-3 shrink-0 text-muted-foreground" />;
 }
 
+// ─── Freshness label (color-coded by how recently updated) ───────────────────
+
+function freshnessLabel(updatedAt) {
+  if (!updatedAt) return null;
+  const ts = new Date(Number(updatedAt));
+  if (isNaN(ts.getTime())) return null;
+  const ageMs = Date.now() - ts.getTime();
+  const days  = Math.floor(ageMs / 86_400_000);
+  const hours = Math.floor(ageMs / 3_600_000);
+  if (ageMs < 86_400_000) {
+    const label = hours < 1 ? "Updated recently" : `Updated ${hours}h ago`;
+    return { label, color: "text-green-600 dark:text-green-400 bg-green-500/10 border-green-500/30" };
+  }
+  if (ageMs < 7 * 86_400_000) {
+    return { label: `Updated ${days}d ago`, color: "text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/30" };
+  }
+  return { label: `Updated ${days}d ago`, color: "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30" };
+}
+
 // ─── Entity meta (icon + colour per type) ────────────────────────────────────
 
 function entityMeta(type) {
@@ -73,13 +93,19 @@ function entityMeta(type) {
 
 // ─── Non-table entity card (notebook / job / dashboard / pipeline / query) ────
 
-function EntityCard({ entity, nodeRef }) {
+function EntityCard({ entity, nodeRef, graphSearchMatches = null, tracedPath = null }) {
   const { Icon, color, bg } = entityMeta(entity.entity_type);
   const label = entity.name || entity.entity_type || "Unknown";
+  const fqn   = entity.table_name || entity.name || "";
+
+  const isSearchActive = graphSearchMatches !== null;
+  const isPathActive   = tracedPath !== null;
+  const isHighlighted  = (isSearchActive && graphSearchMatches.has(fqn)) || (isPathActive && tracedPath.has(fqn));
+  const isDimmed       = (isSearchActive || isPathActive) && !isHighlighted;
 
   return (
-    <div ref={nodeRef} className="w-[220px] shrink-0">
-      <div className="rounded-xl border border-border shadow-sm overflow-hidden">
+    <div ref={nodeRef} className={cn("w-[220px] shrink-0", isDimmed && "opacity-25 transition-opacity")}>
+      <div className={cn("rounded-xl border border-border shadow-sm overflow-hidden transition-shadow", isHighlighted && "ring-2 ring-yellow-400/80 shadow-yellow-400/20 shadow-lg")}>
         <div className="px-3 py-3 bg-card">
           <div className="flex items-center gap-2 mb-1.5">
             <div className={cn("h-5 w-5 rounded flex items-center justify-center shrink-0", bg)}>
@@ -120,6 +146,8 @@ function TableNodeCard({
   isSecondLevel = false,
   onExpand,
   isExpanded = false,
+  graphSearchMatches = null,
+  tracedPath = null,
 }) {
   const fqn    = entity.table_name || "";
   const parts  = fqn.split(".");
@@ -131,6 +159,7 @@ function TableNodeCard({
 
   const [search, setSearch] = useState("");
   const [page,   setPage]   = useState(0);
+  const [copied, setCopied] = useState(false);
   useEffect(() => setPage(0), [search]);
 
   const filtered   = info.columns.filter(c =>
@@ -153,11 +182,18 @@ function TableNodeCard({
 
   const cardWidth = isSecondLevel ? "w-[200px]" : "w-[240px]";
 
+  // Graph search / path trace visual state
+  const isSearchActive = graphSearchMatches !== null;
+  const isPathActive   = tracedPath !== null;
+  const isHighlighted  = (isSearchActive && graphSearchMatches.has(fqn)) || (isPathActive && tracedPath.has(fqn));
+  const isDimmed       = (isSearchActive || isPathActive) && !isHighlighted && !isTarget;
+
   return (
-    <div ref={nodeRef} className={cn(cardWidth, "shrink-0", isSecondLevel && "scale-90 origin-top")}>
+    <div ref={nodeRef} className={cn(cardWidth, "shrink-0", isSecondLevel && "scale-90 origin-top", isDimmed && "opacity-25 transition-opacity")}>
       <div className={cn(
-        "rounded-xl border overflow-hidden",
+        "rounded-xl border overflow-hidden transition-shadow",
         isTarget ? "border-primary/50 shadow-md ring-1 ring-primary/20" : "border-border shadow-sm",
+        isHighlighted && !isTarget && "ring-2 ring-yellow-400/80 shadow-yellow-400/20 shadow-lg",
       )}>
         {/* Header */}
         <button
@@ -196,6 +232,19 @@ function TableNodeCard({
               <User className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />
               <p className="text-[10px] text-muted-foreground/60 truncate">{info.owner}</p>
             </div>
+          )}
+          {(() => {
+            const f = freshnessLabel(info.updated_at);
+            return f ? (
+              <span className={`inline-flex items-center mt-1.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full border leading-none ${f.color}`}>
+                {f.label}
+              </span>
+            ) : null;
+          })()}
+          {info.comment && (
+            <p className="text-[9px] text-muted-foreground/60 italic truncate mt-0.5" title={info.comment}>
+              {info.comment}
+            </p>
           )}
         </button>
 
@@ -644,6 +693,25 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
   const [expandedData, setExpandedData] = useState({});
   const [expandLoading, setExpandLoading] = useState({});
 
+  // In-graph search
+  const [graphSearch, setGraphSearch] = useState("");
+  // Reset search + path trace when the target table changes
+  useEffect(() => { setGraphSearch(""); setTracedPath(null); setTraceSource(null); }, [lineage]);
+
+  // Path trace
+  const [tracedPath,  setTracedPath]  = useState(null);   // Set<fqn> | null
+  const [traceSource, setTraceSource] = useState(null);   // fqn string | null
+  const graphSearchMatches = useMemo(() => {
+    const q = graphSearch.trim().toLowerCase();
+    if (!q) return null; // null = no filter active
+    const all = [
+      lineage?.table_name,
+      ...(lineage?.upstream_tables   || []).map(e => e.table_name || e.name),
+      ...(lineage?.downstream_tables || []).map(e => e.table_name || e.name),
+    ].filter(Boolean);
+    return new Set(all.filter(fqn => fqn.toLowerCase().includes(q)));
+  }, [graphSearch, lineage]);
+
   // Filter by entity type
   const upstream = useMemo(() =>
     (lineage?.upstream_tables   || []).filter(e =>
@@ -868,6 +936,42 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     setColLines(lines);
   }, [colLineage, selectedCol, scale, cardOffsets]);
 
+  // BFS helpers for path tracing
+  function buildAdjacency() {
+    const adj = {};
+    const addEdge = (a, b) => { adj[a] = adj[a] || []; if (!adj[a].includes(b)) adj[a].push(b); };
+    (lineage?.upstream_tables   || []).forEach(e => { if (e.table_name) addEdge(e.table_name, lineage.table_name); });
+    (lineage?.downstream_tables || []).forEach(e => { if (e.table_name) addEdge(lineage.table_name, e.table_name); });
+    Object.entries(expandedData).forEach(([fqn, data]) => {
+      (data.upstream_tables   || []).forEach(e => { if (e.table_name) addEdge(e.table_name, fqn); });
+      (data.downstream_tables || []).forEach(e => { if (e.table_name) addEdge(fqn, e.table_name); });
+    });
+    return adj;
+  }
+
+  function bfsPath(adj, from, to) {
+    if (from === to) return [from];
+    const visited = new Set([from]);
+    const queue   = [[from, [from]]];
+    while (queue.length) {
+      const [node, path] = queue.shift();
+      for (const next of (adj[node] || [])) {
+        if (next === to) return [...path, next];
+        if (!visited.has(next)) { visited.add(next); queue.push([next, [...path, next]]); }
+      }
+    }
+    return null;
+  }
+
+  const handleTracePath = useCallback((fqn) => {
+    if (traceSource === fqn) { setTracedPath(null); setTraceSource(null); return; }
+    const adj  = buildAdjacency();
+    const path = bfsPath(adj, fqn, lineage.table_name) || bfsPath(adj, lineage.table_name, fqn);
+    if (path) { setTracedPath(new Set(path)); setTraceSource(fqn); }
+    else      { setTracedPath(new Set([fqn, lineage.table_name])); setTraceSource(fqn); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traceSource, lineage, expandedData]);
+
   if (!hasData) return (
     <div className="py-12 text-center text-muted-foreground">
       <Share2 className="h-10 w-10 mx-auto mb-3 opacity-20" />
@@ -903,8 +1007,39 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
     );
 
     if (isTable) return (
-      <div key={cardKey} className="relative" data-draggable-card={cardKey} style={{ transform: `translate(${co.x}px, ${co.y}px)` }}>
+      <div key={cardKey} className="relative group/card" data-draggable-card={cardKey} style={{ transform: `translate(${co.x}px, ${co.y}px)` }}>
         {dragHandle}
+        {/* Hover quick-actions: trace path + copy FQN + open in new tab */}
+        {!isSecondLevel && (
+          <div className="absolute top-6 right-1 z-20 flex gap-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
+            <button
+              onClick={e => { e.stopPropagation(); handleTracePath(fqn); }}
+              title={tracedPath && traceSource === fqn ? "Clear path trace" : "Trace path to target table"}
+              className={cn(
+                "p-1 rounded border shadow-sm transition-colors",
+                tracedPath && traceSource === fqn
+                  ? "bg-yellow-400/20 border-yellow-400/60 text-yellow-600 dark:text-yellow-400"
+                  : "bg-background/90 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+            >
+              <GitBranch className="h-2.5 w-2.5" />
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); navigator.clipboard?.writeText(fqn).catch(() => {}); }}
+              title="Copy full table name"
+              className="p-1 rounded bg-background/90 border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 shadow-sm transition-colors"
+            >
+              <Copy className="h-2.5 w-2.5" />
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); window.open(`/assessment/inventory/lineage?table=${encodeURIComponent(fqn)}`, "_blank"); }}
+              title="Open this table's lineage in a new tab"
+              className="p-1 rounded bg-background/90 border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 shadow-sm transition-colors"
+            >
+              <ExternalLink className="h-2.5 w-2.5" />
+            </button>
+          </div>
+        )}
         {isExpLoading && (
           <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-20">
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -923,6 +1058,8 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
           isSecondLevel={isSecondLevel}
           onExpand={isSecondLevel ? undefined : handleExpand}
           isExpanded={isExpanded}
+          graphSearchMatches={graphSearchMatches}
+          tracedPath={tracedPath}
         />
       </div>
     );
@@ -933,6 +1070,8 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
           entity={entity}
           direction={direction}
           nodeRef={el => (refs.current[i] = el)}
+          graphSearchMatches={graphSearchMatches}
+          tracedPath={tracedPath}
         />
       </div>
     );
@@ -959,6 +1098,22 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
             </span>
           )}
           <button onClick={() => { setSelectedCol(null); setColLineage(null); setColLines([]); }}
+            className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Path trace banner */}
+      {tracedPath && traceSource && (
+        <div className="mx-4 mt-2 mb-0 px-3 py-2 rounded-lg border border-yellow-400/40 bg-yellow-400/5 flex items-center gap-2 text-xs">
+          <GitBranch className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400 shrink-0" />
+          <span className="font-medium shrink-0 text-yellow-700 dark:text-yellow-300">Path trace:</span>
+          <code className="font-mono truncate text-foreground/80">
+            {traceSource.split(".").pop()} → {lineage.table_name.split(".").pop()}
+          </code>
+          <span className="text-muted-foreground shrink-0">{tracedPath.size} node{tracedPath.size !== 1 ? "s" : ""}</span>
+          <button onClick={() => { setTracedPath(null); setTraceSource(null); }}
             className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0">
             <X className="h-3.5 w-3.5" />
           </button>
@@ -1026,6 +1181,8 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
             onColumnClick={handleColumnClick}
             onColumnRef={handleColumnRef}
             colLineage={colLineage}
+            graphSearchMatches={graphSearchMatches}
+            tracedPath={tracedPath}
           />
           <p className="text-[10px] text-muted-foreground text-center mt-1">
             {(lineage.upstream_tables||[]).length} upstream · {(lineage.downstream_tables||[]).length} downstream
@@ -1084,6 +1241,35 @@ function LineageGraph({ lineage, onNavigate, entityFilter, tableInfoMap, onFetch
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
+        </div>
+
+        {/* In-graph search overlay */}
+        <div
+          className="absolute top-3 left-3 z-30 flex items-center gap-1.5 rounded-lg border border-border bg-background/90 backdrop-blur shadow-sm px-2.5 py-1.5"
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+          <input
+            type="text"
+            value={graphSearch}
+            onChange={e => setGraphSearch(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            placeholder="Search nodes…"
+            className="text-[11px] bg-transparent outline-none placeholder:text-muted-foreground/40 text-foreground w-28"
+          />
+          {graphSearch && (
+            <>
+              <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                {graphSearchMatches?.size ?? 0} match{graphSearchMatches?.size !== 1 ? "es" : ""}
+              </span>
+              <button
+                onClick={e => { e.stopPropagation(); setGraphSearch(""); }}
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Hint */}
@@ -1262,14 +1448,20 @@ export default function DataLineagePage() {
 
   const fetchTableInfo = useCallback((fqn) => {
     if (!fqn || tableInfoMap[fqn] !== undefined) return;
-    setTableInfoMap(m => ({ ...m, [fqn]: { columns: [], owner: "", loading: true } }));
+    setTableInfoMap(m => ({ ...m, [fqn]: { columns: [], owner: "", updated_at: "", comment: "", loading: true } }));
     const [cat, schema, tbl] = fqn.split(".");
     api.get(`/catalogs/${cat}/${schema}/${tbl}/info`)
       .then(info => setTableInfoMap(m => ({
-        ...m, [fqn]: { columns: info.columns || [], owner: info.owner || "", loading: false },
+        ...m, [fqn]: {
+          columns: info.columns || [],
+          owner: info.owner || "",
+          updated_at: String(info.updated_at ?? ""),
+          comment: info.comment || "",
+          loading: false,
+        },
       })))
       .catch(() => setTableInfoMap(m => ({
-        ...m, [fqn]: { columns: [], owner: "", loading: false },
+        ...m, [fqn]: { columns: [], owner: "", updated_at: "", comment: "", loading: false },
       })));
   }, [tableInfoMap]);
 
@@ -1340,6 +1532,46 @@ export default function DataLineagePage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  const [exportingPng, setExportingPng] = useState(false);
+
+  async function handleExportPNG() {
+    if (!graphContainerRef.current || exportingPng) return;
+    setExportingPng(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(graphContainerRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const a = document.createElement("a");
+        const safeName = (lineage?.table_name || "lineage").replace(/\./g, "_");
+        a.href = URL.createObjectURL(blob);
+        a.download = `lineage-${safeName}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      }, "image/png");
+    } finally {
+      setExportingPng(false);
+    }
+  }
+
+  function handleExplainWithAI() {
+    if (!lineage) return;
+    const upList = (lineage.upstream_tables || [])
+      .map(e => e.table_name || e.name).filter(Boolean).slice(0, 10);
+    const dnList = (lineage.downstream_tables || [])
+      .map(e => e.table_name || e.name).filter(Boolean).slice(0, 10);
+    const prompt = `Explain the data lineage for ${lineage.table_name}: `
+      + `it has ${upList.length} upstream source${upList.length !== 1 ? "s" : ""} (${upList.join(", ") || "none"}) `
+      + `and ${dnList.length} downstream consumer${dnList.length !== 1 ? "s" : ""} (${dnList.join(", ") || "none"}). `
+      + `What does this data flow represent and what are the data quality risks?`;
+    window.open(`/ai-assistant?prompt=${encodeURIComponent(prompt)}`, "_blank");
   }
 
   return (
@@ -1485,7 +1717,7 @@ export default function DataLineagePage() {
                         {timeRange === "All" ? "All time" : `Last ${timeRange}`}
                       </span>
 
-                      {/* Feature 2: Export SVG button */}
+                      {/* Export SVG */}
                       <button
                         onClick={handleExportSVG}
                         title="Export graph as SVG"
@@ -1493,6 +1725,19 @@ export default function DataLineagePage() {
                       >
                         <Download className="h-3 w-3" />
                         Export SVG
+                      </button>
+
+                      {/* Export PNG */}
+                      <button
+                        onClick={handleExportPNG}
+                        disabled={exportingPng}
+                        title="Export graph as PNG"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/70 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+                      >
+                        {exportingPng
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <Download className="h-3 w-3" />}
+                        Export PNG
                       </button>
 
                       {/* Full-screen toggle */}
@@ -1522,6 +1767,16 @@ export default function DataLineagePage() {
                           ? <PanelRightClose className="h-3 w-3" />
                           : <PanelRightOpen className="h-3 w-3" />}
                         Impact Analysis
+                      </button>
+
+                      {/* Explain with AI */}
+                      <button
+                        onClick={handleExplainWithAI}
+                        title="Open AI assistant with lineage context pre-filled"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/70 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Explain with AI
                       </button>
                     </div>
                   </div>

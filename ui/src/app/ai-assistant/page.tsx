@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, Cpu } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import {
@@ -45,6 +45,15 @@ export default function AiAssistantPage() {
 
   const noModel = !modelName;
 
+  // Auto-send prefilled prompt from ?prompt= URL param (set by Lineage "Explain with AI" button)
+  const prefillRef     = useRef<string | null>(null);
+  const prefillSentRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    prefillRef.current = params.get("prompt");
+  }, []);
+
   useEffect(() => {
     setModelName(localStorage.getItem("dbx_model") || "");
 
@@ -55,6 +64,14 @@ export default function AiAssistantPage() {
       .then((data) => { if (data.success) setModels(data.endpoints); })
       .catch(() => {});
   }, []);
+
+  // Fire prefilled prompt once modelName is available
+  useEffect(() => {
+    if (!modelName || !prefillRef.current || prefillSentRef.current) return;
+    prefillSentRef.current = true;
+    const prompt = prefillRef.current;
+    send(prompt, activeMode, catalog || undefined, schemaName || undefined);
+  }, [modelName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const host = localStorage.getItem("dbx_host");

@@ -9,7 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, Database, Loader2 } from "lucide-react";
+import { TrendingUp, Database, Loader2, ShieldCheck } from "lucide-react";
 
 const SERIES = [
   { key: "tables",   label: "Tables",   color: "#E8453C" },
@@ -24,16 +24,72 @@ function fmt(iso) {
   catch { return iso.slice(0, 10); }
 }
 
+function HealthScoreRing({ score }) {
+  const color = score >= 75 ? "#22c55e" : score >= 50 ? "#f59e0b" : "#ef4444";
+  const radius = 40;
+  const circ = 2 * Math.PI * radius;
+  const dash = (score / 100) * circ;
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 100, height: 100 }}>
+      <svg width={100} height={100} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={50} cy={50} r={radius} fill="none" stroke="var(--muted)" strokeWidth={8} />
+        <circle
+          cx={50} cy={50} r={radius} fill="none"
+          stroke={color} strokeWidth={8}
+          strokeDasharray={`${dash} ${circ}`}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dasharray 0.6s ease" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color }}>{score}</span>
+        <span className="text-[10px] text-muted-foreground font-medium">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+function SubScoreBar({ label, pct, color }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="text-xs font-semibold" style={{ color }}>{pct}%</span>
+      </div>
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function InventoryTimelinePage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState({ tables: true, schemas: true, catalogs: true, columns: false });
+  const [healthScore, setHealthScore] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
 
   useEffect(() => {
     api.get("/assessment/inventory/timeline")
       .then(r => setData(Array.isArray(r) ? r : []))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    const creds = (() => {
+      try { return { host: localStorage.getItem("dbx_host") || "", token: localStorage.getItem("dbx_token") || "" }; }
+      catch { return { host: "", token: "" }; }
+    })();
+    api.get("/assessment/inventory/health-score", {
+      headers: creds.host ? { "X-Databricks-Host": creds.host, "X-Databricks-Token": creds.token } : {},
+    })
+      .then(r => setHealthScore(r))
+      .catch(() => {})
+      .finally(() => setHealthLoading(false));
   }, []);
 
   const chartData = data.map(d => ({
@@ -67,6 +123,63 @@ export default function InventoryTimelinePage() {
         breadcrumbs={["Assessment", "UC Inventory", "Timeline"]}
         description="Track how your Unity Catalog inventory has grown over time — catalogs, schemas, tables, and columns across all scans."
       />
+
+      {/* UC Health Score */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            UC Health Score
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {healthLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Computing health score…</span>
+            </div>
+          ) : !healthScore || healthScore.total_tables === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">
+              No data available. Run an assessment scan to compute the health score.
+            </p>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+              {/* Score circle */}
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                <HealthScoreRing score={healthScore.health_score} />
+                <p className="text-xs font-medium text-muted-foreground mt-1">Overall Health</p>
+              </div>
+              {/* Sub-scores */}
+              <div className="flex-1 space-y-3 w-full max-w-xs">
+                <SubScoreBar
+                  label="Ownership coverage"
+                  pct={healthScore.ownership_pct}
+                  color={healthScore.ownership_pct >= 75 ? "#22c55e" : healthScore.ownership_pct >= 50 ? "#f59e0b" : "#ef4444"}
+                />
+                <SubScoreBar
+                  label="Description coverage"
+                  pct={healthScore.description_pct}
+                  color={healthScore.description_pct >= 75 ? "#22c55e" : healthScore.description_pct >= 50 ? "#f59e0b" : "#ef4444"}
+                />
+                <SubScoreBar
+                  label="Policy compliance"
+                  pct={Math.round((healthScore.ownership_pct + healthScore.description_pct) / 2)}
+                  color="#3b82f6"
+                />
+              </div>
+              {/* Stats */}
+              <div className="shrink-0 space-y-1 text-xs text-muted-foreground">
+                <p>Total tables: <span className="font-semibold text-foreground">{healthScore.total_tables.toLocaleString()}</span></p>
+                <p>With owner: <span className="font-semibold text-foreground">{healthScore.owned_tables.toLocaleString()}</span></p>
+                <p>With description: <span className="font-semibold text-foreground">{healthScore.described_tables.toLocaleString()}</span></p>
+                {healthScore.source && (
+                  <p className="text-[10px] opacity-60 mt-2">Source: {healthScore.source.replace("_", " ")}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {loading && (
         <div className="text-center py-16 text-muted-foreground">

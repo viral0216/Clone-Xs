@@ -5,10 +5,89 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Header, HTTPException, Query
+from pydantic import BaseModel
 
-from ._storage import _STORE
+from ._storage import _STORE, _latest_result
 
 router = APIRouter()
+
+
+class RemediateRequest(BaseModel):
+    finding_id: str
+    action: str
+    catalog: str | None = None
+    schema: str | None = None
+    table: str | None = None
+
+
+@router.post("/remediate")
+async def quick_remediate(
+    body: RemediateRequest,
+    x_databricks_host: str | None = Header(None),
+    x_databricks_token: str | None = Header(None),
+):
+    """Execute a quick remediation action for a finding.
+
+    Actions:
+      - set_owner: ALTER TABLE {fqn} SET OWNER TO current_user() via Databricks SQL
+      - acknowledge: mark the finding status as ACKNOWLEDGED in scan storage
+    """
+    import httpx
+
+    action = body.action
+
+    if action == "acknowledge":
+        # Mark the finding as acknowledged in the latest scan
+        meta = _latest_result()
+        scan_id = meta.get("scan_id") if meta else None
+        if scan_id:
+            path = _STORE / scan_id / "remediation.json"
+            data: dict = {}
+            if path.exists():
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {}
+            data[body.finding_id] = {"status": "ACKNOWLEDGED", "note": "Acknowledged via quick action"}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return {"success": True, "message": f"Finding {body.finding_id} marked as acknowledged"}
+
+    if action == "set_owner":
+        host = (x_databricks_host or "").rstrip("/")
+        token = x_databricks_token or ""
+        if not host or not token:
+            raise HTTPException(status_code=401, detail="Databricks credentials required")
+
+        # Build fully qualified name
+        parts = [p for p in [body.catalog, body.schema, body.table] if p]
+        if len(parts) < 3:
+            raise HTTPException(status_code=400, detail="catalog, schema, and table are required for set_owner action")
+        fqn = ".".join(f"`{p}`" for p in parts)
+
+        sql = f"ALTER TABLE {fqn} SET OWNER TO current_user()"
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                # Start statement execution
+                r = await c.post(
+                    f"{host}/api/2.0/sql/statements",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json={"statement": sql, "wait_timeout": "20s"},
+                )
+            if r.status_code not in (200, 201):
+                raise HTTPException(status_code=r.status_code, detail=f"Databricks SQL error: {r.text[:300]}")
+            result = r.json()
+            state = result.get("status", {}).get("state", "")
+            if state in ("SUCCEEDED", "RUNNING", "PENDING"):
+                return {"success": True, "message": f"Owner updated for {fqn}"}
+            err_msg = result.get("status", {}).get("error", {}).get("message", "Unknown error")
+            raise HTTPException(status_code=400, detail=f"SQL failed: {err_msg}")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Databricks unreachable: {exc}")
+
+    raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
 
 @router.get("/remediation/{scan_id}")

@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
 from ._storage import _STORE, _html_path, _latest_result, _list_results
@@ -293,6 +293,112 @@ async def inventory_diff(
             "tables_removed":   len(removed),
             "tables_modified":  len(modified),
         },
+    }
+
+
+@router.get("/inventory/health-score")
+async def inventory_health_score(
+    x_databricks_host: str | None = Header(None),
+    x_databricks_token: str | None = Header(None),
+):
+    """Compute UC health score from the latest scan inventory.
+
+    Calculates:
+      - ownership_pct  = tables with owner / total * 100
+      - description_pct = tables with comment / total * 100
+      - health_score    = round((ownership_pct + description_pct) / 2)
+
+    Falls back to querying system.information_schema if Databricks credentials provided and
+    no local scan is available.
+    """
+    import httpx
+
+    # Try local inventory first
+    meta = _latest_result()
+    if meta:
+        sid = meta.get("scan_id")
+        inv_path = _STORE / sid / "inventory.json"
+        if inv_path.exists():
+            try:
+                inv = json.loads(inv_path.read_text())
+                total = 0
+                owned = 0
+                described = 0
+                for cat in inv.get("catalogs", []):
+                    for sch in cat.get("schemas", []):
+                        for tbl in sch.get("tables", []):
+                            total += 1
+                            if tbl.get("owner"):
+                                owned += 1
+                            if tbl.get("comment"):
+                                described += 1
+                if total > 0:
+                    ownership_pct = round(owned / total * 100, 1)
+                    description_pct = round(described / total * 100, 1)
+                    health_score = round((ownership_pct + description_pct) / 2)
+                    return {
+                        "health_score": health_score,
+                        "total_tables": total,
+                        "owned_tables": owned,
+                        "described_tables": described,
+                        "ownership_pct": ownership_pct,
+                        "description_pct": description_pct,
+                        "source": "local_scan",
+                    }
+            except Exception:
+                pass
+
+    # Fall back to Databricks SQL query if credentials provided
+    host = (x_databricks_host or "").rstrip("/")
+    token = x_databricks_token or ""
+    if host and token:
+        sql = (
+            "SELECT "
+            "  COUNT(*) AS total, "
+            "  SUM(CASE WHEN table_owner IS NOT NULL AND table_owner != '' THEN 1 ELSE 0 END) AS owned, "
+            "  SUM(CASE WHEN comment IS NOT NULL AND comment != '' THEN 1 ELSE 0 END) AS described "
+            "FROM system.information_schema.tables "
+            "WHERE table_catalog NOT IN ('system', 'hive_metastore', '__databricks_internal')"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    f"{host}/api/2.0/sql/statements",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json={"statement": sql, "wait_timeout": "20s"},
+                )
+            if r.status_code == 200:
+                data = r.json()
+                rows = data.get("result", {}).get("data_array", [])
+                if rows:
+                    total = int(rows[0][0] or 0)
+                    owned = int(rows[0][1] or 0)
+                    described = int(rows[0][2] or 0)
+                    if total > 0:
+                        ownership_pct = round(owned / total * 100, 1)
+                        description_pct = round(described / total * 100, 1)
+                        health_score = round((ownership_pct + description_pct) / 2)
+                        return {
+                            "health_score": health_score,
+                            "total_tables": total,
+                            "owned_tables": owned,
+                            "described_tables": described,
+                            "ownership_pct": ownership_pct,
+                            "description_pct": description_pct,
+                            "source": "databricks_sql",
+                        }
+        except Exception:
+            pass
+
+    # Return a default/empty response if no data source is available
+    return {
+        "health_score": 0,
+        "total_tables": 0,
+        "owned_tables": 0,
+        "described_tables": 0,
+        "ownership_pct": 0.0,
+        "description_pct": 0.0,
+        "source": "none",
     }
 
 

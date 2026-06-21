@@ -1,13 +1,13 @@
 // @ts-nocheck
 "use client";
 
-import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Download, Loader2, ChevronDown, ChevronUp, X, Sparkles } from "lucide-react";
+import { AlertTriangle, Download, Loader2, ChevronDown, ChevronUp, X, Sparkles, Wrench, ExternalLink, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { usePersistedState } from "@/hooks/usePersistedState";
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -107,6 +107,87 @@ function AiPlanDialog({ finding, onClose }: { finding: any; onClose: () => void 
   );
 }
 
+function getQuickActions(finding: any) {
+  const cat = (finding.category || "").toLowerCase();
+  if (cat.includes("owner")) {
+    return [{ id: "set_owner", label: "Set owner to current user", icon: <ShieldCheck className="h-3 w-3" /> }];
+  }
+  if (cat.includes("description")) {
+    return [{ id: "open_explorer", label: "Open in UC Explorer", icon: <ExternalLink className="h-3 w-3" /> }];
+  }
+  if (cat.includes("permission") || cat.includes("privilege")) {
+    return [{ id: "view_permissions", label: "View permissions", icon: <ShieldCheck className="h-3 w-3" /> }];
+  }
+  return [{ id: "acknowledge", label: "Mark as acknowledged", icon: <CheckCircle2 className="h-3 w-3" /> }];
+}
+
+function FixPopover({ finding, onClose }: { finding: any; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const actions = getQuickActions(finding);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  async function runAction(actionId: string) {
+    if (actionId === "open_explorer") {
+      navigate("/assessment/inventory");
+      onClose();
+      return;
+    }
+    if (actionId === "view_permissions") {
+      navigate("/assessment/inventory/permissions");
+      onClose();
+      return;
+    }
+    setBusy(true);
+    try {
+      const body: any = { finding_id: finding.check_id, action: actionId === "acknowledge" ? "acknowledge" : "set_owner" };
+      if (finding.catalog) body.catalog = finding.catalog;
+      if (finding.schema) body.schema = finding.schema;
+      if (finding.table) body.table = finding.table;
+      await api.post("/assessment/remediate", body);
+      setDone(actionId === "acknowledge" ? "Acknowledged!" : "Owner updated!");
+    } catch (e: any) {
+      setDone("Error: " + (e?.message ?? "failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute z-50 right-0 top-full mt-1 bg-background border border-border rounded-lg shadow-lg p-2 min-w-[200px]"
+      onClick={e => e.stopPropagation()}
+    >
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-1.5">Quick Actions</p>
+      {done ? (
+        <p className="text-xs text-green-600 px-2 py-1 font-medium">{done}</p>
+      ) : (
+        actions.map(a => (
+          <button
+            key={a.id}
+            onClick={() => runAction(a.id)}
+            disabled={busy}
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted/60 transition-colors disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : a.icon}
+            {a.label}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 function ExpandRow({ finding, scanId, remStatus, onUpdateRemediation }: {
   finding: any;
   scanId: string | null;
@@ -115,15 +196,29 @@ function ExpandRow({ finding, scanId, remStatus, onUpdateRemediation }: {
 }) {
   const [open, setOpen] = useState(false);
   const [aiDialog, setAiDialog] = useState(false);
+  const [showFix, setShowFix] = useState(false);
   return (
     <div>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-xs text-primary hover:underline"
-      >
-        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        {open ? "Collapse" : "Details"}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {open ? "Collapse" : "Details"}
+        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowFix(v => !v)}
+            className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+            title="Quick fix actions"
+          >
+            <Wrench className="h-3 w-3" />
+            Fix
+          </button>
+          {showFix && <FixPopover finding={finding} onClose={() => setShowFix(false)} />}
+        </div>
+      </div>
       {open && (
         <div className="mt-2 space-y-1.5 text-xs text-muted-foreground bg-muted/30 rounded-md p-3">
           {finding.description && (

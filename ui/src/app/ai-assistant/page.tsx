@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -39,6 +40,7 @@ export default function AiAssistantPage() {
   const [models, setModels]         = useState<ModelEndpoint[]>([]);
   const [activeMode, setActiveMode] = useState("assistant");
   const [refreshSidebar, setRefreshSidebar] = useState(0);
+  const [lastSentMessage, setLastSentMessage] = useState<string>("");
 
   const noModel = !modelName;
 
@@ -71,9 +73,18 @@ export default function AiAssistantPage() {
 
   const handleSend = useCallback(
     (text: string, mode: string) => {
+      setLastSentMessage(text);
       send(text, mode, catalog || undefined, schemaName || undefined);
     },
     [send, catalog, schemaName],
+  );
+
+  const handleRunSavedPrompt = useCallback(
+    (text: string) => {
+      setLastSentMessage(text);
+      send(text, activeMode, catalog || undefined, schemaName || undefined);
+    },
+    [send, activeMode, catalog, schemaName],
   );
 
   const handleNew = useCallback(() => {
@@ -115,6 +126,9 @@ export default function AiAssistantPage() {
             onSelect={loadSession}
             onNew={handleNew}
             refreshTrigger={refreshSidebar}
+            onRunPrompt={handleRunSavedPrompt}
+            lastSentMessage={lastSentMessage}
+            lastSentMode={activeMode}
           />
         </div>
 

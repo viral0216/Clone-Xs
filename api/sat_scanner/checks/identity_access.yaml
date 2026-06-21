@@ -1,0 +1,270 @@
+# Identity & Access
+# 20 checks
+
+SAT-IAM-1:
+  title: Admin account count is reasonable
+  category: Identity & Access
+  severity: high
+  description: |-
+    Having too many workspace admins increases blast radius from compromised credentials. CIS Databricks recommends ≤ 2 admin users (official SAT threshold).
+  recommendation: |-
+    Reduce admin accounts to ≤ 2. Use groups and role-based access control instead of granting admin to individuals.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/preview/scim/v2/Groups
+  benefits: |-
+    Limiting admin accounts reduces the blast radius of compromised credentials and enforces least-privilege access.
+  portal_link: settings/workspace/identity-and-access/groups
+SAT-IAM-2:
+  title: Service principals used for automated workloads
+  category: Identity & Access
+  severity: medium
+  description: |-
+    Automated workloads (jobs, pipelines, CI/CD) should use service principals rather than personal user accounts.
+  recommendation: Create service principals for all automated workloads and migrate job owners from personal accounts.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/preview/scim/v2/ServicePrincipals
+  benefits: |-
+    Service principals provide dedicated, auditable identities for automation — separating machine from human access.
+  portal_link: settings/workspace/identity-and-access/service-principals
+SAT-IAM-3:
+  title: Personal Access Token (PAT) management configured
+  category: Identity & Access
+  severity: medium
+  description: PATs with no expiry or no rotation policy are a persistent credential risk.
+  recommendation: Enable PAT token management. Set maximum token lifetime to < 90 days.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    PAT management lets admins control who can create tokens and enforce lifetime limits, reducing credential risk.
+  ws_conf_keys: enableTokensConfig,maxTokenLifetimeDays
+SAT-IAM-4:
+  title: Workspace access control (ACLs) enabled
+  category: Identity & Access
+  severity: high
+  description: Without workspace access control, all users can see and run all notebooks, jobs, and clusters.
+  recommendation: Enable workspace access control in Azure Databricks Admin Settings → Workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Workspace access control prevents unauthorized users from viewing or modifying notebooks, jobs, and data.
+  ws_conf_keys: enableRoleBasedAccessControl
+SAT-IAM-5:
+  title: No PAT tokens with indefinite lifetime
+  category: Identity & Access
+  severity: high
+  description: Personal Access Tokens that never expire are equivalent to permanent credentials.
+  recommendation: Revoke all tokens with no expiry. Set maxTokenLifetimeDays to < 90.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/token/list
+  benefits: |-
+    Tokens without expiry are permanent credentials — if leaked, they grant indefinite access. Enforcing expiry limits the blast radius.
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-6:
+  title: Maximum token lifetime policy configured
+  category: Identity & Access
+  severity: high
+  description: Without a maximum token lifetime policy, users can create tokens that never expire.
+  recommendation: |-
+    Set maxTokenLifetimeDays to < 90 in workspace settings. Microsoft recommends a lifetime shorter than 90 days.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Long-lived tokens increase the attack window if credentials are leaked. A max lifetime < 90 days forces regular rotation per Microsoft guidance.
+  ws_conf_keys: maxTokenLifetimeDays
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-7:
+  title: No existing tokens exceed maximum lifetime
+  category: Identity & Access
+  severity: medium
+  description: Tokens created before the policy was applied may exceed the current max lifetime.
+  recommendation: Audit all existing tokens. Revoke tokens with remaining lifetime > maxTokenLifetimeDays.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/token/list
+  benefits: |-
+    Pre-existing tokens that exceed the new policy remain valid. Revoking them closes the gap between policy intent and enforcement.
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-8:
+  title: No PAT tokens expiring within 7 days
+  category: Identity & Access
+  severity: medium
+  description: PAT tokens expiring within 7 days will soon break automated workloads.
+  recommendation: Rotate tokens expiring within 7 days before they expire.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/token/list
+  benefits: |-
+    Proactive token rotation before expiry prevents unexpected failures in CI/CD pipelines and scheduled jobs.
+  portal_link: settings/user/developer/access-tokens
+SAT-IA-SSO:
+  title: Single Sign-On (SSO) with MFA configured
+  category: Identity & Access
+  severity: high
+  description: Workspaces should authenticate via SSO with MFA through an enterprise IdP.
+  recommendation: Configure SSO via your enterprise IdP and enforce MFA.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/preview/scim/v2/Users
+  benefits: |-
+    SSO with MFA eliminates password-based attacks and provides centralized authentication through your enterprise IdP.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/enterpriseApplications
+SAT-IA-SCIM:
+  title: SCIM provisioning enabled for automated user lifecycle
+  category: Identity & Access
+  severity: high
+  description: User provisioning should use SCIM to keep accounts synchronized with your IdP.
+  recommendation: Enable SCIM provisioning from your IdP to Databricks.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/scim
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/preview/scim/v2/Users
+  benefits: |-
+    SCIM provisioning keeps Databricks accounts synchronized with your IdP, automatically disabling departed users.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/enterpriseApplications
+SAT-IA-TAC:
+  title: Table access control enabled on shared clusters
+  category: Identity & Access
+  severity: high
+  description: Shared clusters without Unity Catalog must have Table ACLs enabled.
+  recommendation: Enable Table ACLs on all shared-access clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/table-acls
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Table access control on shared clusters prevents users from bypassing data permissions via direct Spark access.
+  ws_conf_keys: enableTableAccessControl
+  portal_link: settings/workspace/advanced
+SAT-IAM-SP-OAUTH:
+  title: Service principals use OAuth instead of PATs
+  category: Identity & Access
+  severity: medium
+  description: |-
+    Service principals using PATs create long-lived credential risk. OAuth M2M tokens auto-expire and are more auditable.
+  recommendation: Migrate service principal authentication from PATs to OAuth M2M. Revoke existing SP PAT tokens.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/oauth-m2m
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/token/list
+  benefits: |-
+    OAuth M2M tokens auto-expire and are tied to app registrations, eliminating the risk of long-lived PAT credentials for service accounts.
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-STALE-TOKENS:
+  title: No stale PAT tokens (unused > 90 days)
+  category: Identity & Access
+  severity: medium
+  description: PAT tokens that have not been used for over 90 days are likely orphaned and increase attack surface.
+  recommendation: Revoke all PAT tokens not used in the past 90 days. Implement periodic token hygiene reviews.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/token/list
+  benefits: Stale tokens are forgotten credentials that remain valid. Revoking them shrinks the attack surface.
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-ADMIN-SPRAWL:
+  title: Admin user ratio is within acceptable limits
+  category: Identity & Access
+  severity: high
+  description: |-
+    A high ratio of admins to total users increases blast radius and violates least-privilege principles.
+  recommendation: Reduce admin ratio to <= 5%. Use groups and role-based access control.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/preview/scim/v2/Groups + /api/2.0/preview/scim/v2/Users
+  benefits: |-
+    A high admin-to-user ratio violates least-privilege and increases the blast radius of any compromised admin account.
+  portal_link: settings/workspace/identity-and-access/groups
+SAT-IAM-TOKEN-MGMT:
+  title: All-user token hygiene (admin view)
+  category: Identity & Access
+  severity: medium
+  description: Long-lived or stale tokens across all workspace users pose credential theft risk.
+  recommendation: Use the Token Management API to audit and revoke stale or long-lived tokens across all users.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/token-management/tokens
+  benefits: |-
+    Auditing all user tokens across the workspace catches stale or long-lived credentials that attackers could exploit.
+  portal_link: settings/user/developer/access-tokens
+SAT-IAM-GUEST:
+  title: No guest/external users with admin or elevated roles
+  category: Identity & Access
+  severity: high
+  description: |-
+    Guest or external users (B2B invites) with admin roles bypass the organization's
+    identity governance boundary. A compromised external account grants full workspace
+    control to an outsider.
+  recommendation: |-
+    Remove admin roles from all guest/external users. Use dedicated service principals
+    for cross-organization automation instead of guest user accounts.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/preview/scim/v2/Users
+  benefits: Removing admin roles from guest users eliminates cross-boundary privilege escalation risk.
+  portal_link: settings/workspace/identity-and-access
+SAT-IAM-GROUP-NESTING:
+  title: Groups do not exceed 3 levels of nesting
+  category: Identity & Access
+  severity: low
+  description: |-
+    Deeply nested groups (>3 levels) make permission inheritance difficult to audit
+    and debug. Users may receive unintended permissions through complex nesting chains.
+  recommendation: |-
+    Flatten group hierarchies to a maximum of 3 levels. Use direct group membership
+    for clarity and auditability.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/preview/scim/v2/Groups
+  benefits: Flat group hierarchies simplify permission auditing and prevent unintended access inheritance.
+  portal_link: settings/workspace/identity-and-access/groups
+SAT-IAM-EMPTY-GROUP:
+  title: No empty groups with granted permissions
+  category: Identity & Access
+  severity: low
+  description: |-
+    Empty groups with active permission grants indicate stale access configurations.
+    These groups may accumulate permissions over time and become a risk if members
+    are added without reviewing the group's privilege set.
+  recommendation: |-
+    Remove empty groups or remove their permission grants. Audit group membership
+    regularly as part of access reviews.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/preview/scim/v2/Groups
+  benefits: Removing empty groups with permissions prevents future privilege escalation when members are added.
+  portal_link: settings/workspace/identity-and-access/groups
+SAT-IAM-SP-SECRET-ROTATION:
+  title: Service principal secrets rotated within 90 days
+  category: Identity & Access
+  severity: high
+  description: |-
+    Service principal secrets (OAuth client secrets) that are not rotated become
+    long-lived credentials. If compromised, they grant persistent access until
+    manually revoked.
+  recommendation: |-
+    Rotate all service principal OAuth secrets every 90 days. Automate rotation
+    using Azure Key Vault or CI/CD secret rotation workflows.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/oauth-m2m
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/preview/scim/v2/ServicePrincipals
+  benefits: Regular secret rotation limits the window of exposure for compromised service principal credentials.
+  portal_link: settings/workspace/identity-and-access/service-principals
+SAT-IAM-CONDITIONAL-ACCESS:
+  title: Conditional access policies applied to workspace
+  category: Identity & Access
+  severity: medium
+  description: |-
+    Without Azure AD conditional access policies, workspace access is granted
+    solely based on credentials — no device compliance, location, or risk-based
+    conditions are enforced.
+  recommendation: |-
+    Configure Azure AD conditional access policies for the Databricks enterprise
+    application. Require compliant devices, approved locations, and MFA for
+    all workspace access.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/conditional-access
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/preview/scim/v2/Users
+  benefits: Conditional access adds device and location-based controls beyond simple authentication.
+  portal_link: settings/workspace/identity-and-access

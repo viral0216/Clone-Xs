@@ -1,0 +1,68 @@
+# SQL Warehouses
+# 3 checks
+
+SAT-SQL-1:
+  title: SQL warehouses configured with auto-stop
+  category: SQL Warehouses
+  severity: low
+  description: SQL warehouses without auto-stop run indefinitely, incurring unnecessary costs.
+  recommendation: Set auto-stop to ≤ 30 minutes for all SQL warehouses.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/create-sql-warehouse
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Auto-stop prevents SQL warehouses from running indefinitely, eliminating unnecessary costs when not in use.
+SAT-SQL-2:
+  title: SQL warehouses on stable (non-preview) channel
+  category: SQL Warehouses
+  severity: low
+  description: Preview channel receives unvalidated updates. Use previous/LTS for stability.
+  recommendation: Use CHANNEL_NAME_PREVIOUS or LTS for production SQL warehouses.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/create-sql-warehouse#channel
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    The current/LTS channel provides validated, stable updates — preview channel may introduce untested changes.
+SAT-SQL-3:
+  title: SQL warehouses have Unity Catalog enabled
+  category: SQL Warehouses
+  severity: high
+  description: SQL warehouses with Unity Catalog disabled bypass fine-grained access controls.
+  recommendation: Ensure all SQL warehouses have Unity Catalog enabled.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Unity Catalog on SQL warehouses enforces fine-grained table and column permissions for all SQL queries.
+SAT-WH-SCALING:
+  title: SQL warehouses have appropriate scaling bounds
+  category: SQL Warehouses
+  severity: medium
+  description: |-
+    SQL warehouses without appropriate min/max_num_clusters bounds may over-provision or under-provision
+    compute, leading to excessive costs or poor query performance.
+  recommendation: |-
+    Review and configure min_num_clusters and max_num_clusters on all SQL warehouses to balance
+    cost efficiency with query performance requirements.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Appropriate scaling bounds balance cost efficiency with query performance, preventing both over- and under-provisioning.
+  portal_link: sql/warehouses
+SAT-WH-TAGS:
+  title: SQL warehouses have cost attribution tags
+  category: SQL Warehouses
+  severity: medium
+  description: |-
+    SQL warehouses without custom_tags make it impossible to attribute query compute costs to teams,
+    projects, or cost centers for chargeback and budget tracking.
+  recommendation: |-
+    Apply custom_tags (e.g. team, project, environment) to all SQL warehouses for cost allocation and chargeback.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Cost attribution tags on SQL warehouses enable chargeback and budget tracking by team, project, or cost center.
+  portal_link: sql/warehouses

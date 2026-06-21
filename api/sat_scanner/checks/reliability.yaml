@@ -1,0 +1,39 @@
+# Reliability
+# 3 checks
+
+SAT-REL-1:
+  title: Jobs have retry and timeout settings
+  category: Reliability
+  severity: medium
+  description: |-
+    Jobs without retry or timeout settings may fail silently or run indefinitely, impacting downstream pipelines.
+  recommendation: Configure max_retries and timeout_seconds on all production jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/settings
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Retry and timeout settings prevent silent failures and indefinite job runs that block downstream pipelines.
+SAT-REL-2:
+  title: Job run success rate
+  category: Reliability
+  severity: high
+  description: |-
+    A low job success rate indicates systemic reliability issues that may affect data freshness and SLAs.
+  recommendation: Investigate frequently failing jobs. Add retries, alerts, and root-cause analysis for failures.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/monitor-job-runs
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/jobs/runs/list
+  benefits: A healthy job success rate ensures data freshness and SLA compliance across the data platform.
+SAT-REL-3:
+  title: Cluster log delivery coverage
+  category: Reliability
+  severity: medium
+  description: |-
+    Clusters without log delivery make it difficult to debug failures, investigate performance, or satisfy audit requirements.
+  recommendation: Enable cluster log delivery to ADLS Gen2 or Azure Blob Storage on all clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#cluster-log-delivery
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Cluster log delivery enables post-mortem debugging and satisfies audit requirements for compute operations.
+  portal_link: compute

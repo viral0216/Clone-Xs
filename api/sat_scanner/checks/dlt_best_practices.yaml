@@ -1,0 +1,112 @@
+# DLT Best Practices
+# 5 checks
+
+SAT-DLT-MULTI-LAYER:
+  title: DLT pipelines have bronze/silver/gold layers
+  category: Data Architecture
+  severity: medium
+  description: |-
+    A well-structured Delta Live Tables pipeline separates data processing into bronze (raw ingestion), silver
+    (cleansed and conformed), and gold (business-level aggregates) layers. Pipelines that collapse all
+    transformations into a single layer become difficult to debug, lack clear data lineage, and make it hard
+    to apply different quality rules and access controls at each stage of data refinement.
+  recommendation: |-
+    Restructure DLT pipelines to follow the medallion architecture with distinct bronze, silver, and gold
+    datasets. Define raw ingestion tables as bronze using STREAMING LIVE TABLE, apply cleansing and
+    deduplication in silver views or tables, and produce business-ready aggregations in gold tables.
+    Use separate DLT pipeline specs or clearly named datasets to delineate each layer.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Multi-layer pipelines provide clear data lineage, enable granular quality rules at each stage, simplify
+    debugging by isolating failures to a specific layer, and support independent access control per data tier.
+  portal_link: pipelines
+
+SAT-DLT-QUARANTINE:
+  title: DLT pipelines have quarantine patterns
+  category: Data Quality
+  severity: low
+  description: |-
+    Quarantine patterns in DLT pipelines route records that fail quality expectations to a separate quarantine
+    table instead of silently dropping or passing bad data downstream. Without quarantine handling, failed
+    records are either lost or contaminate downstream tables, making root cause analysis difficult and
+    degrading data trust.
+  recommendation: |-
+    Implement quarantine tables in DLT pipelines to capture records that fail expectations. Use DLT
+    expectations with the ON VIOLATION DROP ROW or ON VIOLATION FAIL UPDATE clause, then create a companion
+    quarantine table that captures the rejected rows along with the reason for rejection. Review quarantine
+    tables regularly to identify and fix upstream data quality issues.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Quarantine patterns preserve rejected records for analysis, prevent bad data from propagating downstream,
+    and provide visibility into upstream data quality issues that would otherwise go undetected.
+  portal_link: pipelines
+
+SAT-DLT-UC-ENABLED:
+  title: DLT pipelines use Unity Catalog
+  category: Governance
+  severity: high
+  description: |-
+    DLT pipelines that do not publish to Unity Catalog use the legacy Hive metastore, which lacks centralized
+    governance, fine-grained access controls, data lineage tracking, and cross-workspace discoverability.
+    Unity Catalog integration ensures that all DLT-produced tables are governed under a unified data access
+    layer with audit logging and column-level security.
+  recommendation: |-
+    Migrate DLT pipelines to Unity Catalog by setting the catalog field in the pipeline configuration to a
+    valid Unity Catalog catalog name. Update the target field to specify the schema within that catalog.
+    Test the migration in a non-production environment first, as switching from Hive metastore to Unity Catalog
+    may require updating downstream consumers that reference legacy table paths.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/unity-catalog
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Unity Catalog integration provides centralized governance, fine-grained access controls, automatic lineage
+    tracking, and cross-workspace discoverability for all tables produced by DLT pipelines.
+  portal_link: pipelines
+
+SAT-DLT-FRESHNESS:
+  title: DLT pipelines have freshness SLAs configured
+  category: Operations
+  severity: medium
+  description: |-
+    DLT pipelines without scheduled triggers or defined update intervals run only when manually triggered,
+    leading to unpredictable data freshness and potential SLA violations. Consumers cannot rely on data
+    currency when pipelines lack explicit freshness guarantees, which erodes trust in downstream dashboards
+    and reports.
+  recommendation: |-
+    Configure scheduled triggers on all production DLT pipelines with update intervals that match downstream
+    freshness requirements. Use the continuous mode for near-real-time needs or set a cron-based trigger
+    schedule for batch pipelines. Document the expected freshness SLA for each pipeline and set up alerting
+    when updates exceed the defined threshold.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/updates
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Defined freshness SLAs ensure predictable data currency for downstream consumers, enable proactive alerting
+    on stale data, and establish clear operational expectations for pipeline reliability.
+  portal_link: pipelines
+
+SAT-DLT-SERVERLESS:
+  title: DLT pipelines use serverless compute
+  category: Cost Optimization
+  severity: low
+  description: |-
+    DLT pipelines running on classic compute require manual cluster sizing, incur startup latency, and may
+    over-provision resources for variable workloads. Serverless DLT eliminates infrastructure management by
+    automatically provisioning and scaling compute resources, reducing both operational overhead and cost
+    for pipelines with variable or unpredictable resource demands.
+  recommendation: |-
+    Enable serverless compute on DLT pipelines by setting the serverless field to true in the pipeline
+    configuration. Evaluate pipeline performance and cost after migration to confirm savings. Serverless
+    is especially beneficial for pipelines with variable data volumes or infrequent execution schedules
+    where pre-provisioned clusters would sit idle.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/serverless
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Serverless DLT eliminates cluster management overhead, reduces startup latency, and automatically scales
+    compute to match workload demands, lowering costs for variable or infrequent pipeline executions.
+  portal_link: pipelines

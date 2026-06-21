@@ -1,0 +1,88 @@
+# ── Serverless Governance ──
+# Checks for governance, cost control, and network security of
+# serverless compute (SQL warehouses, jobs, notebooks).
+
+SAT-SRVL-BUDGET:
+  title: Serverless compute has budget alerts configured
+  category: Serverless Governance
+  severity: medium
+  description: |-
+    Serverless compute (SQL warehouses, serverless jobs) can auto-scale without
+    cluster-level limits. Without budget alerts, serverless DBU consumption can
+    spike unexpectedly with no advance warning.
+  recommendation: |-
+    Configure account-level budget alerts that include serverless SKU categories.
+    Set thresholds at 50%, 75%, and 90% of planned monthly spend.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/budgets
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/budgets
+  benefits: Budget alerts on serverless compute prevent uncontrolled DBU consumption and cost overruns.
+  portal_link: settings/budgets
+
+SAT-SRVL-NETWORK:
+  title: Serverless compute uses Network Connectivity Config
+  category: Serverless Governance
+  severity: high
+  description: |-
+    Serverless compute without Network Connectivity Config (NCC) uses shared
+    public IPs, bypassing workspace network controls and potentially violating
+    data residency requirements.
+  recommendation: |-
+    Configure NCC with private endpoints for serverless SQL warehouses and jobs.
+    Verify NCC is attached to the workspace in the account console.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/serverless-network-security/serverless-private-link
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: NCC ensures serverless compute uses dedicated network paths instead of shared public infrastructure.
+  portal_link: settings/workspace
+
+SAT-SRVL-ALLOWED:
+  title: Serverless compute usage restricted to approved workloads
+  category: Serverless Governance
+  severity: medium
+  description: |-
+    Without workspace-level controls on serverless compute, any user can create
+    serverless SQL warehouses or submit serverless jobs, potentially consuming
+    budget without governance oversight.
+  recommendation: |-
+    Use workspace settings to control serverless compute enablement. Restrict
+    serverless warehouse creation to admin groups via cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Restricting serverless access prevents uncontrolled compute consumption by unauthorized users.
+  portal_link: settings/workspace
+
+SAT-SRVL-JOB-COST:
+  title: Serverless jobs DBU cost tracked and compared
+  category: Serverless Governance
+  severity: low
+  description: |-
+    Without comparing serverless vs classic cluster DBU costs, organizations
+    cannot verify that serverless compute delivers expected cost savings or
+    identify workloads where classic clusters are more economical.
+  recommendation: |-
+    Query system.billing tables to compare serverless vs classic DBU costs
+    per job. Migrate cost-inefficient serverless jobs back to job clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/billing
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: DBU cost comparison identifies workloads where serverless is more or less economical than classic.
+  portal_link: explore/data
+
+SAT-SRVL-WH-SIZING:
+  title: Serverless SQL warehouses right-sized for actual usage
+  category: Serverless Governance
+  severity: low
+  description: |-
+    Serverless SQL warehouses provisioned at sizes larger than actual query
+    demand waste DBUs. Right-sizing based on query history and concurrency
+    patterns optimizes cost without impacting performance.
+  recommendation: |-
+    Review SQL warehouse query history and scaling events. Downsize warehouses
+    where peak concurrent queries consistently stay below the configured size.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: Right-sized serverless warehouses eliminate wasted DBU consumption without impacting query performance.
+  portal_link: sql/warehouses

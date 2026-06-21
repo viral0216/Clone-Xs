@@ -1,0 +1,453 @@
+# Governance
+# 36 checks
+
+SAT-GOV-1:
+  title: PAT token lifetime ≤ 90 days enforced
+  category: Governance
+  severity: high
+  description: PATs without expiry are equivalent to permanent credentials.
+  recommendation: Enable token management and set maxTokenLifetimeDays to < 90.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/access-control/tokens
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Enforcing token expiry ensures credentials are regularly rotated, reducing the window of exposure if leaked.
+  ws_conf_keys: enforceUserIsolation
+  portal_link: settings/workspace/advanced
+SAT-GOV-2:
+  title: No long-running interactive clusters
+  category: Governance
+  severity: medium
+  description: Clusters running continuously for more than 30 days accumulate cost.
+  recommendation: Configure auto-termination on all interactive clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#auto-termination
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Long-running interactive clusters accumulate cost and may run unpatched runtimes. Auto-termination forces refresh.
+  portal_link: compute
+SAT-GOV-3:
+  title: Cluster custom tags configured
+  category: Governance
+  severity: low
+  description: Custom tags enable cost attribution and chargeback.
+  recommendation: Enforce mandatory tags via cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#tags
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Custom tags on clusters enable cost attribution and chargeback to specific teams or projects.
+  portal_link: compute
+SAT-GOV-4:
+  title: Job cluster specs have custom tags
+  category: Governance
+  severity: low
+  description: Job clusters without tags make cloud billing analysis difficult.
+  recommendation: Add tags to all job cluster configurations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: Tags on job clusters make cloud billing analysis possible and support cost allocation policies.
+  portal_link: jobs
+SAT-GOV-5:
+  title: Jobs configured with cluster log delivery
+  category: Governance
+  severity: low
+  description: Job cluster logs capture output for debugging and auditing.
+  recommendation: Configure cluster_log_conf in all job cluster settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Cluster log delivery on job clusters captures output for debugging failures and satisfying audit requirements.
+  portal_link: jobs
+SAT-GOV-6:
+  title: Clusters use Unity Catalog security mode
+  category: Governance
+  severity: high
+  description: Clusters in NONE mode bypass UC table-level permissions.
+  recommendation: Set data_security_mode to USER_ISOLATION or SINGLE_USER.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#access-modes
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Unity Catalog security mode enforces table-level permissions. NONE mode bypasses all UC access controls.
+  portal_link: compute
+SAT-GOV-7:
+  title: User isolation enforced on shared clusters
+  category: Governance
+  severity: high
+  description: Prevents users on shared clusters from accessing each other's data.
+  recommendation: Enable enforceUserIsolation in workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    User isolation prevents users on shared clusters from accessing each other's temporary data and credentials.
+  ws_conf_keys: enforceUserIsolation
+  portal_link: settings/workspace/advanced
+SAT-GOV-8:
+  title: Verbose audit logging enabled for read operations
+  category: Governance
+  severity: medium
+  description: Verbose audit logs capture read operations in addition to write/admin events.
+  recommendation: Enable verbose audit logs in workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/audit-log-delivery
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Verbose audit logs capture read operations in addition to write/admin events, enabling complete forensic analysis.
+  ws_conf_keys: enableVerboseAuditLogs
+  portal_link: settings/workspace/advanced
+SAT-GOV-9:
+  title: Delta Sharing token lifetime limited
+  category: Governance
+  severity: medium
+  description: Delta Sharing tokens that never expire create persistent access risk.
+  recommendation: Configure token lifetime ≤ 90 days. Rotate tokens for existing recipients.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing/create-recipient
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    Limiting Delta Sharing token lifetime ensures shared data access expires, preventing indefinite access if tokens leak.
+  portal_link: explore/data/delta-sharing
+SAT-GOV-10:
+  title: Metastore admin group configured
+  category: Governance
+  severity: high
+  description: Metastore should have a dedicated admin group rather than individual users.
+  recommendation: Create a dedicated metastore admin group.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    A dedicated metastore admin group provides clear ownership and prevents single-user admin bottlenecks.
+  portal_link: explore/data
+SAT-GOV-11:
+  title: Deprecated global init scripts disabled
+  category: Governance
+  severity: medium
+  description: Legacy global init scripts run without logging or auditing.
+  recommendation: Disable and migrate to the audited Global Init Scripts API.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/init-scripts/global
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Legacy global init scripts run without logging or auditing. Disabling them eliminates an unmonitored execution path.
+  ws_conf_keys: enableDeprecatedGlobalInitScripts
+  portal_link: settings/workspace/advanced
+SAT-GOV-12:
+  title: Deprecated cluster-named init scripts disabled
+  category: Governance
+  severity: medium
+  description: Deprecated cluster-named init scripts create unpredictable behavior.
+  recommendation: Disable and use audited cluster-scoped init scripts instead.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/init-scripts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Deprecated cluster-named init scripts create unpredictable behavior. Migrating to workspace init scripts improves control.
+  ws_conf_keys: enableDeprecatedClusterNamedInitScripts
+  portal_link: settings/workspace/advanced
+SAT-GOV-13:
+  title: Unity Catalog system tables enabled
+  category: Governance
+  severity: medium
+  description: System tables provide structured access to audit logs, billing, and lineage.
+  recommendation: Enable system tables in Unity Catalog.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: |-
+    System tables provide structured access to audit logs, billing, and lineage data for governance queries.
+  portal_link: explore/data
+SAT-GOV-14:
+  title: Workspace admin privileges restricted
+  category: Governance
+  severity: high
+  description: Prevents workspace admins from granting themselves elevated permissions.
+  recommendation: |-
+    Enable 'Restrict workspace admins' in workspace Settings (requires account admin + workspace membership).
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings/restrict-workspace-admins
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/settings/types/restrict_workspace_admins/names/default
+  benefits: |-
+    Restricting workspace admin privileges prevents self-escalation and enforces proper governance boundaries.
+  portal_link: settings/workspace
+SAT-GOV-15:
+  title: Automatic cluster update enabled
+  category: Governance
+  severity: medium
+  description: Automatic cluster update applies security patches automatically.
+  recommendation: |-
+    In the Azure Portal, open the Databricks workspace resource, go to Settings > Security & compliance, and enable Automatic cluster update.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/privacy/enhanced-security-compliance
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/settings/types/automatic_cluster_update/names/default
+  benefits: |-
+    Automatic cluster updates apply security patches without manual intervention, closing vulnerabilities faster.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/security
+SAT-GOV-DS-IP:
+  title: Delta Sharing recipients have IP allowlists
+  category: Governance
+  severity: medium
+  description: Recipients without IP allowlists can access data from any network location.
+  recommendation: Configure IP allowlists for all Delta Sharing recipients.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing/create-recipient
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/recipients
+  benefits: IP allowlists on Delta Sharing recipients restrict data access to approved network locations only.
+  portal_link: explore/data
+SAT-GOV-DS-EXP:
+  title: Delta Sharing recipients have credential expiration
+  category: Governance
+  severity: medium
+  description: Tokens without expiration remain valid indefinitely if compromised.
+  recommendation: Set token_ttl_in_seconds for all recipients.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing/create-recipient
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/recipients
+  benefits: Token expiration on Delta Sharing recipients ensures shared access is time-bounded, not permanent.
+  portal_link: explore/data
+SAT-GOV-DIRECT-CREDS:
+  title: No direct storage credentials on clusters
+  category: Governance
+  severity: medium
+  description: Inline storage credentials bypass Unity Catalog governance.
+  recommendation: Migrate all storage access to Unity Catalog external locations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/external-locations
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Inline storage credentials on clusters bypass Unity Catalog governance. Removing them centralizes access control.
+  portal_link: compute
+SAT-GOV-ML-UC:
+  title: Legacy workspace model registry migrated to Unity Catalog
+  category: Governance
+  severity: medium
+  description: Legacy workspace model registry lacks cross-workspace governance.
+  recommendation: Migrate registered models to Unity Catalog model registry.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/mlflow/registered-models/search
+  benefits: |-
+    Unity Catalog model registry provides cross-workspace governance, lineage, and access control for ML models.
+  portal_link: ml
+SAT-GOV-DS-PERMS:
+  title: Delta Sharing creation permissions restricted
+  category: Governance
+  severity: low
+  description: Unrestricted sharing permissions may lead to inadvertent data exposure.
+  recommendation: Restrict CREATE SHARE and CREATE RECIPIENT privileges.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/recipients
+  benefits: Restricting sharing permissions prevents inadvertent data exposure to external recipients.
+  portal_link: explore/data
+SAT-GOV-DBFS-INIT:
+  title: Global init scripts not stored in DBFS root
+  category: Governance
+  severity: medium
+  description: Init scripts in DBFS root are accessible to all users without change control.
+  recommendation: Migrate init scripts to the Global Init Scripts API.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/init-scripts/global
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/global-init-scripts + /api/2.0/clusters/list
+  benefits: |-
+    Moving init scripts out of DBFS root into workspace storage provides change control and access restrictions.
+  portal_link: settings/workspace/advanced
+SAT-GOV-DEFAULT-CAT:
+  title: Default catalog configured (not hive_metastore)
+  category: Governance
+  severity: medium
+  description: Using hive_metastore as the default catalog bypasses Unity Catalog governance for new objects.
+  recommendation: Set the default catalog to a Unity Catalog catalog. Migrate workloads away from hive_metastore.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/catalogs/default
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Using a UC catalog as default ensures new objects are governed from creation, not placed in the ungoverned hive_metastore.
+  ws_conf_keys: defaultCatalog
+  portal_link: settings/workspace/advanced
+SAT-GOV-WS-BINDING:
+  title: Workspace-catalog bindings restrict catalog access
+  category: Governance
+  severity: medium
+  description: |-
+    Without workspace bindings, all workspaces can access all catalogs, violating data isolation boundaries.
+  recommendation: |-
+    Open Catalog Explorer, click the catalog name, go to the Workspaces tab, uncheck 'All workspaces have access', then click 'Assign to workspaces' to bind specific workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/catalogs/binding
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Workspace-catalog bindings enforce data isolation by restricting which workspaces can access which catalogs.
+  portal_link: explore/data
+SAT-GOV-AUTO-MAINT:
+  title: Predictive optimization / auto table maintenance enabled
+  category: Governance
+  severity: low
+  description: |-
+    Auto table maintenance (OPTIMIZE, VACUUM) prevents performance degradation and storage bloat over time.
+  recommendation: |-
+    In the Account Console, go to Settings > Feature enablement and enable Predictive optimization. Override at catalog/schema level with ALTER CATALOG ... ENABLE PREDICTIVE OPTIMIZATION.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    Automatic table maintenance (OPTIMIZE, VACUUM) prevents performance degradation and storage bloat over time.
+  portal_link: https://accounts.azuredatabricks.net/settings?account_id={account_id}
+SAT-GOV-DLT:
+  title: DLT pipelines use secure cluster configuration
+  category: Governance
+  severity: medium
+  description: DLT pipeline clusters should enforce encryption, UC security mode, and cluster policies.
+  recommendation: Configure DLT pipelines with Unity Catalog, cluster policies, and audit logging.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Secure DLT cluster configs enforce encryption and UC security mode, preventing data exposure in pipeline execution.
+  portal_link: pipelines
+SAT-ML-FEATURE-ACL:
+  title: Feature Engineering tables governed in Unity Catalog
+  category: Governance
+  severity: low
+  description: Feature tables outside Unity Catalog lack fine-grained access control and lineage tracking.
+  recommendation: Migrate feature tables to Unity Catalog. Use Feature Engineering in Unity Catalog.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/uc/feature-tables-uc
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Feature tables in Unity Catalog provide fine-grained access control and lineage tracking for ML features.
+  portal_link: explore/data
+SAT-ML-AI-GATEWAY:
+  title: AI Gateway rate limits and guardrails configured
+  category: Governance
+  severity: medium
+  description: |-
+    Model serving endpoints without rate limits or guardrails may be exploited for excessive usage or prompt injection.
+  recommendation: Configure rate limits, usage tracking, and guardrails on all model serving endpoints via AI Gateway.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Rate limits and guardrails on AI Gateway prevent abuse, excessive usage, and prompt injection attacks.
+SAT-GOV-EXT-LOC:
+  title: External location credential isolation
+  category: Governance
+  severity: medium
+  description: |-
+    External locations should use dedicated credentials with least-privilege access. Read-only flags prevent accidental writes.
+  recommendation: |-
+    Assign per-location credentials instead of a single shared credential. Set read_only where applicable.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/external-locations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/external-locations
+  benefits: |-
+    Dedicated credentials per external location enforce least-privilege access. Read-only flags prevent accidental writes.
+  portal_link: explore/locations
+SAT-GOV-STORAGE-CRED:
+  title: Storage credentials use managed identity
+  category: Governance
+  severity: high
+  description: |-
+    Key-based storage credentials create long-lived secrets that can be leaked. Managed identities are auto-rotated.
+  recommendation: Migrate storage credentials from key-based to Azure Managed Identity.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/storage-credentials
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/storage-credentials
+  benefits: |-
+    Managed identities are auto-rotated by Azure — eliminating the risk of leaked long-lived storage keys.
+  portal_link: explore/data
+SAT-GOV-UC-TAGS:
+  title: Unity Catalog data classification tags applied
+  category: Governance
+  severity: low
+  description: Tags on catalogs and schemas enable data classification, discovery, and compliance tracking.
+  recommendation: |-
+    In Catalog Explorer, click a catalog or schema name, open the Details tab, and add classification tags (e.g., PII, confidential, public).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/tags
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/catalogs + /api/2.1/unity-catalog/tags
+  benefits: |-
+    Tags on catalogs and schemas enable data classification, discovery, and automated policy enforcement.
+  portal_link: explore/data
+SAT-GOV-CLUSTER-ACL:
+  title: Cluster-level permissions are granular
+  category: Governance
+  severity: medium
+  description: |-
+    Clusters without granular ACLs default to broad access. Explicit per-cluster permissions limit blast radius.
+  recommendation: Add granular ACL entries to each cluster (at least 2 non-default entries).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list + /api/2.0/permissions/clusters/{id}
+  benefits: |-
+    Granular cluster permissions limit who can attach, restart, or manage each cluster, reducing blast radius.
+  portal_link: compute
+SAT-GOV-JOB-ACL:
+  title: Job-level permissions are granular
+  category: Governance
+  severity: medium
+  description: Jobs without granular ACLs allow any workspace user to view or modify them.
+  recommendation: Add granular ACL entries to each production job.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list + /api/2.0/permissions/jobs/{id}
+  benefits: |-
+    Granular job permissions prevent unauthorized users from viewing or modifying production job configurations.
+  portal_link: jobs
+SAT-GOV-WH-ACL:
+  title: SQL warehouse permissions are governed
+  category: Governance
+  severity: medium
+  description: SQL warehouses relying only on the default 'users' group lack fine-grained access control.
+  recommendation: Add explicit permission entries to SQL warehouses beyond the default 'users' group.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/warehouses + /api/2.0/permissions/sql/warehouses/{id}
+  benefits: Fine-grained warehouse permissions control who can execute queries and consume compute resources.
+  portal_link: sql/warehouses
+SAT-GOV-GRANTS:
+  title: Unity Catalog grants audit
+  category: Governance
+  severity: high
+  description: |-
+    Overly permissive Unity Catalog grants (ALL PRIVILEGES, broad grants to 'account users') weaken data governance.
+  recommendation: |-
+    In Catalog Explorer, review grants on each catalog. Replace ALL PRIVILEGES with specific grants (USE CATALOG, SELECT, etc.).
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/privileges
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/grants
+  benefits: |-
+    Least-privilege UC grants prevent unauthorized data access and limit blast radius of compromised credentials.
+  portal_link: explore/data
+SAT-GOV-SYS-SCHEMAS:
+  title: System tables enabled for observability
+  category: Governance
+  severity: medium
+  description: System tables (audit logs, billing, lineage) provide critical compliance and cost observability.
+  recommendation: |-
+    Enable system schemas (access, billing, compute, storage, lineage) in Catalog Explorer under the system catalog.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/system-schemas
+  benefits: |-
+    System tables provide audit logs, billing data, and lineage tracking essential for compliance and cost management.
+  portal_link: explore/data
+SAT-GOV-POLICY-COMPLIANCE:
+  title: Cluster policy compliance
+  category: Governance
+  severity: medium
+  description: Clusters violating their assigned policies may run oversized, untagged, or insecure configurations.
+  recommendation: Review non-compliant clusters and update them to comply with assigned cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/clusters/policy-definition
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/policy-compliance-for-clusters
+  benefits: |-
+    Policy-compliant clusters enforce security guardrails (tagging, sizing, runtime versions) consistently.
+  portal_link: compute/policies

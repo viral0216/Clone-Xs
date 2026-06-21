@@ -1,0 +1,85 @@
+# ── Workspace Object ACLs ──
+# Checks that workspace objects (notebooks, folders, dashboards, queries,
+# experiments) have explicit permission grants rather than open defaults.
+
+SAT-ACL-NOTEBOOK:
+  title: Notebooks in /Shared have explicit ACLs
+  category: Workspace Object ACLs
+  severity: medium
+  description: |-
+    Notebooks in /Shared are accessible to all workspace users by default.
+    Without explicit ACLs, sensitive notebooks may be read or modified by
+    unauthorized users.
+  recommendation: |-
+    Set explicit permissions on notebooks in /Shared. Grant CAN_READ or
+    CAN_RUN to specific groups rather than relying on inherited defaults.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control/workspace-acl
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list + /api/2.0/permissions/notebooks/{id}
+  benefits: Explicit notebook ACLs prevent unauthorized access to sensitive code and data in shared folders.
+  portal_link: workspace
+
+SAT-ACL-FOLDER:
+  title: Top-level folders restrict write access
+  category: Workspace Object ACLs
+  severity: medium
+  description: |-
+    Top-level workspace folders without restricted write access allow any user to
+    create, modify, or delete objects, risking accidental or malicious changes to
+    shared resources.
+  recommendation: |-
+    Set CAN_MANAGE permission on top-level folders to admin groups only.
+    Grant CAN_READ or CAN_RUN to broader groups as needed.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control/workspace-acl
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list + /api/2.0/permissions/directories/{id}
+  benefits: Folder-level write restrictions prevent unauthorized modification of shared workspace objects.
+  portal_link: workspace
+
+SAT-ACL-DASHBOARD:
+  title: Dashboards are not world-editable
+  category: Workspace Object ACLs
+  severity: low
+  description: |-
+    Dashboards without explicit ACLs can be edited by any workspace user, risking
+    accidental modification of shared analytics and reporting artifacts.
+  recommendation: |-
+    Set CAN_VIEW permission for consumers and CAN_EDIT only for dashboard owners
+    and their teams.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control/workspace-acl
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/lakeview/dashboards
+  benefits: Restricting dashboard edit access prevents accidental modification of shared analytics.
+  portal_link: sql/dashboards
+
+SAT-ACL-QUERY:
+  title: Saved queries have owner and explicit grants
+  category: Workspace Object ACLs
+  severity: low
+  description: |-
+    Saved SQL queries without explicit permission grants are visible and editable
+    by all workspace users, potentially exposing sensitive query logic.
+  recommendation: |-
+    Set explicit permissions on saved queries. Grant CAN_RUN to consumers
+    and CAN_MANAGE only to query owners.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control/workspace-acl
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/queries
+  benefits: Query-level permissions prevent unauthorized modification of shared SQL analytics logic.
+  portal_link: sql/queries
+
+SAT-ACL-EXPERIMENT:
+  title: ML experiments restrict write to owners
+  category: Workspace Object ACLs
+  severity: medium
+  description: |-
+    MLflow experiments without explicit ACLs allow any workspace user to log runs,
+    modify parameters, or delete experiment data, compromising ML reproducibility.
+  recommendation: |-
+    Set CAN_MANAGE permission on ML experiments to experiment owners only.
+    Grant CAN_READ to broader teams for experiment visibility.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control/workspace-acl
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/mlflow/experiments/search
+  benefits: Experiment ACLs protect ML reproducibility by restricting who can modify experiment data.
+  portal_link: ml/experiments

@@ -1,0 +1,362 @@
+# AI / ML Security & Governance
+# 22 checks
+
+SAT-AI-PAYLOAD-LOG:
+  title: Inference payload logging enabled on serving endpoints
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    Serving endpoints without payload logging cannot be audited for misuse, bias, or compliance violations.
+    Payload logging (auto_capture_config) records all inference requests and responses to Delta tables.
+  recommendation: Enable auto_capture_config on all model serving endpoints for inference audit trails.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/inference-tables
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Payload logging captures all inference requests and responses, enabling audit, compliance, and bias detection.
+  portal_link: ml/endpoints
+SAT-AI-GUARDRAILS:
+  title: AI Gateway guardrails have content filter rules
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    AI Gateway guardrails without input/output content filters provide no protection against prompt injection,
+    PII leakage, or harmful content generation. The guardrails key must contain actual filter rules.
+  recommendation: Configure PII detection, safety filters, and valid topics in AI Gateway guardrails.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway/guardrails
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Content filter rules in guardrails block prompt injection, PII leakage, and harmful content in AI interactions.
+  portal_link: ml/endpoints
+SAT-AI-TOKEN-LIMITS:
+  title: External model endpoints have token-based rate limits
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Request-based rate limits alone do not control cost for LLM endpoints where a single request
+    can consume thousands of tokens. Token-based limits are needed for cost governance.
+  recommendation: Configure token-based rate limits on external model endpoints via AI Gateway.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Token-based rate limits prevent runaway costs from long-context LLM requests that request-count limits miss.
+  portal_link: ml/endpoints
+SAT-ML-SERVING-SCALE:
+  title: Model serving endpoints configured for scale-to-zero
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Serving endpoints without scale-to-zero accumulate compute cost even when idle.
+  recommendation: Enable scale_to_zero_enabled on served entities unless low-latency requirements prevent it.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Scale-to-zero on serving endpoints eliminates idle compute costs without affecting request handling.
+  portal_link: ml/endpoints
+SAT-AI-EXT-MODEL-KEYS:
+  title: External model API keys stored in Databricks secrets
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    External model API keys (OpenAI, Anthropic, etc.) stored as plaintext create credential exposure risk.
+    Keys should reference Databricks secrets ({{secrets/scope/key}}) instead.
+  recommendation: Use Databricks secret references for all external model API keys. Never use plaintext key fields.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/secrets
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Secret-backed API keys prevent credential exposure in API responses, logs, and configuration exports.
+  portal_link: ml/endpoints
+SAT-ML-UC-MODELS:
+  title: Models registered in Unity Catalog
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Models registered only in the workspace registry lack cross-workspace governance, lineage, and access control.
+    Unity Catalog model registry is the recommended approach for production ML governance.
+  recommendation: Register models in Unity Catalog for centralized governance, versioning, and lineage.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle/upgrade-to-uc
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/registered-models
+  benefits: |-
+    Unity Catalog model registry provides cross-workspace governance, versioning, and lineage for ML models.
+  portal_link: ml
+SAT-ML-EXPERIMENT-ACL:
+  title: MLflow experiments organized in shared workspace paths
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Experiments under /Users/ paths are individually owned without shared governance or team access.
+    Experiments in shared paths (/Shared, /Repos) enable collaborative ML development.
+  recommendation: Create experiments in shared workspace paths (/Shared/ or /Repos/) for team collaboration.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/mlflow/experiments
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/mlflow/experiments/search
+  benefits: |-
+    Shared experiment paths enable team access, consistent governance, and prevent data silos in ML development.
+  portal_link: ml/experiments
+SAT-ML-SERVING-AUTH:
+  title: Serving endpoint permissions are restricted
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    Serving endpoints with overly permissive access allow any workspace user to invoke model inference,
+    potentially exposing sensitive data or incurring unauthorized compute costs.
+  recommendation: Restrict serving endpoint permissions to specific groups or service principals.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/serving-endpoint-access-control
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Restricted endpoint permissions ensure only authorized users and applications can invoke model inference.
+  portal_link: ml/endpoints
+SAT-ML-DRIFT-MON:
+  title: Inference tables have drift monitors configured
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Model serving inference tables without monitors cannot detect prediction drift, data quality issues,
+    or model degradation over time.
+  recommendation: Configure Lakehouse Monitors on inference tables for continuous model quality monitoring.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables/{name}/monitor
+  benefits: |-
+    Inference table monitors detect prediction drift and data quality issues before they impact business outcomes.
+  portal_link: ml/endpoints
+SAT-AI-GATEWAY-ENABLED:
+  title: Serving endpoints route through AI Gateway
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Serving endpoints without AI Gateway lack centralized rate limiting, usage tracking, guardrails,
+    and cost attribution. AI Gateway is the control plane for all GenAI governance features.
+  recommendation: Enable AI Gateway on all serving endpoints for centralized governance and monitoring.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    AI Gateway provides centralized rate limiting, usage tracking, guardrails, and cost attribution for all serving endpoints.
+  portal_link: ml/endpoints
+SAT-AI-USAGE-TRACKING:
+  title: AI Gateway usage tracking enabled for cost attribution
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    AI Gateway endpoints without usage tracking cannot attribute inference costs to specific users, teams,
+    or applications. Usage tracking is essential for GenAI cost governance and chargeback.
+  recommendation: Enable usage_tracking_config on AI Gateway endpoints for per-user and per-team cost attribution.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Usage tracking enables per-user and per-team cost attribution for GenAI workloads, supporting chargeback and budgeting.
+  portal_link: ml/endpoints
+SAT-AI-PII-FILTER:
+  title: AI Gateway guardrails block PII in inputs and outputs
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    AI Gateway endpoints without PII blocking allow sensitive personal data (SSNs, credit cards, emails)
+    to flow through LLM requests and responses, creating compliance and data privacy violations.
+  recommendation: Set pii.behavior to BLOCK in both input and output guardrails on AI Gateway endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway/guardrails
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    PII blocking in guardrails prevents sensitive personal data from flowing through LLM requests and responses.
+  portal_link: ml/endpoints
+SAT-ML-SERVING-TRAFFIC:
+  title: Multi-entity endpoints use traffic routing for safe deploys
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Serving endpoints with multiple served entities but no traffic_config route 100% of traffic to
+    the default entity. Traffic routing enables canary deployments and safe model rollouts.
+  recommendation: Configure traffic_config with percentage routing on multi-entity endpoints for safe model transitions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/create-manage-serving-endpoints
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Traffic routing enables canary deployments and gradual model rollouts, reducing risk of production incidents.
+  portal_link: ml/endpoints
+SAT-AI-ENDPOINT-GPU:
+  title: GPU serving endpoints have compute limits configured
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Custom model serving endpoints without workload_size or max_provisioned_throughput limits
+    may consume unbounded GPU compute resources, leading to unexpected costs.
+  recommendation: Configure workload_size or max_provisioned_throughput on custom serving endpoints for cost control.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Compute limits on GPU serving endpoints prevent unbounded resource consumption and unexpected cost spikes.
+  portal_link: ml/endpoints
+SAT-AI-RATE-LIMITS:
+  title: Serving endpoints have rate limits configured
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Serving endpoints without any rate limits (request or token) are vulnerable to abuse, accidental
+    overload, and cost runaway from automated clients or misconfigured applications.
+  recommendation: Configure at least one rate limit (request-count or token-based) on all serving endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Rate limits protect serving endpoints from abuse, overload, and cost runaway from uncontrolled access.
+  portal_link: ml/endpoints
+SAT-ML-MODEL-VERSIONS:
+  title: Unity Catalog models have multiple versions
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Models with only a single version may indicate ad-hoc deployment without a proper promotion
+    workflow (dev → staging → production). Multiple versions demonstrate versioned model lifecycle.
+  recommendation: Use versioned model promotion workflows with staging and production aliases in Unity Catalog.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/registered-models
+  benefits: |-
+    Versioned model promotion workflows ensure proper testing and governance before production deployment.
+  portal_link: ml
+SAT-ML-MODEL-DESCRIPTIONS:
+  title: Unity Catalog models have descriptions
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Models without descriptions are difficult to discover, understand, and govern at scale.
+    Descriptions provide essential context for model consumers, auditors, and governance teams.
+  recommendation: Add descriptions (comment field) to all Unity Catalog registered models.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/registered-models
+  benefits: |-
+    Model descriptions improve discoverability, understanding, and governance for ML model consumers and auditors.
+  portal_link: ml
+SAT-ML-EXPERIMENT-CLEANUP:
+  title: No deleted MLflow experiments accumulating
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Deleted experiments (lifecycle_stage=deleted) remain in the workspace consuming storage and
+    cluttering search results until permanently purged.
+  recommendation: Permanently delete or restore trashed MLflow experiments to maintain workspace hygiene.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/mlflow/experiments
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/mlflow/experiments/search
+  benefits: |-
+    Cleaning up deleted experiments reduces storage waste and improves experiment search and discovery.
+  portal_link: ml/experiments
+SAT-ML-TRAINING-COMPUTE:
+  title: ML training jobs use job clusters
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    ML training jobs using interactive (all-purpose) clusters incur higher costs and lack isolation.
+    Job clusters provide per-job isolation, auto-termination, and reproducible compute environments.
+  recommendation: Configure ML training jobs to use job clusters instead of existing interactive clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/jobs/compute
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Job clusters provide per-job isolation, auto-termination, and lower costs for ML training workloads.
+  portal_link: jobs
+SAT-ML-REGISTRY-UC:
+  title: Models registered in Unity Catalog Model Registry
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    Models registered in the legacy workspace model registry lack cross-workspace governance,
+    centralized access control, and lineage tracking. Unity Catalog Model Registry is the
+    recommended approach for production ML governance.
+  recommendation: |-
+    Migrate models from the workspace registry to Unity Catalog Model Registry for centralized
+    governance, versioning, lineage, and cross-workspace access control.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle/
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/models
+  benefits: |-
+    Unity Catalog Model Registry provides centralized governance, lineage, and cross-workspace access control for ML models.
+  portal_link: ml
+SAT-ML-INFERENCE-TABLES:
+  title: Serving endpoints have inference tables enabled
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Serving endpoints without inference tables (auto_capture_config) cannot log predictions for
+    monitoring, debugging, or compliance auditing of model behavior in production.
+  recommendation: |-
+    Enable auto_capture_config on all model serving endpoints to capture inference requests and
+    responses to Delta tables for monitoring and audit.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/inference-tables
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Inference tables capture all prediction requests and responses, enabling monitoring, debugging, and compliance auditing.
+  portal_link: ml/endpoints
+SAT-AI-MODEL-APPROVAL:
+  title: Model serving requires staging-to-production promotion workflow
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    Serving endpoints that deploy models directly to production without a staging
+    step risk deploying untested or biased models. A promotion workflow ensures
+    models are validated before serving live traffic.
+  recommendation: |-
+    Implement a model promotion workflow using UC model aliases (staging → production).
+    Require approval before promoting models to production serving endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Model promotion workflows prevent untested models from reaching production.
+  portal_link: ml/endpoints
+SAT-AI-COST-TRACKING:
+  title: External model endpoints have cost tracking enabled
+  category: AI / ML Governance
+  severity: medium
+  description: |-
+    External model endpoints (OpenAI, Anthropic, etc.) without cost tracking
+    cannot attribute API costs to specific users, teams, or applications,
+    making GenAI cost governance impossible.
+  recommendation: |-
+    Enable AI Gateway usage tracking on all external model endpoints. Query
+    system tables to build per-user and per-team cost attribution reports.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/ai-gateway
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Cost tracking on external model endpoints enables per-user GenAI cost attribution.
+  portal_link: ml/endpoints
+SAT-ML-FEATURE-FRESHNESS:
+  title: Feature tables have freshness monitoring
+  category: AI / ML Governance
+  severity: low
+  description: |-
+    Feature tables without freshness monitoring may silently go stale, causing
+    model predictions to degrade as features drift from current reality.
+  recommendation: |-
+    Configure Lakehouse Monitors on feature tables to track data freshness.
+    Set alerts when feature tables are not updated within expected SLAs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/feature-store/feature-tables
+  benefits: Feature freshness monitoring prevents model degradation from stale feature data.
+  portal_link: ml
+SAT-GOV-MODEL-SERVING-ACL:
+  title: Model serving endpoints have explicit access control
+  category: AI / ML Governance
+  severity: high
+  description: |-
+    Model serving endpoints without explicit ACLs may be accessible to all workspace users.
+    Serving endpoints handling sensitive data or predictions should have restricted access.
+  recommendation: Configure explicit ACLs on all model serving endpoints. Remove broad CAN_MANAGE or CAN_QUERY grants to All Users.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/serving-endpoint-access-control
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints + /api/2.0/permissions/serving-endpoints/{endpoint_id}
+  benefits: |-
+    Explicit ACLs on serving endpoints ensure only authorized users and applications can invoke model inference or manage endpoints.
+  portal_link: ml/endpoints

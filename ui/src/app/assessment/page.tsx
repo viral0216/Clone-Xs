@@ -47,6 +47,7 @@ export default function AssessmentOverview() {
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const [pillars, setPillars] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [prevScore, setPrevScore] = useState<number | null>(null);
@@ -57,14 +58,16 @@ export default function AssessmentOverview() {
     setLoading(true);
     setError("");
     try {
-      const [latest, cats, results, qwData] = await Promise.allSettled([
+      const [latest, cats, pillarsData, results, qwData] = await Promise.allSettled([
         api.get("/assessment/latest"),
         api.get("/assessment/categories"),
+        api.get("/assessment/waf-pillars"),
         api.get("/assessment/results"),
         api.get("/assessment/findings?status=FAIL"),
       ]);
       if (latest.status === "fulfilled") setData(latest.value);
       if (cats.status === "fulfilled") setCategories(Array.isArray(cats.value) ? cats.value : []);
+      if (pillarsData.status === "fulfilled") setPillars(Array.isArray(pillarsData.value) ? pillarsData.value : []);
       if (results.status === "fulfilled") {
         const r = Array.isArray(results.value) ? results.value : [];
         const fullScans = r.filter(x => x.overall_score !== null && x.overall_score !== undefined);
@@ -94,14 +97,13 @@ export default function AssessmentOverview() {
   const topFindings = data?.findings_preview ?? [];
   const scoreDelta = prevScore !== null && score > 0 ? score - prevScore : null;
 
-  const chartData = categories
+  const chartData = (pillars.length > 0 ? pillars : categories)
     .slice()
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 12)
+    .sort((a, b) => (a.score ?? 0) - (b.score ?? 0))
     .map(c => ({
-      name: c.category.replace(/ (Extended|Governance)$/i, ""),
-      fullName: c.category,
-      score: c.score,
+      name: c.pillar ?? c.category,
+      fullName: c.pillar ?? c.category,
+      score: c.score ?? 0,
     }));
 
   function handleBarClick(entry: any) {
@@ -257,8 +259,8 @@ export default function AssessmentOverview() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-1">
-                <CardTitle className="text-sm font-medium">Lowest Category Scores</CardTitle>
-                <p className="text-[11px] text-muted-foreground">Click a bar to filter findings by that category</p>
+                <CardTitle className="text-sm font-medium">WAF Pillar Scores</CardTitle>
+                <p className="text-[11px] text-muted-foreground">Click a bar to filter findings by that pillar</p>
               </CardHeader>
               <CardContent>
                 {chartData.length === 0 ? (
@@ -278,8 +280,8 @@ export default function AssessmentOverview() {
                   </ResponsiveContainer>
                 )}
                 <div className="mt-2 text-right">
-                  <Link to="/assessment/categories" className="text-xs text-primary hover:underline">
-                    View all {categories.length} categories →
+                  <Link to="/assessment/pillars" className="text-xs text-primary hover:underline">
+                    View all WAF pillars →
                   </Link>
                 </div>
               </CardContent>

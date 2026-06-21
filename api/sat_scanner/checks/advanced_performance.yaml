@@ -1,0 +1,28 @@
+# Advanced Performance
+# 2 checks
+
+SAT-PERF-4:
+  title: Adaptive Query Execution (AQE) configuration
+  category: Advanced Performance
+  severity: low
+  description: |-
+    AQE dynamically optimizes query plans at runtime. Explicitly disabling it removes a key performance optimization.
+  recommendation: Leave AQE enabled (default) or explicitly set spark.sql.adaptive.enabled=true.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/aqe
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    AQE dynamically optimizes query plans at runtime, improving join strategies and partition sizes automatically.
+SAT-PERF-5:
+  title: Delta optimization jobs
+  category: Advanced Performance
+  severity: low
+  description: |-
+    Regular OPTIMIZE and VACUUM jobs keep Delta tables performant by compacting small files and removing stale data.
+  recommendation: Schedule OPTIMIZE and VACUUM jobs for large Delta tables, or enable predictive optimization.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Regular OPTIMIZE and VACUUM keep Delta tables performant by compacting small files and removing stale data.
+  portal_link: jobs

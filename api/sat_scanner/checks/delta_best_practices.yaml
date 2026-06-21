@@ -1,0 +1,126 @@
+# Delta Best Practices
+# 6 checks
+
+SAT-DELTA-VACUUM-RETENTION:
+  title: Tables have VACUUM retention ≤ 30 days
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Delta tables with VACUUM retention periods longer than 30 days accumulate stale data files that consume
+    unnecessary storage and increase cloud costs. The delta.deletedFileRetentionDuration table property controls
+    how long deleted files are retained before VACUUM can remove them. Excessively long retention inflates
+    storage bills and slows metadata operations without providing additional value beyond time travel needs.
+  recommendation: |-
+    Review delta.deletedFileRetentionDuration on all Delta tables and set it to 30 days or less unless
+    specific compliance or time-travel requirements demand longer retention. Use
+    ALTER TABLE <table> SET TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 7 days')
+    to configure a sensible default, then run VACUUM to reclaim space immediately.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/vacuum
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Keeping VACUUM retention at 30 days or less prevents stale file accumulation, reduces cloud storage costs,
+    and keeps metadata operations fast while still supporting reasonable time-travel windows.
+  portal_link: explore/data
+
+SAT-DELTA-CDF-ENABLED:
+  title: Change Data Feed enabled on key tables
+  category: Table Optimization
+  severity: low
+  description: |-
+    Change Data Feed (CDF) captures row-level changes (inserts, updates, deletes) in Delta tables, enabling
+    efficient incremental processing downstream. Without CDF, consumers must perform expensive full-table scans
+    or custom change-detection logic to identify what changed between versions.
+  recommendation: |-
+    Enable Change Data Feed on tables that serve as sources for incremental ETL pipelines, streaming consumers,
+    or audit trails. Use ALTER TABLE <table> SET TBLPROPERTIES ('delta.enableChangeDataFeed' = true) to activate
+    it. For new tables, include the property at creation time to capture changes from the start.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/delta-change-data-feed
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Change Data Feed eliminates the need for full-table scans to detect changes, dramatically reducing
+    incremental ETL costs and enabling real-time downstream processing with row-level granularity.
+  portal_link: explore/data
+
+SAT-DELTA-DELETION-VECTORS:
+  title: Deletion vectors enabled on tables
+  category: Table Optimization
+  severity: low
+  description: |-
+    Deletion vectors provide a lightweight mechanism for marking rows as deleted without rewriting entire data
+    files. Without deletion vectors, every DELETE or MERGE operation rewrites affected Parquet files, which is
+    expensive for large tables with frequent row-level mutations.
+  recommendation: |-
+    Enable deletion vectors on tables that receive frequent DELETE, UPDATE, or MERGE operations. Use
+    ALTER TABLE <table> SET TBLPROPERTIES ('delta.enableDeletionVectors' = true) to activate. This is
+    especially beneficial for large tables where row-level operations currently trigger costly file rewrites.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/deletion-vectors
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Deletion vectors avoid costly file rewrites for row-level operations, reducing write amplification and
+    speeding up DELETE, UPDATE, and MERGE by orders of magnitude on large tables.
+  portal_link: explore/data
+
+SAT-DELTA-COLUMN-MAPPING:
+  title: Column mapping enabled for schema evolution
+  category: Table Optimization
+  severity: low
+  description: |-
+    Delta column mapping decouples logical column names from physical Parquet field names, enabling safe column
+    renames and drops without rewriting data files. Without column mapping, schema changes such as renaming or
+    dropping columns require a full table rewrite, which is time-consuming and error-prone for large tables.
+  recommendation: |-
+    Enable column mapping on tables that anticipate schema evolution. Use
+    ALTER TABLE <table> SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name') to activate name-based mapping.
+    Test on non-production tables first, as enabling column mapping is a one-way migration that changes the
+    minimum reader/writer protocol versions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/column-mapping
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Column mapping enables safe column renames and drops without full data rewrites, simplifying schema
+    evolution and reducing maintenance overhead for tables with evolving structures.
+  portal_link: explore/data
+
+SAT-DELTA-UNIFORM:
+  title: Delta UniForm enabled for cross-engine access
+  category: Table Optimization
+  severity: low
+  description: |-
+    Delta UniForm automatically generates Iceberg-compatible metadata alongside Delta logs, enabling external
+    engines (Spark, Trino, Presto, Snowflake) to read Delta tables natively. Without UniForm, cross-engine
+    access requires manual data export or format conversion, creating data duplication and staleness risks.
+  recommendation: |-
+    Enable UniForm on tables that need to be read by non-Databricks engines. Use
+    ALTER TABLE <table> SET TBLPROPERTIES ('delta.universalFormat.enabledFormats' = 'iceberg') to generate
+    Iceberg metadata automatically. Ensure column mapping is enabled first, as UniForm depends on it.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/uniform
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    UniForm eliminates the need for data duplication or format conversion when sharing tables with external
+    engines, providing a single source of truth accessible across the data ecosystem.
+  portal_link: explore/data
+
+SAT-DELTA-CLONE-EXISTS:
+  title: Production tables have clones for DR/testing
+  category: Data Architecture
+  severity: low
+  description: |-
+    Delta clones (SHALLOW CLONE or DEEP CLONE) provide zero-copy or full copies of production tables for
+    disaster recovery, testing, and development purposes. Without clones, teams risk using production data
+    directly for testing or lack a recovery mechanism when data corruption occurs.
+  recommendation: |-
+    Create SHALLOW CLONE or DEEP CLONE copies of critical production tables for disaster recovery and testing
+    environments. Establish a naming convention (e.g., table_clone or table_backup suffix) and schedule
+    periodic clone refreshes. Use CREATE TABLE <target> SHALLOW CLONE <source> for storage-efficient copies
+    or DEEP CLONE for fully independent backups.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/clone
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Delta clones provide fast, storage-efficient copies of production tables for DR and testing, isolating
+    non-production workloads from live data and enabling rapid recovery from data corruption incidents.
+  portal_link: explore/data

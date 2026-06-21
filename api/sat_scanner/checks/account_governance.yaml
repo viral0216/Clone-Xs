@@ -1,0 +1,85 @@
+# Account Governance
+# 7 checks
+
+SAT-ACCT-USERS:
+  title: No inactive or unassigned account users
+  category: Account Governance
+  severity: low
+  description: Inactive or unassigned account users increase attack surface and complicate identity audits.
+  recommendation: Review inactive users in the Account Console and deactivate or remove those no longer needed.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/users
+  effort: Moderate (1–4 hrs)
+  api_endpoint: accounts.azuredatabricks.net /scim/v2/Users
+  benefits: |-
+    Regular account user audits remove orphaned identities and reduce the blast radius of credential compromise.
+  portal_link: https://accounts.azuredatabricks.net/users?account_id={account_id}
+SAT-ACCT-GROUPS:
+  title: No empty account-level groups
+  category: Account Governance
+  severity: low
+  description: Empty account-level groups add clutter and may indicate stale SCIM provisioning.
+  recommendation: Remove empty groups or populate them with members in the Account Console.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/groups
+  effort: Quick Fix (5–15 min)
+  api_endpoint: accounts.azuredatabricks.net /scim/v2/Groups
+  benefits: Clean account groups ensure RBAC assignments are accurate and SCIM provisioning is healthy.
+  portal_link: https://accounts.azuredatabricks.net/users?account_id={account_id}
+SAT-ACCT-SP:
+  title: No inactive service principals in account
+  category: Account Governance
+  severity: low
+  description: Inactive service principals left in the account may retain stale permissions.
+  recommendation: Deactivate or remove unused service principals in the Account Console.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals
+  effort: Moderate (1–4 hrs)
+  api_endpoint: accounts.azuredatabricks.net /scim/v2/ServicePrincipals
+  benefits: Deactivating unused service principals closes automated access paths that attackers could exploit.
+  portal_link: https://accounts.azuredatabricks.net/users?account_id={account_id}
+SAT-ACCT-IP-ACL:
+  title: Account console IP access restricted
+  category: Account Governance
+  severity: medium
+  description: Without IP restrictions, the Account Console is accessible from any network.
+  recommendation: |-
+    Configure IP access lists in Account Console > Security > IP access lists to restrict Account Console access.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/front-end/ip-access-list-account
+  effort: Moderate (1–4 hrs)
+  api_endpoint: accounts.azuredatabricks.net /ip-access-lists
+  benefits: IP restrictions on the Account Console prevent unauthorized access to account-wide admin functions.
+  portal_link: https://accounts.azuredatabricks.net/security/networking/ip-access-list?account_id={account_id}
+SAT-ACCT-METASTORES:
+  title: UC metastore coverage
+  category: Account Governance
+  severity: low
+  description: Account-wide metastore visibility ensures all workspaces have Unity Catalog governance.
+  recommendation: Verify all metastores have Delta Sharing token lifetime configured and are assigned to workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-metastore
+  effort: Moderate (1–4 hrs)
+  api_endpoint: accounts.azuredatabricks.net /metastores
+  benefits: |-
+    Account-wide metastore visibility ensures all workspaces have Unity Catalog governance and Delta Sharing controls.
+  portal_link: https://accounts.azuredatabricks.net/data?account_id={account_id}
+SAT-ACCT-BUDGETS:
+  title: Account budgets and spending alerts configured
+  category: Account Governance
+  severity: low
+  description: Without budgets, cost overruns go undetected until billing arrives.
+  recommendation: Create budgets with alerts in Account Console > Settings to monitor and control spending.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/budgets
+  effort: Moderate (1–4 hrs)
+  api_endpoint: accounts.azuredatabricks.net /budgets
+  benefits: |-
+    Budget alerts catch unexpected spend early, preventing bill shock and enabling proactive cost governance.
+  portal_link: https://accounts.azuredatabricks.net/settings?account_id={account_id}
+SAT-ACCT-WS-LIST:
+  title: All workspaces on Premium tier
+  category: Account Governance
+  severity: low
+  description: Standard-tier workspaces lack security features like Unity Catalog, IP ACLs, and audit logs.
+  recommendation: Upgrade Standard-tier workspaces to Premium for full security and governance features.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/
+  effort: Significant (1–3 days)
+  api_endpoint: accounts.azuredatabricks.net /workspaces
+  benefits: |-
+    Premium-tier workspaces unlock security features (IP ACLs, Unity Catalog, audit logs) unavailable on Standard.
+  portal_link: https://accounts.azuredatabricks.net/workspaces?account_id={account_id}

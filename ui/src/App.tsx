@@ -167,6 +167,7 @@ const MdmProfiling = lazy(() => import("@/app/mdm/profiling/page"));
 const AssessmentOverview = lazy(() => import("@/app/assessment/page"));
 const AssessmentRun = lazy(() => import("@/app/assessment/run/page"));
 const AssessmentFindings = lazy(() => import("@/app/assessment/findings/page"));
+const AssessmentPillars = lazy(() => import("@/app/assessment/pillars/page"));
 const AssessmentCategories = lazy(() => import("@/app/assessment/categories/page"));
 const AssessmentRecommendations = lazy(() => import("@/app/assessment/recommendations/page"));
 const AssessmentInventory = lazy(() => import("@/app/assessment/inventory/page"));
@@ -511,6 +512,7 @@ export default function App() {
               <Route path="/assessment" element={<Suspense fallback={<PageFallback />}><AssessmentOverview /></Suspense>} />
               <Route path="/assessment/run" element={<Suspense fallback={<PageFallback />}><AssessmentRun /></Suspense>} />
               <Route path="/assessment/findings" element={<Suspense fallback={<PageFallback />}><AssessmentFindings /></Suspense>} />
+              <Route path="/assessment/pillars" element={<Suspense fallback={<PageFallback />}><AssessmentPillars /></Suspense>} />
               <Route path="/assessment/categories" element={<Suspense fallback={<PageFallback />}><AssessmentCategories /></Suspense>} />
               <Route path="/assessment/recommendations" element={<Suspense fallback={<PageFallback />}><AssessmentRecommendations /></Suspense>} />
               <Route path="/assessment/inventory" element={<Suspense fallback={<PageFallback />}><AssessmentInventory /></Suspense>} />

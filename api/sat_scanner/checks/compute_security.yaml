@@ -1,0 +1,73 @@
+# Compute Security
+# 5 checks
+
+SAT-COMPUTE-1:
+  title: Cluster policies defined
+  category: Compute Security
+  severity: medium
+  description: Without cluster policies, users can create arbitrarily large or insecure clusters.
+  recommendation: Create cluster policies for each team or use case.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#cluster-policy
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/policies/clusters/list + /api/2.0/clusters/list
+  benefits: |-
+    Cluster policies enforce guardrails on cluster size, instance types, and security settings, preventing misconfiguration.
+  portal_link: compute/policies
+SAT-COMPUTE-2:
+  title: No clusters running end-of-life Databricks Runtime
+  category: Compute Security
+  severity: high
+  description: EOL Databricks Runtime versions no longer receive security patches.
+  recommendation: Upgrade all clusters to a supported LTS Databricks Runtime (13.3 LTS or later).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/release-notes/runtime/databricks-runtime-ver
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: EOL runtimes no longer receive security patches. Upgrading eliminates known vulnerabilities.
+SAT-COMPUTE-3:
+  title: Cluster log delivery configured
+  category: Compute Security
+  severity: low
+  description: Cluster log delivery sends driver/worker logs to storage for audit.
+  recommendation: Configure cluster log delivery to a dedicated storage location.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#cluster-log-delivery
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Cluster log delivery captures driver and worker logs for debugging, performance analysis, and audit compliance.
+SAT-COMPUTE-4:
+  title: Autoscaling enabled on interactive clusters
+  category: Compute Security
+  severity: low
+  description: Fixed-size clusters waste compute when underutilised.
+  recommendation: Enable autoscaling on all interactive clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#autoscaling
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Autoscaling adjusts cluster size to actual workload, reducing idle compute costs without manual intervention.
+SAT-COMPUTE-PHOTON:
+  title: Photon engine enabled for hardened execution
+  category: Compute Security
+  severity: low
+  description: Photon provides a hardened C++ execution engine with memory safety and better performance.
+  recommendation: Enable Photon on SQL warehouses and supported clusters for better security and performance.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/photon
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Photon provides a hardened C++ execution engine with memory safety and 2-8x performance improvements.
+  portal_link: compute
+SAT-DATA-CREDENTIAL-PASSTHROUGH:
+  title: No clusters using legacy credential passthrough
+  category: Compute Security
+  severity: high
+  description: |-
+    Legacy credential passthrough bypasses Unity Catalog access controls, allowing users to access
+    storage directly with their Azure AD identity. This prevents audit logging and fine-grained access control.
+  recommendation: Migrate clusters from legacy credential passthrough to Unity Catalog with USER_ISOLATION or SINGLE_USER access mode.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Removing legacy credential passthrough enforces Unity Catalog access controls, enabling audit logging and fine-grained permissions.
+  portal_link: compute

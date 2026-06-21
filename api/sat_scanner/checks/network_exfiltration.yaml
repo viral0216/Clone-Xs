@@ -1,0 +1,73 @@
+# ── Network Exfiltration Controls ──
+# Fine-grained checks for data exfiltration prevention beyond the
+# general SAT-NET-EXFIL workspace-conf check.
+
+SAT-EXFIL-EGRESS:
+  title: Workspace has egress firewall rules configured
+  category: Network Exfiltration
+  severity: high
+  description: |-
+    Without egress firewall rules, cluster nodes can connect to any external
+    IP address, enabling data exfiltration to unauthorized destinations via
+    HTTP, JDBC, or custom protocols.
+  recommendation: |-
+    Configure Network Connectivity Config (NCC) with egress firewall rules
+    to restrict outbound traffic to approved destinations only.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/data-exfiltration-protection
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Egress firewall rules block unauthorized outbound connections that could exfiltrate data.
+  portal_link: settings/workspace
+
+SAT-EXFIL-MOUNT-TRUST:
+  title: DBFS mounts point only to trusted cloud accounts
+  category: Network Exfiltration
+  severity: high
+  description: |-
+    DBFS mounts (/mnt) pointing to external or untrusted cloud storage accounts
+    create data exfiltration paths that bypass Unity Catalog governance. An
+    attacker with workspace access could mount their own storage and copy data out.
+  recommendation: |-
+    Audit all DBFS mount points. Remove mounts to untrusted storage accounts.
+    Migrate to Unity Catalog external locations with storage credential governance.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/dbfs/mounts
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/dbfs/list?path=/mnt
+  benefits: Restricting mounts to trusted accounts prevents data exfiltration via user-mounted external storage.
+  portal_link: explore/data/dbfs
+
+SAT-EXFIL-EXT-LOC-TRUST:
+  title: External locations restrict to trusted cloud accounts
+  category: Network Exfiltration
+  severity: high
+  description: |-
+    External locations pointing to cloud storage accounts outside the organization's
+    trust boundary enable authorized users to stage data for exfiltration via
+    Unity Catalog's own data access mechanisms.
+  recommendation: |-
+    Audit external location URLs. Ensure all storage accounts belong to your
+    organization. Use storage credential governance to restrict which accounts
+    can be registered as external locations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-external-locations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/external-locations
+  benefits: Trusted external locations prevent data staging in unauthorized cloud storage accounts.
+  portal_link: explore/data
+
+SAT-EXFIL-PYPI:
+  title: Init scripts do not install from untrusted package sources
+  category: Network Exfiltration
+  severity: medium
+  description: |-
+    Cluster init scripts that install packages from public PyPI, npm, or Maven
+    without pinned versions or internal mirrors are vulnerable to supply-chain
+    attacks and can be used to exfiltrate data during cluster startup.
+  recommendation: |-
+    Use internal package mirrors or UC Volumes for library distribution.
+    Pin exact versions in init scripts. Restrict network egress to approved
+    package repositories only.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/init-scripts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/global-init-scripts
+  benefits: Trusted package sources prevent supply-chain attacks and data exfiltration via init scripts.
+  portal_link: compute

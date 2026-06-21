@@ -1,0 +1,56 @@
+# Performance
+# 4 checks
+
+SAT-PERF-1:
+  title: Photon enabled on compatible clusters
+  category: Performance
+  severity: medium
+  description: |-
+    Photon accelerates Spark workloads 2-8x. Clusters without Photon may be leaving performance on the table.
+  recommendation: Enable Photon on all-purpose and job clusters by selecting a Photon-compatible runtime.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/photon
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Photon accelerates Spark workloads 2-8x with a memory-safe C++ engine, reducing both cost and runtime.
+SAT-PERF-2:
+  title: SQL Warehouse serverless adoption
+  category: Performance
+  severity: medium
+  description: Serverless SQL warehouses start instantly and scale automatically, eliminating cold-start latency.
+  recommendation: Migrate classic SQL warehouses to serverless or PRO for better performance and cost efficiency.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/serverless
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Serverless SQL warehouses start instantly and scale automatically, eliminating cold-start latency and over-provisioning.
+  portal_link: sql/warehouses
+SAT-PERF-3:
+  title: Runtime version currency
+  category: Performance
+  severity: high
+  description: |-
+    Clusters on end-of-life (EOL) runtimes miss security patches, bug fixes, and performance improvements. LTS runtimes receive extended support.
+  recommendation: Upgrade clusters to the latest LTS runtime. Retire clusters running runtime versions below 13.x.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/release-notes/runtime
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Current runtimes include critical security patches, bug fixes, and performance improvements. EOL runtimes miss these.
+SAT-PERF-QUERY-ANTIPATTERN:
+  title: No query anti-patterns detected in recent history
+  category: Performance
+  severity: medium
+  description: |-
+    Query anti-patterns like SELECT *, full table scans without filters,
+    and .collect() on large datasets cause excessive compute usage and
+    slow performance. System table query history is used to detect these.
+  recommendation: |-
+    Review flagged queries in system.query.history. Replace SELECT * with
+    explicit column lists. Add WHERE filters to large table scans. Avoid
+    .collect() in notebooks — use .display() or .toPandas() with limits.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/query-history
+  effort: Significant (1–3 days)
+  api_endpoint: system.query.history (system table)
+  benefits: Eliminating query anti-patterns reduces compute costs and improves query performance across the workspace.
+  portal_link: sql/history

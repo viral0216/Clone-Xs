@@ -1,0 +1,171 @@
+# Table Optimization
+# 10 checks
+
+SAT-OPT-PRED-CATALOG:
+  title: Predictive optimization enabled at catalog level
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Predictive optimization at the catalog level ensures OPTIMIZE and VACUUM run automatically for all tables
+    in the catalog. Without it, individual table owners must manage maintenance manually.
+  recommendation: |-
+    Enable predictive optimization on each Unity Catalog catalog via
+    ALTER CATALOG SET ENABLE_PREDICTIVE_OPTIMIZATION = 'ENABLE' or Catalog Explorer > Properties.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Catalog-level predictive optimization ensures every table receives automatic OPTIMIZE and VACUUM
+    without relying on individual table owners to configure maintenance.
+  portal_link: explore/data
+
+SAT-OPT-OPTIMIZE-WRITE:
+  title: Optimized writes enabled on clusters
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Optimized writes coalesce small files during write operations, reducing the need for separate OPTIMIZE jobs
+    and improving read performance. Clusters without this setting produce small files that degrade query speed.
+  recommendation: |-
+    Set spark.databricks.delta.optimizeWrite.enabled=true in cluster Spark configuration or cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/optimize-write
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Optimized writes coalesce small files at write time, reducing the need for separate OPTIMIZE jobs
+    and improving read performance without manual intervention.
+  portal_link: compute
+
+SAT-OPT-AUTO-COMPACT:
+  title: Auto compaction enabled on clusters
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Auto compaction automatically triggers OPTIMIZE after writes, keeping Delta tables compact. Without it,
+    small files accumulate and degrade read performance over time.
+  recommendation: |-
+    Set spark.databricks.delta.autoCompact.enabled=true in cluster Spark configuration or cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/auto-optimize
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Auto compaction triggers OPTIMIZE after writes, preventing small file accumulation that degrades query performance.
+  portal_link: compute
+
+SAT-OPT-DELTA-CACHE:
+  title: Delta cache enabled on clusters
+  category: Table Optimization
+  severity: low
+  description: |-
+    Delta cache stores frequently accessed data on local SSD, accelerating repeated reads. Without it,
+    every query re-reads from remote storage, adding latency.
+  recommendation: |-
+    Set spark.databricks.io.cache.enabled=true on clusters that run repetitive analytical queries.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/optimizations/disk-cache
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Delta cache stores frequently accessed data on local SSD, reducing remote storage reads and accelerating
+    repeated analytical queries.
+  portal_link: compute
+
+SAT-OPT-MAINT-SCHEDULE:
+  title: Delta maintenance jobs have cron schedules
+  category: Table Optimization
+  severity: medium
+  description: |-
+    OPTIMIZE and VACUUM jobs without cron schedules run only when manually triggered, leading to
+    inconsistent maintenance and small file accumulation.
+  recommendation: |-
+    Configure cron schedules on all OPTIMIZE/VACUUM jobs for consistent automated maintenance.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/schedule-jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Scheduled maintenance jobs ensure consistent OPTIMIZE and VACUUM execution, preventing performance
+    degradation from small file accumulation.
+  portal_link: jobs
+
+SAT-OPT-WH-PHOTON:
+  title: SQL warehouses have Photon enabled
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Photon accelerates SQL warehouse queries significantly. Warehouses without Photon run on the slower
+    JVM-based engine, increasing query latency and cost.
+  recommendation: |-
+    Enable Photon on all SQL warehouses via warehouse configuration (enable_photon=true).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/photon
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Photon on SQL warehouses accelerates queries, reducing both cost and response time for BI and analytics.
+  portal_link: sql/warehouses
+
+SAT-OPT-LIQUID-CLUSTER:
+  title: Tables use Liquid Clustering
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Liquid Clustering is the modern replacement for Z-ORDER and partitioning. It automatically manages data
+    layout for optimal query performance without manual OPTIMIZE runs or partition design.
+  recommendation: |-
+    Convert critical Delta tables to use Liquid Clustering via ALTER TABLE SET CLUSTER BY or CREATE TABLE CLUSTER BY.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/clustering
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Liquid Clustering automatically optimizes data layout, eliminating the need for manual Z-ORDER and
+    partition management while improving query performance.
+  portal_link: explore/data
+
+SAT-OPT-WH-AUTO-STOP:
+  title: SQL warehouses auto-stop within 10 minutes
+  category: Table Optimization
+  severity: low
+  description: |-
+    SQL warehouses with long auto-stop timers waste compute resources when idle. Setting auto_stop_mins to
+    10 or less reclaims idle capacity while keeping restart latency minimal.
+  recommendation: |-
+    Set auto_stop_mins to 10 or less on all SQL warehouses to reclaim idle resources.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/admin/create-sql-warehouse
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Aggressive auto-stop on SQL warehouses reclaims idle compute within minutes, directly reducing unnecessary
+    cloud spend without impacting user experience.
+  portal_link: sql/warehouses
+
+SAT-OPT-SERVERLESS-JOBS:
+  title: Jobs use serverless or job clusters
+  category: Table Optimization
+  severity: low
+  description: |-
+    Jobs running on interactive (all-purpose) clusters waste resources and lack isolation. Serverless compute
+    or dedicated job clusters provide cost-efficient, isolated execution.
+  recommendation: |-
+    Migrate jobs from interactive clusters to serverless compute or dedicated job clusters for better isolation and cost.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Jobs on serverless or dedicated job clusters get isolated execution environments, predictable costs, and
+    automatic resource management without competing for shared cluster capacity.
+  portal_link: jobs
+
+SAT-OPT-TABLE-FORMAT:
+  title: UC tables use Delta format
+  category: Table Optimization
+  severity: medium
+  description: |-
+    Non-Delta tables (Parquet, CSV, JSON) miss ACID transactions, time travel, OPTIMIZE/VACUUM, and
+    predicate pushdown. Delta format is the recommended standard for Databricks.
+  recommendation: |-
+    Convert non-Delta tables to Delta format using CREATE TABLE ... AS SELECT or CONVERT TO DELTA.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Delta format provides ACID transactions, time travel, schema enforcement, and automatic optimization —
+    features unavailable with Parquet, CSV, or JSON formats.
+  portal_link: explore/data

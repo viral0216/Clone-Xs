@@ -1,0 +1,230 @@
+# Operations
+# 17 checks
+
+SAT-OPS-JOB-SUCCESS:
+  title: Job run success rate is healthy
+  category: Operations
+  severity: medium
+  description: A low job success rate indicates systemic reliability issues affecting data freshness and SLAs.
+  recommendation: Investigate and fix failing jobs. Target >= 95% success rate.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/monitor-job-runs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/runs/list
+  benefits: A healthy job success rate ensures data freshness and SLA compliance for downstream consumers.
+SAT-OPS-DORMANT-JOBS:
+  title: No dormant jobs without schedule or recent runs
+  category: Operations
+  severity: low
+  description: Dormant jobs clutter the workspace and may contain stale configurations or credentials.
+  recommendation: Archive or delete jobs with no schedule and no recent runs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list + /api/2.1/jobs/runs/list
+  benefits: Removing dormant jobs reduces workspace clutter and eliminates stale configurations or credentials.
+SAT-OPS-JOB-NOTIFY:
+  title: Jobs have failure notification configured
+  category: Operations
+  severity: medium
+  description: Jobs without failure notifications allow silent failures that delay incident response.
+  recommendation: Configure email or webhook notifications for job failures on all production jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Failure notifications enable rapid incident response — without them, teams discover failures hours or days late.
+SAT-OPS-CLUSTER-EVENTS:
+  title: No frequent cluster failure events
+  category: Operations
+  severity: medium
+  description: |-
+    Frequent DRIVER_NOT_RESPONDING, SPARK_EXCEPTION, or NODES_LOST events indicate infrastructure instability.
+  recommendation: |-
+    Investigate clusters with frequent failure events. Review VM sizes and Azure Spot VM vs on-demand ratios.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/cluster-event-log
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list + /api/2.0/clusters/events
+  benefits: |-
+    Frequent cluster failures indicate infrastructure instability that impacts job reliability and data freshness.
+  portal_link: compute
+SAT-OPS-IDLE-CLUSTERS:
+  title: Clusters auto-terminate within 30 minutes
+  category: Operations
+  severity: low
+  description: Clusters with long or no auto-termination waste compute resources when idle.
+  recommendation: Set autotermination_minutes to <= 30 for all interactive clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Aggressive auto-termination reclaims idle compute resources, directly reducing unnecessary cloud spend.
+  portal_link: compute
+SAT-OPS-NOTIFY-DEST:
+  title: Notification destinations configured (AlertOps)
+  category: Operations
+  severity: low
+  description: Without notification destinations, alerts and job failures cannot be routed to operational tools.
+  recommendation: Configure Slack, PagerDuty, or webhook notification destinations.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings/notification-destinations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/notification-destinations
+  benefits: |-
+    Notification destinations route alerts to operational tools (PagerDuty, Slack, email) for timely incident response.
+SAT-OPS-DLT-QUALITY:
+  title: DLT pipelines use Pro/Advanced edition with Photon
+  category: Operations
+  severity: low
+  description: Basic-edition DLT pipelines lack expectations, advanced monitoring, and data quality features.
+  recommendation: Upgrade DLT pipelines to Pro or Advanced edition. Enable Photon for performance.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Pro/Advanced DLT with Photon provides expectations, advanced monitoring, and data quality enforcement.
+  portal_link: pipelines
+SAT-OPS-SQL-HEALTH:
+  title: SQL query failure rate is low
+  category: Operations
+  severity: medium
+  description: High SQL query failure or slow query rates indicate warehouse sizing or query optimization issues.
+  recommendation: Investigate failing and slow queries. Consider warehouse sizing and query optimization.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/admin/query-history
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/history/queries
+  benefits: |-
+    Low SQL failure rates indicate properly sized warehouses and well-optimized queries for reliable analytics.
+  portal_link: sql/warehouses
+SAT-OPS-SQL-ALERTS:
+  title: SQL alerts configured for data quality monitoring
+  category: Operations
+  severity: low
+  description: SQL alerts proactively detect data quality anomalies and business metric deviations.
+  recommendation: Create SQL alerts for key data quality metrics and business KPIs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/user/alerts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/alerts
+  benefits: |-
+    SQL alerts proactively detect data quality anomalies and business metric deviations before users notice.
+  portal_link: sql/alerts
+SAT-OPS-POOL-USAGE:
+  title: Instance pools preload Spark versions for fast startup
+  category: Operations
+  severity: low
+  description: Instance pools with preloaded Spark versions reduce cluster startup time significantly.
+  recommendation: Create instance pools with preloaded_spark_versions for frequently-used runtime versions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/pool-best-practices
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/instance-pools/list
+  benefits: Instance pools with preloaded versions reduce cluster startup time from minutes to seconds.
+  portal_link: compute/instance-pools
+SAT-OPS-JOB-SP-OWNER:
+  title: Production jobs owned by service principals
+  category: Operations
+  severity: high
+  description: |-
+    Production jobs owned by individual user accounts create single points of failure when users leave
+    or change roles. Service principal ownership ensures continuity and proper access control.
+  recommendation: |-
+    Transfer ownership of production jobs to service principals. Verify creator_user_name follows
+    the service principal naming pattern for all critical workflow jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Service principal ownership ensures production job continuity when individual users leave or change roles.
+  portal_link: jobs
+SAT-OPS-JOB-TAGS:
+  title: Jobs have cost attribution tags
+  category: Operations
+  severity: medium
+  description: |-
+    Jobs without tags make it impossible to attribute compute costs to teams, projects, or cost centers.
+    Tags on jobs enable cost allocation and chargeback for workflow compute spend.
+  recommendation: |-
+    Apply tags (e.g. team, project, environment) to all jobs for cost attribution and chargeback reporting.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Job tags enable cost attribution to teams and projects, supporting chargeback and budget accountability.
+  portal_link: jobs
+SAT-OPS-JOB-GIT:
+  title: Jobs use Git-backed sources
+  category: Operations
+  severity: medium
+  description: |-
+    Jobs without git_source in their tasks rely on workspace-local notebooks or JARs, which lack
+    version control, code review, and audit trail capabilities.
+  recommendation: |-
+    Configure job tasks to use git_source for version-controlled, auditable, and reviewable code deployments.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/repos/
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Git-backed job sources provide version control, code review, and audit trails for production workflow code.
+  portal_link: jobs
+SAT-OPS-INCIDENT-RUNBOOK:
+  title: Alert destinations have linked runbook documentation
+  category: Operations
+  severity: low
+  description: |-
+    Notification destinations and alerts without linked runbook URLs leave
+    on-call engineers without documented response procedures, increasing
+    mean time to resolution (MTTR).
+  recommendation: |-
+    Add runbook URLs to alert descriptions or notification destination
+    configurations. Document escalation paths and remediation steps.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/user/alerts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/alerts
+  benefits: Linked runbooks reduce MTTR by giving on-call engineers documented response procedures.
+  portal_link: sql/alerts
+SAT-OPS-CHANGE-MGMT:
+  title: Workspace changes tracked via system tables
+  category: Operations
+  severity: medium
+  description: |-
+    Without change tracking via system tables (system.access.audit), workspace
+    configuration changes are invisible, making it impossible to correlate
+    incidents with recent changes.
+  recommendation: |-
+    Enable system tables and create dashboards tracking workspace configuration
+    changes, permission modifications, and cluster policy updates.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: Change tracking via system tables enables incident correlation with recent workspace changes.
+  portal_link: explore/data
+SAT-OPS-CAPACITY-PLAN:
+  title: Peak concurrent cluster count within account limits
+  category: Operations
+  severity: medium
+  description: |-
+    Without capacity planning, peak cluster counts may hit account or
+    subscription limits, causing cluster creation failures during critical
+    processing windows.
+  recommendation: |-
+    Monitor peak concurrent cluster counts via system tables. Set alerts at
+    80% of account limits. Plan for growth in cluster and core quotas.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Capacity planning prevents cluster creation failures during peak processing periods.
+  portal_link: compute
+SAT-OPS-DR-PLAN:
+  title: Disaster recovery configuration documented
+  category: Operations
+  severity: medium
+  description: |-
+    Without a documented disaster recovery plan (cross-region workspace,
+    Delta table replication, metastore backup), a regional outage or
+    workspace failure results in extended downtime and potential data loss.
+  recommendation: |-
+    Document DR procedures including: secondary workspace in another region,
+    Delta table replication schedule, metastore backup strategy, and
+    RTO/RPO targets. Test DR procedures quarterly.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/disaster-recovery
+  effort: Project (1+ weeks)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Documented DR plans ensure business continuity during regional outages or workspace failures.
+  portal_link: settings/workspace

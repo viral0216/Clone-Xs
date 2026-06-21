@@ -1,0 +1,318 @@
+# Data Protection
+# 23 checks
+
+SAT-DATA-1:
+  title: Unity Catalog enabled on workspace
+  category: Data Protection
+  severity: high
+  description: Unity Catalog provides centralized governance, fine-grained access control, and audit logging.
+  recommendation: Migrate workspaces to Unity Catalog. Assign a metastore.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    Unity Catalog provides centralized governance with fine-grained access control, data lineage, and cross-workspace audit logging.
+  portal_link: explore/data
+SAT-DATA-2:
+  title: DBFS root access restricted
+  category: Data Protection
+  severity: medium
+  description: DBFS root is shared storage accessible to all workspace users without fine-grained ACLs.
+  recommendation: Disable DBFS browsing for non-admin users. Migrate data to Unity Catalog.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Restricting DBFS root access prevents uncontrolled data sharing — DBFS root lacks the fine-grained ACLs that Unity Catalog provides.
+  ws_conf_keys: enableDbfsFileBrowser
+  portal_link: settings/workspace/advanced
+SAT-DATA-3:
+  title: Unity Catalog catalogs and schemas configured
+  category: Data Protection
+  severity: medium
+  description: Production data should be organized into environment-specific catalogs (prod/dev/staging).
+  recommendation: Create environment-specific catalogs. Grant access using catalog/schema-level GRANT statements.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Environment-specific catalogs (prod/dev/staging) enforce data isolation and prevent accidental production data access.
+  portal_link: explore/data
+SAT-DATA-4:
+  title: Cluster local disk encryption enabled
+  category: Data Protection
+  severity: high
+  description: Local disk encryption protects shuffle data and temporary files on cluster nodes.
+  recommendation: Enable local disk encryption on all clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/keys/customer-managed-keys
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Local disk encryption protects temporary shuffle data and spill files that may contain sensitive query results.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/encryption
+SAT-DATA-5:
+  title: Results downloading disabled for non-admins
+  category: Data Protection
+  severity: medium
+  description: Results downloading allows data exfiltration in regulated environments.
+  recommendation: Disable results downloading for workspaces handling sensitive data.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Disabling results download prevents data exfiltration through the workspace UI in regulated environments.
+  ws_conf_keys: enableResultsDownloading
+  portal_link: settings/workspace/security
+SAT-DATA-6:
+  title: Notebook export disabled for non-admins
+  category: Data Protection
+  severity: medium
+  description: Notebook export allows bulk data extraction including embedded data.
+  recommendation: Disable notebook export for sensitive workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Disabling notebook export prevents bulk data extraction through exported notebook files.
+  ws_conf_keys: enableExportNotebook
+  portal_link: settings/workspace/security
+SAT-DATA-7:
+  title: Notebook table clipboard copy disabled
+  category: Data Protection
+  severity: low
+  description: Clipboard copy for table data may bypass data loss prevention controls.
+  recommendation: Disable clipboard copy for table data for regulated workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Disabling table clipboard copy prevents data exfiltration via copy-paste, supporting data loss prevention controls.
+  ws_conf_keys: enableNotebookTableClipboard
+  portal_link: settings/workspace/security
+SAT-DATA-8:
+  title: Interactive notebook results stored in customer account
+  category: Data Protection
+  severity: medium
+  description: Notebook results stored in Databricks control plane instead of your own storage.
+  recommendation: Enable storing results in customer account.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Storing notebook results in your own account keeps sensitive data within your security perimeter.
+  ws_conf_keys: storeInteractiveNotebookResultsInCustomerAccount
+  portal_link: settings/workspace/security
+SAT-DATA-9:
+  title: DBFS file store endpoint disabled
+  category: Data Protection
+  severity: medium
+  description: DBFS file store endpoint provides REST-based download path for data exfiltration.
+  recommendation: Disable the DBFS file store endpoint unless specifically required.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Disabling the DBFS file store endpoint closes a REST API path that could be used for data exfiltration.
+  ws_conf_keys: enableFileStoreEndpoint
+  portal_link: settings/workspace/security
+SAT-DATA-10:
+  title: Delta Sharing recipient token lifetime configured
+  category: Data Protection
+  severity: medium
+  description: Delta Sharing tokens that never expire create persistent access risk.
+  recommendation: Set deltaShareRecipientTokenLifetimeInSeconds to ≤ 90 days.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing/create-recipient
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/shares + /api/2.1/unity-catalog/recipients
+  benefits: |-
+    Limiting Delta Sharing token lifetime ensures shared data access expires, preventing indefinite third-party access.
+  portal_link: settings/workspace/security
+SAT-DATA-VECTORSEARCH:
+  title: Vector Search endpoints secured
+  category: Data Protection
+  severity: medium
+  description: Vector Search endpoints expose embedding indexes over REST APIs.
+  recommendation: Restrict endpoint access via workspace permissions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/vector-search
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/vector-search/endpoints
+  benefits: |-
+    Securing Vector Search endpoints prevents unauthorized access to embedding indexes that may contain sensitive data.
+  portal_link: explore/data
+SAT-DATA-DBFS-ROOT:
+  title: DBFS root has no user directories
+  category: Data Protection
+  severity: medium
+  description: User directories in DBFS root indicate data stored outside Unity Catalog governance boundaries.
+  recommendation: Migrate data from DBFS root to Unity Catalog managed/external locations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/dbfs/list?path=/
+  benefits: |-
+    User directories in DBFS root store data outside Unity Catalog governance, lacking fine-grained access control and lineage.
+  portal_link: explore/data/dbfs
+SAT-DATA-DBFS-MOUNTS:
+  title: DBFS mount points (legacy /mnt) minimized
+  category: Data Protection
+  severity: medium
+  description: DBFS /mnt mount points bypass Unity Catalog governance and expose data without fine-grained ACLs.
+  recommendation: Migrate from DBFS mounts to Unity Catalog external locations. Target zero mounts.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/dbfs/mounts
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/dbfs/list?path=/mnt
+  benefits: |-
+    DBFS mount points bypass Unity Catalog governance, exposing cloud storage without access control or audit logging.
+  portal_link: explore/data/dbfs
+SAT-INFO-COMPLIANCE-PROFILE:
+  title: Compliance security profile configured for regulated workloads
+  category: Data Protection
+  severity: low
+  description: Compliance Security Profile adds hardened compute images for regulated workloads.
+  recommendation: Enable the Compliance Security Profile for workspaces handling regulated data.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/privacy/security-profile
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Compliance Security Profile adds hardened compute images required for HIPAA, PCI-DSS, and FedRAMP workloads.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/security
+SAT-INFO-ENHANCED-MONITORING:
+  title: Enhanced security monitoring enabled
+  category: Data Protection
+  severity: low
+  description: Enhanced Security Monitoring provides additional audit events and anomaly detection.
+  recommendation: Enable Enhanced Security Monitoring for sensitive workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/privacy/security-profile
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Enhanced Security Monitoring provides additional audit events and anomaly detection for threat investigation.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/security
+SAT-INFO-3P-LIBS:
+  title: Third-party library sources controlled
+  category: Data Protection
+  severity: low
+  description: Unrestricted access to public repositories increases supply-chain attack risk.
+  recommendation: |-
+    In Catalog Explorer, click the gear icon, open the metastore, and configure Allowed JARs/Init Scripts.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/artifact-allowlist
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Controlling third-party library sources reduces supply-chain attack risk from public package repositories.
+  portal_link: explore/data
+SAT-DATA-CMK:
+  title: Customer-managed keys (CMK) configured for encryption
+  category: Data Protection
+  severity: high
+  description: |-
+    Without CMK, Databricks manages encryption keys. CMK gives you full control over key lifecycle and rotation.
+  recommendation: |-
+    Configure customer-managed keys for managed services (notebooks, secrets) and workspace storage (DBFS root, managed disks).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/keys/customer-managed-keys
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Customer-managed keys give you full control over encryption key lifecycle and rotation for regulatory compliance.
+  ws_conf_keys: enableCustomerManagedKey
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/encryption
+SAT-DATA-LINEAGE:
+  title: Data lineage tracking enabled in metastore
+  category: Data Protection
+  severity: medium
+  description: |-
+    Data lineage tracks how data flows through tables and notebooks, essential for compliance and impact analysis.
+  recommendation: Enable data lineage in Unity Catalog metastore settings. Review lineage in Catalog Explorer.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/data-lineage
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    Data lineage tracks how data flows through your lakehouse, enabling impact analysis and compliance auditing.
+  portal_link: explore/data
+SAT-DATA-ROW-FILTER:
+  title: Row filters and column masks applied to sensitive tables
+  category: Data Protection
+  severity: medium
+  description: |-
+    Row filters and column masks in Unity Catalog provide fine-grained data access control for sensitive data.
+  recommendation: Apply row filters and column masks to tables containing PII or sensitive data in Unity Catalog.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/row-filters-column-masks
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/metastores
+  benefits: |-
+    Row filters and column masks provide fine-grained data protection without duplicating tables for different audiences.
+  portal_link: explore/data
+SAT-DATA-CONNECTIONS:
+  title: External data connections inventory
+  category: Data Protection
+  severity: low
+  description: External connections (Snowflake, PostgreSQL, etc.) represent data egress paths that need governance.
+  recommendation: |-
+    Review external connections in Catalog Explorer. Ensure each connection has a documented business need and uses secure credentials.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/query-federation/
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/connections
+  benefits: |-
+    Inventorying external connections tracks data egress paths and ensures each meets security requirements.
+  portal_link: explore/data
+SAT-DATA-CLASSIFICATION:
+  title: Tables with PII columns have classification tags
+  category: Data Protection
+  severity: high
+  description: |-
+    Tables containing personally identifiable information (PII) without
+    classification tags cannot be automatically governed. Without tags,
+    row filters and column masks cannot be systematically applied.
+  recommendation: |-
+    Tag columns containing PII using Unity Catalog tags (e.g., pii=true,
+    sensitivity=high). Use automated PII detection to identify candidate columns.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/tags
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: PII classification tags enable automated governance policies and compliance reporting.
+  portal_link: explore/data
+SAT-DATA-SHARING-AUDIT:
+  title: Delta Sharing recipients audited and reviewed
+  category: Data Protection
+  severity: medium
+  description: |-
+    Delta Sharing recipients that have not been audited may have stale access
+    to shared data. Former partners, expired contracts, or terminated
+    relationships may still have active share access.
+  recommendation: |-
+    Review all Delta Sharing recipients quarterly. Revoke access for recipients
+    with expired business relationships. Audit sharing activity in system tables.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-sharing
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/recipients
+  benefits: Regular recipient audits prevent unauthorized data access through stale sharing relationships.
+  portal_link: explore/data
+SAT-DATA-BACKUP:
+  title: Critical tables have backup or clone strategy
+  category: Data Protection
+  severity: medium
+  description: |-
+    Critical production tables without a backup strategy (Delta DEEP CLONE,
+    cross-region replication, or scheduled snapshots) risk unrecoverable data
+    loss from accidental deletion, corruption, or ransomware.
+  recommendation: |-
+    Implement Delta DEEP CLONE to a separate storage account for critical tables.
+    Schedule clone jobs on a regular cadence. Test restore procedures quarterly.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/clone
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: Backup strategies protect against data loss from accidental deletion, corruption, or attacks.
+  portal_link: explore/data
+SAT-DATA-EXT-LOC-OVERLAP:
+  title: No overlapping external location paths
+  category: Data Protection
+  severity: medium
+  description: |-
+    Overlapping external location URLs (e.g., abfss://container@storage/path and
+    abfss://container@storage/path/subdir) can create ambiguous access controls where data may be
+    accessible through multiple external locations with different permissions.
+  recommendation: Consolidate or restructure external locations to eliminate URL prefix overlaps.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/external-locations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/external-locations
+  benefits: |-
+    Eliminating overlapping external location paths prevents ambiguous access controls and ensures consistent permission enforcement.
+  portal_link: explore/data

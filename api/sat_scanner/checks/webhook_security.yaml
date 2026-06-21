@@ -1,0 +1,71 @@
+# ── Webhook & Integration Security ──
+# Checks that webhook and notification destinations are secure,
+# authenticated, and actively monitored.
+
+SAT-HOOK-HTTPS:
+  title: All notification destinations use HTTPS
+  category: Webhook Security
+  severity: high
+  description: |-
+    Notification destinations using HTTP (not HTTPS) transmit alert content,
+    including potentially sensitive workspace event data, in cleartext over
+    the network.
+  recommendation: |-
+    Update all notification destinations to use HTTPS endpoints. Remove or
+    replace any HTTP-only webhook URLs with their HTTPS equivalents.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings/notification-destinations
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/notification-destinations
+  benefits: HTTPS notification endpoints prevent cleartext transmission of sensitive alert data.
+  portal_link: settings/workspace/notifications
+
+SAT-HOOK-AUTH:
+  title: Webhook destinations include authentication headers
+  category: Webhook Security
+  severity: medium
+  description: |-
+    Webhook destinations without authentication tokens or secret headers can
+    be spoofed — anyone who discovers the URL can send fake notifications,
+    potentially triggering false alerts or masking real incidents.
+  recommendation: |-
+    Configure authentication headers (Bearer tokens, HMAC signatures) on all
+    webhook notification destinations. Rotate secrets quarterly.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings/notification-destinations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/notification-destinations
+  benefits: Authenticated webhooks prevent spoofed notifications and ensure only legitimate alerts are processed.
+  portal_link: settings/workspace/notifications
+
+SAT-HOOK-STALE:
+  title: No stale or error-returning notification destinations
+  category: Webhook Security
+  severity: low
+  description: |-
+    Notification destinations that have not been used recently or return errors
+    create silent failures — alerts fire but no one receives them, delaying
+    incident response.
+  recommendation: |-
+    Review all notification destinations. Test each endpoint manually. Remove
+    or fix destinations that return errors or are no longer monitored.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/workspace-settings/notification-destinations
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/notification-destinations
+  benefits: Healthy notification destinations ensure alerts actually reach operational teams for timely response.
+  portal_link: settings/workspace/notifications
+
+SAT-HOOK-SCOPE:
+  title: Model registry webhooks scoped to specific models
+  category: Webhook Security
+  severity: low
+  description: |-
+    Model registry webhooks without scope fire on all model events workspace-wide,
+    potentially leaking model names and versions to unrelated notification
+    channels and creating alert noise.
+  recommendation: |-
+    Scope model registry webhooks to specific registered models using the
+    model_name filter. Remove overly broad workspace-wide webhooks.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/mlflow/model-registry-webhooks
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/mlflow/registry-webhooks/list
+  benefits: Scoped webhooks reduce alert noise and prevent model metadata leakage to unrelated channels.
+  portal_link: ml

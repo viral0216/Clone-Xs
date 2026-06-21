@@ -1,0 +1,159 @@
+# Feature Adoption
+# 14 checks
+
+SAT-FEAT-VECTOR-SEARCH:
+  title: Vector Search endpoints deployed
+  category: Feature Adoption
+  severity: low
+  description: Vector Search enables semantic search and RAG applications natively in Databricks.
+  recommendation: Evaluate Vector Search for AI/ML use cases requiring embedding similarity search.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/vector-search
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/vector-search/endpoints
+  benefits: |-
+    Vector Search enables semantic search and RAG applications natively within your governed Databricks environment.
+  portal_link: explore/data
+SAT-FEAT-FEATURE-STORE:
+  title: Feature Engineering tables in use
+  category: Feature Adoption
+  severity: low
+  description: Feature Engineering provides centralized feature management with automatic lineage and serving.
+  recommendation: Evaluate Databricks Feature Engineering for ML feature management and online serving.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/feature-store/feature-tables
+  benefits: |-
+    Feature Engineering provides centralized feature management with automatic lineage and real-time serving.
+  portal_link: explore/data
+SAT-FEAT-QUALITY-MON:
+  title: Lakehouse quality monitors deployed
+  category: Feature Adoption
+  severity: low
+  description: Lakehouse Monitors automatically track data quality drift and schema changes.
+  recommendation: Deploy quality monitors on key tables to detect drift, anomalies, and schema changes.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables/{name}/monitor
+  benefits: Lakehouse Monitors automatically detect data quality drift, schema changes, and volume anomalies.
+  portal_link: explore/data
+SAT-FEAT-GENIE:
+  title: Genie Spaces (AI/BI) in use
+  category: Feature Adoption
+  severity: low
+  description: Genie provides natural-language data exploration via AI/BI Dashboards.
+  recommendation: Evaluate Genie Spaces for self-service analytics and business user data access.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/genie
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/genie/spaces
+  benefits: Genie enables natural-language data exploration, making analytics accessible to non-technical users.
+  portal_link: sql/dashboards
+SAT-FEAT-LAKEVIEW:
+  title: Lakeview AI/BI Dashboards in use
+  category: Feature Adoption
+  severity: low
+  description: Lakeview dashboards provide modern, AI-assisted business intelligence directly in Databricks.
+  recommendation: Evaluate Lakeview dashboards for reporting and BI use cases.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/dashboards
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/lakeview/dashboards
+  benefits: Lakeview dashboards provide modern, AI-assisted business intelligence directly within Databricks.
+  portal_link: sql/dashboards
+SAT-FEAT-APPS:
+  title: Databricks Apps deployed
+  category: Feature Adoption
+  severity: low
+  description: Databricks Apps enable deployment of custom web applications backed by Databricks compute.
+  recommendation: Evaluate Databricks Apps for custom data applications and internal tools.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/apps
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/apps
+  benefits: Databricks Apps enable custom web applications backed by governed Databricks compute and data.
+  portal_link: settings/workspace/advanced
+SAT-FEAT-GIT-REPOS:
+  title: Git/Repos integration active
+  category: Feature Adoption
+  severity: low
+  description: Git integration provides version control for notebooks and enables CI/CD workflows.
+  recommendation: Connect Databricks Repos to your Git provider for version-controlled development.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/repos
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/repos
+  benefits: Git integration provides version control for notebooks, enabling code review and CI/CD workflows.
+  portal_link: repos
+SAT-FEAT-CLEAN-ROOMS:
+  title: UC Clean Rooms in use
+  category: Feature Adoption
+  severity: low
+  description: Clean Rooms enable secure multi-party data collaboration without sharing raw data.
+  recommendation: Evaluate UC Clean Rooms for cross-organization data collaboration use cases.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/clean-rooms
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/clean-rooms
+  benefits: Clean Rooms enable secure multi-party data collaboration without sharing raw data.
+  portal_link: explore/data
+SAT-FEAT-MARKETPLACE:
+  title: Marketplace listings consumed
+  category: Feature Adoption
+  severity: low
+  description: Databricks Marketplace provides curated datasets, models, and solution accelerators.
+  recommendation: Explore Databricks Marketplace for relevant industry datasets and pre-built solutions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/marketplace
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/marketplace-consumer/listings
+  benefits: Marketplace provides curated datasets, models, and solution accelerators to speed up development.
+  portal_link: explore/data
+SAT-FEAT-MODEL-SERVING:
+  title: Model serving endpoints deployed
+  category: Feature Adoption
+  severity: low
+  description: Model serving enables real-time and batch inference on registered models via REST API.
+  recommendation: Evaluate Databricks Model Serving for deploying ML models as production REST endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Model serving provides managed, scalable REST endpoints for real-time ML inference.
+  portal_link: ml/endpoints
+SAT-FEAT-AGENT-FW:
+  title: Agent framework endpoints in use
+  category: Feature Adoption
+  severity: low
+  description: Databricks Agent Framework enables building, deploying, and monitoring compound AI agents.
+  recommendation: Evaluate the Agent Framework for complex AI workflows that chain multiple LLM calls and tools.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Agent Framework provides governed deployment of compound AI agents with built-in monitoring and feedback.
+  portal_link: ml/endpoints
+SAT-FEAT-MOSAIC-TRAINING:
+  title: Foundation model fine-tuning endpoints in use
+  category: Feature Adoption
+  severity: low
+  description: Foundation model fine-tuning enables custom LLMs trained on your proprietary data within Databricks.
+  recommendation: Evaluate Databricks foundation model fine-tuning for domain-specific LLM customization.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/large-language-models/foundation-model-training
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Foundation model fine-tuning creates domain-specific LLMs within your governed Databricks environment.
+  portal_link: ml/endpoints
+SAT-FEAT-UC-VOLUMES-ML:
+  title: UC Volumes used for ML artifact storage
+  category: Feature Adoption
+  severity: low
+  description: Unity Catalog Volumes provide governed cloud storage for ML artifacts, datasets, and model checkpoints.
+  recommendation: Use UC Volumes for ML artifact storage instead of DBFS or direct cloud storage paths.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/volumes
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/volumes
+  benefits: UC Volumes provide governed, access-controlled storage for ML artifacts with lineage and audit trails.
+  portal_link: explore/data
+SAT-FEAT-ONLINE-TABLES:
+  title: Online tables for real-time serving
+  category: Feature Adoption
+  severity: low
+  description: Online tables provide low-latency key-value access for real-time feature serving and applications.
+  recommendation: Evaluate online tables for real-time ML feature serving use cases.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/online-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/online-tables
+  benefits: Online tables provide low-latency key-value access for real-time feature serving and applications.
+  portal_link: explore/data

@@ -1,0 +1,92 @@
+# ── Compliance ──
+# Checks for regulatory compliance posture including HIPAA, SOC2,
+# GDPR, and data retention policy enforcement.
+
+SAT-COMP-HIPAA:
+  title: HIPAA-required controls enabled when compliance profile is set
+  category: Compliance
+  severity: critical
+  description: |-
+    Workspaces with the compliance security profile enabled for HIPAA must have
+    additional controls: enhanced monitoring, restricted results downloading,
+    disabled notebook export, and customer-managed keys. Missing any of these
+    violates HIPAA Technical Safeguards.
+  recommendation: |-
+    Verify all HIPAA controls are enabled: compliance security profile, enhanced
+    monitoring, CMK, disabled results download, disabled notebook export.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/privacy/security-profile
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Complete HIPAA controls prevent regulatory violations and protect electronic health information.
+  portal_link: settings/workspace/security
+
+SAT-COMP-SOC2:
+  title: SOC2-relevant logging and access controls enabled
+  category: Compliance
+  severity: high
+  description: |-
+    SOC2 Type II compliance requires comprehensive audit logging, access control
+    enforcement, and change management controls. Missing any of these creates
+    audit findings that can delay SOC2 attestation.
+  recommendation: |-
+    Enable verbose audit logging, workspace ACLs, IP access lists, and
+    diagnostic logging. Verify audit log delivery is active and fresh.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/best-practices
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: SOC2-aligned controls accelerate audit attestation and demonstrate security maturity.
+  portal_link: settings/workspace/security
+
+SAT-COMP-DATA-RETENTION:
+  title: Data retention policies defined on catalogs
+  category: Compliance
+  severity: medium
+  description: |-
+    Without data retention policies on Unity Catalog catalogs, data may be kept
+    indefinitely (increasing storage costs and compliance risk) or deleted
+    prematurely (violating regulatory requirements).
+  recommendation: |-
+    Define data retention policies for each catalog using tags or comments.
+    Implement automated retention enforcement via scheduled jobs that drop
+    or archive data beyond retention periods.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/tags
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: Data retention policies balance compliance requirements with storage cost optimization.
+  portal_link: explore/data
+
+SAT-COMP-GDPR-DELETE:
+  title: Right-to-delete process exists for personal data
+  category: Compliance
+  severity: medium
+  description: |-
+    GDPR Article 17 requires the ability to delete personal data on request.
+    Without Delta CDF (Change Data Feed) or a documented deletion workflow,
+    organizations cannot demonstrate compliance with right-to-erasure requests.
+  recommendation: |-
+    Enable Change Data Feed on tables containing personal data. Implement a
+    documented deletion workflow that can identify and purge personal data
+    across all Delta tables within the required timeframe.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta/delta-change-data-feed
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: A documented deletion workflow demonstrates GDPR right-to-erasure compliance.
+  portal_link: explore/data
+
+SAT-COMP-AUDIT-TRAIL:
+  title: End-to-end audit trail for sensitive data access
+  category: Compliance
+  severity: high
+  description: |-
+    Without an end-to-end audit trail (data lineage + audit logs + access logs),
+    organizations cannot trace who accessed what data, when, and why — a
+    fundamental requirement for most regulatory frameworks.
+  recommendation: |-
+    Enable data lineage in Unity Catalog, configure audit log delivery, and
+    enable system tables (system.access.audit). Create dashboards tracking
+    sensitive data access patterns.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/audit-logs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: End-to-end audit trails satisfy regulatory requirements and enable forensic investigation.
+  portal_link: settings/workspace/audit-logs

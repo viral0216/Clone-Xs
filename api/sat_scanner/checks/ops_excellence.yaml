@@ -1,0 +1,50 @@
+# Ops Excellence
+# 4 checks
+
+SAT-OPS-1:
+  title: Git repos adoption
+  category: Ops Excellence
+  severity: low
+  description: |-
+    Git-connected repos enable version control, code review, and CI/CD. Low adoption indicates manual workflows.
+  recommendation: Connect notebooks and projects to Git repos for version control and collaboration.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/repos
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/repos
+  benefits: Git repos enable version control and code review, replacing error-prone manual notebook development.
+  portal_link: repos
+SAT-OPS-2:
+  title: Job ownership by service principals
+  category: Ops Excellence
+  severity: medium
+  description: |-
+    Jobs owned by personal accounts break when the owner leaves the organization. Service principal ownership ensures continuity.
+  recommendation: Transfer production job ownership from personal accounts to service principals.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: Service principal job ownership ensures automation continuity when employees leave the organization.
+  portal_link: jobs
+SAT-OPS-3:
+  title: Idle interactive cluster detection
+  category: Ops Excellence
+  severity: medium
+  description: Running interactive clusters with no recent activity waste cloud resources and budget.
+  recommendation: Terminate idle clusters manually or reduce auto-termination timeout. Consider serverless compute.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#auto-termination
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Detecting idle clusters enables proactive termination, directly reducing wasted cloud compute spend.
+  portal_link: compute
+SAT-OPS-4:
+  title: SQL alert monitoring coverage
+  category: Ops Excellence
+  severity: low
+  description: |-
+    SQL alerts provide proactive monitoring for data quality and business metrics. No alerts means no proactive detection.
+  recommendation: Create SQL alerts for critical business metrics, data freshness, and quality thresholds.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/user/alerts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/alerts
+  benefits: SQL alerts provide proactive monitoring — without them, data quality issues go undetected.
+  portal_link: sql/alerts

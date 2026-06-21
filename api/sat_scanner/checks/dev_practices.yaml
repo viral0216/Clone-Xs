@@ -1,0 +1,182 @@
+# ── Dev Practices Checks ──
+# Checks that inspect connected Git repos and notebook source for CI/CD,
+# linting, and development best practice adoption.
+
+SAT-DEV-SQLFLUFF:
+  title: SQLFluff linting config exists in connected repos
+  category: Dev Practices
+  severity: low
+  description: |-
+    SQLFluff enforces SQL style and anti-pattern rules. Without a .sqlfluff config
+    in connected repos, SQL code quality is not programmatically enforced.
+  recommendation: |-
+    Add a .sqlfluff configuration file to each Databricks-connected Git repo.
+    Configure rules for SELECT *, implicit joins, and column aliasing.
+  reference_url: https://docs.sqlfluff.com/en/stable/configuration.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/repos
+  benefits: Automated SQL linting catches anti-patterns before they reach production.
+  portal_link: workspace
+
+SAT-DEV-RUFF:
+  title: Ruff/Python linting config exists in connected repos
+  category: Dev Practices
+  severity: low
+  description: |-
+    Ruff (or flake8/pylint) enforces Python code quality. Without a ruff.toml,
+    pyproject.toml [tool.ruff], or .flake8 config, Python notebook code is not linted.
+  recommendation: |-
+    Add a ruff.toml or pyproject.toml with [tool.ruff] section to repos.
+    Enable rules for PySpark anti-patterns (collect on large datasets, UDF misuse).
+  reference_url: https://docs.astral.sh/ruff/configuration/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/repos
+  benefits: Python linting prevents common PySpark mistakes and enforces team conventions.
+  portal_link: workspace
+
+SAT-DEV-PRECOMMIT:
+  title: Pre-commit hooks configured in connected repos
+  category: Dev Practices
+  severity: low
+  description: |-
+    Pre-commit hooks run linters, formatters, and secret scanners before code is committed.
+    Without .pre-commit-config.yaml, these checks rely on manual discipline.
+  recommendation: |-
+    Add .pre-commit-config.yaml with hooks for ruff, sqlfluff, detect-secrets, and
+    trailing whitespace. Document setup in repo README.
+  reference_url: https://pre-commit.com/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/repos
+  benefits: Pre-commit hooks prevent bad code from entering the repo, shifting quality left.
+  portal_link: workspace
+
+SAT-DEV-CI-PIPELINE:
+  title: CI/CD pipeline config exists in connected repos
+  category: Dev Practices
+  severity: medium
+  description: |-
+    Without CI/CD pipeline definitions (.github/workflows/, .azure-pipelines/,
+    Jenkinsfile, .gitlab-ci.yml), code changes are deployed without automated testing
+    or validation.
+  recommendation: |-
+    Add CI pipeline config that runs unit tests, linting, and Databricks Asset Bundle
+    validation on every PR. Use databricks bundle validate in CI.
+  reference_url: https://docs.databricks.com/en/dev-tools/bundles/ci-cd.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/repos
+  benefits: CI pipelines catch regressions and enforce quality gates before deployment.
+  portal_link: workspace
+
+SAT-DEV-ANTIPATTERN:
+  title: No common anti-patterns in notebook source code
+  category: Dev Practices
+  severity: medium
+  description: |-
+    Notebooks containing .collect() on large DataFrames, SELECT *, @udf instead of
+    @pandas_udf, or inferSchema=true cause performance and reliability issues.
+    Scanning notebook source catches patterns that CI/CD in repos cannot reach.
+  recommendation: |-
+    Refactor flagged notebooks: replace .collect() with .limit().toPandas(), remove
+    SELECT *, convert @udf to @pandas_udf, replace inferSchema with explicit schemas.
+  reference_url: https://docs.databricks.com/en/udf/pandas.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list
+  benefits: Eliminating anti-patterns improves Spark job performance by 2-10x.
+  portal_link: workspace
+
+SAT-DEV-CODE-REVIEW:
+  title: Pull request template exists in connected repos
+  category: Dev Practices
+  severity: low
+  description: |-
+    A PULL_REQUEST_TEMPLATE.md ensures code reviews follow a consistent checklist
+    covering performance, security, and data quality considerations.
+  recommendation: |-
+    Add .github/PULL_REQUEST_TEMPLATE.md with sections for change description,
+    testing approach, performance impact, and security review.
+  reference_url: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/repos
+  benefits: PR templates standardize review quality and ensure nothing is missed.
+  portal_link: workspace
+
+SAT-DEV-ONBOARDING:
+  title: Onboarding or documentation resources exist in workspace
+  category: Dev Practices
+  severity: low
+  description: |-
+    Without a dedicated onboarding folder, README notebooks, or documentation schema,
+    new developers lack guidance on workspace conventions and best practices.
+  recommendation: |-
+    Create a /Shared/onboarding/ folder with README notebooks covering workspace
+    conventions, Spark best practices, and common patterns. Or maintain a docs catalog/schema.
+  reference_url: https://docs.databricks.com/en/workspace/index.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list
+  benefits: Structured onboarding reduces ramp-up time and prevents common mistakes.
+  portal_link: workspace
+
+SAT-DEV-DQ-DASHBOARD:
+  title: Data quality monitoring dashboard exists
+  category: Dev Practices
+  severity: low
+  description: |-
+    Without a dedicated data quality dashboard, teams lack visibility into freshness,
+    completeness, and anomaly trends across their data assets.
+  recommendation: |-
+    Create a Lakeview dashboard tracking data quality metrics: row counts, null rates,
+    freshness (last update time), and schema drift alerts.
+  reference_url: https://docs.databricks.com/en/dashboards/index.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/lakeview/dashboards
+  benefits: Quality dashboards provide early warning of data issues before they impact consumers.
+  portal_link: sql/dashboards
+
+SAT-DEV-NOTEBOOK-TEMPLATE:
+  title: Notebooks follow standard template (header, widgets, error handling)
+  category: Dev Practices
+  severity: low
+  description: |-
+    Notebooks without a standard header (title, author, description), widget parameters,
+    or dbutils.widgets usage are harder to maintain, schedule, and parameterize.
+  recommendation: |-
+    Establish a notebook template with a markdown header cell (title, owner, description),
+    dbutils.widgets for parameters, and try/except error handling. Enforce via code review.
+  reference_url: https://docs.databricks.com/en/notebooks/widgets.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list
+  benefits: Standardized notebooks are easier to maintain, schedule, and troubleshoot.
+  portal_link: workspace
+
+SAT-DEV-DABS:
+  title: Databricks Asset Bundles (DABs) config exists in connected repos
+  category: Dev Practices
+  severity: medium
+  description: |-
+    Without databricks.yml (DABs config), deployments rely on manual processes or
+    ad-hoc scripts. DABs provides declarative, version-controlled infrastructure.
+  recommendation: |-
+    Initialize DABs with 'databricks bundle init' in each project repo. Define jobs,
+    pipelines, and clusters in databricks.yml with per-environment targets.
+  reference_url: https://docs.databricks.com/en/dev-tools/bundles/index.html
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/repos
+  benefits: DABs enables reproducible, version-controlled deployments across environments.
+  portal_link: workspace
+
+SAT-DEV-ENV-SEPARATION:
+  title: Environment separation (dev/staging/prod catalogs)
+  category: Dev Practices
+  severity: medium
+  description: |-
+    Without separate catalogs for development, staging, and production environments, data changes
+    in one environment can inadvertently affect others, creating data quality and security risks.
+  recommendation: |-
+    Establish separate Unity Catalog catalogs for dev, staging, and production environments using
+    consistent naming patterns (e.g. catalog_dev, catalog_staging, catalog_prod).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/best-practices
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Environment separation prevents cross-environment data contamination and enforces proper promotion workflows.
+  portal_link: explore/data

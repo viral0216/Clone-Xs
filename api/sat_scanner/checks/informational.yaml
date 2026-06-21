@@ -1,0 +1,174 @@
+# Informational
+# 14 checks
+
+SAT-INFO-1:
+  title: Cluster creation restricted to admins/policy
+  category: Informational
+  severity: low
+  description: Restricting cluster creation prevents uncontrolled compute.
+  recommendation: Review who has cluster create permission. Use cluster policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Restricting cluster creation prevents uncontrolled compute sprawl and enforces standardized configurations.
+  portal_link: compute
+SAT-INFO-2:
+  title: Global init scripts inventoried and reviewed
+  category: Informational
+  severity: low
+  description: Global init scripts run on every cluster and must be reviewed.
+  recommendation: Review and document all global init scripts.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/init-scripts/global
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/global-init-scripts
+  benefits: Reviewed global init scripts ensure no unauthorized code runs on every cluster at startup.
+  portal_link: compute
+SAT-INFO-3:
+  title: Job view ACLs enabled
+  category: Informational
+  severity: low
+  description: Controls whether job-level access control is enforced.
+  recommendation: Enable job view ACLs in workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Job view ACLs prevent unauthorized users from seeing job configurations and run outputs.
+  ws_conf_keys: enableResultsDownloading
+  portal_link: settings/workspace/security
+SAT-INFO-4:
+  title: Cluster view ACLs enforced
+  category: Informational
+  severity: low
+  description: Controls whether cluster-level access control is enforced.
+  recommendation: Enable cluster view ACLs in workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Cluster view ACLs prevent unauthorized users from seeing cluster configurations and attached notebooks.
+  ws_conf_keys: enableExportNotebook
+  portal_link: compute
+SAT-INFO-5:
+  title: Workspace object view ACLs enforced
+  category: Informational
+  severity: low
+  description: Restricts workspace object visibility by permissions.
+  recommendation: Enable workspace view ACLs in workspace settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/auth/access-control
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: Workspace object view ACLs restrict visibility of notebooks, folders, and repos to authorized users.
+  ws_conf_keys: enableNotebookTableClipboard
+  portal_link: settings/workspace/security
+SAT-INFO-6:
+  title: Databricks Projects (Git integration) enabled
+  category: Informational
+  severity: low
+  description: Projects enables version-controlled notebook development via Git.
+  recommendation: Enable Databricks Projects. Configure Git integration.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/repos
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Git integration enables version control, code review, and CI/CD — essential for production-grade development.
+  ws_conf_keys: storeInteractiveNotebookResultsInCustomerAccount
+  portal_link: repos
+SAT-INFO-7:
+  title: X-Frame-Options security header enabled
+  category: Informational
+  severity: low
+  description: Prevents clickjacking attacks by controlling iframe embedding.
+  recommendation: Enable X-Frame-Options header in workspace security settings.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    X-Frame-Options prevents clickjacking attacks by blocking the workspace UI from being embedded in iframes.
+  ws_conf_keys: enableFileStoreEndpoint
+  portal_link: settings/workspace/security
+SAT-INFO-8:
+  title: X-Content-Type-Options security header enabled
+  category: Informational
+  severity: low
+  description: Prevents MIME type sniffing attacks.
+  recommendation: Enable X-Content-Type-Options header.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    X-Content-Type-Options prevents browsers from MIME-sniffing responses, blocking content-type-based attacks.
+  ws_conf_keys: enableDeprecatedGlobalInitScripts
+  portal_link: settings/workspace/advanced
+SAT-INFO-9:
+  title: X-XSS-Protection security header enabled
+  category: Informational
+  severity: low
+  description: Activates the browser's built-in XSS filtering.
+  recommendation: Enable X-XSS-Protection header.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: X-XSS-Protection activates the browser's built-in cross-site scripting filter as a defense layer.
+  ws_conf_keys: enableDeprecatedClusterNamedInitScripts
+  portal_link: settings/workspace/advanced
+SAT-INFO-POOL-TAGS:
+  title: Instance pools have resource tags
+  category: Informational
+  severity: low
+  description: Instance pools without tags cannot be cost-attributed.
+  recommendation: Add custom tags to all instance pools.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/usage
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/instance-pools/list
+  benefits: Tags on instance pools enable cost attribution and lifecycle management across teams.
+  portal_link: compute/instance-pools
+SAT-INFO-JOB-CONCUR:
+  title: Jobs have max concurrent runs configured
+  category: Informational
+  severity: low
+  description: Unlimited concurrent runs can cause resource exhaustion.
+  recommendation: Set max_concurrent_runs to 1 for most jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/create-run-jobs
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: Max concurrent run limits prevent resource exhaustion from runaway job schedules or retry storms.
+  portal_link: jobs
+SAT-INFO-GLOBAL-LIBS:
+  title: No unmanaged cluster-level library installations
+  category: Informational
+  severity: low
+  description: Cluster-level libraries are untracked and create version conflicts.
+  recommendation: Prefer notebook-scoped or job-scoped library installations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/libraries
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/libraries/all-cluster-statuses
+  benefits: Unmanaged cluster libraries create version conflicts and make reproducible environments impossible.
+  portal_link: compute
+SAT-INFO-SERVERLESS:
+  title: Serverless compute evaluated for applicable workloads
+  category: Informational
+  severity: low
+  description: Serverless compute eliminates cluster startup time.
+  recommendation: Enable and evaluate serverless SQL warehouses and jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/serverless-compute
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Serverless compute eliminates cluster management overhead and starts instantly with zero cold-start time.
+  portal_link: sql/warehouses
+SAT-INFO-APPS:
+  title: Databricks Apps inventory reviewed
+  category: Informational
+  severity: low
+  description: |-
+    Databricks Apps run as always-on services inside the workspace. Each app consumes compute
+    resources and has its own service principal. Unreviewed apps may expose internal APIs or data.
+  recommendation: Review deployed apps periodically. Remove unused apps to reduce attack surface and cost.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/apps
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/apps
+  benefits: |-
+    Regular app inventory review prevents abandoned services from consuming resources and reduces
+    the attack surface of always-on endpoints inside your workspace.
+  portal_link: apps

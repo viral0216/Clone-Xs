@@ -1,0 +1,55 @@
+# Governance Data Quality
+# 4 checks
+
+SAT-GOV-QUALITY-MON:
+  title: Lakehouse Monitor adoption
+  category: Governance Data Quality
+  severity: low
+  description: |-
+    Lakehouse Monitors automatically track data quality metrics (drift, nulls, volume). No monitors means blind spots.
+  recommendation: Enable Lakehouse Monitoring on critical tables to track data quality over time.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables/{name}/monitor
+  benefits: |-
+    Lakehouse Monitors automatically track data quality metrics (drift, nulls, volume), detecting issues early.
+  portal_link: explore/data
+SAT-GOV-METADATA:
+  title: Catalog & schema description completeness
+  category: Governance Data Quality
+  severity: low
+  description: Catalogs and schemas without descriptions make data discovery harder for analysts and engineers.
+  recommendation: Add meaningful descriptions (COMMENT) to all catalogs and schemas in Unity Catalog.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/catalogs + /api/2.1/unity-catalog/schemas
+  benefits: |-
+    Catalog and schema descriptions improve data discovery, helping analysts find and understand the right datasets.
+  portal_link: explore/data
+SAT-GOV-UC-MIGRATE:
+  title: Hive metastore migration progress
+  category: Governance Data Quality
+  severity: medium
+  description: |-
+    Tables in hive_metastore lack Unity Catalog governance (fine-grained ACLs, lineage, audit). Migration is essential.
+  recommendation: Migrate tables from hive_metastore to Unity Catalog. Use the UCX migration tool.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/migrate
+  effort: Project (1+ weeks)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Tables in hive_metastore lack fine-grained ACLs, lineage, and audit. Migrating to UC closes these governance gaps.
+  portal_link: explore/data
+SAT-GOV-UC-TAGS-ADOPT:
+  title: Unity Catalog tags applied across catalogs and schemas
+  category: Governance Data Quality
+  severity: low
+  description: |-
+    Unity Catalog tags enable data classification, discovery, and policy enforcement. No tags limits governance maturity.
+  recommendation: |-
+    In Catalog Explorer, click a catalog or schema name, open the Details tab, and add tags for classification (e.g. PII, confidential, public).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/tags
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    UC tags enable data classification, discovery, and policy enforcement across your entire data estate.
+  portal_link: explore/data

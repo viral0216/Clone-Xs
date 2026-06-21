@@ -1,0 +1,524 @@
+# Spark Best Practices
+# 20 checks — derived from spark-best-practices.md & spark-sql-best-practices.md
+
+# ── Cluster Spark Configuration Checks ──
+
+SAT-SPARK-AQE:
+  title: Adaptive Query Execution (AQE) enabled on clusters
+  category: Spark Best Practices
+  severity: high
+  description: |-
+    AQE dynamically optimizes queries at runtime based on actual data statistics. Without it,
+    Spark uses static plans that miss opportunities for auto-broadcast, skew handling, and
+    partition coalescing. AQE is the single most impactful Spark optimization setting.
+  recommendation: |-
+    Set spark.sql.adaptive.enabled=true in cluster Spark configuration or cluster policies.
+    This is enabled by default on DBR 12.0+, but may be explicitly disabled.
+  reference_url: https://docs.databricks.com/en/optimizations/aqe.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    AQE auto-optimizes join strategies, handles data skew, and coalesces shuffle partitions —
+    reducing query time by 2-10x without code changes.
+  portal_link: compute
+
+SAT-SPARK-AQE-SKEW:
+  title: AQE skew join handling enabled on clusters
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Skewed data is the #1 cause of slow Spark jobs. AQE skew join automatically splits
+    oversized partitions during joins. Without it, a single hot key can bottleneck the entire query.
+  recommendation: |-
+    Set spark.sql.adaptive.skewJoin.enabled=true in cluster Spark config or cluster policies.
+  reference_url: https://docs.databricks.com/en/optimizations/aqe.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Automatic skew handling eliminates the need for manual salted joins, reducing both
+    development effort and query execution time on skewed datasets.
+  portal_link: compute
+
+SAT-SPARK-SHUFFLE-PARTITIONS:
+  title: Shuffle partitions set to auto or appropriate value
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    The default spark.sql.shuffle.partitions=200 is too low for large datasets (causes OOM)
+    and too high for small ones (excessive overhead). Setting to "auto" lets AQE optimize.
+  recommendation: |-
+    Set spark.sql.shuffle.partitions=auto (requires AQE enabled) or calculate based on data
+    size: data_size_gb * 1024 / 128MB target per partition.
+  reference_url: https://docs.databricks.com/en/optimizations/aqe.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Properly sized shuffle partitions prevent OOM on large datasets and reduce overhead on
+    small ones, improving both reliability and performance.
+  portal_link: compute
+
+SAT-SPARK-DYNAMIC-OVERWRITE:
+  title: Dynamic partition overwrite mode enabled
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Static partition overwrite mode replaces ALL partitions even when writing to a single
+    partition. Dynamic mode only overwrites partitions present in the write, enabling safe
+    idempotent partition-level updates.
+  recommendation: |-
+    Set spark.sql.sources.partitionOverwriteMode=dynamic in cluster Spark configuration.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-dml-insert-overwrite-table.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Dynamic partition overwrite enables safe, idempotent partition-level writes — the
+    foundation of reliable batch ETL with INSERT OVERWRITE.
+  portal_link: compute
+
+SAT-SPARK-SCHEMA-AUTOMERGE:
+  title: Schema auto-merge disabled (explicit schema control)
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    When spark.databricks.delta.schema.autoMerge.enabled=true, any write can silently
+    add columns to production tables. Disabling it forces explicit schema evolution via
+    ALTER TABLE, preventing accidental schema drift.
+  recommendation: |-
+    Set spark.databricks.delta.schema.autoMerge.enabled=false in production cluster configs.
+    Use explicit ALTER TABLE ADD COLUMN or .option("mergeSchema", "true") per-write when needed.
+  reference_url: https://docs.databricks.com/en/delta/update-schema.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Explicit schema control prevents accidental schema drift from upstream changes,
+    maintaining data contract stability in production pipelines.
+  portal_link: compute
+
+SAT-SPARK-STRICT-TIMESTAMP:
+  title: Strict timestamp parsing enabled
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Legacy timestamp parsing silently returns NULL for ambiguous or invalid timestamps.
+    Strict mode raises errors, preventing silent data loss in date-heavy pipelines.
+  recommendation: |-
+    Set spark.sql.legacy.timeParserPolicy=EXCEPTION in cluster Spark configuration.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-datetime-pattern.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Strict timestamp parsing surfaces data issues immediately rather than silently
+    producing NULLs, enabling faster debugging and preventing incorrect time-based analytics.
+  portal_link: compute
+
+SAT-SPARK-CLUSTER-LOG-DELIVERY:
+  title: Clusters have log delivery configured
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Without log delivery, Spark driver/executor logs are lost when clusters terminate.
+    This makes post-mortem debugging of failed jobs impossible.
+  recommendation: |-
+    Configure cluster_log_conf with a DBFS or cloud storage destination on all clusters
+    and cluster policies.
+  reference_url: https://docs.databricks.com/en/compute/configure.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Persistent log delivery enables post-mortem debugging of terminated clusters,
+    supporting root cause analysis and compliance audit requirements.
+  portal_link: compute
+
+# ── Job Configuration Checks ──
+
+SAT-SPARK-JOB-PHOTON:
+  title: Job clusters use Photon runtime
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Photon accelerates Spark workloads 2-8x with a vectorized C++ engine. Job clusters
+    without Photon leave significant performance and cost savings on the table.
+  recommendation: |-
+    Configure job cluster templates to use Photon-compatible runtimes (e.g., 15.4.x-photon-scala2.12)
+    or set runtime_engine=PHOTON in job cluster definitions.
+  reference_url: https://docs.databricks.com/en/compute/photon.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Photon on job clusters reduces job runtime by 2-8x, directly lowering DBU costs
+    while improving pipeline throughput and SLA adherence.
+  portal_link: jobs
+
+SAT-SPARK-JOB-RETRY:
+  title: Jobs have retry policies configured
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Jobs without retry policies fail permanently on transient errors (spot eviction,
+    network blips, API throttling). A single retry with backoff prevents unnecessary
+    pipeline failures and on-call alerts.
+  recommendation: |-
+    Configure max_retries (1-3) with min_retry_interval_millis on all production job tasks.
+  reference_url: https://docs.databricks.com/en/workflows/jobs/settings.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Retry policies prevent permanent failures from transient errors, reducing on-call
+    alerts and improving pipeline reliability without manual intervention.
+  portal_link: jobs
+
+SAT-SPARK-JOB-TIMEOUT:
+  title: Jobs have timeout configured
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Jobs without timeouts can run indefinitely due to data skew, infinite loops, or
+    upstream delays — consuming expensive compute and blocking downstream pipelines.
+  recommendation: |-
+    Set timeout_seconds on all job tasks. Use 2-3x the expected runtime as a safe limit.
+  reference_url: https://docs.databricks.com/en/workflows/jobs/settings.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Timeout limits prevent runaway jobs from consuming unlimited compute resources,
+    enabling faster detection and recovery from pipeline issues.
+  portal_link: jobs
+
+SAT-SPARK-JOB-INTERACTIVE:
+  title: Jobs do not run on interactive (all-purpose) clusters
+  category: Spark Best Practices
+  severity: high
+  description: |-
+    Jobs running on interactive clusters waste shared resources, lack isolation, and
+    prevent auto-termination. Job clusters or serverless compute provide dedicated,
+    cost-efficient execution that terminates after completion.
+  recommendation: |-
+    Migrate jobs from existing_cluster_id to new_cluster or serverless compute.
+    Reserve interactive clusters for development and ad-hoc analysis only.
+  reference_url: https://docs.databricks.com/en/workflows/jobs/create-run-jobs.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Dedicated job clusters provide resource isolation, automatic termination, and
+    predictable costs — eliminating contention with interactive users.
+  portal_link: jobs
+
+SAT-SPARK-JOB-NOTIFICATIONS:
+  title: Production jobs have failure notifications configured
+  category: Spark Best Practices
+  severity: high
+  description: |-
+    Jobs without email/webhook notifications on failure run silently, and failures may
+    go undetected for hours or days — causing stale data and broken dashboards.
+  recommendation: |-
+    Configure email_notifications.on_failure or webhook_notifications on all production jobs.
+    Use Slack/Teams webhooks for real-time alerting.
+  reference_url: https://docs.databricks.com/en/workflows/jobs/settings.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Failure notifications enable rapid detection and response to pipeline issues,
+    preventing stale data from propagating to dashboards and reports.
+  portal_link: jobs
+
+# ── Cluster Policy Checks ──
+
+SAT-SPARK-POLICY-TAGS:
+  title: Cluster policies enforce cost attribution tags
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Without mandatory tags (team, project, environment), compute costs cannot be attributed
+    to teams or projects, making cost optimization impossible at the organizational level.
+  recommendation: |-
+    Add required custom_tags (team, project) to all cluster policies using type=regex
+    with pattern=".+" to ensure non-empty values.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Mandatory tags enable cost attribution by team/project, supporting showback/chargeback
+    models and targeted cost optimization efforts.
+  portal_link: compute
+
+SAT-SPARK-POLICY-AUTOTERMINATE:
+  title: Cluster policies enforce auto-termination
+  category: Spark Best Practices
+  severity: high
+  description: |-
+    Clusters without auto-termination run indefinitely when idle, wasting compute spend.
+    Cluster policies should enforce a maximum auto-termination timeout of 60 minutes.
+  recommendation: |-
+    Set autotermination_minutes with type=range, maxValue=60 in all cluster policies.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Enforced auto-termination prevents idle clusters from consuming resources indefinitely,
+    directly reducing unnecessary cloud spend.
+  portal_link: compute
+
+SAT-SPARK-POLICY-MAX-WORKERS:
+  title: Cluster policies enforce maximum worker limits
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Without worker limits, users can create oversized clusters that consume disproportionate
+    resources and budget. Policies should cap max_workers to prevent cost overruns.
+  recommendation: |-
+    Set num_workers with type=range and maxValue appropriate for your workloads (e.g., 50)
+    in all cluster policies.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Worker limits prevent accidental or intentional creation of oversized clusters,
+    protecting budgets and ensuring fair resource allocation across teams.
+  portal_link: compute
+
+# ── Unity Catalog & Governance Checks ──
+
+SAT-SPARK-UC-TABLE-COMMENTS:
+  title: Tables have documentation (COMMENT ON)
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Tables without comments make data discovery difficult. Undocumented tables lead to
+    misuse, duplicate work, and incorrect analysis as users guess at column semantics.
+  recommendation: |-
+    Add COMMENT ON TABLE and column-level comments to all gold-layer tables.
+    Include: purpose, update frequency, owner, and SLA.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-comment.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Table and column comments enable self-service data discovery, reduce support requests,
+    and satisfy governance requirements for data catalog completeness.
+  portal_link: explore/data
+
+SAT-SPARK-UC-TABLE-TAGS:
+  title: Tables have classification tags (PII, sensitivity)
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Tables without classification tags cannot be governed systematically. PII columns
+    without tags won't be caught by automated masking or access control policies.
+  recommendation: |-
+    Tag all tables with domain, owner, and classification. Tag PII columns with
+    pii=email|phone|name|ssn and sensitivity=high|medium|low.
+  reference_url: https://docs.databricks.com/en/governance/unity-catalog/tags.html
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Classification tags enable automated governance, PII detection, access control
+    policies, and compliance reporting at organizational scale.
+  portal_link: explore/data
+
+SAT-SPARK-UC-CONSTRAINTS:
+  title: Production tables have CHECK constraints
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Tables without constraints accept any data, including invalid values. CHECK constraints
+    enforce data quality at the storage layer as a last line of defense.
+  recommendation: |-
+    Add NOT NULL on key columns and CHECK constraints for valid ranges, enums, and
+    business rules on all gold-layer production tables.
+  reference_url: https://docs.databricks.com/en/tables/constraints.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Storage-layer constraints prevent invalid data from entering tables, complementing
+    application-level validation and reducing downstream data quality issues.
+  portal_link: explore/data
+
+# ── SQL Warehouse Checks ──
+
+SAT-SPARK-WH-QUERY-TIMEOUT:
+  title: SQL warehouses have query timeout configured
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    SQL warehouses without query timeouts allow runaway queries that consume resources
+    indefinitely, blocking other users and inflating costs.
+  recommendation: |-
+    Configure statement_timeout on SQL warehouses to prevent queries from running
+    beyond a reasonable limit (e.g., 3600 seconds for analytics workloads).
+  reference_url: https://docs.databricks.com/en/sql/admin/sql-warehouse-config.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Query timeouts prevent resource monopolization by runaway queries, ensuring
+    fair access and predictable costs for all warehouse users.
+  portal_link: sql/warehouses
+
+# ── Pipeline & Data Quality Checks ──
+
+SAT-SPARK-DLT-EXPECTATIONS:
+  title: DLT pipelines have data quality expectations
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    DLT pipelines without expectations pass data through without validation. Expectations
+    enforce quality at each layer (warn, drop, fail) — catching issues before they
+    propagate to downstream consumers.
+  recommendation: |-
+    Add EXPECT constraints to all DLT tables: warn on bronze, drop on silver, fail on gold.
+  reference_url: https://docs.databricks.com/en/delta-live-tables/expectations.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    DLT expectations automate data quality enforcement at pipeline level, catching
+    issues at ingestion time before they corrupt downstream tables and analytics.
+  portal_link: pipelines
+
+# ── Enforcement & Governance Checks ──
+
+SAT-SPARK-NAMING-CONVENTION:
+  title: Tables follow snake_case naming conventions
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Inconsistent table and column naming (camelCase, PascalCase, mixed) makes data discovery
+    difficult and leads to confusion. snake_case is the Databricks/SQL standard convention.
+  recommendation: |-
+    Rename tables and columns to snake_case using ALTER TABLE RENAME. Establish naming
+    conventions in cluster policies or documentation and enforce via code review.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-alter-table.html
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Consistent naming conventions improve discoverability, reduce errors from case-sensitivity
+    issues, and make SQL queries more readable and maintainable.
+  portal_link: explore/data
+
+SAT-SPARK-TABLE-STATS:
+  title: Tables have column statistics collected (ANALYZE TABLE)
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Without column statistics, the Spark Cost-Based Optimizer (CBO) falls back to heuristic
+    plans that may choose suboptimal join strategies and partition counts. ANALYZE TABLE
+    collects statistics that enable better query plans.
+  recommendation: |-
+    Run ANALYZE TABLE ... COMPUTE STATISTICS FOR ALL COLUMNS on frequently-queried tables.
+    Schedule as a weekly maintenance job alongside OPTIMIZE and VACUUM.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-aux-analyze-table.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Up-to-date column statistics enable the Cost-Based Optimizer to choose optimal join
+    strategies, reducing query time and resource consumption by 2-5x on complex queries.
+  portal_link: explore/data
+
+SAT-SPARK-POLICY-RUNTIME:
+  title: Cluster policies enforce runtime version constraints
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Cluster policies without spark_version constraints allow users to create clusters on
+    outdated or end-of-life runtimes, missing security patches and performance improvements.
+  recommendation: |-
+    Add spark_version with type=regex and a pattern like "1[4-9]\\.[0-9]+\\.x-.*" to all
+    cluster policies to enforce a minimum DBR version.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Runtime version constraints in policies prevent creation of clusters on EOL runtimes,
+    ensuring all workloads benefit from latest security patches and performance improvements.
+  portal_link: compute
+
+# ── Enforcement Guide Checks ──
+
+SAT-SPARK-QUERY-ANTIPATTERN:
+  title: No SELECT * or full table scan anti-patterns in recent queries
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    SELECT * and full table scans (>10GB without partition filters) waste compute and I/O.
+    Detecting these at runtime via query history surfaces violations that CI/CD linting misses.
+  recommendation: |-
+    Review flagged queries and rewrite to select specific columns. Add partition filters
+    (WHERE date_col = ...) for large tables. Use system.query.history for ongoing monitoring.
+  reference_url: https://docs.databricks.com/en/optimizations/data-skipping.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/history/queries
+  benefits: |-
+    Eliminating SELECT * and full scans reduces I/O by 50-90%, directly cutting query cost
+    and improving response times for analytics users.
+  portal_link: sql/history
+
+SAT-SPARK-POLICY-PHOTON:
+  title: Cluster policies enforce Photon runtime engine
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Cluster policies without runtime_engine constraints allow users to create non-Photon
+    clusters, missing 2-8x performance improvements. Policy-level enforcement ensures
+    every cluster uses Photon without relying on individual configuration.
+  recommendation: |-
+    Add runtime_engine with type=fixed, value=PHOTON to all cluster policies.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Policy-level Photon enforcement guarantees all clusters benefit from 2-8x acceleration
+    without relying on users to configure it individually.
+  portal_link: compute
+
+SAT-SPARK-POLICY-SPARK-CONF:
+  title: Cluster policies enforce standard Spark configurations
+  category: Spark Best Practices
+  severity: medium
+  description: |-
+    Cluster policies without spark_conf constraints allow users to override critical settings
+    like AQE, optimized writes, and auto-compaction. Policy enforcement ensures standard
+    Spark configurations are applied consistently across all clusters.
+  recommendation: |-
+    Add spark_conf.spark.sql.adaptive.enabled, spark_conf.spark.databricks.delta.optimizeWrite.enabled,
+    and spark_conf.spark.databricks.delta.autoCompact.enabled with type=fixed, value=true.
+  reference_url: https://docs.databricks.com/en/admin/clusters/policies.html
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Policy-level Spark config enforcement ensures AQE, optimized writes, and auto-compaction
+    are consistently enabled without relying on individual cluster configuration.
+  portal_link: compute
+
+SAT-SPARK-ENV-CATALOGS:
+  title: Environment-separated Unity Catalog catalogs exist
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Without separate catalogs for prod, dev, and staging, development queries can accidentally
+    read or modify production data. Environment separation at the catalog level provides
+    the strongest isolation boundary.
+  recommendation: |-
+    Create separate catalogs for each environment (prod, dev, staging/stg) and restrict
+    access via GRANT statements. Use DABs variables for environment-specific deployment.
+  reference_url: https://docs.databricks.com/en/data-governance/unity-catalog/best-practices.html
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/catalogs
+  benefits: |-
+    Environment-separated catalogs prevent accidental production data access from dev,
+    enabling safe experimentation and testing without risk to production workloads.
+  portal_link: explore/data
+
+SAT-SPARK-TABLE-QUALITY-TIER:
+  title: Tables have quality tier TBLPROPERTIES (bronze/silver/gold)
+  category: Spark Best Practices
+  severity: low
+  description: |-
+    Tables without a quality tier property (quality=bronze|silver|gold) make it impossible
+    to programmatically distinguish data maturity levels for governance, SLA, and access rules.
+  recommendation: |-
+    Set TBLPROPERTIES ('quality' = 'bronze|silver|gold') on all tables. Use this property
+    for automated governance rules and SLA monitoring.
+  reference_url: https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-tblproperties.html
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Quality tier properties enable automated governance, differentiated SLAs, and
+    programmatic data lineage tracking across the medallion architecture.
+  portal_link: explore/data

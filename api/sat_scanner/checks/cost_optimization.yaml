@@ -1,0 +1,219 @@
+# Cost Optimization
+# 15 checks
+
+SAT-COST-1:
+  title: Cluster autoscaling adoption
+  category: Cost Optimization
+  severity: medium
+  description: Interactive clusters without autoscaling pay for fixed capacity even when idle, wasting cloud spend.
+  recommendation: Enable autoscaling on interactive clusters to match capacity to workload demand.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#autoscaling
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Autoscaling adjusts cluster size to actual workload demand, eliminating idle compute costs.
+SAT-COST-2:
+  title: Azure Spot VM usage
+  category: Cost Optimization
+  severity: low
+  description: Azure Spot VMs reduce compute costs by 60-90%. Clusters not using spot may incur unnecessary spend.
+  recommendation: Enable Azure Spot VMs with fallback on worker nodes for fault-tolerant workloads.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#spot-instances
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Azure Spot VMs reduce compute costs by 60-90% for fault-tolerant workloads.
+SAT-COST-3:
+  title: Auto-termination configured (≤60 min)
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    Clusters without auto-termination (or with long timeouts) continue running and accruing cost when unused.
+  recommendation: Set auto-termination to 60 minutes or less on all interactive clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#auto-termination
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Auto-termination reclaims idle clusters, preventing 24/7 charges for interactive workloads.
+SAT-COST-4:
+  title: Clusters tagged for cost allocation
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    Clusters without custom tags make it impossible to attribute cloud costs to teams, projects, or cost centers.
+  recommendation: |-
+    Apply custom tags (e.g. team, project, environment) to all clusters for cost allocation and chargeback.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#tags
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Resource tags enable cost attribution to teams and projects, supporting chargeback and budget accountability.
+SAT-COST-5:
+  title: Instance pools configured to reduce startup cost
+  category: Cost Optimization
+  severity: low
+  description: |-
+    Instance pools reduce cluster start time and cost by keeping warm instances ready. No pools may indicate long start times.
+  recommendation: Create instance pools for frequently used VM sizes to reduce startup latency and cost.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/pool-index
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/instance-pools/list
+  benefits: |-
+    Instance pools keep warm instances ready, reducing cluster start time and avoiding cold-start delays.
+  portal_link: compute/instance-pools
+SAT-COST-BUDGET:
+  title: Budget alerts configured for workspace
+  category: Cost Optimization
+  severity: high
+  description: |-
+    Without budget alerts, workspace spending can exceed planned limits before anyone notices.
+    Budget policies via the account API enable proactive cost controls and notifications.
+  recommendation: |-
+    Configure budget alerts via the account-level budgets API to receive notifications when
+    spending approaches or exceeds defined thresholds.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/budgets
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/budgets
+  benefits: |-
+    Budget alerts provide proactive cost governance, notifying stakeholders before spending exceeds planned limits.
+  portal_link: settings/budgets
+SAT-COST-SYSTEM-TABLES:
+  title: System tables enabled for cost monitoring
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    Without system tables (system.billing schema), cost analysis relies on external tools or manual exports.
+    System tables provide native, queryable billing and usage data for cost attribution and optimization.
+  recommendation: |-
+    Enable system tables and verify the system.billing schema exists for native cost monitoring and attribution.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/billing
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: |-
+    System tables provide native, queryable billing data for cost attribution, trend analysis, and chargeback.
+  portal_link: explore/data
+SAT-COST-IDLE-WH:
+  title: No idle SQL warehouses running beyond auto-stop
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    SQL warehouses that remain running beyond their auto-stop threshold waste compute resources.
+    Idle warehouses should be stopped automatically based on configured auto_stop_mins settings.
+  recommendation: |-
+    Review SQL warehouse states and ensure auto_stop_mins is configured appropriately. Stop any idle warehouses
+    that have been running beyond their auto-stop threshold.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/sql-warehouse/
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/sql/warehouses
+  benefits: |-
+    Stopping idle SQL warehouses beyond auto-stop thresholds eliminates unnecessary compute costs.
+  portal_link: sql/warehouses
+SAT-COST-POLICY-GUARDRAILS:
+  title: Cluster policies enforce cost guardrails
+  category: Cost Optimization
+  severity: high
+  description: |-
+    Cluster policies without cost guardrails (max_workers, auto_termination, spot instance requirements)
+    allow users to create expensive clusters without limits, leading to uncontrolled spending.
+  recommendation: |-
+    Update cluster policies to enforce max_workers limits, mandatory auto_termination_minutes,
+    and Azure Spot VM usage for worker nodes.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/clusters/policies
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/policies/clusters/list
+  benefits: |-
+    Policy-enforced cost guardrails prevent users from creating oversized or long-running clusters that waste budget.
+  portal_link: compute/cluster-policies
+SAT-COST-ZOMBIE-VOLUMES:
+  title: UC Volumes with no reads in 90 days flagged
+  category: Cost Optimization
+  severity: low
+  description: |-
+    Unity Catalog Volumes that have not been read in 90 days may be storing
+    unused data, accumulating storage costs without providing value.
+  recommendation: |-
+    Query system tables to identify Volumes with no recent read access.
+    Archive or delete unused Volumes after confirming with data owners.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/volumes
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/volumes
+  benefits: Identifying zombie Volumes eliminates unnecessary storage costs for unused data assets.
+  portal_link: explore/data
+SAT-COST-ABANDONED-TABLES:
+  title: Tables with no reads or writes in 180 days
+  category: Cost Optimization
+  severity: low
+  description: |-
+    Tables that have not been read or written to in 180 days are likely abandoned.
+    They consume storage, increase catalog clutter, and may contain stale data
+    that misleads consumers.
+  recommendation: |-
+    Query system.access.table_lineage or information_schema to identify tables
+    with no recent access. Archive or drop after confirming with data owners.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: Removing abandoned tables reduces storage costs and catalog clutter.
+  portal_link: explore/data
+SAT-COST-OVERPROVISIONED:
+  title: Clusters not over-provisioned (CPU utilization > 30%)
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    Clusters consistently using less than 30% average CPU are over-provisioned,
+    wasting compute resources. Right-sizing clusters to match actual workload
+    demand can reduce costs significantly.
+  recommendation: |-
+    Review cluster metrics. Downsize node types or reduce max_workers for
+    clusters with consistently low CPU utilization.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: Right-sizing over-provisioned clusters eliminates wasted compute spend.
+  portal_link: compute
+SAT-COST-STORAGE-TIERING:
+  title: Large tables use storage tiering or lifecycle policies
+  category: Cost Optimization
+  severity: low
+  description: |-
+    Tables exceeding 1 TB without lifecycle policies or storage tiering
+    (hot → cool → archive) incur premium storage costs for data that may
+    be infrequently accessed.
+  recommendation: |-
+    Implement Azure Storage lifecycle management for tables > 1 TB.
+    Move cold data to Cool or Archive tiers. Use Delta time travel
+    settings to control version retention.
+  reference_url: https://learn.microsoft.com/en-us/azure/storage/blobs/lifecycle-management-overview
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: Storage tiering reduces costs for infrequently accessed data without deleting it.
+  portal_link: explore/data
+SAT-COST-ANOMALY:
+  title: No cost anomalies detected (spending within normal range)
+  category: Cost Optimization
+  severity: high
+  description: |-
+    Unusual cost spikes (>2x the 7-day rolling average) may indicate runaway jobs,
+    misconfigured clusters, or unauthorized usage. System table billing data is used
+    to detect anomalies.
+  recommendation: |-
+    Investigate cost spikes using system.billing.usage. Set up alerts for unusual
+    spending patterns. Use budgets and cost controls to prevent overruns.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/billing
+  effort: Moderate (1–4 hrs)
+  api_endpoint: system.billing.usage (system table)
+  benefits: Detecting cost anomalies early prevents budget overruns and identifies unauthorized usage.
+  portal_link: settings/workspace/usage
+SAT-COST-STALE-TABLES:
+  title: No stale tables with zero reads in 90+ days
+  category: Cost Optimization
+  severity: medium
+  description: |-
+    Tables with no read access in 90+ days consume storage costs without
+    providing value. System table access audit data is used to identify
+    stale tables.
+  recommendation: |-
+    Archive or delete tables with no reads in 90+ days. Use system.access.audit
+    to identify stale tables and set up lifecycle policies.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/audit-logs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: system.access.audit (system table)
+  benefits: Removing stale tables reduces storage costs and simplifies data governance.
+  portal_link: explore/data

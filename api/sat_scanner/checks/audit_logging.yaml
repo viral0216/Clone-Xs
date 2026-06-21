@@ -1,0 +1,90 @@
+# Audit & Logging
+# 6 checks
+
+SAT-LOG-DIAG:
+  title: Azure Diagnostic Settings configured (Azure only)
+  category: Audit & Logging
+  severity: critical
+  description: |-
+    Azure Diagnostic Settings control where platform and audit logs are delivered (Log Analytics, Storage Account, Event Hub). Without them, no audit logs are captured.
+  recommendation: |-
+    Configure Diagnostic Settings on the Databricks workspace in Azure Portal → Monitoring → Diagnostic settings. Send logs to a Log Analytics workspace or Storage Account.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/azure-diagnostic-logs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: 'Azure ARM: /providers/Microsoft.Insights/diagnosticSettings'
+  benefits: |-
+    Azure Diagnostic Settings route audit and platform logs to Log Analytics, Storage, or Event Hub for retention and analysis.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/diagnostics
+SAT-LOG-1:
+  title: Verbose audit logs enabled
+  category: Audit & Logging
+  severity: critical
+  description: |-
+    Verbose audit logs capture detailed user actions (API calls, notebook runs, etc.) beyond standard audit events. This is separate from Azure Diagnostic Settings which controls log delivery.
+  recommendation: |-
+    Enable verbose audit logs in Databricks workspace settings (Admin Console → Workspace Settings → enableVerboseAuditLogs).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/audit-log-delivery
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Verbose audit logs capture the full text of every command, query, and notebook cell execution for forensic analysis.
+  ws_conf_keys: enableVerboseAuditLogs
+  portal_link: settings/workspace/advanced
+SAT-LOG-2:
+  title: Cluster event logs retained
+  category: Audit & Logging
+  severity: low
+  description: Cluster event logs are retained for only 60 days. Exporting provides long-term retention.
+  recommendation: Configure cluster log delivery to external storage for all clusters.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#cluster-log-delivery
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Exporting cluster event logs provides long-term retention beyond the default 60-day window for compliance.
+  portal_link: compute
+SAT-LOG-3:
+  title: Job run results exported for long-term retention
+  category: Audit & Logging
+  severity: low
+  description: Databricks retains job run history for only 60 days.
+  recommendation: Configure job output tables or Delta Lake sink for long-term retention.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    Exporting job run results provides long-term retention beyond the default 60-day window for audit and debugging.
+  portal_link: jobs
+SAT-LOG-FAILED-AUTH:
+  title: No spike in authentication failures (last 7 days)
+  category: Audit & Logging
+  severity: high
+  description: |-
+    A spike in failed authentication attempts may indicate brute-force attacks,
+    credential stuffing, or compromised service principals. System table audit
+    data is used to detect anomalous failure rates.
+  recommendation: |-
+    Investigate failed authentication events in system.access.audit. Review
+    service principal credentials, rotate PATs, and consider IP access lists
+    to block suspicious sources.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/audit-logs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: system.access.audit (system table)
+  benefits: Detecting authentication failure spikes early helps prevent unauthorized access from brute-force or credential-stuffing attacks.
+  portal_link: settings/workspace/identity-and-access
+SAT-LOG-DATA-EXFIL:
+  title: No large data downloads detected (last 7 days)
+  category: Audit & Logging
+  severity: high
+  description: |-
+    Large query result downloads (>100 MB) or bulk DBFS reads may indicate
+    data exfiltration. System table query history is used to detect unusually
+    large result sets.
+  recommendation: |-
+    Review large data downloads in system.query.history. Disable results
+    downloading for non-admins (enableResultsDownloading). Implement data
+    loss prevention policies and restrict DBFS external access.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/query-history
+  effort: Moderate (1–4 hrs)
+  api_endpoint: system.query.history (system table)
+  benefits: Detecting large data downloads helps prevent data exfiltration and supports data loss prevention policies.
+  portal_link: settings/workspace/security

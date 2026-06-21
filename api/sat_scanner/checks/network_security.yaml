@@ -1,0 +1,145 @@
+# Network Security
+# 10 checks
+
+SAT-NET-1:
+  title: IP access lists configured
+  category: Network Security
+  severity: high
+  description: Without IP access lists, the workspace API and UI are accessible from any internet IP.
+  recommendation: Enable IP access lists. Add corporate VPN egress IPs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/front-end/ip-access-list
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/ip-access-lists
+  benefits: |-
+    IP access lists restrict workspace access to approved corporate networks, preventing unauthorized access from the public internet.
+  portal_link: https://accounts.azuredatabricks.net/security/networking/ip-access-list?account_id={account_id}
+SAT-NET-2:
+  title: Secure Cluster Connectivity (No Public IP) enabled
+  category: Network Security
+  severity: high
+  description: SCC ensures cluster nodes have no public IP addresses.
+  recommendation: Enable Secure Cluster Connectivity in workspace network settings.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/security/network/classic/secure-cluster-connectivity
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list + /api/2.0/workspace-conf
+  benefits: |-
+    No-public-IP clusters eliminate direct internet exposure of compute nodes, reducing the network attack surface.
+  ws_conf_keys: enableNoPublicIp
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/networking
+SAT-NET-3:
+  title: VNet injection / Private Link configured
+  category: Network Security
+  severity: medium
+  description: VNet injection deploys compute resources into a customer-managed VNet.
+  recommendation: Use VNet-injected workspaces for production. Configure Private Link.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/classic/vnet-inject
+  effort: Project (1+ weeks)
+  api_endpoint: /api/2.0/clusters/list + /api/2.0/workspace-conf
+  benefits: |-
+    VNet injection and Private Link keep all traffic within your private network, preventing data exposure on the public internet.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/networking
+SAT-NET-4:
+  title: No SSH keys configured on interactive clusters
+  category: Network Security
+  severity: medium
+  description: SSH keys allow direct SSH access to cluster nodes, bypassing audit logging.
+  recommendation: Remove all SSH public keys from cluster configurations.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#ssh-access
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Removing SSH keys from interactive clusters prevents direct node access that bypasses Databricks audit logging.
+  portal_link: compute
+SAT-NET-5:
+  title: No SSH keys configured on job clusters
+  category: Network Security
+  severity: medium
+  description: SSH keys in job cluster definitions provide persistent access to compute nodes.
+  recommendation: Remove all ssh_public_keys from job cluster specifications.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/jobs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: |-
+    SSH keys on job clusters provide persistent backdoor access to compute nodes outside the Databricks control plane.
+  portal_link: jobs
+SAT-NS-SERVING:
+  title: Model serving endpoint network exposure reviewed
+  category: Network Security
+  severity: high
+  description: Model serving endpoints are internet-accessible by default.
+  recommendation: Configure IP access lists or Private Link for serving endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: |-
+    Restricting model serving endpoint access prevents unauthorized external calls to your hosted ML models.
+  portal_link: ml/endpoints
+SAT-NS-EXT-LLM:
+  title: External AI model endpoints reviewed for data residency
+  category: Network Security
+  severity: medium
+  description: External model endpoints carry third-party data residency risks.
+  recommendation: Audit all external model endpoints. Implement rate limiting.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/generative-ai/external-models
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/serving-endpoints
+  benefits: Governing external model endpoints controls which third-party AI services your data is sent to.
+  portal_link: ml/endpoints
+SAT-INFO-NETWORK-PEERING:
+  title: Network peering replaced with Private Endpoints
+  category: Network Security
+  severity: medium
+  description: VNet peering has a larger network exposure than Private Link.
+  recommendation: Replace VNet peering with Azure Private Link or Private Endpoints.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/concepts/private-link
+  effort: Project (1+ weeks)
+  api_endpoint: (manual check)
+  benefits: Private Endpoints provide tighter network isolation than VNet peering, with smaller attack surface.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/networking
+SAT-NET-NCC:
+  title: Network Connectivity Config (NCC) for serverless
+  category: Network Security
+  severity: high
+  description: |-
+    Serverless compute without Network Connectivity Config uses shared public IPs, bypassing workspace network controls.
+  recommendation: |-
+    Configure Network Connectivity Config (NCC) with private endpoints for serverless SQL warehouses and jobs.
+  reference_url: |-
+    https://learn.microsoft.com/en-us/azure/databricks/security/network/serverless-network-security/serverless-private-link
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Network Connectivity Config ensures serverless compute uses your dedicated network path instead of shared public IPs.
+  ws_conf_keys: enableNccConfig
+  portal_link: |-
+    https://accounts.azuredatabricks.net/security/networking/network-connectivity-configs?account_id={account_id}
+SAT-NET-FRONTEND-PL:
+  title: Front-end Private Link evaluated
+  category: Network Security
+  severity: medium
+  description: Without front-end Private Link, the workspace UI and API are accessible via the public internet.
+  recommendation: |-
+    Configure front-end Azure Private Link to restrict workspace access to your corporate network. Verify in Azure Portal.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/concepts/private-link
+  effort: Significant (1–3 days)
+  api_endpoint: (manual check)
+  benefits: |-
+    Front-end Private Link keeps workspace UI and API traffic within your Azure private network, eliminating public internet exposure.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/networking
+SAT-NET-EXFIL:
+  title: Data exfiltration prevention controls enabled
+  category: Network Security
+  severity: high
+  description: |-
+    Without data exfiltration prevention controls, users can copy data to unauthorized external locations
+    via DBFS, external tables, or network egress, creating data loss and compliance risks.
+  recommendation: |-
+    Enable data exfiltration prevention controls including restricting outbound network access,
+    disabling DBFS root access, and enforcing Unity Catalog external location governance.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/security/network/data-exfiltration-protection
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/workspace-conf
+  benefits: |-
+    Data exfiltration prevention controls block unauthorized data transfers to external locations, protecting sensitive data.
+  portal_link: https://portal.azure.com/#@{tenant}/resource{resource_id}/networking

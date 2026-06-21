@@ -6,7 +6,7 @@ import {
   PanelLeftClose, PanelLeftOpen, Network, TreePine, Layers, ArrowLeftRight, Search,
   Workflow, Server, Users, BrainCircuit, FileCode, ShieldCheck, Activity,
   GitCompareArrows, AlertOctagon, Share2, TrendingUp,
-  HardDrive, FunctionSquare, Tag,
+  HardDrive, FunctionSquare, Tag, LayoutGrid,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -21,6 +21,7 @@ const NAV_SECTIONS = [
     title: "Results",
     items: [
       { href: "/assessment/findings", label: "Findings", icon: AlertTriangle },
+      { href: "/assessment/pillars", label: "WAF Pillars", icon: LayoutGrid },
       { href: "/assessment/categories", label: "Category Scores", icon: BarChart2 },
       { href: "/assessment/recommendations", label: "Recommendations", icon: Lightbulb },
     ],

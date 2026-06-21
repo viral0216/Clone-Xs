@@ -1,0 +1,145 @@
+# Advanced Governance
+# 10 checks
+
+SAT-GOV-PII:
+  title: PII columns tagged with classification labels
+  category: Advanced Governance
+  severity: low
+  description: Tables without PII classification tags risk accidental exposure of sensitive personal data.
+  recommendation: Tag columns containing PII with classification tags (e.g. pii, sensitive, confidential).
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/tags
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/catalogs + /api/2.1/unity-catalog/tables
+  benefits: |-
+    PII classification tags enable automated data protection policies and help prevent accidental exposure of personal data.
+  portal_link: explore/data
+SAT-GOV-INFO-SCHEMA:
+  title: Information schema accessible in catalogs
+  category: Advanced Governance
+  severity: low
+  description: |-
+    The information_schema provides metadata about all objects in a catalog — useful for governance queries.
+  recommendation: Use INFORMATION_SCHEMA views for metadata queries and governance automation.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-information-schema
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: |-
+    Information schema provides metadata for governance queries — checking permissions, ownership, and table statistics.
+  portal_link: explore/data
+SAT-GOV-STALE-OBJ:
+  title: No excessive top-level workspace objects
+  category: Advanced Governance
+  severity: low
+  description: |-
+    A large number of top-level workspace objects indicates poor workspace hygiene and makes navigation harder.
+  recommendation: Organize workspace objects into folders. Archive or delete stale notebooks and experiments.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workspace
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/workspace/list
+  benefits: |-
+    Cleaning stale workspace objects improves navigation, reduces confusion, and removes outdated configurations.
+  portal_link: workspace
+SAT-OPS-5:
+  title: Jobs have email or webhook failure alerts
+  category: Advanced Governance
+  severity: low
+  description: |-
+    Jobs without email or webhook notifications fail silently. Teams discover failures hours or days late.
+  recommendation: Configure email_notifications or webhook_notifications on all production jobs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/workflows/jobs/settings#notifications
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/jobs/list
+  benefits: Job notifications enable rapid incident response when pipeline failures occur.
+SAT-OPS-6:
+  title: DLT expectations (data quality rules)
+  category: Advanced Governance
+  severity: low
+  description: |-
+    DLT expectations enforce data quality at ingestion time. Pipelines without expectations may propagate bad data.
+  recommendation: Add EXPECT, EXPECT OR DROP, or EXPECT OR FAIL constraints to DLT pipeline definitions.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    DLT expectations enforce data quality rules at ingestion time, preventing bad data from propagating downstream.
+  portal_link: pipelines
+SAT-DA-4:
+  title: External locations governance
+  category: Advanced Governance
+  severity: low
+  description: |-
+    External locations sharing a single credential increase blast radius. Read-only flags limit write access.
+  recommendation: Use dedicated storage credentials per external location. Set read_only where writes are not needed.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/external-locations
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/external-locations
+  benefits: Isolated credentials per external location enforce least-privilege access to cloud storage.
+SAT-GOV-ORPHAN-GRANTS:
+  title: No grants to inactive or deleted principals
+  category: Advanced Governance
+  severity: medium
+  description: |-
+    Grants to deleted users, removed service principals, or inactive groups create zombie permissions
+    that may be exploited if the principal name is reused.
+  recommendation: Review and revoke grants to principals not found in current SCIM users or groups. Audit catalog permissions regularly.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/permissions/catalog/{name} + /api/2.0/preview/scim/v2/Users + /api/2.0/preview/scim/v2/Groups
+  benefits: |-
+    Removing orphaned grants eliminates zombie permissions that could be exploited through principal name reuse.
+SAT-GOV-UC-FUNCTIONS:
+  title: Unity Catalog functions audited for external access
+  category: Advanced Governance
+  severity: medium
+  description: |-
+    UC functions can call external APIs and execute arbitrary code. Functions with EXTERNAL_ACCESS or that reference external endpoints should be audited.
+  recommendation: |-
+    Review all UC functions for external access patterns. Restrict CREATE FUNCTION privileges and audit function definitions regularly.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-functions-udf-scalar
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/functions
+  benefits: |-
+    Auditing UC functions for external access prevents uncontrolled data exfiltration through user-defined functions.
+  portal_link: explore/data
+SAT-GOV-ALL-PRIVILEGES:
+  title: No ALL_PRIVILEGES grants on UC securables
+  category: Advanced Governance
+  severity: high
+  description: |-
+    ALL_PRIVILEGES grants give unrestricted access to catalogs, schemas, or tables. This violates least-privilege and makes access auditing difficult.
+  recommendation: |-
+    Replace ALL_PRIVILEGES grants with specific privileges (USE CATALOG, SELECT, MODIFY, etc.) on each securable.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/privileges
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/permissions/{securable_type}/{full_name}
+  benefits: |-
+    Replacing ALL_PRIVILEGES with specific grants enforces least-privilege access and simplifies audit reporting.
+  portal_link: explore/data
+SAT-GOV-CATALOG-ISOLATION:
+  title: Catalogs bound to specific workspaces
+  category: Advanced Governance
+  severity: medium
+  description: |-
+    Catalogs without workspace bindings are accessible from ALL workspaces in the metastore, which may violate data isolation requirements.
+  recommendation: |-
+    Bind catalogs to specific workspaces in Catalog Explorer. Uncheck 'All workspaces have access' and assign specific workspaces.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/catalogs/binding
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/bindings/catalog/{catalog_name}
+  benefits: |-
+    Workspace-catalog bindings enforce data isolation by restricting which workspaces can access which catalogs.
+  portal_link: explore/data
+SAT-GOV-SCHEMA-OWNER:
+  title: Schemas owned by groups or service principals (not individual users)
+  category: Advanced Governance
+  severity: medium
+  description: |-
+    Schemas owned by individual users create single-point-of-failure and access issues when users leave. Ownership should be assigned to groups or service principals.
+  recommendation: |-
+    Transfer schema ownership to groups or service principals using ALTER SCHEMA ... SET OWNER TO <group_or_sp>.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/ownership
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: |-
+    Group or service principal ownership of schemas prevents access disruption when individual users leave the organization.
+  portal_link: explore/data

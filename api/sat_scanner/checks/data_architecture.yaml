@@ -1,0 +1,40 @@
+# Data Architecture
+# 3 checks
+
+SAT-DA-1:
+  title: Medallion (bronze/silver/gold) pattern adopted
+  category: Data Architecture
+  severity: low
+  description: |-
+    The medallion (bronze/silver/gold) pattern organizes data by quality tier, simplifying governance and lineage.
+  recommendation: |-
+    Adopt the medallion architecture with separate schemas for bronze (raw), silver (curated), and gold (aggregated) data.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse/medallion
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/schemas
+  benefits: |-
+    The medallion pattern (bronze/silver/gold) organizes data by quality tier, simplifying governance and lineage.
+SAT-DA-2:
+  title: Files stored in Unity Catalog Volumes
+  category: Data Architecture
+  severity: low
+  description: |-
+    Unity Catalog Volumes provide governed file storage. Files outside Volumes lack access control and lineage.
+  recommendation: Store files in UC Managed Volumes for governance, access control, and lineage tracking.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/volumes
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.1/unity-catalog/volumes
+  benefits: |-
+    UC Volumes provide governed file storage — files outside Volumes lack access control and lineage tracking.
+SAT-DA-3:
+  title: DLT pipeline health
+  category: Data Architecture
+  severity: medium
+  description: |-
+    Failed or unhealthy DLT pipelines indicate data pipeline reliability issues affecting downstream consumers.
+  recommendation: Investigate and fix failed DLT pipelines. Set up alerts for pipeline failures.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: Healthy DLT pipelines ensure reliable data ingestion and transformation for downstream consumers.
+  portal_link: pipelines

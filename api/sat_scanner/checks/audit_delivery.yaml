@@ -1,0 +1,71 @@
+# ── Audit Log Delivery & Monitoring ──
+# Checks that audit logs are delivered, fresh, alerted on, and retained
+# per compliance requirements.
+
+SAT-AUDIT-DELIVERY:
+  title: Account-level audit log delivery configured
+  category: Audit Delivery
+  severity: critical
+  description: |-
+    Without account-level audit log delivery, workspace activity events are not
+    persisted to your own cloud storage. This creates a compliance blind spot
+    and prevents forensic investigation of security incidents.
+  recommendation: |-
+    Configure account-level audit log delivery via the Log Delivery API to
+    deliver audit logs to your own S3 bucket or ADLS container.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/audit-log-delivery
+  effort: Significant (1–3 days)
+  api_endpoint: /api/2.0/account/log-delivery
+  benefits: Audit log delivery persists all workspace activity to your cloud storage for compliance and forensics.
+  portal_link: settings/workspace/audit-logs
+
+SAT-AUDIT-FRESHNESS:
+  title: Audit logs delivered within last 24 hours
+  category: Audit Delivery
+  severity: high
+  description: |-
+    Audit log delivery that has not completed successfully in the past 24 hours
+    indicates a broken pipeline. Stale audit logs delay incident detection and
+    create compliance gaps.
+  recommendation: |-
+    Verify audit log delivery status. Check for delivery errors in the account
+    console. Ensure the destination storage is accessible and not throttled.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/audit-log-delivery
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/account/log-delivery
+  benefits: Fresh audit logs ensure timely incident detection and continuous compliance monitoring.
+  portal_link: settings/workspace/audit-logs
+
+SAT-AUDIT-ALERTING:
+  title: Alerts configured on high-risk audit events
+  category: Audit Delivery
+  severity: medium
+  description: |-
+    Without SQL alerts or notification rules on high-risk audit events (admin role
+    changes, PAT creation, cluster creation with public IPs), security incidents
+    go undetected until manual log review.
+  recommendation: |-
+    Create SQL alerts on the system.access.audit table for high-risk events:
+    admin group changes, token creation, cluster creation, and permission changes.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/system-tables/audit-logs
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/alerts
+  benefits: Audit event alerts enable real-time detection of security-relevant actions in the workspace.
+  portal_link: sql/alerts
+
+SAT-AUDIT-RETENTION:
+  title: Audit log storage retention exceeds 365 days
+  category: Audit Delivery
+  severity: medium
+  description: |-
+    Audit logs with retention shorter than 365 days may be deleted before
+    compliance investigations or annual audits can reference them. Most
+    regulatory frameworks require at least 1 year of log retention.
+  recommendation: |-
+    Configure your audit log storage (S3/ADLS) lifecycle policy to retain logs
+    for at least 365 days. For HIPAA/SOC2, consider 7-year retention.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/admin/account-settings/audit-log-delivery
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/account/log-delivery
+  benefits: Long audit log retention ensures compliance investigations can reference historical events.
+  portal_link: settings/workspace/audit-logs

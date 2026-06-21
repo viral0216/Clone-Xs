@@ -1,0 +1,171 @@
+# Data Quality
+# 8 checks
+
+SAT-DQ-TABLE-MONITORS:
+  title: Unity Catalog tables have Lakehouse Monitors
+  category: Data Quality
+  severity: medium
+  description: |-
+    Lakehouse Monitors track data quality metrics (drift, nulls, volume changes) on UC tables. Tables
+    without monitors have no automated quality checks, allowing silent data quality degradation.
+  recommendation: |-
+    Configure Lakehouse Monitors on critical tables via Catalog Explorer or the monitor API.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Lakehouse Monitors automatically track data quality metrics, detecting drift, null spikes, and volume
+    anomalies before they impact downstream consumers.
+  portal_link: explore/data
+
+SAT-DQ-TABLE-COMMENTS:
+  title: Unity Catalog tables have descriptions
+  category: Data Quality
+  severity: low
+  description: |-
+    Tables without descriptions are hard to discover and understand. Descriptions improve data catalog
+    usability and reduce time-to-insight for analysts and engineers.
+  recommendation: |-
+    Add COMMENT descriptions to all Unity Catalog tables via ALTER TABLE SET COMMENT or Catalog Explorer.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Table descriptions improve data discoverability, reducing the time analysts spend searching for the
+    right dataset and understanding its contents.
+  portal_link: explore/data
+
+SAT-DQ-DLT-FRESHNESS:
+  title: DLT pipelines have recent successful updates
+  category: Data Quality
+  severity: medium
+  description: |-
+    DLT pipelines that have not run recently may be producing stale data. Consumers relying on these
+    pipelines may be making decisions on outdated information.
+  recommendation: |-
+    Review DLT pipelines that have not run in the last 7 days. Schedule regular triggers or investigate failures.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/updates
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Regularly updated DLT pipelines ensure downstream tables and dashboards reflect current data,
+    preventing decisions based on stale information.
+  portal_link: pipelines
+
+SAT-DQ-COMPUTE-RIGHT-SIZE:
+  title: Clusters have reasonable autoscaling min/max ratio
+  category: Data Quality
+  severity: low
+  description: |-
+    Clusters with extreme autoscaling ratios (e.g. min=1, max=100) may experience excessive scaling events
+    or waste resources. A reasonable ratio (max <= 5x min) balances responsiveness with stability.
+  recommendation: |-
+    Set autoscaling max_workers to at most 5x min_workers. Review cluster utilization to right-size.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/compute/configure#autoscaling
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/clusters/list
+  benefits: |-
+    Reasonable autoscaling ratios balance cost efficiency with workload responsiveness, preventing both
+    over-provisioning and excessive scaling churn.
+  portal_link: compute
+
+SAT-DQ-COLUMN-COMMENTS:
+  title: Table columns have descriptions
+  category: Data Quality
+  severity: low
+  description: |-
+    Columns without descriptions force analysts to guess field meanings, increasing errors and onboarding time.
+    Column-level documentation is essential for self-service analytics.
+  recommendation: |-
+    Add COMMENT descriptions to table columns via ALTER TABLE ALTER COLUMN SET COMMENT or Catalog Explorer.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Column descriptions eliminate guesswork for analysts, reducing errors from misinterpreted fields and
+    accelerating onboarding for new team members.
+  portal_link: explore/data
+
+SAT-DQ-TABLE-OWNERS:
+  title: UC tables have explicit owners
+  category: Data Quality
+  severity: medium
+  description: |-
+    Tables without explicit owners lack clear accountability for data quality, access control, and maintenance.
+    Default ownership often falls to the creating service principal with no human contact.
+  recommendation: |-
+    Assign explicit owners to all UC tables via ALTER TABLE SET OWNER or Catalog Explorer.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Explicit table ownership establishes clear accountability for data quality, access decisions, and
+    incident response — essential for data governance at scale.
+  portal_link: explore/data
+
+SAT-DQ-PIPELINE-ERRORS:
+  title: DLT pipelines have low failure rate
+  category: Data Quality
+  severity: medium
+  description: |-
+    DLT pipelines with frequent failures produce incomplete or stale data, impacting downstream consumers
+    and eroding trust in the data platform.
+  recommendation: |-
+    Investigate and fix failing DLT pipelines. Review pipeline logs and configure failure notifications.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/updates
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/pipelines
+  benefits: |-
+    Low pipeline failure rates ensure reliable data delivery, maintaining trust in the data platform and
+    preventing downstream impact from incomplete data.
+  portal_link: pipelines
+
+SAT-DQ-ALERT-COVERAGE:
+  title: SQL alerts configured for data quality
+  category: Data Quality
+  severity: low
+  description: |-
+    SQL alerts proactively monitor data quality metrics and business KPIs. Without alerts, data quality
+    issues go undetected until downstream consumers discover them.
+  recommendation: |-
+    Create SQL alerts for key data quality metrics (row counts, null rates, freshness) and business KPIs.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/sql/user/alerts
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/sql/alerts
+  benefits: |-
+    SQL alerts detect data quality anomalies and business metric deviations before they impact consumers,
+    enabling proactive rather than reactive data management.
+  portal_link: sql/alerts
+
+SAT-DQ-FRESHNESS:
+  title: Freshness monitoring on critical tables
+  category: Data Quality
+  severity: medium
+  description: |-
+    Critical tables without freshness monitoring can become stale without detection, leading to
+    downstream consumers making decisions based on outdated data.
+  recommendation: |-
+    Configure Lakehouse Monitor schedules on critical tables to track data freshness and alert
+    when tables are not updated within expected intervals.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring/
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Freshness monitoring detects stale data before downstream consumers are impacted by outdated information.
+  portal_link: explore/data
+SAT-DQ-PROFILING:
+  title: Data profiling enabled on key tables
+  category: Data Quality
+  severity: low
+  description: |-
+    Key tables without data profiling lack visibility into distribution changes, null rate trends,
+    and statistical anomalies that indicate data quality degradation.
+  recommendation: |-
+    Enable Lakehouse Monitor profile metrics on key tables to track statistical distributions,
+    null rates, and data quality trends over time.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/lakehouse-monitoring/
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.1/unity-catalog/tables
+  benefits: |-
+    Data profiling provides visibility into distribution changes and statistical anomalies that indicate quality degradation.
+  portal_link: explore/data

@@ -1,0 +1,43 @@
+# Data Residency
+# 3 checks
+
+SAT-GEO-1:
+  title: Workspace Geography and region
+  category: Data Residency
+  severity: low
+  description: |-
+    Reports the Azure region and Databricks Geography (Geo) for this workspace. Designated Services (AI assistants, Foundation Model APIs, Genie, AI/BI dashboards) process customer content on a Geography basis rather than a single-region basis.
+  recommendation: Informational — verify the workspace Geography matches your data residency requirements.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/resources/databricks-geos
+  effort: Quick Fix (5–15 min)
+  api_endpoint: (workspace metadata)
+  benefits: |-
+    Knowing your workspace Geography ensures Designated Services process data within the expected regional boundary.
+  portal_link: https://accounts.azuredatabricks.net/workspaces?account_id={account_id}
+SAT-GEO-2:
+  title: Cross-Geography data processing enforcement
+  category: Data Residency
+  severity: high
+  description: |-
+    Azure Databricks Designated Services can process customer content in other Geographies unless enforcement is explicitly enabled. For workspaces outside US and EU, cross-Geo processing is enabled by default unless the compliance security profile is active.
+  recommendation: |-
+    Enable 'Enforce data processing within workspace Geography for Designated Services' in the Account Console under the workspace's Security and Compliance tab.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/resources/databricks-geos
+  effort: Quick Fix (5–15 min)
+  api_endpoint: /api/2.0/settings/types/{geo_setting}/names/default
+  benefits: Enforcing cross-Geo processing restrictions keeps customer data within your regulatory jurisdiction.
+  portal_link: https://accounts.azuredatabricks.net/workspaces?account_id={account_id}
+SAT-GEO-3:
+  title: Compliance profile and cross-Geo data residency risk
+  category: Data Residency
+  severity: medium
+  description: |-
+    Workspaces outside US/EU without the compliance security profile have cross-Geography processing enabled by default. The compliance security profile changes this default. This check verifies the combined posture of compliance profile + Geo enforcement.
+  recommendation: |-
+    For workspaces outside US/EU: enable the compliance security profile AND the Geo enforcement setting. For US/EU workspaces: verify the compliance profile is enabled for defence-in-depth.
+  reference_url: https://learn.microsoft.com/en-us/azure/databricks/resources/databricks-geos
+  effort: Moderate (1–4 hrs)
+  api_endpoint: /api/2.0/settings/types/shield_csp_enablement_ws_db/names/default
+  benefits: |-
+    The compliance security profile plus Geo enforcement provides the strongest data residency guarantees for regulated workloads.
+  portal_link: https://accounts.azuredatabricks.net/workspaces?account_id={account_id}

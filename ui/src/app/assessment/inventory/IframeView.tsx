@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ExternalLink, Loader2, RefreshCw, AlertCircle, TreePine, GitBranch, Network, Layers, Search as SearchIcon } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, AlertCircle, TreePine, GitBranch, Network, Layers, Search as SearchIcon, Sun, Moon } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -29,6 +29,24 @@ export default function IframeView({ viewKey, title, description }: Props) {
   const [loadError, setLoadError] = useState(false);
   const [stats, setStats] = useState<any>(null);
   const [reload, setReload] = useState(0);
+
+  // Track portal dark mode and allow manual override
+  const [portalDark, setPortalDark] = useState(
+    () => document.documentElement.classList.contains("dark")
+  );
+  const [darkOverride, setDarkOverride] = useState<boolean | null>(null);
+  const effectiveDark = darkOverride !== null ? darkOverride : portalDark;
+
+  useEffect(() => {
+    const update = () => setPortalDark(document.documentElement.classList.contains("dark"));
+    window.addEventListener("clxs-theme-changed", update);
+    const obs = new MutationObserver(update);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+      window.removeEventListener("clxs-theme-changed", update);
+      obs.disconnect();
+    };
+  }, []);
 
   const view = VIEWS.find(v => v.key === viewKey)!;
   const src = `/api/assessment/html/${view.apiView}`;
@@ -95,6 +113,14 @@ export default function IframeView({ viewKey, title, description }: Props) {
                 Search Objects
               </Button>
             </Link>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDarkOverride(v => v === null ? !portalDark : !v)}
+              title={effectiveDark ? "Switch visualization to light mode" : "Switch visualization to dark mode"}
+            >
+              {effectiveDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
             <Button size="sm" variant="outline" onClick={handleReload} title="Reload view">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -185,7 +211,10 @@ export default function IframeView({ viewKey, title, description }: Props) {
             className="w-full h-full border-0"
             title={title}
             onLoad={handleLoad}
-            style={{ minHeight: "calc(100vh - 220px)" }}
+            style={{
+              minHeight: "calc(100vh - 220px)",
+              filter: effectiveDark ? "invert(0.88) hue-rotate(180deg)" : undefined,
+            }}
           />
         )}
       </div>

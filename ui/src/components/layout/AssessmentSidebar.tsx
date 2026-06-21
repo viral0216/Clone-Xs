@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Play, AlertTriangle, BarChart2,
   Lightbulb, Database, GitBranch, Clock, Download,
   PanelLeftClose, PanelLeftOpen, Network, TreePine, Layers, ArrowLeftRight, Search,
-  Workflow, Server, Users, BrainCircuit, FileCode,
+  Workflow, Server, Users, BrainCircuit, FileCode, ShieldCheck, Activity,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -27,7 +27,9 @@ const NAV_SECTIONS = [
     title: "UC Inventory",
     items: [
       { href: "/assessment/inventory", label: "Summary", icon: Database },
-      { href: "/assessment/inventory/search", label: "Object Search", icon: Search },
+      { href: "/assessment/inventory/search", label: "Object Search",   icon: Search },
+      { href: "/assessment/inventory/access", label: "Access Control",  icon: ShieldCheck },
+      { href: "/assessment/inventory/health", label: "Metadata Health", icon: Activity },
       { href: "/assessment/inventory/tree", label: "Tree View", icon: TreePine },
       { href: "/assessment/inventory/sunburst", label: "Sunburst View", icon: GitBranch },
       { href: "/assessment/inventory/hubspoke", label: "Hub & Spoke", icon: Network },

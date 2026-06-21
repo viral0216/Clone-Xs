@@ -32,6 +32,7 @@ dependencies = [
     # literals, so realistic-looking values land in target tables without
     # requiring any client-side row materialisation.
     "faker>=20.0",
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]

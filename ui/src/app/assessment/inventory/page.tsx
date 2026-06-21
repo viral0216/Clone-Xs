@@ -1,15 +1,16 @@
 // @ts-nocheck
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Database, TreePine, GitBranch, Network, Loader2,
   Table2, FileStack, FunctionSquare, BrainCircuit, Search, Shield, X, ChevronDown, ChevronUp,
-  HardDrive, Key, Share2, Users, Layers, Workflow, Server, BarChart2, ArrowRight,
+  HardDrive, Key, Share2, Users, Layers, Workflow, Server, BarChart2, ArrowRight, Download,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -192,12 +193,54 @@ function GrantRow({ grant }: { grant: any }) {
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
+const INV_EXPORT_OPTIONS = [
+  { key: "json",        label: "Inventory JSON",   ext: "json" },
+  { key: "csv_tables",  label: "Tables CSV",       ext: "csv"  },
+  { key: "csv_columns", label: "Columns CSV",      ext: "csv"  },
+  { key: "excel",       label: "Excel Workbook",   ext: "xlsx" },
+  { key: "html",        label: "HTML Dashboards (ZIP)", ext: "zip" },
+];
+
 export default function InventoryPage() {
   const [inv, setInv] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null);
   const [wsResult, setWsResult] = useState<any>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    if (exportOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [exportOpen]);
+
+  async function downloadInv(fmt: string) {
+    setExporting(fmt);
+    setExportOpen(false);
+    try {
+      const resp = await fetch(`/api/assessment/inventory/export?fmt=${fmt}`, {
+        headers: {
+          "X-Databricks-Host": localStorage.getItem("dbx_host") ?? "",
+          "X-Databricks-Token": localStorage.getItem("dbx_token") ?? "",
+        },
+      });
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail ?? "Export failed");
+      const blob = await resp.blob();
+      const opt = INV_EXPORT_OPTIONS.find(o => o.key === fmt)!;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `uc_inventory.${opt.ext}`; a.click();
+      URL.revokeObjectURL(url);
+    } catch {}
+    finally { setExporting(null); }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -311,6 +354,42 @@ export default function InventoryPage() {
         icon={Database}
         breadcrumbs={["Assessment", "UC Inventory"]}
         description="Complete Unity Catalog object tree — catalogs, schemas, tables, volumes, functions, registered models, grants, and column-level detail."
+        actions={
+          <div className="relative" ref={exportRef}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExportOpen(v => !v)}
+              disabled={!!exporting}
+            >
+              {exporting ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Exporting…
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                  <ChevronDown className="h-3 w-3 ml-0.5" />
+                </span>
+              )}
+            </Button>
+            {exportOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-background border border-border rounded-lg shadow-lg min-w-[180px] py-1">
+                {INV_EXPORT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => downloadInv(opt.key)}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted/60 transition-colors"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        }
       />
 
       {/* Stats grid */}

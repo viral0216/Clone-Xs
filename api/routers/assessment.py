@@ -676,6 +676,204 @@ async def get_inventory(scan_id: str | None = Query(None)):
         return None
 
 
+@router.get("/inventory/export")
+async def export_inventory(
+    fmt: str = Query("json"),
+    scan_id: str | None = Query(None),
+):
+    """Download UC inventory in the requested format: json | csv_tables | csv_columns | excel."""
+    sid = scan_id or ((_latest_result() or {}).get("scan_id"))
+    if not sid:
+        raise HTTPException(status_code=404, detail="No scan found")
+
+    inv_path = _STORE / sid / "inventory.json"
+    if not inv_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Inventory not available for this scan — run a scan with UC Inventory enabled",
+        )
+
+    inv = json.loads(inv_path.read_text())
+
+    if fmt == "json":
+        return FileResponse(
+            str(inv_path),
+            media_type="application/json",
+            filename=f"uc_inventory_{sid}.json",
+        )
+
+    elif fmt == "csv_tables":
+        import csv
+        import io as _io
+        buf = _io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([
+            "catalog", "catalog_type", "schema", "table", "full_name",
+            "table_type", "data_format", "owner", "comment",
+            "storage_location", "created_at", "updated_at", "column_count", "grant_count",
+        ])
+        for cat in inv.get("catalogs", []):
+            for sch in cat.get("schemas", []):
+                for tbl in sch.get("tables", []):
+                    w.writerow([
+                        cat["name"], cat.get("catalog_type", ""), sch["name"],
+                        tbl["name"], tbl.get("full_name", ""), tbl.get("table_type", ""),
+                        tbl.get("data_source_format", ""), tbl.get("owner", ""),
+                        tbl.get("comment", ""), tbl.get("storage_location", ""),
+                        tbl.get("created_at", ""), tbl.get("updated_at", ""),
+                        len(tbl.get("columns", [])), len(tbl.get("grants", [])),
+                    ])
+        return Response(
+            content=buf.getvalue().encode(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="uc_tables_{sid}.csv"'},
+        )
+
+    elif fmt == "csv_columns":
+        import csv
+        import io as _io
+        buf = _io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([
+            "catalog", "schema", "table", "full_table_name",
+            "column", "position", "type", "nullable", "comment", "masked",
+        ])
+        for cat in inv.get("catalogs", []):
+            for sch in cat.get("schemas", []):
+                for tbl in sch.get("tables", []):
+                    for col in tbl.get("columns", []):
+                        w.writerow([
+                            cat["name"], sch["name"], tbl["name"],
+                            tbl.get("full_name", ""), col["name"],
+                            col.get("position", ""), col.get("type_text", ""),
+                            col.get("nullable", ""), col.get("comment", ""),
+                            "yes" if col.get("mask") else "no",
+                        ])
+        return Response(
+            content=buf.getvalue().encode(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="uc_columns_{sid}.csv"'},
+        )
+
+    elif fmt == "excel":
+        try:
+            import io as _io
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
+        except ImportError:
+            raise HTTPException(status_code=503, detail="openpyxl not installed — cannot generate Excel export")
+
+        HEADER_FILL = PatternFill("solid", fgColor="E8453C")
+        HEADER_FONT = Font(color="FFFFFF", bold=True)
+
+        def _add_sheet(wb, name, headers, rows):
+            ws = wb.create_sheet(name)
+            ws.append(headers)
+            for cell in ws[1]:
+                cell.fill = HEADER_FILL
+                cell.font = HEADER_FONT
+            for row in rows:
+                ws.append(row)
+
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+
+        _add_sheet(wb, "Catalogs",
+            ["Name", "Type", "Owner", "Comment", "Storage Root", "Isolation Mode"],
+            [[c["name"], c.get("catalog_type", ""), c.get("owner", ""), c.get("comment", ""),
+              c.get("storage_root", ""), c.get("isolation_mode", "")]
+             for c in inv.get("catalogs", [])])
+
+        _add_sheet(wb, "Schemas",
+            ["Full Name", "Catalog", "Schema", "Owner", "Comment"],
+            [[s.get("full_name", ""), cat["name"], s["name"], s.get("owner", ""), s.get("comment", "")]
+             for cat in inv.get("catalogs", []) for s in cat.get("schemas", [])])
+
+        _add_sheet(wb, "Tables",
+            ["Full Name", "Catalog", "Schema", "Table", "Type", "Format", "Owner", "Comment",
+             "Storage Location", "Columns", "Grants", "Created", "Updated"],
+            [[t.get("full_name", ""), cat["name"], sch["name"], t["name"],
+              t.get("table_type", ""), t.get("data_source_format", ""),
+              t.get("owner", ""), t.get("comment", ""), t.get("storage_location", ""),
+              len(t.get("columns", [])), len(t.get("grants", [])),
+              t.get("created_at", ""), t.get("updated_at", "")]
+             for cat in inv.get("catalogs", []) for sch in cat.get("schemas", [])
+             for t in sch.get("tables", [])])
+
+        _add_sheet(wb, "Columns",
+            ["Table", "Catalog", "Schema", "Column", "Position", "Type", "Nullable", "Comment", "Masked"],
+            [[t.get("full_name", ""), cat["name"], sch["name"], col["name"],
+              col.get("position", ""), col.get("type_text", ""), col.get("nullable", ""),
+              col.get("comment", ""), "yes" if col.get("mask") else "no"]
+             for cat in inv.get("catalogs", []) for sch in cat.get("schemas", [])
+             for t in sch.get("tables", []) for col in t.get("columns", [])])
+
+        grant_rows: list[list] = []
+        for g in inv.get("metastore_grants", []):
+            grant_rows.append(["METASTORE", "—", g.get("full_name", ""), g.get("principal", ""),
+                                ", ".join(g.get("privileges", [])), g.get("inherited_from", "")])
+        for cat in inv.get("catalogs", []):
+            for g in cat.get("grants", []):
+                grant_rows.append(["CATALOG", cat["name"], g.get("full_name", ""), g.get("principal", ""),
+                                    ", ".join(g.get("privileges", [])), g.get("inherited_from", "")])
+            for sch in cat.get("schemas", []):
+                for g in sch.get("grants", []):
+                    grant_rows.append(["SCHEMA", cat["name"], g.get("full_name", ""), g.get("principal", ""),
+                                        ", ".join(g.get("privileges", [])), g.get("inherited_from", "")])
+                for t in sch.get("tables", []):
+                    for g in t.get("grants", []):
+                        grant_rows.append(["TABLE", cat["name"], g.get("full_name", ""), g.get("principal", ""),
+                                            ", ".join(g.get("privileges", [])), g.get("inherited_from", "")])
+        _add_sheet(wb, "Grants",
+            ["Level", "Catalog", "Object", "Principal", "Privileges", "Inherited From"],
+            grant_rows)
+
+        _add_sheet(wb, "External Locations",
+            ["Name", "URL", "Credential", "Read Only", "Owner", "Comment"],
+            [[e.get("name", ""), e.get("url", ""), e.get("credential_name", ""),
+              str(e.get("read_only", "")), e.get("owner", ""), e.get("comment", "")]
+             for e in inv.get("external_locations", [])])
+
+        buf = _io.BytesIO()
+        wb.save(buf)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="uc_inventory_{sid}.xlsx"'},
+        )
+
+    elif fmt == "html":
+        import tempfile
+        import zipfile
+        # Collect UC inventory HTML views only (not the security findings report)
+        html_files: list[Path] = []
+        for view in ("overview", "tree", "sunburst", "hubspoke", "topology"):
+            p = _html_path(sid, view)
+            if p and p.exists():
+                html_files.append(p)
+        if not html_files:
+            raise HTTPException(
+                status_code=404,
+                detail="No inventory HTML found — run a scan with UC Inventory enabled",
+            )
+        if len(html_files) == 1:
+            return FileResponse(str(html_files[0]), media_type="text/html",
+                                filename=f"uc_inventory_{sid}.html")
+        # Multiple files — bundle as ZIP (temp file, then FileResponse for reliable streaming)
+        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        tmp.close()
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in html_files:
+                zf.write(str(p), arcname=p.name)
+        return FileResponse(
+            tmp.name,
+            media_type="application/zip",
+            filename=f"uc_inventory_{sid}.zip",
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unknown format: {fmt}")
+
+
 @router.get("/workspace-resources")
 async def get_workspace_resources(
     scan_id: str | None = Query(None),

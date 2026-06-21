@@ -181,6 +181,8 @@ const AssessmentInventoryIdentity = lazy(() => import("@/app/assessment/inventor
 const AssessmentInventorySql = lazy(() => import("@/app/assessment/inventory/sql/page"));
 const AssessmentInventoryAiMl = lazy(() => import("@/app/assessment/inventory/aiml/page"));
 const AssessmentInventoryNotebooks = lazy(() => import("@/app/assessment/inventory/notebooks/page"));
+const AssessmentInventoryAccess    = lazy(() => import("@/app/assessment/inventory/access/page"));
+const AssessmentInventoryHealth    = lazy(() => import("@/app/assessment/inventory/health/page"));
 const AssessmentHistory = lazy(() => import("@/app/assessment/history/page"));
 const AssessmentExport = lazy(() => import("@/app/assessment/export/page"));
 const AssessmentCompare = lazy(() => import("@/app/assessment/compare/page"));
@@ -515,6 +517,8 @@ export default function App() {
               <Route path="/assessment/inventory/sql" element={<Suspense fallback={<PageFallback />}><AssessmentInventorySql /></Suspense>} />
               <Route path="/assessment/inventory/aiml" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryAiMl /></Suspense>} />
               <Route path="/assessment/inventory/notebooks" element={<Suspense fallback={<PageFallback />}><AssessmentInventoryNotebooks /></Suspense>} />
+              <Route path="/assessment/inventory/access"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryAccess /></Suspense>} />
+              <Route path="/assessment/inventory/health"    element={<Suspense fallback={<PageFallback />}><AssessmentInventoryHealth /></Suspense>} />
               <Route path="/assessment/history" element={<Suspense fallback={<PageFallback />}><AssessmentHistory /></Suspense>} />
               <Route path="/assessment/compare" element={<Suspense fallback={<PageFallback />}><AssessmentCompare /></Suspense>} />
               <Route path="/assessment/export" element={<Suspense fallback={<PageFallback />}><AssessmentExport /></Suspense>} />

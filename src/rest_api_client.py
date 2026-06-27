@@ -34,18 +34,10 @@ class DatabricksRestClient:
         self._ws = workspace_client
         config = workspace_client.config
         self.host = (config.host or "").rstrip("/")
-        # Build auth headers from the SDK config
-        self._headers = {"Content-Type": "application/json"}
-        try:
-            # SDK >= 0.20: use the config's authenticate method to get headers
-            auth_headers = {}
-            config.authenticate(auth_headers)
-            self._headers.update(auth_headers)
-        except Exception:
-            # Fallback: try to extract token directly
-            token = getattr(config, "token", None)
-            if token:
-                self._headers["Authorization"] = f"Bearer {token}"
+        # Build auth headers from the SDK config (handles PAT, OAuth, Azure AD, SP)
+        from src.auth import auth_headers_from_client
+
+        self._headers = auth_headers_from_client(workspace_client)
 
     # ── Generic HTTP ─────────────────────────────────────────────────
 

@@ -130,7 +130,7 @@ The **Export** button downloads the current graph state as `lineage-{tableName}.
 
 ## API reference
 
-All endpoints accept `X-Databricks-Host` and `X-Databricks-Token` headers.
+Credentials are resolved from, in order: `X-Databricks-Host` + `X-Databricks-Token` headers (PAT) → `X-Clone-Session` (Azure AD / OAuth / Service Principal logins) → the Databricks App runtime / environment. So these endpoints work for every login method, not just PAT.
 
 ### GET `/api/assessment/lineage/table`
 
@@ -158,7 +158,7 @@ Returns `{ upstream_cols, downstream_cols }` — each entry has `name`, `table_n
 | `table_name` | yes | Full FQN |
 | `limit` | no | Max rows (default 50, max 200) |
 
-Returns `{ columns, rows }` from `system.access.table_lineage`.
+Returns `{ columns, rows }` from `system.access.table_lineage`. Because this runs a SQL statement, it also requires the `X-Databricks-Warehouse` header (the web UI sends this automatically once a SQL warehouse is selected in **Settings**). The `table` and `column` endpoints above call the lineage-tracking REST API directly and need no warehouse.
 
 ---
 

@@ -63,6 +63,14 @@ Full Databricks-parity lineage page, three new UC Inventory tools, AI Assistant 
 - `api/routers/assessment/__init__.py` registers `_pii_router`, `_freshness_router`, `_permissions_router`
 - AssessmentSidebar has PII Scanner, Freshness, and Permissions links in the UC Inventory section
 - `api/routers/assessment/lineage.py` rewritten: `_extract_all()` handles all eight Databricks entity types; time-range params forwarded to Databricks API
+- **Server-side sessions now survive a backend restart.** Login persists a small "recreate descriptor" to `~/.clone-xs/sessions.json` (written `0600`); on a cache miss the `WorkspaceClient` is rebuilt on demand. Host-only methods (Azure CLI, OAuth, Databricks App) store **no** secrets — they rebuild from the host plus the machine's own credentials; PAT/SP store the minimum needed to reconnect. TTL is wall-clock (8 h) so it is honoured across restarts. Override the store path with `CLONE_XS_SESSION_FILE` (used to isolate tests).
+- **Settings → Authentication** keeps all four method tabs (Access Token, OAuth, Azure, Service Principal) visible when connected via Azure — the "Connected via Azure" card is now a status banner above the picker instead of replacing it, so you can switch methods (e.g. to a PAT) without logging out first.
+
+### Fixed
+
+- **401 on UC Explorer pages for non-PAT logins.** The assessment endpoints (`/assessment/freshness/*`, `/lineage/*`, `/permissions/*`, `/pii/*`, `/remediate`, `/ai/remediation-plan`) only read raw `X-Databricks-Host` / `X-Databricks-Token` headers and ignored server-side sessions, so they returned **401 "Databricks credentials required"** for Azure AD / OAuth / Service Principal logins. They now resolve credentials through a shared helper (`api/routers/assessment/_creds.py::resolve_sql_auth`) in the same order as the rest of the app: PAT headers → `X-Clone-Session` → Databricks App / env.
+- **Azure AD / OAuth sessions could not produce a REST auth header.** `Config.authenticate()` in databricks-sdk ≥ 0.20 takes no arguments and *returns* the headers dict, but several call sites passed a dict argument (legacy convention) → `TypeError` → fell back to a PAT token that doesn't exist for these methods → 401. Consolidated onto one correct helper, `src/auth.py::auth_headers_from_client`, now used by the assessment resolver, `rest_api_client.py`, the AI assistant, AI service, and the Genie-spaces lookup.
+- `GET /assessment/lineage/system-events` now sends the required `warehouse_id` (it previously omitted it, so the statement could never run).
 
 ---
 

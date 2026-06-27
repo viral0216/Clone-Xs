@@ -12,6 +12,14 @@ pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_session_store(tmp_path, monkeypatch):
+    """Point the on-disk session store at a temp file so tests never touch the
+    developer's real ~/.clone-xs/sessions.json."""
+    monkeypatch.setenv("CLONE_XS_SESSION_FILE", str(tmp_path / "sessions.json"))
+    yield
+
+
 @pytest.fixture()
 def mock_workspace_client():
     """A MagicMock of databricks.sdk.WorkspaceClient with common sub-mocks."""

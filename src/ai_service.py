@@ -132,22 +132,11 @@ class AIService:
         if not host:
             raise RuntimeError("Databricks host not configured. Please log in first.")
 
-        # Build auth headers from SDK config
-        headers = {"Content-Type": "application/json"}
-        has_auth = False
-        try:
-            auth_headers = {}
-            config.authenticate(auth_headers)
-            headers.update(auth_headers)
-            has_auth = bool(auth_headers)
-        except Exception:
-            pass
-        if not has_auth:
-            token = getattr(config, "token", None)
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                has_auth = True
-        if not has_auth:
+        # Build auth headers from SDK config (handles PAT, OAuth, Azure AD, SP)
+        from src.auth import auth_headers_from_client
+
+        headers = auth_headers_from_client(client)
+        if "Authorization" not in headers:
             raise RuntimeError(
                 "No authentication credentials available for Databricks. Please log in."
             )

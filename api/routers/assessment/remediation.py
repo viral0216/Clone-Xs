@@ -7,6 +7,7 @@ import json
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 
+from ._creds import resolve_sql_auth
 from ._storage import _STORE, _latest_result
 
 router = APIRouter()
@@ -25,6 +26,7 @@ async def quick_remediate(
     body: RemediateRequest,
     x_databricks_host: str | None = Header(None),
     x_databricks_token: str | None = Header(None),
+    x_clone_session: str | None = Header(None),
 ):
     """Execute a quick remediation action for a finding.
 
@@ -48,21 +50,26 @@ async def quick_remediate(
                     data = json.loads(path.read_text(encoding="utf-8"))
                 except Exception:
                     data = {}
-            data[body.finding_id] = {"status": "ACKNOWLEDGED", "note": "Acknowledged via quick action"}
+            data[body.finding_id] = {
+                "status": "ACKNOWLEDGED",
+                "note": "Acknowledged via quick action",
+            }
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return {"success": True, "message": f"Finding {body.finding_id} marked as acknowledged"}
 
     if action == "set_owner":
-        host = (x_databricks_host or "").rstrip("/")
-        token = x_databricks_token or ""
-        if not host or not token:
-            raise HTTPException(status_code=401, detail="Databricks credentials required")
+        host, authorization = resolve_sql_auth(
+            x_databricks_host, x_databricks_token, x_clone_session
+        )
 
         # Build fully qualified name
         parts = [p for p in [body.catalog, body.schema, body.table] if p]
         if len(parts) < 3:
-            raise HTTPException(status_code=400, detail="catalog, schema, and table are required for set_owner action")
+            raise HTTPException(
+                status_code=400,
+                detail="catalog, schema, and table are required for set_owner action",
+            )
         fqn = ".".join(f"`{p}`" for p in parts)
 
         sql = f"ALTER TABLE {fqn} SET OWNER TO current_user()"
@@ -71,11 +78,13 @@ async def quick_remediate(
                 # Start statement execution
                 r = await c.post(
                     f"{host}/api/2.0/sql/statements",
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    headers={"Authorization": authorization, "Content-Type": "application/json"},
                     json={"statement": sql, "wait_timeout": "20s"},
                 )
             if r.status_code not in (200, 201):
-                raise HTTPException(status_code=r.status_code, detail=f"Databricks SQL error: {r.text[:300]}")
+                raise HTTPException(
+                    status_code=r.status_code, detail=f"Databricks SQL error: {r.text[:300]}"
+                )
             result = r.json()
             state = result.get("status", {}).get("state", "")
             if state in ("SUCCEEDED", "RUNNING", "PENDING"):
@@ -117,7 +126,7 @@ async def update_remediation(scan_id: str, check_id: str, body: dict):
             data = {}
     data[check_id] = {
         "status": body.get("status", "open"),
-        "note":   body.get("note",   ""),
+        "note": body.get("note", ""),
     }
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return data[check_id]
@@ -128,14 +137,13 @@ async def ai_remediation_plan(
     body: dict,
     x_databricks_host: str | None = Header(None),
     x_databricks_token: str | None = Header(None),
+    x_clone_session: str | None = Header(None),
     model: str = Query("databricks-meta-llama-3-1-70b-instruct"),
 ):
     """Generate a step-by-step remediation plan for a security finding via Databricks Foundation Model."""
     import httpx
-    host  = (x_databricks_host  or "").rstrip("/")
-    token = (x_databricks_token or "")
-    if not host or not token:
-        raise HTTPException(status_code=401, detail="Databricks credentials required")
+
+    host, authorization = resolve_sql_auth(x_databricks_host, x_databricks_token, x_clone_session)
 
     finding = body.get("finding", {})
     system_prompt = (
@@ -146,13 +154,13 @@ async def ai_remediation_plan(
     )
     user_prompt = f"""## Security Finding
 
-**Check ID:** {finding.get('check_id', '')}
-**Title:** {finding.get('title', '')}
-**Category:** {finding.get('category', '')}
-**Severity:** {finding.get('severity', '')}
-**Description:** {finding.get('description', '')}
-**Current Recommendation:** {finding.get('recommendation', '')}
-**Effort:** {finding.get('effort', '')}
+**Check ID:** {finding.get("check_id", "")}
+**Title:** {finding.get("title", "")}
+**Category:** {finding.get("category", "")}
+**Severity:** {finding.get("severity", "")}
+**Description:** {finding.get("description", "")}
+**Current Recommendation:** {finding.get("recommendation", "")}
+**Effort:** {finding.get("effort", "")}
 
 Please provide:
 1. **Root Cause** (1-2 sentences on why this happens)
@@ -165,13 +173,13 @@ Please provide:
         async with httpx.AsyncClient(timeout=45) as c:
             r = await c.post(
                 f"{host}/serving-endpoints/{model}/invocations",
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                headers={"Authorization": authorization, "Content-Type": "application/json"},
                 json={
                     "messages": [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user",   "content": user_prompt},
+                        {"role": "user", "content": user_prompt},
                     ],
-                    "max_tokens":  1500,
+                    "max_tokens": 1500,
                     "temperature": 0.1,
                 },
             )

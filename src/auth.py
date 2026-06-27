@@ -35,6 +35,38 @@ def is_databricks_app() -> bool:
     return os.getenv("CLONE_XS_RUNTIME") == "databricks-app"
 
 
+def auth_headers_from_client(client) -> dict:
+    """Return fresh REST auth headers for a WorkspaceClient.
+
+    Works for every auth type (PAT, OAuth, Azure AD, Service Principal). The SDK
+    call convention varies by version: modern SDKs (>= ~0.20) expose
+    ``Config.authenticate() -> dict``; very old ones mutate a dict passed in.
+    Both are handled, with a static-token fallback for the PAT case.
+    """
+    config = client.config
+    headers = {"Content-Type": "application/json"}
+    auth_headers = None
+    try:
+        result = config.authenticate()  # modern SDK: returns the headers dict
+        if isinstance(result, dict):
+            auth_headers = result
+        elif result is None:
+            auth_headers = {}
+            config.authenticate(auth_headers)  # legacy SDK: mutates in place
+    except TypeError:
+        auth_headers = {}
+        config.authenticate(auth_headers)
+    except Exception:
+        auth_headers = None
+    if auth_headers:
+        headers.update(auth_headers)
+    if "Authorization" not in headers:
+        token = getattr(config, "token", None)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 logger = logging.getLogger(__name__)
 
 # ── Module-level client cache ─────────────────────────────────────────

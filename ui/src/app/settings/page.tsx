@@ -564,8 +564,9 @@ export default function SettingsPage() {
             <section id="auth">
               <SectionHeading title="Authentication" subtitle="Choose how to connect to your Databricks workspace" />
 
-              {auth.data?.authenticated && auth.data?.auth_method?.toLowerCase().includes("azure") ? (
-                /* Azure users: session managed server-side, no credential fields needed */
+              {auth.data?.authenticated && auth.data?.auth_method?.toLowerCase().includes("azure") && (
+                /* Azure users: session managed server-side. Shown as a status banner;
+                   the credential methods below stay available so users can switch (e.g. PAT). */
                 <div className="mt-3 p-4 bg-muted/30 border border-border rounded-lg max-w-lg">
                   <div className="flex items-center gap-2 text-sm text-foreground font-medium">
                     <Globe className="h-4 w-4 text-primary" />
@@ -573,11 +574,12 @@ export default function SettingsPage() {
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Your session is managed automatically via Azure authentication.
-                    To change workspace, log out and re-authenticate from the login page.
+                    You can also connect with a different method below.
                   </p>
                 </div>
-              ) : (
-                <>
+              )}
+
+              <>
                   {/* Pill tabs */}
                   <div className="flex flex-wrap gap-1 mt-3 p-1 bg-muted/50 rounded-lg w-fit">
                     {authTabs.map((tab) => (
@@ -672,7 +674,6 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </>
-              )}
             </section>
           )}
 

@@ -205,11 +205,26 @@ All login methods — PAT, OAuth, Azure CLI, and Service Principal — create a 
 
 - A unique **session ID** is generated on login and stored in the browser's `localStorage`.
 - Every API call includes the `X-Clone-Session` HTTP header so the server can look up the session.
-- The session persists until the user logs out or the server restarts — there is no need to re-authenticate after closing and reopening the browser.
 - For Azure/OAuth flows the authenticated `WorkspaceClient` is cached server-side; raw tokens are never stored in the browser.
+- **Sessions survive a backend restart.** The live client can't be serialised, so login also writes a small *recreate descriptor* to `~/.clone-xs/sessions.json` (file mode `0600`). After a restart the server rebuilds the client from that descriptor on the next request — no re-login needed.
+- Sessions expire **8 hours** after login (wall-clock, so the TTL is honoured across restarts). Expired records are purged automatically.
+
+#### What is stored on disk
+
+| Login method | Persisted to rebuild the client | Secrets on disk? |
+|--------------|----------------------------------|------------------|
+| Azure CLI | host only (rebuilt from your `az login`) | **No** |
+| OAuth (U2M) | host only (rebuilt from the SDK token cache) | **No** |
+| Databricks App | nothing (runtime service principal) | **No** |
+| Personal Access Token | host + token | Yes (token) |
+| Service Principal | host + client ID/secret (+ tenant) | Yes (secret) |
 
 :::tip
 Because the session lives on the server, you can open multiple browser tabs and they will all share the same authenticated context.
+:::
+
+:::note
+The store path defaults to `~/.clone-xs/sessions.json` and can be overridden with the `CLONE_XS_SESSION_FILE` environment variable (the test suite uses this to keep your real sessions untouched).
 :::
 
 ### Settings page

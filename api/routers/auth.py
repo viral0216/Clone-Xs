@@ -1,10 +1,13 @@
 """Authentication endpoints."""
 
+import json
 import logging
+import os
 import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from databricks.sdk import WorkspaceClient
@@ -27,10 +30,26 @@ router = APIRouter()
 # ── Server-side session store ──────────────────────────────────────────
 # Maps session_id → SessionEntry so Azure/OAuth/SP logins persist across
 # requests without the frontend needing raw tokens.
-# Thread-safe via _sessions_lock; entries expire after SESSION_TTL_SECONDS.
+#
+# The live WorkspaceClient is held in memory (it cannot be serialised), but a
+# small "recreate descriptor" is also written to disk so sessions survive a
+# backend restart (e.g. uvicorn --reload during development). On a cache miss
+# the client is lazily rebuilt from that descriptor — see _rehydrate_session.
+#
+# created_at uses wall-clock time (time.time) so the TTL is consistent across
+# restarts. The on-disk file may contain secrets (PAT token / SP secret) for
+# the auth methods that have no other credential source, so it is written with
+# 0600 permissions. Host-only methods (azure-cli, oauth-u2m, databricks-app)
+# persist NO secrets — they rebuild from the host + the machine's own creds.
 
 SESSION_TTL_SECONDS = 8 * 60 * 60  # 8 hours
 MAX_SESSIONS = 100
+
+
+def _session_file() -> Path:
+    """Path to the on-disk session store. Overridable via env for tests."""
+    override = os.environ.get("CLONE_XS_SESSION_FILE")
+    return Path(override) if override else Path.home() / ".clone-xs" / "sessions.json"
 
 
 @dataclass
@@ -39,50 +58,217 @@ class SessionEntry:
     user: str
     host: str
     auth_method: str
-    created_at: float = field(default_factory=time.monotonic)
+    created_at: float = field(default_factory=time.time)
 
 
 _sessions: dict[str, SessionEntry] = {}
 _sessions_lock = threading.Lock()
+_persist_lock = threading.Lock()
 
 
-def _evict_expired() -> None:
-    """Remove expired sessions. Must be called with _sessions_lock held."""
-    now = time.monotonic()
+# ── Persistence helpers (file ops guarded by _persist_lock) ─────────────
+
+
+def _persist_load_all() -> dict:
+    """Read the whole on-disk session map. Returns {} if missing/corrupt."""
+    path = _session_file()
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    except Exception:
+        logger.warning("Failed to read session store %s", path, exc_info=True)
+        return {}
+
+
+def _persist_write_all(data: dict) -> None:
+    """Atomically write the session map with 0600 permissions."""
+    path = _session_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except Exception:
+        logger.warning("Failed to write session store %s", path, exc_info=True)
+
+
+def _persist_save(
+    session_id: str, user: str, host: str, auth_method: str, created_at: float, recreate: dict
+) -> None:
+    with _persist_lock:
+        data = _persist_load_all()
+        data[session_id] = {
+            "user": user,
+            "host": host,
+            "auth_method": auth_method,
+            "created_at": created_at,
+            "recreate": recreate,
+        }
+        _persist_write_all(data)
+
+
+def _persist_load(session_id: str) -> Optional[dict]:
+    with _persist_lock:
+        return _persist_load_all().get(session_id)
+
+
+def _persist_delete(session_id: str) -> None:
+    with _persist_lock:
+        data = _persist_load_all()
+        if session_id in data:
+            del data[session_id]
+            _persist_write_all(data)
+
+
+def _purge_expired_persisted() -> None:
+    """Drop expired records from disk on startup."""
+    with _persist_lock:
+        data = _persist_load_all()
+        now = time.time()
+        fresh = {
+            sid: rec
+            for sid, rec in data.items()
+            if now - rec.get("created_at", 0) <= SESSION_TTL_SECONDS
+        }
+        if len(fresh) != len(data):
+            _persist_write_all(fresh)
+
+
+def _recreate_client(rec: dict) -> Optional[WorkspaceClient]:
+    """Rebuild a WorkspaceClient from a persisted recreate descriptor."""
+    from databricks.sdk.config import Config
+
+    host = rec.get("host") or ""
+    r = rec.get("recreate") or {}
+    kind = r.get("kind")
+
+    if kind == "pat":
+        return get_client(host, r.get("token"))
+    if kind == "service-principal":
+        if r.get("auth_type") == "azure" and r.get("tenant_id"):
+            return WorkspaceClient(
+                host=host,
+                azure_client_id=r.get("client_id"),
+                azure_client_secret=r.get("client_secret"),
+                azure_tenant_id=r.get("tenant_id"),
+            )
+        return WorkspaceClient(
+            host=host, client_id=r.get("client_id"), client_secret=r.get("client_secret")
+        )
+    if kind == "azure-cli":
+        return WorkspaceClient(config=Config(host=host, auth_type="azure-cli"))
+    if kind == "oauth":
+        return get_client(host)
+    if kind == "app":
+        return get_client()
+    return None
+
+
+# ── In-memory store + rehydration ───────────────────────────────────────
+
+
+def _evict_expired() -> list[str]:
+    """Remove expired sessions from memory. Must hold _sessions_lock. Returns evicted IDs."""
+    now = time.time()
     expired = [
         sid for sid, entry in _sessions.items() if now - entry.created_at > SESSION_TTL_SECONDS
     ]
     for sid in expired:
         del _sessions[sid]
+    return expired
 
 
 def create_session(
-    client: WorkspaceClient, user: str = "", host: str = "", auth_method: str = ""
+    client: WorkspaceClient,
+    user: str = "",
+    host: str = "",
+    auth_method: str = "",
+    recreate: Optional[dict] = None,
 ) -> str:
-    """Store an authenticated client with user info and return a session ID."""
+    """Store an authenticated client and return a session ID.
+
+    If ``recreate`` is provided, a descriptor is also persisted to disk so the
+    session can be rebuilt after a backend restart.
+    """
     session_id = secrets.token_hex(16)
+    created_at = time.time()
+    evicted: list[str] = []
     with _sessions_lock:
-        _evict_expired()
+        evicted = _evict_expired()
         # Cap session count to prevent unbounded growth
         if len(_sessions) >= MAX_SESSIONS:
             oldest = min(_sessions, key=lambda s: _sessions[s].created_at)
             del _sessions[oldest]
+            evicted.append(oldest)
         _sessions[session_id] = SessionEntry(
-            client=client, user=user, host=host, auth_method=auth_method
+            client=client, user=user, host=host, auth_method=auth_method, created_at=created_at
         )
+    # File I/O outside the lock
+    for sid in evicted:
+        _persist_delete(sid)
+    if recreate is not None:
+        _persist_save(session_id, user, host, auth_method, created_at, recreate)
     return session_id
 
 
+def _rehydrate_session(session_id: str) -> Optional[SessionEntry]:
+    """Rebuild an in-memory session from its persisted descriptor after a restart."""
+    rec = _persist_load(session_id)
+    if not rec:
+        return None
+    created_at = rec.get("created_at", 0)
+    if time.time() - created_at > SESSION_TTL_SECONDS:
+        _persist_delete(session_id)
+        return None
+    try:
+        client = _recreate_client(rec)
+    except Exception:
+        logger.warning(
+            "Could not rehydrate session %s (%s); removing",
+            session_id[:8],
+            rec.get("auth_method"),
+            exc_info=True,
+        )
+        _persist_delete(session_id)
+        return None
+    if client is None:
+        return None
+    entry = SessionEntry(
+        client=client,
+        user=rec.get("user", ""),
+        host=rec.get("host", ""),
+        auth_method=rec.get("auth_method", ""),
+        created_at=created_at,
+    )
+    with _sessions_lock:
+        _sessions[session_id] = entry
+    logger.info("Rehydrated session %s (%s) after restart", session_id[:8], entry.auth_method)
+    return entry
+
+
 def get_session(session_id: Optional[str]) -> Optional[SessionEntry]:
-    """Look up a cached session by ID. Returns None if expired."""
+    """Look up a session by ID, rebuilding from disk if not in memory. None if expired."""
     if not session_id:
         return None
+    expired = False
     with _sessions_lock:
         entry = _sessions.get(session_id)
-        if entry and (time.monotonic() - entry.created_at > SESSION_TTL_SECONDS):
-            del _sessions[session_id]
-            return None
-        return entry
+        if entry:
+            if time.time() - entry.created_at > SESSION_TTL_SECONDS:
+                del _sessions[session_id]
+                expired = True
+            else:
+                return entry
+    if expired:
+        _persist_delete(session_id)
+        return None
+    # Cache miss — try to rebuild from the persisted descriptor (survives restarts)
+    return _rehydrate_session(session_id)
 
 
 def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
@@ -92,10 +278,15 @@ def get_session_client(session_id: Optional[str]) -> Optional[WorkspaceClient]:
 
 
 def delete_session(session_id: Optional[str]):
-    """Remove a session from the store."""
+    """Remove a session from memory and disk."""
     if session_id:
         with _sessions_lock:
             _sessions.pop(session_id, None)
+        _persist_delete(session_id)
+
+
+# Drop stale records left on disk from previous runs
+_purge_expired_persisted()
 
 
 def _auto_start_warehouse(client: WorkspaceClient):
@@ -167,7 +358,13 @@ async def auto_login():
         client = get_client()
         user = info.get("user", "")
         host = info.get("host", "")
-        session_id = create_session(client, user=user, host=host, auth_method="databricks-app")
+        session_id = create_session(
+            client,
+            user=user,
+            host=host,
+            auth_method="databricks-app",
+            recreate={"kind": "app"},
+        )
         _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True,
@@ -190,7 +387,13 @@ async def login(req: LoginRequest):
         user = info.get("user", "")
         host = info.get("host", "")
         method = info.get("auth_method", "pat")
-        session_id = create_session(client, user=user, host=host, auth_method=method)
+        session_id = create_session(
+            client,
+            user=user,
+            host=host,
+            auth_method=method,
+            recreate={"kind": "pat", "token": req.token},
+        )
         _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True,
@@ -287,7 +490,13 @@ async def oauth_login(req: OAuthLoginRequest):
         client = get_client(req.host)
         user = info.get("user", "")
         host = info.get("host", "")
-        session_id = create_session(client, user=user, host=host, auth_method="oauth-u2m")
+        session_id = create_session(
+            client,
+            user=user,
+            host=host,
+            auth_method="oauth-u2m",
+            recreate={"kind": "oauth"},
+        )
         _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True, user=user, host=host, auth_method="oauth-u2m", session_id=session_id
@@ -319,7 +528,17 @@ async def service_principal_login(req: ServicePrincipalRequest):
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
         session_id = create_session(
-            client, user=user, host=req.host, auth_method="service-principal"
+            client,
+            user=user,
+            host=req.host,
+            auth_method="service-principal",
+            recreate={
+                "kind": "service-principal",
+                "client_id": req.client_id,
+                "client_secret": req.client_secret,
+                "tenant_id": req.tenant_id,
+                "auth_type": req.auth_type,
+            },
         )
         _auto_start_warehouse(client)
         return AuthStatus(
@@ -398,7 +617,13 @@ async def azure_connect_workspace(req: OAuthLoginRequest):
         client = WorkspaceClient(config=config)
         me = client.current_user.me()
         user = me.user_name or me.display_name or ""
-        session_id = create_session(client, user=user, host=req.host, auth_method="azure-cli")
+        session_id = create_session(
+            client,
+            user=user,
+            host=req.host,
+            auth_method="azure-cli",
+            recreate={"kind": "azure-cli"},
+        )
         _auto_start_warehouse(client)
         return AuthStatus(
             authenticated=True,
@@ -510,8 +735,7 @@ async def list_serving_endpoints(client=Depends(get_db_client)):
             # Exclude embedding-only endpoints — they don't support chat invocations
             _EMBED_KEYWORDS = {"embed", "bge", "e5-large", "e5-small", "e5-base", "nomic", "rerank"}
             is_embedding = (
-                any(kw in name.lower() for kw in _EMBED_KEYWORDS)
-                or "embed" in task.lower()
+                any(kw in name.lower() for kw in _EMBED_KEYWORDS) or "embed" in task.lower()
             )
             if is_embedding:
                 continue
@@ -535,17 +759,11 @@ async def list_genie_spaces(client=Depends(get_db_client)):
     try:
         import requests as req
 
+        from src.auth import auth_headers_from_client
+
         config = client.config
         host = (config.host or "").rstrip("/")
-        headers = {"Content-Type": "application/json"}
-        try:
-            auth_headers = {}
-            config.authenticate(auth_headers)
-            headers.update(auth_headers)
-        except Exception:
-            token = getattr(config, "token", None)
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
+        headers = auth_headers_from_client(client)
 
         r = req.get(f"{host}/api/2.0/genie/spaces", headers=headers, timeout=15)
         if r.status_code == 200:

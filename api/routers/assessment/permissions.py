@@ -2,66 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, Header, HTTPException, Query
 
+from ._creds import exec_sql, resolve_sql_auth
+
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Shared helper: execute a SQL statement via Databricks SQL Statements API
-# ---------------------------------------------------------------------------
-
-async def _exec_sql(host: str, token: str, warehouse_id: str, statement: str) -> dict:
-    """Execute SQL via Databricks /api/2.0/sql/statements and return the result."""
-    import httpx
-
-    base = host.rstrip("/")
-    hdrs = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "statement": statement,
-        "warehouse_id": warehouse_id,
-        "wait_timeout": "50s",
-        "on_wait_timeout": "CANCEL",
-        "disposition": "INLINE",
-        "format": "JSON_ARRAY",
-    }
-
-    async with httpx.AsyncClient(timeout=60) as c:
-        r = await c.post(f"{base}/api/2.0/sql/statements", headers=hdrs, json=payload)
-        if r.status_code not in (200, 201):
-            raise HTTPException(status_code=r.status_code, detail=r.text[:500])
-        data = r.json()
-
-    # Poll if still pending/running
-    stmt_id = data.get("statement_id")
-    for _ in range(30):
-        state = data.get("status", {}).get("state", "")
-        if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
-            break
-        if not stmt_id:
-            break
-        await asyncio.sleep(2)
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.get(f"{base}/api/2.0/sql/statements/{stmt_id}", headers=hdrs)
-            if r.status_code == 200:
-                data = r.json()
-
-    state = data.get("status", {}).get("state", "")
-    if state == "FAILED":
-        err_msg = data.get("status", {}).get("error", {}).get("message", "Unknown SQL error")
-        raise HTTPException(status_code=422, detail=f"SQL execution failed: {err_msg}")
-
-    result = data.get("result", {})
-    schema = data.get("manifest", {}).get("schema", {}).get("columns", [])
-    columns = [col.get("name", f"col{i}") for i, col in enumerate(schema)]
-    rows = result.get("data_array", [])
-
-    return {"columns": columns, "rows": rows, "total": len(rows)}
 
 
 # ---------------------------------------------------------------------------
@@ -102,21 +47,17 @@ async def permission_grants(
     x_databricks_host: str | None = Header(None),
     x_databricks_token: str | None = Header(None),
     x_databricks_warehouse: str | None = Header(None),
+    x_clone_session: str | None = Header(None),
 ):
     """Return permission grants from system.information_schema.grants.
 
     Optionally filter to objects belonging to a specific catalog.
     Highlights ALL PRIVILEGES grants and inherited grants for audit purposes.
     """
-    host = (x_databricks_host or "").rstrip("/")
-    token = x_databricks_token or ""
+    base_host, authorization = resolve_sql_auth(
+        x_databricks_host, x_databricks_token, x_clone_session
+    )
     warehouse_id = x_databricks_warehouse or ""
-
-    if not host or not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Databricks credentials required (X-Databricks-Host, X-Databricks-Token headers)",
-        )
     if not warehouse_id:
         raise HTTPException(
             status_code=400,
@@ -129,7 +70,7 @@ async def permission_grants(
         sql = GRANTS_SQL_NO_CATALOG
 
     try:
-        return await _exec_sql(host, token, warehouse_id, sql)
+        return await exec_sql(base_host, authorization, warehouse_id, sql)
     except HTTPException:
         raise
     except Exception as exc:

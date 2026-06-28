@@ -96,7 +96,21 @@ def test_detect_azure_sp():
     assert _detect_auth_method() == "azure-ad-sp"
 
 
+@patch.dict(
+    os.environ,
+    {
+        "DATABRICKS_CLIENT_ID": "",
+        "DATABRICKS_CLIENT_SECRET": "",
+        "AZURE_CLIENT_ID": "",
+        "AZURE_CLIENT_SECRET": "",
+        "DATABRICKS_HOST": "",
+        "DATABRICKS_TOKEN": "",
+    },
+    clear=False,
+)
 def test_detect_profile():
+    # Clear higher-priority env credentials so the profile path is exercised
+    # regardless of the developer's ambient shell environment.
     assert _detect_auth_method(profile="staging") == "cli-profile:staging"
 
 
